@@ -1,0 +1,8 @@
+node_modules/
+runs/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.DS_Store
+lean/.lake/

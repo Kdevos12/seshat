@@ -1,0 +1,71 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  canonicalJson,
+  canTransition,
+  collapseWhitespace,
+  hashJson,
+  newId,
+  statementIdV0,
+  stripLeanComments,
+} from "../src/index.ts";
+
+describe("canonicalJson", () => {
+  it("sorts keys at every level and drops undefined", () => {
+    assert.equal(canonicalJson({ b: 1, a: { d: [3, { y: 1, x: 2 }], c: undefined } }), '{"a":{"d":[3,{"x":2,"y":1}]},"b":1}');
+  });
+
+  it("gives the same hash for equal values written in another order", () => {
+    assert.equal(hashJson({ a: 1, b: [1, 2] }), hashJson({ b: [1, 2], a: 1 }));
+    assert.notEqual(hashJson({ a: 1 }), hashJson({ a: 2 }));
+  });
+
+  it("refuses values JSON cannot round-trip", () => {
+    assert.throws(() => canonicalJson({ x: Number.NaN }), /non-finite number at \$\.x/);
+    assert.throws(() => canonicalJson([new Date(0)]), /unsupported object at \$\[0\]/);
+    assert.throws(() => canonicalJson({ f: () => 1 }), /unsupported function/);
+  });
+});
+
+describe("newId", () => {
+  it("is prefixed, 26 characters after the prefix, and sorts by time", () => {
+    const zeros = new Uint8Array(10);
+    const a = newId("att", 1_700_000_000_000, zeros);
+    const b = newId("att", 1_700_000_000_001, zeros);
+    assert.match(a, /^att_[0-9A-HJKMNP-TV-Z]{26}$/);
+    assert.ok(a < b);
+    assert.equal(newId("att", 0, zeros), "att_00000000000000000000000000");
+    assert.equal(newId("x", 0, new Uint8Array(10).fill(255)), "x_0000000000ZZZZZZZZZZZZZZZZ");
+  });
+
+  it("refuses bad prefixes", () => {
+    assert.throws(() => newId("Bad"), /bad prefix/);
+    assert.throws(() => newId("toolongprefix"), /bad prefix/);
+  });
+});
+
+describe("statement ids", () => {
+  it("removes nested and line comments but keeps strings", () => {
+    assert.equal(stripLeanComments('a /- x /- y -/ z -/ b -- c\n"--not a comment"'), 'a  b \n"--not a comment"');
+  });
+
+  it("ignores comments and whitespace, not content", () => {
+    const a = statementIdV0("theorem t : 1 + 1 = 2 := by\n  sorry");
+    const b = statementIdV0("theorem t :  1 + 1 = 2 := by /- note -/\n\tsorry -- todo");
+    assert.equal(a, b);
+    assert.notEqual(a, statementIdV0("theorem t : 1 + 1 = 3 := by sorry"));
+    assert.match(a, /^st0_[0-9a-f]{32}$/);
+    assert.equal(collapseWhitespace("  a \n b  "), "a b");
+  });
+});
+
+describe("claim statuses", () => {
+  it("only lets a revocation undo a proof", () => {
+    assert.ok(canTransition("open", "computed"));
+    assert.ok(canTransition("computed", "proved"));
+    assert.ok(canTransition("proved", "retracted"));
+    assert.ok(!canTransition("proved", "open"));
+    assert.ok(!canTransition("refuted", "proved"));
+    assert.ok(!canTransition("open", "retracted"));
+  });
+});
