@@ -1,0 +1,16 @@
+{
+  "host": "server",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key.",
+  "capabilities": {
+    "lean.check": {
+      "use": ["kimina"],
+      "settings": {
+        "kimina": {
+          "url": "${env:LEAN_SERVER_API_URL:-http://localhost:8000}",
+          "apiKey": "${env:LEAN_SERVER_API_KEY}"
+        }
+      },
+      "timeoutMs": 1800000
+    }
+  }
+}

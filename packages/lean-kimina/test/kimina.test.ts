@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { KiminaChecker } from "../src/index.ts";
+import { CapabilityError, loadCatalog, Registry, type HostProfile } from "@math-harness/registry";
+import { KiminaChecker, kiminaFactory } from "../src/index.ts";
 
 interface Call {
   url: string;
@@ -80,6 +81,38 @@ describe("KiminaChecker", () => {
 
   it("refuses duplicate snippet ids", async () => {
     await assert.rejects(new KiminaChecker({ fetch: fakeFetch([]).fn }).check([{ id: "a", code: "" }, { id: "a", code: "" }]), /unique/);
+  });
+});
+
+describe("kiminaFactory", () => {
+  const catalog = loadCatalog(new URL("../../../capabilities", import.meta.url).pathname);
+  const host = (settings: Record<string, unknown>): HostProfile => ({
+    host: "test",
+    capabilities: { "lean.check": { use: ["kimina"], settings: { kimina: settings as never } } },
+  });
+
+  it("provides lean.check with the host's settings and the pinned version", async () => {
+    const { fn, calls } = fakeFetch([() => json({ results: [{ id: "a", time: 0.1, response: { messages: [] } }] })]);
+    const registry = new Registry({
+      catalog,
+      host: host({ url: "http://lean:9000", apiKey: "${env:LEAN_KEY:-}", timeoutSec: 30 }),
+      factories: { kimina: kiminaFactory({ fetch: fn, sleep: noSleep }) },
+      env: {},
+    });
+    const run = await registry.invoke("lean.check", { snippets: [{ id: "a", code: "def x := 1" }] });
+    assert.deepEqual(run.output, { results: [{ id: "a", status: "valid", messages: [], sorries: [], timeMs: 100 }] });
+    assert.equal(run.version, "fb2393de+lean-v4.27.0+fc-bench-v1");
+    assert.equal(calls[0]?.url, "http://lean:9000/api/check");
+    assert.equal((calls[0]?.init.headers as Record<string, string>).Authorization, undefined);
+    assert.equal(JSON.parse(String(calls[0]?.init.body)).timeout, 30);
+  });
+
+  it("refuses settings it does not know", async () => {
+    const registry = new Registry({ catalog, host: host({ url: "http://lean:9000", port: 8000 }), factories: { kimina: kiminaFactory() } });
+    await assert.rejects(
+      registry.invoke("lean.check", { snippets: [{ id: "a", code: "x" }] }),
+      (error: unknown) => error instanceof CapabilityError && error.code === "unavailable" && /settings: unexpected property "port"/.test(error.message),
+    );
   });
 });
 

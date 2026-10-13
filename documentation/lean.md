@@ -61,11 +61,16 @@ seconds; any other HTTP error is reported at once. Results are matched to snippe
 one is a `server_error`. The HTTP request is abandoned 30 seconds after the Lean timeout.
 
 ```ts
-const checker = new KiminaChecker({ url: "http://localhost:8000", apiKey: process.env.LEAN_SERVER_API_KEY, version: "2.0.0+lean-v4.27.0" });
+const checker = new KiminaChecker({ url: "http://localhost:8000", apiKey: process.env.LEAN_SERVER_API_KEY, version: "fb2393de+lean-v4.27.0+fc-bench-v1" });
 ```
 
 `url` and `apiKey` default to `LEAN_SERVER_API_URL` and `LEAN_SERVER_API_KEY`. With
 `LEAN_SERVER_API_URL` set, `pnpm test` also runs a live check against that server.
+
+The harness does not build a `KiminaChecker` itself: the registry does, through the factory
+`kimina` (`kiminaFactory`), with the settings of the host profile (`url`, `apiKey`, `timeoutSec`,
+`httpSlackMs`, `retries`; an empty `apiKey` sends no key) and the version pinned in
+`capabilities/lean.check/manifest.json` ([capabilities.md](capabilities.md#leancheck)).
 
 ## Deployment for the bench
 
@@ -82,6 +87,13 @@ LEAN_SERVER_LEAN_VERSION=v4.27.0 REPL_BRANCH=v4.27.0 ./setup.sh   # Lean, the RE
 export LEAN_SERVER_PROJECT_DIR=/path/to/formal-conjectures
 export LEAN_SERVER_API_KEY=...            # any secret; the harness sends it
 python -m server
+```
+
+Then, from the harness, with the same `LEAN_SERVER_API_URL` and `LEAN_SERVER_API_KEY`:
+
+```sh
+pnpm harness health                          # the server answers
+pnpm harness contract lean.check --out lean-contract.json
 ```
 
 The prebuilt image `projectnumina/kimina-lean-server:2.0.0` targets Lean v4.26.0 and a plain
@@ -103,7 +115,9 @@ compiled in a sandbox without network and with read-only access to the reference
 
 ## To verify against Lean
 
-These depend on Lean's exact behaviour and are covered only by simulations so far:
+These depend on Lean's exact behaviour and are covered only by simulations so far. The contract
+of `lean.check` checks each of them against a server
+([capabilities.md](capabilities.md#leancheck)):
 
 1. The text of `#print axioms` (`'X' depends on axioms: [...]` and `'X' does not depend on any
    axioms`), also for names with `«»` parts such as `Arxiv.«1609.08688».maximalLength_le`.

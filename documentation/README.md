@@ -17,13 +17,15 @@ Phase P0a builds the parts that need neither Lean nor a model.
 | Problem sketches and proof validator (fast check) | `@math-harness/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@math-harness/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@math-harness/bench` | Done: 575 problems, index committed |
-| Capability registry and MCP boundary | `@math-harness/registry` | Next |
+| Capability registry, MCP boundary, `lean.check` and its contract | `@math-harness/registry` | Done, tested with simulated servers |
+| `harness` command (capabilities, health, contract tests) | `@math-harness/orchestrator` | Done |
 | M0 loop on pi | `@math-harness/orchestrator` | Next |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
 None of this has run against a real Lean yet, because the development environment blocks the
 Lean toolchain downloads. [lean.md](lean.md#to-verify-against-lean) lists what depends on Lean's
-exact output and must be checked first.
+exact output; `pnpm harness contract lean.check` checks it against a server
+([capabilities.md](capabilities.md#leancheck)).
 
 ## Pages
 
@@ -32,5 +34,7 @@ exact output and must be checked first.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [lean.md](lean.md): Lean checkers, the Kimina client, the certifier, deployment.
+- [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
+  contract tests, the `harness` command.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
 - [development.md](development.md): conventions, tests, commits.

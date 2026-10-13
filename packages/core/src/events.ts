@@ -95,11 +95,14 @@ export interface EventDataMap {
     implementation: string;
     version: string;
     inputHash: string;
+    /** Time limit of the call. */
+    timeoutMs?: number;
     attemptId?: string;
   };
   "tool_run.finished": {
     toolRunId: string;
-    outcome: "ok" | "error" | "timeout";
+    /** `aborted`: the caller gave up (a budget ran out, a run was stopped), not a failure of the tool. */
+    outcome: "ok" | "error" | "timeout" | "aborted";
     durationMs: number;
     outputHash?: string;
     summary?: Json;

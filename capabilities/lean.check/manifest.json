@@ -1,0 +1,286 @@
+{
+  "id": "lean.check",
+  "version": 1,
+  "title": "Check Lean files",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "checking that a Lean file elaborates, and reading its errors at their lines",
+    "reading the goals left at each sorry",
+    "printing the axioms or the type of a declaration with #print axioms or #check"
+  ],
+  "whenNot": [
+    "certifying a proof: the certifier replays it through the kernel in a fresh process",
+    "searching Mathlib for a lemma"
+  ],
+  "exposure": "auto",
+  "input": {
+    "type": "object",
+    "required": [
+      "snippets"
+    ],
+    "properties": {
+      "snippets": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "description": "Whole Lean files. Their leading import lines are the header, loaded once per distinct header",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "code"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600,
+        "description": "Lean's time limit for each file, in seconds"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "results"
+    ],
+    "properties": {
+      "results": {
+        "type": "array",
+        "description": "One result per file, in the order sent",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "status",
+            "messages",
+            "sorries",
+            "timeMs"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "valid",
+                "sorry",
+                "lean_error",
+                "repl_error",
+                "timeout",
+                "server_error"
+              ]
+            },
+            "messages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "severity",
+                  "pos",
+                  "text"
+                ],
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "trace",
+                      "info",
+                      "warning",
+                      "error"
+                    ]
+                  },
+                  "pos": {
+                    "type": "object",
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "endPos": {
+                    "type": "object",
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "sorries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "pos",
+                  "goal"
+                ],
+                "properties": {
+                  "pos": {
+                    "type": "object",
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "endPos": {
+                    "type": "object",
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "goal": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "timeMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 900000,
+  "summary": [
+    "results.*.status",
+    "results.*.timeMs"
+  ],
+  "examples": [
+    {
+      "title": "a proof left at sorry",
+      "input": {
+        "snippets": [
+          {
+            "id": "a",
+            "code": "theorem t (n : Nat) : n ≤ n + 1 := by\n  sorry\n"
+          }
+        ],
+        "timeoutSec": 60
+      },
+      "output": {
+        "results": [
+          {
+            "id": "a",
+            "status": "sorry",
+            "timeMs": 412,
+            "messages": [
+              {
+                "severity": "warning",
+                "pos": {
+                  "line": 1,
+                  "column": 8
+                },
+                "endPos": {
+                  "line": 1,
+                  "column": 9
+                },
+                "text": "declaration uses 'sorry'"
+              }
+            ],
+            "sorries": [
+              {
+                "pos": {
+                  "line": 2,
+                  "column": 2
+                },
+                "endPos": {
+                  "line": 2,
+                  "column": 7
+                },
+                "goal": "n : Nat\n⊢ n ≤ n + 1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "kimina",
+      "version": "fb2393de+lean-v4.27.0+fc-bench-v1",
+      "kind": "inproc",
+      "factory": "kimina",
+      "description": "Kimina Lean Server 2.x (commit fb2393de) over HTTP, built for Lean v4.27.0 with a checkout of formal-conjectures bench-v1-lean4.27.0 as its project (documentation/lean.md#deployment-for-the-bench).",
+      "environment": {
+        "lean": "v4.27.0",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7"
+      }
+    }
+  ]
+}
