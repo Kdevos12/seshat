@@ -16,6 +16,7 @@ import { buildIndex, DISCRETE, type BenchIndex } from "@math-harness/bench";
 import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@math-harness/core";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@math-harness/registry";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
+import type { FakeSage } from "./fixtures/fake-sage.ts";
 import { DEFAULT_CONFIG, REPO_ROOT, runBench, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
 
 export const DEMO_FILE = `import FormalConjectures.Util.ProblemImports
@@ -109,6 +110,27 @@ export function demoRegistry(lean: LeanChecker): RunOptions["registry"] {
   return (journal, blobs) => new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean) }, journal, blobs });
 }
 
+/**
+ * The repository's catalog on a host that also offers compute.sage through the implementations
+ * `use`, each served by `sage` unless `servers` gives it another.
+ */
+export function sageRegistry(
+  sage: FakeSage,
+  use: string[] = ["local"],
+  servers: Record<string, FakeSage> = {},
+): (lean: LeanChecker) => RunOptions["registry"] {
+  const withSage: HostProfile = { host: "test", capabilities: { ...host.capabilities, "compute.sage": { use } } };
+  return (lean) => (journal, blobs) =>
+    new Registry({
+      catalog,
+      host: withSage,
+      factories: { kimina: () => leanCheckImplementation(lean) },
+      journal,
+      blobs,
+      mcpTransport: (_server, spec) => (servers[spec.id] ?? sage).transport(),
+    });
+}
+
 /** A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise. */
 export function fauxModels(pricePerMillion = 3): { models: MutableModels; faux: FauxProviderHandle; name: string } {
   const faux = fauxProvider({
@@ -123,6 +145,11 @@ export function fauxModels(pricePerMillion = 3): { models: MutableModels; faux: 
 /** A response that checks these regions. */
 export function check(proof: string, aux = ""): AssistantMessage {
   return fauxAssistantMessage([fauxText("Let me check this."), fauxToolCall("lean_check", { aux, proof })], { stopReason: "toolUse" });
+}
+
+/** A response that calls a tool other than lean_check. */
+export function call(tool: string, args: Parameters<typeof fauxToolCall>[1]): AssistantMessage {
+  return fauxAssistantMessage([fauxToolCall(tool, args)], { stopReason: "toolUse" });
 }
 
 /** A final message: the notes of the session. */
@@ -144,16 +171,21 @@ export async function demoRun(options: {
   responses: FauxResponseStep[];
   config?: Partial<RunConfig>;
   lean?: LeanChecker;
+  /** Default: `demoRegistry(lean)`. */
+  registry?: (lean: LeanChecker) => RunOptions["registry"];
   problems?: number;
   pricePerMillion?: number;
   certifier?: LeanCertifier;
   signal?: AbortSignal;
+  /** The run directory. Default: a new temporary one. */
+  dir?: string;
+  log?: (line: string) => void;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
   const { checkout, index } = demoBench();
   const { models, faux, name } = fauxModels(options.pricePerMillion);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
-  const dir = join(tempDir(), "run");
+  const dir = options.dir ?? join(tempDir(), "run");
   const result = await runBench({
     config: config(name, options.config),
     index,
@@ -161,9 +193,10 @@ export async function demoRun(options: {
     checkout,
     dir,
     models,
-    registry: demoRegistry(lean),
+    registry: (options.registry ?? demoRegistry)(lean),
     ...(options.certifier !== undefined ? { certifier: options.certifier } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options.log !== undefined ? { log: options.log } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean };
 }

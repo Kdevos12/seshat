@@ -61,7 +61,7 @@ describe("M0 run", () => {
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /\| Candidates \(fast check only\) \| 1 \|/);
     const config = JSON.parse(readFileSync(join(dir, "config.json"), "utf8")) as { problems: string[]; prompt: { version: string } };
     assert.equal(config.problems.length, 1);
-    assert.equal(config.prompt.version, "m0-1");
+    assert.equal(config.prompt.version, "m0-2");
   });
 
   it("carries the file and the notes from one session to the next", async () => {

@@ -17,5 +17,8 @@
     "@math-harness/core": "workspace:*",
     "@math-harness/lean-kimina": "workspace:*",
     "@math-harness/registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-mcp": "1.2.0"
   }
 }

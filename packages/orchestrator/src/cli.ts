@@ -20,12 +20,14 @@ const usage = `usage:
   harness models [PROVIDER]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
-              [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N] [--out DIR]
+              [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
+              [--tool CAPABILITY]... [--out DIR]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
-run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID.`;
+run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
+provers a direct capability besides lean_check, such as compute.sage.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -50,6 +52,7 @@ const { positionals, values } = parseArgs({
     "budget-usd": { type: "string" },
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
+    tool: { type: "string", multiple: true },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
@@ -228,6 +231,7 @@ async function run(): Promise<number> {
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
+    tools: [...new Set(values.tool ?? [])],
   };
   const host = hostName(values.host);
   const runId = newId("run");

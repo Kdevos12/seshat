@@ -1,0 +1,227 @@
+{
+  "id": "compute.sage",
+  "version": 1,
+  "title": "Compute with SageMath",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "testing a statement on small cases before trying to prove it, and searching for a counterexample",
+    "computing examples: factorizations, orders and structure of small groups, invariants of graphs, the first values of a sequence",
+    "exact arithmetic: integers, rationals, polynomials, finite fields, number fields, matrices",
+    "finding the closed form, the bound or the witness a proof needs, before checking it in Lean"
+  ],
+  "whenNot": [
+    "proving the theorem: a computation is evidence, not a proof; only lean_check decides",
+    "searches that run for minutes: a call stops after 60 seconds unless you give it a timeout, at most 300, and when it stops the session's variables are lost",
+    "files, the network and imports, which are refused, or plots, which come back as one line of text"
+  ],
+  "exposure": "direct",
+  "stateful": true,
+  "input": {
+    "type": "object",
+    "required": [
+      "code"
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000,
+        "description": "SageMath code, run in this session. The value of the last line comes back, with what the code printed"
+      },
+      "timeout": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "Seconds this call may run, 60 when not given"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "result_type",
+      "stdout",
+      "elapsed_ms"
+    ],
+    "properties": {
+      "result_type": {
+        "enum": [
+          "expression",
+          "statement"
+        ],
+        "description": "expression when the code ends with an expression, whose value is result"
+      },
+      "result": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The value of the last expression, as Sage prints it"
+      },
+      "latex": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stdout": {
+        "type": "string",
+        "description": "What the code printed"
+      },
+      "elapsed_ms": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [
+    "computed"
+  ],
+  "timeoutMs": 75000,
+  "timeoutField": "timeout",
+  "summary": [
+    "result_type",
+    "elapsed_ms"
+  ],
+  "examples": [
+    {
+      "title": "a factorization",
+      "input": {
+        "code": "factor(2^64 + 1)"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "274177 * 67280421310721",
+        "latex": null,
+        "stdout": "",
+        "elapsed_ms": 1.2
+      }
+    },
+    {
+      "title": "a conjecture tested on small cases",
+      "input": {
+        "code": "[n for n in range(100) if not is_prime(n^2 + n + 41)]"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "[40, 41, 44, 49, 56, 65, 76, 81, 82, 84, 87, 89, 91, 96]",
+        "latex": null,
+        "stdout": "",
+        "elapsed_ms": 3.5
+      }
+    },
+    {
+      "title": "an object built once, then explored",
+      "input": {
+        "code": "petersen = graphs.PetersenGraph()\nprint(petersen.chromatic_number(), petersen.girth())\npetersen.automorphism_group().order()"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "120",
+        "latex": null,
+        "stdout": "3 5\n",
+        "elapsed_ms": 40.1
+      },
+      "note": "petersen stays defined for the next calls of this session, and only this session."
+    }
+  ],
+  "implementations": [
+    {
+      "id": "docker",
+      "version": "0.9.5",
+      "description": "sagemath-mcp 0.9.5 in its passagemath image, over stdio: no network, read-only file system, no capabilities, limited processes and memory.",
+      "environment": {
+        "sage": "passagemath 10.8.12",
+        "image": "ghcr.io/xbp-europe/sagemath-mcp:0.9.5-passagemath@sha256:28f8bbb72a18da0b73fd22039a270c3e2e4441c05df02d28865545b28caf305e"
+      },
+      "kind": "mcp",
+      "tool": "evaluate_sage",
+      "server": {
+        "transport": "stdio",
+        "command": "docker",
+        "args": [
+          "run",
+          "--interactive",
+          "--rm",
+          "--network",
+          "none",
+          "--read-only",
+          "--tmpfs",
+          "/tmp:rw,size=512m",
+          "--tmpfs",
+          "/home/sage/.sage:rw,size=256m",
+          "--cap-drop",
+          "ALL",
+          "--security-opt",
+          "no-new-privileges",
+          "--pids-limit",
+          "512",
+          "--memory",
+          "6g",
+          "--env",
+          "SAGEMATH_MCP_EVAL_TIMEOUT=60",
+          "--env",
+          "SAGEMATH_MCP_MAX_STDOUT=20000",
+          "--env",
+          "SAGEMATH_MCP_MAX_SESSIONS=24",
+          "--env",
+          "OMP_NUM_THREADS=1",
+          "--env",
+          "OPENBLAS_NUM_THREADS=1",
+          "--entrypoint",
+          "sagemath-mcp",
+          "ghcr.io/xbp-europe/sagemath-mcp:0.9.5-passagemath@sha256:28f8bbb72a18da0b73fd22039a270c3e2e4441c05df02d28865545b28caf305e",
+          "--transport",
+          "stdio",
+          "--log-level",
+          "WARNING"
+        ]
+      },
+      "scope": {
+        "argument": "session",
+        "release": {
+          "tool": "stop_sage_session",
+          "argument": "name"
+        }
+      }
+    },
+    {
+      "id": "local",
+      "version": "0.9.5",
+      "description": "sagemath-mcp 0.9.5 installed on this machine, started as a child process. The model's code runs as your user, behind the server's allowlist only: prefer docker where it runs.",
+      "environment": {
+        "sage": "the SageMath it finds, passagemath 10.8.12 with the [passagemath] extra"
+      },
+      "kind": "mcp",
+      "tool": "evaluate_sage",
+      "server": {
+        "transport": "stdio",
+        "command": "sagemath-mcp",
+        "args": [
+          "--transport",
+          "stdio",
+          "--log-level",
+          "WARNING"
+        ],
+        "env": {
+          "SAGEMATH_MCP_EVAL_TIMEOUT": "60",
+          "SAGEMATH_MCP_MAX_STDOUT": "20000",
+          "SAGEMATH_MCP_MAX_SESSIONS": "24",
+          "OMP_NUM_THREADS": "1",
+          "OPENBLAS_NUM_THREADS": "1"
+        }
+      },
+      "scope": {
+        "argument": "session",
+        "release": {
+          "tool": "stop_sage_session",
+          "argument": "name"
+        }
+      }
+    }
+  ]
+}

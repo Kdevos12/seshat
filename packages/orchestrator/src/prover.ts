@@ -6,6 +6,7 @@ import { failureClass, formatCheck } from "./feedback.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { ABORT_BUDGET, runSession, type SessionLimits, type SessionResult } from "./session.ts";
+import { capabilityTool, type PinnedTool, toolName } from "./tools.ts";
 
 export interface ProverOptions {
   /** `p1`, `p2`...: the prover's name in attempts and actors. */
@@ -28,6 +29,8 @@ export interface ProverOptions {
   signal: AbortSignal;
   /** Receives each session's messages, to keep them. */
   transcript?: (attemptId: string, messages: AgentMessage[]) => void;
+  /** Capabilities given to the sessions besides lean_check (`direct` ones, checked and pinned by the run). */
+  tools?: readonly PinnedTool[];
 }
 
 /** Why a prover stopped: it found the candidate, used its sessions, ran out of budget, was stopped, or kept failing. */
@@ -49,7 +52,8 @@ const MAX_FAILED_SESSIONS = 2;
 export async function runProver(o: ProverOptions): Promise<ProverResult> {
   const { workbench, journal } = o;
   const actor = `prover:${o.name}`;
-  const system = systemPrompt(o.notesChars);
+  const tools = o.tools ?? [];
+  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)));
   let regions: Submission = { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined;
   let lastCheck: string | undefined;
@@ -71,6 +75,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
     let result: SessionResult;
     try {
       result = await runSession({
+        tools: tools.map((t) => capabilityTool(t.capability, { registry: workbench.registry, attemptId, actor, implementation: t.implementation })),
         models: o.models,
         model: o.model,
         thinkingLevel: o.thinkingLevel,
@@ -101,6 +106,9 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
         actor,
       );
       throw error;
+    } finally {
+      // The attempt's state in stateful tools (its SageMath session) ends with it.
+      if (tools.length > 0) await workbench.registry.release(attemptId);
     }
 
     if (result.submission !== undefined) {

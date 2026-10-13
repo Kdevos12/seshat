@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -11,6 +11,9 @@
         }
       },
       "timeoutMs": 1800000
+    },
+    "compute.sage": {
+      "use": ["docker"]
     }
   }
 }

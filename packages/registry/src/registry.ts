@@ -12,8 +12,15 @@ import {
   type McpImplementationSpec,
   type McpServerSpec,
 } from "./manifest.ts";
-import { messageOf, UnavailableError, type HealthCheck, type ImplementationFactory, type ImplementationInstance } from "./implementation.ts";
-import { defaultMcpTransport, McpImplementation } from "./mcp.ts";
+import {
+  type CapabilityErrorCode,
+  messageOf,
+  UnavailableError,
+  type HealthCheck,
+  type ImplementationFactory,
+  type ImplementationInstance,
+} from "./implementation.ts";
+import { defaultMcpTransport, McpImplementation, McpToolError } from "./mcp.ts";
 import { getPath } from "./paths.ts";
 import { validate } from "./schema.ts";
 
@@ -46,6 +53,8 @@ export interface RegistryOptions {
 
 export interface InvokeOptions {
   attemptId?: string;
+  /** Required by a stateful capability: calls with the same scope share state. See `release`. */
+  scope?: string;
   /** Actor of the tool run events. Default: the capability id. */
   actor?: string;
   signal?: AbortSignal;
@@ -71,15 +80,6 @@ export interface HealthEntry {
   durationMs: number;
 }
 
-export type CapabilityErrorCode =
-  | "unknown_capability"
-  | "invalid_input"
-  | "unavailable"
-  | "timeout"
-  | "aborted"
-  | "failed"
-  | "invalid_output";
-
 export class CapabilityError extends Error {
   readonly code: CapabilityErrorCode;
   readonly capability: string;
@@ -103,6 +103,9 @@ export class CapabilityError extends Error {
 }
 
 const HEALTH_TIMEOUT_MS = 15_000;
+/** Past a tool's own time limit (`timeoutField`), the time it gets to stop and say so. */
+export const TOOL_TIMEOUT_MARGIN_MS = 15_000;
+const RELEASE_TIMEOUT_MS = 10_000;
 
 /**
  * The single way the harness calls a tool. Callers name a capability (`lean.check`); the host
@@ -177,12 +180,18 @@ export class Registry {
     if (problems.length > 0) {
       throw new CapabilityError("invalid_input", id, `invalid input for ${id}: ${problems.join("; ")}`, { details: problems });
     }
+    if (manifest.stateful === true && options.scope === undefined) {
+      throw new CapabilityError("invalid_input", id, `${id} keeps state between calls, so a call needs a scope`);
+    }
     const binding = this.host.capabilities[id];
     const candidates = options.implementation !== undefined ? [options.implementation] : (binding?.use ?? []);
     if (candidates.length === 0) {
       throw new CapabilityError("unavailable", id, `${id} is not offered on host ${this.host.host}`);
     }
-    const timeoutMs = options.timeoutMs ?? binding?.timeoutMs ?? manifest.timeoutMs;
+    const own = manifest.timeoutField !== undefined ? (input as Record<string, Json>)[manifest.timeoutField] : undefined;
+    const timeoutMs =
+      options.timeoutMs ??
+      (typeof own === "number" ? Math.ceil(own * 1000) + TOOL_TIMEOUT_MARGIN_MS : (binding?.timeoutMs ?? manifest.timeoutMs));
     const unreachable: string[] = [];
     for (const implId of candidates) {
       const spec = manifest.implementations.find((i) => i.id === implId);
@@ -230,6 +239,7 @@ export class Registry {
         inputHash,
         timeoutMs,
         ...(options.attemptId !== undefined ? { attemptId: options.attemptId } : {}),
+        ...(manifest.stateful === true && options.scope !== undefined ? { scope: options.scope } : {}),
       },
       actor,
     );
@@ -256,7 +266,8 @@ export class Registry {
     try {
       let output: Json;
       try {
-        output = await untilAborted(instance.invoke(input, { signal: controller.signal, timeoutMs }), controller.signal);
+        const context = { signal: controller.signal, timeoutMs, ...(manifest.stateful === true ? { scope: options.scope as string } : {}) };
+        output = await untilAborted(instance.invoke(input, context), controller.signal);
       } catch (error) {
         if (timedOut) throw fail("timeout", `${manifest.id}/${spec.id}: timed out after ${timeoutMs} ms`);
         if (controller.signal.aborted) throw fail("aborted", `${manifest.id}/${spec.id}: aborted`);
@@ -264,7 +275,9 @@ export class Registry {
           fail("unavailable", error.message);
           return { unavailable: error.message };
         }
-        throw fail("failed", `${manifest.id}/${spec.id} failed: ${messageOf(error)}`);
+        // `details` holds what the implementation said, for callers that show it without the prefix.
+        const said = error instanceof McpToolError ? error.toolMessage : messageOf(error);
+        throw fail("failed", `${manifest.id}/${spec.id} failed: ${messageOf(error)}`, [said]);
       }
       const problems = validate(manifest.output, output, "output");
       if (problems.length > 0) {
@@ -344,6 +357,24 @@ export class Registry {
       }
     }
     return entries;
+  }
+
+  /**
+   * Ends a scope of the stateful capabilities: each implementation called with it drops its state
+   * (a computer algebra session, its variables, its memory). Best effort: an implementation that
+   * cannot be reached has lost that state already.
+   */
+  async release(scope: string): Promise<void> {
+    const signal = AbortSignal.timeout(RELEASE_TIMEOUT_MS);
+    await Promise.all(
+      [...this.instances.values()].map(async (pending) => {
+        try {
+          await untilAborted((await pending).release?.(scope, { signal }) ?? Promise.resolve(), signal);
+        } catch {
+          // The implementation is gone or does not answer: its state went with it, or it expires on its own.
+        }
+      }),
+    );
   }
 
   /** Closes every implementation (MCP connections, child processes). */

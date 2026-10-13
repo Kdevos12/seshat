@@ -43,7 +43,9 @@ Data that is versioned with the code:
 4. Each prover works in sessions, each a fresh pi agent and an attempt in the journal. The agent
    edits the two regions and calls its `lean_check` tool, which runs the fast check and answers
    with Lean's messages and the goals of the `sorry`s at the prover's own line numbers. Lean is
-   reached through the capability `lean.check`, so each check is a tool run of the attempt.
+   reached through the capability `lean.check`, so each check is a tool run of the attempt. A run
+   can give the agent other tools, such as SageMath (`compute_sage`), whose calls are tool runs
+   of the attempt too ([compute.md](compute.md)).
 5. A session ends when the model stops, at a limit of turns or context, or when the budget runs
    out. The model's last message becomes the prover's notes (`lesson.recorded`); the next session
    starts afresh from the file as the prover left it, its notes, and what Lean said last.

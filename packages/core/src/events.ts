@@ -130,6 +130,8 @@ export interface EventDataMap {
     /** Time limit of the call. */
     timeoutMs?: number;
     attemptId?: string;
+    /** Of a stateful capability: the calls with the same scope share state, in journal order. */
+    scope?: string;
   };
   "tool_run.finished": {
     toolRunId: string;

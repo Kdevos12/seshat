@@ -1,6 +1,6 @@
 {
   "host": "local",
-  "description": "A workstation. Kimina Lean Server runs on this machine, or LEAN_SERVER_API_URL points to the dedicated server's.",
+  "description": "A workstation. Kimina Lean Server runs on this machine, or LEAN_SERVER_API_URL points to the dedicated server's. SageMath runs in its container when Docker is there, otherwise from a local install (SAGEMATH_MCP_COMMAND, default sagemath-mcp).",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -8,6 +8,14 @@
         "kimina": {
           "url": "${env:LEAN_SERVER_API_URL:-http://localhost:8000}",
           "apiKey": "${env:LEAN_SERVER_API_KEY:-}"
+        }
+      }
+    },
+    "compute.sage": {
+      "use": ["docker", "local"],
+      "settings": {
+        "local": {
+          "command": "${env:SAGEMATH_MCP_COMMAND:-sagemath-mcp}"
         }
       }
     }

@@ -34,19 +34,23 @@ code and long descriptions live in their own files.
 | `input`, `output` | JSON schemas. |
 | `produces`, `certificate` | Claim statuses a result can justify; `proved` and `refuted` need a `certificate` saying what makes the result trustworthy. |
 | `timeoutMs` | Default time limit of one call. |
+| `timeoutField` | A number field of the input, in seconds, that sets the tool's own time limit; the registry then allows that plus 15 seconds. |
+| `stateful` | `true` when calls keep state between them, such as the variables of a computer algebra session ([scopes](#scopes)). |
 | `summary` | Paths of the output recorded in each tool run, such as `results.*.status`. |
 | `examples` | Inputs with their outputs, shown to models. |
 | `implementations` | The known implementations, each with a pinned `version`. |
 
 `exposure` places the capability in the three levels of the tool library: `auto` is called only by
 the orchestrator, by rule (level 0); `direct` is one of the ten or so tools always declared to the
-model (level 1); `deferred` is found on demand through tool search or code (level 2). Only `auto`
-is used so far.
+model (level 1); `deferred` is found on demand through tool search or code (level 2). `lean.check`
+is `auto`, called by the validator; `compute.sage` is `direct`, given to the provers by
+`harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)). No capability is `deferred` yet.
 
 Loading checks more than the shape: schemas use only the supported keywords, implementation ids
 are unique, every example and every contract input is valid for the schemas, summary and
-expectation paths parse, and every regular expression compiles. All problems of the catalog are
-reported together.
+expectation paths parse, every regular expression compiles, the MCP implementations of a stateful
+capability name their scope argument (and only theirs do), and `timeoutField` is a number field of
+the input with both bounds. All problems of the catalog are reported together.
 
 ### Schemas
 
@@ -92,7 +96,17 @@ tools under the GPL are called, not linked.
   the implementation is unavailable.
 - The capability's input is passed as the tool's arguments, so its schema must be an object. The
   output is the result's `structuredContent`, or else its single text block read as JSON. A
-  result with `isError` is a failure.
+  result with `isError` is a failure, which keeps the tool's own message.
+- A stdio server gets its own `env` and, from the harness's environment, only what programs need
+  to start: `PATH`, `HOME`, the user and the shell, the locale and the time zone, the temporary
+  directories, Windows' system variables, and Docker's (`DOCKER_HOST`, `DOCKER_CONTEXT`,
+  `DOCKER_CONFIG`, `DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`). The harness's credentials (model
+  keys, the Lean server's key) never reach it; a server that needs a secret gets it in its `env`,
+  from `${env:NAME}`.
+- An implementation of a stateful capability names its `scope`:
+  `{"argument": "session", "release": {"tool": "stop_sage_session", "argument": "name"}}`. The
+  call's scope goes to the tool under `argument`. Releasing the scope calls `release.tool` with
+  the scope under its own `argument`, if the current connection used that scope.
 
 ## Host profiles
 
@@ -113,7 +127,8 @@ the capabilities the host offers; a capability it does not name is unavailable t
 ```
 
 - `use` lists implementations in order of preference. The next one is tried only when one
-  cannot be reached.
+  cannot be reached. A run pins each tool it gives the provers to the first one that answers when
+  the run starts ([m0-loop.md](m0-loop.md#other-tools)).
 - `settings` gives, per implementation, the settings of an in-process one, or fields of an MCP
   server that replace the manifest's. A profile that changes an MCP server's `transport` replaces
   the whole server.
@@ -135,19 +150,21 @@ const { output, toolRunId, implementation, version } = await registry.invoke("le
 ```
 
 `invoke` checks the input against the manifest, then, for each implementation of the host in
-order: records `tool_run.started` (capability, implementation, pinned version, hash of the input,
-time limit, attempt), calls the implementation, checks the output against the manifest, and
-records `tool_run.finished` (outcome, duration, hash of the output, summary). Its errors are
-`CapabilityError`s:
+order (or the one `implementation` names): records `tool_run.started` (capability,
+implementation, pinned version, hash of the input, time limit, attempt, scope), calls the
+implementation, checks the output against the manifest, and records `tool_run.finished` (outcome,
+duration, hash of the output, summary). The time limit is the caller's `timeoutMs`, else the
+input's `timeoutField` plus 15 seconds, else the host profile's, else the manifest's. Its errors
+are `CapabilityError`s:
 
 | Code | When | Tool run outcome |
 |---|---|---|
 | `unknown_capability` | No such manifest. | none |
-| `invalid_input` | The input breaks the schema. | none |
+| `invalid_input` | The input breaks the schema, or a call of a stateful capability has no scope. | none |
 | `unavailable` | The host does not offer the capability, or no implementation could be reached. | `error`, for each one tried |
 | `timeout` | The time limit passed. | `timeout` |
 | `aborted` | The caller's signal aborted, for instance when a budget ran out. | `aborted` |
-| `failed` | The implementation failed on this input. | `error` |
+| `failed` | The implementation failed on this input; `details[0]` is its own message. | `error` |
 | `invalid_output` | The output breaks the schema. | `error` |
 
 With a blob store (`blobs`, any `BlobSink`), the input and the output of each call are kept there
@@ -160,6 +177,17 @@ is a result about that input, and is not retried elsewhere.
 
 When the time limit passes or the caller aborts, the implementation's signal aborts and `invoke`
 returns at once, even if the implementation ignores the signal.
+
+### Scopes
+
+A call of a stateful capability gives a `scope`. Calls with the same scope share state, such as
+the variables of a SageMath session, and calls with different scopes share none.
+`tool_run.started` records the scope, so the journal says which calls saw which state, in order.
+`registry.release(scope)` ends the scope in every implementation that used it, best effort: an
+implementation that went away took its state with it. The orchestrator uses an attempt's id as its
+scope and releases it when the attempt ends ([m0-loop.md](m0-loop.md#other-tools)).
+
+### Hashes, health, descriptions
 
 `registry.hash` covers the catalog (every manifest, files included) and the host profile. It goes
 into `run.started`, so a run's journal says which contracts and implementation versions it used.
@@ -201,10 +229,27 @@ Its contract is the list of Lean behaviours the validator relies on
 A test runs this contract against the answers Lean is expected to give, which only shows that the
 expectations are well written. Whether Lean answers so is what running it against a server tells.
 
+## `compute.sage`
+
+SageMath, through the MCP server sagemath-mcp: Sage code in, the value of its last line and what it
+printed out. It is stateful, one Sage session per scope, and `direct`. Its implementations are
+`docker` (the server's container image, without network) and `local` (an installed server). Its
+contract has 16 cases. [compute.md](compute.md) covers the installation, the settings, the
+resources it takes, and what it offers and refuses.
+
 ## Contract tests
 
 `contract.json` holds cases: a `name`, a `purpose`, an `input`, a list of expectations on the
-output, and an optional `timeoutMs`. An expectation has a `path` into the output and one check:
+output, and an optional `timeoutMs`. A case may also have:
+
+- `before`: inputs called first, in the case's scope, for a case about state (stateful capabilities
+  only);
+- `fails` in place of `expect`: `{"code": "failed", "matches": "..."}`, the error the call must end
+  with, and a regular expression its message must match.
+
+Each case of a stateful capability runs in a scope of its own, released after the case.
+
+An expectation has a `path` into the output and one check:
 
 | Check | Holds when the value at `path` |
 |---|---|
@@ -248,9 +293,11 @@ Run it as `pnpm harness ...` from the repository.
    description, examples, golden cases.
 2. Provide an implementation: an MCP server for an external program (preferred), or a factory
    registered in `FACTORIES`.
+   A tool that keeps state between calls is `stateful`, and its MCP implementations give their
+   `scope`.
 3. Add the capability to the host profiles that offer it.
 4. Run `pnpm harness contract <id>` on each host, and `pnpm check`.
 
 Not written yet: choosing among implementations by their measured success on similar goals,
-tool search over `deferred` capabilities, declaring `direct` capabilities to the model, and cost
-and health statistics from the journal's tool runs.
+tool search over `deferred` capabilities, and cost and health statistics from the journal's tool
+runs.
