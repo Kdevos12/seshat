@@ -24,6 +24,7 @@ import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
+import { checkTools, pinTools, toolName } from "./tools.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
 export interface RunConfig {
@@ -43,6 +44,8 @@ export interface RunConfig {
   budget: { problemUsd: number; runUsd?: number };
   /** Problems worked on at the same time. */
   concurrency: number;
+  /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
+  tools: string[];
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -53,6 +56,7 @@ export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
   notesChars: 4000,
   budget: { problemUsd: 5 },
   concurrency: 1,
+  tools: [],
 };
 
 export interface RunOptions {
@@ -120,6 +124,7 @@ export function checkConfig(config: RunConfig): string[] {
   whole("limits.contextTokens", config.limits.contextTokens, 1000);
   whole("notesChars", config.notesChars, 100);
   whole("concurrency", config.concurrency, 1);
+  if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -169,14 +174,23 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   const created = !existsSync(o.dir);
   const journal = Journal.open(o.dir, runId);
   const blobs = new BlobStore(join(o.dir, "blobs"));
+  const abandon = async (message: string, cause: unknown, opened?: Registry): Promise<never> => {
+    await opened?.close();
+    journal.close();
+    if (created) rmSync(o.dir, { recursive: true, force: true });
+    throw new RunSetupError(message, { cause });
+  };
   let registry: Registry;
   try {
     registry = o.registry(journal, blobs);
   } catch (error) {
-    journal.close();
-    if (created) rmSync(o.dir, { recursive: true, force: true });
-    throw new RunSetupError(`the registry of the run: ${messageOf(error)}`, { cause: error });
+    return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  const toolProblems = checkTools(registry, config.tools);
+  if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
+  // A tool that cannot be reached now would answer every prover's call with an error.
+  const pinned = await pinTools(registry, config.tools);
+  if (pinned.problems.length > 0) return await abandon(pinned.problems.join("; "), undefined, registry);
   for (const sub of ["transcripts", "proofs"]) mkdirSync(join(o.dir, sub), { recursive: true });
 
   const recorded: Json = {
@@ -190,9 +204,10 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     notesChars: config.notesChars,
     budget: { problemUsd: config.budget.problemUsd, runUsd: config.budget.runUsd ?? null },
     concurrency: config.concurrency,
+    tools: pinned.tools.map((t) => ({ ...t })),
     bench: { hash: o.index.hash, source: { ...o.index.source } },
     registry: registry.hash,
-    prompt: { version: PROMPT_VERSION, hash: promptHash(config.notesChars) },
+    prompt: { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) },
     policy: { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] },
     certifier: o.certifier === undefined ? null : `${o.certifier.implementation} ${o.certifier.version}`,
   };
@@ -213,6 +228,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     "orchestrator",
   );
   log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
+  for (const note of pinned.notes) log(note);
 
   const runLedger = new Ledger(config.budget.runUsd);
   const results: ProblemResult[] = [];
@@ -321,6 +337,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
             ledger,
             signal: controller.signal,
             transcript,
+            tools: pinned.tools,
           }).catch((error: unknown) => {
             // A harness failure stops the problem's other provers too.
             controller.abort(ABORT_STOPPED);

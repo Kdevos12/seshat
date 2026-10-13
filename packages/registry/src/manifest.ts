@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { CLAIM_STATUSES, hashJson, type ClaimStatus, type Json } from "@math-harness/core";
+import { CAPABILITY_ERROR_CODES, type CapabilityErrorCode } from "./implementation.ts";
 import { checkPath } from "./paths.ts";
 import { checkSchema, isPlainObject, validate, type JsonSchema } from "./schema.ts";
 
@@ -40,6 +41,14 @@ export type McpServerSpec =
   | { transport: "stdio"; command: string; args?: string[]; cwd?: string; env?: Record<string, string> }
   | { transport: "http"; url: string; headers?: Record<string, string> };
 
+/** How an MCP server keeps a separate state for each scope of a stateful capability. */
+export interface McpScopeSpec {
+  /** The tool argument that receives the scope's name on every call, e.g. `session`. */
+  argument: string;
+  /** The tool that ends a scope's state, and its argument that receives the scope's name. */
+  release?: { tool: string; argument: string };
+}
+
 /** A tool of an MCP server, in its own process or behind a URL. */
 export interface McpImplementationSpec extends ImplementationSpecBase {
   kind: "mcp";
@@ -49,6 +58,8 @@ export interface McpImplementationSpec extends ImplementationSpecBase {
   server: McpServerSpec;
   /** Refuse a server whose `serverInfo.version` is not `version`. Default true. */
   versionCheck?: boolean;
+  /** Required for a stateful capability: how the server separates the scopes. */
+  scope?: McpScopeSpec;
 }
 
 export type ImplementationSpec = InprocImplementationSpec | McpImplementationSpec;
@@ -64,6 +75,11 @@ export interface CapabilityManifest {
   when: string[];
   whenNot: string[];
   exposure: Exposure;
+  /**
+   * Calls in the same scope share state, as the variables of a computer algebra session do; calls
+   * in different scopes never see each other's. Callers pass a scope and release it when done.
+   */
+  stateful?: boolean;
   input: JsonSchema;
   output: JsonSchema;
   /** Claim statuses a result can justify. `proved` and `refuted` need a `certificate`. */
@@ -72,6 +88,11 @@ export interface CapabilityManifest {
   certificate?: string;
   /** Default time limit of one call, in milliseconds. */
   timeoutMs: number;
+  /**
+   * An optional numeric input field, in seconds, that sets the tool's own time limit. A call that
+   * gives it is allowed that long plus a margin, so that the tool stops itself and says so first.
+   */
+  timeoutField?: string;
   /** Paths of the output recorded in each tool run, e.g. `results.*.status`. */
   summary?: string[];
   examples?: CapabilityExample[];
@@ -96,8 +117,13 @@ export interface ContractCase {
   name: string;
   /** What the harness relies on that this case checks. */
   purpose?: string;
+  /** Of a stateful capability: inputs called first, in the case's scope, which must succeed. */
+  before?: Json[];
   input: Json;
-  expect: Expectation[];
+  /** Checks on the output. */
+  expect?: Expectation[];
+  /** Instead of `expect`: the call must fail with this error code, and a message matching `matches`. */
+  fails?: { code: CapabilityErrorCode; matches?: string };
   timeoutMs?: number;
 }
 
@@ -157,6 +183,20 @@ const IMPLEMENTATION_SCHEMA: JsonSchema = {
     tool: { type: "string", minLength: 1 },
     server: SERVER_SCHEMA,
     versionCheck: { type: "boolean" },
+    scope: {
+      type: "object",
+      required: ["argument"],
+      properties: {
+        argument: { type: "string", minLength: 1 },
+        release: {
+          type: "object",
+          required: ["tool", "argument"],
+          properties: { tool: { type: "string", minLength: 1 }, argument: { type: "string", minLength: 1 } },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 };
@@ -172,11 +212,13 @@ const MANIFEST_SCHEMA: JsonSchema = {
     when: { type: "array", items: { type: "string", minLength: 1 } },
     whenNot: { type: "array", items: { type: "string", minLength: 1 } },
     exposure: { enum: ["auto", "direct", "deferred"] },
+    stateful: { type: "boolean" },
     input: { type: "object" },
     output: { type: "object" },
     produces: { type: "array", items: { enum: [...CLAIM_STATUSES] } },
     certificate: { type: "string", minLength: 1 },
     timeoutMs: { type: "integer", minimum: 1 },
+    timeoutField: { type: "string", minLength: 1 },
     summary: { type: "array", items: { type: "string" } },
     examples: {
       type: "array",
@@ -201,12 +243,19 @@ const CONTRACT_SCHEMA: JsonSchema = {
       type: "array",
       items: {
         type: "object",
-        required: ["name", "input", "expect"],
+        required: ["name", "input"],
         properties: {
           name: { type: "string", minLength: 1 },
           purpose: { type: "string" },
+          before: { type: "array", minItems: 1 },
           input: {},
           expect: { type: "array", items: { type: "object" } },
+          fails: {
+            type: "object",
+            required: ["code"],
+            properties: { code: { enum: [...CAPABILITY_ERROR_CODES] }, matches: { type: "string" } },
+            additionalProperties: false,
+          },
           timeoutMs: { type: "integer", minimum: 1 },
         },
         additionalProperties: false,
@@ -317,7 +366,7 @@ export function checkCapability(dirName: string, manifest: unknown, contract: un
     const raw = impl as unknown as Record<string, unknown>;
     if (impl.kind === "inproc") {
       if (raw.factory === undefined) problems.push(`${at} implementation ${impl.id} (inproc) needs a factory`);
-      for (const key of ["tool", "server", "versionCheck"]) {
+      for (const key of ["tool", "server", "versionCheck", "scope"]) {
         if (raw[key] !== undefined) problems.push(`${at} implementation ${impl.id} (inproc) cannot have ${key}`);
       }
     } else {
@@ -327,6 +376,23 @@ export function checkCapability(dirName: string, manifest: unknown, contract: un
       }
       if (raw.server !== undefined) problems.push(...checkServer(impl.server).map((p) => `${at} implementation ${impl.id}: ${p}`));
       if (m.input.type !== "object") problems.push(`${at} an MCP implementation needs an object input`);
+      if (m.stateful === true && impl.scope === undefined) {
+        problems.push(`${at} implementation ${impl.id} (mcp) of a stateful capability needs a scope`);
+      }
+      if (m.stateful !== true && impl.scope !== undefined) {
+        problems.push(`${at} implementation ${impl.id} has a scope, but the capability is not stateful`);
+      }
+      if (impl.scope !== undefined && Object.hasOwn(m.input.properties ?? {}, impl.scope.argument)) {
+        problems.push(`${at} implementation ${impl.id}: the scope argument ${impl.scope.argument} is also a field of the input`);
+      }
+    }
+  }
+
+  if (m.timeoutField !== undefined) {
+    const field = m.input.properties?.[m.timeoutField];
+    const numeric = field !== undefined && (field.type === "number" || field.type === "integer");
+    if (!numeric || field.maximum === undefined || field.minimum === undefined || field.minimum <= 0) {
+      problems.push(`${at} timeoutField ${m.timeoutField} must be a number field of the input, with a positive minimum and a maximum`);
     }
   }
 
@@ -353,10 +419,22 @@ export function checkCapability(dirName: string, manifest: unknown, contract: un
   for (const testCase of c.cases) {
     if (names.has(testCase.name)) problems.push(`${at} contract case "${testCase.name}" is declared twice`);
     names.add(testCase.name);
+    const where = `${at} contract case "${testCase.name}":`;
     if (inputProblems.length === 0) {
-      problems.push(...validate(m.input, testCase.input, "input").map((p) => `${at} contract case "${testCase.name}": ${p}`));
+      for (const input of [...(testCase.before ?? []), testCase.input]) {
+        problems.push(...validate(m.input, input, "input").map((p) => `${where} ${p}`));
+      }
     }
-    problems.push(...testCase.expect.flatMap((e) => checkExpectation(e)).map((p) => `${at} contract case "${testCase.name}": ${p}`));
+    if (testCase.before !== undefined && m.stateful !== true) problems.push(`${where} before needs a stateful capability`);
+    if ((testCase.expect === undefined) === (testCase.fails === undefined)) problems.push(`${where} needs either expect or fails`);
+    problems.push(...(testCase.expect ?? []).flatMap((e) => checkExpectation(e)).map((p) => `${where} ${p}`));
+    if (testCase.fails?.matches !== undefined) {
+      try {
+        new RegExp(testCase.fails.matches, "u");
+      } catch (error) {
+        problems.push(`${where} fails.matches: ${(error as Error).message}`);
+      }
+    }
   }
   return problems;
 }

@@ -52,6 +52,10 @@ importers:
       '@math-harness/registry':
         specifier: workspace:*
         version: link:../registry
+    devDependencies:
+      '@earendil-works/pi-mcp':
+        specifier: 1.2.0
+        version: 1.2.0
 
   packages/registry:
     dependencies:

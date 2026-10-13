@@ -21,6 +21,7 @@ simulated model and a simulated Lean.
 | Capability registry, MCP boundary, `lean.check` and its contract | `@math-harness/registry` | Done, tested with simulated servers |
 | `harness` command (capabilities, health, contract tests, models, runs, reports) | `@math-harness/orchestrator` | Done |
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@math-harness/orchestrator` | Done, tested with a simulated model and Lean |
+| Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@math-harness/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
 None of this has run against a real Lean or a real model yet, because the development environment
@@ -40,6 +41,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   directory, `harness run` and `harness report`.
 - [lean.md](lean.md): Lean checkers, the Kimina client, the certifier, deployment.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
-  contract tests, the `harness` command.
+  scopes, contract tests, the `harness` command.
+- [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
+  what it offers and refuses.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
 - [development.md](development.md): conventions, tests, commits.

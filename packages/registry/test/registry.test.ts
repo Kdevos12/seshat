@@ -5,8 +5,10 @@ import { BlobStore, Journal, readEvents, type Json } from "@math-harness/core";
 import {
   CapabilityError,
   CatalogError,
+  checkCapability,
   loadCatalog,
   Registry,
+  TOOL_TIMEOUT_MARGIN_MS,
   UnavailableError,
   type HostProfile,
   type ImplementationFactory,
@@ -111,6 +113,57 @@ describe("Registry.invoke", () => {
       assert.equal((started?.data as Record<string, Json>).timeoutMs, 30);
       assert.equal((finished?.data as Record<string, Json>).outcome, "timeout");
     });
+  });
+
+  it("gives a call the time limit its input sets for the tool, plus a margin", async () => {
+    const timed = loadCatalog(
+      writeCatalog({
+        "math.add": {
+          manifest: addManifest({
+            input: {
+              type: "object",
+              required: ["a", "b"],
+              properties: { a: { type: "number" }, b: { type: "number" }, seconds: { type: "number", minimum: 0.001, maximum: 60 } },
+              additionalProperties: false,
+            },
+            timeoutField: "seconds",
+          }),
+        },
+      }),
+    );
+    const limits: number[] = [];
+    const spy: ImplementationFactory = () => ({
+      async invoke(_input, context) {
+        limits.push(context.timeoutMs);
+        return { sum: 0 };
+      },
+    });
+    const registry = new Registry({ catalog: timed, host: host(["js"], { timeoutMs: 700 }), factories: { "js-add": spy } });
+    await registry.invoke("math.add", { a: 0, b: 0 });
+    await registry.invoke("math.add", { a: 0, b: 0, seconds: 2.5 });
+    await registry.invoke("math.add", { a: 0, b: 0, seconds: 2.5 }, { timeoutMs: 40 });
+    assert.deepEqual(limits, [700, 2500 + TOOL_TIMEOUT_MARGIN_MS, 40], "the host's limit, the tool's plus the margin, the caller's");
+    assert.deepEqual(
+      checkCapability("math.add", addManifest({ timeoutField: "a" }), { capability: "math.add", cases: [] }),
+      ["math.add: timeoutField a must be a number field of the input, with a positive minimum and a maximum"],
+    );
+  });
+
+  it("keeps what a failing implementation said, without the registry's prefix", async () => {
+    const failing: ImplementationFactory = () => ({
+      invoke: async () => {
+        throw new Error("division by zero");
+      },
+    });
+    const registry = new Registry({ catalog, host: host(["js"]), factories: { "js-add": failing } });
+    await assert.rejects(
+      registry.invoke("math.add", { a: 1, b: 0 }),
+      (error: unknown) =>
+        error instanceof CapabilityError &&
+        error.message === "math.add/js failed: division by zero" &&
+        error.details.length === 1 &&
+        error.details[0] === "division by zero",
+    );
   });
 
   it("records a call its caller abandons as aborted", async () => {

@@ -5,6 +5,8 @@ export interface InvokeContext {
   /** Aborted when the call times out or its caller gives up. */
   signal: AbortSignal;
   timeoutMs: number;
+  /** Of a stateful capability: the state this call reads and changes. */
+  scope?: string;
 }
 
 export interface HealthCheck {
@@ -17,8 +19,23 @@ export interface ImplementationInstance {
   /** Gets an input valid for the capability's schema; returns its output. */
   invoke(input: Json, context: InvokeContext): Promise<Json>;
   health?(context: { signal: AbortSignal }): Promise<HealthCheck>;
+  /** Of a stateful capability: drops the state of a scope. A scope it never saw is not an error. */
+  release?(scope: string, context: { signal: AbortSignal }): Promise<void>;
   close?(): Promise<void>;
 }
+
+/** Why a call of a capability failed (documentation/capabilities.md#calls). */
+export const CAPABILITY_ERROR_CODES = [
+  "unknown_capability",
+  "invalid_input",
+  "unavailable",
+  "timeout",
+  "aborted",
+  "failed",
+  "invalid_output",
+] as const;
+
+export type CapabilityErrorCode = (typeof CAPABILITY_ERROR_CODES)[number];
 
 /**
  * Thrown by an implementation that cannot be reached at all (connection refused, wrong version,

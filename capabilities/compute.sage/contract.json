@@ -1,0 +1,221 @@
+{
+  "capability": "compute.sage",
+  "cases": [
+    {
+      "name": "exact integer arithmetic",
+      "purpose": "Integers are exact and factor completely.",
+      "input": {
+        "code": "factor(2^64 + 1)"
+      },
+      "expect": [
+        {
+          "path": "result_type",
+          "equals": "expression"
+        },
+        {
+          "path": "result",
+          "equals": "274177 * 67280421310721"
+        }
+      ]
+    },
+    {
+      "name": "the last line and what was printed",
+      "purpose": "The value of the last line comes back in result, and print() output in stdout.",
+      "input": {
+        "code": "print(1); print(2)\n3"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "3"
+        },
+        {
+          "path": "stdout",
+          "equals": "1\n2\n"
+        }
+      ]
+    },
+    {
+      "name": "a statement has no value",
+      "purpose": "Code that ends with an assignment is a statement, with no result.",
+      "input": {
+        "code": "a = 2^10"
+      },
+      "expect": [
+        {
+          "path": "result_type",
+          "equals": "statement"
+        },
+        {
+          "path": "result",
+          "equals": null
+        }
+      ]
+    },
+    {
+      "name": "variables persist within a scope",
+      "purpose": "What one call defines, the next call of the same scope sees: the model builds an object once and explores it.",
+      "before": [
+        {
+          "code": "petersen = graphs.PetersenGraph()"
+        }
+      ],
+      "input": {
+        "code": "petersen.chromatic_number(), petersen.girth(), petersen.automorphism_group().order()"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "(3, 5, 120)"
+        }
+      ]
+    },
+    {
+      "name": "each scope starts empty",
+      "purpose": "A new scope does not have the names of others (here, the petersen of the case before), so provers do not share state, and a name it has not assigned is refused rather than silently empty.",
+      "input": {
+        "code": "petersen.order()"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "'petersen' is not a name this server offers"
+      }
+    },
+    {
+      "name": "a letter not assigned is a symbol",
+      "purpose": "A single letter the scope has not assigned becomes a symbolic variable, as the description warns; this is why it asks for longer names.",
+      "input": {
+        "code": "((w + 1)^2 - w^2).expand()"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "2*w + 1"
+        }
+      ]
+    },
+    {
+      "name": "graphs up to isomorphism",
+      "purpose": "Graph enumeration, for small models: graphs on 1 to 6 vertices.",
+      "input": {
+        "code": "[len(list(graphs(n))) for n in range(1, 7)]"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "[1, 2, 4, 11, 34, 156]"
+        }
+      ]
+    },
+    {
+      "name": "the small groups library",
+      "purpose": "GAP's SmallGroups library, through SmallPermutationGroup: the groups of order 8.",
+      "input": {
+        "code": "[SmallPermutationGroup(8, k).structure_description() for k in range(1, 6)]"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "['C8', 'C4 x C2', 'D4', 'Q8', 'C2 x C2 x C2']"
+        }
+      ]
+    },
+    {
+      "name": "number theory",
+      "purpose": "PARI and primecount: prime counting, totients, Bernoulli numbers.",
+      "input": {
+        "code": "prime_pi(10^9), euler_phi(10^6), bernoulli(20)"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "(50847534, 400000, -174611/330)"
+        }
+      ]
+    },
+    {
+      "name": "symbolic sums",
+      "purpose": "Maxima works (passagemath shipped a broken Maxima in 10.8.10 and 10.8.11).",
+      "input": {
+        "code": "var('k'); sum(1/k^2, k, 1, oo)"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "1/6*pi^2"
+        }
+      ]
+    },
+    {
+      "name": "exact linear algebra",
+      "purpose": "Matrices over the rationals stay exact.",
+      "input": {
+        "code": "matrix(QQ, [[1, 2], [3, 4]]).inverse()"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "[  -2    1]\n[ 3/2 -1/2]"
+        }
+      ]
+    },
+    {
+      "name": "a SAT solver",
+      "purpose": "SAT() answers False on an unsatisfiable formula.",
+      "input": {
+        "code": "s = SAT(); s.add_clause((1,)); s.add_clause((-1,)); s()"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "False"
+        }
+      ]
+    },
+    {
+      "name": "errors come back with their message",
+      "purpose": "The model sees why its code failed.",
+      "input": {
+        "code": "[][1]"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "index out of range"
+      }
+    },
+    {
+      "name": "imports are refused",
+      "purpose": "Defence in depth: the model's code cannot reach the operating system through an import.",
+      "input": {
+        "code": "import os\nos.getcwd()"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "Import statements are disabled"
+      }
+    },
+    {
+      "name": "files are refused",
+      "purpose": "Defence in depth: the model's code cannot read files.",
+      "input": {
+        "code": "open('/etc/passwd').read()"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "forbidden function 'open'"
+      }
+    },
+    {
+      "name": "the call's own time limit",
+      "purpose": "The server stops a computation at the timeout of the input, says so, and the registry's limit has not fired yet.",
+      "input": {
+        "code": "while True: pass",
+        "timeout": 2
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "timed out after 2\\.00s.*variables were discarded"
+      }
+    }
+  ]
+}

@@ -57,7 +57,11 @@ describe("MCP implementations", () => {
     const registry = new Registry({ catalog, host: offered, mcpTransport: memoryServers().factory });
     await assert.rejects(
       registry.invoke("math.add", { a: -1, b: 0 }, { implementation: "fail" }),
-      (error: unknown) => error instanceof CapabilityError && error.code === "failed" && /a must be positive/.test(error.message),
+      (error: unknown) =>
+        error instanceof CapabilityError &&
+        error.code === "failed" &&
+        error.message === "math.add/fail failed: the tool reported an error: a must be positive" &&
+        error.details[0] === "a must be positive",
     );
     await registry.close();
   });
@@ -70,7 +74,7 @@ describe("MCP implementations", () => {
     );
     await assert.rejects(
       registry.invoke("math.add", { a: 1, b: 1 }, { implementation: "missing" }),
-      /has no tool multiply \(it has add, add_text, fail, slow, crash\)/,
+      /has no tool multiply \(it has add, add_text, fail, slow, crash, store, drop, workspaces, env\)/,
     );
     await registry.close();
   });

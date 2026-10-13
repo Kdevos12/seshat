@@ -42,6 +42,8 @@ export interface SessionOptions {
   signal: AbortSignal;
   /** When a limit ends the session, ask the model for its notes (one more response). */
   wrapUp: boolean;
+  /** Tools besides lean_check, for this session's attempt. */
+  tools?: AgentTool<never, unknown>[];
 }
 
 export interface SessionResult {
@@ -61,7 +63,7 @@ export interface SessionResult {
 /** Lean answers `server_error` this many times in a row: the session ends with an error. */
 const MAX_UNREACHABLE = 3;
 
-/** One session of a prover: a fresh pi agent whose only tool is `lean_check`. */
+/** One session of a prover: a fresh pi agent with `lean_check` and the run's other tools. */
 export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const cost: TokenCost = { usd: 0, inputTokens: 0, outputTokens: 0 };
   let turns = 0;
@@ -112,7 +114,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   };
 
   const agent = new Agent({
-    initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck] },
+    initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
     streamFn: o.models.streamSimple.bind(o.models),
     toolExecution: "sequential",
     sessionId: o.attemptId,

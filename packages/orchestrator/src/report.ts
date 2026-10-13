@@ -32,6 +32,18 @@ export interface RunReport {
   usdPerProof?: number;
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
   leanChecks: { total: number; outcomes: Record<string, number>; medianMs?: number; p90Ms?: number };
+  /**
+   * The provers' calls of each capability besides lean.check: calls by outcome, the attempts that
+   * made them, and how many of those attempts found a proof.
+   */
+  tools: Record<string, ToolUse>;
+}
+
+export interface ToolUse {
+  calls: number;
+  outcomes: Record<string, number>;
+  attempts: number;
+  proofs: number;
 }
 
 function count(map: Record<string, number>, key: string): void {
@@ -53,6 +65,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
   const capabilities = new Map<string, string>();
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
+  const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
+  const proofAttempts = new Set<string>();
   let usd = 0;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -82,20 +96,35 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         count(attempts.outcomes, d.outcome);
         if (d.stoppedBy !== undefined) count(attempts.stoppedBy, d.stoppedBy);
         if (d.failureClass !== undefined) count(attempts.failures, d.failureClass);
+        if (d.outcome === "valid") proofAttempts.add(d.attemptId);
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
         break;
       }
-      case "tool_run.started":
-        capabilities.set(event.data.toolRunId, event.data.capability);
+      case "tool_run.started": {
+        const d = event.data;
+        capabilities.set(d.toolRunId, d.capability);
+        // Only the provers' calls: an attempt's, and not the validator's Lean checks.
+        if (d.capability === "lean.check" || d.attemptId === undefined) break;
+        const use = tools.get(d.capability) ?? { calls: 0, outcomes: {}, attempts: new Set<string>() };
+        tools.set(d.capability, use);
+        use.calls += 1;
+        use.attempts.add(d.attemptId);
         break;
-      case "tool_run.finished":
-        if (capabilities.get(event.data.toolRunId) !== "lean.check") break;
+      }
+      case "tool_run.finished": {
+        const capability = capabilities.get(event.data.toolRunId);
+        if (capability !== "lean.check") {
+          const use = capability === undefined ? undefined : tools.get(capability);
+          if (use !== undefined) count(use.outcomes, event.data.outcome);
+          break;
+        }
         checks.total += 1;
         count(checks.outcomes, event.data.outcome);
         if (event.data.outcome === "ok") checks.durations.push(event.data.durationMs);
         break;
+      }
       default:
         break;
     }
@@ -126,6 +155,12 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ...(medianMs !== undefined ? { medianMs } : {}),
       ...(p90Ms !== undefined ? { p90Ms } : {}),
     },
+    tools: Object.fromEntries(
+      [...tools].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, use]) => [
+        id,
+        { calls: use.calls, outcomes: use.outcomes, attempts: use.attempts.size, proofs: [...use.attempts].filter((a) => proofAttempts.has(a)).length },
+      ]),
+    ),
   };
 }
 
@@ -143,13 +178,18 @@ function cell(text: string): string {
 }
 
 export function renderRunReport(report: RunReport): string {
-  const c = report.config as { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number } } | null;
+  const c = report.config as
+    | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[] }
+    | null;
   const o = report.outcomes;
+  const given = c?.tools ?? [];
+  const tools = Object.entries(report.tools);
   const lines = [
     `# Run ${report.runId}`,
     "",
     `Bench ${report.benchId}, host ${report.host}${report.codeRev !== undefined ? `, code ${report.codeRev}` : ""}. ` +
-      `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}.`,
+      `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
+      `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.`,
     report.finished ? (report.stopped !== undefined ? `The run stopped early: ${report.stopped}.` : "The run is complete.") : "The run has not finished.",
     "",
     "| Problems | |",
@@ -170,6 +210,11 @@ export function renderRunReport(report: RunReport): string {
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +
       `${report.leanChecks.medianMs !== undefined ? `; median ${(report.leanChecks.medianMs / 1000).toFixed(1)} s` : ""}` +
       `${report.leanChecks.p90Ms !== undefined ? `, 90th percentile ${(report.leanChecks.p90Ms / 1000).toFixed(1)} s` : ""}.`,
+    ...tools.map(
+      ([id, use]) =>
+        `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +
+        `${use.proofs} of which found a proof.`,
+    ),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
     "",

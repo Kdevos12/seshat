@@ -1,8 +1,8 @@
-import type { Json } from "@math-harness/core";
+import { type Json, newId } from "@math-harness/core";
 import { messageOf } from "./implementation.ts";
-import type { Expectation } from "./manifest.ts";
+import type { ContractCase, Expectation } from "./manifest.ts";
 import { getPath } from "./paths.ts";
-import { CapabilityError, type Registry } from "./registry.ts";
+import { CapabilityError, type InvokeResult, type Registry } from "./registry.ts";
 import { jsonEqual } from "./schema.ts";
 
 export interface CaseResult {
@@ -44,34 +44,7 @@ export async function runContract(registry: Registry, capabilityId: string, opti
   const cases = capability.contract.filter((c) => options.only === undefined || options.only.includes(c.name));
   const results: CaseResult[] = [];
   for (const testCase of cases) {
-    const started = performance.now();
-    let result: CaseResult;
-    try {
-      const run = await registry.invoke(capabilityId, testCase.input, {
-        actor: "contract",
-        ...(options.implementation !== undefined ? { implementation: options.implementation } : {}),
-        ...(testCase.timeoutMs !== undefined ? { timeoutMs: testCase.timeoutMs } : {}),
-        ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      });
-      const failures = checkExpectations(run.output, testCase.expect);
-      result = {
-        name: testCase.name,
-        passed: failures.length === 0,
-        failures,
-        durationMs: run.durationMs,
-        implementation: run.implementation,
-        version: run.version,
-        output: run.output,
-      };
-    } catch (error) {
-      const code = error instanceof CapabilityError ? `${error.code}: ` : "";
-      result = {
-        name: testCase.name,
-        passed: false,
-        failures: [`${code}${messageOf(error)}`],
-        durationMs: Math.round(performance.now() - started),
-      };
-    }
+    const result = await runCase(registry, capabilityId, testCase, options);
     results.push(result);
     options.onCase?.(result);
   }
@@ -84,6 +57,69 @@ export async function runContract(registry: Registry, capabilityId: string, opti
     failed: results.length - passed,
     cases: results,
   };
+}
+
+/** One case, in a scope of its own when the capability is stateful, released afterwards. */
+async function runCase(registry: Registry, capabilityId: string, testCase: ContractCase, options: ContractOptions): Promise<CaseResult> {
+  const started = performance.now();
+  const scope = registry.capability(capabilityId).manifest.stateful === true ? newId("contract") : undefined;
+  const invoke = (input: Json) =>
+    registry.invoke(capabilityId, input, {
+      actor: "contract",
+      ...(scope !== undefined ? { scope } : {}),
+      ...(options.implementation !== undefined ? { implementation: options.implementation } : {}),
+      ...(testCase.timeoutMs !== undefined ? { timeoutMs: testCase.timeoutMs } : {}),
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    });
+  const failed = (failures: string[]): CaseResult => ({
+    name: testCase.name,
+    passed: false,
+    failures,
+    durationMs: Math.round(performance.now() - started),
+  });
+  try {
+    for (const [i, input] of (testCase.before ?? []).entries()) {
+      try {
+        await invoke(input);
+      } catch (error) {
+        return failed([`before.${i}: ${describeError(error)}`]);
+      }
+    }
+    let run: InvokeResult;
+    try {
+      run = await invoke(testCase.input);
+    } catch (error) {
+      const expected = testCase.fails;
+      if (expected === undefined) return failed([describeError(error)]);
+      const code = error instanceof CapabilityError ? error.code : undefined;
+      const failures = [
+        ...(code !== expected.code ? [`expected the error ${expected.code}, got ${describeError(error)}`] : []),
+        ...(expected.matches !== undefined && !new RegExp(expected.matches, "u").test(messageOf(error))
+          ? [`expected an error message matching /${expected.matches}/, got ${JSON.stringify(messageOf(error))}`]
+          : []),
+      ];
+      return { name: testCase.name, passed: failures.length === 0, failures, durationMs: Math.round(performance.now() - started) };
+    }
+    const failures =
+      testCase.fails !== undefined
+        ? [`expected the error ${testCase.fails.code}, but the call succeeded`]
+        : checkExpectations(run.output, testCase.expect ?? []);
+    return {
+      name: testCase.name,
+      passed: failures.length === 0,
+      failures,
+      durationMs: run.durationMs,
+      implementation: run.implementation,
+      version: run.version,
+      output: run.output,
+    };
+  } finally {
+    if (scope !== undefined) await registry.release(scope);
+  }
+}
+
+function describeError(error: unknown): string {
+  return `${error instanceof CapabilityError ? `${error.code}: ` : ""}${messageOf(error)}`;
 }
 
 /** The expectations a value fails, each as a sentence naming the path; empty when all hold. */

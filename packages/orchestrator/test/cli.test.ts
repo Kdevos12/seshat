@@ -76,12 +76,16 @@ describe("harness CLI", () => {
   });
 
   it("checks the health of the host's implementations", async () => {
-    const up = await harness(["health"], { LEAN_SERVER_API_URL: url });
+    const up = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: url });
     assert.equal(up.code, 0, up.stdout + up.stderr);
     assert.match(up.stdout, /^ok {3}lean\.check\/kimina fb2393de\+lean-v4\.27\.0\+fc-bench-v1 \(\d+ ms\): kimina-lean-server fb2393de/m);
-    const down = await harness(["health"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
+    const down = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
+    // Every implementation the host lists, in order: here SageMath's, which nothing serves.
+    const all = await harness(["health"], { LEAN_SERVER_API_URL: url, PATH: "/nowhere", SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp" });
+    assert.equal(all.code, 1);
+    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nok {3}lean\.check\/kimina/m);
   });
 
   it("runs contract cases and fails when one does not hold", async () => {

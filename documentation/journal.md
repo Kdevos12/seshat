@@ -46,7 +46,7 @@ Event types:
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model` |
 | `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens` |
-| `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?` |
+| `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text` |
 | `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash` |
@@ -58,7 +58,9 @@ ended (`stoppedBy`), why a run stopped early (`stopped`) and what each outcome m
 
 Tool runs are written by the capability registry ([capabilities.md](capabilities.md#calls)). A
 tool run is `aborted` when its caller gave up (a budget ran out, a run was stopped), which is not
-a failure of the tool. Its `summary` holds the output paths the manifest names, or the error.
+a failure of the tool. Its `summary` holds the output paths the manifest names, or the error. The
+tool runs of a stateful capability carry their `scope`: the calls with the same scope share state
+(the variables of a SageMath session), in the journal's order.
 
 ## Writing
 

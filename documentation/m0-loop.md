@@ -14,7 +14,8 @@ The code is in `packages/orchestrator/src`:
 | `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
 | `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks and the candidate of one problem. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
-| `session.ts` | `runSession`: one pi agent with the `lean_check` tool, and its limits. |
+| `session.ts` | `runSession`: one pi agent with the `lean_check` tool and the run's other tools, and its limits. |
+| `tools.ts` | The other tools: `direct` capabilities as tools of a session. |
 | `prompt.ts` | The prompts, versioned. |
 | `feedback.ts` | What a check says to the prover, and the failure class of a check. |
 | `budget.ts` | Ledgers of dollars and tokens. |
@@ -26,14 +27,16 @@ The code is in `packages/orchestrator/src`:
 `runBench(options)`:
 
 1. Checks the configuration, finds the model and its provider's credentials, and refuses a run
-   directory that already holds a journal. A failure here, or in building the host's registry, is
-   a `RunSetupError`: no event is written, and a directory created for the run is removed.
+   directory that already holds a journal. It builds the host's registry, then checks the tools
+   given with `--tool` and pins each to an implementation that answers
+   ([other tools](#other-tools)). A failure here is a `RunSetupError`: no event is written, and a
+   directory created for the run is removed.
 2. Opens the journal and the blob store, writes `config.json` and records `run.started`. The
    configuration recorded there fixes what the run does: how the problems were chosen and the hash
    of their list, the model and its thinking level, the provers, sessions, limits, notes length,
-   budgets and concurrency, the bench's hash and source, the registry's hash (manifests and host
-   profile), the prompts' version and hash, the validation policy, the certifier, and the code
-   revision.
+   budgets and concurrency, the other tools with their implementations and versions, the bench's
+   hash and source, the registry's hash (manifests and host profile), the prompts' version and
+   hash, the validation policy, the certifier, and the code revision.
 3. Works on the problems in order, `concurrency` at a time.
 4. Records `run.finished`, then writes `report.md` and `report.json`.
 
@@ -87,7 +90,8 @@ Lean could not be reached).
 
 ## A session
 
-A session is a fresh pi `Agent` whose only tool is `lean_check(aux, proof)`. A check puts the two
+A session is a fresh pi `Agent` with the tool `lean_check(aux, proof)`, and the run's
+[other tools](#other-tools) if it has any. A check puts the two
 regions into the file, keeps the file in the blob store, and runs the fast check under
 `SKETCH_POLICY`, which lets `sorry` and `admit` reach Lean so that the goals of the holes come back
 ([validator.md](validator.md#holes)). Regions that contain marker lines are refused before Lean.
@@ -102,7 +106,7 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 
 | `stoppedBy` | When | Attempt outcome |
 |---|---|---|
-| `model` | The model answered without calling the tool. | `invalid`, or `no_submission` if the session made no check |
+| `model` | The model answered without calling a tool. | `invalid`, or `no_submission` if the session made no check |
 | `turns` | The session reached `turns` model responses. | the same |
 | `context` | The prompt of the last request reached `contextTokens` tokens. | the same |
 | `budget` | The problem's or the run's budget ran out. | `budget_exhausted` |
@@ -111,8 +115,8 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check. | `error` |
 
 When `turns` or `context` ends a session that is not the prover's last, one more request asks the
-model for its notes (`WRAP_UP`). The tool stays declared, because providers need the definitions of
-the tools that the history calls, but a `beforeToolCall` hook blocks any call.
+model for its notes (`WRAP_UP`). The tools stay declared, because providers need the definitions
+of the tools that the history calls, but a `beforeToolCall` hook blocks any call.
 
 For an `invalid` attempt, `failureClass` classifies its last check: `refused` (before Lean),
 `lean_unavailable`, `timeout`, `lean_error`, `holes`, `axioms` (an axiom outside the allowed ones)
@@ -142,6 +146,43 @@ Other messages (1):
 The other answers say that the file was refused before Lean ran and why, that Lean ran out of
 time, or that Lean could not be reached.
 
+## Other tools
+
+`--tool CAPABILITY` gives the provers a capability besides `lean_check`, such as `compute.sage`
+(SageMath, [compute.md](compute.md)). It must be a `direct` capability that the host offers, and
+not `lean.check` itself.
+
+Before `run.started`, the run pins each tool to the first implementation of the host profile that
+answers a health check, so that all the tool's calls in the run go to that implementation, and none
+goes first to one that is down. It writes on the standard error which ones it passed over and why,
+such as `compute.sage uses local, because docker: ...`. A tool none of whose implementations answers
+stops the run before it starts. `run.started` records each tool with the implementation and the
+version it was pinned to.
+
+In a session, the capability is a pi tool named after its id, with `_` for `.` (`compute_sage`).
+Its description is the manifest's: the title, the description, when to use it and when not, and the
+examples with their outputs as the model will read them. Its parameters are the manifest's input
+schema. Each call is a tool run of the attempt. A stateful capability's calls take the attempt's id
+as their scope, so a prover's SageMath session lasts one attempt: the prover releases the scope
+when the attempt ends, and its next session starts with an empty one, with only the notes to carry
+what was found.
+
+The model reads an output as one line per field, without the empty ones, with text of several
+lines indented below its field, and numbers to four significant digits:
+
+```
+result_type: expression
+result: 120
+stdout: 3
+elapsed_ms: 306.4
+```
+
+An answer longer than 8000 characters is cut, with a note that asks to print less. Errors come back
+as tool errors: the tool's own message when the call failed on its input (`Error: (no message)` when
+the tool gave none), and a sentence of the harness for a timeout, an input the schema refuses, or an
+output the harness does not accept. When the tool cannot be reached, the model is told to go on
+without it, and the tool is not called again in that session.
+
 ## Prompts
 
 `prompt.ts` holds the system prompt, the first message of a session and the wrap-up message. The
@@ -151,8 +192,15 @@ out the mathematics first; write the proof as a sketch, with `aux_` lemmas or `h
 progress; use the automation and the tactics that search Mathlib; say in the notes when the
 statement seems false.
 
-`PROMPT_VERSION` (now `m0-1`) changes with any change of the prompts, and `run.started` records it
-with a hash of the prompts.
+When the run has other tools, the system prompt names them and says that what they return is
+evidence, not proof, since only `lean_check` decides; it asks the prover to use them to test small
+cases, compute examples and search for counterexamples before writing Lean, and to find the values
+and witnesses a proof needs.
+
+`PROMPT_VERSION` (now `m0-2`) changes with any change of the prompts, and `run.started` records it
+with a hash of the prompts, tools' names included. Version `m0-2` added the section on other tools;
+without tools, its system prompt is that of `m0-1`. The tools' descriptions are in their manifests,
+covered by the registry's hash.
 
 ## Budgets
 
@@ -182,10 +230,11 @@ per prover, can take a ledger past its limit.
 
 ```sh
 git clone --depth 1 --branch bench-v1-lean4.27.0 https://github.com/google-deepmind/formal-conjectures.git ../google-deepmind/formal-conjectures-bench-v1
-pnpm harness health                    # the Lean server answers
+pnpm harness health                    # the Lean server and the other tools answer
 pnpm harness models                    # the providers, and whether their credentials are set
 pnpm harness models PROVIDER           # the models of a provider, with their prices
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
 
@@ -210,6 +259,7 @@ Options of `harness run`:
 | `--budget-usd X` | 5 | Dollars per problem. |
 | `--run-budget-usd X` | none | Dollars for the whole run. |
 | `--concurrency N` | 1 | Problems worked on at the same time. |
+| `--tool CAPABILITY` | none | A `direct` capability given to the provers besides `lean_check`, such as `compute.sage`; repeat it for several ([other tools](#other-tools)). |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
 Progress goes to the standard error, one line per problem, and the report goes to the standard
@@ -231,7 +281,8 @@ proved, and candidates that passed the fast check only), the cost in total and p
 proof, tokens, attempts
 by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
 checks with their median and 90th percentile times (the count includes one reference check per
-problem). It also says what it does not measure: the fidelity of the formal statements, taken as
+problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
+and how many of those attempts found a proof. It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
 
 ## Tested, and not yet
@@ -242,8 +293,16 @@ recorded; the file and the notes carried from one session to the next; forbidden
 before Lean; the turn limit, with the wrap-up; the problem's budget; the other provers stopped when
 one succeeds; a problem whose original file does not compile; a run stopped when Lean cannot be
 reached; certification, accepted and rejected; and a run aborted between problems.
+`tools.test.ts` gives the provers a simulated SageMath server (`test/fixtures/fake-sage.ts`, over
+an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
+errors as the model reads them; the tool's description and the prompt's section; the run's
+refusals of tools it cannot give; and the pinning to the first implementation that answers.
 `cli.test.ts` covers the argument and setup errors of `harness run`, and `harness report` and
 `harness models`.
+
+A run with the real SageMath (the `local` implementation), the faux model and the simulated Lean was
+done by hand on 2026-10-13: the outputs, the per-attempt sessions, a timeout and the report came out
+as the tests expect. It is not part of `pnpm test`, which needs no SageMath.
 
 Not done yet:
 

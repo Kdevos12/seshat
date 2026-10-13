@@ -26,8 +26,9 @@ pnpm test
   simulated Lean, Kimina and MCP servers stand in. The MCP tests also spawn a small MCP server
   (`packages/registry/test/fixtures/fake-mcp-server.ts`) as a child process, over stdio. The M0
   loop runs with pi-ai's faux provider, whose answers each test writes, and a simulated Lean
-  (`packages/orchestrator/test/m0-helpers.ts`); the command tests run `harness` as a child
-  process.
+  (`packages/orchestrator/test/m0-helpers.ts`), and with a simulated SageMath server over an
+  in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`); the command tests run
+  `harness` as a child process.
 - A change updates the documentation page that describes it, in the same commit.
 
 ## Tests that use real data
@@ -41,7 +42,9 @@ Some tests run only when their data is on disk:
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`
-([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`.
+([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`. For SageMath
+without Docker: `SAGEMATH_MCP_COMMAND=PATH/TO/sagemath-mcp pnpm harness contract compute.sage
+--implementation local` ([compute.md](compute.md#with-pip-no-docker)).
 
 ```sh
 git clone --depth 1 --branch bench-v1-lean4.27.0 https://github.com/google-deepmind/formal-conjectures.git ../google-deepmind/formal-conjectures-bench-v1
