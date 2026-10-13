@@ -130,7 +130,7 @@ required).
 ## Calls
 
 ```ts
-const registry = openRegistry({ host: "local", journal });
+const registry = openRegistry({ host: "local", journal, blobs });
 const { output, toolRunId, implementation, version } = await registry.invoke("lean.check", input, { attemptId });
 ```
 
@@ -149,6 +149,10 @@ records `tool_run.finished` (outcome, duration, hash of the output, summary). It
 | `aborted` | The caller's signal aborted, for instance when a budget ran out. | `aborted` |
 | `failed` | The implementation failed on this input. | `error` |
 | `invalid_output` | The output breaks the schema. | `error` |
+
+With a blob store (`blobs`, any `BlobSink`), the input and the output of each call are kept there
+under the hashes its tool run records ([journal.md](journal.md#blobs)), so that every tool call of
+a run can be read back.
 
 Only an implementation that cannot be reached at all (it throws `UnavailableError`: connection
 refused, wrong version, missing tool) makes the registry try the next one. A failure on an input
@@ -232,6 +236,9 @@ speed with the old one's is not implemented yet.)
 | `harness describe ID` | Prints the manifest as a model sees it. |
 | `harness health [ID] [--host H]` | Reaches every implementation the host lists; exits with 1 if one is down. |
 | `harness contract ID [--host H] [--implementation I] [--case NAME]... [--out FILE]` | Runs the contract cases. |
+| `harness models [PROVIDER]` | Lists the model providers and whether their credentials are set, or the models of one provider. |
+| `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |
+| `harness report RUN_DIR [--json]` | Prints the report of a run, built from its journal. |
 
 Run it as `pnpm harness ...` from the repository.
 

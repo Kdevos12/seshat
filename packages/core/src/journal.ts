@@ -2,11 +2,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
 import { EventLog, readEvents } from "./log.ts";
-import { Projection } from "./projection.ts";
+import { Projection, StaleProjectionError } from "./projection.ts";
 import { assertTransition } from "./status.ts";
-
-/** The projection is not a prefix of the journal (it is ahead, or from another journal). */
-export class StaleProjectionError extends Error {}
 
 /**
  * The single writer of a run: every fact goes through `emit`, which checks the invariants against
@@ -44,17 +41,25 @@ export class Journal {
     const log = EventLog.open(join(dir, "journal.jsonl"), { run, ...options });
     const path = join(dir, "projection.sqlite");
     try {
-      const projection = Projection.open(path);
       try {
-        return new Journal(log, projection);
+        return Journal.attach(log, path);
       } catch (error) {
-        projection.close();
         if (!(error instanceof StaleProjectionError)) throw error;
       }
       for (const suffix of ["", "-wal", "-shm"]) rmSync(path + suffix, { force: true });
-      return new Journal(log, Projection.open(path));
+      return Journal.attach(log, path);
     } catch (error) {
       log.close();
+      throw error;
+    }
+  }
+
+  private static attach(log: EventLog, path: string): Journal {
+    const projection = Projection.open(path);
+    try {
+      return new Journal(log, projection);
+    } catch (error) {
+      projection.close();
       throw error;
     }
   }
@@ -92,7 +97,17 @@ export class Journal {
       }
       case "problem.registered":
         if (!p.claim(event.data.claimId)) throw new Error(`unknown claim ${event.data.claimId}`);
+        if (p.problem(event.data.problemId)) throw new Error(`problem ${event.data.problemId} is already registered`);
         return;
+      case "problem.finished": {
+        const problem = p.problem(event.data.problemId);
+        if (!problem) throw new Error(`unknown problem ${event.data.problemId}`);
+        if (problem.finished_seq !== null) throw new Error(`problem ${event.data.problemId} already finished`);
+        if (problem.claim_id !== event.data.claimId) {
+          throw new Error(`problem ${event.data.problemId} is about claim ${problem.claim_id}, not ${event.data.claimId}`);
+        }
+        return;
+      }
       case "validation.finished":
         if (!p.claim(event.data.claimId)) throw new Error(`unknown claim ${event.data.claimId}`);
         if (p.validation(event.data.validationId)) throw new Error(`validation ${event.data.validationId} already exists`);

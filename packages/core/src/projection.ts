@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { HarnessEvent, SourceRef } from "./events.ts";
+import type { HarnessEvent, ProblemOutcome, SourceRef } from "./events.ts";
 import type { ClaimStatus } from "./status.ts";
 
 export interface ClaimRow {
@@ -20,6 +20,8 @@ export interface AttemptRow {
   model: string;
   outcome: string | null;
   failure_class: string | null;
+  stopped_by: string | null;
+  error: string | null;
   usd: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
@@ -68,6 +70,9 @@ export interface ProblemRow {
   source: SourceRef;
   domain: string[];
   seq: number;
+  outcome: ProblemOutcome | null;
+  reason: string | null;
+  finished_seq: number | null;
 }
 
 export interface RunSummary {
@@ -82,18 +87,25 @@ export interface RunSummary {
   outputTokens: number;
 }
 
+/** The projection is not a prefix of the journal (it is ahead, from another journal, or older code). */
+export class StaleProjectionError extends Error {}
+
+/** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
+export const PROJECTION_VERSION = 2;
+
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
 create table if not exists problems (
   problem_id text primary key, claim_id text not null, target text not null,
-  source_json text not null, domain_json text not null, seq integer not null);
+  source_json text not null, domain_json text not null, seq integer not null,
+  outcome text, reason text, finished_seq integer);
 create table if not exists claims (
   claim_id text primary key, statement_id text not null, statement text not null,
   origin text not null, status text not null, created_seq integer not null, updated_seq integer not null);
 create index if not exists claims_by_statement on claims (statement_id);
 create table if not exists attempts (
   attempt_id text primary key, claim_id text not null, prover text not null, iteration integer not null,
-  model text not null, outcome text, failure_class text, usd real, input_tokens integer,
+  model text not null, outcome text, failure_class text, stopped_by text, error text, usd real, input_tokens integer,
   output_tokens integer, duration_ms integer, turns integer, started_seq integer not null, finished_seq integer);
 create index if not exists attempts_by_claim on attempts (claim_id);
 create table if not exists tool_runs (
@@ -119,9 +131,18 @@ export class Projection {
   private constructor(db: DatabaseSync) {
     this.db = db;
     db.exec("pragma journal_mode = wal");
-    db.exec(SCHEMA);
+    const { user_version: version } = db.prepare("pragma user_version").get() as { user_version: number };
+    const { n: tables } = db.prepare("select count(*) as n from sqlite_master where type = 'table'").get() as { n: number };
+    if (version === 0 && tables === 0) {
+      db.exec(SCHEMA);
+      db.exec(`pragma user_version = ${PROJECTION_VERSION}`);
+    } else if (version !== PROJECTION_VERSION) {
+      db.close();
+      throw new StaleProjectionError(`projection has version ${version}, this code writes version ${PROJECTION_VERSION}`);
+    }
   }
 
+  /** Opens or creates a projection. Throws `StaleProjectionError` if the file has another version. */
   static open(path: string): Projection {
     return new Projection(new DatabaseSync(path));
   }
@@ -174,8 +195,15 @@ export class Projection {
         return;
       case "problem.registered": {
         const d = event.data;
-        db.prepare("insert into problems values (?, ?, ?, ?, ?, ?)").run(
-          d.problemId, d.claimId, d.target, JSON.stringify(d.source), JSON.stringify(d.domain), event.seq);
+        db.prepare(
+          "insert into problems (problem_id, claim_id, target, source_json, domain_json, seq) values (?, ?, ?, ?, ?, ?)",
+        ).run(d.problemId, d.claimId, d.target, JSON.stringify(d.source), JSON.stringify(d.domain), event.seq);
+        return;
+      }
+      case "problem.finished": {
+        const d = event.data;
+        db.prepare("update problems set outcome = ?, reason = ?, finished_seq = ? where problem_id = ?").run(
+          d.outcome, d.reason ?? null, event.seq, d.problemId);
         return;
       }
       case "claim.created": {
@@ -199,9 +227,11 @@ export class Projection {
       case "attempt.finished": {
         const d = event.data;
         db.prepare(
-          `update attempts set outcome = ?, failure_class = ?, usd = ?, input_tokens = ?, output_tokens = ?,
-           duration_ms = ?, turns = ?, finished_seq = ? where attempt_id = ?`,
-        ).run(d.outcome, d.failureClass ?? null, d.usd, d.inputTokens, d.outputTokens, d.durationMs, d.turns, event.seq, d.attemptId);
+          `update attempts set outcome = ?, failure_class = ?, stopped_by = ?, error = ?, usd = ?, input_tokens = ?,
+           output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ? where attempt_id = ?`,
+        ).run(
+          d.outcome, d.failureClass ?? null, d.stoppedBy ?? null, d.error ?? null, d.usd, d.inputTokens, d.outputTokens,
+          d.durationMs, d.turns, event.seq, d.attemptId);
         return;
       }
       case "tool_run.started": {
@@ -241,15 +271,14 @@ export class Projection {
     return this.db.prepare("select * from claims where statement_id = ? order by created_seq").all(statementId) as unknown as ClaimRow[];
   }
 
+  problem(problemId: string): ProblemRow | undefined {
+    const row = this.db.prepare("select * from problems where problem_id = ?").get(problemId) as StoredProblem | undefined;
+    return row === undefined ? undefined : problemRow(row);
+  }
+
   problems(): ProblemRow[] {
-    const rows = this.db.prepare("select * from problems order by seq").all() as unknown as Array<
-      Omit<ProblemRow, "source" | "domain"> & { source_json: string; domain_json: string }
-    >;
-    return rows.map(({ source_json, domain_json, ...rest }) => ({
-      ...rest,
-      source: JSON.parse(source_json) as SourceRef,
-      domain: JSON.parse(domain_json) as string[],
-    }));
+    const rows = this.db.prepare("select * from problems order by seq").all() as unknown as StoredProblem[];
+    return rows.map(problemRow);
   }
 
   attempt(attemptId: string): AttemptRow | undefined {
@@ -316,4 +345,10 @@ export class Projection {
   close(): void {
     this.db.close();
   }
+}
+
+type StoredProblem = Omit<ProblemRow, "source" | "domain"> & { source_json: string; domain_json: string };
+
+function problemRow({ source_json, domain_json, ...rest }: StoredProblem): ProblemRow {
+  return { ...rest, source: JSON.parse(source_json) as SourceRef, domain: JSON.parse(domain_json) as string[] };
 }

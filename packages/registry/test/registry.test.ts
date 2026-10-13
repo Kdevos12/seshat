@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { Journal, readEvents, type Json } from "@math-harness/core";
+import { BlobStore, Journal, readEvents, type Json } from "@math-harness/core";
 import {
   CapabilityError,
   CatalogError,
@@ -58,6 +58,17 @@ describe("Registry.invoke", () => {
       assert.deepEqual(data.summary, { sum: 5 });
       assert.match(String(data.outputHash), /^[0-9a-f]{64}$/);
       assert.equal(journal.projection.toolRuns("att_1")[0]?.outcome, "ok");
+    });
+  });
+
+  it("keeps the input and output of each tool run under the hashes it records", async () => {
+    await withJournal(async (journal, dir) => {
+      const blobs = new BlobStore(join(dir, "blobs"));
+      const registry = new Registry({ catalog, host: host(["js"]), factories: { "js-add": add }, journal, blobs });
+      await registry.invoke("math.add", { b: 3, a: 2 });
+      const [started, finished] = toolRunEvents(dir).map((e) => e.data as Record<string, Json>);
+      assert.deepEqual(blobs.getJson(String(started?.inputHash)), { a: 2, b: 3 });
+      assert.deepEqual(blobs.getJson(String(finished?.outputHash)), { sum: 5 });
     });
   });
 

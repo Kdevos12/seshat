@@ -38,6 +38,15 @@ export interface TokenCost {
 
 export type AttemptOutcome = "valid" | "invalid" | "no_submission" | "budget_exhausted" | "aborted" | "error";
 
+/**
+ * How a problem ended: `proved` (certified), `candidate` (passed the fast check only), `unsolved`
+ * (the budget or the sessions ran out, or the certifier rejected the candidate), `skipped` (it could
+ * not be set up: its file changed, it cannot be cut into a sketch, or the original does not
+ * compile), `aborted` (the run was stopped), `error` (the harness failed, Lean could not be reached,
+ * or every prover kept failing).
+ */
+export type ProblemOutcome = "proved" | "candidate" | "unsolved" | "skipped" | "aborted" | "error";
+
 export interface EventDataMap {
   "run.started": {
     runId: string;
@@ -49,9 +58,18 @@ export interface EventDataMap {
   };
   "run.finished": {
     runId: string;
+    /** Problems that had at least one attempt. */
     attempted: number;
+    /** Problems whose claim is `proved`. */
     solved: number;
+    /** Problems whose claim is `computed`: a candidate that is not certified. */
+    candidates: number;
     usd: number;
+    /**
+     * Why the run stopped before its last problem: `aborted`, `budget_exhausted`, `lean_unavailable`,
+     * or `errors` (problems ended with a harness error in a row).
+     */
+    stopped?: string;
   };
   "problem.registered": {
     problemId: string;
@@ -59,6 +77,15 @@ export interface EventDataMap {
     target: string;
     source: SourceRef;
     domain: string[];
+  };
+  "problem.finished": {
+    problemId: string;
+    claimId: string;
+    outcome: ProblemOutcome;
+    reason?: string;
+    attempts: number;
+    usd: number;
+    durationMs: number;
   };
   "claim.created": {
     claimId: string;
@@ -85,7 +112,12 @@ export interface EventDataMap {
   "attempt.finished": TokenCost & {
     attemptId: string;
     outcome: AttemptOutcome;
+    /** The kind of failure of the attempt's last check, for an `invalid` attempt. */
     failureClass?: string;
+    /** Why the session ended: `model`, `turns`, `context`, `budget`, `solved`, `aborted`, `error`. */
+    stoppedBy?: string;
+    /** What failed, for an `error` attempt. */
+    error?: string;
     durationMs: number;
     turns: number;
   };
@@ -136,6 +168,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "run.started",
   "run.finished",
   "problem.registered",
+  "problem.finished",
   "claim.created",
   "claim.status_changed",
   "attempt.started",

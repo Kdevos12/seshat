@@ -10,6 +10,7 @@ import {
   prepareSketch,
   renderSketch,
   scanRegion,
+  SKETCH_POLICY,
   structuralCheck,
 } from "../src/index.ts";
 import { FakeChecker } from "./fake-lean.ts";
@@ -61,6 +62,11 @@ describe("structuralCheck", () => {
     refused("", "  -- only a comment", /the proof is empty/);
     refused("axiom aux_x : False", "  simp", /'axiom' is not allowed/);
     refused("set_option debug.skipKernelTC true in\ntheorem aux_x : True := trivial", "  simp", /'debug' is not allowed/);
+  });
+
+  it("lets holes through under the sketch policy, and nothing else", () => {
+    assert.deepEqual(structuralCheck({ aux: "theorem aux_a : 1 = 1 := by sorry", proof: "  admit" }, SKETCH_POLICY), []);
+    assert.deepEqual(structuralCheck({ aux: "", proof: "  native_decide" }, SKETCH_POLICY), ["proof: 'native_decide' is not allowed"]);
   });
 
   it("allows only aux_ theorems and definitions with plain attributes", () => {
@@ -139,6 +145,33 @@ describe("ProofValidator", () => {
     const report = await validator.validate(sketch, cheating, { fullName: sketch.fullName, ppType: `@${sketch.fullName} : T` });
     assert.equal(report.editsOutsideRegions, true);
     assert.ok(report.checked.includes("answer(False) ↔ 0 < (A + B).lowerDensity := by"));
+  });
+
+  it("checks a sketch with holes and returns its goals, never valid", async () => {
+    const reference = { fullName: sketch.fullName, ppType: `@${sketch.fullName} : T` };
+    const file = withProof("  have h := aux_a\n  sorry", "theorem aux_a : 1 = 1 := by sorry");
+    const goalLine = file.split("\n").indexOf("  sorry") + 1;
+    const sorries = [{ pos: { line: goalLine, column: 2 }, goal: "h : 1 = 1\n⊢ False" }];
+    const sketching = new ProofValidator(new FakeChecker(() => ({ sorries, axioms: ["sorryAx"] })), { policy: SKETCH_POLICY });
+    const report = await sketching.validate(sketch, file, reference);
+    assert.equal(report.verdict, "invalid");
+    assert.equal(report.holes, true);
+    assert.deepEqual(report.sorries, sorries);
+    assert.deepEqual(report.reasons, [
+      "the file still has holes (sorry or admit)",
+      "lean: 1 sorry(s) left",
+      `lean: ${sketch.fullName} depends on sorryAx`,
+    ]);
+
+    // A hole the target does not use still makes the file invalid, whatever Lean reports.
+    const unused = withProof("  simp", "theorem aux_a : 1 = 1 := by sorry");
+    const quiet = new ProofValidator(new FakeChecker(), { policy: SKETCH_POLICY });
+    assert.deepEqual((await quiet.validate(sketch, unused, reference)).reasons, ["the file still has holes (sorry or admit)"]);
+
+    // Without holes, the sketch policy gives the default verdict.
+    const complete = await quiet.validate(sketch, withProof("  simp"), reference);
+    assert.equal(complete.verdict, "valid");
+    assert.equal(complete.holes, false);
   });
 
   it("hands a valid candidate to the certifier, if there is one", async () => {

@@ -9,7 +9,8 @@ in the same commit.
 
 ## Status
 
-Phase P0a builds the parts that need neither Lean nor a model.
+Phase P0a builds the parts that need neither Lean nor a model, and the M0 loop, tested with a
+simulated model and a simulated Lean.
 
 | Part | Package | State |
 |---|---|---|
@@ -18,14 +19,16 @@ Phase P0a builds the parts that need neither Lean nor a model.
 | Kimina Lean Server client | `@math-harness/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@math-harness/bench` | Done: 575 problems, index committed |
 | Capability registry, MCP boundary, `lean.check` and its contract | `@math-harness/registry` | Done, tested with simulated servers |
-| `harness` command (capabilities, health, contract tests) | `@math-harness/orchestrator` | Done |
-| M0 loop on pi | `@math-harness/orchestrator` | Next |
+| `harness` command (capabilities, health, contract tests, models, runs, reports) | `@math-harness/orchestrator` | Done |
+| M0 loop on pi: provers in sessions, notes, budgets, report | `@math-harness/orchestrator` | Done, tested with a simulated model and Lean |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
-None of this has run against a real Lean yet, because the development environment blocks the
-Lean toolchain downloads. [lean.md](lean.md#to-verify-against-lean) lists what depends on Lean's
-exact output; `pnpm harness contract lean.check` checks it against a server
-([capabilities.md](capabilities.md#leancheck)).
+None of this has run against a real Lean or a real model yet, because the development environment
+blocks the Lean toolchain downloads and has no model credentials.
+[lean.md](lean.md#to-verify-against-lean) lists what depends on Lean's exact output;
+`pnpm harness contract lean.check` checks it against a server
+([capabilities.md](capabilities.md#leancheck)). The first real run is then
+`pnpm harness run` ([m0-loop.md](m0-loop.md#commands)).
 
 ## Pages
 
@@ -33,6 +36,8 @@ exact output; `pnpm harness contract lean.check` checks it against a server
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
+- [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
+  directory, `harness run` and `harness report`.
 - [lean.md](lean.md): Lean checkers, the Kimina client, the certifier, deployment.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
   contract tests, the `harness` command.

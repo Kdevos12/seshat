@@ -4,9 +4,15 @@
   "private": true,
   "description": "The composition root: registry with every implementation, the M0 loop on pi, and the harness CLI.",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "harness": "./src/cli.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "harness": "./src/cli.ts"
+  },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
     "@math-harness/bench": "workspace:*",
     "@math-harness/core": "workspace:*",
     "@math-harness/lean-kimina": "workspace:*",

@@ -22,7 +22,7 @@
 | `@math-harness/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@math-harness/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@math-harness/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@math-harness/orchestrator` | Composition root (every implementation), the `harness` command; the M0 loop next | all of the above |
+| `@math-harness/orchestrator` | Composition root (every implementation), the M0 loop on pi, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
 Data that is versioned with the code:
 
@@ -32,21 +32,27 @@ Data that is versioned with the code:
 | `config/hosts/` | Host profiles: what each machine uses, and where. |
 | `bench/` | Bench indexes ([bench.md](bench.md)). |
 
-## An attempt, end to end (M0)
+## A problem, end to end (M0)
 
 1. The bench index names a problem: a file of the pinned formal-conjectures snapshot and a theorem
    ([bench.md](bench.md)).
-2. The file is put in plain-header form and cut into a sketch: fixed parts and two editable regions
-   ([validator.md](validator.md)).
-3. The orchestrator records `problem.registered` and `claim.created` (status `open`), then starts
-   the provers.
-4. A prover (a pi session) edits the two regions and calls a `lean_check` tool, which runs the
-   fast check and answers with Lean's messages at the prover's own line numbers. Lean is reached
-   through the capability `lean.check`, so each check is a tool run of the attempt.
-5. A proof that passes the fast check makes the claim `computed` (a candidate). Certification
-   makes it `proved`.
-6. Each attempt ends with `attempt.finished` (outcome, tokens, cost) and a short lesson for the
-   next attempt.
+2. The file is put in plain-header form, checked against the index, and cut into a sketch: fixed
+   parts and two editable regions ([validator.md](validator.md)).
+3. The orchestrator records `claim.created` (status `open`) and `problem.registered`, checks the
+   original file once for the statement's reference type, then starts the provers in parallel.
+4. Each prover works in sessions, each a fresh pi agent and an attempt in the journal. The agent
+   edits the two regions and calls its `lean_check` tool, which runs the fast check and answers
+   with Lean's messages and the goals of the `sorry`s at the prover's own line numbers. Lean is
+   reached through the capability `lean.check`, so each check is a tool run of the attempt.
+5. A session ends when the model stops, at a limit of turns or context, or when the budget runs
+   out. The model's last message becomes the prover's notes (`lesson.recorded`); the next session
+   starts afresh from the file as the prover left it, its notes, and what Lean said last.
+6. The first proof that passes the fast check makes the claim `computed` (a candidate) and stops
+   the other provers. Certification makes it `proved`.
+7. The problem ends with `problem.finished` (outcome, attempts, cost), and the run with a report
+   built from the journal.
+
+[m0-loop.md](m0-loop.md) describes the loop in full.
 
 ## Design rules
 

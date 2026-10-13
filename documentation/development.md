@@ -24,7 +24,10 @@ pnpm test
   parameter properties, no namespaces.
 - Tests use `node:test` and `node:assert/strict`. They run without Lean, a model or a network;
   simulated Lean, Kimina and MCP servers stand in. The MCP tests also spawn a small MCP server
-  (`packages/registry/test/fixtures/fake-mcp-server.ts`) as a child process, over stdio.
+  (`packages/registry/test/fixtures/fake-mcp-server.ts`) as a child process, over stdio. The M0
+  loop runs with pi-ai's faux provider, whose answers each test writes, and a simulated Lean
+  (`packages/orchestrator/test/m0-helpers.ts`); the command tests run `harness` as a child
+  process.
 - A change updates the documentation page that describes it, in the same commit.
 
 ## Tests that use real data

@@ -18,6 +18,11 @@ export interface ValidationPolicy {
   auxNamePattern: RegExp;
   auxAttributes: readonly string[];
   timeoutSec: number;
+  /**
+   * Lets `sorry` and `admit` through, so that a sketch with holes reaches Lean and the goals of its
+   * holes come back. A file with a hole is never valid.
+   */
+  holes: boolean;
 }
 
 export const DEFAULT_POLICY: ValidationPolicy = {
@@ -25,7 +30,14 @@ export const DEFAULT_POLICY: ValidationPolicy = {
   auxNamePattern: /^aux_[\p{L}\p{N}_'!?₀-₉]*$/u,
   auxAttributes: ["simp", "reducible", "irreducible", "local simp"],
   timeoutSec: 300,
+  holes: false,
 };
+
+/** The policy of a prover's checks while it works: the default one, with holes allowed. */
+export const SKETCH_POLICY: ValidationPolicy = { ...DEFAULT_POLICY, holes: true };
+
+/** The tokens `SKETCH_POLICY` lets through. */
+export const HOLE_TOKENS: readonly string[] = ["sorry", "admit"];
 
 /**
  * Tokens refused in both editable regions, outside comments. The Lean checks below are what decide;
@@ -54,6 +66,15 @@ function tokenPattern(token: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}_'.!?])${escaped}(?![\\p{L}\\p{N}_'!?])`, "u");
 }
 const FORBIDDEN_PATTERNS = FORBIDDEN_TOKENS.map((t) => [t, tokenPattern(t)] as const);
+const HOLE_PATTERNS = HOLE_TOKENS.map(tokenPattern);
+
+/** Whether a region holds `sorry` or `admit` outside comments. */
+export function hasHoles(submission: Submission): boolean {
+  return [submission.aux, submission.proof].some((region) => {
+    const text = scanRegion(region).masked.replace(/_root_\./g, " ");
+    return HOLE_PATTERNS.some((pattern) => pattern.test(text));
+  });
+}
 
 export interface RegionScan {
   /** The region with its comments blanked (newlines kept). */
@@ -117,6 +138,7 @@ export function structuralCheck(submission: Submission, policy: ValidationPolicy
     // `_root_.Lean.Meta` must not slip past the token boundary.
     const text = scan.masked.replace(/_root_\./g, " ");
     for (const [token, pattern] of FORBIDDEN_PATTERNS) {
+      if (policy.holes && HOLE_TOKENS.includes(token)) continue;
       if (pattern.test(text)) reasons.push(`${region}: '${token}' is not allowed`);
     }
   }
@@ -213,6 +235,16 @@ export interface Reference {
   ppType: string;
 }
 
+/** Lean gave no answer for a file: the server failed, the REPL crashed, or the time limit passed. */
+export class CheckFailedError extends Error {
+  readonly status: LeanCheckResult["status"];
+
+  constructor(status: LeanCheckResult["status"], message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export interface ValidationReport {
   verdict: "valid" | "invalid";
   /** `repl`: the fast check, whose `valid` makes a candidate. Certification is reported apart. */
@@ -227,6 +259,8 @@ export interface ValidationReport {
   submissionHash: string;
   /** True when the prover changed text outside the editable regions (those edits are discarded). */
   editsOutsideRegions: boolean;
+  /** True when the regions hold `sorry` or `admit`: a sketch, checked for its goals, never valid. */
+  holes: boolean;
   leanStatus?: LeanCheckResult["status"];
 }
 
@@ -253,13 +287,14 @@ export class ProofValidator {
   }
 
   /** Elaborates the original file once to record the target's type. Fails if the file is broken. */
-  async reference(sketch: Sketch, originalSource: string): Promise<Reference> {
+  async reference(sketch: Sketch, originalSource: string, options: { signal?: AbortSignal } = {}): Promise<Reference> {
     const code = originalSource + checkCommands(sketch.fullName);
     const [result] = await this.checker.check([{ id: `ref:${sketch.fullName}`, code }], {
       timeoutSec: this.policy.timeoutSec,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     if (!result) throw new Error("Lean checker returned no result");
-    if (result.error !== undefined) throw new Error(`reference check failed: ${result.status}: ${result.error}`);
+    if (result.error !== undefined) throw new CheckFailedError(result.status, `reference check failed: ${result.status}: ${result.error}`);
     const seen = interpret(result, lineCount(originalSource), sketch.fullName);
     if (seen.errors.length > 0) {
       const errors = seen.errors.map((e) => `${e.pos.line}: ${e.text}`).join("; ");
@@ -269,7 +304,12 @@ export class ProofValidator {
     return { fullName: sketch.fullName, ppType: seen.ppType };
   }
 
-  async validate(sketch: Sketch, submitted: string, reference: Reference): Promise<ValidationReport> {
+  async validate(
+    sketch: Sketch,
+    submitted: string,
+    reference: Reference,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<ValidationReport> {
     const submissionHash = sha256Hex(submitted);
     let submission: Submission;
     let editsOutsideRegions: boolean;
@@ -280,33 +320,38 @@ export class ProofValidator {
       if (!(error instanceof SketchError)) throw error;
       return {
         verdict: "invalid", method: "repl", reasons: [error.message], axioms: [], messages: [], sorries: [],
-        checked: submitted, submissionHash, editsOutsideRegions: false,
+        checked: submitted, submissionHash, editsOutsideRegions: false, holes: false,
       };
     }
     const checked = assemble(sketch, submission);
+    const holes = hasHoles(submission);
     const reasons = structuralCheck(submission, this.policy);
     // A refused submission never reaches Lean: nothing in it runs.
     if (reasons.length > 0) {
       return {
         verdict: "invalid", method: "repl", reasons, axioms: [], messages: [], sorries: [], checked,
-        submissionHash, editsOutsideRegions,
+        submissionHash, editsOutsideRegions, holes,
       };
     }
 
     const id = `chk:${submissionHash.slice(0, 16)}`;
     const [result] = await this.checker.check([{ id, code: checked + checkCommands(sketch.fullName) }], {
       timeoutSec: this.policy.timeoutSec,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     if (!result) throw new Error("Lean checker returned no result");
     if (result.error !== undefined) {
       reasons.push(`lean: ${result.status}: ${result.error}`);
       return {
         verdict: "invalid", method: "repl", reasons, axioms: [], messages: [], sorries: [], checked,
-        submissionHash, editsOutsideRegions, leanStatus: result.status,
+        submissionHash, editsOutsideRegions, holes, leanStatus: result.status,
       };
     }
     const seen = interpret(result, lineCount(checked), sketch.fullName);
+    // Without holes the policies agree: the structural checks were the same, and so is the verdict.
+    if (holes) reasons.push("the file still has holes (sorry or admit)");
     if (seen.errors.length > 0) reasons.push(`lean: ${seen.errors.length} error(s)`);
+    if (seen.sorries.length > 0) reasons.push(`lean: ${seen.sorries.length} sorry(s) left`);
     const axioms = seen.axioms ?? [];
     if (seen.axioms === undefined) {
       reasons.push(`lean: could not read the axioms of ${sketch.fullName}`);
@@ -327,19 +372,28 @@ export class ProofValidator {
       checked,
       submissionHash,
       editsOutsideRegions,
+      holes,
       leanStatus: result.status,
     };
   }
 
   /** Certifies a candidate. Without a certifier, the claim stays a candidate. */
-  async certify(sketch: Sketch, originalSource: string, report: ValidationReport): Promise<CertificationResult | undefined> {
+  async certify(
+    sketch: Sketch,
+    originalSource: string,
+    report: ValidationReport,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CertificationResult | undefined> {
     if (this.certifier === undefined) return undefined;
     if (report.verdict !== "valid") throw new Error("only a valid candidate can be certified");
-    return this.certifier.certify({
-      original: originalSource,
-      candidate: report.checked,
-      target: sketch.fullName,
-      allowedAxioms: this.policy.allowedAxioms,
-    });
+    return this.certifier.certify(
+      {
+        original: originalSource,
+        candidate: report.checked,
+        target: sketch.fullName,
+        allowedAxioms: this.policy.allowedAxioms,
+      },
+      options,
+    );
   }
 }
