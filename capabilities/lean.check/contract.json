@@ -1,0 +1,368 @@
+{
+  "capability": "lean.check",
+  "cases": [
+    {
+      "name": "lean version",
+      "purpose": "The server runs the Lean version of the bench (v4.27.0); a server built for another version would check against another Mathlib.",
+      "input": {
+        "snippets": [
+          {
+            "id": "lean-version",
+            "code": {
+              "$file": "cases/lean-version.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "info"
+            },
+            {
+              "path": "text",
+              "matches": "^\"4\\.27\\.0\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "axioms of a classical proof",
+      "purpose": "The validator parses `'X' depends on axioms: [...]` from #print axioms (documentation/lean.md#to-verify-against-lean, item 1).",
+      "input": {
+        "snippets": [
+          {
+            "id": "axioms-classical",
+            "code": {
+              "$file": "cases/axioms-classical.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "info"
+            },
+            {
+              "path": "pos.line",
+              "equals": 3
+            },
+            {
+              "path": "text",
+              "matches": "^'Harness\\.em' depends on axioms: \\[(?=[^\\]]*\\bpropext\\b)(?=[^\\]]*\\bClassical\\.choice\\b)(?=[^\\]]*\\bQuot\\.sound\\b)[^\\]]*\\]\\s*$"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no axioms",
+      "purpose": "The text Lean prints for a declaration without axioms (item 1).",
+      "input": {
+        "snippets": [
+          {
+            "id": "axioms-none",
+            "code": {
+              "$file": "cases/axioms-none.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "text",
+              "matches": "^'Harness\\.two' does not depend on any axioms\\s*$"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "axioms of a name with guillemets",
+      "purpose": "Names such as Arxiv.«1609.08688».maximalLength_le are printed with their «» parts, as the validator expects (item 1).",
+      "input": {
+        "snippets": [
+          {
+            "id": "axioms-guillemets",
+            "code": {
+              "$file": "cases/axioms-guillemets.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "text",
+              "matches": "^'Harness\\.«1609\\.08688»\\.t' does not depend on any axioms\\s*$"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the validator's check commands",
+      "purpose": "pp.maxSteps exists (item 3), and the #check message under set_option ... in comes after the #print axioms line, as the only other info message (item 2).",
+      "input": {
+        "snippets": [
+          {
+            "id": "check-commands",
+            "code": {
+              "$file": "cases/check-commands.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "length": 2
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "pos.line",
+              "equals": 4
+            },
+            {
+              "path": "text",
+              "matches": "^'Harness\\.add_zero''"
+            }
+          ]
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "info"
+            },
+            {
+              "path": "pos.line",
+              "atLeast": 5
+            },
+            {
+              "path": "pos.line",
+              "atMost": 7
+            },
+            {
+              "path": "text",
+              "matches": "^@Harness\\.add_zero' : ∀ \\(n : Nat\\), @Eq\\.\\{1\\} Nat "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "two files in one call",
+      "purpose": "Results come back one per file with their ids; a sorry gives its goal and position, an error its line.",
+      "input": {
+        "snippets": [
+          {
+            "id": "sorry",
+            "code": {
+              "$file": "cases/sorry.lean"
+            }
+          },
+          {
+            "id": "error",
+            "code": {
+              "$file": "cases/error.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results",
+          "length": 2
+        },
+        {
+          "path": "results.0.id",
+          "equals": "sorry"
+        },
+        {
+          "path": "results.0.status",
+          "equals": "sorry"
+        },
+        {
+          "path": "results.0.sorries.0.pos.line",
+          "equals": 2
+        },
+        {
+          "path": "results.0.sorries.0.goal",
+          "matches": "^n : Nat\\n⊢ n ≤ n \\+ 1$"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "warning"
+            },
+            {
+              "path": "text",
+              "matches": "sorry"
+            }
+          ]
+        },
+        {
+          "path": "results.1.id",
+          "equals": "error"
+        },
+        {
+          "path": "results.1.status",
+          "equals": "lean_error"
+        },
+        {
+          "path": "results.1.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "error"
+            },
+            {
+              "path": "pos.line",
+              "equals": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "line numbers after a header",
+      "purpose": "The server splits off the imports and shifts positions back, so an error is reported at its line in the file (item 4).",
+      "input": {
+        "snippets": [
+          {
+            "id": "header",
+            "code": {
+              "$file": "cases/header.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "lean_error"
+        },
+        {
+          "path": "results.0.messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "error"
+            },
+            {
+              "path": "pos.line",
+              "equals": 8
+            }
+          ]
+        },
+        {
+          "path": "results.0.messages",
+          "every": [
+            {
+              "path": "pos.line",
+              "atLeast": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a formal-conjectures file",
+      "purpose": "The project's imports load, its attributes work, and its linters emit no error (items 4 and 5).",
+      "input": {
+        "snippets": [
+          {
+            "id": "formal-conjectures",
+            "code": {
+              "$file": "cases/formal-conjectures.lean"
+            }
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "valid"
+        },
+        {
+          "path": "results.0.messages",
+          "every": [
+            {
+              "path": "severity",
+              "matches": "^(info|warning|trace)$"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "timeout",
+      "purpose": "A file that runs past Lean's time limit gives the status timeout, not a server error. Last, since the server may restart a REPL after it.",
+      "input": {
+        "snippets": [
+          {
+            "id": "timeout",
+            "code": {
+              "$file": "cases/timeout.lean"
+            }
+          }
+        ],
+        "timeoutSec": 5
+      },
+      "timeoutMs": 120000,
+      "expect": [
+        {
+          "path": "results.0.status",
+          "equals": "timeout"
+        }
+      ]
+    }
+  ]
+}

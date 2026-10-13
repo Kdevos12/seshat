@@ -41,12 +41,16 @@ Event types:
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model` |
 | `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens` |
-| `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `attemptId?` |
-| `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`), `durationMs`, `outputHash?`, `summary?` |
+| `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?` |
+| `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text` |
 | `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash` |
 
 Attempt outcomes: `valid`, `invalid`, `no_submission`, `budget_exhausted`, `aborted`, `error`.
+
+Tool runs are written by the capability registry ([capabilities.md](capabilities.md#calls)). A
+tool run is `aborted` when its caller gave up (a budget ran out, a run was stopped), which is not
+a failure of the tool. Its `summary` holds the output paths the manifest names, or the error.
 
 ## Writing
 

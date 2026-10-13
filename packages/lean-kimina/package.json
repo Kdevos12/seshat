@@ -2,10 +2,13 @@
   "name": "@math-harness/lean-kimina",
   "version": "0.0.0",
   "private": true,
-  "description": "LeanChecker over Kimina Lean Server (POST /api/check).",
+  "description": "LeanChecker over Kimina Lean Server (POST /api/check), and the registry factory `kimina` for lean.check.",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
-    "@math-harness/core": "workspace:*"
+    "@math-harness/core": "workspace:*",
+    "@math-harness/registry": "workspace:*"
   }
 }

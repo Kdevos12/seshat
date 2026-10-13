@@ -1,1 +1,2 @@
-export { KiminaChecker, type KiminaOptions, toResult } from "./checker.ts";
+export * from "./checker.ts";
+export * from "./factory.ts";

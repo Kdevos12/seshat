@@ -1,0 +1,15 @@
+{
+  "name": "@math-harness/orchestrator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The composition root: registry with every implementation, the M0 loop on pi, and the harness CLI.",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "bin": { "harness": "./src/cli.ts" },
+  "dependencies": {
+    "@math-harness/bench": "workspace:*",
+    "@math-harness/core": "workspace:*",
+    "@math-harness/lean-kimina": "workspace:*",
+    "@math-harness/registry": "workspace:*"
+  }
+}

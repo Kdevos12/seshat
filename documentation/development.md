@@ -23,7 +23,8 @@ pnpm test
   only syntax that type stripping can erase is allowed (`erasableSyntaxOnly`): no enums, no
   parameter properties, no namespaces.
 - Tests use `node:test` and `node:assert/strict`. They run without Lean, a model or a network;
-  simulated Lean and HTTP servers stand in.
+  simulated Lean, Kimina and MCP servers stand in. The MCP tests also spawn a small MCP server
+  (`packages/registry/test/fixtures/fake-mcp-server.ts`) as a child process, over stdio.
 - A change updates the documentation page that describes it, in the same commit.
 
 ## Tests that use real data
@@ -35,6 +36,9 @@ Some tests run only when their data is on disk:
 | Sketches of every research-solved theorem | a formal-conjectures checkout | `FORMAL_CONJECTURES_DIR` (default `../google-deepmind/formal-conjectures`) |
 | The committed bench index is reproduced | the `bench-v1-lean4.27.0` checkout | `FC_BENCH_V1_DIR` (default `../google-deepmind/formal-conjectures-bench-v1`) |
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
+
+The contract of a capability runs against real implementations with `pnpm harness contract <id>`
+([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`.
 
 ```sh
 git clone --depth 1 --branch bench-v1-lean4.27.0 https://github.com/google-deepmind/formal-conjectures.git ../google-deepmind/formal-conjectures-bench-v1

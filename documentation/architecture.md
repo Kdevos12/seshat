@@ -19,10 +19,18 @@
 | Package | Role | Depends on |
 |---|---|---|
 | `@math-harness/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
-| `@math-harness/lean-kimina` | `LeanChecker` over Kimina Lean Server | core |
+| `@math-harness/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
+| `@math-harness/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@math-harness/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@math-harness/registry` (planned) | Capability manifests; in-process, HTTP and MCP (stdio, HTTP) implementations; host profiles; tool runs | core |
-| `@math-harness/orchestrator` (planned) | M0 loop on pi, run CLI | all of the above |
+| `@math-harness/orchestrator` | Composition root (every implementation), the `harness` command; the M0 loop next | all of the above |
+
+Data that is versioned with the code:
+
+| Directory | Content |
+|---|---|
+| `capabilities/` | One manifest and one contract per capability ([capabilities.md](capabilities.md)). |
+| `config/hosts/` | Host profiles: what each machine uses, and where. |
+| `bench/` | Bench indexes ([bench.md](bench.md)). |
 
 ## An attempt, end to end (M0)
 
@@ -33,7 +41,8 @@
 3. The orchestrator records `problem.registered` and `claim.created` (status `open`), then starts
    the provers.
 4. A prover (a pi session) edits the two regions and calls a `lean_check` tool, which runs the
-   fast check and answers with Lean's messages at the prover's own line numbers.
+   fast check and answers with Lean's messages at the prover's own line numbers. Lean is reached
+   through the capability `lean.check`, so each check is a tool run of the attempt.
 5. A proof that passes the fast check makes the claim `computed` (a candidate). Certification
    makes it `proved`.
 6. Each attempt ends with `attempt.finished` (outcome, tokens, cost) and a short lesson for the
