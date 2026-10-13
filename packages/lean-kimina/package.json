@@ -1,0 +1,11 @@
+{
+  "name": "@math-harness/lean-kimina",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LeanChecker over Kimina Lean Server (POST /api/check).",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@math-harness/core": "workspace:*"
+  }
+}

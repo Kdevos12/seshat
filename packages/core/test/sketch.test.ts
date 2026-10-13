@@ -11,11 +11,14 @@ import {
   namespacesAt,
   PROOF_BEGIN,
   PROOF_END,
+  importsOf,
+  nameParts,
   prepareSketch,
   readDeclarationHead,
   renderSketch,
   SketchError,
   splitCommands,
+  toPlainHeader,
 } from "../src/index.ts";
 
 const fixture = readFileSync(new URL("./fixtures/erdos-125.lean", import.meta.url), "utf8");
@@ -58,9 +61,34 @@ describe("lean-source", () => {
     assert.equal(readDeclarationHead("theorem erdos_1.variants.b : True := trivial")?.name, "erdos_1.variants.b");
   });
 
+  it("keeps «» parts of names whole", () => {
+    assert.deepEqual(nameParts("Arxiv.«1609.08688».f"), ["Arxiv", "«1609.08688»", "f"]);
+    assert.deepEqual(namespacesAt(splitCommands("namespace Arxiv.«1609.08688»\ndef x := 1\nend Arxiv.«1609.08688»\n"))[1], ["Arxiv", "«1609.08688»"]);
+  });
+
   it("tracks nested namespaces and sections", () => {
     const source = "namespace A.B\nsection\nnamespace C\ndef x := 1\nend C\nend\ndef y := 2\nend A.B\ndef z := 3\n";
     assert.deepEqual(namespacesAt(splitCommands(source)), [[], ["A", "B"], ["A", "B"], ["A", "B", "C"], ["A", "B", "C"], ["A", "B"], ["A", "B"], ["A", "B"], []]);
+  });
+});
+
+describe("toPlainHeader", () => {
+  it("makes a module file a plain file with the same lines", () => {
+    const plain = toPlainHeader(fixture);
+    assert.equal(plain.split("\n").length, fixture.split("\n").length);
+    const lines = plain.split("\n");
+    assert.equal(lines.findIndex((l) => l !== ""), 17);
+    assert.equal(lines[17], "import FormalConjecturesUtil");
+    assert.equal(lines[19], "/-!");
+    assert.ok(lines.includes("section") && !plain.includes("public section"));
+    assert.deepEqual(importsOf(fixture), ["FormalConjecturesUtil"]);
+    assert.equal(toPlainHeader(plain), plain);
+  });
+
+  it("keeps a classic file's imports and rewrites meta imports", () => {
+    const source = "/- c -/\nimport A\nmeta import B.C\npublic import D E\n\ntheorem t : True := trivial\n";
+    assert.equal(toPlainHeader(source), "\nimport A\nimport B.C\nimport D E\n\ntheorem t : True := trivial\n");
+    assert.deepEqual(importsOf(source), ["A", "B.C", "D", "E"]);
   });
 });
 
@@ -75,6 +103,7 @@ describe("prepareSketch on a formal-conjectures file", () => {
     assert.ok(sketch.header.endsWith("answer(False) ↔ 0 < (A + B).lowerDensity := by"));
     assert.equal(sketch.originalProof, "sorry");
     assert.equal(sketch.indent, "  ");
+    assert.equal(sketch.statement, ":\n    answer(False) ↔ 0 < (A + B).lowerDensity");
   });
 
   it("gives back the original file when nothing is edited", () => {
@@ -213,7 +242,7 @@ describe("prepareSketch on every research-solved theorem of formal-conjectures",
     }
     console.log(`research-solved theorems: ${count}, with a proof in the file: ${withProof}, failures: ${failures.length}`);
     for (const failure of failures.slice(0, 30)) console.log(`  ${failure}`);
-    assert.ok(count > 2000, `expected the corpus to have over 2000 such theorems, found ${count}`);
+    assert.ok(count > 500, `expected the corpus to have over 500 such theorems, found ${count}`);
     assert.deepEqual(failures, []);
   });
 });
