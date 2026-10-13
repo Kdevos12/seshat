@@ -17,18 +17,27 @@ export interface Command {
 const OPENERS = new Set(["(", "[", "{", "⟨", "⦃", "⟦", "⁅"]);
 const CLOSERS = new Set([")", "]", "}", "⟩", "⦄", "⟧", "⁆"]);
 
+/**
+ * A line at column 0 still belongs to the previous command when that one cannot end where it
+ * stopped: after `:`, `,`, an arrow, a connective or a relation, as in
+ * `theorem t :` followed by `answer(sorry) ↔ ...` at column 0.
+ */
+const CONTINUES = new Set([":", ",", "↔", "→", "←", "∧", "∨", "=", "+", "^", "∣", "≤", "≥", "<", ">", "≠", "∈", "∉", "⊆", "⊂", "∘", "×", "•", "∀", "∃", "↦", "¬"]);
+
 export function splitCommands(source: string): Command[] {
   const starts: number[] = [];
   let depth = 0; // block comment nesting
   let brackets = 0;
   let inString = false;
   let lineStart = true;
+  let last = ""; // last character outside comments
   for (let i = 0; i < source.length; i++) {
     const c = source[i] as string;
     const next = source[i + 1];
     if (lineStart) {
       lineStart = false;
-      if (depth === 0 && !inString && brackets <= 0 && c !== "\n" && c !== " " && c !== "\t" && c !== "\r") {
+      const blank = c === "\n" || c === " " || c === "\t" || c === "\r";
+      if (depth === 0 && !inString && brackets <= 0 && !blank && c !== "|" && !CONTINUES.has(last)) {
         starts.push(i);
         brackets = 0;
       }
@@ -39,7 +48,10 @@ export function splitCommands(source: string): Command[] {
     }
     if (inString) {
       if (c === "\\") i++;
-      else if (c === '"') inString = false;
+      else if (c === '"') {
+        inString = false;
+        last = c;
+      }
       continue;
     }
     if (depth > 0) {
@@ -65,6 +77,7 @@ export function splitCommands(source: string): Command[] {
       inString = true;
       continue;
     }
+    if (c !== " " && c !== "\t" && c !== "\r") last = c;
     if (OPENERS.has(c)) brackets++;
     else if (CLOSERS.has(c)) brackets--;
   }
@@ -228,6 +241,11 @@ interface Scope {
   parts: string[];
 }
 
+/** Splits a dotted name, keeping `«...»` parts whole: `Arxiv.«1609.08688»` has two parts. */
+export function nameParts(name: string): string[] {
+  return name.match(/«[^»]*»|[^.«]+/g) ?? [];
+}
+
 /** The namespace in force at the start of each command, from `namespace`, `section` and `end`. */
 export function namespacesAt(commands: readonly Command[]): string[][] {
   const stack: Scope[] = [];
@@ -238,7 +256,7 @@ export function namespacesAt(commands: readonly Command[]): string[][] {
     const line = maskCommentsAndStrings(command.text).trim();
     const ns = /^namespace\s+(\S+)/.exec(line);
     if (ns) {
-      stack.push({ kind: "namespace", parts: (ns[1] as string).split(".") });
+      stack.push({ kind: "namespace", parts: nameParts(command.text.trim().slice("namespace".length).trim().split(/\s/)[0] as string) });
       continue;
     }
     if (/^(?:@\[[^\]]*\]\s*)?(?:(?:noncomputable|public|private)\s+)*section\b/.test(line)) {
@@ -248,4 +266,46 @@ export function namespacesAt(commands: readonly Command[]): string[][] {
     if (/^end\b/.test(line)) stack.pop();
   }
   return result;
+}
+
+/**
+ * Rewrites a Lean file, line for line, into a plain (non-module) file whose first non-blank lines
+ * are its imports: comments and `module` before the imports become blank lines, `public import` and
+ * `meta import` become `import`, and `@[expose] public section` becomes `section`.
+ *
+ * REPL servers such as Kimina take the leading `import` and blank lines as the header, run the rest
+ * in an environment that has those imports, and report positions relative to the whole snippet. A
+ * file in this form gets the same line numbers in the REPL as on disk.
+ */
+export function toPlainHeader(source: string): string {
+  const lines = source.split("\n");
+  const masked = maskCommentsAndStrings(source).split("\n");
+  const out = [...lines];
+  const importRe = /^(?:public\s+)?(?:meta\s+)?import\s+(.+)$/;
+  // The header region: blank, comment, `module` and import lines from the top, up to the last import.
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = (masked[i] ?? "").trim();
+    if (importRe.test(line)) last = i;
+    else if (line !== "" && line !== "module") break;
+  }
+  for (let i = 0; i <= last; i++) {
+    const imported = importRe.exec((masked[i] ?? "").trim());
+    out[i] = imported ? `import ${(imported[1] as string).trim().split(/\s+/).join(" ")}` : "";
+  }
+  for (let k = last + 1; k < lines.length; k++) {
+    if (/^(?:@\[expose\]\s*)?public\s+section$/.test((masked[k] ?? "").trim())) out[k] = "section";
+  }
+  return out.join("\n");
+}
+
+/** The modules a file imports (after `toPlainHeader`, the header lines). */
+export function importsOf(source: string): string[] {
+  const imports: string[] = [];
+  for (const line of toPlainHeader(source).split("\n")) {
+    if (line === "") continue;
+    if (!line.startsWith("import ")) break;
+    imports.push(...line.slice("import ".length).split(" "));
+  }
+  return imports;
 }

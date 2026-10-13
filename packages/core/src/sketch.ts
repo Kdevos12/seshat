@@ -15,6 +15,8 @@ export interface Sketch {
   fullName: string;
   /** Name as written in the source. */
   declaredName: string;
+  /** Binders and type, as written: what is between the name and the proof's `:=`. */
+  statement: string;
   prefix: string;
   /** Docstring, attributes and `theorem name : statement := by`. */
   header: string;
@@ -67,9 +69,13 @@ export function prepareSketch(source: string, target: string): Sketch {
   const indent = indentMatch?.[1] ?? "  ";
   const proof = dedent(proofText.replace(/^[ \t]*\n/, "")).trim();
 
+  const head = readDeclarationHead(command.text) as NonNullable<ReturnType<typeof readDeclarationHead>>;
+  const statement = command.text.slice(head.nameEnd, proofStart.end).replace(/:=\s*by$|:=$/, "").trim();
+
   return {
     fullName,
     declaredName,
+    statement,
     prefix: source.slice(0, start),
     // A term-mode proof becomes a tactic block, so the prover always writes tactics.
     header: source.slice(start, headerEnd) + (proofStart.tactic ? "" : " by"),
