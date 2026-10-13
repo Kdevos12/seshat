@@ -1,0 +1,255 @@
+# The M0 loop
+
+M0 is the baseline that every later mechanism has to beat at equal budget: agent (A) of
+AlphaProof Nexus, rebuilt on pi. For each problem, independent provers work on a Lean sketch of
+the theorem, each in a Ralph loop: a session is a fresh model context, and only the file as the
+prover left it and its notes go from one session to the next. Provers share nothing else. The
+first proof that passes the fast check makes the claim a candidate and stops the problem's other
+provers.
+
+The code is in `packages/orchestrator/src`:
+
+| Module | Role |
+|---|---|
+| `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
+| `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks and the candidate of one problem. |
+| `prover.ts` | `runProver`: one prover's loop of sessions. |
+| `session.ts` | `runSession`: one pi agent with the `lean_check` tool, and its limits. |
+| `prompt.ts` | The prompts, versioned. |
+| `feedback.ts` | What a check says to the prover, and the failure class of a check. |
+| `budget.ts` | Ledgers of dollars and tokens. |
+| `report.ts` | The report of a run, built from its journal alone. |
+| `cli.ts` | `harness models`, `harness run`, `harness report`, with the other commands. |
+
+## A run
+
+`runBench(options)`:
+
+1. Checks the configuration, finds the model and its provider's credentials, and refuses a run
+   directory that already holds a journal. A failure here, or in building the host's registry, is
+   a `RunSetupError`: no event is written, and a directory created for the run is removed.
+2. Opens the journal and the blob store, writes `config.json` and records `run.started`. The
+   configuration recorded there fixes what the run does: how the problems were chosen and the hash
+   of their list, the model and its thinking level, the provers, sessions, limits, notes length,
+   budgets and concurrency, the bench's hash and source, the registry's hash (manifests and host
+   profile), the prompts' version and hash, the validation policy, the certifier, and the code
+   revision.
+3. Works on the problems in order, `concurrency` at a time.
+4. Records `run.finished`, then writes `report.md` and `report.json`.
+
+The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
+(`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), or after three problems in
+a row ended with a harness error (`errors`). The reason is in `run.finished`.
+
+## A problem
+
+1. Records `claim.created` (status `open`) and `problem.registered`.
+2. Reads the file from the checkout in plain-header form, checks it against the bench index, and
+   cuts it into a sketch ([validator.md](validator.md#sketches)).
+3. Checks the original file once, for the reference type of the statement.
+4. Starts the provers in parallel. They share the problem's `Workbench` and its budget.
+5. When a prover finds a candidate, writes its file to `proofs/` and, if there is a certifier,
+   certifies it.
+6. Records `problem.finished`: outcome, reason, attempts, cost and time.
+
+| Outcome | When |
+|---|---|
+| `proved` | The certifier certified the candidate. The claim is `proved`. |
+| `candidate` | A proof passed the fast check, and there is no certifier, or it could not run. The claim is `computed`. |
+| `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate (the claim goes back to `open`). |
+| `skipped` | The problem could not be set up: its file differs from the index, it cannot be cut into a sketch, or the original does not compile. |
+| `aborted` | The run was stopped. |
+| `error` | Lean could not be reached for the reference check, every prover kept failing, or the harness failed. |
+
+Each problem has its own abort signal, aborted with a reason: `solved` (a prover found the
+candidate), `budget` (the problem's or the run's budget ran out) or `stopped` (the run was stopped,
+or a prover crashed). Aborting it ends every session of the problem at once, with the model
+requests and the Lean checks in flight.
+
+## A prover
+
+A prover runs at most `sessions` sessions. Each session is an attempt in the journal
+(`attempt.started` with its iteration, then `attempt.finished`), and its first message gives:
+
+- the theorem's full name, and the session's number out of the maximum;
+- the prover's notes from the previous session;
+- the file with the regions of the prover's last check (at first, an empty AUX region and the
+  original proof, usually `sorry`);
+- what Lean said in that check.
+
+The model's final message in a session becomes the prover's notes, cut at `notesChars`
+characters, and is recorded as `lesson.recorded`. New notes replace the old ones; the system
+prompt asks the prover to rewrite them in full and keep what still helps.
+
+A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
+out, when the problem is aborted, or after two sessions in a row ended with an error (the model or
+Lean could not be reached).
+
+## A session
+
+A session is a fresh pi `Agent` whose only tool is `lean_check(aux, proof)`. A check puts the two
+regions into the file, keeps the file in the blob store, and runs the fast check under
+`SKETCH_POLICY`, which lets `sorry` and `admit` reach Lean so that the goals of the holes come back
+([validator.md](validator.md#holes)). Regions that contain marker lines are refused before Lean.
+
+A check of a file without holes that Lean answered is a validation, recorded as
+`validation.finished` (method `repl`). The first valid one makes the claim `computed`, ends the
+session and aborts the problem's other provers. A check with holes, a check that could not reach
+Lean, and a check that was stopped say nothing about the proof and are not validations; their tool
+runs are in the journal all the same.
+
+A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.finished`:
+
+| `stoppedBy` | When | Attempt outcome |
+|---|---|---|
+| `model` | The model answered without calling the tool. | `invalid`, or `no_submission` if the session made no check |
+| `turns` | The session reached `turns` model responses. | the same |
+| `context` | The prompt of the last request reached `contextTokens` tokens. | the same |
+| `budget` | The problem's or the run's budget ran out. | `budget_exhausted` |
+| `solved` | One of its checks made the candidate. | `valid` |
+| `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
+| `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check. | `error` |
+
+When `turns` or `context` ends a session that is not the prover's last, one more request asks the
+model for its notes (`WRAP_UP`). The tool stays declared, because providers need the definitions of
+the tools that the history calls, but a `beforeToolCall` hook blocks any call.
+
+For an `invalid` attempt, `failureClass` classifies its last check: `refused` (before Lean),
+`lean_unavailable`, `timeout`, `lean_error`, `holes`, `axioms` (an axiom outside the allowed ones)
+or `statement_changed`.
+
+## What the prover sees
+
+The answer to a check lists Lean's errors, the holes with their goals, and the other messages (such
+as the suggestions of `exact?`), each located by region and line of the prover's file, with the
+text of that line. The `declaration uses 'sorry'` warnings are left out. At most 8 items of each
+kind are shown, and a message is cut at 1500 characters.
+
+```
+Checked the sketch: 1 error(s), 1 hole(s).
+Errors (1):
+1. PROOF line 1, `intro m`:
+   no additional binders
+Holes, with their goals (1):
+1. PROOF line 3, `sorry`:
+   n : ℕ
+   ⊢ n + 0 = n
+Other messages (1):
+1. info, PROOF line 2, `exact?`:
+   Try this: exact Nat.add_zero n
+```
+
+The other answers say that the file was refused before Lean ran and why, that Lean ran out of
+time, or that Lean could not be reached.
+
+## Prompts
+
+`prompt.ts` holds the system prompt, the first message of a session and the wrap-up message. The
+system prompt explains the two regions, the check, the sessions and the notes, and a method: work
+out the mathematics first; write the proof as a sketch, with `aux_` lemmas or `have`s proved by
+`sorry`; check the sketch, then fill the holes one at a time; a hole as hard as the theorem is not
+progress; use the automation and the tactics that search Mathlib; say in the notes when the
+statement seems false.
+
+`PROMPT_VERSION` (now `m0-1`) changes with any change of the prompts, and `run.started` records it
+with a hash of the prompts.
+
+## Budgets
+
+Spending is tracked by ledgers: one for the run, and one per problem below it. Every model response
+is charged to its problem and to the run, at the cost the provider reports, or at the cost computed
+from the model's prices when it reports none. Input tokens include cache reads and writes. An
+aborted response is charged for the usage that pi kept.
+
+When a problem's budget runs out, its sessions end at once (`budget`) and the problem is
+`unsolved`. When the run's budget runs out, the problems in progress end in the same way and no new
+problem starts. Budgets are checked as responses arrive, so the responses in flight, at most one
+per prover, can take a ledger past its limit.
+
+## The run directory
+
+| Path | Content |
+|---|---|
+| `journal.jsonl` | The events: the record of the run ([journal.md](journal.md)). |
+| `projection.sqlite` | The queryable view of the journal. |
+| `config.json` | The configuration recorded in `run.started`, the problem ids and the code revision. |
+| `blobs/` | Every file a prover submitted, by its `submissionHash`, and every tool run's input and output, by its `inputHash` and `outputHash` ([journal.md](journal.md#blobs)). |
+| `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. |
+| `proofs/NAME-HASH.lean` | The file of each candidate proof. |
+| `report.md`, `report.json` | The report. |
+
+## Commands
+
+```sh
+git clone --depth 1 --branch bench-v1-lean4.27.0 https://github.com/google-deepmind/formal-conjectures.git ../google-deepmind/formal-conjectures-bench-v1
+pnpm harness health                    # the Lean server answers
+pnpm harness models                    # the providers, and whether their credentials are set
+pnpm harness models PROVIDER           # the models of a provider, with their prices
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
+pnpm harness report runs/RUN_ID        # add --json for the JSON report
+```
+
+A model's credentials come from the environment, in the variable its provider uses; `harness
+models` says which variable it found. Credentials are never written in a file of the repository.
+
+Options of `harness run`:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--checkout DIR` | required | A checkout of formal-conjectures at the bench's revision ([bench.md](bench.md)). |
+| `--model PROVIDER/ID` | required | A model, as pi-ai names it. |
+| `--sample N [--seed S]`, `--problem ID...`, `--all` | one of them | The problems. A sample is deterministic: the `N` problems whose hash with the seed (default `m0`) is smallest. |
+| `--bench FILE` | `bench/fc-bench-v1-discrete.json` | The bench index. |
+| `--host HOST` | `HARNESS_HOST`, then `local` | The host profile ([capabilities.md](capabilities.md#host-profiles)). |
+| `--provers N` | 4 | Provers per problem. |
+| `--sessions N` | 8 | Sessions per prover. |
+| `--turns N` | 40 | Model responses per session. |
+| `--context-tokens N` | 120000 | Prompt size that ends a session. |
+| `--notes-chars N` | 4000 | Length limit of the notes. |
+| `--thinking LEVEL` | `medium` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--budget-usd X` | 5 | Dollars per problem. |
+| `--run-budget-usd X` | none | Dollars for the whole run. |
+| `--concurrency N` | 1 | Problems worked on at the same time. |
+| `--out DIR` | `runs/RUN_ID` | The run directory. |
+
+Progress goes to the standard error, one line per problem, and the report goes to the standard
+output at the end. A first Ctrl-C stops the run: the problems in progress end as `aborted`, and the
+journal and the report are still written. A second Ctrl-C quits at once.
+
+Exit codes: 0 when the run is complete or its budget ran out; 1 when it stopped on errors, or on a
+bug (printed with its stack); 2 for a mistake in the command or its inputs, found before anything
+is written; 130 when it was interrupted.
+
+`harness report` builds the report from the journal alone, so it also works on a run that was
+interrupted or killed.
+
+## The report
+
+The report counts the problems by outcome, with those that have none (not started, or cut off
+when the run was killed). It gives the Q5 metrics that a run can measure: validity (problems
+proved, and candidates that passed the fast check only), the cost in total and per problem with a
+proof, tokens, attempts
+by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
+checks with their median and 90th percentile times (the count includes one reference check per
+problem). It also says what it does not measure: the fidelity of the formal statements, taken as
+given by the bench, and novelty, since the bench's problems are solved ones.
+
+## Tested, and not yet
+
+The tests in `packages/orchestrator/test/m0.test.ts` run the loop with pi-ai's faux provider as the
+model and a simulated Lean (`DemoLean`, in `m0-helpers.ts`). They cover a candidate found and
+recorded; the file and the notes carried from one session to the next; forbidden code refused
+before Lean; the turn limit, with the wrap-up; the problem's budget; the other provers stopped when
+one succeeds; a problem whose original file does not compile; a run stopped when Lean cannot be
+reached; certification, accepted and rejected; and a run aborted between problems.
+`cli.test.ts` covers the argument and setup errors of `harness run`, and `harness report` and
+`harness models`.
+
+Not done yet:
+
+- No run against a real model or a real Lean server. The development environment cannot download
+  the Lean toolchain, so the first real run will be on the workstation or the dedicated server,
+  once `pnpm harness contract lean.check` passes there.
+- The certifier (kernel replay) is not written, so the best outcome of a run is `candidate`
+  ([lean.md](lean.md#the-certifier-to-write)).
+- The prompts have not been tuned on real attempts.

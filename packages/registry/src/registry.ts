@@ -22,6 +22,12 @@ export interface ToolRunSink {
   emit<K extends EventType>(type: K, data: EventDataMap[K], actor: string): unknown;
 }
 
+/** Where the inputs and outputs of tool runs are kept, by the hashes the tool runs record. */
+export interface BlobSink {
+  /** Stores a value as canonical JSON and returns `hashJson(value)`. */
+  putJson(value: unknown): string;
+}
+
 export type McpTransportFactory = (server: McpServerSpec, spec: McpImplementationSpec) => McpTransport;
 
 export interface RegistryOptions {
@@ -30,6 +36,8 @@ export interface RegistryOptions {
   /** In-process implementations, by the `factory` name their manifests use. */
   factories?: Readonly<Record<string, ImplementationFactory>>;
   journal?: ToolRunSink;
+  /** Keeps every input and output, so that a tool run's hashes can be read back. A `BlobStore` fits. */
+  blobs?: BlobSink;
   /** Source of `${env:NAME}`. Default: `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
   /** Builds MCP transports. Default: spawn stdio servers, connect to HTTP ones. */
@@ -109,6 +117,7 @@ export class Registry {
   readonly hash: string;
   private readonly factories: Readonly<Record<string, ImplementationFactory>>;
   private readonly journal: ToolRunSink | undefined;
+  private readonly blobs: BlobSink | undefined;
   private readonly env: Readonly<Record<string, string | undefined>>;
   private readonly mcpTransport: McpTransportFactory;
   private readonly instances = new Map<string, Promise<ImplementationInstance>>();
@@ -118,6 +127,7 @@ export class Registry {
     this.host = options.host;
     this.factories = options.factories ?? {};
     this.journal = options.journal;
+    this.blobs = options.blobs;
     this.env = options.env ?? process.env;
     this.mcpTransport = options.mcpTransport ?? defaultMcpTransport;
     const problems = checkHostProfile(this.host, this.catalog);
@@ -209,6 +219,7 @@ export class Registry {
     const toolRunId = newId("tr");
     const actor = options.actor ?? manifest.id;
     const started = performance.now();
+    const inputHash = this.blobs?.putJson(input) ?? hashJson(input);
     this.journal?.emit(
       "tool_run.started",
       {
@@ -216,7 +227,7 @@ export class Registry {
         capability: manifest.id,
         implementation: spec.id,
         version: spec.version,
-        inputHash: hashJson(input),
+        inputHash,
         timeoutMs,
         ...(options.attemptId !== undefined ? { attemptId: options.attemptId } : {}),
       },
@@ -263,7 +274,8 @@ export class Registry {
         manifest.summary === undefined
           ? undefined
           : Object.fromEntries(manifest.summary.map((path) => [path, getPath(output, path) ?? null]));
-      const durationMs = finish("ok", { outputHash: hashJson(output), ...(summary !== undefined ? { summary } : {}) });
+      const outputHash = this.blobs?.putJson(output) ?? hashJson(output);
+      const durationMs = finish("ok", { outputHash, ...(summary !== undefined ? { summary } : {}) });
       return { output, toolRunId, implementation: spec.id, version: spec.version, durationMs };
     } finally {
       clearTimeout(timer);

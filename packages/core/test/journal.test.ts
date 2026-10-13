@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
-import { EventLog, Journal, readEvents, verifyChain } from "../src/index.ts";
+import { EventLog, Journal, PROJECTION_VERSION, readEvents, verifyChain } from "../src/index.ts";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "mh-core-"));
@@ -21,7 +22,7 @@ describe("EventLog", () => {
     const path = join(tempDir(), "journal.jsonl");
     const log = EventLog.open(path, { run: "run_1" });
     const first = log.append("run.started", { runId: "run_1", benchId: "b", problems: 0, host: "local", config: {} }, "orchestrator");
-    const second = log.append("run.finished", { runId: "run_1", attempted: 0, solved: 0, usd: 0 }, "orchestrator");
+    const second = log.append("run.finished", { runId: "run_1", attempted: 0, solved: 0, candidates: 0, usd: 0 }, "orchestrator");
     log.close();
     assert.equal(first.prev, "");
     assert.equal(second.prev, first.hash);
@@ -33,8 +34,8 @@ describe("EventLog", () => {
   it("refuses to open a journal whose content was changed", () => {
     const path = join(tempDir(), "journal.jsonl");
     const log = EventLog.open(path, { run: "run_1" });
-    log.append("run.finished", { runId: "run_1", attempted: 1, solved: 0, usd: 0.5 }, "orchestrator");
-    log.append("run.finished", { runId: "run_1", attempted: 2, solved: 0, usd: 0.5 }, "orchestrator");
+    log.append("run.finished", { runId: "run_1", attempted: 1, solved: 0, candidates: 0, usd: 0.5 }, "orchestrator");
+    log.append("run.finished", { runId: "run_1", attempted: 2, solved: 0, candidates: 0, usd: 0.5 }, "orchestrator");
     log.close();
     writeFileSync(path, readFileSync(path, "utf8").replace('"solved":0', '"solved":1'));
     assert.throws(() => EventLog.open(path, { run: "run_1" }), /corrupt at seq 0: hash does not match content/);
@@ -44,12 +45,12 @@ describe("EventLog", () => {
   it("drops a torn last line and keeps appending after it", () => {
     const path = join(tempDir(), "journal.jsonl");
     const log = EventLog.open(path, { run: "run_1" });
-    log.append("run.finished", { runId: "run_1", attempted: 0, solved: 0, usd: 0 }, "orchestrator");
+    log.append("run.finished", { runId: "run_1", attempted: 0, solved: 0, candidates: 0, usd: 0 }, "orchestrator");
     log.close();
     appendFileSync(path, '{"v":1,"seq":1,"id":"evt_');
     const reopened = EventLog.open(path, { run: "run_1" });
     assert.equal(reopened.length, 1);
-    reopened.append("run.finished", { runId: "run_1", attempted: 1, solved: 0, usd: 0 }, "orchestrator");
+    reopened.append("run.finished", { runId: "run_1", attempted: 1, solved: 0, candidates: 0, usd: 0 }, "orchestrator");
     reopened.close();
     const events = readEvents(path);
     assert.equal(events.length, 2);
@@ -109,6 +110,31 @@ describe("Journal", () => {
     journal.close();
   });
 
+  it("registers a problem once and finishes it once", () => {
+    const journal = Journal.open(tempDir(), "run_1");
+    seedClaim(journal);
+    journal.emit("claim.created", { claimId: "clm_2", statementId: "st0_y", statement: "s", origin: "bench", status: "open" }, "x");
+    assert.throws(
+      () => journal.emit("problem.registered", { problemId: "prb_clm_1", claimId: "clm_2", target: "t", source, domain: [] }, "x"),
+      /problem prb_clm_1 is already registered/,
+    );
+    const finish = (problemId: string, claimId: string) =>
+      journal.emit(
+        "problem.finished",
+        { problemId, claimId, outcome: "unsolved", reason: "budget", attempts: 2, usd: 1.5, durationMs: 10 },
+        "orchestrator",
+      );
+    assert.throws(() => finish("prb_9", "clm_1"), /unknown problem prb_9/);
+    assert.throws(() => finish("prb_clm_1", "clm_2"), /is about claim clm_1, not clm_2/);
+    finish("prb_clm_1", "clm_1");
+    assert.throws(() => finish("prb_clm_1", "clm_1"), /already finished/);
+    const row = journal.projection.problem("prb_clm_1");
+    assert.equal(row?.outcome, "unsolved");
+    assert.equal(row?.reason, "budget");
+    assert.equal(journal.projection.problem("prb_9"), undefined);
+    journal.close();
+  });
+
   it("makes a claim proved only through a certified validation of that claim", () => {
     const journal = Journal.open(tempDir(), "run_1");
     seedClaim(journal);
@@ -163,5 +189,22 @@ describe("Journal", () => {
     assert.equal(third.projection.claim("clm_1"), undefined);
     assert.equal(third.projection.claim("clm_9")?.status, "open");
     third.close();
+  });
+
+  it("rebuilds a projection written by another version of the code", () => {
+    const dir = tempDir();
+    const first = Journal.open(dir, "run_1");
+    seedClaim(first);
+    first.close();
+    const db = new DatabaseSync(join(dir, "projection.sqlite"));
+    db.exec("pragma user_version = 1");
+    db.exec("drop table problems");
+    db.close();
+    const second = Journal.open(dir, "run_1");
+    assert.equal(second.projection.problems().length, 1);
+    second.close();
+    const check = new DatabaseSync(join(dir, "projection.sqlite"));
+    assert.equal((check.prepare("pragma user_version").get() as { user_version: number }).user_version, PROJECTION_VERSION);
+    check.close();
   });
 });

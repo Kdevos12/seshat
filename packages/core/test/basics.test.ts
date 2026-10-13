@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  BlobStore,
   canonicalJson,
   canTransition,
   collapseWhitespace,
   hashJson,
   newId,
+  sha256Hex,
   statementIdV0,
   stripLeanComments,
 } from "../src/index.ts";
@@ -67,5 +72,29 @@ describe("claim statuses", () => {
     assert.ok(!canTransition("proved", "open"));
     assert.ok(!canTransition("refuted", "proved"));
     assert.ok(!canTransition("open", "retracted"));
+  });
+});
+
+describe("BlobStore", () => {
+  it("stores texts and JSON under their hash, once", () => {
+    const store = new BlobStore(mkdtempSync(join(tmpdir(), "mh-blobs-")));
+    const hash = store.put("theorem t : True := trivial");
+    assert.equal(hash, sha256Hex("theorem t : True := trivial"));
+    assert.equal(store.put("theorem t : True := trivial"), hash);
+    assert.equal(store.get(hash), "theorem t : True := trivial");
+    const value = { b: [1, 2], a: "x" };
+    const jsonHash = store.putJson(value);
+    assert.equal(jsonHash, hashJson(value));
+    assert.deepEqual(store.getJson(jsonHash), { a: "x", b: [1, 2] });
+    assert.equal(store.get(sha256Hex("absent")), undefined);
+    assert.deepEqual(readdirSync(join(store.dir, hash.slice(0, 2))), [hash]);
+  });
+
+  it("refuses a blob whose content does not match its name, and names that are not hashes", () => {
+    const store = new BlobStore(mkdtempSync(join(tmpdir(), "mh-blobs-")));
+    const hash = store.put("a");
+    writeFileSync(join(store.dir, hash.slice(0, 2), hash), "b");
+    assert.throws(() => store.get(hash), /does not match its content/);
+    assert.throws(() => store.get("../x"), /not a sha256/);
   });
 });

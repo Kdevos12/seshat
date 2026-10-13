@@ -92,13 +92,30 @@ form.
    `propext`, `Classical.choice` and `Quot.sound`, and the printed type equals the reference.
 
 The reference comes from `ProofValidator.reference(sketch, originalSource)`, which runs the
-original file with the same commands, once per problem, and fails if the file has errors.
+original file with the same commands, once per problem. It throws a `CheckFailedError`, which
+carries Lean's status (`server_error`, `timeout`), when Lean gave no answer, and an error when the
+file has errors.
+
+`reference`, `validate` and `certify` take an optional `signal`. Aborting it stops the call to
+Lean, for instance when a budget runs out.
 
 Messages are split by line: those in the file go back to the prover; the axioms message is the
 info on the line of `#print axioms`; the type is the only other info message after it.
 
 A pass makes a candidate. `ProofValidator.certify` hands a candidate to the `LeanCertifier`, when
 one is configured ([trust.md](trust.md#two-levels-of-checking)).
+
+## Holes
+
+A prover's sketch has holes while it works. The policy's `holes` option lets `sorry` and `admit`
+through the structural checks, so that the file reaches Lean and the goal of each hole comes back.
+`SKETCH_POLICY` is the default policy with holes allowed; the M0 loop checks every submission under
+it ([m0-loop.md](m0-loop.md#a-session)).
+
+A file with holes is never valid: its report has `holes: true` and the reason
+`the file still has holes (sorry or admit)`, and Lean's `sorry`s add `lean: N sorry(s) left`. For a
+file without holes, both policies run the same checks and give the same verdict. `hasHoles` tells
+whether a submission's regions hold `sorry` or `admit`.
 
 ## Structural checks
 
@@ -107,8 +124,9 @@ Both regions are scanned with comments blanked. Refused anywhere in the regions:
 - string literals and `«»` names, because a light scanner cannot follow interpolated strings
   exactly, and a scanner that disagrees with Lean about where a comment starts would let tokens
   hide from the checks; an unclosed block comment;
-- ways to skip or weaken a proof: `sorry`, `admit`, `axiom`, `native_decide`, `ofReduceBool`,
-  `ofReduceNat`, `trustCompiler`, `implemented_by`, `extern`, `unsafe`, `debug`, `skipKernelTC`;
+- ways to skip or weaken a proof: `sorry` and `admit` (unless the policy allows holes), `axiom`,
+  `native_decide`, `ofReduceBool`, `ofReduceNat`, `trustCompiler`, `implemented_by`, `extern`,
+  `unsafe`, `debug`, `skipKernelTC`;
 - commands and attributes that run code or change the syntax: `#eval`, `#exit`, `#print`,
   `run_cmd`, `run_elab`, `run_meta`, `run_tac`, `by_elab`, `eval%`, `elab`, `elab_rules`, `macro`,
   `macro_rules`, `syntax`, `declare_syntax_cat`, `notation`, `infix`, `infixl`, `infixr`, `prefix`,
@@ -135,4 +153,5 @@ a proof trusted; the Lean checks and certification are.
 
 `ValidationReport` carries `verdict` (`valid` or `invalid`), `method` (`repl`), `reasons`, the
 target's `axioms`, the Lean `messages` and `sorries` located in the prover's file, the `checked`
-file, the `submissionHash`, `editsOutsideRegions`, and the checker's status.
+file, the `submissionHash` (sha256 of the submitted file), `editsOutsideRegions`, `holes`, and
+`leanStatus`, the checker's status, absent when the file was refused before Lean.
