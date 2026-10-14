@@ -50,6 +50,13 @@ identity, since ids of different versions never compare equal. The bench gives e
 its `st0_` id, so with `TextIdentity` a line that states a problem's statement again gets the
 problem's claim.
 
+A status goes up only through the validator and the certifier ([trust.md](trust.md)). The store can
+only lower one: `retractClaim(claimId, {reason})` takes back a claim whose status rested on
+something that was withdrawn, which is how a mechanism revokes what it derived. A `computed` claim
+goes back to `open`; a `proved`, `refuted` or `proved_informal` claim becomes `retracted`; an `open`
+or `retracted` claim stays as it is. It emits `claim.status_changed`, which the journal checks like
+any other.
+
 ## Edges
 
 An edge goes from a claim or node to one target, or to several for `decomposes_into`. Each has a

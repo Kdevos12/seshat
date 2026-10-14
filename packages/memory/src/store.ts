@@ -282,6 +282,23 @@ export class MemoryStore {
     return this.node(nodeId) as MemoryNode;
   }
 
+  /**
+   * Withdraws a claim whose status rested on something that was retracted: a `proved`, `refuted` or
+   * `proved_informal` claim becomes `retracted`, and a `computed` candidate goes back to `open`. An
+   * `open` or `retracted` claim stays as it is. It only lowers a status, so it cannot raise trust;
+   * it is how a mechanism revokes a claim it derived (plan §3.2).
+   */
+  retractClaim(claimId: string, options: { reason: string }): Claim {
+    const claim = this.claim(claimId);
+    if (claim === undefined) throw new Error(`unknown claim ${claimId}`);
+    const to: ClaimStatus | undefined =
+      claim.status === "computed" ? "open" : claim.status === "open" || claim.status === "retracted" ? undefined : "retracted";
+    if (to !== undefined) {
+      this.journal.emit("claim.status_changed", { claimId, from: claim.status, to, reason: options.reason }, this.actor);
+    }
+    return this.claim(claimId) as Claim;
+  }
+
   claim(claimId: string): Claim | undefined {
     const row = this.journal.projection.claim(claimId);
     return row === undefined ? undefined : toClaim(row);
