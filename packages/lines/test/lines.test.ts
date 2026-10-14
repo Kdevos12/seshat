@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { TextIdentity } from "@seshat/memory";
 import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines } from "../src/index.ts";
 
 function line(id: Line["id"], extra: Partial<Line> = {}): Line {
@@ -66,5 +67,12 @@ describe("resolveLines", () => {
       'option M1.k must be a number, got "five"',
       "line M1 has no option depth; its options are k, label",
     ]);
+  });
+
+  it("lets one enabled line give the statement identity, not two", () => {
+    const identity = () => new TextIdentity();
+    const named: LineRegistry = { M1: line("M1", { identity }), M10: line("M10", { identity }), M2: line("M2", { requires: ["M1"] }) };
+    assert.deepEqual(resolveLines(["M1", "M2"], named).problems, []);
+    assert.deepEqual(resolveLines(["M1", "M10"], named).problems, ["lines M1 and M10 all give the statement identity; enable one of them"]);
   });
 });

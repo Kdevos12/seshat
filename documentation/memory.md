@@ -54,9 +54,17 @@ without comments and with whitespace collapsed (`st0_`), which only catches text
 header is the same claim, so `ensureClaim` returns the first claim and its header, and the new
 header is dropped. A Lean-backed identity (`st1_`, the hash of the elaborated statement) is
 planned, and reads the header; the store takes any identity without change. A run uses one
-identity, since ids of different versions never compare equal. The bench gives each problem's claim
-its `st0_` id, so with `TextIdentity` a line that states a problem's statement again gets the
-problem's claim.
+identity, since ids of different versions never compare equal. A line gives the run its identity
+(`Line.identity`, [lines.md](lines.md#a-line)); M1 gives the text one.
+
+In a run with lines the orchestrator makes each problem's claim with `ensureClaim` as well (origin
+`bench:<id>`, the problem's domains, and the prefix of the problem's file as `header`), so two
+problems with one statement share one claim and its attempts, and a line that states a problem's
+statement again gets the problem's claim. A claim a line makes about a problem's own definitions
+should pass the same prefix as its `header`. A run without lines is M0: one claim per problem,
+with the bench's `st0_` id. `TextIdentity` ignores the header, so two problems whose signatures
+read the same but whose files define the names differently share a claim until the Lean identity
+tells them apart.
 
 ### Statement form
 
@@ -150,6 +158,7 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 | `edges({from?, to?, kinds?, minStatus?})` | The edges that meet every criterion, in the order they were added. `to` matches any target and is answered from an index of targets, not by scanning the edges; `minStatus` counts in the order `proposed`, `computed`, `informal_checked`, `human_signed`, `lean_checked`. |
 | `equivalents(claimId)` | The claim and every claim reached from it through `lean_checked` `equiv` edges, in both directions: the claim first. |
 | `attempts(claimId, {includeEquivalents?})` | The attempts on the claim (and on its equivalents), in the order they started, with their role, strategies, premises and outcome. |
+| `alreadyTried(claimId)` | The attempts on the claim and its equivalents that were accepted or failed, grouped by their classified strategy: how many, how they failed, the last failure. Never the attempts' text ([m1-identity-memory.md](m1-identity-memory.md#already-tried)). |
 | `validations(claimId)` | Its validations, of the claim and of its negation, in order. |
 | `node(id)` | The node, its data with every patch applied in order. |
 | `nodes(kind, {claimId?})` | The nodes of a kind (about one claim), in the order they were recorded. |

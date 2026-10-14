@@ -3,8 +3,8 @@
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.
 
-Status: early development (phase P0a). The event journal, the memory store, the line API, the proof validator,
-a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
+Status: early development (phase P0a). The event journal, the memory store, the line API and its first line (M1: shared
+claims and negative memory), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
 (independent provers on pi, in sessions that pass on their notes) are written and tested with a
@@ -40,11 +40,15 @@ flowchart TB
   projection["SQLite projection"]:::built
 
   subgraph MEMORY["Memory: the plan's edge"]
-    kg["Facts and research graph<br/>verified implications,<br/>failures, lemmas,<br/>deduplication"]:::planned
+    identity["M1 canonical identity<br/>one claim per statement,<br/>shared by equal problems"]:::built
+    tried["M1 negative memory<br/>strategies tried and<br/>how each one failed"]:::built
+    kg["Facts and research graph<br/>verified implications,<br/>lemmas, propagation"]:::planned
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
   end
 
   bench -->|problems| provers
+  bench -->|statements| identity
+  identity -->|claims| journal
   fleet -.->|"who works on what"| provers
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
@@ -54,7 +58,10 @@ flowchart TB
   fast -.->|candidate| certifier
   certifier -.->|"computed → proved"| journal
   TOOLS -->|"every call"| journal
+  provers -->|"attempts: strategy,<br/>failure class, detail"| journal
   journal --> projection
+  projection --> tried
+  tried -->|"already tried,<br/>in every session"| provers
   journal -.-> kg
   kg -.-> compiler
   compiler -.->|"context for each session"| provers
@@ -70,11 +77,13 @@ goes through the capability registry, which writes it to the journal, with its i
 as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
-written (claims, the edges between them and records of every kind, all in the journal), the
-mechanisms that would use it are not ([documentation/memory.md](documentation/memory.md)). Each
-mechanism will come as a line that a run switches on (`harness run --lines M1,M10` or
-`--ablation M10`), so that it is measured against the run without it; no line is written yet
-([documentation/lines.md](documentation/lines.md)).
+written (claims, the edges between them and records of every kind, all in the journal), and so is
+the first line that uses it, M1: one claim per statement, each attempt labeled with its strategy
+and how it failed, and an "already tried" section in every session
+([documentation/memory.md](documentation/memory.md),
+[documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). The other mechanisms
+will come as lines that a run switches on (`harness run --lines M1,M10` or `--ablation M10`), so
+that each is measured against the run without it ([documentation/lines.md](documentation/lines.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).

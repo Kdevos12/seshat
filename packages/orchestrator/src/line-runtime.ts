@@ -89,6 +89,11 @@ export class RunLines {
     return this.o.lines.map((entry) => entry.line.id);
   }
 
+  /** The strategy labels the enabled lines classify attempts with, once each. */
+  get strategies(): string[] {
+    return [...new Set(this.o.lines.flatMap((entry) => entry.line.strategies ?? []))];
+  }
+
   /** Looks a model up once per run. */
   resolveModel(name: string): Promise<Model<Api>> {
     let model = this.resolved.get(name);
@@ -154,6 +159,11 @@ export class ProblemLines {
   constructor(run: RunLines, options: ProblemLinesOptions) {
     this.run = run;
     this.p = options;
+  }
+
+  /** The strategy labels `lean_check` offers; none when no enabled line gives any. */
+  get strategies(): string[] {
+    return this.run.strategies;
   }
 
   private with<K extends keyof LineHooks>(hook: K): Array<{ entry: EnabledLine; hook: NonNullable<LineHooks[K]> }> {

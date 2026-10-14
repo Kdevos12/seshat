@@ -45,7 +45,7 @@ Event types:
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?` |
-| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `premises?`, `failureDetail?` |
+| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?` |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text` |
@@ -65,7 +65,9 @@ was derived from (a variant, a subgoal, a part).
 An attempt's `role` says what it is for: prove the claim (the default), refute it (prove its
 negation), or explore it. `strategy` on `attempt.started` is the strategy it was given or declared;
 on `attempt.finished`, the strategy classified from what it submitted, with the `premises` (the
-names the final proof uses) and a short `failureDetail`. A validation with `negation: true` checked
+names the final proof uses) and a short `failureDetail`. `declaredStrategy` on `attempt.finished` is
+the strategy the model declared in its last `lean_check` that gave one; it replaces, in the
+projection, the one given at the start. A validation with `negation: true` checked
 a proof of the claim's negation: a refutation.
 
 Edges and nodes are the memory's other records. An edge goes from a claim or node to one target, or

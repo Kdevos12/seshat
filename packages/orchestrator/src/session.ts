@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
+import { StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
 import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
@@ -48,6 +48,11 @@ export interface SessionOptions {
   tools?: AgentTool<never, unknown>[];
   /** The enabled lines' hooks inside the session: the context packet, and the look at each check. */
   lines?: SessionHooks;
+  /**
+   * Labels that `lean_check` takes as its optional `strategy` argument: what the model says it is
+   * trying. Set only when an enabled line classifies strategies; absent, the tool is M0's.
+   */
+  strategies?: readonly string[];
 }
 
 export interface SessionResult {
@@ -60,6 +65,8 @@ export interface SessionResult {
   submission: Submission | undefined;
   report: ValidationReport | undefined;
   submissions: number;
+  /** The strategy the model declared in its last `lean_check` that gave one. */
+  declaredStrategy?: string;
   messages: AgentMessage[];
   error?: string;
 }
@@ -82,6 +89,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let last: AssistantMessage | undefined;
   let lineStop: `line:${string}` | undefined;
   let requests = 0;
+  let declared: string | undefined;
 
   const leanCheck: AgentTool<ReturnType<typeof checkParameters>, { summary: string }> = {
     name: "lean_check",
@@ -90,11 +98,13 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       "Puts the two regions in the file and checks the whole file with Lean. Returns Lean's errors, the goal at each " +
       "sorry and other messages, located by region and line. A file without sorry that Lean accepts, with the standard " +
       "axioms and the original statement, is accepted: the theorem is proved.",
-    parameters: checkParameters(),
+    parameters: checkParameters(o.strategies ?? []),
     executionMode: "sequential",
     execute: async (_id, params, signal) => {
       submissions += 1;
       submission = { aux: params.aux, proof: params.proof };
+      const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
+      if (strategy !== undefined) declared = strategy;
       try {
         const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}) });
         report = result.report;
@@ -108,6 +118,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
             const stop = await o.lines.afterCheck({
               index: submissions,
               submission,
+              ...(strategy !== undefined ? { strategy } : {}),
               report,
               ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
               accepted: result.accepted,
@@ -198,6 +209,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       submission,
       report,
       submissions,
+      ...(declared !== undefined ? { declaredStrategy: declared } : {}),
       messages: agent.state.messages,
       ...(stop === "error" ? { error: failure ?? last?.errorMessage ?? "the model request failed" } : {}),
     };
@@ -217,15 +229,26 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   }
 }
 
-function checkParameters() {
-  return Type.Object({
+/** The arguments of `lean_check`: the two regions, and with labels from a line, the optional `strategy`. */
+function checkParameters(strategies: readonly string[]) {
+  const regions = {
     aux: Type.String({
       description: "The whole AUX region: auxiliary lemmas and definitions named aux_..., or an empty string.",
     }),
     proof: Type.String({
       description: "The whole PROOF region: the tactics that prove the theorem, without `by`. Use sorry for the parts not proved yet.",
     }),
-  });
+  };
+  return strategies.length === 0
+    ? Type.Object(regions)
+    : Type.Object({
+        ...regions,
+        strategy: Type.Optional(
+          StringEnum(strategies, {
+            description: "Optional: the technique this proof rests on. It is recorded with the attempt, beside the label computed from the proof text.",
+          }),
+        ),
+      });
 }
 
 /** The text of a response, without its thinking. */

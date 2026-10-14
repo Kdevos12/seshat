@@ -4,6 +4,7 @@ export * from "./implementations.ts";
 export * from "./line-runtime.ts";
 export * from "./lines.ts";
 export * from "./llm.ts";
+export * from "./m1.ts";
 export * from "./problem.ts";
 export * from "./prompt.ts";
 export * from "./prover.ts";

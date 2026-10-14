@@ -8,7 +8,7 @@ import type {
   TokenCost,
   ValidationReport,
 } from "@seshat/core";
-import type { MemoryStore } from "@seshat/memory";
+import type { MemoryStore, StatementIdentity } from "@seshat/memory";
 import type { Registry } from "@seshat/registry";
 import type { LineId } from "./ids.ts";
 
@@ -33,7 +33,24 @@ export interface Line {
   options?: JsonObject;
   /** Recorded in `run.started`: change it when the line's behavior changes. */
   version?: string;
+  /**
+   * How the run's memory names statements (plan §3.1): called once per run, with the run's
+   * registry, so that an identity that needs Lean can use it. At most one enabled line gives it;
+   * without one the memory names statements by their text (`TextIdentity`).
+   */
+  identity?: (env: IdentityEnv) => StatementIdentity;
+  /**
+   * The strategy labels the line classifies attempts with. When an enabled line gives some,
+   * `lean_check` takes an optional `strategy` argument, one of the labels: the model declares what
+   * it is trying, and the declaration is recorded beside the label the line classifies.
+   */
+  strategies?: readonly string[];
   hooks: LineHooks;
+}
+
+/** What a line's `identity` factory gets. */
+export interface IdentityEnv {
+  registry: Registry;
 }
 
 /**
@@ -198,6 +215,8 @@ export interface SessionCheck {
   /** The check's number in the session, from 1. */
   index: number;
   submission: Submission;
+  /** The strategy the model declared in this call, when the run offers labels and it gave one. */
+  strategy?: string;
   report: ValidationReport;
   /** Set when the check was recorded as a validation (a file without holes). */
   validationId?: string;
@@ -230,8 +249,11 @@ export interface FinishedAttempt {
   durationMs: number;
   /** The model's final message, when it wrote one. */
   notes?: string;
+  /** The strategy and subgoal a line declared for the session in `beforeSession`. */
   strategy?: string;
   subgoal?: string;
+  /** The strategy the model declared in its last `lean_check` that gave one. */
+  declaredStrategy?: string;
 }
 
 /** What `afterAttempt` adds to `attempt.finished`. */

@@ -191,8 +191,8 @@ describe("lines in a run", () => {
       return true;
     });
     await assert.rejects(
-      demoRun({ dir, responses: [], config: { lines: ["M1"] } }),
-      /the lines of the run: line M1 \(canonical identity and shared negative memory\) is planned, not implemented yet$/,
+      demoRun({ dir, responses: [], config: { lines: ["M10"] } }),
+      /the lines of the run: line M10 \(classical battery per subgoal before any model, domain router, ATP and SMT\) is planned, not implemented yet$/,
     );
     const needy: Line = { id: "M2", title: "needs M1", requires: ["M1"], hooks: {} };
     await assert.rejects(demoRun({ dir, responses: [], lines: { M2: needy }, config: { lines: ["M2"] } }), /line M2 requires line M1, which is not enabled/);

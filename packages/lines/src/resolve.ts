@@ -15,8 +15,8 @@ export interface EnabledLine {
  * Checks the lines a run enables and puts them in `LINE_ORDER`. `problems` says what is wrong:
  * an unknown or repeated id, a line that is planned but not implemented, a missing requirement,
  * options for a line that is not enabled, that the line does not have, or of another type than the
- * default (a default of `null` takes any value), or two lines that both give the context packet. A
- * run with problems does not start.
+ * default (a default of `null` takes any value), or two lines that both give the context packet or
+ * the statement identity. A run with problems does not start.
  */
 export function resolveLines(
   ids: readonly string[],
@@ -54,6 +54,8 @@ export function resolveLines(
   }
   const packets = enabled.filter((line) => line.hooks.contextPacket !== undefined).map((line) => line.id);
   if (packets.length > 1) problems.push(`lines ${packets.join(" and ")} all give the context packet; enable one of them`);
+  const identities = enabled.filter((line) => line.identity !== undefined).map((line) => line.id);
+  if (identities.length > 1) problems.push(`lines ${identities.join(" and ")} all give the statement identity; enable one of them`);
 
   for (const key of Object.keys(options)) {
     if (!enabled.some((line) => line.id === key) && !(isLineId(key) && seen.has(key))) {

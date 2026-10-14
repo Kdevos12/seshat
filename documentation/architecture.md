@@ -19,12 +19,12 @@
 | Package | Role | Depends on |
 |---|---|---|
 | `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
-| `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim ([memory.md](memory.md)) | core |
+| `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim ([memory.md](memory.md)); M1's strategy and failure classifiers, "already tried" and redundancy ([m1-identity-memory.md](m1-identity-memory.md)) | core |
 | `@seshat/lines` | The line API: line ids and their order, cumulative configs, hooks and their contexts, the checks of a run's lines ([lines.md](lines.md)) | core, memory, registry |
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
+| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime, the M1 line, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
 The packages of the planned mechanisms exist as skeletons (a `package.json` and an empty
 `src/index.ts`), with their dependencies in the lockfile, so that the task that writes one adds

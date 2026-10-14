@@ -143,9 +143,12 @@ export function fauxModels(pricePerMillion = 3): { models: MutableModels; faux: 
   return { models, faux, name: `${model.provider}/${model.id}` };
 }
 
-/** A response that checks these regions. */
-export function check(proof: string, aux = ""): AssistantMessage {
-  return fauxAssistantMessage([fauxText("Let me check this."), fauxToolCall("lean_check", { aux, proof })], { stopReason: "toolUse" });
+/** A response that checks these regions, declaring a strategy when one is given. */
+export function check(proof: string, aux = "", strategy?: string): AssistantMessage {
+  return fauxAssistantMessage(
+    [fauxText("Let me check this."), fauxToolCall("lean_check", { aux, proof, ...(strategy !== undefined ? { strategy } : {}) })],
+    { stopReason: "toolUse" },
+  );
 }
 
 /** A response that calls a tool other than lean_check. */
@@ -183,8 +186,10 @@ export async function demoRun(options: {
   log?: (line: string) => void;
   /** The lines the run can enable (`config.lines` enables them). Default: the repository's. */
   lines?: LineRegistry;
+  /** The bench's Lean file. Default: `DEMO_FILE`. */
+  file?: string;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
-  const { checkout, index } = demoBench();
+  const { checkout, index } = demoBench(options.file);
   const { models, faux, name } = fauxModels(options.pricePerMillion);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();

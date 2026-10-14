@@ -21,6 +21,7 @@ import {
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
 import { signatureMessage } from "./signature.ts";
+import { type TriedStrategy, triedStrategies } from "./tried.ts";
 
 export interface MemoryStoreOptions {
   journal: Journal;
@@ -352,6 +353,14 @@ export class MemoryStore {
       .flatMap((id) => this.#journal.projection.attempts(id))
       .sort((a, b) => a.started_seq - b.started_seq)
       .map(toAttempt);
+  }
+
+  /**
+   * What was already tried on a claim and its equivalents, by strategy: counts, failure classes and
+   * the last failure's typed detail (plan §3.3). The attempts' text is not in it.
+   */
+  alreadyTried(claimId: string): TriedStrategy[] {
+    return triedStrategies(this.attempts(claimId, { includeEquivalents: true }));
   }
 
   /** The validations of a claim (proofs of it and of its negation), in order. */

@@ -18,7 +18,7 @@ import {
   sha256Hex,
 } from "@seshat/core";
 import { type JsonObject, type LineRegistry, resolveLines } from "@seshat/lines";
-import { MemoryStore } from "@seshat/memory";
+import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { Ledger } from "./budget.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
@@ -204,6 +204,14 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   // A tool that cannot be reached now would answer every prover's call with an error.
   const pinned = await pinTools(registry, config.tools);
   if (pinned.problems.length > 0) return await abandon(pinned.problems.join("; "), undefined, registry);
+  // The statement identity of the run is the one an enabled line gives; without one, the text's.
+  const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
+  let identity: StatementIdentity | undefined;
+  try {
+    identity = giver?.identity?.({ registry });
+  } catch (error) {
+    return await abandon(`the statement identity of line ${giver?.id}: ${messageOf(error)}`, error, registry);
+  }
   for (const sub of ["transcripts", "proofs"]) mkdirSync(join(o.dir, sub), { recursive: true });
 
   const recorded: Json = {
@@ -257,7 +265,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   let runLines: RunLines | undefined;
   let memory: MemoryStore | undefined;
   if (enabled.lines.length > 0) {
-    memory = new MemoryStore({ journal, blobs });
+    memory = new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) });
     runLines = new RunLines({
       lines: enabled.lines,
       runId,
@@ -299,17 +307,42 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     );
   };
 
-  const solveProblem = async (entry: ProblemEntry): Promise<ProblemResult> => {
-    const started = performance.now();
+  /** An M0 problem's claim: one per problem. */
+  const createClaim = (entry: ProblemEntry): string => {
     const claimId = newId("clm");
-    const ledger = runLedger.child(config.budget.problemUsd);
-    const domain = entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`);
-    let attempts = 0;
     journal.emit(
       "claim.created",
       { claimId, statementId: entry.statementId, statement: entry.statement, origin: `bench:${o.index.benchId}`, status: "open" },
       "orchestrator",
     );
+    return claimId;
+  };
+
+  const solveProblem = async (entry: ProblemEntry): Promise<ProblemResult> => {
+    const started = performance.now();
+    const ledger = runLedger.child(config.budget.problemUsd);
+    const domain = entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`);
+    let attempts = 0;
+    // The problem's file is read before its claim is made: its prefix is the header the statement is read under.
+    let loaded: LoadedProblem | undefined;
+    let loadFailure = "";
+    try {
+      loaded = loadProblem(o.checkout, entry);
+    } catch (error) {
+      loadFailure = messageOf(error);
+    }
+    // With lines, the claim is the memory's: a problem whose statement already is a claim shares it.
+    const claimId =
+      memory === undefined
+        ? createClaim(entry)
+        : (
+            await memory.withActor("orchestrator").ensureClaim({
+              statement: entry.statement,
+              ...(loaded !== undefined ? { header: loaded.sketch.prefix } : {}),
+              origin: `bench:${o.index.benchId}`,
+              domain,
+            })
+          ).claimId;
     journal.emit(
       "problem.registered",
       {
@@ -349,12 +382,8 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       return finish(outcome, reason, proof);
     };
 
-    let problem: LoadedProblem;
-    try {
-      problem = loadProblem(o.checkout, entry);
-    } catch (error) {
-      return finish("skipped", messageOf(error));
-    }
+    if (loaded === undefined) return finish("skipped", loadFailure);
+    const problem = loaded;
 
     const controller = new AbortController();
     const stop = () => controller.abort(ABORT_STOPPED);
@@ -437,7 +466,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
             ),
           );
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
-      attempts = journal.projection.attempts(claimId).length;
+      attempts = workbench.attemptIds.length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
 
       const candidate = workbench.candidate;
@@ -458,7 +487,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       if (crash !== undefined) return await end("error", `the harness failed: ${messageOf(crash.reason)}`);
       if (o.signal?.aborted) return await end("aborted", "the run was stopped");
       if (ledger.exhausted) return await end("unsolved", runLedger.exhausted ? "the run's budget ran out" : "the problem's budget ran out");
-      if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return await end("error", proverErrors(journal, claimId));
+      if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return await end("error", proverErrors(journal, workbench.attemptIds));
       if (lines !== undefined && provers.length === 0) return await end("unsolved", "the lines ended the problem before the provers");
       return await end("unsolved", stopSummary(provers));
     } finally {
@@ -522,9 +551,10 @@ function stopSummary(provers: readonly ProverResult[]): string {
   return `provers stopped: ${[...counts].map(([stop, n]) => `${n} ${stop}`).join(", ")}`;
 }
 
-function proverErrors(journal: Journal, claimId: string): string {
-  const errors = journal.projection
-    .attempts(claimId)
-    .flatMap((a) => (a.error !== null ? [a.error] : []));
+function proverErrors(journal: Journal, attemptIds: readonly string[]): string {
+  const errors = attemptIds.flatMap((id) => {
+    const error = journal.projection.attempt(id)?.error;
+    return error === undefined || error === null ? [] : [error];
+  });
   return `every prover failed: ${[...new Set(errors)].slice(0, 3).join("; ")}`;
 }

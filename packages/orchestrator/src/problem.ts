@@ -98,6 +98,7 @@ export class Workbench {
   private readonly blobs: BlobStore | undefined;
   private found: Candidate | undefined;
   private readonly listeners: Array<(candidate: Candidate) => void> = [];
+  private readonly started: string[] = [];
 
   constructor(options: WorkbenchOptions) {
     this.journal = options.journal;
@@ -117,6 +118,19 @@ export class Workbench {
 
   get candidate(): Candidate | undefined {
     return this.found;
+  }
+
+  /**
+   * The attempts this problem's provers started, in order. With lines, two problems with one
+   * statement share a claim, which then holds the attempts of both: these are this problem's own.
+   */
+  get attemptIds(): readonly string[] {
+    return this.started;
+  }
+
+  /** Records an attempt that a prover of this problem started. */
+  noteAttempt(attemptId: string): void {
+    this.started.push(attemptId);
   }
 
   /** Called once, with the first candidate. */
@@ -189,7 +203,9 @@ export class Workbench {
   /**
    * Certifies the candidate, when there is a certifier: a certified proof makes the claim `proved`,
    * a rejected one sends it back to `open`. Returns undefined without a certifier or a candidate,
-   * and for a refutation, whose certification is not wired yet.
+   * and for a refutation, whose certification is not wired yet. A claim that another problem
+   * with the same statement has settled meanwhile keeps its status: the validation is recorded,
+   * and only a claim that is still `computed` (or `open`, for a proof) changes.
    */
   async certify(signal?: AbortSignal): Promise<CertificationResult | undefined> {
     const candidate = this.found;
@@ -213,13 +229,23 @@ export class Workbench {
       },
       this.certifier.implementation,
     );
-    this.journal.emit(
-      "claim.status_changed",
-      valid
-        ? { claimId: this.claimId, from: "computed", to: "proved", reason: "the candidate was certified", validationId }
-        : { claimId: this.claimId, from: "computed", to: "open", reason: `certification rejected the candidate: ${result.reasons.join("; ")}`, validationId },
-      "orchestrator",
-    );
+    const status = this.journal.projection.claim(this.claimId)?.status;
+    if (valid && (status === "computed" || status === "open")) {
+      this.journal.emit(
+        "claim.status_changed",
+        { claimId: this.claimId, from: status, to: "proved", reason: "the candidate was certified", validationId },
+        "orchestrator",
+      );
+    } else if (!valid && status === "computed") {
+      this.journal.emit(
+        "claim.status_changed",
+        {
+          claimId: this.claimId, from: "computed", to: "open",
+          reason: `certification rejected the candidate: ${result.reasons.join("; ")}`, validationId,
+        },
+        "orchestrator",
+      );
+    }
     return result;
   }
 }

@@ -129,3 +129,7 @@ of `lean.check` checks each of them against a server
 5. That formal-conjectures' linters only emit warnings in the REPL (warnings do not fail a check).
 6. Timings: the first REPL for a header loads all of Mathlib; `LEAN_SERVER_INIT_REPLS` can start
    REPLs ahead of time.
+7. The first words of Lean's error messages (`unsolved goals` followed by `case <name>`,
+   `unknown identifier`, `type mismatch`, `linarith failed`...), which classify a failed check
+   ([m1-identity-memory.md](m1-identity-memory.md#failure-classes)); a message not matched is
+   `other`.

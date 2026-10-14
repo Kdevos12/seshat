@@ -37,7 +37,7 @@ export interface AttemptRow {
   started_seq: number;
   finished_seq: number | null;
   role: AttemptRole | null;
-  /** The strategy given or declared when the attempt started. */
+  /** The strategy given when the attempt started, or the one the model declared in its last check. */
   declared_strategy: string | null;
   subgoal: string | null;
   /** The strategy classified when it finished. */
@@ -346,12 +346,13 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `update attempts set outcome = ?, failure_class = ?, stopped_by = ?, error = ?, usd = ?, input_tokens = ?,
-           output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ?, strategy = ?, premises_json = ?, failure_detail = ?
+           output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ?, strategy = ?, premises_json = ?, failure_detail = ?,
+           declared_strategy = coalesce(?, declared_strategy)
            where attempt_id = ?`,
         ).run(
           d.outcome, d.failureClass ?? null, d.stoppedBy ?? null, d.error ?? null, d.usd, d.inputTokens, d.outputTokens,
           d.durationMs, d.turns, event.seq, d.strategy ?? null, d.premises === undefined ? null : canonicalJson(d.premises),
-          d.failureDetail ?? null, d.attemptId);
+          d.failureDetail ?? null, d.declaredStrategy ?? null, d.attemptId);
         return;
       }
       case "tool_run.started": {
