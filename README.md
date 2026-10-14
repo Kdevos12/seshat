@@ -6,8 +6,9 @@ judge, classical tools first.
 Status: early development (phase P0a). The event journal, the memory store, the line API, the proof validator,
 a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
-[formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
-(independent provers on pi, in sessions that pass on their notes) are written and tested with a
+[formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
+(independent provers on pi, in sessions that pass on their notes), and the first line, M2 (the variant
+graph and its logical propagation), are written and tested with a
 simulated model and a simulated Lean. The provers can also be given SageMath, an external program
 installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
 run against a real Lean or a real model yet.
@@ -40,7 +41,8 @@ flowchart TB
   projection["SQLite projection"]:::built
 
   subgraph MEMORY["Memory: the plan's edge"]
-    kg["Facts and research graph<br/>verified implications,<br/>failures, lemmas,<br/>deduplication"]:::planned
+    kg["Facts and research graph<br/>claims, edges, records,<br/>textual deduplication"]:::built
+    prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::wait
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
   end
 
@@ -55,7 +57,10 @@ flowchart TB
   certifier -.->|"computed → proved"| journal
   TOOLS -->|"every call"| journal
   journal --> projection
-  journal -.-> kg
+  journal --> kg
+  kg --> prop
+  prop -->|"composed proofs"| fast
+  prop -->|"briefing, graph tool,<br/>stop on refutation"| provers
   kg -.-> compiler
   compiler -.->|"context for each session"| provers
 ```
@@ -70,11 +75,15 @@ goes through the capability registry, which writes it to the journal, with its i
 as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
-written (claims, the edges between them and records of every kind, all in the journal), the
-mechanisms that would use it are not ([documentation/memory.md](documentation/memory.md)). Each
-mechanism will come as a line that a run switches on (`harness run --lines M1,M10` or
-`--ablation M10`), so that it is measured against the run without it; no line is written yet
-([documentation/lines.md](documentation/lines.md)).
+written (claims, the edges between them and records of every kind, all in the journal), and the
+first mechanism that uses it is too ([documentation/memory.md](documentation/memory.md)). Each
+mechanism comes as a line that a run switches on (`harness run --lines M2`), so that it is measured
+against the run without it ([documentation/lines.md](documentation/lines.md)). The line M2 keeps a
+graph of variants of a claim, joined by edges that become `lean_checked` only when Lean accepts
+their link lemma. It follows those edges with logic rules, and turns what they derive into composed
+proofs that go through the same fast check. It also tries to prove the negation of a claim alongside
+the provers, and stops whichever side loses ([documentation/graph.md](documentation/graph.md)). It
+waits for a Lean server like the fast check; the other lines are not written.
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).

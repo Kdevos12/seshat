@@ -7,9 +7,9 @@ points of a run. A run enables lines with `harness run --lines` or `--ablation`;
 exactly M0 ([m0-loop.md](m0-loop.md)).
 
 The API is in `@seshat/lines`; the orchestrator runs it (`packages/orchestrator/src/line-runtime.ts`).
-No line is implemented yet: `packages/orchestrator/src/lines.ts`, the registry of the lines a run
-can enable, is empty, and a run that enables a line stops before it starts and says that the line
-is planned.
+One line is implemented, M2 ([graph.md](graph.md)): `packages/orchestrator/src/lines.ts`, the
+registry of the lines a run can enable, holds it, and a run that enables any other line stops before
+it starts and says that the line is planned.
 
 ## The lines
 
@@ -20,7 +20,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 |---|---|---|
 | `M1` | canonical identity and shared negative memory | `@seshat/memory`, `@seshat/lean-meta` |
 | `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` |
-| `M2` | variant graph and logical propagation | `@seshat/graph` |
+| `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` |
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` |
 | `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` |
 | `M4` | context compiler | `@seshat/context` |
@@ -34,15 +34,17 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M5` | lessons with counters | `@seshat/lessons` |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` |
 
-The packages exist as skeletons, with their dependencies in the lockfile; `@seshat/lean-local`
-(the certifier on the host) is the fourteenth.
+The packages of the lines not written yet exist as skeletons, with their dependencies in the
+lockfile (`@seshat/graph` holds M2 now); `@seshat/lean-local` (the certifier on the host) is the
+fourteenth.
 
 ### Cumulative configs
 
 The plan's ablations are cumulative: each config adds one line to the one before, in §7's order.
 `ablationLines(name)` gives the lines of a config: none for `M0`, and for a line, that line and
 every line before it in `LINE_ORDER`. `M1` is M0 + M1; `M2` is M0 + M1 + M10 + M2; `M9` enables
-every line. `harness run --ablation M2` runs that config.
+every line. `harness run --ablation M2` runs that config, once all its lines are written: today it
+stops and names M1 and M10 as planned, and `--lines M2` runs M2 alone.
 
 ## A line
 
@@ -173,4 +175,5 @@ unmet lines refused before anything is written; a failing hook; sessions skipped
 line's model call charged to the problem; the context packet of each request, and its failure.
 `cli.test.ts` covers `--lines`, `--ablation` and `--line-option`.
 
-No real line exists yet, and nothing here has run against a real model or Lean.
+The one real line, M2, has its own tests ([graph.md](graph.md#tested-and-not-yet)). Nothing here
+has run against a real model or Lean.
