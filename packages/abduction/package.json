@@ -1,0 +1,19 @@
+{
+  "name": "@seshat/abduction",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The abductive engine: relational skeletons, multichannel inspirations, reranking, analogy cards (lines M7, M9).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/graph": "workspace:*",
+    "@seshat/lean-meta": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/models": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

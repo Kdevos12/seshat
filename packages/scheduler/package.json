@@ -1,0 +1,19 @@
+{
+  "name": "@seshat/scheduler",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The saturation kernel: given-clause loop, subsumption, proof numbers, the subgoal scheduler (line M12).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/fleet": "workspace:*",
+    "@seshat/graph": "workspace:*",
+    "@seshat/lean-meta": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

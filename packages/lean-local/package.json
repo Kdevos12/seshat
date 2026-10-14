@@ -1,0 +1,16 @@
+{
+  "name": "@seshat/lean-local",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lean on the host: the certifier (kernel replay) in a pinned Lean project.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

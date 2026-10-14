@@ -4,15 +4,17 @@ import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
 import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
+import type { SessionHooks } from "./line-runtime.ts";
 import type { Workbench } from "./problem.ts";
 import { WRAP_UP } from "./prompt.ts";
 
 /**
  * Why a session ended: `model` (the model stopped calling tools), `turns` or `context` (a limit of
  * the session), `budget` (the problem's budget), `solved` (this session found the candidate),
- * `aborted` (another prover found it, or the run was stopped), `error`.
+ * `aborted` (another prover found it, or the run was stopped), `error`, or `line:<id>` (an enabled
+ * line's `afterCheck` stopped it).
  */
-export type SessionStop = "model" | "turns" | "context" | "budget" | "solved" | "aborted" | "error";
+export type SessionStop = "model" | "turns" | "context" | "budget" | "solved" | "aborted" | "error" | `line:${string}`;
 
 export interface SessionLimits {
   /** Model responses in one session. */
@@ -44,6 +46,8 @@ export interface SessionOptions {
   wrapUp: boolean;
   /** Tools besides lean_check, for this session's attempt. */
   tools?: AgentTool<never, unknown>[];
+  /** The enabled lines' hooks inside the session: the context packet, and the look at each check. */
+  lines?: SessionHooks;
 }
 
 export interface SessionResult {
@@ -76,6 +80,8 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let limit: "turns" | "context" | "budget" | undefined;
   let wrappingUp = false;
   let last: AssistantMessage | undefined;
+  let lineStop: `line:${string}` | undefined;
+  let requests = 0;
 
   const leanCheck: AgentTool<ReturnType<typeof checkParameters>, { summary: string }> = {
     name: "lean_check",
@@ -96,10 +102,25 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
         const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);
         unreachable = lost ? unreachable + 1 : 0;
         if (unreachable >= MAX_UNREACHABLE) failure = `Lean could not be reached ${unreachable} times in a row`;
+        if (o.lines?.afterCheck !== undefined) {
+          // A line that fails here ends the session with an error, not the check.
+          try {
+            const stop = await o.lines.afterCheck({
+              index: submissions,
+              submission,
+              report,
+              ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
+              accepted: result.accepted,
+            });
+            if (stop !== undefined) lineStop = `line:${stop.line}`;
+          } catch (error) {
+            failure = messageOf(error);
+          }
+        }
         return {
           content: [{ type: "text", text: formatCheck(report) }],
           details: { summary: summarizeCheck(report) },
-          ...(result.accepted || failure !== undefined ? { terminate: true } : {}),
+          ...(result.accepted || failure !== undefined || lineStop !== undefined ? { terminate: true } : {}),
         };
       } catch (error) {
         failure = `the harness failed during a check: ${messageOf(error)}`;
@@ -113,15 +134,35 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     },
   };
 
+  const packet = o.lines?.packet;
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
     streamFn: o.models.streamSimple.bind(o.models),
     toolExecution: "sequential",
     sessionId: o.attemptId,
+    // The context packet of a line (M4) replaces every message after the system messages, which
+    // hold the system prompt and the tools. pi wants this hook never to throw: a failure ends the
+    // session with an error, and the request is aborted.
+    ...(packet !== undefined
+      ? {
+          transformContext: async (messages: AgentMessage[]) => {
+            requests += 1;
+            try {
+              const text = await packet(requests, messages);
+              if (text === undefined) return messages;
+              return [...messages.filter((m) => m.role === "system"), { role: "user", content: text, timestamp: Date.now() }];
+            } catch (error) {
+              failure = messageOf(error);
+              agent.abort();
+              return messages;
+            }
+          },
+        }
+      : {}),
     beforeToolCall: async () =>
       wrappingUp ? { block: true, reason: "The session is over: write your notes as text, without calling a tool." } : undefined,
     finishTurn: () => {
-      if (wrappingUp || accepted || failure !== undefined || o.signal.aborted) return { action: "end" };
+      if (wrappingUp || accepted || failure !== undefined || lineStop !== undefined || o.signal.aborted) return { action: "end" };
       if (o.ledger.exhausted) limit = "budget";
       else if (turns >= o.limits.turns) limit = "turns";
       else if (last !== undefined && contextTokens(last) >= o.limits.contextTokens) limit = "context";
@@ -167,6 +208,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   function stopOf(): SessionStop {
     if (accepted) return "solved";
     if (failure !== undefined) return "error";
+    if (lineStop !== undefined) return lineStop;
     if (o.signal.aborted) return o.signal.reason === ABORT_BUDGET ? "budget" : "aborted";
     if (limit !== undefined) return limit;
     if (last === undefined || last.stopReason === "error") return "error";

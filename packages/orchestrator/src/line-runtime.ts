@@ -1,0 +1,404 @@
+import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { BlobStore, Journal, Submission } from "@seshat/core";
+import type {
+  AttemptAnnotation,
+  Briefing,
+  Budget,
+  EnabledLine,
+  FinishedAttempt,
+  JsonObject,
+  LineHooks,
+  LineId,
+  LineTool,
+  ProblemContext,
+  ProblemEnd,
+  SessionCheck,
+  SessionContext,
+  Target,
+  TranscriptEntry,
+} from "@seshat/lines";
+import type { MemoryStore } from "@seshat/memory";
+import { messageOf, type Registry } from "@seshat/registry";
+import type { Ledger } from "./budget.ts";
+import { lineLlm } from "./llm.ts";
+import type { Workbench } from "./problem.ts";
+import type { ClaimBenches } from "./validate.ts";
+
+/** A hook of a line threw: a failure of the harness, which names the line and the hook. */
+export class LineError extends Error {
+  readonly line: LineId;
+  readonly hook: keyof LineHooks;
+
+  constructor(line: LineId, hook: keyof LineHooks, cause: unknown) {
+    super(`line ${line} failed in ${hook}: ${messageOf(cause)}`, { cause });
+    this.line = line;
+    this.hook = hook;
+  }
+}
+
+async function call<T>(line: LineId, hook: keyof LineHooks, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    throw new LineError(line, hook, error);
+  }
+}
+
+export interface RunLinesOptions {
+  lines: readonly EnabledLine[];
+  runId: string;
+  journal: Journal;
+  blobs: BlobStore;
+  registry: Registry;
+  memory: MemoryStore;
+  benches: ClaimBenches;
+  models: Models;
+  /** `provider/id` of the run's model. */
+  model: string;
+  /** Looks a `provider/id` up, with its credentials checked. */
+  resolveModel: (name: string) => Promise<Model<Api>>;
+  thinkingLevel: ThinkingLevel;
+  log: (line: string) => void;
+  /** The run's stop signal. */
+  signal?: AbortSignal;
+}
+
+export interface ProblemLinesOptions {
+  problemId: string;
+  claimId: string;
+  target: Target;
+  domain: readonly string[];
+  /** The problem's ledger. */
+  ledger: Ledger;
+  /** The problem's signal. */
+  signal: AbortSignal;
+  workbench: Workbench;
+}
+
+/** The enabled lines of a run, in `LINE_ORDER`, and what their contexts share. */
+export class RunLines {
+  readonly o: RunLinesOptions;
+  private readonly resolved = new Map<string, Promise<Model<Api>>>();
+
+  constructor(options: RunLinesOptions) {
+    this.o = options;
+  }
+
+  get ids(): LineId[] {
+    return this.o.lines.map((entry) => entry.line.id);
+  }
+
+  /** Looks a model up once per run. */
+  resolveModel(name: string): Promise<Model<Api>> {
+    let model = this.resolved.get(name);
+    if (model === undefined) {
+      model = this.o.resolveModel(name);
+      this.resolved.set(name, model);
+      model.catch(() => this.resolved.delete(name));
+    }
+    return model;
+  }
+
+  problem(options: ProblemLinesOptions): ProblemLines {
+    return new ProblemLines(this, options);
+  }
+}
+
+/** What a prover tells the lines about a session. */
+export interface SessionInfo {
+  prover: string;
+  session: number;
+  sessions: number;
+  attemptId: string;
+  /** `provider/id`. */
+  model: string;
+  regions: Submission;
+  strategy?: string;
+  subgoal?: string;
+}
+
+/** What the lines decided for a session about to start, merged in `LINE_ORDER`. */
+export interface SessionPlan {
+  /** The prover stops, for this reason (`line <id>: ...`). */
+  stop?: string;
+  /** The session is skipped, for this reason (`line <id>: ...`). */
+  skip?: string;
+  /** The session's model, when a line chose one. */
+  model?: { name: string; model: Model<Api> };
+  strategy?: string;
+  subgoal?: string;
+}
+
+/** The lines' part in a session that starts: briefing sections, tools, and the in-session hooks. */
+export interface OpenedSession {
+  sections: Briefing[];
+  tools: AgentTool<never, unknown>[];
+  hooks?: SessionHooks;
+}
+
+/** The hooks a session calls itself. */
+export interface SessionHooks {
+  /** The text that replaces the request's messages after the system prompt, or undefined. */
+  packet?: (request: number, messages: readonly AgentMessage[]) => Promise<string | undefined>;
+  /** After each check: the line that stops the session, and why. */
+  afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason: string } | undefined>;
+}
+
+/** The lines of one problem: each line's context, and the hooks at each point of the problem. */
+export class ProblemLines {
+  private readonly run: RunLines;
+  private readonly p: ProblemLinesOptions;
+  private readonly contexts = new Map<LineId, ProblemContext>();
+
+  constructor(run: RunLines, options: ProblemLinesOptions) {
+    this.run = run;
+    this.p = options;
+  }
+
+  private with<K extends keyof LineHooks>(hook: K): Array<{ entry: EnabledLine; hook: NonNullable<LineHooks[K]> }> {
+    return this.run.o.lines.flatMap((entry) => {
+      const fn = entry.line.hooks[hook];
+      return fn === undefined ? [] : [{ entry, hook: fn as NonNullable<LineHooks[K]> }];
+    });
+  }
+
+  /** The context of a line for this problem; with `signal`, one aborted by that signal instead. */
+  context(entry: EnabledLine, signal?: AbortSignal): ProblemContext {
+    const cached = signal === undefined ? this.contexts.get(entry.line.id) : undefined;
+    if (cached !== undefined) return cached;
+    const o = this.run.o;
+    const id = entry.line.id;
+    const actor = `line:${id}`;
+    const own = signal ?? this.p.signal;
+    const context: ProblemContext = {
+      line: id,
+      runId: o.runId,
+      problemId: this.p.problemId,
+      claimId: this.p.claimId,
+      target: this.p.target,
+      domain: this.p.domain,
+      memory: o.memory.withActor(actor),
+      registry: o.registry,
+      llm: lineLlm({
+        line: id,
+        journal: o.journal,
+        blobs: o.blobs,
+        models: o.models,
+        model: o.model,
+        resolveModel: (name) => this.run.resolveModel(name),
+        thinkingLevel: o.thinkingLevel,
+        ledger: this.p.ledger,
+        problemId: this.p.problemId,
+        signal: own,
+      }),
+      validate: (request) =>
+        o.benches.validate(request, { actor, signal: own, problem: { claimId: this.p.claimId, workbench: this.p.workbench } }),
+      budget: budgetOf(this.p.ledger),
+      log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
+      signal: own,
+      options: entry.options,
+    };
+    if (signal === undefined) this.contexts.set(id, context);
+    return context;
+  }
+
+  private sessionContext(entry: EnabledLine, info: SessionInfo): SessionContext {
+    return {
+      ...this.context(entry),
+      prover: info.prover,
+      session: info.session,
+      sessions: info.sessions,
+      attemptId: info.attemptId,
+      model: info.model,
+      regions: info.regions,
+      ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
+      ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
+    };
+  }
+
+  /**
+   * Runs the lines' `beforeProvers` in order, and stops calling them once the problem is settled
+   * (a proof of its claim passed) or its signal is aborted.
+   */
+  async beforeProvers(): Promise<void> {
+    for (const { entry, hook } of this.with("beforeProvers")) {
+      if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) return;
+      await call(entry.line.id, "beforeProvers", () => hook(this.context(entry)));
+      if (this.p.workbench.candidate !== undefined) this.log(`line ${entry.line.id} settled the problem before the provers`);
+    }
+  }
+
+  /**
+   * The lines' decisions for a session, merged in order: a later line's model, strategy or
+   * subgoal wins, and the first `stop` or `skip` ends the merge. A model a line chose is looked up
+   * here, so that a wrong one is that line's failure.
+   */
+  async beforeSession(info: SessionInfo): Promise<SessionPlan> {
+    const plan: SessionPlan = {};
+    let chosen: { line: LineId; name: string } | undefined;
+    for (const { entry, hook } of this.with("beforeSession")) {
+      const id = entry.line.id;
+      const decision = await call(id, "beforeSession", () => hook(this.sessionContext(entry, info)));
+      if (decision === undefined) continue;
+      if (decision.stop !== undefined) {
+        this.log(`${info.prover} stops before session ${info.session}: line ${id}: ${decision.stop}`);
+        return { stop: `line ${id}: ${decision.stop}` };
+      }
+      if (decision.skip !== undefined) {
+        this.log(`${info.prover} skips session ${info.session}: line ${id}: ${decision.skip}`);
+        return { skip: `line ${id}: ${decision.skip}` };
+      }
+      if (decision.model !== undefined) chosen = { line: id, name: decision.model };
+      if (decision.strategy !== undefined) plan.strategy = decision.strategy;
+      if (decision.subgoal !== undefined) plan.subgoal = decision.subgoal;
+    }
+    if (chosen !== undefined) {
+      const { line, name } = chosen;
+      plan.model = { name, model: await call(line, "beforeSession", () => this.run.resolveModel(name)) };
+    }
+    return plan;
+  }
+
+  /**
+   * Prepares a session that starts: the lines' briefing sections and tools, and the hooks the
+   * session calls. `taken` are the names of the session's other tools.
+   */
+  async openSession(info: SessionInfo, taken: readonly string[]): Promise<OpenedSession> {
+    const sections: Briefing[] = [];
+    for (const { entry, hook } of this.with("briefing")) {
+      const briefing = await call(entry.line.id, "briefing", () => hook(this.sessionContext(entry, info)));
+      if (briefing !== undefined) sections.push(briefing);
+    }
+    const tools: AgentTool<never, unknown>[] = [];
+    const names = new Set(taken);
+    for (const { entry, hook } of this.with("tools")) {
+      const id = entry.line.id;
+      const specs = await call(id, "tools", () => hook(this.sessionContext(entry, info)));
+      for (const spec of specs) {
+        if (!/^[a-z][a-z0-9_]{0,63}$/.test(spec.name)) throw new LineError(id, "tools", `bad tool name ${JSON.stringify(spec.name)}`);
+        if (names.has(spec.name)) throw new LineError(id, "tools", `the tool name ${spec.name} is taken`);
+        names.add(spec.name);
+        tools.push(agentTool(id, spec, this.p.signal));
+      }
+    }
+    const packetLine = this.with("contextPacket")[0];
+    const checkers = this.with("afterCheck");
+    const hooks: SessionHooks = {
+      ...(packetLine !== undefined
+        ? {
+            packet: (request: number, messages: readonly AgentMessage[]) =>
+              call(packetLine.entry.line.id, "contextPacket", () =>
+                packetLine.hook(this.sessionContext(packetLine.entry, info), { request, transcript: transcriptOf(messages) }),
+              ),
+          }
+        : {}),
+      ...(checkers.length > 0
+        ? {
+            afterCheck: async (check: SessionCheck) => {
+              for (const { entry, hook } of checkers) {
+                const id = entry.line.id;
+                const decision = await call(id, "afterCheck", () => hook(this.sessionContext(entry, info), check));
+                if (decision?.stop !== undefined) {
+                  this.log(`${info.prover} session ${info.session}: line ${id} stops it: ${decision.stop}`);
+                  return { line: id, reason: decision.stop };
+                }
+              }
+              return undefined;
+            },
+          }
+        : {}),
+    };
+    return { sections, tools, ...(hooks.packet !== undefined || hooks.afterCheck !== undefined ? { hooks } : {}) };
+  }
+
+  /** The lines' annotations of an attempt, merged in order: a later line's fields win. */
+  async afterAttempt(attempt: FinishedAttempt): Promise<AttemptAnnotation> {
+    const merged: AttemptAnnotation = {};
+    for (const { entry, hook } of this.with("afterAttempt")) {
+      const annotation = await call(entry.line.id, "afterAttempt", () => hook(this.context(entry), attempt));
+      if (annotation?.strategy !== undefined) merged.strategy = annotation.strategy;
+      if (annotation?.premises !== undefined) merged.premises = annotation.premises;
+      if (annotation?.failureDetail !== undefined) merged.failureDetail = annotation.failureDetail;
+    }
+    return merged;
+  }
+
+  /** The lines' `afterProblem`, with the run's signal: the problem's own may be aborted by now. */
+  async afterProblem(end: ProblemEnd): Promise<void> {
+    const signal = this.run.o.signal ?? new AbortController().signal;
+    for (const { entry, hook } of this.with("afterProblem")) {
+      await call(entry.line.id, "afterProblem", () => hook(this.context(entry, signal), end));
+    }
+  }
+
+  private log(text: string): void {
+    this.run.o.log(`${this.p.problemId}: ${text}`);
+  }
+}
+
+function budgetOf(ledger: Ledger): Budget {
+  return {
+    get limitUsd() {
+      return ledger.limitUsd;
+    },
+    get usd() {
+      return ledger.usd;
+    },
+    get exhausted() {
+      return ledger.exhausted;
+    },
+  };
+}
+
+/** A line's tool as a tool of a prover's session. An error goes back to the model as a tool error. */
+function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal): AgentTool<never, unknown> {
+  return {
+    name: spec.name,
+    label: spec.name,
+    description: spec.description,
+    // A plain JSON Schema, which pi validates as it is.
+    parameters: spec.parameters as never,
+    executionMode: "sequential",
+    execute: async (_id, params, signal) => {
+      try {
+        const text = await spec.run(params as JsonObject, signal ?? fallback);
+        return { content: [{ type: "text", text }], details: { line } };
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error: ${messageOf(error)}` }], details: { line }, isError: true };
+      }
+    },
+  };
+}
+
+/** A session's messages as the lines read them: the system messages left out, thinking dropped. */
+export function transcriptOf(messages: readonly AgentMessage[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  for (const message of messages) {
+    if (!("role" in message)) continue;
+    switch (message.role) {
+      case "user": {
+        const text = typeof message.content === "string" ? message.content : message.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
+        entries.push({ role: "user", text });
+        break;
+      }
+      case "assistant": {
+        const text = message.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
+        const toolCalls = message.content.flatMap((c) => (c.type === "toolCall" ? [{ name: c.name, arguments: c.arguments as JsonObject }] : []));
+        entries.push({ role: "assistant", text, ...(toolCalls.length > 0 ? { toolCalls } : {}) });
+        break;
+      }
+      case "toolResult":
+        entries.push({
+          role: "tool",
+          text: message.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n"),
+          tool: message.toolName,
+          ...(message.isError ? { isError: true } : {}),
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return entries;
+}

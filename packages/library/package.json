@@ -1,0 +1,16 @@
+{
+  "name": "@seshat/library",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The growing lemma library: promotion, deduplication, index and search (line M3).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

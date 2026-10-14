@@ -1,0 +1,19 @@
+{
+  "name": "@seshat/induction",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The inductive engine and theory exploration: data tables, hypotheses, classical conjecturing (lines M8, M13).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/classical": "workspace:*",
+    "@seshat/core": "workspace:*",
+    "@seshat/library": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/models": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

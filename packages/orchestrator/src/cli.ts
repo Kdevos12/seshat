@@ -7,6 +7,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
 import { type Json, newId, readEvents } from "@seshat/core";
+import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { buildReport, renderRunReport } from "./report.ts";
@@ -21,13 +22,16 @@ const usage = `usage:
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--out DIR]
+              [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--out DIR]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
-provers a direct capability besides lean_check, such as compute.sage.`;
+provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
+(documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
+--line-option sets an option of an enabled line, its VALUE read as JSON when it parses.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -53,6 +57,9 @@ const { positionals, values } = parseArgs({
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
     tool: { type: "string", multiple: true },
+    lines: { type: "string", multiple: true },
+    ablation: { type: "string" },
+    "line-option": { type: "string", multiple: true },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
@@ -182,6 +189,37 @@ function selectProblems(index: BenchIndex): { problems: ProblemEntry[]; selectio
   return { problems: sample(index.problems, n, seed), selection: { sample: n, seed } };
 }
 
+/** The lines a run enables: `--lines` (comma-separated, repeatable), or the cumulative config `--ablation NAME`. */
+function selectLines(): string[] {
+  if (values.lines !== undefined && values.ablation !== undefined) throw new UsageError("choose the lines with --lines or --ablation, not both");
+  if (values.ablation !== undefined) {
+    if (!isAblationName(values.ablation)) {
+      throw new UsageError(`--ablation must be M0 or a line (${LINE_ORDER.join(", ")}), got ${values.ablation}`);
+    }
+    return ablationLines(values.ablation);
+  }
+  return (values.lines ?? []).flatMap((list) => list.split(",")).map((id) => id.trim()).filter((id) => id !== "");
+}
+
+/** The `--line-option ID.KEY=VALUE` options, by line: VALUE is JSON when it parses, a string otherwise. */
+function lineOptions(given: readonly string[]): Record<string, JsonObject> {
+  const options = new Map<string, Map<string, Json>>();
+  for (const option of given) {
+    const match = /^([A-Za-z][A-Za-z0-9]*)\.([A-Za-z][A-Za-z0-9_]*)=(.*)$/s.exec(option);
+    if (match === null) throw new UsageError(`--line-option takes ID.KEY=VALUE, got ${JSON.stringify(option)}`);
+    const [, id = "", key = "", text = ""] = match;
+    let value: Json;
+    try {
+      value = JSON.parse(text) as Json;
+    } catch {
+      value = text;
+    }
+    const line = options.get(id) ?? new Map<string, Json>();
+    options.set(id, line.set(key, value));
+  }
+  return Object.fromEntries([...options].map(([id, line]) => [id, Object.fromEntries(line)]));
+}
+
 /** The commit of this repository, with `+dirty` when tracked files have changes. */
 function codeRevision(): string | undefined {
   const git = (args: string[]) =>
@@ -218,6 +256,8 @@ async function run(): Promise<number> {
     console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
   }
   const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
+  const lines = selectLines();
+  const options = lineOptions(values["line-option"] ?? []);
   const config: RunConfig = {
     selection,
     model: values.model,
@@ -232,6 +272,8 @@ async function run(): Promise<number> {
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
+    ...(lines.length > 0 ? { lines } : {}),
+    ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
   };
   const host = hostName(values.host);
   const runId = newId("run");

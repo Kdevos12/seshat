@@ -15,13 +15,145 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  packages/abduction:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/graph':
+        specifier: workspace:*
+        version: link:../graph
+      '@seshat/lean-meta':
+        specifier: workspace:*
+        version: link:../lean-meta
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/models':
+        specifier: workspace:*
+        version: link:../models
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/bench:
     dependencies:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
 
+  packages/classical:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/context:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/graph':
+        specifier: workspace:*
+        version: link:../graph
+      '@seshat/lessons':
+        specifier: workspace:*
+        version: link:../lessons
+      '@seshat/library':
+        specifier: workspace:*
+        version: link:../library
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/core: {}
+
+  packages/fleet:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/graph:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/guards:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/induction:
+    dependencies:
+      '@seshat/classical':
+        specifier: workspace:*
+        version: link:../classical
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/library':
+        specifier: workspace:*
+        version: link:../library
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/models':
+        specifier: workspace:*
+        version: link:../models
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
 
   packages/lean-kimina:
     dependencies:
@@ -32,11 +164,98 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lean-local:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/lean-meta:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/lessons:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/library:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/lines:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/memory:
     dependencies:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/models:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
 
   packages/orchestrator:
     dependencies:
@@ -46,18 +265,66 @@ importers:
       '@earendil-works/pi-ai':
         specifier: 1.2.0
         version: 1.2.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(ws@8.22.0)
+      '@seshat/abduction':
+        specifier: workspace:*
+        version: link:../abduction
       '@seshat/bench':
         specifier: workspace:*
         version: link:../bench
+      '@seshat/classical':
+        specifier: workspace:*
+        version: link:../classical
+      '@seshat/context':
+        specifier: workspace:*
+        version: link:../context
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@seshat/graph':
+        specifier: workspace:*
+        version: link:../graph
+      '@seshat/guards':
+        specifier: workspace:*
+        version: link:../guards
+      '@seshat/induction':
+        specifier: workspace:*
+        version: link:../induction
       '@seshat/lean-kimina':
         specifier: workspace:*
         version: link:../lean-kimina
+      '@seshat/lean-local':
+        specifier: workspace:*
+        version: link:../lean-local
+      '@seshat/lean-meta':
+        specifier: workspace:*
+        version: link:../lean-meta
+      '@seshat/lessons':
+        specifier: workspace:*
+        version: link:../lessons
+      '@seshat/library':
+        specifier: workspace:*
+        version: link:../library
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/models':
+        specifier: workspace:*
+        version: link:../models
       '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
+      '@seshat/repair':
+        specifier: workspace:*
+        version: link:../repair
+      '@seshat/scheduler':
+        specifier: workspace:*
+        version: link:../scheduler
     devDependencies:
       '@earendil-works/pi-mcp':
         specifier: 1.2.0
@@ -71,6 +338,48 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/repair:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/induction':
+        specifier: workspace:*
+        version: link:../induction
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/scheduler:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@seshat/graph':
+        specifier: workspace:*
+        version: link:../graph
+      '@seshat/lean-meta':
+        specifier: workspace:*
+        version: link:../lean-meta
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
 
 packages:
 

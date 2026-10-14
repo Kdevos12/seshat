@@ -48,15 +48,22 @@ export interface CheckResult {
 }
 
 export interface Candidate {
-  attemptId: string;
+  /** The attempt that found it; absent for a proof a line submitted outside a session. */
+  attemptId?: string;
   validationId: string;
   report: ValidationReport;
+}
+
+/** What a workbench checks against: a Lean file (a problem's, or a claim's reference file) and its sketch. */
+export interface WorkbenchFile {
+  source: string;
+  sketch: Sketch;
 }
 
 export interface WorkbenchOptions {
   journal: Journal;
   registry: Registry;
-  problem: LoadedProblem;
+  problem: WorkbenchFile;
   claimId: string;
   reference: Reference;
   /** Default: `SKETCH_POLICY`. */
@@ -64,6 +71,11 @@ export interface WorkbenchOptions {
   certifier?: LeanCertifier;
   /** Keeps every file a prover submits, by its `submissionHash`. */
   blobs?: BlobStore;
+  /**
+   * The file states the negation of the claim: its valid checks are refutations, recorded with
+   * `negation: true`, and leave the claim's status as it is (only certification settles one).
+   */
+  negation?: boolean;
 }
 
 const MARKERS = [AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END].map((m) => m.trim());
@@ -71,16 +83,18 @@ const MARKERS = [AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END].map((m) => m.trim()
 /**
  * What the provers of one problem share: the sketch, the reference type, and the checks. A check of
  * a file without holes is a validation and goes into the journal; the first valid one makes the
- * claim a candidate (`computed`) and ends the problem's search.
+ * claim a candidate (`computed`) and ends the problem's search. The lines' `validate` checks other
+ * claims, and negations, on workbenches of their own.
  */
 export class Workbench {
   readonly journal: Journal;
   readonly registry: Registry;
-  readonly problem: LoadedProblem;
+  readonly problem: WorkbenchFile;
   readonly claimId: string;
   readonly reference: Reference;
   readonly policy: ValidationPolicy;
   readonly certifier: LeanCertifier | undefined;
+  readonly negation: boolean;
   private readonly blobs: BlobStore | undefined;
   private found: Candidate | undefined;
   private readonly listeners: Array<(candidate: Candidate) => void> = [];
@@ -94,6 +108,7 @@ export class Workbench {
     this.policy = options.policy ?? SKETCH_POLICY;
     this.certifier = options.certifier;
     this.blobs = options.blobs;
+    this.negation = options.negation ?? false;
   }
 
   get sketch(): Sketch {
@@ -115,11 +130,12 @@ export class Workbench {
     return renderSketch(this.sketch, submission.aux, submission.proof);
   }
 
-  async check(submission: Submission, context: { attemptId: string; actor: string; signal?: AbortSignal }): Promise<CheckResult> {
+  async check(submission: Submission, context: { attemptId?: string; actor: string; signal?: AbortSignal }): Promise<CheckResult> {
     const submitted = this.render(submission);
     this.blobs?.put(submitted);
     const markers = markerProblems(submission);
-    const checker = new RegistryLeanChecker(this.registry, { attemptId: context.attemptId, actor: context.actor });
+    const attempt = context.attemptId !== undefined ? { attemptId: context.attemptId } : {};
+    const checker = new RegistryLeanChecker(this.registry, { ...attempt, actor: context.actor });
     const report =
       markers.length > 0
         ? refused(submitted, markers)
@@ -139,17 +155,18 @@ export class Workbench {
       {
         validationId,
         claimId: this.claimId,
-        attemptId: context.attemptId,
+        ...attempt,
         method: "repl",
         verdict: report.verdict,
         reasons: report.reasons,
         axioms: report.axioms,
         submissionHash: report.submissionHash,
+        ...(this.negation ? { negation: true } : {}),
       },
       "validator",
     );
     if (report.verdict !== "valid") return { report, validationId, accepted: false };
-    if (this.journal.projection.claim(this.claimId)?.status === "open") {
+    if (!this.negation && this.journal.projection.claim(this.claimId)?.status === "open") {
       this.journal.emit(
         "claim.status_changed",
         {
@@ -157,25 +174,26 @@ export class Workbench {
           from: "open",
           to: "computed",
           reason: "a proof passed the fast check",
-          attemptId: context.attemptId,
+          ...attempt,
           validationId,
         },
         "orchestrator",
       );
     }
     if (this.found !== undefined) return { report, validationId, accepted: false };
-    this.found = { attemptId: context.attemptId, validationId, report };
+    this.found = { ...attempt, validationId, report };
     for (const listener of this.listeners.splice(0)) listener(this.found);
     return { report, validationId, accepted: true };
   }
 
   /**
    * Certifies the candidate, when there is a certifier: a certified proof makes the claim `proved`,
-   * a rejected one sends it back to `open`. Returns undefined without a certifier or a candidate.
+   * a rejected one sends it back to `open`. Returns undefined without a certifier or a candidate,
+   * and for a refutation, whose certification is not wired yet.
    */
   async certify(signal?: AbortSignal): Promise<CertificationResult | undefined> {
     const candidate = this.found;
-    if (this.certifier === undefined || candidate === undefined) return undefined;
+    if (this.certifier === undefined || candidate === undefined || this.negation) return undefined;
     const validator = new ProofValidator(new RegistryLeanChecker(this.registry), { policy: this.policy, certifier: this.certifier });
     const result = await validator.certify(this.sketch, this.problem.source, candidate.report, signal ? { signal } : {});
     if (result === undefined) return undefined;
@@ -186,7 +204,7 @@ export class Workbench {
       {
         validationId,
         claimId: this.claimId,
-        attemptId: candidate.attemptId,
+        ...(candidate.attemptId !== undefined ? { attemptId: candidate.attemptId } : {}),
         method: "kernel_replay",
         verdict: valid ? "valid" : "invalid",
         reasons: result.reasons,

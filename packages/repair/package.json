@@ -1,0 +1,17 @@
+{
+  "name": "@seshat/repair",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Typed repairs from failure classes, and Lakatos-style repair of refuted conjectures (line M14).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/induction": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

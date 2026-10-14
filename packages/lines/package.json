@@ -1,0 +1,15 @@
+{
+  "name": "@seshat/lines",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The line API: ablation lines, their hooks and contexts, cumulative configs, and the checks of a run's lines.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

@@ -21,13 +21,17 @@ The code is in `packages/orchestrator/src`:
 | `budget.ts` | Ledgers of dollars and tokens. |
 | `report.ts` | The report of a run, built from its journal alone. |
 | `cli.ts` | `harness models`, `harness run`, `harness report`, with the other commands. |
+| `lines.ts` | The lines a run can enable, by id; none is implemented yet ([lines.md](lines.md)). |
+| `line-runtime.ts` | The enabled lines of a run: their contexts, and their hooks at each point of a problem, a prover and a session. |
+| `llm.ts` | The lines' one-shot model calls, charged and recorded. |
+| `validate.ts` | The lines' `validate`: proofs of any claim, or of its negation, through the validator. |
 
 ## A run
 
 `runBench(options)`:
 
-1. Checks the configuration, finds the model and its provider's credentials, and refuses a run
-   directory that already holds a journal. It builds the host's registry, then checks the tools
+1. Checks the configuration and the lines it enables ([lines.md](lines.md)), finds the model and
+   its provider's credentials, and refuses a run directory that already holds a journal. It builds the host's registry, then checks the tools
    given with `--tool` and pins each to an implementation that answers
    ([other tools](#other-tools)). A failure here is a `RunSetupError`: no event is written, and a
    directory created for the run is removed.
@@ -36,7 +40,8 @@ The code is in `packages/orchestrator/src`:
    of their list, the model and its thinking level, the provers, sessions, limits, notes length,
    budgets and concurrency, the other tools with their implementations and versions, the bench's
    hash and source, the registry's hash (manifests and host profile), the prompts' version and
-   hash, the validation policy, the certifier, and the code revision.
+   hash, the validation policy, the certifier, the code revision, and the enabled lines with their
+   options (only when there are some, so that an M0 run records what it always did).
 3. Works on the problems in order, `concurrency` at a time.
 4. Records `run.finished`, then writes `report.md` and `report.json`.
 
@@ -85,8 +90,8 @@ characters, and is recorded as `lesson.recorded`. New notes replace the old ones
 prompt asks the prover to rewrite them in full and keep what still helps.
 
 A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
-out, when the problem is aborted, or after two sessions in a row ended with an error (the model or
-Lean could not be reached).
+out, when the problem is aborted, after two sessions in a row ended with an error (the model or
+Lean could not be reached), or when a line's `beforeSession` stops it (`line`).
 
 ## A session
 
@@ -112,7 +117,8 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `budget` | The problem's or the run's budget ran out. | `budget_exhausted` |
 | `solved` | One of its checks made the candidate. | `valid` |
 | `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
-| `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check. | `error` |
+| `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
+| `line:<id>` | An enabled line's `afterCheck` stopped it ([lines.md](lines.md#the-hooks)); no notes are asked for. | `invalid` |
 
 When `turns` or `context` ends a session that is not the prover's last, one more request asks the
 model for its notes (`WRAP_UP`). The tools stay declared, because providers need the definitions
@@ -235,6 +241,7 @@ pnpm harness models                    # the providers, and whether their creden
 pnpm harness models PROVIDER           # the models of a provider, with their prices
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --ablation M2
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
 
@@ -260,6 +267,9 @@ Options of `harness run`:
 | `--run-budget-usd X` | none | Dollars for the whole run. |
 | `--concurrency N` | 1 | Problems worked on at the same time. |
 | `--tool CAPABILITY` | none | A `direct` capability given to the provers besides `lean_check`, such as `compute.sage`; repeat it for several ([other tools](#other-tools)). |
+| `--lines ID,...` | none | The lines to enable, such as `M1,M10`; repeatable. None: M0 ([lines.md](lines.md)). No line is implemented yet, so a run with one refuses to start. |
+| `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
+| `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
 Progress goes to the standard error, one line per problem, and the report goes to the standard
@@ -297,8 +307,10 @@ reached; certification, accepted and rejected; and a run aborted between problem
 an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
 errors as the model reads them; the tool's description and the prompt's section; the run's
 refusals of tools it cannot give; and the pinning to the first implementation that answers.
-`cli.test.ts` covers the argument and setup errors of `harness run`, and `harness report` and
-`harness models`.
+`cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options too), and
+`harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
+([lines.md](lines.md#tested-and-not-yet)); with no line enabled, the loop is the one the tests above
+cover, unchanged.
 
 A run with the real SageMath (the `local` implementation), the faux model and the simulated Lean was
 done by hand on 2026-10-13: the outputs, the per-attempt sessions, a timeout and the report came out

@@ -134,7 +134,7 @@ export interface EventDataMap {
     outcome: AttemptOutcome;
     /** The kind of failure of the attempt's last check, for an `invalid` attempt. */
     failureClass?: string;
-    /** Why the session ended: `model`, `turns`, `context`, `budget`, `solved`, `aborted`, `error`. */
+    /** Why the session ended: `model`, `turns`, `context`, `budget`, `solved`, `aborted`, `error`, or `line:<id>`. */
     stoppedBy?: string;
     /** What failed, for an `error` attempt. */
     error?: string;

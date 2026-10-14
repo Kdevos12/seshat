@@ -3,7 +3,7 @@
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.
 
-Status: early development (phase P0a). The event journal, the memory store, the proof validator,
+Status: early development (phase P0a). The event journal, the memory store, the line API, the proof validator,
 a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
@@ -71,7 +71,10 @@ as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), the
-mechanisms that would use it are not ([documentation/memory.md](documentation/memory.md)).
+mechanisms that would use it are not ([documentation/memory.md](documentation/memory.md)). Each
+mechanism will come as a line that a run switches on (`harness run --lines M1,M10` or
+`--ablation M10`), so that it is measured against the run without it; no line is written yet
+([documentation/lines.md](documentation/lines.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
