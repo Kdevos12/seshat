@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { loadCatalog, Registry, type HostProfile } from "@math-harness/registry";
+import { loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { capabilityTool, checkTools, PROMPT_VERSION, REPO_ROOT, renderOutput, RunSetupError, systemPrompt, toolDescription, toolName } from "../src/index.ts";
 import { fakeSage, refusal } from "./fixtures/fake-sage.ts";
 import { call, check, demoRegistry, demoRun, ofType, say, sageRegistry, tempDir } from "./m0-helpers.ts";

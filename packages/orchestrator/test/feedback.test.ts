@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { prepareSketch, renderSketch, type ValidationReport } from "@math-harness/core";
+import { prepareSketch, renderSketch, type ValidationReport } from "@seshat/core";
 import { failureClass, formatCheck, locate, summarizeCheck } from "../src/index.ts";
 import { DEMO_FILE } from "./m0-helpers.ts";
 

@@ -12,9 +12,9 @@ import {
   type FauxResponseStep,
   type MutableModels,
 } from "@earendil-works/pi-ai";
-import { buildIndex, DISCRETE, type BenchIndex } from "@math-harness/bench";
-import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@math-harness/core";
-import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@math-harness/registry";
+import { buildIndex, DISCRETE, type BenchIndex } from "@seshat/bench";
+import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@seshat/core";
+import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import type { FakeSage } from "./fixtures/fake-sage.ts";
 import { DEFAULT_CONFIG, REPO_ROOT, runBench, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";

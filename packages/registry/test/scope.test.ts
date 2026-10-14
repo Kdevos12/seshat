@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createInMemoryTransportPair } from "@earendil-works/pi-mcp/testing";
-import type { EventDataMap, EventType } from "@math-harness/core";
+import type { EventDataMap, EventType } from "@seshat/core";
 import { CapabilityError, checkCapability, loadCatalog, Registry, runContract, serverEnv, type McpTransportFactory } from "../src/index.ts";
 import { attach, type Workspaces } from "./fixtures/fake-mcp-server.ts";
 import { FAKE_SERVER, writeCatalog } from "./helpers.ts";

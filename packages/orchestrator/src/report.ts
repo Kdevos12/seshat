@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type EventDataMap, type HarnessEvent, readEvents } from "@math-harness/core";
+import { type EventDataMap, type HarnessEvent, readEvents } from "@seshat/core";
 
 export interface ProblemLine {
   problemId: string;

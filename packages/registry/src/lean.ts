@@ -1,4 +1,4 @@
-import type { Json, LeanChecker, LeanCheckOptions, LeanCheckResult, LeanSnippet } from "@math-harness/core";
+import type { Json, LeanChecker, LeanCheckOptions, LeanCheckResult, LeanSnippet } from "@seshat/core";
 import { UnavailableError, type HealthCheck, type ImplementationInstance } from "./implementation.ts";
 import { CapabilityError, type Registry } from "./registry.ts";
 

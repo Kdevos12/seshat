@@ -41,7 +41,7 @@ interface LeanCertifier {
 
 ## Kimina Lean Server
 
-`@math-harness/lean-kimina` implements `LeanChecker` over
+`@seshat/lean-kimina` implements `LeanChecker` over
 [Kimina Lean Server](https://github.com/project-numina/kimina-lean-server) 2.x. The wire format
 below was read from the server's source (commit `fb2393de`, January 2026).
 

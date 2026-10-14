@@ -1,5 +1,5 @@
 {
-  "name": "@math-harness/core",
+  "name": "@seshat/core",
   "version": "0.0.0",
   "private": true,
   "description": "Event log, ids, statuses, SQLite projection and the Lean proof validator. Depends on no tool.",

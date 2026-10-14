@@ -1,4 +1,4 @@
-import { leanCheckImplementation, validate, type ImplementationFactory, type JsonSchema } from "@math-harness/registry";
+import { leanCheckImplementation, validate, type ImplementationFactory, type JsonSchema } from "@seshat/registry";
 import { KiminaChecker, type KiminaOptions } from "./checker.ts";
 
 const SETTINGS: JsonSchema = {

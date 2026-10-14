@@ -7,7 +7,7 @@ import type {
   LeanPosition,
   LeanSnippet,
   LeanSorry,
-} from "@math-harness/core";
+} from "@seshat/core";
 
 /**
  * Wire format of Kimina Lean Server 2.x (`POST /api/check`), from its source

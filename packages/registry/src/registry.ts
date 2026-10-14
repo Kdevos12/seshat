@@ -1,4 +1,4 @@
-import { hashJson, newId, type EventDataMap, type EventType, type Json } from "@math-harness/core";
+import { hashJson, newId, type EventDataMap, type EventType, type Json } from "@seshat/core";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 import { describeCapability } from "./describe.ts";
 import { checkHostProfile, hostProfileHash, hostProfilePath, interpolate, loadHostProfile, type HostProfile } from "./host.ts";

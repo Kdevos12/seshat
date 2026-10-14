@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { hashJson, type Json } from "@math-harness/core";
+import { hashJson, type Json } from "@seshat/core";
 import { CatalogError, type Catalog } from "./manifest.ts";
 import { isPlainObject, validate, type JsonSchema } from "./schema.ts";
 

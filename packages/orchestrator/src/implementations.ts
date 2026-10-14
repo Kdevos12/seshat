@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { kiminaFactory } from "@math-harness/lean-kimina";
-import { Registry, type ImplementationFactory, type RegistryOptions } from "@math-harness/registry";
+import { kiminaFactory } from "@seshat/lean-kimina";
+import { Registry, type ImplementationFactory, type RegistryOptions } from "@seshat/registry";
 
 /** The repository: `capabilities/` holds the manifests, `config/hosts/` the host profiles. */
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));

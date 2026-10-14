@@ -1,9 +1,9 @@
 import { McpClient, StdioTransport, StreamableHttpTransport, type CallToolResult, type McpTransport } from "@earendil-works/pi-mcp";
-import type { Json } from "@math-harness/core";
+import type { Json } from "@seshat/core";
 import type { McpImplementationSpec, McpServerSpec } from "./manifest.ts";
 import { messageOf, UnavailableError, type HealthCheck, type ImplementationInstance, type InvokeContext } from "./implementation.ts";
 
-const CLIENT = { name: "math-harness", version: "0.0.0" };
+const CLIENT = { name: "seshat", version: "0.0.0" };
 /** pi-mcp's own request timer is set past the registry's, so that the registry's fires first. */
 const REQUEST_SLACK_MS = 5_000;
 

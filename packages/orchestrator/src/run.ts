@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import type { BenchIndex, ProblemEntry } from "@math-harness/bench";
+import type { BenchIndex, ProblemEntry } from "@seshat/bench";
 import {
   BlobStore,
   CheckFailedError,
@@ -16,8 +16,8 @@ import {
   type Reference,
   SKETCH_POLICY,
   sha256Hex,
-} from "@math-harness/core";
-import { messageOf, RegistryLeanChecker, type Registry } from "@math-harness/registry";
+} from "@seshat/core";
+import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { Ledger } from "./budget.ts";
 import { type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";

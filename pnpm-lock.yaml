@@ -17,7 +17,7 @@ importers:
 
   packages/bench:
     dependencies:
-      '@math-harness/core':
+      '@seshat/core':
         specifier: workspace:*
         version: link:../core
 
@@ -25,10 +25,10 @@ importers:
 
   packages/lean-kimina:
     dependencies:
-      '@math-harness/core':
+      '@seshat/core':
         specifier: workspace:*
         version: link:../core
-      '@math-harness/registry':
+      '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
 
@@ -40,16 +40,16 @@ importers:
       '@earendil-works/pi-ai':
         specifier: 1.2.0
         version: 1.2.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(ws@8.22.0)
-      '@math-harness/bench':
+      '@seshat/bench':
         specifier: workspace:*
         version: link:../bench
-      '@math-harness/core':
+      '@seshat/core':
         specifier: workspace:*
         version: link:../core
-      '@math-harness/lean-kimina':
+      '@seshat/lean-kimina':
         specifier: workspace:*
         version: link:../lean-kimina
-      '@math-harness/registry':
+      '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
     devDependencies:
@@ -62,7 +62,7 @@ importers:
       '@earendil-works/pi-mcp':
         specifier: 1.2.0
         version: 1.2.0
-      '@math-harness/core':
+      '@seshat/core':
         specifier: workspace:*
         version: link:../core
 

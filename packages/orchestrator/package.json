@@ -1,5 +1,5 @@
 {
-  "name": "@math-harness/orchestrator",
+  "name": "@seshat/orchestrator",
   "version": "0.0.0",
   "private": true,
   "description": "The composition root: registry with every implementation, the M0 loop on pi, and the harness CLI.",
@@ -13,10 +13,10 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
-    "@math-harness/bench": "workspace:*",
-    "@math-harness/core": "workspace:*",
-    "@math-harness/lean-kimina": "workspace:*",
-    "@math-harness/registry": "workspace:*"
+    "@seshat/bench": "workspace:*",
+    "@seshat/core": "workspace:*",
+    "@seshat/lean-kimina": "workspace:*",
+    "@seshat/registry": "workspace:*"
   },
   "devDependencies": {
     "@earendil-works/pi-mcp": "1.2.0"

@@ -1,5 +1,5 @@
 {
-  "name": "@math-harness/registry",
+  "name": "@seshat/registry",
   "version": "0.0.0",
   "private": true,
   "description": "Capability manifests, host profiles, implementations (in-process and MCP), tool runs and contract tests.",
@@ -7,6 +7,6 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@earendil-works/pi-mcp": "1.2.0",
-    "@math-harness/core": "workspace:*"
+    "@seshat/core": "workspace:*"
   }
 }

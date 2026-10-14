@@ -18,11 +18,11 @@
 
 | Package | Role | Depends on |
 |---|---|---|
-| `@math-harness/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
-| `@math-harness/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
-| `@math-harness/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
-| `@math-harness/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@math-harness/orchestrator` | Composition root (every implementation), the M0 loop on pi, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
+| `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
+| `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
+| `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
+| `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
+| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
 Data that is versioned with the code:
 

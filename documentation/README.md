@@ -1,6 +1,6 @@
-# math-harness documentation
+# Seshat documentation
 
-math-harness is a harness for autonomous mathematical research with LLMs. Models are used only
+Seshat is a harness for autonomous mathematical research with LLMs. Models are used only
 through their APIs, Lean decides what is proved, and classical tools (automated provers, SAT/SMT
 solvers, computer algebra, decision procedures) are used wherever they can do the job.
 
@@ -14,14 +14,14 @@ simulated model and a simulated Lean.
 
 | Part | Package | State |
 |---|---|---|
-| Event journal, claim statuses, SQLite projection | `@math-harness/core` | Done, tested |
-| Problem sketches and proof validator (fast check) | `@math-harness/core` | Done, tested with a simulated Lean |
-| Kimina Lean Server client | `@math-harness/lean-kimina` | Done, tested with a simulated server |
-| Bench built from formal-conjectures | `@math-harness/bench` | Done: 575 problems, index committed |
-| Capability registry, MCP boundary, `lean.check` and its contract | `@math-harness/registry` | Done, tested with simulated servers |
-| `harness` command (capabilities, health, contract tests, models, runs, reports) | `@math-harness/orchestrator` | Done |
-| M0 loop on pi: provers in sessions, notes, budgets, report | `@math-harness/orchestrator` | Done, tested with a simulated model and Lean |
-| Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@math-harness/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
+| Event journal, claim statuses, SQLite projection | `@seshat/core` | Done, tested |
+| Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
+| Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
+| Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
+| Capability registry, MCP boundary, `lean.check` and its contract | `@seshat/registry` | Done, tested with simulated servers |
+| `harness` command (capabilities, health, contract tests, models, runs, reports) | `@seshat/orchestrator` | Done |
+| M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
+| Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
 None of this has run against a real Lean or a real model yet, because the development environment
