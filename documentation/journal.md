@@ -140,7 +140,8 @@ from the journal gives the same rows.
 
 Queries: `claim`, `claimsByStatement`, `problem(s)`, `attempt(s)`, `toolRun(s)`, `lessons`,
 `validation(s)`, `edge`, `edges({from?, to?, kinds?, statuses?})`, `node`, `nodes(kind, claimId?)`,
-`modelCall`.
+`modelCall`. `edges({to})` looks the edges up in `edge_targets_by_to` and then by key, and never
+scans the edges (a test reads the query plan): `equivalents` and the graph queries call it.
 
 Applying an event is idempotent: an event at or below the last applied seq is skipped, and each
 event is applied in one transaction. When a journal is opened, a projection that lags is caught

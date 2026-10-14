@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
-import { type EdgeKind, type EdgeStatus, type EventDataMap, Journal, statementIdV0 } from "../src/index.ts";
+import { type EdgeKind, type EdgeStatus, edgesSql, type EventDataMap, Journal, statementIdV0 } from "../src/index.ts";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "mh-memory-"));
@@ -151,6 +151,51 @@ describe("memory events", () => {
     for (const suffix of ["", "-wal", "-shm"]) rmSync(path + suffix, { force: true });
     Journal.open(dir, "run_1").close();
     assert.deepEqual(dump(path), before);
+  });
+});
+
+describe("edge queries", () => {
+  it("find the edges that end at an id, among several targets, in the order they were added", () => {
+    const journal = Journal.open(tempDir(), "run_1");
+    for (const id of ["a", "b", "c", "d"]) claim(journal, `clm_${id}`, `: P_${id}`);
+    const add = (edgeId: string, kind: EdgeKind, from: string, to: string[], status: EdgeStatus = "proposed") =>
+      journal.emit("edge.added", { edgeId, kind, from: `clm_${from}`, to: to.map((id) => `clm_${id}`), status }, "test");
+    add("edg_1", "decomposes_into", "a", ["b", "c", "d"]);
+    add("edg_2", "implies", "b", ["c"]);
+    add("edg_3", "uses", "d", ["c"], "computed");
+    add("edg_4", "implies", "c", ["a"]);
+    const ids = (filter: Parameters<typeof journal.projection.edges>[0]) => journal.projection.edges(filter).map((e) => e.edge_id);
+    assert.deepEqual(ids({ to: "clm_c" }), ["edg_1", "edg_2", "edg_3"]);
+    assert.deepEqual(ids({ to: "clm_d" }), ["edg_1"]);
+    assert.deepEqual(ids({ to: "clm_a" }), ["edg_4"]);
+    assert.deepEqual(ids({ to: "clm_c", kinds: ["implies", "uses"] }), ["edg_2", "edg_3"]);
+    assert.deepEqual(ids({ to: "clm_c", statuses: ["computed"] }), ["edg_3"]);
+    assert.deepEqual(ids({ from: "clm_b", to: "clm_c" }), ["edg_2"]);
+    assert.deepEqual(ids({ from: "clm_a", to: "clm_a" }), []);
+    assert.deepEqual(ids({ to: "clm_x" }), []);
+    assert.deepEqual(ids({ to: "clm_c", kinds: [] }), []);
+    journal.close();
+  });
+
+  it("search the index of targets, and never scan the edges, for the edges that end at an id", () => {
+    const dir = tempDir();
+    const journal = Journal.open(dir, "run_1");
+    const db = new DatabaseSync(join(dir, "projection.sqlite"));
+    try {
+      const plan = (filter: Parameters<typeof edgesSql>[0]): string[] => {
+        const { sql, values } = edgesSql(filter);
+        return (db.prepare(`explain query plan ${sql}`).all(...values) as unknown as Array<{ detail: string }>).map((row) => row.detail);
+      };
+      // What `equivalents` asks for, and the plain target query: both go through `edge_targets_by_to`.
+      for (const filter of [{ to: "clm_a" }, { to: "clm_a", kinds: ["equiv"] as const, statuses: ["lean_checked"] as const }]) {
+        const steps = plan(filter);
+        assert.ok(steps.some((step) => step.includes("edge_targets_by_to")), `no search by target in: ${steps.join(" | ")}`);
+        assert.ok(!steps.some((step) => /^SCAN edges/.test(step)), `scans the edges in: ${steps.join(" | ")}`);
+      }
+    } finally {
+      db.close();
+      journal.close();
+    }
   });
 });
 

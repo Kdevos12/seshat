@@ -109,7 +109,7 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 | `claim(id)` | The claim, or undefined. |
 | `claimByStatement(statementId)` | The first claim with that statement id. |
 | `edge(id)` | The edge. |
-| `edges({from?, to?, kinds?, minStatus?})` | The edges that meet every criterion, in the order they were added. `to` matches any target; `minStatus` counts in the order `proposed`, `computed`, `informal_checked`, `human_signed`, `lean_checked`. |
+| `edges({from?, to?, kinds?, minStatus?})` | The edges that meet every criterion, in the order they were added. `to` matches any target and is answered from an index of targets, not by scanning the edges; `minStatus` counts in the order `proposed`, `computed`, `informal_checked`, `human_signed`, `lean_checked`. |
 | `equivalents(claimId)` | The claim and every claim reached from it through `lean_checked` `equiv` edges, in both directions: the claim first. |
 | `attempts(claimId, {includeEquivalents?})` | The attempts on the claim (and on its equivalents), in the order they started, with their role, strategies, premises and outcome. |
 | `validations(claimId)` | Its validations, of the claim and of its negation, in order. |

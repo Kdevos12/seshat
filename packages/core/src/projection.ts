@@ -210,6 +210,31 @@ create table if not exists model_calls (
 `;
 
 /**
+ * The SQL of `Projection.edges`, and its values. The edges that end at an id are found through
+ * `edge_targets_by_to`, then by their key: written as a correlated `exists (...)`, the same filter
+ * made SQLite scan every edge, and `equivalents` and every graph query call it. A test reads the
+ * query plan.
+ */
+export function edgesSql(filter: EdgeFilter): { sql: string; values: SQLInputValue[] } {
+  const where: string[] = [];
+  const values: SQLInputValue[] = [];
+  if (filter.from !== undefined) {
+    where.push("from_id = ?");
+    values.push(filter.from);
+  }
+  if (filter.to !== undefined) {
+    where.push("edge_id in (select edge_id from edge_targets where to_id = ?)");
+    values.push(filter.to);
+  }
+  for (const [column, list] of [["kind", filter.kinds], ["status", filter.statuses]] as const) {
+    if (list === undefined) continue;
+    where.push(`${column} in (${list.map(() => "?").join(", ") || "null"})`);
+    values.push(...list);
+  }
+  return { sql: `select * from edges${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_seq`, values };
+}
+
+/**
  * Queryable view of the journal in SQLite. Disposable: delete the file and replay the journal to
  * get it back. `apply` is idempotent, so replaying from any point is safe.
  */
@@ -461,22 +486,7 @@ export class Projection {
 
   /** The edges that meet every criterion of the filter, in the order they were added. */
   edges(filter: EdgeFilter = {}): EdgeRow[] {
-    const where: string[] = [];
-    const values: SQLInputValue[] = [];
-    if (filter.from !== undefined) {
-      where.push("from_id = ?");
-      values.push(filter.from);
-    }
-    if (filter.to !== undefined) {
-      where.push("exists (select 1 from edge_targets t where t.edge_id = edges.edge_id and t.to_id = ?)");
-      values.push(filter.to);
-    }
-    for (const [column, list] of [["kind", filter.kinds], ["status", filter.statuses]] as const) {
-      if (list === undefined) continue;
-      where.push(`${column} in (${list.map(() => "?").join(", ") || "null"})`);
-      values.push(...list);
-    }
-    const sql = `select * from edges${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_seq`;
+    const { sql, values } = edgesSql(filter);
     const rows = this.db.prepare(sql).all(...values) as unknown as StoredEdge[];
     return rows.map((row) => this.edgeRow(row));
   }
