@@ -1,4 +1,4 @@
-import type { TokenCost } from "@math-harness/core";
+import type { TokenCost } from "@seshat/core";
 import { calculateCost, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 
 /**

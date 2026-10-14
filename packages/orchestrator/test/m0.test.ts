@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
-import { BlobStore, type CertificationRequest, type LeanCertifier } from "@math-harness/core";
+import { BlobStore, type CertificationRequest, type LeanCertifier } from "@seshat/core";
 import { renderRunReport, resolveModel } from "../src/index.ts";
 import { check, DemoLean, demoAnswer, demoRun, fauxModels, ofType, say } from "./m0-helpers.ts";
 

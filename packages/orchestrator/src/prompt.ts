@@ -1,4 +1,4 @@
-import { sha256Hex } from "@math-harness/core";
+import { sha256Hex } from "@seshat/core";
 
 /** Changes with any change of the prompts below, and goes into `run.started`. */
 export const PROMPT_VERSION = "m0-2";

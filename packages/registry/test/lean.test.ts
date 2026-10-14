@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { Journal, prepareSketch, PROOF_BEGIN, ProofValidator, renderSketch, type LeanCheckResult, type LeanSnippet } from "@math-harness/core";
+import { Journal, prepareSketch, PROOF_BEGIN, ProofValidator, renderSketch, type LeanCheckResult, type LeanSnippet } from "@seshat/core";
 import { FakeChecker } from "../../core/test/fake-lean.ts";
 import { leanCheckImplementation, loadCatalog, Registry, RegistryLeanChecker, type HealthAwareChecker, type HostProfile } from "../src/index.ts";
 import { tempDir } from "./helpers.ts";

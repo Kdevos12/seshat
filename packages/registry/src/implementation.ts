@@ -1,4 +1,4 @@
-import type { Json } from "@math-harness/core";
+import type { Json } from "@seshat/core";
 import type { CapabilityManifest, InprocImplementationSpec } from "./manifest.ts";
 
 export interface InvokeContext {

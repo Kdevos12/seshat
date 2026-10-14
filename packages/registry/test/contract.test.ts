@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { LeanCheckResult, LeanMessage, LeanSnippet } from "@math-harness/core";
+import type { LeanCheckResult, LeanMessage, LeanSnippet } from "@seshat/core";
 import {
   checkExpectations,
   leanCheckImplementation,

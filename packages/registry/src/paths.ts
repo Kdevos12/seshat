@@ -1,4 +1,4 @@
-import type { Json } from "@math-harness/core";
+import type { Json } from "@seshat/core";
 
 const SEGMENT = /^(?:\*|[0-9]+|[A-Za-z_$][A-Za-z0-9_$-]*)$/;
 

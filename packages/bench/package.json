@@ -1,5 +1,5 @@
 {
-  "name": "@math-harness/bench",
+  "name": "@seshat/bench",
   "version": "0.0.0",
   "private": true,
   "description": "Benchmark indexes built from a formal-conjectures checkout.",
@@ -7,6 +7,6 @@
   "exports": { ".": "./src/index.ts" },
   "bin": { "harness-bench": "./src/cli.ts" },
   "dependencies": {
-    "@math-harness/core": "workspace:*"
+    "@seshat/core": "workspace:*"
   }
 }

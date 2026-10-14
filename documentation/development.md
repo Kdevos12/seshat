@@ -17,7 +17,7 @@ pnpm test
 - Everything in the repository is in English.
 - Packages live in `packages/*`, each with `src/` and `test/`, and are linked by pnpm workspaces.
   A package exports `./src/index.ts`.
-- `@math-harness/core` has no runtime dependency. Other packages add one only when it clearly
+- `@seshat/core` has no runtime dependency. Other packages add one only when it clearly
   pays for itself.
 - TypeScript is strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), and
   only syntax that type stripping can erase is allowed (`erasableSyntaxOnly`): no enums, no

@@ -5,7 +5,7 @@ Every tool the harness uses sits behind a capability: a stable contract with a d
 tool. The host profile picks the implementation, so replacing Kimina by another Lean server, or
 Vampire 5.0 by 5.1, changes a manifest or a profile, not the code and not the prompts.
 
-`@math-harness/registry` loads the manifests and the host profiles, calls implementations (in
+`@seshat/registry` loads the manifests and the host profiles, calls implementations (in
 this process, or MCP servers in their own processes), checks every input and output against the
 manifest's schemas, and records every call as a tool run in the journal.
 
@@ -69,8 +69,8 @@ project it imports from.
 
 **In-process** (`"kind": "inproc"`): code in the harness, built by a factory. The manifest names
 the factory and may give default `settings`. Factories are registered by the composition root
-(`FACTORIES` in `@math-harness/orchestrator`); a package that provides one exports it, as
-`@math-harness/lean-kimina` exports `kiminaFactory`.
+(`FACTORIES` in `@seshat/orchestrator`); a package that provides one exports it, as
+`@seshat/lean-kimina` exports `kiminaFactory`.
 
 **MCP** (`"kind": "mcp"`): one tool of an MCP server, reached with
 [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi). Any external program goes this

@@ -1,6 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptOutcome, type Journal, newId, type Submission } from "@math-harness/core";
+import { type AttemptOutcome, type Journal, newId, type Submission } from "@seshat/core";
 import type { Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { Workbench } from "./problem.ts";

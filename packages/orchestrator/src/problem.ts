@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { verifyProblemFile, type ProblemEntry } from "@math-harness/bench";
+import { verifyProblemFile, type ProblemEntry } from "@seshat/bench";
 import {
   AUX_BEGIN,
   AUX_END,
@@ -22,8 +22,8 @@ import {
   toPlainHeader,
   type ValidationPolicy,
   type ValidationReport,
-} from "@math-harness/core";
-import { RegistryLeanChecker, type Registry } from "@math-harness/registry";
+} from "@seshat/core";
+import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 
 /** A bench problem ready to work on: its file in plain-header form, checked against the index, and cut into a sketch. */
 export interface LoadedProblem {

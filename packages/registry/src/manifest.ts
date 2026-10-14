@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { CLAIM_STATUSES, hashJson, type ClaimStatus, type Json } from "@math-harness/core";
+import { CLAIM_STATUSES, hashJson, type ClaimStatus, type Json } from "@seshat/core";
 import { CAPABILITY_ERROR_CODES, type CapabilityErrorCode } from "./implementation.ts";
 import { checkPath } from "./paths.ts";
 import { checkSchema, isPlainObject, validate, type JsonSchema } from "./schema.ts";

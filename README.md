@@ -1,4 +1,4 @@
-# math-harness
+# Seshat
 
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.

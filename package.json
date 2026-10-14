@@ -1,5 +1,5 @@
 {
-  "name": "math-harness",
+  "name": "seshat",
   "private": true,
   "description": "A harness for autonomous mathematical research with LLMs through APIs, Lean as the verifier, and classical tools first.",
   "type": "module",

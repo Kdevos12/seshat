@@ -10,7 +10,7 @@ import {
   splitCommands,
   statementIdV0,
   toPlainHeader,
-} from "@math-harness/core";
+} from "@seshat/core";
 
 export interface FormalProofRef {
   /** `lean4`, `formal_conjectures` or `other_system`, as in the `formal_proof` attribute. */

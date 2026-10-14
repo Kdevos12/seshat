@@ -1,4 +1,4 @@
-import type { Json } from "@math-harness/core";
+import type { Json } from "@seshat/core";
 
 export type JsonType = "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
 

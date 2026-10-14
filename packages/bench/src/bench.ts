@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { canonicalJson, hashJson, sha256Hex } from "@math-harness/core";
+import { canonicalJson, hashJson, sha256Hex } from "@seshat/core";
 import { type ProblemEntry, scanCheckout } from "./formal-conjectures.ts";
 
 export interface BenchFilter {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { BlobStore, Journal, readEvents, type Json } from "@math-harness/core";
+import { BlobStore, Journal, readEvents, type Json } from "@seshat/core";
 import {
   CapabilityError,
   CatalogError,

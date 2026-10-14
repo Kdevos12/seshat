@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CapabilityError, loadCatalog, Registry, type HostProfile } from "@math-harness/registry";
+import { CapabilityError, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { KiminaChecker, kiminaFactory } from "../src/index.ts";
 
 interface Call {

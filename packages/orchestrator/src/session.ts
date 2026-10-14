@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
-import type { Submission, TokenCost, ValidationReport } from "@math-harness/core";
-import { messageOf } from "@math-harness/registry";
+import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
+import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
 import type { Workbench } from "./problem.ts";

@@ -1,4 +1,4 @@
-import { type Json, newId } from "@math-harness/core";
+import { type Json, newId } from "@seshat/core";
 import { messageOf } from "./implementation.ts";
 import type { ContractCase, Expectation } from "./manifest.ts";
 import { getPath } from "./paths.ts";

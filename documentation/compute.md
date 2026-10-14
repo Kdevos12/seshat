@@ -147,6 +147,11 @@ files, and the call's own time limit. They passed on 2026-10-13 with the `local`
 (sagemath-mcp 0.9.5, passagemath 10.8.12, Python 3.13, Linux x86-64), against which the
 expectations were written. The `docker` implementation has not run them yet.
 
+One run, the first of a morning after the machine sat idle for the night, had two failing cases
+whose messages were not kept. The 15 runs after it passed, one of them with a cold file cache and
+two under load, and so did 40 sessions opened and ended in a row. The cause is not known. When a
+case fails, run the contract again with `--out FILE` to keep every output.
+
 ## Not done yet
 
 - The `docker` implementation has never been started (see above).

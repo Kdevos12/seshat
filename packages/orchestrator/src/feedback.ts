@@ -6,7 +6,7 @@ import {
   STANDARD_AXIOMS,
   type LeanMessage,
   type ValidationReport,
-} from "@math-harness/core";
+} from "@seshat/core";
 
 /** Limits on what one check sends back to the model. */
 export interface FeedbackLimits {

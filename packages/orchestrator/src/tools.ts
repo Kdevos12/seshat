@@ -1,6 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Json } from "@math-harness/core";
-import { CapabilityError, type CapabilityManifest, messageOf, type Registry } from "@math-harness/registry";
+import type { Json } from "@seshat/core";
+import { CapabilityError, type CapabilityManifest, messageOf, type Registry } from "@seshat/registry";
 
 /** The name a model calls a capability by: its id with `_` for `.`, such as `compute_sage`. */
 export function toolName(id: string): string {
