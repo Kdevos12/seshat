@@ -124,9 +124,13 @@ When `turns` or `context` ends a session that is not the prover's last, one more
 model for its notes (`WRAP_UP`). The tools stay declared, because providers need the definitions
 of the tools that the history calls, but a `beforeToolCall` hook blocks any call.
 
-For an `invalid` attempt, `failureClass` classifies its last check: `refused` (before Lean),
-`lean_unavailable`, `timeout`, `lean_error`, `holes`, `axioms` (an axiom outside the allowed ones)
-or `statement_changed`.
+For an `invalid` attempt, `failureClass` classifies its last check from Lean's messages: `refused`
+(before Lean), `lean_unavailable`, `timeout` (Lean's time limit, heartbeats or recursion depth),
+`syntax`, `unknown_identifier`, `type_mismatch`, `tactic_failed`, `unsolved_goals`, `restates_target`
+(an auxiliary lemma states the target again), `holes`, `axioms` (an axiom outside the allowed ones),
+`statement_changed` or `other`. When Lean reports several errors, the most basic gives the class: a
+syntax error before an unknown identifier, before a type error, before a failed tactic, before
+unsolved goals. The class `lean_error`, which stood for every error Lean reported, is gone.
 
 ## What the prover sees
 
