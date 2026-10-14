@@ -79,6 +79,8 @@ that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386
 A `model_call.finished` records a one-shot model call a mechanism made outside a prover session,
 with its cost; its request and response are blobs.
 
+Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
+
 Attempt outcomes: `valid`, `invalid`, `no_submission`, `budget_exhausted`, `aborted`, `error`.
 Problem outcomes: `proved`, `candidate`, `unsolved`, `skipped`, `aborted`, `error`. Why a session
 ended (`stoppedBy`), why a run stopped early (`stopped`) and what each outcome means are in

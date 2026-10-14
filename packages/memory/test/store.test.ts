@@ -1,0 +1,192 @@
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import { BlobStore, Journal, readEvents, sha256Hex, statementIdV0 } from "@seshat/core";
+import { claimSource, claimTheoremName, MemoryStore, negationReference, type StatementIdentity } from "../src/index.ts";
+
+function open(identity?: StatementIdentity): { memory: MemoryStore; journal: Journal; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), "mh-memory-"));
+  const journal = Journal.open(dir, "run_1");
+  const blobs = new BlobStore(join(dir, "blobs"));
+  return { memory: new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) }), journal, dir };
+}
+
+/** Proves the link lemma of an edge: a claim with the link's statement and a valid validation of it. */
+async function checkedLink(memory: MemoryStore, statement: string): Promise<{ link: { name: string; statement: string }; validationId: string }> {
+  const { claimId } = await memory.ensureClaim({ statement, origin: "test" });
+  const validationId = `val_${claimId}`;
+  memory.journal.emit(
+    "validation.finished",
+    { validationId, claimId, method: "repl", verdict: "valid", reasons: [], axioms: [], submissionHash: "h" },
+    "validator",
+  );
+  return { link: { name: `link_${claimId}`, statement }, validationId };
+}
+
+describe("MemoryStore claims", () => {
+  it("keep one claim per statement id, whatever the spacing and comments", async () => {
+    const { memory, journal, dir } = open();
+    const first = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test", gloss: "first", domain: ["11"], header: "import Mathlib" });
+    assert.equal(first.created, true);
+    assert.equal(first.statementId, statementIdV0("(n : ℕ) : n + 0 = n"));
+    const again = await memory.withActor("line:M1").ensureClaim({ statement: "(n : ℕ) :  n + 0 = n -- again", origin: "other", gloss: "second" });
+    assert.deepEqual(again, { claimId: first.claimId, statementId: first.statementId, created: false });
+    const claim = memory.claim(first.claimId);
+    assert.equal(claim?.gloss, "first", "the first claim of a statement keeps its fields");
+    assert.deepEqual([claim?.kind, claim?.domain, claim?.header, claim?.status, claim?.parentId], ["formal", ["11"], "import Mathlib", "open", undefined]);
+    assert.equal(memory.claimByStatement(first.statementId)?.claimId, first.claimId);
+    const other = await memory.withActor("line:M1").ensureClaim({ statement: ": True", origin: "line:M1", parentId: first.claimId, kind: "formal" });
+    assert.equal(other.created, true);
+    assert.notEqual(other.claimId, first.claimId);
+    assert.equal(memory.claim(other.claimId)?.parentId, first.claimId);
+    await assert.rejects(memory.ensureClaim({ statement: "  ", origin: "test" }), /the statement is empty/);
+    journal.close();
+    const actors = readEvents(join(dir, "journal.jsonl")).filter((e) => e.type === "claim.created").map((e) => e.actor);
+    assert.deepEqual(actors, ["memory", "line:M1"]);
+  });
+
+  it("accept another identity, asynchronous, and create a claim once under concurrent calls", async () => {
+    const identity: StatementIdentity = {
+      version: "st9",
+      async id(statement, context) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return `st9_${sha256Hex(`${context?.header ?? ""}\n${statement.replace(/\s+/g, "")}`).slice(0, 8)}`;
+      },
+    };
+    const { memory, journal } = open(identity);
+    const input = { statement: ": 1 + 1 = 2", origin: "test", header: "import Mathlib" };
+    const results = await Promise.all([memory.ensureClaim(input), memory.ensureClaim(input), memory.ensureClaim({ ...input, statement: ":1+1=2" })]);
+    assert.match(results[0]?.statementId ?? "", /^st9_[0-9a-f]{8}$/);
+    assert.equal(new Set(results.map((r) => r.claimId)).size, 1);
+    assert.deepEqual(results.map((r) => r.created), [true, false, false]);
+    const elsewhere = await memory.ensureClaim({ ...input, header: "import Other" });
+    assert.equal(elsewhere.created, true, "this identity reads the header");
+    journal.close();
+  });
+});
+
+describe("MemoryStore edges and nodes", () => {
+  it("follow only lean_checked equiv edges to equivalents, both ways", async () => {
+    const { memory, journal } = open();
+    const ids: Record<string, string> = {};
+    for (const name of ["a", "b", "c", "d", "e"]) ids[name] = (await memory.ensureClaim({ statement: `: P_${name}`, origin: "test" })).claimId;
+    const { a, b, c, d, e } = ids as Record<"a" | "b" | "c" | "d" | "e", string>;
+    const ab = await checkedLink(memory, ": P_a ↔ P_b");
+    memory.addEdge({ kind: "equiv", from: a, to: b, status: "lean_checked", ...ab });
+    const cb = await checkedLink(memory, ": P_c ↔ P_b");
+    const edge = memory.addEdge({ kind: "equiv", from: c, to: [b], link: cb.link });
+    assert.deepEqual(memory.equivalents(a), [a, b], "a proposed edge does not count");
+    memory.setEdgeStatus(edge.edgeId, "lean_checked", { reason: "link lemma checked", validationId: cb.validationId });
+    memory.addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
+    const ae = await checkedLink(memory, ": P_a → P_e");
+    memory.addEdge({ kind: "implies", from: a, to: e, status: "lean_checked", ...ae });
+    assert.deepEqual(memory.equivalents(a), [a, b, c]);
+    assert.deepEqual(memory.equivalents(c), [c, b, a]);
+    assert.deepEqual(memory.equivalents(d), [d]);
+
+    const start = (attemptId: string, claimId: string) =>
+      journal.emit("attempt.started", { attemptId, claimId, prover: "p0", iteration: 0, model: "PROVIDER/ID", strategy: "simp" }, "prover:p0");
+    start("att_c", c);
+    start("att_a", a);
+    start("att_d", d);
+    assert.deepEqual(memory.attempts(a).map((x) => x.attemptId), ["att_a"]);
+    assert.deepEqual(memory.attempts(a, { includeEquivalents: true }).map((x) => x.attemptId), ["att_c", "att_a"]);
+    assert.deepEqual(
+      [memory.attempts(a)[0]?.role, memory.attempts(a)[0]?.declaredStrategy, memory.attempts(a)[0]?.outcome],
+      ["prove", "simp", undefined],
+    );
+    journal.close();
+  });
+
+  it("refuse to make an edge lean_checked without a valid validation of its link lemma", async () => {
+    const { memory, journal } = open();
+    const a = (await memory.ensureClaim({ statement: ": A", origin: "test" })).claimId;
+    const b = (await memory.ensureClaim({ statement: ": B", origin: "test" })).claimId;
+    const edge = memory.addEdge({ kind: "implies", from: a, to: b, link: { name: "a_b", statement: ": A → B" }, note: "by analogy" });
+    assert.throws(() => memory.setEdgeStatus(edge.edgeId, "lean_checked", { reason: "trust me" }), /only with a valid validation of its link lemma/);
+    assert.equal(memory.edge(edge.edgeId)?.status, "proposed");
+    assert.throws(() => memory.setEdgeStatus("edg_x", "computed", { reason: "x" }), /unknown edge edg_x/);
+    journal.close();
+  });
+
+  it("select edges by end, kind and least status", async () => {
+    const { memory, journal } = open();
+    const a = (await memory.ensureClaim({ statement: ": A", origin: "test" })).claimId;
+    const b = (await memory.ensureClaim({ statement: ": B", origin: "test" })).claimId;
+    const c = (await memory.ensureClaim({ statement: ": C", origin: "test" })).claimId;
+    const parts = memory.addEdge({ kind: "decomposes_into", from: a, to: [b, c] });
+    const uses = memory.addEdge({ kind: "uses", from: b, to: c, status: "computed" });
+    const signed = memory.addEdge({ kind: "special_case_of", from: c, to: a, status: "human_signed" });
+    assert.deepEqual(parts.to, [b, c]);
+    assert.deepEqual(memory.edges({ to: c }).map((x) => x.edgeId), [parts.edgeId, uses.edgeId]);
+    assert.deepEqual(memory.edges({ minStatus: "computed" }).map((x) => x.edgeId), [uses.edgeId, signed.edgeId]);
+    assert.deepEqual(memory.edges({ minStatus: "lean_checked" }), []);
+    assert.deepEqual(memory.edges({ from: c, kinds: ["special_case_of", "implies"] }).map((x) => x.edgeId), [signed.edgeId]);
+    assert.equal(memory.edges().length, 3);
+    journal.close();
+  });
+
+  it("apply a node's patches in order", async () => {
+    const { memory, journal } = open();
+    const a = (await memory.ensureClaim({ statement: ": A", origin: "test" })).claimId;
+    const node = memory.recordNode({ kind: "lesson", claimId: a, data: { text: "try induction", uses: 0, tags: ["nat"] } });
+    memory.updateNode(node.nodeId, { uses: 1, tags: null }, "used");
+    memory.updateNode(node.nodeId, { uses: 2, where: { file: "X.lean" } }, "used again");
+    const updated = memory.updateNode(node.nodeId, { where: { line: 3 } }, "located");
+    assert.deepEqual(updated.data, { text: "try induction", uses: 2, where: { file: "X.lean", line: 3 } });
+    assert.deepEqual(memory.node(node.nodeId)?.data, updated.data);
+    const other = memory.recordNode({ kind: "lesson", data: null });
+    assert.equal(other.data, null);
+    assert.equal(other.claimId, undefined);
+    assert.deepEqual(memory.nodes("lesson").map((n) => n.nodeId), [node.nodeId, other.nodeId]);
+    assert.deepEqual(memory.nodes("lesson", { claimId: a }).map((n) => n.nodeId), [node.nodeId]);
+    assert.deepEqual(memory.nodes("fingerprint"), []);
+    assert.throws(() => memory.recordNode({ kind: "Lesson", data: {} }), /bad kind/);
+    journal.close();
+  });
+});
+
+describe("MemoryStore references", () => {
+  it("write a claim's file from its header and statement, and the file of its negation", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", header: "import Mathlib\nopen Nat\n", origin: "test" });
+    const name = claimTheoremName(claimId);
+    const reference = memory.referenceFor(claimId);
+    assert.deepEqual(reference, { source: "import Mathlib\nopen Nat\n\ntheorem " + name + " (n : ℕ) : n + 0 = n := by\n  sorry\n", theorem: name });
+    const negation = memory.referenceFor(claimId, { negation: true });
+    assert.equal(negation.theorem, `${name}_negation`);
+    assert.equal(negation.source, `${reference.source}\ntheorem ${name}_negation : ¬ (type_of% @${name}) := by\n  sorry\n`);
+    const bare = await memory.ensureClaim({ statement: ": 1 + 1 = 2", origin: "test" });
+    assert.equal(memory.referenceFor(bare.claimId).source, `theorem ${claimTheoremName(bare.claimId)} : 1 + 1 = 2 := by\n  sorry\n`);
+    const prose = await memory.ensureClaim({ statement: "every even number is a sum of two primes", kind: "informal", origin: "test" });
+    assert.throws(() => memory.referenceFor(prose.claimId), /is informal: it has no Lean reference/);
+    assert.throws(() => memory.referenceFor("clm_x"), /unknown claim clm_x/);
+    journal.close();
+  });
+
+  it("use the file a claim was given, and state its negation after it", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "bench:x" });
+    const source = "import Mathlib\n\nnamespace Erdos1\n\n/-- doc -/\ntheorem erdos_1 : 1 = 1 := by\n  sorry\n\nend Erdos1\n";
+    memory.withActor("orchestrator").setReference(claimId, { source, theorem: "Erdos1.erdos_1" });
+    assert.deepEqual(memory.referenceFor(claimId), { source, theorem: "Erdos1.erdos_1" });
+    const negation = memory.referenceFor(claimId, { negation: true });
+    assert.equal(negation.theorem, "erdos_1_negation");
+    assert.ok(negation.source.startsWith(source.trimEnd()));
+    assert.ok(negation.source.endsWith("\n\ntheorem erdos_1_negation : ¬ (type_of% @Erdos1.erdos_1) := by\n  sorry\n"));
+    // A file that ends inside its namespace: the negation is stated there.
+    const open_ = negationReference({ source: "namespace A\ntheorem «odd name» : True := trivial\n", theorem: "A.«odd name»" });
+    assert.equal(open_.theorem, "A.«odd name_negation»");
+    assert.throws(() => memory.setReference("clm_x", { source, theorem: "x" }), /unknown claim clm_x/);
+    journal.close();
+  });
+
+  it("write a statement after the header, separated by a blank line", () => {
+    assert.equal(claimSource("", "t", ": True"), "theorem t : True := by\n  sorry\n");
+    assert.equal(claimSource("import Mathlib\n\n\n", "t", "  (x : ℕ) : x = x "), "import Mathlib\n\ntheorem t (x : ℕ) : x = x := by\n  sorry\n");
+    assert.equal(claimTheoremName("clm_01ABC"), "clm_01ABC");
+    assert.equal(claimTheoremName("9-x.y"), "c_9_x_y");
+  });
+});

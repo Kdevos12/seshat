@@ -3,8 +3,8 @@
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.
 
-Status: early development (phase P0a). The event journal, the proof validator, a client for Kimina
-Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
+Status: early development (phase P0a). The event journal, the memory store, the proof validator,
+a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
 (independent provers on pi, in sessions that pass on their notes) are written and tested with a
@@ -69,8 +69,9 @@ statement `computed`, a candidate. SageMath is the only classical tool plugged i
 goes through the capability registry, which writes it to the journal, with its inputs and outputs
 as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
-still to write. The memory is what the plan counts on to beat existing systems, and none of it is
-written yet.
+still to write. The memory is what the plan counts on to beat existing systems: its store is
+written (claims, the edges between them and records of every kind, all in the journal), the
+mechanisms that would use it are not ([documentation/memory.md](documentation/memory.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
