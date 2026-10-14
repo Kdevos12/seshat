@@ -27,7 +27,8 @@ export interface Line {
   requires: readonly LineId[];
   /**
    * The line's options and their defaults. A run's values replace them key by key, and must have
-   * the type of the default; a key that is not here is refused.
+   * the type of the default; a key that is not here is refused. A default of `null` means "not
+   * set" and has no type: the run may give any JSON value for it (a number for an optional limit).
    */
   options?: JsonObject;
   /** Recorded in `run.started`: change it when the line's behavior changes. */

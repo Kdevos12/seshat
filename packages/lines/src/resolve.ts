@@ -14,8 +14,9 @@ export interface EnabledLine {
 /**
  * Checks the lines a run enables and puts them in `LINE_ORDER`. `problems` says what is wrong:
  * an unknown or repeated id, a line that is planned but not implemented, a missing requirement,
- * options for a line that is not enabled or that the line does not have, or two lines that both
- * give the context packet. A run with problems does not start.
+ * options for a line that is not enabled, that the line does not have, or of another type than the
+ * default (a default of `null` takes any value), or two lines that both give the context packet. A
+ * run with problems does not start.
  */
 export function resolveLines(
   ids: readonly string[],
@@ -67,7 +68,8 @@ export function resolveLines(
       if (fallback === undefined) {
         const known = Object.keys(defaults);
         problems.push(`line ${line.id} has no option ${key}${known.length > 0 ? `; its options are ${known.join(", ")}` : ""}`);
-      } else if (kind(value) !== kind(fallback)) {
+      } else if (fallback !== null && kind(value) !== kind(fallback)) {
+        // A default of null says "not set": it has no type to keep, so any JSON value is accepted.
         problems.push(`option ${line.id}.${key} must be ${kind(fallback)}, got ${JSON.stringify(value)}`);
       }
     }

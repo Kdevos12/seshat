@@ -38,6 +38,20 @@ describe("resolveLines", () => {
     assert.deepEqual(resolveLines([], registry), { lines: [], problems: [] });
   });
 
+  it("takes any JSON value for an option whose default is null, and keeps the type of the others", () => {
+    const optional: LineRegistry = { M1: line("M1", { options: { limit: null, label: "x", depth: 2 } }) };
+    for (const value of [5, 0.5, "five", true, false, [1, 2], { max: 3 }, null]) {
+      const { lines, problems } = resolveLines(["M1"], optional, { M1: { limit: value } });
+      assert.deepEqual(problems, [], JSON.stringify(value));
+      assert.deepEqual(lines[0]?.options, { limit: value, label: "x", depth: 2 });
+    }
+    assert.deepEqual(resolveLines(["M1"], optional).lines[0]?.options, { limit: null, label: "x", depth: 2 }, "unset, it stays null");
+    assert.deepEqual(resolveLines(["M1"], optional, { M1: { limit: 5, label: 3, depth: null } }).problems, [
+      "option M1.label must be a string, got 3",
+      "option M1.depth must be a number, got null",
+    ]);
+  });
+
   it("names every problem: unknown, repeated, planned, unmet and conflicting lines, and bad options", () => {
     assert.deepEqual(resolveLines(["M99", "M1", "M1"], registry).problems, [
       `unknown line "M99"; the lines are ${LINE_ORDER.join(", ")}`,

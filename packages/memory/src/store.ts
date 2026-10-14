@@ -20,6 +20,7 @@ import {
 } from "@seshat/core";
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
+import { signatureMessage } from "./signature.ts";
 
 export interface MemoryStoreOptions {
   journal: Journal;
@@ -200,10 +201,16 @@ export class MemoryStore {
 
   /**
    * The claim of a statement: the existing claim with the same statement id, or a new one ("same
-   * hash, same claim", plan §3.1). The first claim of a statement keeps its fields.
+   * hash, same claim", plan §3.1). The first claim of a statement keeps its fields. A formal
+   * statement must be in signature form (`signatureProblem`): a bare proposition is refused here,
+   * with a message that says what to write, and not later as a reference file that does not check.
    */
   async ensureClaim(input: ClaimInput): Promise<EnsuredClaim> {
     if (input.statement.trim() === "") throw new Error("ensureClaim: the statement is empty");
+    if (input.kind !== "informal") {
+      const problem = signatureMessage(input.statement);
+      if (problem !== undefined) throw new Error(`ensureClaim: ${problem}`);
+    }
     const context: StatementContext = {
       ...(input.header !== undefined ? { header: input.header } : {}),
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
