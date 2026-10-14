@@ -15,6 +15,7 @@ simulated model and a simulated Lean.
 | Part | Package | State |
 |---|---|---|
 | Event journal, claim statuses, SQLite projection | `@seshat/core` | Done, tested |
+| Memory store: claims, edges, nodes, reference files | `@seshat/memory` | Done, tested; reference files not run against Lean |
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
@@ -36,6 +37,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [architecture.md](architecture.md): packages, data flow, design rules.
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
+- [memory.md](memory.md): the memory store: claims, statement identities, edges, nodes and their
+  kinds, queries, reference files.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
   directory, `harness run` and `harness report`.

@@ -19,6 +19,7 @@
 | Package | Role | Depends on |
 |---|---|---|
 | `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
+| `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim ([memory.md](memory.md)) | core |
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |

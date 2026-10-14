@@ -32,6 +32,12 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/memory:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/orchestrator:
     dependencies:
       '@earendil-works/pi-agent-core':
