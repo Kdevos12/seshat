@@ -60,7 +60,8 @@ interface Line {
 A run checks its lines before anything is written, and refuses to start, with every problem named,
 when an id is unknown or listed twice, a line is planned but not implemented, a line it requires is
 not enabled, two lines give the context packet, or an option is given for a line that is not
-enabled, that the line does not have, or with another type than its default (`resolveLines`).
+enabled, that the line does not have, or with another type than its default (`resolveLines`). An
+option whose default is `null` means "not set": it has no type, and takes any JSON value.
 `run.started` records the enabled lines in `LINE_ORDER`, each with its options and version; a run
 without lines records no `lines` key at all, as M0 always did.
 
@@ -109,6 +110,18 @@ A session's context (`SessionContext`) adds the prover, the session's number and
 have, its attempt id (recorded only after `beforeSession`; a skipped session's id is never
 recorded), its model, the prover's regions as the session starts, and the declared strategy and
 subgoal.
+
+### Claims a line states
+
+`memory.ensureClaim` takes a statement in signature form (the binders, then `:` and the type; a
+bare proposition is refused, [memory.md](memory.md#statement-form)). A claim about the problem's
+own definitions (a variant, a subgoal, a negation) takes the problem sketch's prefix as its
+header, so that the names the problem defines resolve in its reference file
+([memory.md](memory.md#claims-about-the-problems-own-definitions)):
+
+```ts
+problem.memory.ensureClaim({ statement: "(n : ℕ) : 2 ∣ n → P n", header: problem.target.sketch.prefix, parentId: problem.claimId, origin: "line:M2" })
+```
 
 ### `llm`
 

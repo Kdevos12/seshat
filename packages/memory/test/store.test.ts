@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { BlobStore, Journal, readEvents, sha256Hex, statementIdV0 } from "@seshat/core";
+import { BlobStore, Journal, prepareSketch, readEvents, sha256Hex, statementIdV0 } from "@seshat/core";
 import { claimSource, claimTheoremName, MemoryStore, negationReference, type StatementIdentity } from "../src/index.ts";
 
 function open(identity?: StatementIdentity): { memory: MemoryStore; journal: Journal; dir: string } {
@@ -55,6 +55,15 @@ describe("MemoryStore claims", () => {
     assert.deepEqual(actors, ["memory", "line:M1"]);
   });
 
+  it("ignore the header with the default identity: the same text under another header is the first claim", async () => {
+    const { memory, journal } = open();
+    const first = await memory.ensureClaim({ statement: ": 1 + 1 = 2", header: "import Mathlib", origin: "test" });
+    const other = await memory.ensureClaim({ statement: ": 1 + 1 = 2", header: "import Mathlib\nopen Nat", origin: "test" });
+    assert.deepEqual(other, { claimId: first.claimId, statementId: first.statementId, created: false });
+    assert.equal(memory.claim(other.claimId)?.header, "import Mathlib", "the first claim's header stands");
+    journal.close();
+  });
+
   it("accept another identity, asynchronous, and create a claim once under concurrent calls", async () => {
     const identity: StatementIdentity = {
       version: "st9",
@@ -71,6 +80,77 @@ describe("MemoryStore claims", () => {
     assert.deepEqual(results.map((r) => r.created), [true, false, false]);
     const elsewhere = await memory.ensureClaim({ ...input, header: "import Other" });
     assert.equal(elsewhere.created, true, "this identity reads the header");
+    journal.close();
+  });
+});
+
+describe("MemoryStore statement form", () => {
+  it("accept the signature form: binders of every kind, then a colon and the type", async () => {
+    const { memory, journal } = open();
+    const forms = [
+      ": 1 + 1 = 2",
+      "(n : ℕ) : n + 0 = n",
+      "{α : Type*} [Fintype α] (s : Finset α) : s.card ≤ Fintype.card α",
+      "⦃x : ℕ⦄ (h : x ∈ S := by simp) : x ∈ S",
+      "x y : ℕ",
+      ".{u} (α : Type u) : Nonempty α → True",
+      "«odd name» : True",
+      "(n : ℕ) : let m := n; m = n",
+      "(n : ℕ) : -- the claim\n  n + 1 = 1 + n",
+      ": answer(False) ↔ (A + B).HasPosDensity",
+    ];
+    for (const statement of forms) {
+      const { created } = await memory.ensureClaim({ statement, origin: "test" });
+      assert.equal(created, true, statement);
+    }
+    // Prose is for an informal claim, which has no form to check.
+    const prose = await memory.ensureClaim({ statement: "every even number is a sum of two primes", kind: "informal", origin: "test" });
+    assert.equal(prose.created, true);
+    journal.close();
+  });
+
+  it("accept the statements of a real problem file, as the sketch reads them", async () => {
+    const { memory, journal } = open();
+    const source = readFileSync(new URL("../../core/test/fixtures/erdos-125.lean", import.meta.url), "utf8");
+    const names = [...source.matchAll(/^theorem (\S+)/gm)].map((match) => match[1] as string);
+    assert.ok(names.length >= 5, "the fixture has its theorems");
+    for (const name of names) {
+      const { statement } = prepareSketch(source, name);
+      assert.equal((await memory.ensureClaim({ statement, origin: "bench:test" })).created, true, `${name}: ${statement}`);
+    }
+    journal.close();
+  });
+
+  it("refuse a bare proposition, a whole declaration or a proof, saying what to write, and create no claim", async () => {
+    const { memory, journal } = open();
+    const refused: Array<[string, RegExp]> = [
+      ["1 + 1 = 2", /'1' is not a binder: write ':' before a statement that has none/],
+      ["n + 0 = n", /'\+' is not a binder/],
+      ["∀ n : ℕ, n + 0 = n", /'∀' is not a binder/],
+      ["Nat.Prime 7", /'7' is not a binder/],
+      ["(a + b) * c = a * c + b * c", /'\*' is not a binder/],
+      ["True", /there is no ':' before the type/],
+      ["Even n", /there is no ':' before the type/],
+      ["(n : ℕ", /the '\(' is not closed/],
+      ["(n : ℕ) :", /there is nothing after the ':'/],
+      ["theorem t : True", /it starts with 'theorem'/],
+      ["(n : ℕ) : n = n := rfl", /it contains ':=' and a proof/],
+      [": True := by trivial", /it contains ':=' and a proof/],
+      ["-- only a comment", /the statement is empty/],
+    ];
+    for (const [statement, reason] of refused) {
+      await assert.rejects(
+        memory.ensureClaim({ statement, origin: "test" }),
+        (error: Error) =>
+          reason.test(error.message) &&
+          error.message.startsWith("ensureClaim: the statement is not in signature form") &&
+          error.message.includes('"(n : ℕ) : n + 0 = n" or ": 1 + 1 = 2"') &&
+          error.message.includes("Got: "),
+        statement,
+      );
+    }
+    assert.equal(journal.projection.runSummary().problems, 0);
+    assert.equal(journal.log.length, 0, "a refused statement writes nothing");
     journal.close();
   });
 });

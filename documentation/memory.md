@@ -33,8 +33,8 @@ A claim is a statement with a status ([trust.md](trust.md#claim-statuses)).
 
 | Field | Meaning |
 |---|---|
-| `statement` | For a formal claim, Lean in signature form: the binders, then `:` and the type, as between a theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`, or `: 1 + 1 = 2`). Prose for an informal claim. |
-| `header` | The imports, `open`s and definitions the statement needs. |
+| `statement` | For a formal claim, Lean in signature form: the binders, then `:` and the type, as between a theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`, or `: 1 + 1 = 2`); `ensureClaim` refuses any other form ([statement form](#statement-form)). Prose for an informal claim. |
+| `header` | The imports, `open`s and definitions the statement needs. A claim about a problem's own definitions takes the problem's prefix ([below](#claims-about-the-problems-own-definitions)). |
 | `kind` | `formal` (default) or `informal`. |
 | `gloss` | A short gloss in words. |
 | `domain` | Domains, such as `msc:11`. |
@@ -50,11 +50,49 @@ nothing.
 The statement id comes from a `StatementIdentity` (`{version, id(statement, {header?, kind?})}`),
 which may be asynchronous. `TextIdentity`, the default, is `statementIdV0`: a hash of the text
 without comments and with whitespace collapsed (`st0_`), which only catches textual duplicates
-([journal.md](journal.md#statement-ids)). A Lean-backed identity (`st1_`, the hash of the
-elaborated statement) is planned; the store takes any identity without change. A run uses one
+([journal.md](journal.md#statement-ids)). It ignores the `header`: the same text under another
+header is the same claim, so `ensureClaim` returns the first claim and its header, and the new
+header is dropped. A Lean-backed identity (`st1_`, the hash of the elaborated statement) is
+planned, and reads the header; the store takes any identity without change. A run uses one
 identity, since ids of different versions never compare equal. The bench gives each problem's claim
 its `st0_` id, so with `TextIdentity` a line that states a problem's statement again gets the
 problem's claim.
+
+### Statement form
+
+`ensureClaim` checks a formal statement's form before it computes the statement id, and refuses what
+cannot be a signature with a message that says what to write. A statement is binders, then `:`,
+then the type: the binders are bracketed groups (`(x : T)`, `{x : T}`, `[C x]`, `⦃x : T⦄`) or bare
+names, and there may be none. So `: 1 + 1 = 2` and `(n : ℕ) : n + 0 = n` pass, and these do not:
+
+| Refused | Why |
+|---|---|
+| `1 + 1 = 2`, `∀ n : ℕ, n = n`, `Nat.Prime 7` | A bare proposition: only binders may come before the `:`. Write `: 1 + 1 = 2`. |
+| `True`, `Even n` | Names only, with no `:` before the type. |
+| `theorem t : True`, `example : True` | A whole declaration. Give what follows the theorem's name. |
+| `(n : ℕ) : n = n := rfl` | A proof (`:=`). Give the binders and the type. |
+| `(n : ℕ` | A bracket that is not closed. |
+
+The check is syntactic and conservative: it refuses what cannot be a signature, and Lean still
+decides, when the reference file is checked, whether the binders and the type mean anything.
+`signatureProblem(statement)` gives the reason, or undefined for a statement in signature form.
+An informal claim (`kind: "informal"`) is prose and has no form.
+
+### Claims about the problem's own definitions
+
+A problem's file has its imports, `open`s, namespace and definitions before the target theorem. A
+claim that a line states about them (a variant, a subgoal, a negation, a lemma on the problem's
+definitions) is checked against a file made from its `header`, so it takes the problem sketch's
+prefix as its header, or the names the problem defines do not resolve and its reference file does
+not check:
+
+```ts
+await memory.ensureClaim({ statement: "(n : ℕ) : n < 3 → P n", header: problem.target.sketch.prefix, parentId: problem.claimId, origin: "line:M2" });
+```
+
+`problem` is the hook's context ([lines.md](lines.md#what-a-hook-gets)). The prefix is everything
+before the target theorem, with the file's `namespace` lines and no `end`, which Lean accepts at
+the end of a file. A claim that needs only Mathlib takes `import Mathlib` instead.
 
 ## Edges
 
@@ -139,6 +177,13 @@ theorem}`:
 
 The lines' `validate` checks proofs of any claim, and of its negation, against these files
 ([lines.md](lines.md#validate)). The generated files have not been run against a real Lean yet.
+
+`setReference` is not an event, so a store opened on a finished run's journal (to read it, or to
+validate more) does not have the problems' bench files. `referenceFor` then gives a problem's claim
+the generated file, and the orchestrator creates that claim without a header, so the file has no
+imports or definitions and does not check. Rebuilding the bench file needs the bench checkout:
+`problem.registered` names the repository, revision and path, and `setReference` gives the file
+back.
 
 ## Not done yet
 
