@@ -12,6 +12,71 @@ simulated model and a simulated Lean. The provers can also be given SageMath, an
 installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
 run against a real Lean or a real model yet.
 
+## How research flows
+
+```mermaid
+flowchart TB
+  classDef built fill:#e8eefa,stroke:#1f4fa3,stroke-width:2px,color:#1b2230
+  classDef wait fill:#fbf1e1,stroke:#a66300,stroke-width:2px,color:#1b2230
+  classDef planned fill:#f1f3f6,stroke:#8a92a3,stroke-width:2px,stroke-dasharray:6 4,color:#1b2230
+
+  bench["Bench<br/>575 Lean problems"]:::built
+  fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::planned
+  llm["LLMs through their APIs<br/>any provider, no training"]:::built
+  provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
+
+  subgraph TOOLS["Capability registry"]
+    leancheck["lean_check<br/>Kimina Lean Server"]:::wait
+    sage["compute_sage<br/>SageMath"]:::built
+    moretools["ATPs, SAT/SMT, OEIS,<br/>Mathlib search,<br/>counterexample search"]:::planned
+  end
+
+  subgraph JUDGE["Judge: Lean"]
+    fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::wait
+    certifier["Certifier<br/>kernel replay"]:::planned
+  end
+
+  journal["Event journal<br/>the only source of truth<br/>JSONL, hash chain, blobs"]:::built
+  projection["SQLite projection"]:::built
+
+  subgraph MEMORY["Memory: the plan's edge"]
+    kg["Facts and research graph<br/>verified implications,<br/>failures, lemmas,<br/>deduplication"]:::planned
+    compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
+  end
+
+  bench -->|problems| provers
+  fleet -.->|"who works on what"| provers
+  llm <-->|"prompts, tool calls"| provers
+  provers --> leancheck & sage
+  provers -.-> moretools
+  leancheck -->|Lean file| fast
+  fast -->|"open → computed"| journal
+  fast -.->|candidate| certifier
+  certifier -.->|"computed → proved"| journal
+  TOOLS -->|"every call"| journal
+  journal --> projection
+  journal -.-> kg
+  kg -.-> compiler
+  compiler -.->|"context for each session"| provers
+```
+
+Blue: built and tested. Orange: written, waits for a Lean server. Grey and dashed: planned, not
+written.
+
+Today one loop runs, tested with a simulated model and a simulated Lean: each prover edits a Lean
+sketch and checks it with `lean_check`, and the first file that passes the fast check makes the
+statement `computed`, a candidate. SageMath is the only classical tool plugged in. Every tool call
+goes through the capability registry, which writes it to the journal, with its inputs and outputs
+as blobs.
+Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
+still to write. The memory is what the plan counts on to beat existing systems, and none of it is
+written yet.
+
+This diagram changes with the code: a change to the research flow updates it in the same commit
+([documentation/development.md](documentation/development.md#conventions)).
+
+## Commands
+
 ```sh
 pnpm install
 pnpm check

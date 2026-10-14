@@ -30,6 +30,12 @@ pnpm test
   in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`); the command tests run
   `harness` as a child process.
 - A change updates the documentation page that describes it, in the same commit.
+- The diagram in the README, "How research flows", shows the steps a statement goes through and the
+  tools a prover can call, each marked built, written but waiting for a Lean server, or planned. A
+  change to that flow, such as a new capability, a new step, or a planned part that gets built,
+  updates the diagram in the same commit. A test fails when a capability's tool is missing from the
+  diagram or a node has none of the three marks
+  (`packages/orchestrator/test/readme.test.ts`).
 
 ## Tests that use real data
 
