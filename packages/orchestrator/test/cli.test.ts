@@ -179,7 +179,7 @@ describe("harness run --lines", () => {
   it("refuses unknown and planned lines before the model is looked up, and runs M0 for --ablation M0", async () => {
     const options: Array<[string[], RegExp]> = [
       [["--lines", "M1,M99"], /^the lines of the run: line M1 \(canonical identity and shared negative memory\) is planned, not implemented yet; unknown line "M99"/m],
-      [["--ablation", "M2"], /^the lines of the run: line M1 .* is planned, not implemented yet; line M10 .* is planned, not implemented yet; line M2 .* is planned, not implemented yet$/m],
+      [["--ablation", "M2"], /^the lines of the run: line M1 .* is planned, not implemented yet; line M10 .* is planned, not implemented yet$/m],
       [["--lines", "M1", "--line-option", "M1.k=2"], /^the lines of the run: line M1 .* is planned, not implemented yet$/m],
       // No line: the run goes on to the model, which does not exist.
       [["--ablation", "M0"], /^unknown provider nowhere$/m],

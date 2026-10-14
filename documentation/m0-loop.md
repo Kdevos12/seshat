@@ -267,7 +267,7 @@ Options of `harness run`:
 | `--run-budget-usd X` | none | Dollars for the whole run. |
 | `--concurrency N` | 1 | Problems worked on at the same time. |
 | `--tool CAPABILITY` | none | A `direct` capability given to the provers besides `lean_check`, such as `compute.sage`; repeat it for several ([other tools](#other-tools)). |
-| `--lines ID,...` | none | The lines to enable, such as `M1,M10`; repeatable. None: M0 ([lines.md](lines.md)). No line is implemented yet, so a run with one refuses to start. |
+| `--lines ID,...` | none | The lines to enable, such as `M1,M10`; repeatable. None: M0 ([lines.md](lines.md)). Only `M2` is implemented ([graph.md](graph.md)); a run with another line refuses to start. |
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
