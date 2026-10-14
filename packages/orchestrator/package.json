@@ -13,10 +13,26 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
+    "@seshat/abduction": "workspace:*",
     "@seshat/bench": "workspace:*",
+    "@seshat/classical": "workspace:*",
+    "@seshat/context": "workspace:*",
     "@seshat/core": "workspace:*",
+    "@seshat/fleet": "workspace:*",
+    "@seshat/graph": "workspace:*",
+    "@seshat/guards": "workspace:*",
+    "@seshat/induction": "workspace:*",
     "@seshat/lean-kimina": "workspace:*",
-    "@seshat/registry": "workspace:*"
+    "@seshat/lean-local": "workspace:*",
+    "@seshat/lean-meta": "workspace:*",
+    "@seshat/lessons": "workspace:*",
+    "@seshat/library": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/models": "workspace:*",
+    "@seshat/registry": "workspace:*",
+    "@seshat/repair": "workspace:*",
+    "@seshat/scheduler": "workspace:*"
   },
   "devDependencies": {
     "@earendil-works/pi-mcp": "1.2.0"

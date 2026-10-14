@@ -131,7 +131,8 @@ theorem}`:
   would depend on `sorryAx`, which the validator refuses;
 - an informal claim has no reference.
 
-The generated files have not been run against a real Lean yet.
+The lines' `validate` checks proofs of any claim, and of its negation, against these files
+([lines.md](lines.md#validate)). The generated files have not been run against a real Lean yet.
 
 ## Not done yet
 

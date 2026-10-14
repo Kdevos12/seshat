@@ -50,12 +50,15 @@ export interface SessionContext {
   lastCheck: string | undefined;
   session: number;
   sessions: number;
+  /** The enabled lines' briefings, each a titled section after the last check. */
+  sections?: ReadonlyArray<{ title: string; text: string }>;
 }
 
-/** The first message of a session: the theorem, the notes, the file, and the last check. */
+/** The first message of a session: the theorem, the notes, the file, the last check, and the lines' sections. */
 export function sessionPrompt(c: SessionContext): string {
   const notes = c.notes ?? "(none: this is your first session on this theorem)";
   const lastCheck = c.lastCheck ?? "(the file has not been checked yet)";
+  const sections = (c.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
   return `Theorem: ${c.theorem}
 This is session ${c.session} of at most ${c.sessions}.
 
@@ -68,7 +71,7 @@ ${c.file}
 \`\`\`
 
 # What Lean said about the file as it is
-${lastCheck}`;
+${lastCheck}${sections}`;
 }
 
 /** Sent when a session reaches a limit, so that the prover writes its notes. */

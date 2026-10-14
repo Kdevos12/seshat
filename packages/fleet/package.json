@@ -1,0 +1,16 @@
+{
+  "name": "@seshat/fleet",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The fleet policy: posteriors per claim, strategy and model, and Thompson sampling of the next session (line fleet).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

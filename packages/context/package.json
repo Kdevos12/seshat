@@ -1,0 +1,19 @@
+{
+  "name": "@seshat/context",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The context compiler: the packet of each model request, expand and graph_query (line M4).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/graph": "workspace:*",
+    "@seshat/lessons": "workspace:*",
+    "@seshat/library": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

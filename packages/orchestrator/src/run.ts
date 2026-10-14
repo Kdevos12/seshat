@@ -17,14 +17,19 @@ import {
   SKETCH_POLICY,
   sha256Hex,
 } from "@seshat/core";
+import { type JsonObject, type LineRegistry, resolveLines } from "@seshat/lines";
+import { MemoryStore } from "@seshat/memory";
 import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { Ledger } from "./budget.ts";
+import { type ProblemLines, RunLines } from "./line-runtime.ts";
+import { LINES } from "./lines.ts";
 import { type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
+import { ClaimBenches } from "./validate.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
 export interface RunConfig {
@@ -46,6 +51,10 @@ export interface RunConfig {
   concurrency: number;
   /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
   tools: string[];
+  /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
+  lines?: string[];
+  /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
+  lineOptions?: Record<string, JsonObject>;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -79,6 +88,8 @@ export interface RunOptions {
   /** Revision of this repository. */
   codeRev?: string;
   runId?: string;
+  /** The lines that can be enabled, by id. Default: `LINES`, the lines implemented so far. */
+  lines?: LineRegistry;
 }
 
 export interface ProblemResult {
@@ -165,6 +176,8 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   const { config } = o;
   const problems = checkConfig(config);
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
+  const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
+  if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run: ${enabled.problems.join("; ")}`);
   const model = await resolveModel(o.models, config.model);
   if (existsSync(join(o.dir, "journal.jsonl")) && statSync(join(o.dir, "journal.jsonl")).size > 0) {
     throw new RunSetupError(`${o.dir} already holds a run; choose another directory`);
@@ -210,6 +223,16 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     prompt: { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) },
     policy: { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] },
     certifier: o.certifier === undefined ? null : `${o.certifier.implementation} ${o.certifier.version}`,
+    // Only with lines, so that an M0 run records what it always did.
+    ...(enabled.lines.length > 0
+      ? {
+          lines: enabled.lines.map(({ line, options }) => ({
+            id: line.id,
+            ...(line.version !== undefined ? { version: line.version } : {}),
+            options,
+          })),
+        }
+      : {}),
   };
   writeFileSync(
     join(o.dir, "config.json"),
@@ -229,6 +252,29 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   );
   log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
   for (const note of pinned.notes) log(note);
+
+  // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
+  let runLines: RunLines | undefined;
+  let memory: MemoryStore | undefined;
+  if (enabled.lines.length > 0) {
+    memory = new MemoryStore({ journal, blobs });
+    runLines = new RunLines({
+      lines: enabled.lines,
+      runId,
+      journal,
+      blobs,
+      registry,
+      memory,
+      benches: new ClaimBenches({ journal, registry, memory, blobs }),
+      models: o.models,
+      model: config.model,
+      resolveModel: (name) => resolveModel(o.models, name),
+      thinkingLevel: config.thinkingLevel,
+      log,
+      ...(o.signal !== undefined ? { signal: o.signal } : {}),
+    });
+    log(`lines: ${runLines.ids.join(", ")}`);
+  }
 
   const runLedger = new Ledger(config.budget.runUsd);
   const results: ProblemResult[] = [];
@@ -257,6 +303,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     const started = performance.now();
     const claimId = newId("clm");
     const ledger = runLedger.child(config.budget.problemUsd);
+    const domain = entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`);
     let attempts = 0;
     journal.emit(
       "claim.created",
@@ -270,7 +317,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
         claimId,
         target: entry.fullName,
         source: { repo: o.index.source.repo, rev: o.index.source.rev, path: entry.path, line: entry.line },
-        domain: entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`),
+        domain,
       },
       "orchestrator",
     );
@@ -285,6 +332,21 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
         problemId: entry.id, outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd, durationMs,
         ...(proof !== undefined ? { proof } : {}),
       };
+    };
+    /**
+     * The end of a problem whose lines reached `beforeProvers`: their `afterProblem`, then
+     * `finish`. A line that fails there makes the problem a harness error, except that a proof
+     * found stays found, as when certification fails.
+     */
+    const settle = async (lines: ProblemLines, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult> => {
+      try {
+        await lines.afterProblem({ outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd });
+      } catch (error) {
+        const failure = messageOf(error);
+        if (outcome !== "proved" && outcome !== "candidate") return finish("error", failure);
+        return finish(outcome, reason !== undefined ? `${reason}; ${failure}` : failure, proof);
+      }
+      return finish(outcome, reason, proof);
     };
 
     let problem: LoadedProblem;
@@ -321,30 +383,59 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
       const transcript = (attemptId: string, messages: AgentMessage[]) =>
         writeFileSync(join(o.dir, "transcripts", `${attemptId}.json`), `${JSON.stringify(messages)}\n`);
-      const settled = await Promise.allSettled(
-        Array.from({ length: config.provers }, (_, i) =>
-          runProver({
-            name: `p${i + 1}`,
-            workbench,
-            journal,
-            models: o.models,
-            model,
-            modelName: config.model,
-            thinkingLevel: config.thinkingLevel,
-            sessions: config.sessions,
-            limits: config.limits,
-            notesChars: config.notesChars,
-            ledger,
-            signal: controller.signal,
-            transcript,
-            tools: pinned.tools,
-          }).catch((error: unknown) => {
-            // A harness failure stops the problem's other provers too.
-            controller.abort(ABORT_STOPPED);
-            throw error;
-          }),
-        ),
-      );
+
+      // With lines: the problem's lines, their `beforeProvers`, and `afterProblem` before the end.
+      let lines: ProblemLines | undefined;
+      let lineFailure: string | undefined;
+      let end: (outcome: ProblemOutcome, reason?: string, proof?: string) => ProblemResult | Promise<ProblemResult> = finish;
+      if (runLines !== undefined && memory !== undefined) {
+        memory.setReference(claimId, { source: problem.source, theorem: entry.fullName });
+        const problemLines = runLines.problem({
+          problemId: entry.id,
+          claimId,
+          target: { theorem: entry.fullName, statement: entry.statement, source: problem.source, sketch: problem.sketch },
+          domain,
+          ledger,
+          signal: controller.signal,
+          workbench,
+        });
+        lines = problemLines;
+        end = (outcome, reason, proof) => settle(problemLines, outcome, reason, proof);
+        try {
+          await problemLines.beforeProvers();
+        } catch (error) {
+          lineFailure = messageOf(error);
+        }
+      }
+      // A problem the lines settled, or that ended while they worked, gets no prover.
+      const idle = lines !== undefined && (lineFailure !== undefined || workbench.candidate !== undefined || controller.signal.aborted);
+      const settled: PromiseSettledResult<ProverResult>[] = idle
+        ? []
+        : await Promise.allSettled(
+            Array.from({ length: config.provers }, (_, i) =>
+              runProver({
+                name: `p${i + 1}`,
+                workbench,
+                journal,
+                models: o.models,
+                model,
+                modelName: config.model,
+                thinkingLevel: config.thinkingLevel,
+                sessions: config.sessions,
+                limits: config.limits,
+                notesChars: config.notesChars,
+                ledger,
+                signal: controller.signal,
+                transcript,
+                tools: pinned.tools,
+                ...(lines !== undefined ? { lines } : {}),
+              }).catch((error: unknown) => {
+                // A harness failure stops the problem's other provers too.
+                controller.abort(ABORT_STOPPED);
+                throw error;
+              }),
+            ),
+          );
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = journal.projection.attempts(claimId).length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
@@ -353,21 +444,23 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       if (candidate !== undefined) {
         const proof = join("proofs", `${slug(entry.fullName)}-${sha256Hex(entry.id).slice(0, 8)}.lean`);
         writeFileSync(join(o.dir, proof), candidate.report.checked);
-        if (o.certifier === undefined) return finish("candidate", undefined, proof);
+        if (o.certifier === undefined) return await end("candidate", undefined, proof);
         try {
           const certified = await workbench.certify(o.signal);
           return certified?.verdict === "certified"
-            ? finish("proved", undefined, proof)
-            : finish("unsolved", `certification rejected the candidate: ${certified?.reasons.join("; ") ?? ""}`, proof);
+            ? await end("proved", undefined, proof)
+            : await end("unsolved", `certification rejected the candidate: ${certified?.reasons.join("; ") ?? ""}`, proof);
         } catch (error) {
-          return finish("candidate", `certification failed: ${messageOf(error)}`, proof);
+          return await end("candidate", `certification failed: ${messageOf(error)}`, proof);
         }
       }
-      if (crash !== undefined) return finish("error", `the harness failed: ${messageOf(crash.reason)}`);
-      if (o.signal?.aborted) return finish("aborted", "the run was stopped");
-      if (ledger.exhausted) return finish("unsolved", runLedger.exhausted ? "the run's budget ran out" : "the problem's budget ran out");
-      if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return finish("error", proverErrors(journal, claimId));
-      return finish("unsolved", stopSummary(provers));
+      if (lineFailure !== undefined) return await end("error", lineFailure);
+      if (crash !== undefined) return await end("error", `the harness failed: ${messageOf(crash.reason)}`);
+      if (o.signal?.aborted) return await end("aborted", "the run was stopped");
+      if (ledger.exhausted) return await end("unsolved", runLedger.exhausted ? "the run's budget ran out" : "the problem's budget ran out");
+      if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return await end("error", proverErrors(journal, claimId));
+      if (lines !== undefined && provers.length === 0) return await end("unsolved", "the lines ended the problem before the provers");
+      return await end("unsolved", stopSummary(provers));
     } finally {
       o.signal?.removeEventListener("abort", stop);
     }

@@ -1,6 +1,9 @@
 export * from "./budget.ts";
 export * from "./feedback.ts";
 export * from "./implementations.ts";
+export * from "./line-runtime.ts";
+export * from "./lines.ts";
+export * from "./llm.ts";
 export * from "./problem.ts";
 export * from "./prompt.ts";
 export * from "./prover.ts";
@@ -8,3 +11,4 @@ export * from "./report.ts";
 export * from "./run.ts";
 export * from "./session.ts";
 export * from "./tools.ts";
+export * from "./validate.ts";

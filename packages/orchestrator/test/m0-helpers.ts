@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { buildIndex, DISCRETE, type BenchIndex } from "@seshat/bench";
 import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@seshat/core";
+import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import type { FakeSage } from "./fixtures/fake-sage.ts";
@@ -180,6 +181,8 @@ export async function demoRun(options: {
   /** The run directory. Default: a new temporary one. */
   dir?: string;
   log?: (line: string) => void;
+  /** The lines the run can enable (`config.lines` enables them). Default: the repository's. */
+  lines?: LineRegistry;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
   const { checkout, index } = demoBench();
   const { models, faux, name } = fauxModels(options.pricePerMillion);
@@ -197,6 +200,7 @@ export async function demoRun(options: {
     ...(options.certifier !== undefined ? { certifier: options.certifier } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
     ...(options.log !== undefined ? { log: options.log } : {}),
+    ...(options.lines !== undefined ? { lines: options.lines } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean };
 }

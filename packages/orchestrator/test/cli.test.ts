@@ -157,6 +157,45 @@ describe("harness run", () => {
   });
 });
 
+describe("harness run --lines", () => {
+  const { checkout } = demoBench();
+  const out = join(tempDir(), "run");
+
+  it("refuses contradictory and malformed line options, with the usage", async () => {
+    const options: Array<[string[], RegExp]> = [
+      [["--lines", "M1", "--ablation", "M2"], /^choose the lines with --lines or --ablation, not both/],
+      [["--ablation", "M15"], /^--ablation must be M0 or a line \(M1, M10, M2, .*\), got M15/],
+      [["--line-option", "M1:k=1"], /^--line-option takes ID\.KEY=VALUE, got "M1:k=1"/],
+    ];
+    const results = await Promise.all(options.map(([args]) => harness(["run", "--checkout", checkout, "--model", "a/b", "--all", ...args])));
+    options.forEach(([args, message], k) => {
+      const { code, stderr } = results[k] as Awaited<ReturnType<typeof harness>>;
+      assert.equal(code, 2, args.join(" "));
+      assert.match(stderr.replace(/^warning: .*\n/, ""), message);
+      assert.match(stderr, /\n\nusage:\n/);
+    });
+  });
+
+  it("refuses unknown and planned lines before the model is looked up, and runs M0 for --ablation M0", async () => {
+    const options: Array<[string[], RegExp]> = [
+      [["--lines", "M1,M99"], /^the lines of the run: line M1 \(canonical identity and shared negative memory\) is planned, not implemented yet; unknown line "M99"/m],
+      [["--ablation", "M2"], /^the lines of the run: line M1 .* is planned, not implemented yet; line M10 .* is planned, not implemented yet; line M2 .* is planned, not implemented yet$/m],
+      [["--lines", "M1", "--line-option", "M1.k=2"], /^the lines of the run: line M1 .* is planned, not implemented yet$/m],
+      // No line: the run goes on to the model, which does not exist.
+      [["--ablation", "M0"], /^unknown provider nowhere$/m],
+    ];
+    const results = await Promise.all(options.map(([args]) => harness(["run", "--checkout", checkout, "--model", "nowhere/x", "--sample", "1", "--out", out, ...args])));
+    options.forEach(([args, message], k) => {
+      const { code, stdout, stderr } = results[k] as Awaited<ReturnType<typeof harness>>;
+      assert.equal(code, 2, `${args.join(" ")}: ${stderr}`);
+      assert.match(stderr, message);
+      assert.doesNotMatch(stderr, /usage:/);
+      assert.equal(stdout, "");
+    });
+    assert.equal(existsSync(out), false);
+  });
+});
+
 describe("harness report", () => {
   it("prints the report of a run directory, as written by the run, in Markdown or JSON", async () => {
     const { dir } = await demoRun({ responses: [check("exact trivial_proof")] });

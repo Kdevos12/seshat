@@ -19,6 +19,8 @@ export interface RunReport {
   host: string;
   config: unknown;
   codeRev?: string;
+  /** The lines the run enabled, in `LINE_ORDER`; absent for an M0 run. */
+  lines?: string[];
   finished: boolean;
   stopped?: string;
   /** Problems the run was given; those without a line had no outcome. */
@@ -37,6 +39,11 @@ export interface RunReport {
    * made them, and how many of those attempts found a proof.
    */
   tools: Record<string, ToolUse>;
+  /**
+   * The lines' one-shot model calls, by outcome and by line; absent when there was none. Their
+   * cost is in `usd` and the token counts.
+   */
+  modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
 }
 
 export interface ToolUse {
@@ -67,6 +74,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
   const proofAttempts = new Set<string>();
+  const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
   let usd = 0;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -97,6 +105,16 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         if (d.stoppedBy !== undefined) count(attempts.stoppedBy, d.stoppedBy);
         if (d.failureClass !== undefined) count(attempts.failures, d.failureClass);
         if (d.outcome === "valid") proofAttempts.add(d.attemptId);
+        usd += d.usd;
+        inputTokens += d.inputTokens;
+        outputTokens += d.outputTokens;
+        break;
+      }
+      case "model_call.finished": {
+        const d = event.data;
+        modelCalls.total += 1;
+        count(modelCalls.outcomes, d.outcome);
+        count(modelCalls.lines, d.line);
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
@@ -133,12 +151,14 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
+  const lines = (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : []));
   return {
     runId: started.runId,
     benchId: started.benchId,
     host: started.host,
     config: started.config,
     ...(started.codeRev !== undefined ? { codeRev: started.codeRev } : {}),
+    ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
     planned: started.problems,
@@ -161,6 +181,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         { calls: use.calls, outcomes: use.outcomes, attempts: use.attempts.size, proofs: [...use.attempts].filter((a) => proofAttempts.has(a)).length },
       ]),
     ),
+    ...(modelCalls.total > 0 ? { modelCalls } : {}),
   };
 }
 
@@ -189,7 +210,8 @@ export function renderRunReport(report: RunReport): string {
     "",
     `Bench ${report.benchId}, host ${report.host}${report.codeRev !== undefined ? `, code ${report.codeRev}` : ""}. ` +
       `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
-      `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.`,
+      `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
+      `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}`,
     report.finished ? (report.stopped !== undefined ? `The run stopped early: ${report.stopped}.` : "The run is complete.") : "The run has not finished.",
     "",
     "| Problems | |",
@@ -215,6 +237,9 @@ export function renderRunReport(report: RunReport): string {
         `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +
         `${use.proofs} of which found a proof.`,
     ),
+    ...(report.modelCalls !== undefined
+      ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
+      : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
     "",

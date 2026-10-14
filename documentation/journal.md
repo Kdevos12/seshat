@@ -76,8 +76,8 @@ to several for `decomposes_into`; its kinds are `implies`, `equiv`, `special_cas
 lesson, a fingerprint...): its `kind` is a short lowercase word, its `data` belongs to the package
 that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it.
 
-A `model_call.finished` records a one-shot model call a mechanism made outside a prover session,
-with its cost; its request and response are blobs.
+A `model_call.finished` records a one-shot model call a mechanism made outside a prover session
+(a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs.
 
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
