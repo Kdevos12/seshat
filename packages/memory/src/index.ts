@@ -1,3 +1,4 @@
+export * from "./failures.ts";
 export * from "./identity.ts";
 export * from "./reference.ts";
 export * from "./signature.ts";

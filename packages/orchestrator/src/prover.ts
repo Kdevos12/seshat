@@ -160,7 +160,13 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
       journal.emit("lesson.recorded", { attemptId, claimId: workbench.claimId, text: notes }, actor);
     }
     const outcome = outcomeOf(result);
-    const failure = outcome === "invalid" && result.report !== undefined ? failureClass(result.report) : undefined;
+    const failure =
+      outcome === "invalid" && result.report !== undefined
+        ? failureClass(result.report, {
+            statement: workbench.sketch.statement,
+            ...(result.submission !== undefined ? { aux: result.submission.aux } : {}),
+          })
+        : undefined;
     const finished = () => ({
       attemptId,
       outcome,

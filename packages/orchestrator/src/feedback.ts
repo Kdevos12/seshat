@@ -7,6 +7,7 @@ import {
   type LeanMessage,
   type ValidationReport,
 } from "@seshat/core";
+import { classifyFailure, type FailureClass, type FailureContext } from "@seshat/memory";
 
 /** Limits on what one check sends back to the model. */
 export interface FeedbackLimits {
@@ -119,17 +120,12 @@ export function summarizeCheck(report: ValidationReport): string {
 }
 
 /**
- * The kind of failure of a check, for `attempt.finished`: `refused` (never reached Lean),
- * `lean_unavailable`, `timeout`, `lean_error`, `holes`, `axioms`, `statement_changed`, `other`.
+ * The class of a failed check, for `attempt.finished` (`FAILURE_CLASSES` in `@seshat/memory`, with
+ * what each means): `refused`, `lean_unavailable`, `timeout`, `syntax`, `unknown_identifier`,
+ * `type_mismatch`, `tactic_failed`, `unsolved_goals`, `holes`, `axioms`, `statement_changed`,
+ * `restates_target` or `other`. Undefined for a valid check. `context` tells an auxiliary lemma that
+ * restates the target.
  */
-export function failureClass(report: ValidationReport): string | undefined {
-  if (report.verdict === "valid") return undefined;
-  if (report.leanStatus === undefined) return "refused";
-  if (report.leanStatus === "server_error" && report.messages.length === 0) return "lean_unavailable";
-  if (report.leanStatus === "timeout" && report.messages.length === 0) return "timeout";
-  if (report.messages.some((m) => m.severity === "error")) return "lean_error";
-  if (report.holes || report.sorries.length > 0) return "holes";
-  if (report.reasons.some((r) => / depends on /.test(r))) return "axioms";
-  if (report.reasons.some((r) => /original type/.test(r))) return "statement_changed";
-  return "other";
+export function failureClass(report: ValidationReport, context: FailureContext = {}): FailureClass | undefined {
+  return classifyFailure(report, context)?.class;
 }
