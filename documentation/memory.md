@@ -50,21 +50,24 @@ nothing.
 The statement id comes from a `StatementIdentity` (`{version, id(statement, {header?, kind?})}`),
 which may be asynchronous. `TextIdentity`, the default, is `statementIdV0`: a hash of the text
 without comments and with whitespace collapsed (`st0_`), which only catches textual duplicates
-([journal.md](journal.md#statement-ids)). It ignores the `header`: the same text under another
-header is the same claim, so `ensureClaim` returns the first claim and its header, and the new
-header is dropped. A Lean-backed identity (`st1_`, the hash of the elaborated statement) is
-planned, and reads the header; the store takes any identity without change. A run uses one
-identity, since ids of different versions never compare equal. A line gives the run its identity
-(`Line.identity`, [lines.md](lines.md#a-line)); M1 gives the text one.
+([journal.md](journal.md#statement-ids)). It reads the `header` too: given one, it hashes the
+header with the statement, normalized the same way, so the same text under another header is
+another claim, which keeps its own header; a statement with no header, or one whose header has
+nothing in it, has the id of its text alone. So distinct statements never share a claim, and fewer
+are merged than the elaborated statement will merge. A Lean-backed identity (`st1_`, the hash of
+the elaborated statement) is planned, and reads the header as Lean does; the store takes any
+identity without change. A run uses one identity, since ids of different versions never compare
+equal. A line gives the run its identity (`Line.identity`, [lines.md](lines.md#a-line)); M1 gives
+the text one.
 
 In a run with lines the orchestrator makes each problem's claim with `ensureClaim` as well (origin
-`bench:<id>`, the problem's domains, and the prefix of the problem's file as `header`), so two
-problems with one statement share one claim and its attempts, and a line that states a problem's
-statement again gets the problem's claim. A claim a line makes about a problem's own definitions
-should pass the same prefix as its `header`. A run without lines is M0: one claim per problem,
-with the bench's `st0_` id. `TextIdentity` ignores the header, so two problems whose signatures
-read the same but whose files define the names differently share a claim until the Lean identity
-tells them apart.
+`bench:<id>`, the problem's domains, and the prefix of the problem's file as `header`), so every
+claim of the run is named by the run's identity, and two problems with one statement under one
+prefix share one claim and its attempts. The prefix is everything in the file before the problem's
+docstring, earlier theorems included: problems of one file never share a claim. A line that states
+a problem's statement again, or makes a claim about the problem's own definitions, passes the same
+prefix as its `header`, and gets the problem's claim. A run without lines is M0: one claim per
+problem, with the bench's `st0_` id, which is the statement's alone.
 
 ### Statement form
 

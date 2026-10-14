@@ -27,13 +27,13 @@ makes a claim about the problem's own definitions passes the same prefix as its 
 
 The identity that names the statements is the one an enabled line gives (`Line.identity`, called
 once per run with the registry, so that an identity that needs Lean can use it). M1 gives
-`TextIdentity`: the hash of the text without comments and with whitespace collapsed (`st0_`).
-Another identity replaces it without change to the store, and at most one enabled line may give
-one. The Lean identity (`st1_`) is not built.
+`TextIdentity`: the hash of the text without comments and with whitespace collapsed, together with
+the header, normalized the same way (`st0_`). Another identity replaces it without change to the
+store, and at most one enabled line may give one. The Lean identity (`st1_`) is not built.
 
-So two problems with one statement have one claim, in the order the run reaches them: the second
-problem's `problem.registered` carries the first one's `claimId`, and no second `claim.created`
-exists. What this changes:
+So two problems with one statement under one prefix have one claim, in the order the run reaches
+them: the second problem's `problem.registered` carries the first one's `claimId`, and no second
+`claim.created` exists. What this changes:
 
 - **Attempts are shared.** The second problem's provers are told what failed on the first, and the
   report's redundancy counts the repeats between them.
@@ -46,9 +46,12 @@ exists. What this changes:
   alone.
 - `run.finished.solved` and `candidates` count the problems whose claim has that status, so both
   problems of a shared claim count; the report's outcomes are per problem.
-- `TextIdentity` ignores the header: two problems whose signatures read the same but whose files
-  define the names differently share a claim. Only an identity that reads the header apart tells
-  them apart.
+- **Sharing needs the same prefix.** `TextIdentity` reads the header, so the same signature under
+  another prefix (other imports, `open`s or definitions) is another claim, and no two distinct
+  statements share one. The prefix is everything in the file before the problem's docstring,
+  earlier theorems included, so problems of one file never share a claim, and the sharing is
+  between files that repeat a problem under one prefix. This merges fewer claims than the
+  elaborated statement will.
 
 ## Strategies
 
@@ -162,8 +165,9 @@ as a line of `report.md`. A run with no labeled attempt, which is every run with
 
 Tested with the simulated model and Lean (`packages/orchestrator/test/m1.test.ts`) and on the
 memory alone (`packages/memory/test`): the strategy table and the failure-class table; two problems
-with one statement sharing one claim, each counting its own attempts, and a shared claim settled
-once; the "already tried" lines, and the briefing reaching the first message of the next problem's
+with one statement and one prefix sharing one claim, each counting its own attempts, a shared claim
+settled once, the same statement under two prefixes kept as two claims, and a statement the
+identity cannot name ending its own problem as an error; the "already tried" lines, and the briefing reaching the first message of the next problem's
 session and of a prover's second session; the declared and the classified labels, premises and
 details on `attempt.finished`; a label outside the vocabulary refused; the option; the redundancy
 metric; M0 unchanged without a line; an identity given by a line, and the registry it is handed.
@@ -171,7 +175,8 @@ metric; M0 unchanged without a line; an identity given by a line, and the regist
 Not done, and not measured:
 
 - The Lean identity: statements equal up to renaming, binder style or definitional unfolding are
-  different claims, and near-equal statements are not deduplicated.
+  different claims, and so is one problem repeated under two prefixes; near-equal statements are
+  not deduplicated.
 - The classifiers are lexical rules written from Mathlib habits, tested on a table of cases, not on
   real provers' output. The failure classes depend on Lean's exact wording
   ([lean.md](lean.md#to-verify-against-lean)).

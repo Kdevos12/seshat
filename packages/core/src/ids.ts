@@ -82,9 +82,15 @@ export function collapseWhitespace(text: string): string {
 
 /**
  * Version 0 of the statement id: a hash of the statement text without comments and with
- * whitespace collapsed. It only catches textual duplicates; P0b replaces it with a hash of the
+ * whitespace collapsed. Given the `header` the statement is read under (its imports, `open`s and
+ * definitions), the header, normalized the same way, is hashed with it: the same text under another
+ * header is another statement, so statements that differ never share an id. A header with nothing
+ * in it, empty or only comments and spaces, is no header, and a statement with no header has the
+ * hash of its text alone. It only catches textual duplicates; P0b replaces it with a hash of the
  * elaborated, normalized Lean expression (prefix `st1_`). Different versions never compare equal.
  */
-export function statementIdV0(statement: string): string {
-  return `st0_${sha256Hex(collapseWhitespace(stripLeanComments(statement))).slice(0, 32)}`;
+export function statementIdV0(statement: string, header?: string): string {
+  const text = collapseWhitespace(stripLeanComments(statement));
+  const context = header === undefined ? "" : collapseWhitespace(stripLeanComments(header));
+  return `st0_${sha256Hex(context === "" ? text : `${context}\u0000${text}`).slice(0, 32)}`;
 }

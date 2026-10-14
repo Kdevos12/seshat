@@ -61,7 +61,7 @@ Each problem has:
 | `path`, `line` | File in the checkout and line of the `theorem` keyword. |
 | `fullName`, `declaredName` | Name with namespaces, and as written. |
 | `category`, `ams`, `formalProof`, `answer` | From the attributes and the statement. |
-| `statement`, `statementId` | Binders and type as written, and their `st0_` id. |
+| `statement`, `statementId` | Binders and type as written, and their `st0_` id (of the statement alone: a run with lines names the problem's claim by the statement and its file's prefix). |
 | `fileHash` | sha256 of the file in plain-header form, checked before a run uses it. |
 | `imports` | The file's imports. |
 | `proofInFile`, `sorryInStatement`, `unprovedBefore` | What the filter looked at. |

@@ -38,8 +38,10 @@ describe("MemoryStore claims", () => {
     const { memory, journal, dir } = open();
     const first = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test", gloss: "first", domain: ["11"], header: "import Mathlib" });
     assert.equal(first.created, true);
-    assert.equal(first.statementId, statementIdV0("(n : ℕ) : n + 0 = n"));
-    const again = await memory.withActor("line:M1").ensureClaim({ statement: "(n : ℕ) :  n + 0 = n -- again", origin: "other", gloss: "second" });
+    assert.equal(first.statementId, statementIdV0("(n : ℕ) : n + 0 = n", "import Mathlib"));
+    const again = await memory
+      .withActor("line:M1")
+      .ensureClaim({ statement: "(n : ℕ) :  n + 0 = n -- again", header: "import  Mathlib -- the same", origin: "other", gloss: "second" });
     assert.deepEqual(again, { claimId: first.claimId, statementId: first.statementId, created: false });
     const claim = memory.claim(first.claimId);
     assert.equal(claim?.gloss, "first", "the first claim of a statement keeps its fields");
@@ -55,12 +57,23 @@ describe("MemoryStore claims", () => {
     assert.deepEqual(actors, ["memory", "line:M1"]);
   });
 
-  it("ignore the header with the default identity: the same text under another header is the first claim", async () => {
+  it("read the header with the default identity: the same text under another header is another claim", async () => {
     const { memory, journal } = open();
-    const first = await memory.ensureClaim({ statement: ": 1 + 1 = 2", header: "import Mathlib", origin: "test" });
-    const other = await memory.ensureClaim({ statement: ": 1 + 1 = 2", header: "import Mathlib\nopen Nat", origin: "test" });
-    assert.deepEqual(other, { claimId: first.claimId, statementId: first.statementId, created: false });
-    assert.equal(memory.claim(other.claimId)?.header, "import Mathlib", "the first claim's header stands");
+    const text = ": 1 + 1 = 2";
+    const bare = await memory.ensureClaim({ statement: text, origin: "test" });
+    const mathlib = await memory.ensureClaim({ statement: text, header: "import Mathlib", origin: "test" });
+    const nat = await memory.ensureClaim({ statement: text, header: "import Mathlib\nopen Nat", origin: "test" });
+    assert.equal(bare.statementId, statementIdV0(text), "with no header the id is the text's alone");
+    assert.deepEqual([bare.created, mathlib.created, nat.created], [true, true, true]);
+    assert.equal(new Set([bare.claimId, mathlib.claimId, nat.claimId]).size, 3);
+    assert.equal(memory.claim(nat.claimId)?.header, "import Mathlib\nopen Nat");
+    // The header is normalized as the statement is: the same header, spaced and commented, is the same claim.
+    const spaced = await memory.ensureClaim({ statement: ":  1 + 1 = 2", header: "import   Mathlib /- as before -/\n", origin: "test" });
+    assert.deepEqual(spaced, { claimId: mathlib.claimId, statementId: mathlib.statementId, created: false });
+    assert.equal(memory.claim(spaced.claimId)?.header, "import Mathlib", "the first claim's header stands");
+    // A header with nothing in it is no header.
+    const blank = await memory.ensureClaim({ statement: text, header: "  -- nothing\n", origin: "test" });
+    assert.deepEqual(blank, { claimId: bare.claimId, statementId: bare.statementId, created: false });
     journal.close();
   });
 

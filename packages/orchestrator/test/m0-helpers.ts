@@ -41,11 +41,12 @@ export function tempDir(prefix = "mh-m0-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** A checkout with one problem file, and its bench index. */
-export function demoBench(file = DEMO_FILE): { checkout: string; index: BenchIndex } {
+/** A checkout with one problem file (or several, by file name), and its bench index. */
+export function demoBench(file: string | Record<string, string> = DEMO_FILE): { checkout: string; index: BenchIndex } {
   const checkout = tempDir("mh-checkout-");
   mkdirSync(join(checkout, "FormalConjectures"), { recursive: true });
-  writeFileSync(join(checkout, "FormalConjectures", "Demo.lean"), file);
+  const files = typeof file === "string" ? { "Demo.lean": file } : file;
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(checkout, "FormalConjectures", name), text);
   const { errors: _errors, ...index } = buildIndex(checkout, "demo-bench", DISCRETE);
   return { checkout, index };
 }
@@ -186,8 +187,8 @@ export async function demoRun(options: {
   log?: (line: string) => void;
   /** The lines the run can enable (`config.lines` enables them). Default: the repository's. */
   lines?: LineRegistry;
-  /** The bench's Lean file. Default: `DEMO_FILE`. */
-  file?: string;
+  /** The bench's Lean file, or its files by name. Default: `DEMO_FILE`. */
+  file?: string | Record<string, string>;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
   const { checkout, index } = demoBench(options.file);
   const { models, faux, name } = fauxModels(options.pricePerMillion);

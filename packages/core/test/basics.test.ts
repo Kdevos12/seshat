@@ -83,6 +83,26 @@ describe("statement ids", () => {
     assert.match(a, /^st0_[0-9a-f]{32}$/);
     assert.equal(collapseWhitespace("  a \n b  "), "a b");
   });
+
+  it("keeps the id of a statement with no header, and hashes a header with the statement", () => {
+    const statement = "(n : ℕ) : n + 0 = n";
+    // The ids of statements with no header are the ones this function always gave.
+    assert.equal(statementIdV0(statement), "st0_84d25b8a326e7ae4ad6b194c8aa9c597");
+    assert.equal(statementIdV0(": 1 + 1 = 2"), "st0_aedbc542c3d26b2fd9404138d67e753d");
+    const header = "import Mathlib\nopen Nat";
+    const id = statementIdV0(statement, header);
+    assert.match(id, /^st0_[0-9a-f]{32}$/);
+    assert.notEqual(id, statementIdV0(statement));
+    // The header is normalized as the statement is: comments and spacing do not count.
+    assert.equal(statementIdV0(" (n : ℕ)  :  n + 0 = n -- zero", "import   Mathlib /- all of it -/\n\nopen Nat\n"), id);
+    // Another header, another statement; the header and the statement cannot trade text.
+    assert.notEqual(statementIdV0(statement, "import Mathlib"), id);
+    assert.notEqual(statementIdV0(statement, "import Mathlib\nopen Nat\nopen Real"), id);
+    assert.notEqual(statementIdV0("n : ℕ) : n + 0 = n", "import Mathlib\nopen Nat\n("), statementIdV0("(n : ℕ) : n + 0 = n", "import Mathlib\nopen Nat"));
+    // A header with nothing in it is none.
+    assert.equal(statementIdV0(statement, ""), statementIdV0(statement));
+    assert.equal(statementIdV0(statement, "  -- nothing here\n/- or here -/ "), statementIdV0(statement));
+  });
 });
 
 describe("claim statuses", () => {

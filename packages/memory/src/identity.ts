@@ -19,12 +19,15 @@ export interface StatementIdentity {
 
 /**
  * Version 0: a hash of the statement's text without comments and with whitespace collapsed
- * (`statementIdV0`). It only catches textual duplicates, and ignores the header.
+ * (`statementIdV0`). When a header is given, it is hashed with the statement, normalized the same
+ * way: the same text under another header is another claim, since the header may define the names
+ * the text uses. Without a header, or with one that has nothing in it, the id is the text's alone.
+ * It only catches textual duplicates, and merges fewer claims than the elaborated statement will.
  */
 export class TextIdentity implements StatementIdentity {
   readonly version = "st0";
 
-  id(statement: string): string {
-    return statementIdV0(statement);
+  id(statement: string, context: StatementContext = {}): string {
+    return statementIdV0(statement, context.header);
   }
 }
