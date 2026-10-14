@@ -60,4 +60,7 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
   what it offers and refuses.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
+- [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
+  graphs and integers, evaluators, fingerprints, certified refutations, identification of
+  sequences (line M11).
 - [development.md](development.md): conventions, tests, commits.

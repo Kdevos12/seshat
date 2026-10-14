@@ -46,6 +46,7 @@ Some tests run only when their data is on disk:
 | Sketches of every research-solved theorem | a formal-conjectures checkout | `FORMAL_CONJECTURES_DIR` (default `../google-deepmind/formal-conjectures`) |
 | The committed bench index is reproduced | the `bench-v1-lean4.27.0` checkout | `FC_BENCH_V1_DIR` (default `../google-deepmind/formal-conjectures-bench-v1`) |
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
+| Graph and group batteries read from SageMath (`@seshat/models`) | the `sagemath-mcp` executable | `SAGEMATH_MCP_COMMAND` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`
 ([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`. For SageMath
