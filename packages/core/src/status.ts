@@ -1,6 +1,8 @@
 /**
- * Epistemic statuses (plan §2). Only a Lean-checked proof makes a claim `proved`; tool output
- * without a Lean certificate is `computed` and never propagates to `proved`.
+ * Epistemic statuses (plan §2). Only a certified Lean proof makes a claim `proved`, and a claim is
+ * `computed` (a candidate) only when a proof of it passed the Lean fast check: the journal asks for
+ * the validation. Tool output without a Lean proof marks an edge `computed` or becomes a node, and
+ * never propagates to `proved`.
  *
  * The user's four statuses map as: conjecture = open, réfutée = refuted,
  * preuve candidate = computed, preuve certifiée = proved.

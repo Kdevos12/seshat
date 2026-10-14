@@ -116,9 +116,11 @@ corruption, and the journal refuses to open.
 - an attempt, tool run or problem finishes twice, or finishes without having started (or been
   registered);
 - a problem finishes with a claim other than its own;
+- a claim is created in a status other than `open`;
 - a status change's `from` is not the claim's current status, or the transition is not allowed
   ([trust.md](trust.md#claim-statuses));
-- a claim becomes `proved` without a certified validation of that claim, or `refuted` without a
+- a claim becomes `computed` without a valid validation of that claim (a proof of the claim, not of
+  its negation), `proved` without a certified validation of that claim, or `refuted` without a
   certified validation of its negation ([trust.md](trust.md#the-journal-enforces-it));
 - an edge has an unknown kind or status, no target, several targets when it is not a
   `decomposes_into`, a target twice, itself as a target, or a `link` on a kind no lemma checks;

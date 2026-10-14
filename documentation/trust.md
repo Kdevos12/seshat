@@ -5,7 +5,7 @@
 | Status | Meaning |
 |---|---|
 | `open` | A conjecture: nothing is established yet. |
-| `computed` | A candidate: a proof passed the fast check, or a tool found evidence without a Lean certificate. |
+| `computed` | A candidate: a proof of the claim passed the fast check. |
 | `proved` | A certified Lean proof. |
 | `refuted` | A certified Lean proof of the negation. |
 | `proved_informal` | An accepted informal proof (kept for later; the bench does not use it). |
@@ -54,6 +54,13 @@ A `claim.status_changed` event to `proved` or `refuted` is refused unless it nam
 (`method: "kernel_replay"`): a proof of the claim for `proved`, a proof of its negation
 (`negation: true`) for `refuted`. No code path can mark a claim proved without a certificate
 ([journal.md](journal.md#invariants)).
+
+An event to `computed` is refused unless it names a valid `validation.finished` event of the same
+claim, a proof of the claim and not of its negation. A claim is also created `open`: the other
+statuses come only through these checked changes. Tool output without a Lean proof therefore
+never changes a claim's status: it marks an edge `computed` or is recorded as a node. Lines cannot
+bypass the journal either: the memory store keeps it private ([memory.md](memory.md)), and a line
+reaches a status only through `validate` ([lines.md](lines.md#validate)).
 
 ## Edges
 

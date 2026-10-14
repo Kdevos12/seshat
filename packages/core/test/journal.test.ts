@@ -135,6 +135,59 @@ describe("Journal", () => {
     journal.close();
   });
 
+  it("creates a claim open, whatever status the event names", () => {
+    const journal = Journal.open(tempDir(), "run_1");
+    for (const status of ["computed", "proved", "refuted"] as const) {
+      assert.throws(
+        () => journal.emit("claim.created", { claimId: "clm_p", statementId: "st0_p", statement: ": P", origin: "test", status }, "test"),
+        new RegExp(`claim clm_p is created open, not ${status}`),
+      );
+    }
+    assert.equal(journal.projection.claim("clm_p"), undefined);
+    journal.close();
+  });
+
+  it("makes a claim computed only through a valid validation of that claim", () => {
+    const journal = Journal.open(tempDir(), "run_1");
+    seedClaim(journal);
+    seedClaim(journal, "clm_2");
+    const validation = (validationId: string, claimId: string, options: { verdict?: "valid" | "invalid"; negation?: boolean } = {}) =>
+      journal.emit(
+        "validation.finished",
+        {
+          validationId,
+          claimId,
+          method: "repl",
+          verdict: options.verdict ?? "valid",
+          reasons: [],
+          axioms: [],
+          submissionHash: "h",
+          ...(options.negation === true ? { negation: true } : {}),
+        },
+        "validator",
+      );
+    const candidate = (validationId?: string) =>
+      journal.emit(
+        "claim.status_changed",
+        { claimId: "clm_1", from: "open", to: "computed", reason: "candidate", ...(validationId === undefined ? {} : { validationId }) },
+        "line:M1",
+      );
+    validation("val_invalid", "clm_1", { verdict: "invalid" });
+    validation("val_other", "clm_2");
+    validation("val_negation", "clm_1", { negation: true });
+    assert.throws(() => candidate(), /claim clm_1 can become computed only with a valid validation of the claim/);
+    assert.throws(() => candidate("val_unknown"), /can become computed only with a valid validation/);
+    assert.throws(() => candidate("val_invalid"), /can become computed only with a valid validation/);
+    assert.throws(() => candidate("val_other"), /validation val_other validates claim clm_2, not clm_1/);
+    assert.throws(() => candidate("val_negation"), /proves the negation of the claim, so claim clm_1 cannot become computed/);
+    assert.equal(journal.projection.claim("clm_1")?.status, "open");
+    validation("val_ok", "clm_1");
+    candidate("val_ok");
+    assert.equal(journal.projection.claim("clm_1")?.status, "computed");
+    assert.equal(journal.projection.runSummary().candidates, 1);
+    journal.close();
+  });
+
   it("makes a claim proved only through a certified validation of that claim", () => {
     const journal = Journal.open(tempDir(), "run_1");
     seedClaim(journal);

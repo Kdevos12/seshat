@@ -13,11 +13,19 @@ function open(identity?: StatementIdentity): { memory: MemoryStore; journal: Jou
   return { memory: new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) }), journal, dir };
 }
 
-/** Proves the link lemma of an edge: a claim with the link's statement and a valid validation of it. */
-async function checkedLink(memory: MemoryStore, statement: string): Promise<{ link: { name: string; statement: string }; validationId: string }> {
+/**
+ * Proves the link lemma of an edge: a claim with the link's statement and a valid validation of it.
+ * The validation is the validator's event, written with the journal `open` returns: a store has no
+ * way to write one.
+ */
+async function checkedLink(
+  memory: MemoryStore,
+  journal: Journal,
+  statement: string,
+): Promise<{ link: { name: string; statement: string }; validationId: string }> {
   const { claimId } = await memory.ensureClaim({ statement, origin: "test" });
   const validationId = `val_${claimId}`;
-  memory.journal.emit(
+  journal.emit(
     "validation.finished",
     { validationId, claimId, method: "repl", verdict: "valid", reasons: [], axioms: [], submissionHash: "h" },
     "validator",
@@ -67,20 +75,36 @@ describe("MemoryStore claims", () => {
   });
 });
 
+describe("MemoryStore trust", () => {
+  it("keep the journal out of reach, in the store and in the view a line gets", () => {
+    const { memory, journal } = open();
+    const view = memory.withActor("line:M1");
+    for (const store of [memory, view, view.withActor("line:M2")]) {
+      assert.equal("journal" in store, false, "no property called journal");
+      for (const key of Reflect.ownKeys(store)) {
+        assert.notEqual(Reflect.get(store, key), journal, `${String(key)} holds the journal`);
+        assert.notEqual(Reflect.get(store, key), journal.log, `${String(key)} holds the log`);
+        assert.notEqual(Reflect.get(store, key), journal.projection, `${String(key)} holds the projection`);
+      }
+    }
+    journal.close();
+  });
+});
+
 describe("MemoryStore edges and nodes", () => {
   it("follow only lean_checked equiv edges to equivalents, both ways", async () => {
     const { memory, journal } = open();
     const ids: Record<string, string> = {};
     for (const name of ["a", "b", "c", "d", "e"]) ids[name] = (await memory.ensureClaim({ statement: `: P_${name}`, origin: "test" })).claimId;
     const { a, b, c, d, e } = ids as Record<"a" | "b" | "c" | "d" | "e", string>;
-    const ab = await checkedLink(memory, ": P_a ↔ P_b");
+    const ab = await checkedLink(memory, journal, ": P_a ↔ P_b");
     memory.addEdge({ kind: "equiv", from: a, to: b, status: "lean_checked", ...ab });
-    const cb = await checkedLink(memory, ": P_c ↔ P_b");
+    const cb = await checkedLink(memory, journal, ": P_c ↔ P_b");
     const edge = memory.addEdge({ kind: "equiv", from: c, to: [b], link: cb.link });
     assert.deepEqual(memory.equivalents(a), [a, b], "a proposed edge does not count");
     memory.setEdgeStatus(edge.edgeId, "lean_checked", { reason: "link lemma checked", validationId: cb.validationId });
     memory.addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
-    const ae = await checkedLink(memory, ": P_a → P_e");
+    const ae = await checkedLink(memory, journal, ": P_a → P_e");
     memory.addEdge({ kind: "implies", from: a, to: e, status: "lean_checked", ...ae });
     assert.deepEqual(memory.equivalents(a), [a, b, c]);
     assert.deepEqual(memory.equivalents(c), [c, b, a]);

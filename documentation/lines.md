@@ -96,7 +96,7 @@ The problem's context (`ProblemContext`):
 | `line`, `runId`, `problemId`, `claimId` | Who and where. `claimId` is the problem's claim. |
 | `target` | The theorem: its full name, its statement in signature form, the problem's file and its sketch. |
 | `domain` | The problem's domains, such as `msc:11`. |
-| `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. |
+| `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. A line never touches the journal: its store has no access to it. |
 | `registry` | The run's capability registry. Calls through it are tool runs in the journal; pass `actor: "line:<id>"`, and the attempt inside a session. |
 | `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?})` returns the text, its cost, the model and the call's id. |
 | `validate` | Submits a Lean proof of a claim, or of its negation, through the validator. |
@@ -121,7 +121,9 @@ call is recorded too). The model defaults to the run's, with the run's thinking 
 ### `validate`
 
 `validate({claimId, proof, aux?, negation?, attemptId?})` is the only way a line changes a claim's
-status, and it goes through the same validator as the provers' checks:
+status, and it goes through the same validator as the provers' checks. The rule holds by
+construction: a line's store cannot write a status, and the journal makes a claim `computed` only
+with a valid validation of that claim ([trust.md](trust.md#the-journal-enforces-it)).
 
 - A proof of the problem's claim goes to the problem's workbench, as a prover's would: a valid one
   makes the claim `computed`, becomes the problem's candidate, and ends the problem's search.
