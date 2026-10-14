@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type EventDataMap, type HarnessEvent, readEvents } from "@seshat/core";
+import { type Redundancy, redundancy } from "@seshat/memory";
 
 export interface ProblemLine {
   problemId: string;
@@ -44,6 +45,12 @@ export interface RunReport {
    * cost is in `usd` and the token counts.
    */
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
+  /**
+   * The redundant attempts (plan §6): of the attempts that carry a strategy label, the share that
+   * failed in a way an earlier attempt on the claim, or on an equivalent one, had already failed.
+   * Absent when no attempt has a label, which is every run without the M1 line.
+   */
+  redundancy?: Redundancy;
 }
 
 export interface ToolUse {
@@ -152,6 +159,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
   const lines = (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : []));
+  const redundant = redundancy(events);
   return {
     runId: started.runId,
     benchId: started.benchId,
@@ -182,6 +190,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(redundant !== undefined ? { redundancy: redundant } : {}),
   };
 }
 
@@ -239,6 +248,12 @@ export function renderRunReport(report: RunReport): string {
     ),
     ...(report.modelCalls !== undefined
       ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
+      : []),
+    ...(report.redundancy !== undefined
+      ? [
+          `Redundant attempts: ${report.redundancy.redundant} of ${report.redundancy.attempts} labeled attempts ` +
+            `(${(report.redundancy.share * 100).toFixed(0)}%) failed again as an earlier attempt on the same claim or an equivalent one had.`,
+        ]
       : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",

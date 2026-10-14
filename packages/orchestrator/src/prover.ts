@@ -60,6 +60,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
   const { workbench, journal } = o;
   const actor = `prover:${o.name}`;
   const tools = o.tools ?? [];
+  const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)));
   let regions: Submission = { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined;
@@ -103,6 +104,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
       },
       actor,
     );
+    workbench.noteAttempt(attemptId);
     const started = performance.now();
     let result: SessionResult;
     try {
@@ -134,6 +136,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
         signal: o.signal,
         wrapUp: session < o.sessions,
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
+        ...(strategies.length > 0 ? { strategies } : {}),
       });
     } catch (error) {
       journal.emit(
@@ -173,6 +176,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
       ...(failure !== undefined ? { failureClass: failure } : {}),
       stoppedBy: result.stop,
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
+      ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
       durationMs: o.lines === undefined ? Math.round(performance.now() - started) : durationMs,
       turns: result.turns,
       usd: result.cost.usd,
@@ -201,6 +205,7 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
           ...(result.notes !== undefined ? { notes: result.notes } : {}),
           ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
           ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
+          ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
         });
       } catch (error) {
         // The session is over and its facts stand; the line's failure stops the prover.

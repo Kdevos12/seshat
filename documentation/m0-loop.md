@@ -96,7 +96,9 @@ Lean could not be reached), or when a line's `beforeSession` stops it (`line`).
 ## A session
 
 A session is a fresh pi `Agent` with the tool `lean_check(aux, proof)`, and the run's
-[other tools](#other-tools) if it has any. A check puts the two
+[other tools](#other-tools) if it has any. When an enabled line classifies strategies (M1), the
+tool also takes an optional `strategy`, one of the line's labels ([lines.md](lines.md#a-line)); M0
+has no such argument. A check puts the two
 regions into the file, keeps the file in the blob store, and runs the fast check under
 `SKETCH_POLICY`, which lets `sorry` and `admit` reach Lean so that the goals of the holes come back
 ([validator.md](validator.md#holes)). Regions that contain marker lines are refused before Lean.
@@ -125,12 +127,12 @@ model for its notes (`WRAP_UP`). The tools stay declared, because providers need
 of the tools that the history calls, but a `beforeToolCall` hook blocks any call.
 
 For an `invalid` attempt, `failureClass` classifies its last check from Lean's messages: `refused`
-(before Lean), `lean_unavailable`, `timeout` (Lean's time limit, heartbeats or recursion depth),
-`syntax`, `unknown_identifier`, `type_mismatch`, `tactic_failed`, `unsolved_goals`, `restates_target`
-(an auxiliary lemma states the target again), `holes`, `axioms` (an axiom outside the allowed ones),
-`statement_changed` or `other`. When Lean reports several errors, the most basic gives the class: a
-syntax error before an unknown identifier, before a type error, before a failed tactic, before
-unsolved goals. The class `lean_error`, which stood for every error Lean reported, is gone.
+(before Lean), `lean_unavailable`, `timeout`, `syntax`, `unknown_identifier`, `type_mismatch`,
+`tactic_failed`, `unsolved_goals`, `restates_target` (an auxiliary lemma states the target again),
+`holes`, `axioms` (an axiom outside the allowed ones), `statement_changed` or `other`
+([the table](m1-identity-memory.md#failure-classes)). The classes are the same with or without
+lines; the class `lean_error`, which stood for every error Lean reported, is gone. Only a run with M1 records
+the typed `failureDetail` besides the class.
 
 ## What the prover sees
 
@@ -271,7 +273,7 @@ Options of `harness run`:
 | `--run-budget-usd X` | none | Dollars for the whole run. |
 | `--concurrency N` | 1 | Problems worked on at the same time. |
 | `--tool CAPABILITY` | none | A `direct` capability given to the provers besides `lean_check`, such as `compute.sage`; repeat it for several ([other tools](#other-tools)). |
-| `--lines ID,...` | none | The lines to enable, such as `M1,M10`; repeatable. None: M0 ([lines.md](lines.md)). No line is implemented yet, so a run with one refuses to start. |
+| `--lines ID,...` | none | The lines to enable, such as `M1,M10`; repeatable. None: M0 ([lines.md](lines.md)). M1 is the only line built ([m1-identity-memory.md](m1-identity-memory.md)); a run that enables another refuses to start. |
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |

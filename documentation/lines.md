@@ -7,32 +7,32 @@ points of a run. A run enables lines with `harness run --lines` or `--ablation`;
 exactly M0 ([m0-loop.md](m0-loop.md)).
 
 The API is in `@seshat/lines`; the orchestrator runs it (`packages/orchestrator/src/line-runtime.ts`).
-No line is implemented yet: `packages/orchestrator/src/lines.ts`, the registry of the lines a run
-can enable, is empty, and a run that enables a line stops before it starts and says that the line
-is planned.
+`packages/orchestrator/src/lines.ts` is the registry of the lines a run can enable. M1 is the first
+one built ([m1-identity-memory.md](m1-identity-memory.md)); a run that enables a line that is only
+planned stops before it starts and says so.
 
 ## The lines
 
 `LINE_ORDER` lists the lines in the order the plan builds and measures them (§7), which is not the
 order of their numbers. The hooks of the enabled lines run in this order.
 
-| Id | Adds | Package |
-|---|---|---|
-| `M1` | canonical identity and shared negative memory | `@seshat/memory`, `@seshat/lean-meta` |
-| `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` |
-| `M2` | variant graph and logical propagation | `@seshat/graph` |
-| `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` |
-| `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` |
-| `M4` | context compiler | `@seshat/context` |
-| `M6` | guards against hallucination, and drift detectors | `@seshat/guards` |
-| `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` |
-| `M3` | growing lemma library | `@seshat/library` |
-| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` |
-| `M8` | inductive engine | `@seshat/induction` |
-| `M13` | theory exploration and classical conjecturing | `@seshat/induction` |
-| `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` |
-| `M5` | lessons with counters | `@seshat/lessons` |
-| `M9` | reranking from our own labels, without training | `@seshat/abduction` |
+| Id | Adds | Package | State |
+|---|---|---|---|
+| `M1` | canonical identity and shared negative memory | `@seshat/memory` (the line is `packages/orchestrator/src/m1.ts`); the Lean identity will come from `@seshat/lean-meta` | built, with the text identity |
+| `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` | planned |
+| `M2` | variant graph and logical propagation | `@seshat/graph` | planned |
+| `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` | planned |
+| `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` | planned |
+| `M4` | context compiler | `@seshat/context` | planned |
+| `M6` | guards against hallucination, and drift detectors | `@seshat/guards` | planned |
+| `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` | planned |
+| `M3` | growing lemma library | `@seshat/library` | planned |
+| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | planned |
+| `M8` | inductive engine | `@seshat/induction` | planned |
+| `M13` | theory exploration and classical conjecturing | `@seshat/induction` | planned |
+| `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
+| `M5` | lessons with counters | `@seshat/lessons` | planned |
+| `M9` | reranking from our own labels, without training | `@seshat/abduction` | planned |
 
 The packages exist as skeletons, with their dependencies in the lockfile; `@seshat/lean-local`
 (the certifier on the host) is the fourteenth.
@@ -53,15 +53,26 @@ interface Line {
   requires: readonly LineId[];
   options?: JsonObject;       // the options and their defaults
   version?: string;           // recorded in run.started: change it when the line's behavior changes
+  identity?: (env: { registry: Registry }) => StatementIdentity;  // how the run's memory names statements
+  strategies?: readonly string[];  // the labels the line classifies attempts with
   hooks: LineHooks;
 }
 ```
 
+`identity` is called once per run, before anything is written, and gives the `StatementIdentity`
+the run's memory names statements with ([memory.md](memory.md)); without an enabled line that gives
+one, it is the text identity. When an enabled line gives `strategies`, `lean_check` takes an
+optional `strategy` argument, one of the labels (the union, when several lines give some): the
+model declares what it is trying, and the call's `SessionCheck.strategy` and the attempt's
+`FinishedAttempt.declaredStrategy` carry the declaration. A run without such a line offers the
+tool exactly as M0 does.
+
 A run checks its lines before anything is written, and refuses to start, with every problem named,
 when an id is unknown or listed twice, a line is planned but not implemented, a line it requires is
-not enabled, two lines give the context packet, or an option is given for a line that is not
-enabled, that the line does not have, or with another type than its default (`resolveLines`). An
-option whose default is `null` means "not set": it has no type, and takes any JSON value.
+not enabled, two lines give the context packet or the statement identity, or an option is given
+for a line that is not enabled, that the line does not have, or with another type than its default
+(`resolveLines`). An option whose default is `null` means "not set": it has no type, and takes any
+JSON value.
 `run.started` records the enabled lines in `LINE_ORDER`, each with its options and version; a run
 without lines records no `lines` key at all, as M0 always did.
 
@@ -94,7 +105,7 @@ The problem's context (`ProblemContext`):
 
 | Field | What it is |
 |---|---|
-| `line`, `runId`, `problemId`, `claimId` | Who and where. `claimId` is the problem's claim. |
+| `line`, `runId`, `problemId`, `claimId` | Who and where. `claimId` is the problem's claim: in a run with lines it is the memory's claim for the problem's statement, which another problem with the same statement shares. |
 | `target` | The theorem: its full name, its statement in signature form, the problem's file and its sketch. |
 | `domain` | The problem's domains, such as `msc:11`. |
 | `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. A line never touches the journal: its store has no access to it. |
@@ -108,8 +119,9 @@ The problem's context (`ProblemContext`):
 
 A session's context (`SessionContext`) adds the prover, the session's number and the most it may
 have, its attempt id (recorded only after `beforeSession`; a skipped session's id is never
-recorded), its model, the prover's regions as the session starts, and the declared strategy and
-subgoal.
+recorded), its model, the prover's regions as the session starts, and the strategy and subgoal
+`beforeSession` declared. The model's own declaration, through `lean_check`'s `strategy` argument,
+is on each `SessionCheck` and, for its last one, on the `FinishedAttempt`.
 
 ### Claims a line states
 
@@ -158,7 +170,9 @@ status after the check, the reasons, and the validator's report.
 A task that implements a line:
 
 1. Writes it in the line's package (the table above), which already depends on `@seshat/core`,
-   `@seshat/memory`, `@seshat/lines` and `@seshat/registry`.
+   `@seshat/memory`, `@seshat/lines` and `@seshat/registry`. `@seshat/memory` cannot depend on
+   `@seshat/lines`, which depends on it: M1 keeps its logic in the memory and its `Line` object in
+   the orchestrator.
 2. Registers it in `packages/orchestrator/src/lines.ts`.
 3. Records what it learns as events through the `MemoryStore`: claims, edges, and nodes of its own
    kinds, whose `data` shape its package owns ([memory.md](memory.md#nodes)).
@@ -172,7 +186,8 @@ working and updates this page in the same commit.
 ## Measured
 
 The report lists the enabled lines, and the lines' model calls by outcome and by line; their cost
-is in the run's total. `harness run --ablation NAME` runs one cumulative config; comparing two
+is in the run's total. With M1 it also gives the share of redundant attempts
+([m1-identity-memory.md](m1-identity-memory.md#redundant-attempts)). `harness run --ablation NAME` runs one cumulative config; comparing two
 configs on the same problems and budget is the plan's measure of a line.
 
 ## Tested, and not yet
@@ -186,6 +201,8 @@ attempt; a run with no line that records nothing of the lines; a problem settled
 proof of another claim and of the problem's), with the provers left idle; unknown, planned and
 unmet lines refused before anything is written; a failing hook; sessions skipped and stopped; a
 line's model call charged to the problem; the context packet of each request, and its failure.
-`cli.test.ts` covers `--lines`, `--ablation` and `--line-option`.
+`cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
+also checks that only one line gives the statement identity, and
+`packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 
-No real line exists yet, and nothing here has run against a real model or Lean.
+M1 is the only line built, and nothing here has run against a real model or Lean.

@@ -152,6 +152,26 @@ describe("memory events", () => {
     Journal.open(dir, "run_1").close();
     assert.deepEqual(dump(path), before);
   });
+
+  it("keep the strategy an attempt was given, or the one the model declared in its last check", () => {
+    const dir = tempDir();
+    const journal = Journal.open(dir, "run_1");
+    claim(journal, "clm_a", "(n : ℕ) : n + 0 = n");
+    const finished = { outcome: "invalid", durationMs: 1, turns: 1, usd: 0, inputTokens: 0, outputTokens: 0 } as const;
+    for (const [attemptId, strategy] of [["att_1", "induction"], ["att_2", undefined], ["att_3", "induction"]] as const) {
+      journal.emit(
+        "attempt.started",
+        { attemptId, claimId: "clm_a", prover: "p1", iteration: 1, model: "PROVIDER/ID", ...(strategy !== undefined ? { strategy } : {}) },
+        "prover:p1",
+      );
+    }
+    journal.emit("attempt.finished", { attemptId: "att_1", ...finished }, "prover:p1");
+    journal.emit("attempt.finished", { attemptId: "att_2", ...finished, declaredStrategy: "cases" }, "prover:p1");
+    journal.emit("attempt.finished", { attemptId: "att_3", ...finished, declaredStrategy: "cases" }, "prover:p1");
+    const declared = (id: string) => journal.projection.attempt(id)?.declared_strategy;
+    assert.deepEqual(["att_1", "att_2", "att_3"].map(declared), ["induction", "cases", "cases"]);
+    journal.close();
+  });
 });
 
 describe("edge queries", () => {

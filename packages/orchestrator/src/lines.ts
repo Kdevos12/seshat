@@ -1,8 +1,9 @@
 import type { LineRegistry } from "@seshat/lines";
+import { M1 } from "./m1.ts";
 
 /**
- * The lines a run can enable, by id (documentation/lines.md). No line is implemented yet: a run
- * that enables one stops before it starts, and says that the line is planned. The task that
- * implements a line adds it here, from its own package.
+ * The lines a run can enable, by id (documentation/lines.md). A line that is planned and not
+ * implemented is not here: a run that enables it stops before it starts, and says so. The task
+ * that implements a line adds it here.
  */
-export const LINES: LineRegistry = {};
+export const LINES: LineRegistry = { M1 };

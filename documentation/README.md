@@ -16,7 +16,8 @@ simulated model and a simulated Lean.
 |---|---|---|
 | Event journal, claim statuses, SQLite projection | `@seshat/core` | Done, tested |
 | Memory store: claims, edges, nodes, reference files | `@seshat/memory` | Done, tested; reference files not run against Lean |
-| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines; no line implemented yet |
+| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M1 |
+| M1: shared claims by statement identity, strategy and failure classes, "already tried", redundant attempts | `@seshat/memory`, `@seshat/orchestrator` | Done with the text identity, tested with a simulated model and Lean; the Lean identity is not built |
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
@@ -42,6 +43,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   kinds, queries, reference files.
 - [lines.md](lines.md): the line API: the plan's mechanisms as lines a run switches on, their
   hooks and when they run, their contexts, the cumulative configs, how a task adds a line.
+- [m1-identity-memory.md](m1-identity-memory.md): the M1 line: one claim per statement, strategy
+  labels, failure classes, the "already tried" section, the redundant-attempts metric.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
   directory, `harness run` and `harness report`.

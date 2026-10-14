@@ -142,6 +142,8 @@ export interface EventDataMap {
     turns: number;
     /** The strategy classified from what the attempt submitted. */
     strategy?: string;
+    /** The strategy the model declared in its last `lean_check` that gave one; replaces the one given at the start. */
+    declaredStrategy?: string;
     /** The names the final proof text uses. */
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
