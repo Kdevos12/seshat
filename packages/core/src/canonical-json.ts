@@ -38,6 +38,23 @@ function serialize(value: unknown, path: string): string {
   }
 }
 
+/**
+ * Applies a JSON merge patch (RFC 7386) and returns the result, changing neither argument: an object
+ * patch sets its keys, recursively, and removes those it sets to null; any other patch replaces the
+ * target.
+ */
+export function mergePatch(target: Json | undefined, patch: Json): Json {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return patch;
+  const isObject = target !== null && typeof target === "object" && !Array.isArray(target);
+  const merged = new Map<string, Json>(isObject ? Object.entries(target) : []);
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) merged.delete(key);
+    else merged.set(key, mergePatch(merged.get(key), value));
+  }
+  // fromEntries defines keys as data properties, so a key such as "__proto__" stays a plain key.
+  return Object.fromEntries(merged);
+}
+
 export function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }

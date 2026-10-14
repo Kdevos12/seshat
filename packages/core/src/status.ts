@@ -11,6 +11,22 @@ export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 export const EDGE_STATUSES = ["proposed", "computed", "lean_checked", "informal_checked", "human_signed"] as const;
 export type EdgeStatus = (typeof EDGE_STATUSES)[number];
 
+/**
+ * Edge statuses by how far a formal proof may trust them, lowest first. `lean_checked` is last, so
+ * that "at least `lean_checked`" means exactly the edges a Lean lemma checked, the only ones that
+ * propagate proofs; an informal check or a human signature ranks below it.
+ */
+const EDGE_STATUS_ORDER: readonly EdgeStatus[] = ["proposed", "computed", "informal_checked", "human_signed", "lean_checked"];
+
+export function isEdgeStatus(value: unknown): value is EdgeStatus {
+  return typeof value === "string" && (EDGE_STATUSES as readonly string[]).includes(value);
+}
+
+/** The rank of an edge status in that order, from 0 for `proposed`. */
+export function edgeStatusRank(status: EdgeStatus): number {
+  return EDGE_STATUS_ORDER.indexOf(status);
+}
+
 const CLAIM_TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
   open: ["computed", "refuted", "proved", "proved_informal"],
   computed: ["open", "refuted", "proved", "proved_informal"],

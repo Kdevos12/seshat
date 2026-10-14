@@ -50,9 +50,30 @@ type with the reference type as terms. This is the design of
 ## The journal enforces it
 
 A `claim.status_changed` event to `proved` or `refuted` is refused unless it names a
-`validation.finished` event that is valid and certified (`method: "kernel_replay"`). For `proved`,
-that validation must be of the same claim. No code path can mark a claim proved without a
-certificate ([journal.md](journal.md#invariants)).
+`validation.finished` event of the same claim that is valid and certified
+(`method: "kernel_replay"`): a proof of the claim for `proved`, a proof of its negation
+(`negation: true`) for `refuted`. No code path can mark a claim proved without a certificate
+([journal.md](journal.md#invariants)).
+
+## Edges
+
+Edges between claims have their own statuses:
+
+| Status | Meaning |
+|---|---|
+| `proposed` | Someone suggested it: a model, a heuristic, a search. |
+| `computed` | A tool found evidence for it, without a Lean proof. |
+| `informal_checked` | An informal argument was accepted. |
+| `human_signed` | A person vouched for it. |
+| `lean_checked` | Lean checked its link lemma. |
+
+Only `lean_checked` edges propagate proofs. The journal accepts `lean_checked`, when an edge is
+added or later, only with the edge's link lemma (`link`: a name and a statement) and a valid
+validation, fast check or certification, of a claim whose statement is the link's statement (up to
+comments and whitespace). Whether the lemma says what the edge says is the job of whoever
+proposed the edge. Either way, a claim becomes `proved` only through a certified proof of that
+claim, so a wrong edge can mislead a search, never prove anything. An edge's status can go down
+again, with a reason (the lemma's file changed, a dependency was retracted).
 
 ## What runs where
 

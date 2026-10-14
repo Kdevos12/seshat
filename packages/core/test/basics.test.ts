@@ -8,7 +8,9 @@ import {
   canonicalJson,
   canTransition,
   collapseWhitespace,
+  edgeStatusRank,
   hashJson,
+  mergePatch,
   newId,
   sha256Hex,
   statementIdV0,
@@ -29,6 +31,25 @@ describe("canonicalJson", () => {
     assert.throws(() => canonicalJson({ x: Number.NaN }), /non-finite number at \$\.x/);
     assert.throws(() => canonicalJson([new Date(0)]), /unsupported object at \$\[0\]/);
     assert.throws(() => canonicalJson({ f: () => 1 }), /unsupported function/);
+  });
+});
+
+describe("mergePatch", () => {
+  it("sets, replaces and removes keys recursively, as RFC 7386 says", () => {
+    const target = { a: "b", c: { d: "e", f: "g" }, list: [1, 2] };
+    assert.deepEqual(mergePatch(target, { a: "z", c: { f: null, h: 1 }, list: [3] }), { a: "z", c: { d: "e", h: 1 }, list: [3] });
+    assert.deepEqual(target, { a: "b", c: { d: "e", f: "g" }, list: [1, 2] }, "the target is not changed");
+    assert.deepEqual(mergePatch({ a: 1 }, ["x"]), ["x"]);
+    assert.deepEqual(mergePatch(["x"], { a: { b: null, c: 2 } }), { a: { c: 2 } });
+    assert.deepEqual(mergePatch(undefined, { a: null, b: 1 }), { b: 1 });
+    assert.equal(mergePatch({ a: 1 }, null), null);
+  });
+
+  it("keeps a __proto__ key as a plain key", () => {
+    const merged = mergePatch({}, JSON.parse('{"__proto__": {"polluted": true}}')) as Record<string, unknown>;
+    assert.equal(Object.getPrototypeOf(merged), Object.prototype);
+    assert.deepEqual(Object.keys(merged), ["__proto__"]);
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
   });
 });
 
@@ -72,6 +93,12 @@ describe("claim statuses", () => {
     assert.ok(!canTransition("proved", "open"));
     assert.ok(!canTransition("refuted", "proved"));
     assert.ok(!canTransition("open", "retracted"));
+  });
+
+  it("ranks edge statuses with lean_checked last", () => {
+    assert.equal(edgeStatusRank("proposed"), 0);
+    assert.ok(edgeStatusRank("human_signed") < edgeStatusRank("lean_checked"));
+    assert.ok(edgeStatusRank("computed") < edgeStatusRank("informal_checked"));
   });
 });
 
