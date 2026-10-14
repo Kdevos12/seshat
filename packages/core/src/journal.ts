@@ -1,9 +1,11 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
+import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
 import { Projection, StaleProjectionError } from "./projection.ts";
-import { assertTransition } from "./status.ts";
+import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND } from "./records.ts";
+import { assertTransition, isEdgeStatus } from "./status.ts";
 
 /**
  * The single writer of a run: every fact goes through `emit`, which checks the invariants against
@@ -72,9 +74,17 @@ export class Journal {
   private check(event: EventBody): void {
     const p = this.projection;
     switch (event.type) {
-      case "claim.created":
-        if (p.claim(event.data.claimId)) throw new Error(`claim ${event.data.claimId} already exists`);
+      case "claim.created": {
+        const d = event.data;
+        if (p.claim(d.claimId)) throw new Error(`claim ${d.claimId} already exists`);
+        // Edges name claims and nodes by id alone, so the two share one space of ids.
+        if (p.node(d.claimId)) throw new Error(`${d.claimId} is already a node`);
+        if (d.kind !== undefined && d.kind !== "formal" && d.kind !== "informal") {
+          throw new Error(`claim ${d.claimId} has unknown kind ${String(d.kind)}`);
+        }
+        if (d.parentId !== undefined && !p.claim(d.parentId)) throw new Error(`unknown parent claim ${d.parentId}`);
         return;
+      }
       case "claim.status_changed": {
         const claim = p.claim(event.data.claimId);
         if (!claim) throw new Error(`unknown claim ${event.data.claimId}`);
@@ -82,15 +92,20 @@ export class Journal {
           throw new Error(`claim ${event.data.claimId} is ${claim.status}, not ${event.data.from}`);
         }
         assertTransition(event.data.from, event.data.to);
-        // Trust policy: only a certified proof (kernel replay) settles a claim.
+        // Trust policy: only a certified proof (kernel replay) settles a claim: a proof of the claim
+        // makes it proved, a proof of its negation makes it refuted.
         if (event.data.to === "proved" || event.data.to === "refuted") {
           const id = event.data.validationId;
           const validation = id === undefined ? undefined : p.validation(id);
           if (!validation || validation.verdict !== "valid" || validation.method !== "kernel_replay") {
             throw new Error(`claim ${event.data.claimId} can become ${event.data.to} only with a certified validation`);
           }
-          if (event.data.to === "proved" && validation.claim_id !== event.data.claimId) {
+          if (validation.claim_id !== event.data.claimId) {
             throw new Error(`validation ${id} certifies claim ${validation.claim_id}, not ${event.data.claimId}`);
+          }
+          if (validation.negation !== (event.data.to === "refuted")) {
+            const proves = validation.negation ? "the negation of the claim" : "the claim";
+            throw new Error(`validation ${id} certifies ${proves}, so claim ${event.data.claimId} cannot become ${event.data.to}`);
           }
         }
         return;
@@ -134,9 +149,83 @@ export class Journal {
         if (run.finished_seq !== null) throw new Error(`tool run ${event.data.toolRunId} already finished`);
         return;
       }
+      case "edge.added": {
+        const d = event.data;
+        if (p.edge(d.edgeId)) throw new Error(`edge ${d.edgeId} already exists`);
+        if (!isEdgeKind(d.kind)) throw new Error(`edge ${d.edgeId} has unknown kind ${String(d.kind)}`);
+        if (!isEdgeStatus(d.status)) throw new Error(`edge ${d.edgeId} has unknown status ${String(d.status)}`);
+        if (d.to.length === 0) throw new Error(`edge ${d.edgeId} has no target`);
+        if (d.kind !== "decomposes_into" && d.to.length !== 1) {
+          throw new Error(`a ${d.kind} edge has one target, edge ${d.edgeId} has ${d.to.length}`);
+        }
+        if (new Set(d.to).size !== d.to.length) throw new Error(`edge ${d.edgeId} names a target twice`);
+        if (d.to.includes(d.from)) throw new Error(`edge ${d.edgeId} goes from ${d.from} to itself`);
+        for (const id of [d.from, ...d.to]) {
+          if (!p.claim(id) && !p.node(id)) throw new Error(`edge ${d.edgeId}: unknown claim or node ${id}`);
+        }
+        if (d.link !== undefined && !LINK_KINDS.includes(d.kind)) {
+          throw new Error(`edge ${d.edgeId}: no lemma checks a ${d.kind} edge, so it has no link`);
+        }
+        if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
+        if (d.toolRunId !== undefined && !p.toolRun(d.toolRunId)) throw new Error(`unknown tool run ${d.toolRunId}`);
+        if (d.validationId !== undefined && !p.validation(d.validationId)) throw new Error(`unknown validation ${d.validationId}`);
+        if (d.status === "lean_checked") this.checkLink(d.edgeId, d.link, d.validationId);
+        return;
+      }
+      case "edge.status_changed": {
+        const d = event.data;
+        const edge = p.edge(d.edgeId);
+        if (!edge) throw new Error(`unknown edge ${d.edgeId}`);
+        if (edge.status !== d.from) throw new Error(`edge ${d.edgeId} is ${edge.status}, not ${d.from}`);
+        if (!isEdgeStatus(d.to)) throw new Error(`edge ${d.edgeId}: unknown status ${String(d.to)}`);
+        if (d.to === d.from) throw new Error(`edge ${d.edgeId} is already ${d.to}`);
+        if (d.validationId !== undefined && !p.validation(d.validationId)) throw new Error(`unknown validation ${d.validationId}`);
+        if (d.to === "lean_checked") {
+          const link = edge.link_name === null || edge.link_statement === null ? undefined : { name: edge.link_name, statement: edge.link_statement };
+          this.checkLink(d.edgeId, link, d.validationId);
+        }
+        return;
+      }
+      case "node.recorded": {
+        const d = event.data;
+        if (p.node(d.nodeId)) throw new Error(`node ${d.nodeId} already exists`);
+        if (p.claim(d.nodeId)) throw new Error(`${d.nodeId} is already a claim`);
+        if (!NODE_KIND.test(d.kind)) throw new Error(`node ${d.nodeId}: bad kind ${JSON.stringify(d.kind)}`);
+        if (d.claimId !== undefined && !p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
+        return;
+      }
+      case "node.updated":
+        if (!p.node(event.data.nodeId)) throw new Error(`unknown node ${event.data.nodeId}`);
+        return;
+      case "model_call.finished": {
+        const d = event.data;
+        if (p.modelCall(d.modelCallId)) throw new Error(`model call ${d.modelCallId} already exists`);
+        if (d.problemId !== undefined && !p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
+        if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
+        return;
+      }
       case "run.started":
       case "run.finished":
         return;
+    }
+  }
+
+  /**
+   * Trust policy for edges: an edge is `lean_checked` only when Lean checked its link lemma, that
+   * is, a valid validation (fast check or certification) of a claim whose statement is the link's.
+   * Whether the lemma says what the edge says is the job of whoever proposed it; a claim's status
+   * still needs a certified proof of that claim, so a wrong edge can mislead a search but cannot
+   * prove anything.
+   */
+  private checkLink(edgeId: string, link: EdgeLink | undefined, validationId: string | undefined): void {
+    if (link === undefined) throw new Error(`edge ${edgeId} has no link lemma, so it cannot be lean_checked`);
+    const validation = validationId === undefined ? undefined : this.projection.validation(validationId);
+    if (!validation || validation.verdict !== "valid" || validation.negation) {
+      throw new Error(`edge ${edgeId} can be lean_checked only with a valid validation of its link lemma`);
+    }
+    const claim = this.projection.claim(validation.claim_id);
+    if (!claim || statementIdV0(claim.statement) !== statementIdV0(link.statement)) {
+      throw new Error(`validation ${validationId} checks claim ${validation.claim_id}, not the link lemma of edge ${edgeId}`);
     }
   }
 

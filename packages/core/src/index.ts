@@ -7,6 +7,7 @@ export * from "./lean.ts";
 export * from "./lean-source.ts";
 export * from "./log.ts";
 export * from "./projection.ts";
+export * from "./records.ts";
 export * from "./sketch.ts";
 export * from "./status.ts";
 export * from "./validator.ts";
