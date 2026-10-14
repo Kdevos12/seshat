@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
-import { type LeanCertifier, PROOF_BEGIN } from "@seshat/core";
+import { type LeanCertifier, PROOF_BEGIN, statementIdV0 } from "@seshat/core";
 import type { Line } from "@seshat/lines";
 import { STRATEGIES, type StatementIdentity } from "@seshat/memory";
 import { M1 } from "../src/index.ts";
@@ -29,24 +29,38 @@ function leanCheckSpec(context: TranscriptContext): ToolSpec {
   return system.toolsAdded.find((t) => t.name === "lean_check") as ToolSpec;
 }
 
-const TWICE = `import FormalConjectures.Util.ProblemImports
+const IMPORTS = "import FormalConjectures.Util.ProblemImports\n\nnamespace Demo\n\n";
 
-namespace Demo
+/** A problem file: the prefix, then a solved problem. */
+function problemFile(theorem: string, prefix = IMPORTS): string {
+  return `${prefix}/-- Adding zero changes nothing. -/\n@[category research solved, AMS 11]\n${theorem} := by\n  sorry\n\nend Demo\n`;
+}
 
-/-- Adding zero changes nothing. -/
+/** Two files that read the same: one prefix, and one statement, spaced differently. */
+const TWICE = {
+  "Demo.lean": problemFile("theorem add_zero' (n : ℕ) : n + 0 = n"),
+  "DemoAgain.lean": problemFile("theorem add_zero_again (n : ℕ)  :  n + 0 = n"),
+};
+
+/** Two files with one statement under two prefixes: the second opens a namespace the first does not. */
+const APART = {
+  "Demo.lean": TWICE["Demo.lean"],
+  "DemoAgain.lean": problemFile("theorem add_zero_again (n : ℕ) : n + 0 = n", `${IMPORTS}open Nat\n\n`),
+};
+
+/** One file with two statements that differ only in the name of a variable. */
+const ALPHA = `${IMPORTS}/-- Adding zero changes nothing. -/
 @[category research solved, AMS 11]
 theorem add_zero' (n : ℕ) : n + 0 = n := by
   sorry
 
-/-- The same statement, spaced differently. -/
+/-- The same statement, with another variable. -/
 @[category research solved, AMS 11]
-theorem add_zero_again (n : ℕ)  :  n + 0 = n := by
+theorem add_zero_m (m : ℕ) : m + 0 = m := by
   sorry
 
 end Demo
 `;
-
-const ALPHA = TWICE.replace("add_zero_again (n : ℕ)  :  n + 0 = n", "add_zero_again (m : ℕ) : m + 0 = m");
 
 const INDUCTION = "induction n with\n| zero => exact Nat.add_zero 0\n| succ k ih => omega";
 
@@ -92,12 +106,13 @@ describe("M1 in a run", () => {
     });
     assert.deepEqual(result.problems.map((p) => [p.outcome, p.attempts]), [["unsolved", 1], ["unsolved", 1]]);
 
-    // One claim, made through the memory, with the file's prefix as its header.
+    // One claim, made through the memory, with the file's prefix as its header and in its id.
     const claims = ofType(events, "claim.created");
     assert.equal(claims.length, 1);
     assert.equal(claims[0]?.actor, "orchestrator");
     assert.equal(claims[0]?.data.origin, "bench:demo-bench");
-    assert.match(claims[0]?.data.header ?? "", /^import FormalConjectures\.Util\.ProblemImports\n\nnamespace Demo/);
+    assert.equal(claims[0]?.data.header, IMPORTS);
+    assert.equal(claims[0]?.data.statementId, statementIdV0("(n : ℕ) : n + 0 = n", IMPORTS));
     assert.deepEqual(claims[0]?.data.domain, ["msc:11"]);
     const registered = ofType(events, "problem.registered");
     assert.equal(registered.length, 2);
@@ -204,6 +219,56 @@ describe("M1 in a run", () => {
     // The bad call was not a check.
     assert.equal(checker.calls.filter((c) => proofOf(c.code) !== undefined).length, 1);
     assert.equal(ofType(events, "attempt.finished")[0]?.data.declaredStrategy, "induction");
+  });
+});
+
+describe("claims of one statement under two prefixes", () => {
+  it("are two claims: the same text under another prefix is another statement", async () => {
+    const prompts: string[] = [];
+    const { result, events } = await demoRun({
+      file: APART,
+      problems: 2,
+      lean: lean(),
+      config: { lines: ["M1"], sessions: 1 },
+      responses: [
+        check(INDUCTION),
+        say("The successor case is not closed by omega."),
+        (context) => (prompts.push(opening(context)), say("Nothing yet.")),
+      ],
+    });
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["unsolved", "unsolved"]);
+    const claims = ofType(events, "claim.created");
+    assert.equal(claims.length, 2);
+    assert.notEqual(claims[0]?.data.statementId, claims[1]?.data.statementId);
+    assert.deepEqual(claims.map((c) => c.data.header), [IMPORTS, `${IMPORTS}open Nat\n\n`]);
+    assert.deepEqual(ofType(events, "problem.registered").map((e) => e.data.claimId), claims.map((c) => c.data.claimId));
+    // Nothing is shared: the second problem's first session is told nothing about the first's attempt.
+    assert.equal(prompts.length, 1);
+    assert.doesNotMatch(prompts[0] ?? "", /Already tried/);
+    assert.equal(result.report.redundancy?.redundant, 0);
+  });
+
+  it("end a problem as an error, not the run, when the identity cannot name its statement", async () => {
+    const refusing: StatementIdentity = {
+      version: "st9",
+      id: async (statement) => {
+        if (statement.includes("n + 0")) throw new Error("no name for this statement");
+        return `st9:${statement}`;
+      },
+    };
+    const line: Line = { ...M1, identity: () => refusing };
+    const { result, events } = await demoRun({
+      problems: 2,
+      lines: { M1: line },
+      config: { lines: ["M1"], sessions: 1 },
+      responses: [check("exact trivial_proof")],
+    });
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["error", "candidate"]);
+    assert.match(result.problems[0]?.reason ?? "", /^the memory could not name the statement: no name for this statement$/);
+    assert.equal(result.problems[0]?.attempts, 0);
+    // The failed problem is registered like any other, and the run goes on to the next.
+    assert.equal(ofType(events, "problem.registered").length, 2);
+    assert.equal(ofType(events, "attempt.started").length, 1);
   });
 });
 

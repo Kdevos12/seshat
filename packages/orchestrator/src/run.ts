@@ -331,18 +331,28 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     } catch (error) {
       loadFailure = messageOf(error);
     }
-    // With lines, the claim is the memory's: a problem whose statement already is a claim shares it.
-    const claimId =
-      memory === undefined
-        ? createClaim(entry)
-        : (
-            await memory.withActor("orchestrator").ensureClaim({
-              statement: entry.statement,
-              ...(loaded !== undefined ? { header: loaded.sketch.prefix } : {}),
-              origin: `bench:${o.index.benchId}`,
-              domain,
-            })
-          ).claimId;
+    // With lines, the claim is the memory's: a problem whose statement and prefix already are a
+    // claim shares it. A statement the memory cannot name (not in signature form, or the identity
+    // fails on it) ends this problem as an error, with a claim made as in M0 to register it by.
+    let claimId: string;
+    let namingFailure: string | undefined;
+    if (memory === undefined) {
+      claimId = createClaim(entry);
+    } else {
+      try {
+        claimId = (
+          await memory.withActor("orchestrator").ensureClaim({
+            statement: entry.statement,
+            ...(loaded !== undefined ? { header: loaded.sketch.prefix } : {}),
+            origin: `bench:${o.index.benchId}`,
+            domain,
+          })
+        ).claimId;
+      } catch (error) {
+        namingFailure = messageOf(error);
+        claimId = createClaim(entry);
+      }
+    }
     journal.emit(
       "problem.registered",
       {
@@ -382,6 +392,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       return finish(outcome, reason, proof);
     };
 
+    if (namingFailure !== undefined) return finish("error", `the memory could not name the statement: ${namingFailure}`);
     if (loaded === undefined) return finish("skipped", loadFailure);
     const problem = loaded;
 

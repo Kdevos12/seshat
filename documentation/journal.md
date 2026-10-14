@@ -169,6 +169,10 @@ run (`inputHash`, `outputHash`).
 ## Statement ids
 
 `statementIdV0` hashes a statement's text with comments removed and whitespace collapsed
-(`st0_` prefix). It catches textual duplicates only: two files can give the same text different
-meanings through local notations. P0b replaces it with a hash of the elaborated, normalized Lean
+(`st0_` prefix). Given the header the statement is read under (the imports, `open`s and definitions
+before it), it hashes the header, normalized the same way, with the statement: the same text under
+another header has another id, and a header with nothing in it counts as none. A statement with no
+header has the hash of its text alone, which is the id the bench gives each problem. It catches
+textual duplicates only: statements that differ in the name of a bound variable, in notation or by
+an unfolding get different ids. P0b replaces it with a hash of the elaborated, normalized Lean
 term (`st1_` prefix); ids of different versions never compare equal.
