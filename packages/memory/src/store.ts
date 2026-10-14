@@ -169,27 +169,32 @@ export interface Validation {
  * the run's journal, blob store and projection. Every write is one journal event, checked by the
  * journal's invariants; every read comes from the projection. It is the one way mechanisms read and
  * write the memory.
+ *
+ * The journal is a private field, in the store and in every view `withActor` makes: a line that is
+ * given a store cannot emit an event of its own, so the trust rules (which statuses an event may
+ * set, and on what evidence) hold by construction and not by convention. A write that a task needs
+ * gets a narrow method here, never a raw `emit`.
  */
 export class MemoryStore {
-  readonly journal: Journal;
   readonly blobs: BlobStore;
   readonly identity: StatementIdentity;
   readonly actor: string;
+  readonly #journal: Journal;
   /** Shared by the views `withActor` makes. */
-  private references: Map<string, ClaimReference>;
+  #references: Map<string, ClaimReference>;
 
   constructor(options: MemoryStoreOptions) {
-    this.journal = options.journal;
+    this.#journal = options.journal;
     this.blobs = options.blobs;
     this.identity = options.identity ?? new TextIdentity();
     this.actor = options.actor ?? "memory";
-    this.references = new Map();
+    this.#references = new Map();
   }
 
   /** The same store, writing as another actor (`line:M1`...). */
   withActor(actor: string): MemoryStore {
-    const view = new MemoryStore({ journal: this.journal, blobs: this.blobs, identity: this.identity, actor });
-    view.references = this.references;
+    const view = new MemoryStore({ journal: this.#journal, blobs: this.blobs, identity: this.identity, actor });
+    view.#references = this.#references;
     return view;
   }
 
@@ -205,10 +210,10 @@ export class MemoryStore {
     };
     const statementId = await this.identity.id(input.statement, context);
     // Looked up and written with no await in between, so two calls cannot both create the claim.
-    const existing = this.journal.projection.claimsByStatement(statementId)[0];
+    const existing = this.#journal.projection.claimsByStatement(statementId)[0];
     if (existing !== undefined) return { claimId: existing.claim_id, statementId, created: false };
     const claimId = newId("clm");
-    this.journal.emit(
+    this.#journal.emit(
       "claim.created",
       {
         claimId,
@@ -229,7 +234,7 @@ export class MemoryStore {
 
   addEdge(input: EdgeInput): Edge {
     const edgeId = newId("edg");
-    this.journal.emit(
+    this.#journal.emit(
       "edge.added",
       {
         edgeId,
@@ -252,7 +257,7 @@ export class MemoryStore {
   setEdgeStatus(edgeId: string, to: EdgeStatus, options: { reason: string; validationId?: string }): Edge {
     const edge = this.edge(edgeId);
     if (edge === undefined) throw new Error(`unknown edge ${edgeId}`);
-    this.journal.emit(
+    this.#journal.emit(
       "edge.status_changed",
       {
         edgeId,
@@ -268,7 +273,7 @@ export class MemoryStore {
 
   recordNode(input: NodeInput): MemoryNode {
     const nodeId = newId("nod");
-    this.journal.emit(
+    this.#journal.emit(
       "node.recorded",
       { nodeId, kind: input.kind, ...(input.claimId !== undefined ? { claimId: input.claimId } : {}), data: input.data },
       this.actor,
@@ -278,23 +283,23 @@ export class MemoryStore {
 
   /** Applies a JSON merge patch (RFC 7386) to a node's data. */
   updateNode(nodeId: string, patch: Json, reason: string): MemoryNode {
-    this.journal.emit("node.updated", { nodeId, patch, reason }, this.actor);
+    this.#journal.emit("node.updated", { nodeId, patch, reason }, this.actor);
     return this.node(nodeId) as MemoryNode;
   }
 
   claim(claimId: string): Claim | undefined {
-    const row = this.journal.projection.claim(claimId);
+    const row = this.#journal.projection.claim(claimId);
     return row === undefined ? undefined : toClaim(row);
   }
 
   /** The first claim with this statement id. */
   claimByStatement(statementId: string): Claim | undefined {
-    const row = this.journal.projection.claimsByStatement(statementId)[0];
+    const row = this.#journal.projection.claimsByStatement(statementId)[0];
     return row === undefined ? undefined : toClaim(row);
   }
 
   edge(edgeId: string): Edge | undefined {
-    const row = this.journal.projection.edge(edgeId);
+    const row = this.#journal.projection.edge(edgeId);
     return row === undefined ? undefined : toEdge(row);
   }
 
@@ -302,7 +307,7 @@ export class MemoryStore {
   edges(query: EdgeQuery = {}): Edge[] {
     const minimum = query.minStatus;
     const statuses = minimum === undefined ? undefined : EDGE_STATUSES.filter((s) => edgeStatusRank(s) >= edgeStatusRank(minimum));
-    return this.journal.projection
+    return this.#journal.projection
       .edges({
         ...(query.from !== undefined ? { from: query.from } : {}),
         ...(query.to !== undefined ? { to: query.to } : {}),
@@ -325,7 +330,7 @@ export class MemoryStore {
         ...this.edges({ to: id, kinds: ["equiv"], minStatus: "lean_checked" }).map((e) => e.from),
       ];
       for (const next of around) {
-        if (seen.has(next) || this.journal.projection.claim(next) === undefined) continue;
+        if (seen.has(next) || this.#journal.projection.claim(next) === undefined) continue;
         seen.add(next);
         queue.push(next);
       }
@@ -337,24 +342,24 @@ export class MemoryStore {
   attempts(claimId: string, options: { includeEquivalents?: boolean } = {}): Attempt[] {
     const claims = options.includeEquivalents === true ? this.equivalents(claimId) : [claimId];
     return claims
-      .flatMap((id) => this.journal.projection.attempts(id))
+      .flatMap((id) => this.#journal.projection.attempts(id))
       .sort((a, b) => a.started_seq - b.started_seq)
       .map(toAttempt);
   }
 
   /** The validations of a claim (proofs of it and of its negation), in order. */
   validations(claimId: string): Validation[] {
-    return this.journal.projection.validations(claimId).map(toValidation);
+    return this.#journal.projection.validations(claimId).map(toValidation);
   }
 
   node(nodeId: string): MemoryNode | undefined {
-    const row = this.journal.projection.node(nodeId);
+    const row = this.#journal.projection.node(nodeId);
     return row === undefined ? undefined : toNode(row);
   }
 
   /** The nodes of a kind (of one claim, if given), in the order they were recorded. */
   nodes(kind: string, options: { claimId?: string } = {}): MemoryNode[] {
-    return this.journal.projection.nodes(kind, options.claimId).map(toNode);
+    return this.#journal.projection.nodes(kind, options.claimId).map(toNode);
   }
 
   /**
@@ -363,8 +368,8 @@ export class MemoryStore {
    * file comes from the problem's source, which `problem.registered` records.
    */
   setReference(claimId: string, reference: ClaimReference): void {
-    if (this.journal.projection.claim(claimId) === undefined) throw new Error(`unknown claim ${claimId}`);
-    this.references.set(claimId, reference);
+    if (this.#journal.projection.claim(claimId) === undefined) throw new Error(`unknown claim ${claimId}`);
+    this.#references.set(claimId, reference);
   }
 
   /**
@@ -375,7 +380,7 @@ export class MemoryStore {
     const claim = this.claim(claimId);
     if (claim === undefined) throw new Error(`unknown claim ${claimId}`);
     if (claim.kind === "informal") throw new Error(`claim ${claimId} is informal: it has no Lean reference`);
-    const own = this.references.get(claimId) ?? claimReference(claim.header ?? "", claimTheoremName(claimId), claim.statement);
+    const own = this.#references.get(claimId) ?? claimReference(claim.header ?? "", claimTheoremName(claimId), claim.statement);
     return options.negation === true ? negationReference(own) : own;
   }
 }

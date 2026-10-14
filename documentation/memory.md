@@ -21,6 +21,12 @@ store that writes as another actor. The orchestrator gives each line such a view
 says which line wrote what. `blobs` is the run's blob store, for contents too large for an event:
 a node's data can name a blob by its hash.
 
+Lines never touch the journal. The store keeps it in a private field, in every view, so a line has
+no way to emit an event the store has no method for, and the trust rules ([trust.md](trust.md))
+hold by construction: a line moves a claim's status only through `validate`
+([lines.md](lines.md#validate)). A task that needs a write the store lacks adds a narrow method
+here, never a raw `emit`.
+
 ## Claims
 
 A claim is a statement with a status ([trust.md](trust.md#claim-statuses)).

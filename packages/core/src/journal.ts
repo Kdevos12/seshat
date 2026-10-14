@@ -79,6 +79,8 @@ export class Journal {
         if (p.claim(d.claimId)) throw new Error(`claim ${d.claimId} already exists`);
         // Edges name claims and nodes by id alone, so the two share one space of ids.
         if (p.node(d.claimId)) throw new Error(`${d.claimId} is already a node`);
+        // A claim starts open and reaches every other status through the checked status changes below.
+        if (d.status !== "open") throw new Error(`claim ${d.claimId} is created open, not ${String(d.status)}`);
         if (d.kind !== undefined && d.kind !== "formal" && d.kind !== "informal") {
           throw new Error(`claim ${d.claimId} has unknown kind ${String(d.kind)}`);
         }
@@ -92,6 +94,20 @@ export class Journal {
           throw new Error(`claim ${event.data.claimId} is ${claim.status}, not ${event.data.from}`);
         }
         assertTransition(event.data.from, event.data.to);
+        // Trust policy: a candidate (`computed`) needs a proof of the claim that passed the fast check.
+        if (event.data.to === "computed") {
+          const id = event.data.validationId;
+          const validation = id === undefined ? undefined : p.validation(id);
+          if (!validation || validation.verdict !== "valid") {
+            throw new Error(`claim ${event.data.claimId} can become computed only with a valid validation of the claim`);
+          }
+          if (validation.claim_id !== event.data.claimId) {
+            throw new Error(`validation ${id} validates claim ${validation.claim_id}, not ${event.data.claimId}`);
+          }
+          if (validation.negation) {
+            throw new Error(`validation ${id} proves the negation of the claim, so claim ${event.data.claimId} cannot become computed`);
+          }
+        }
         // Trust policy: only a certified proof (kernel replay) settles a claim: a proof of the claim
         // makes it proved, a proof of its negation makes it refuted.
         if (event.data.to === "proved" || event.data.to === "refuted") {
