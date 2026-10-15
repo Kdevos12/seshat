@@ -21,6 +21,18 @@
         }
       }
     },
+    "lean.goals": {
+      "use": ["pantograph"],
+      "settings": {
+        "pantograph": {
+          "command": "${env:PANTOGRAPH_REPL:-repl}",
+          "cwd": "${env:LEAN_PROJECT_DIR:-}",
+          "env": {
+            "LEAN_PATH": "${env:LEAN_PATH:-}"
+          }
+        }
+      }
+    },
     "compute.sage": {
       "use": ["docker"]
     }

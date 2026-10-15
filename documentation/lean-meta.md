@@ -11,6 +11,9 @@ it is an instance of. Three pieces give these answers to the harness:
   `LeanIdentity` (`st1_` ids), the implementation over a `LeanChecker`, and a simulated
   implementation for tests.
 
+The same package holds [`lean.goals`](#leangoals), proof goals one tactic at a time through
+Pantograph, for the provers.
+
 **SeshatMeta has never been compiled.** It was written against the sources of Lean v4.27.0 in an
 environment without Lean, so it may not build as is, and the ids in this page are what its code
 computes, by hand, not what a Lean run printed. Everything in TypeScript is tested against a
@@ -161,6 +164,50 @@ No run uses it yet: the bench gives each problem's claim its `st0_` id, so a run
 answers is refused. Tests put in the table which texts Lean would make the same term.
 `simulated.factory()` serves the table as an implementation of `lean.meta`.
 
+## `lean.goals`
+
+`lean.goals` (`capabilities/lean.goals/manifest.json`) works on a proof goal by goal: `direct`, so
+a run can give it to the provers (`harness run --tool lean.goals`), and stateful, one set of states
+per scope. Its operations:
+
+| `op` | Input | Output |
+|---|---|---|
+| `start` | `statement` (signature form), `header` | `state`, `goals` |
+| `tactic` | `state`, `goal` (default 0), `tactic` | `state`, `goals`, `messages`; or `error` and `messages`, and no new state |
+| `goals` | `state` | `state`, `goals` |
+| `sketch` | `code`, a Lean file with `sorry`s | `targets`: a `state` and its `goals` per declaration with a `sorry` |
+
+A goal is a string as Lean shows it: `case` and its name, the hypotheses (those of one type on one
+line), `⊢` and the target. A state never changes: a tactic gives a new one, so a prover can go back
+to any earlier state. A tactic Lean refuses is an answer (`error`), not a failed call; an unknown
+state, a statement Lean refuses, or a header that imports a module the REPL has not loaded fails
+the call.
+
+Its implementation `pantograph` (factory `pantograph`, `pantograph.ts`) runs Pantograph's REPL
+v0.3.13 as a child process, `PantographRepl`: started on the first call with the `modules` of its
+settings (default `Mathlib`), since it cannot import others later; it prints `ready.`, then answers
+each command line (`<command> <json>`) with one line of JSON. Commands go one at a time.
+
+- `start` and `sketch` send the file to `frontend.distil`, its imports blanked (`distilFile`);
+  `start`'s file is the header then `theorem seshat_goal <statement> := by sorry`, so the binders
+  are the goal's hypotheses.
+- `tactic` is `goal.tactic`, `goals` is `goal.print`, a released scope's states go with
+  `goal.delete`, and the health check is `stat`. Lean's time limit is Pantograph's option
+  `timeout` (`options.set`), from `timeoutSec`.
+- Each scope numbers its states from 0, mapped to Pantograph's ids. An abort kills the process,
+  since Lean cannot be interrupted otherwise; the next call starts a new one, and the states of
+  the old one are refused ("lost when Lean restarted"), in every scope.
+- A REPL that cannot start (no executable, a module it cannot find) is unreachable, so the registry
+  tries the host's next implementation.
+
+Its settings: `command` (default `repl`), `args` (before the modules), `modules`, `cwd` and `env`
+(added to the few variables a child process inherits, such as `LEAN_PATH`; an empty `cwd` or
+variable is left out). The host profiles read `PANTOGRAPH_REPL`, `LEAN_PROJECT_DIR` and
+`LEAN_PATH`. `LeanGoals` is its typed client for one scope (`start`, `tactic`, `goals`, `sketch`,
+`release`), with the errors of `LeanMeta`. Its contract has 6 cases. The tests run the REPL
+protocol against a fake Pantograph process (`packages/lean-meta/test/fixtures/fake-pantograph.ts`);
+it has not run against Pantograph.
+
 ## Deployment
 
 The server's project is the bench's formal-conjectures checkout ([lean.md](lean.md#deployment-for-the-bench));
@@ -177,7 +224,17 @@ tried yet:
    and `lake build SeshatMeta`.
 
 Then `pnpm harness health` shows whether SeshatMeta answers, and
-`pnpm harness contract lean.meta` runs the contract. Kimina keeps one REPL per header, and the
+`pnpm harness contract lean.meta` runs the contract.
+
+For `lean.goals`, build Pantograph at `v0.3.13` (Lean v4.27.0) with `lake build repl`, and point
+the harness at it with the project's library path, as Pantograph's documentation says:
+
+```sh
+export PANTOGRAPH_REPL=/path/to/Pantograph/.lake/build/bin/repl
+export LEAN_PROJECT_DIR=/path/to/formal-conjectures
+export LEAN_PATH=$(cd "$LEAN_PROJECT_DIR" && lake env printenv LEAN_PATH)
+pnpm harness contract lean.goals
+``` Kimina keeps one REPL per header, and the
 headers of `lean.meta` (which import SeshatMeta) differ from those of `lean.check`, so the first
 call under a header loads Mathlib again.
 
@@ -196,3 +253,6 @@ call under a header loads Mathlib again.
 4. That the server takes `import SeshatMeta` as part of the header and finds the module.
 5. That `#seshat_premises` sees through auxiliary lemmas, and `#seshat_instances` finds and checks
    the contract's facts.
+6. For `lean.goals`: the JSON Pantograph v0.3.13 prints (field names, goals, messages, errors, as
+   read from its `Protocol.lean`), that `frontend.distil` accepts a file whose imports are blank
+   lines, and the goals' text in the contract's cases.

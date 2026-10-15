@@ -102,7 +102,7 @@ dedicated server; only `LEAN_SERVER_API_URL` changes in the harness.
 
 The Lean meta tool (`lean.meta`) runs on the same server, and needs the library `lean/SeshatMeta`
 built in the project ([lean-meta.md](lean-meta.md#deployment)). That library has never been
-compiled.
+compiled. `lean.goals` runs Pantograph's REPL on the harness's machine, in the same project.
 
 ## The certifier (to write)
 

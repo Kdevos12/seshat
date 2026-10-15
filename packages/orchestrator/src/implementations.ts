@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
-import { leanMetaFactory } from "@seshat/lean-meta";
+import { leanMetaFactory, pantographFactory } from "@seshat/lean-meta";
 import { Registry, type ImplementationFactory, type RegistryOptions } from "@seshat/registry";
 
 /** The repository: `capabilities/` holds the manifests, `config/hosts/` the host profiles. */
@@ -10,6 +10,7 @@ export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   kimina: kiminaFactory(),
   "kimina-meta": leanMetaFactory((context) => kiminaChecker(context)),
+  pantograph: pantographFactory(),
 };
 
 export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "host" | "factories"> {

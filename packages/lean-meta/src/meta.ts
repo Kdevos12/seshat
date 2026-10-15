@@ -58,7 +58,7 @@ export interface MetaCallOptions {
 }
 
 /**
- * Why `lean.meta` gave no answer. `rejected`: Lean or the capability refused this input (an
+ * Why `lean.meta` (or `lean.goals`) gave no answer. `rejected`: Lean or the capability refused this input (an
  * elaboration error, an unknown name, a name the schema does not take, Lean's time limit), so the
  * same call would be refused again. `unreachable`: no answer came back (the host has no `lean.meta`,
  * the server is down or lacks SeshatMeta, the call timed out or was aborted, the answer was
