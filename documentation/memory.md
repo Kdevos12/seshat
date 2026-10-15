@@ -52,11 +52,12 @@ which may be asynchronous. `TextIdentity`, the default, is `statementIdV0`: a ha
 without comments and with whitespace collapsed (`st0_`), which only catches textual duplicates
 ([journal.md](journal.md#statement-ids)). It ignores the `header`: the same text under another
 header is the same claim, so `ensureClaim` returns the first claim and its header, and the new
-header is dropped. A Lean-backed identity (`st1_`, the hash of the elaborated statement) is
-planned, and reads the header; the store takes any identity without change. A run uses one
-identity, since ids of different versions never compare equal. The bench gives each problem's claim
-its `st0_` id, so with `TextIdentity` a line that states a problem's statement again gets the
-problem's claim.
+header is dropped. `LeanIdentity` (`@seshat/lean-meta`, [lean-meta.md](lean-meta.md#leanidentity))
+is the Lean-backed identity: `st1_`, the hash of the elaborated statement, read under its header.
+The store takes any identity without change. A run uses one identity, since ids of different
+versions never compare equal. The bench gives each problem's claim its `st0_` id, so with
+`TextIdentity` a line that states a problem's statement again gets the problem's claim; with
+`LeanIdentity` it would not, until the problems' claims get `st1_` ids.
 
 ### Statement form
 
@@ -187,7 +188,7 @@ back.
 
 ## Not done yet
 
-- The Lean-backed statement identity, and the dedup of near-equal statements (plan §3.1).
+- The dedup of near-equal statements (plan §3.1). `LeanIdentity` exists, but no run uses it yet.
 - Propagation over `lean_checked` edges and revocation (plan §3.2): the edges are stored, nothing
   follows them yet except `equivalents`.
 - Indexes beyond the projection's tables: embeddings, fingerprints, the subsumption index.

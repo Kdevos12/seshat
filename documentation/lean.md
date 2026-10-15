@@ -100,6 +100,10 @@ The prebuilt image `projectnumina/kimina-lean-server:2.0.0` targets Lean v4.26.0
 Mathlib project, so it does not fit as is. The same build works on a workstation and on the
 dedicated server; only `LEAN_SERVER_API_URL` changes in the harness.
 
+The Lean meta tool (`lean.meta`) runs on the same server, and needs the library `lean/SeshatMeta`
+built in the project ([lean-meta.md](lean-meta.md#deployment)). That library has never been
+compiled.
+
 ## The certifier (to write)
 
 A small Lean program, run in a fresh process for each candidate:
@@ -129,3 +133,4 @@ of `lean.check` checks each of them against a server
 5. That formal-conjectures' linters only emit warnings in the REPL (warnings do not fail a check).
 6. Timings: the first REPL for a header loads all of Mathlib; `LEAN_SERVER_INIT_REPLS` can start
    REPLs ahead of time.
+7. The Lean meta tool, from building SeshatMeta on: [lean-meta.md](lean-meta.md#to-verify-against-lean).
