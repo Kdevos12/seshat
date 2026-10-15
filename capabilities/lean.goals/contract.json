@@ -1,0 +1,140 @@
+{
+  "capability": "lean.goals",
+  "cases": [
+    {
+      "name": "the goals of a statement",
+      "purpose": "start distils theorem seshat_goal <statement> := by sorry: one state, whose goal has the binders as hypotheses.",
+      "input": {
+        "op": "start",
+        "statement": "(n : ℕ) : n + 0 = n",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "state",
+          "equals": 0
+        },
+        {
+          "path": "goals",
+          "equals": [
+            "n : ℕ\n⊢ n + 0 = n"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a tactic that closes the goal",
+      "purpose": "goal.tactic answers the next state and no goal.",
+      "before": [
+        {
+          "op": "start",
+          "statement": "(n : ℕ) : n + 0 = n",
+          "timeoutSec": 300
+        }
+      ],
+      "input": {
+        "op": "tactic",
+        "state": 0,
+        "tactic": "simp",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "state",
+          "equals": 1
+        },
+        {
+          "path": "goals",
+          "length": 0
+        }
+      ]
+    },
+    {
+      "name": "a tactic that splits the goal",
+      "purpose": "constructor on a conjunction leaves two goals, named by their cases.",
+      "before": [
+        {
+          "op": "start",
+          "statement": ": 1 = 1 ∧ 2 = 2",
+          "timeoutSec": 300
+        }
+      ],
+      "input": {
+        "op": "tactic",
+        "state": 0,
+        "tactic": "constructor",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "goals",
+          "equals": [
+            "case left\n⊢ 1 = 1",
+            "case right\n⊢ 2 = 2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a tactic Lean refuses",
+      "purpose": "A failing tactic is an answer with an error and Lean's messages, and no new state.",
+      "before": [
+        {
+          "op": "start",
+          "statement": "(n : ℕ) : n + 0 = n",
+          "timeoutSec": 300
+        }
+      ],
+      "input": {
+        "op": "tactic",
+        "state": 0,
+        "tactic": "exact notDefinedAnywhere",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "error",
+          "matches": "notDefinedAnywhere"
+        },
+        {
+          "path": "state",
+          "exists": false
+        }
+      ]
+    },
+    {
+      "name": "the goals of a sketch",
+      "purpose": "frontend.distil gives one target per declaration with a sorry, its goal after the have.",
+      "input": {
+        "op": "sketch",
+        "code": "import Mathlib\n\ntheorem sketch (a b : ℕ) (h : a ≤ b) : a < b + 1 := by\n  have k : a < b + 1 := sorry\n  exact k\n",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "targets",
+          "length": 1
+        },
+        {
+          "path": "targets.0.goals",
+          "equals": [
+            "a b : ℕ\nh : a ≤ b\n⊢ a < b + 1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an unknown state",
+      "purpose": "A state the session never had fails the call.",
+      "input": {
+        "op": "goals",
+        "state": 7,
+        "timeoutSec": 300
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "state 7"
+      }
+    }
+  ]
+}

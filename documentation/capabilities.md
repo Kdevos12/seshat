@@ -229,6 +229,30 @@ Its contract is the list of Lean behaviours the validator relies on
 A test runs this contract against the answers Lean is expected to give, which only shows that the
 expectations are well written. Whether Lean answers so is what running it against a server tells.
 
+## `lean.meta`
+
+The Lean meta tool: a statement's `st1_` id (the hash of its elaborated term in a canonical form),
+`isDefEq` of two statements, the theorems a proof uses, the classes and instances a statement
+involves, and which facts a statement is an instance of or covers. It is `auto`: `LeanIdentity` and
+the lines call it through the typed client `LeanMeta` of `@seshat/lean-meta`. Its implementation
+`kimina` (factory `kimina-meta`) runs the commands of the Lean library `lean/SeshatMeta` as snippets
+on the Kimina server of `lean.check`, and its version adds the library's to `lean.check`'s. Its
+contract has 11 cases; the library has never been compiled, so they have not run.
+[lean-meta.md](lean-meta.md) covers the commands, the canonical form, the errors and the
+deployment.
+
+## `lean.goals`
+
+Proof goals one tactic at a time, through Pantograph's REPL: `start` gives the goals of a statement,
+`tactic` runs a tactic on a goal of a state and answers the next state, `goals` shows a state again,
+`sketch` gives the goals of a file's `sorry`s. It is `direct` and stateful: each scope numbers its
+states from 0, and releasing the scope deletes them. Its implementation `pantograph` (factory
+`pantograph`) runs the REPL as a child process. Its contract has 6 cases, not run against Pantograph
+yet; [lean-meta.md](lean-meta.md#leangoals) covers the operations, the process and the settings.
+It is not sandboxed: the model's Lean code runs as the harness's user, with that user's files, so
+a run gives it to the provers only when asked (`--tool lean.goals`), on a machine where that is
+acceptable, until an implementation in a container exists.
+
 ## `compute.sage`
 
 SageMath, through the MCP server sagemath-mcp: Sage code in, the value of its last line and what it

@@ -1,0 +1,174 @@
+{
+  "id": "lean.goals",
+  "version": 1,
+  "title": "Work on a proof goal by goal in Lean",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "seeing the goals of a statement in Lean, and trying tactics on them one at a time",
+    "turning a proof sketch with sorry into the goals that remain"
+  ],
+  "whenNot": [
+    "checking a whole proof: lean_check",
+    "searching Mathlib for a lemma"
+  ],
+  "exposure": "direct",
+  "stateful": true,
+  "input": {
+    "type": "object",
+    "required": [
+      "op"
+    ],
+    "properties": {
+      "op": {
+        "enum": [
+          "start",
+          "tactic",
+          "goals",
+          "sketch"
+        ],
+        "description": "start: the goals of a statement; tactic: run a tactic on a goal of a state; goals: the goals of a state; sketch: the goals of the sorrys of a Lean file"
+      },
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "description": "start: the statement in signature form, e.g. (n : ℕ) : n + 0 = n"
+      },
+      "header": {
+        "type": "string",
+        "description": "start: the opens and definitions the statement needs; its imports must be modules this Lean has loaded"
+      },
+      "code": {
+        "type": "string",
+        "minLength": 1,
+        "description": "sketch: a Lean file; each declaration with a sorry gives a state with the sorrys' goals"
+      },
+      "state": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "tactic, goals: a state an earlier call of this session gave"
+      },
+      "goal": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "tactic: the position of the goal in the state's list, 0 when not given"
+      },
+      "tactic": {
+        "type": "string",
+        "minLength": 1,
+        "description": "tactic: a tactic, or several separated by ; or line breaks"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600,
+        "description": "Lean's time limit for this call, in seconds"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "integer"
+      },
+      "goals": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "state",
+            "goals"
+          ],
+          "properties": {
+            "state": {
+              "type": "integer"
+            },
+            "goals": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "messages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 120000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "state",
+    "error"
+  ],
+  "examples": [
+    {
+      "title": "the goals of a statement",
+      "input": {
+        "op": "start",
+        "statement": "(n : ℕ) : n + 0 = n"
+      },
+      "output": {
+        "state": 0,
+        "goals": [
+          "n : ℕ\n⊢ n + 0 = n"
+        ]
+      }
+    },
+    {
+      "title": "a tactic that closes the goal",
+      "input": {
+        "op": "tactic",
+        "state": 0,
+        "tactic": "simp"
+      },
+      "output": {
+        "state": 1,
+        "goals": [],
+        "messages": []
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "pantograph",
+      "version": "0.3.13+lean-v4.27.0+fc-bench-v1",
+      "kind": "inproc",
+      "factory": "pantograph",
+      "description": "Pantograph's REPL v0.3.13 (Lean v4.27.0) as a child process, started with the modules of its settings in the environment of the bench's formal-conjectures checkout. Not sandboxed: the model's Lean code runs as the harness's user (documentation/lean-meta.md#leangoals). Not run against a real Pantograph yet.",
+      "environment": {
+        "lean": "v4.27.0",
+        "pantograph": "v0.3.13",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7"
+      },
+      "settings": {
+        "command": "repl",
+        "args": [],
+        "modules": [
+          "Mathlib"
+        ],
+        "env": {}
+      }
+    }
+  ]
+}
