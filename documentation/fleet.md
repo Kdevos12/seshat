@@ -172,7 +172,8 @@ or the problem ends), the escalation, and the hooks on a real journal with stub 
 faux model: the strategy told and journaled, the same seed drawing the same strategy, a strategy kept
 while Lean gets further, the models chosen and escalated, a model that does not exist, the width
 (provers let in as the posterior falls, kept out while a single agent does well), the strategies of
-provers that work at once, and the notes of one prover never reaching another.
+provers that work at once, its section next to M6's question on an open conjecture, and the notes of
+one prover never reaching another.
 
 - Nothing ran against a real model or a real Lean. The simulated sessions take no time, so the gate is
   tested for its order and its caps, not for how much it speeds a real run up.
