@@ -114,7 +114,99 @@ of `geng` and the TypeScript generator agree. A test against a real SageMath run
 `SAGEMATH_MCP_COMMAND` names the `sagemath-mcp` executable
 ([development.md](development.md#tests-that-use-real-data)); it has not been run here.
 
+## Statements
+
+The line works on the statements of claims, which are in signature form
+([memory.md](memory.md#statement-form)). `recognizeStatement(statement)` says which of two shapes a
+statement has, or why it has neither; a statement of another shape is left alone.
+
+| Shape | Written as | Tried on |
+|---|---|---|
+| Magma | `(M : Type) [Mul M] (h : law) ... : law`, or the hypotheses as premises of the conclusion (`: (law) → law`), or no hypothesis; `Type*` and `Type u` are accepted, and `[Magma G]` with `◇` as in the equational theories project | The magmas of a battery |
+| Number | `(n : ℕ) (h : P n) ... : Q n`, or `: ∀ n : ℕ, Q n` | The integers of a battery |
+
+A *law* is `∀ x y z : M, left = right` where each side is a term in the variables and the one
+operation `*` (or `◇`), which associates to the left as in Lean. Anything else is refused with the
+reason: another symbol, a number, a variable the `∀` does not bind, a second type, more than 8
+variables, a hypothesis that is not a law, a binder that is not a hypothesis. A statement about two
+numbers, or one that uses the proof of its own hypothesis, is not tried either.
+
+A statement holds on an object when every object that satisfies the hypotheses satisfies the
+conclusion. So on a magma that breaks a hypothesis the statement holds vacuously; the object
+*breaks* it when the hypotheses hold and the conclusion does not, and then it is a counter-model.
+
+## Evaluators
+
+An evaluator gives a verdict on each object of a battery: `true` (the statement holds), `false`, or
+`null` (no verdict, with a note saying why). Three of them exist.
+
+| Evaluator | For | How | Where |
+|---|---|---|---|
+| Laws in TypeScript | Magma statements | Every assignment of the variables is tried (`size ** variables` of them, the first failure ends the magma) on a law compiled once. `compileMagmaStatement`, `evaluateLaw`, `lawWitness` give the verdict, and the assignment that breaks the law | `laws.ts`, `statement.ts` |
+| A program in JavaScript | Any predicate on numbers, magmas (`{size, table}`) and graphs (`{n, edges}`) | `runPredicate(source, args)` and `runProgram(source, objects)`: the program is one function expression that returns a boolean | `sandbox.ts` |
+| Lean | Magma and number statements | `evaluateWithLean(checker, {header, statement, objects})` | `lean-eval.ts` |
+
+The first is the fast path: the 3 461 magmas of the default battery take a few milliseconds per
+law. The third is the one that reads the statement as Lean does, and the one that runs a number
+statement; it needs a `LeanChecker`, which in a run is `RegistryLeanChecker` over `lean.check`.
+
+### The sandbox
+
+A program from a model is not trusted. It runs in a process of its own (`node --permission`, so it
+has no file, no child process and no worker, and `--max-old-space-size`), inside a `node:vm`
+context with no global besides the language's, no `eval` or `new Function`, and data that reaches it
+as JSON text only. Three limits apply, and each has a default: 200 ms for a call, 30 seconds for the
+run, 128 MB of memory (`PredicateLimits`).
+
+- A call that goes over its time, throws, or returns something that is not `true` or `false` has no
+  verdict (`null`, with the reason in `notes`), and the run goes on with the next object.
+- A program that fills the memory, or that the run's total time or a cancellation kills, ends the
+  run: the verdicts already given are kept, the others have none, and `stopped` says why.
+- A program that does not compile, an empty one and one over 20 000 characters are refused.
+
+It is a guard against the mistakes of a program that a model wrote, not a defense against one
+written to escape: the process does not isolate the network (the context offers none), and the
+memory limit is the process's, not the program's.
+
+### The Lean evaluator
+
+The statement becomes a proposition `m11_stmt` about its structure, after the claim's header, and
+each object an `example` on a line of its own:
+
+```lean
+import Mathlib
+
+abbrev m11_stmt (M : Type) [Mul M] : Prop := (∀ x y : M, x * y = x) → ∀ x y : M, x * y = y * x
+example : @m11_stmt (Fin 2) ⟨fun a b => ([0, 0, 1, 1] : List (Fin 2)).getD (a.val * 2 + b.val) 0⟩ := by decide
+```
+
+A number is written as itself (`@m11_stmt 7`). Lean accepting the example says the statement holds
+on the object. For the objects whose example fails, a second file asks `example : ¬ @m11_stmt ...`;
+Lean accepting it says the statement fails. When `decide` settles neither (a time limit, a
+statement it cannot decide such as one about `Nat.Prime`), the object has no verdict. The line of
+an error says which object it is about, since the position of an error in the answer is the line of
+the file as sent ([lean.md](lean.md)).
+
+- Up to 16 objects go in a file and 8 files in a call to the checker. A file that times out is
+  split in two, down to one object.
+- The first file is a probe. When an error falls before the examples (the definition does not
+  elaborate) or `decide` settles none of the first objects, the evaluation stops there and says so
+  in `unusable`, instead of sending the rest.
+- The table of a magma is a core `List` indexed by `a.val * n + b.val`, so the instance does not
+  depend on Mathlib.
+
+These verdicts are test results, and no more: `decide` ran on a statement this code wrote from the
+claim's, and a counter-model becomes a refutation only through `validate`
+([lines.md](lines.md#validate)). The tests answer the files with a simulated Lean that reads the
+`example` lines and decides each from the statement's meaning (`SimulatedDecide`); it checks the
+layout of the files and the logic around them, not that a real Lean accepts the syntax.
+
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
+- The Lean evaluator has not run against a real Lean. The text of the files (`abbrev`, the `Fin`
+  instance from a `List`, `decide` on the instantiated statement) is written from what Lean 4 and
+  Mathlib accept, and `pnpm harness contract lean.check` does not cover it.
+- A statement about groups, graphs or any other structure has no Lean evaluator: a program in
+  JavaScript is the evaluator for those.
 - Magmas of size 4 are sampled, never listed. Groups of order 16 and above are partly built.
