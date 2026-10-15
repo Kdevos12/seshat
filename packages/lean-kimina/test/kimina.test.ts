@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CapabilityError, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
-import { KiminaChecker, kiminaFactory } from "../src/index.ts";
+import { CapabilityError, loadCatalog, Registry, type HostProfile, type InprocImplementationSpec } from "@seshat/registry";
+import { KiminaChecker, kiminaChecker, kiminaFactory } from "../src/index.ts";
 
 interface Call {
   url: string;
@@ -105,6 +105,13 @@ describe("kiminaFactory", () => {
     assert.equal(calls[0]?.url, "http://lean:9000/api/check");
     assert.equal((calls[0]?.init.headers as Record<string, string>).Authorization, undefined);
     assert.equal(JSON.parse(String(calls[0]?.init.body)).timeout, 30);
+  });
+
+  it("builds the checker of lean.meta's implementation from the same settings", () => {
+    const spec = catalog.capabilities.get("lean.meta")?.manifest.implementations[0] as InprocImplementationSpec;
+    const checker = kiminaChecker({ spec, settings: { url: "http://lean:9000/", apiKey: "" } });
+    assert.deepEqual([checker.url, checker.version], ["http://lean:9000", spec.version]);
+    assert.throws(() => kiminaChecker({ spec, settings: { port: 8000 } }), /settings: unexpected property "port"/);
   });
 
   it("refuses settings it does not know", async () => {

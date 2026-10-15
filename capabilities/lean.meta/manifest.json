@@ -1,0 +1,259 @@
+{
+  "id": "lean.meta",
+  "version": 1,
+  "title": "Read statements and proofs at Lean's meta level",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "naming a statement by the hash of its elaborated term, so that the same statement is the same claim",
+    "testing whether two statements are definitionally equal",
+    "listing the theorems a proof uses",
+    "the type classes and instances a statement involves, to compare structures",
+    "finding which known facts a statement is an instance of, and which statements a new fact covers"
+  ],
+  "whenNot": [
+    "checking a proof: lean.check, then the certifier",
+    "searching Mathlib for a lemma"
+  ],
+  "exposure": "auto",
+  "input": {
+    "type": "object",
+    "required": [
+      "op"
+    ],
+    "properties": {
+      "op": {
+        "enum": [
+          "hash",
+          "defeq",
+          "premises",
+          "profile",
+          "instances"
+        ]
+      },
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A statement in signature form: the binders, then ':' and the type"
+      },
+      "other": {
+        "type": "string",
+        "minLength": 1,
+        "description": "defeq: the second statement"
+      },
+      "header": {
+        "type": "string",
+        "description": "The imports, opens and definitions the statements need; import Mathlib when not given"
+      },
+      "simp": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+          "type": "string",
+          "pattern": "^[^\\s,\\[\\]]+$"
+        },
+        "description": "hash: lemmas the statement is rewritten with first, by simp only"
+      },
+      "heartbeats": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000000,
+        "description": "defeq: Lean's heartbeat limit (maxHeartbeats), 20000 when not given"
+      },
+      "code": {
+        "type": "string",
+        "minLength": 1,
+        "description": "premises: a whole Lean file that declares the theorem"
+      },
+      "declaration": {
+        "type": "string",
+        "pattern": "^[^\\s,\\[\\]]+$",
+        "description": "premises: the theorem's name"
+      },
+      "facts": {
+        "type": "array",
+        "maxItems": 1000,
+        "items": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[^\\s,\\[\\]]+$",
+              "description": "Its name in the answer; with no statement, a declaration of the header"
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": "instances: the facts to compare the statement with"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600,
+        "description": "Lean's time limit, in seconds"
+      }
+    },
+    "additionalProperties": false,
+    "anyOf": [
+      {
+        "properties": {
+          "op": {
+            "const": "hash"
+          }
+        },
+        "required": [
+          "statement"
+        ]
+      },
+      {
+        "properties": {
+          "op": {
+            "const": "defeq"
+          }
+        },
+        "required": [
+          "statement",
+          "other"
+        ]
+      },
+      {
+        "properties": {
+          "op": {
+            "const": "premises"
+          }
+        },
+        "required": [
+          "code",
+          "declaration"
+        ]
+      },
+      {
+        "properties": {
+          "op": {
+            "const": "profile"
+          }
+        },
+        "required": [
+          "statement"
+        ]
+      },
+      {
+        "properties": {
+          "op": {
+            "const": "instances"
+          }
+        },
+        "required": [
+          "statement",
+          "facts"
+        ]
+      }
+    ]
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^st1_[0-9a-f]{32}$"
+      },
+      "defeq": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "premises": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "classes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "instances": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "instanceOf": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "covers": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 300000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "id",
+    "defeq"
+  ],
+  "examples": [
+    {
+      "title": "the id of a statement",
+      "input": {
+        "op": "hash",
+        "statement": "(n : ℕ) : n = n"
+      },
+      "output": {
+        "id": "st1_d00bd85fedab3a395168758d0a5ca620"
+      }
+    },
+    {
+      "title": "a fact that covers a statement",
+      "input": {
+        "op": "instances",
+        "statement": ": 2 + 3 = 3 + 2",
+        "facts": [
+          {
+            "name": "add_comm_nat",
+            "statement": "(a b : ℕ) : a + b = b + a"
+          }
+        ]
+      },
+      "output": {
+        "instanceOf": [
+          "add_comm_nat"
+        ],
+        "covers": []
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "kimina",
+      "version": "fb2393de+lean-v4.27.0+fc-bench-v1+seshat-meta-0.1.0",
+      "kind": "inproc",
+      "factory": "kimina-meta",
+      "description": "The SeshatMeta commands run as snippets on Kimina Lean Server 2.x (commit fb2393de), whose project is the bench's formal-conjectures checkout with lean/SeshatMeta added and built (documentation/lean-meta.md#deployment). Not run against a real server yet.",
+      "environment": {
+        "lean": "v4.27.0",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7",
+        "library": "lean/SeshatMeta 0.1.0"
+      }
+    }
+  ]
+}

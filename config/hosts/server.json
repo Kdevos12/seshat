@@ -12,6 +12,15 @@
       },
       "timeoutMs": 1800000
     },
+    "lean.meta": {
+      "use": ["kimina"],
+      "settings": {
+        "kimina": {
+          "url": "${env:LEAN_SERVER_API_URL:-http://localhost:8000}",
+          "apiKey": "${env:LEAN_SERVER_API_KEY}"
+        }
+      }
+    },
     "compute.sage": {
       "use": ["docker"]
     }

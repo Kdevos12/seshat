@@ -28,6 +28,7 @@ flowchart TB
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
     sage["compute_sage<br/>SageMath"]:::built
+    leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     moretools["ATPs, SAT/SMT, OEIS,<br/>Mathlib search,<br/>counterexample search"]:::planned
   end
 
@@ -49,6 +50,7 @@ flowchart TB
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.-> moretools
+  leanmeta -.->|"statement ids"| kg
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
   fast -.->|candidate| certifier

@@ -229,6 +229,18 @@ Its contract is the list of Lean behaviours the validator relies on
 A test runs this contract against the answers Lean is expected to give, which only shows that the
 expectations are well written. Whether Lean answers so is what running it against a server tells.
 
+## `lean.meta`
+
+The Lean meta tool: a statement's `st1_` id (the hash of its elaborated term in a canonical form),
+`isDefEq` of two statements, the theorems a proof uses, the classes and instances a statement
+involves, and which facts a statement is an instance of or covers. It is `auto`: `LeanIdentity` and
+the lines call it through the typed client `LeanMeta` of `@seshat/lean-meta`. Its implementation
+`kimina` (factory `kimina-meta`) runs the commands of the Lean library `lean/SeshatMeta` as snippets
+on the Kimina server of `lean.check`, and its version adds the library's to `lean.check`'s. Its
+contract has 11 cases; the library has never been compiled, so they have not run.
+[lean-meta.md](lean-meta.md) covers the commands, the canonical form, the errors and the
+deployment.
+
 ## `compute.sage`
 
 SageMath, through the MCP server sagemath-mcp: Sage code in, the value of its last line and what it
