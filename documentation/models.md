@@ -201,6 +201,84 @@ claim's, and a counter-model becomes a refutation only through `validate`
 `example` lines and decides each from the statement's meaning (`SimulatedDecide`); it checks the
 layout of the files and the logic around them, not that a real Lean accepts the syntax.
 
+## Fingerprints
+
+The fingerprint of a statement on a battery is the vector of an evaluator's verdicts, written as a
+string with one character for each object in the battery's order: `1` (the statement holds on the
+object), `0` (it fails: the object is a counter-model) or `?` (no verdict). Only the fingerprints of
+one battery, the same `id` and `digest`, can be compared.
+
+A claim is a statement about every object of a kind, and the verdict on an object is the claim at
+that object. `relate(a, b)` compares two fingerprints on the objects where both have a verdict:
+
+| Result | When | Candidate edge |
+|---|---|---|
+| `equivalent` | Equal, and not constant | `equiv` |
+| `implies`, `implied_by` | One is below the other everywhere (where it holds the other holds), they differ, the lower one holds somewhere and the upper one fails somewhere | `implies`, from the lower to the upper |
+| `unrelated` | Neither is below the other | none |
+| `uninformative` | One of the first two, but a fingerprint is constant | none |
+
+A fingerprint that is `1` everywhere says no object was found against the statement, and one that is
+`0` everywhere is false on every object; each is related to every other statement, so a relation
+that rests on one of them says nothing and is not proposed.
+
+`planRelations` and `addPlannedEdges` turn the relations of a claim with others into edges. Each
+edge is `computed`, never `lean_checked`: it comes from a finite battery, and a statement can agree
+with another on every small object and differ on a large one. Its note gives the counts. When both
+claims are about the same structure the edge carries the lemma that would make it true, in the claims'
+signature form, which `validate` can check and which then lets the edge propagate
+([memory.md](memory.md#edges)):
+
+```lean
+-- implies: for every magma, the first statement at the magma implies the second
+(M : Type) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x : M, x * x = x
+-- equiv
+(M : Type) [Mul M] : (∀ x y z : M, x * y = x * z) ↔ (∀ x y : M, x * y = x * x)
+```
+
+On the default battery, the associative magmas of size 1, 2 and 3 are 1, 5 and 24 (OEIS A027851),
+`x * y = x` has one model of each size, `x * y = x * z` and `x * y = x * x` have the same
+fingerprint (they are equivalent), `x * y = x` is included in associativity, idempotence and
+`x * y = x * z`, and associativity and commutativity are unrelated; the tests check each.
+
+### The records
+
+The package writes three kinds of nodes ([memory.md](memory.md#nodes)); other packages read them.
+
+| Kind | About | `data` |
+|---|---|---|
+| `battery` | | `id`, `family`, `digest`, `size`, `generator` (its name and parameters): recorded once for each battery a run uses |
+| `fingerprint` | A claim | `battery`, `digest`, `evaluator` (`law`, `lean` or `program`), `verdicts` (the string), `counts`, `batteryNode`; not recorded again when the claim already has the same |
+| `counter_model` | A claim | `battery`, `digest`, `index`, `object`, `description`, `evaluator`, `witness` (the values that break the conclusion), `refutation` (what each submission of the negation came to) |
+
+## Counter-models and refutations
+
+A fingerprint with a `0` is a counter-model, and never a refutation. `recordCounterModel` writes
+the `counter_model` node and a `refuted_by` edge from the claim to it, `computed`: an object was
+found by a tool, and nothing is proved. The refutation is a Lean proof of the claim's negation,
+submitted through `validate({claimId, negation: true, ...})` ([lines.md](lines.md#validate)). The
+validator asks for `¬ (type_of% @claim)`, and `negationProofs` writes the proof from the object:
+
+```lean
+intro hall
+have key := @hall (Fin 2) ⟨fun a b => ([0, 0, 1, 1] : List (Fin 2)).getD (a.val * 2 + b.val) 0⟩
+revert key
+decide
+```
+
+`@hall <object>` is the claim at the object: an implication from its hypotheses to its conclusion,
+which `decide` shows to be false. A second form puts the table in a `def aux_...` and ends with
+`exact absurd (@hall ...) (by decide)`; `submitRefutation` sends the first, and sends the second only
+when the first is invalid, and returns what each came to. Both pass the validator's structural check
+(`structuralCheck`: no forbidden token, no string, auxiliary names starting with `aux_`), which the
+tests run.
+
+What the validation path does with it: a valid proof of a negation is recorded as a validation with
+`negation: true` and changes no status. The claim becomes `refuted` only when the certifier replays
+the proof in a fresh process ([trust.md](trust.md), [lean.md](lean.md)); until then the claim is
+`open`, with a valid negation recorded. Both the proof forms and this path are tested with a simulated
+Lean; neither has run against a real one.
+
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
