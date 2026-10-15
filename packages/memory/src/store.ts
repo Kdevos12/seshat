@@ -298,10 +298,15 @@ export class MemoryStore {
   /**
    * Withdraws a claim whose status rested on something that was retracted: a `proved`, `refuted` or
    * `proved_informal` claim becomes `retracted`, and a `computed` candidate goes back to `open`. An
-   * `open` or `retracted` claim stays as it is. It only lowers a status, so it cannot raise trust;
-   * it is how a mechanism revokes a claim it derived (plan §3.2).
+   * `open` or `retracted` claim stays as it is. These are the revocation transitions of the status
+   * table (`packages/core/src/status.ts`), and the method picks the lower status itself, so it
+   * cannot raise a claim: a status goes up only through a validation (trust.md). It is the one
+   * change of status a line may make besides `validate`, and the line M2's revocation of a claim it
+   * composed (plan §3.2) is its only caller. It needs a reason, and the journal records the change
+   * under the store's actor.
    */
   retractClaim(claimId: string, options: { reason: string }): Claim {
+    if (options.reason.trim() === "") throw new Error(`claim ${claimId} can be retracted only with a reason`);
     const claim = this.claim(claimId);
     if (claim === undefined) throw new Error(`unknown claim ${claimId}`);
     const to: ClaimStatus | undefined =

@@ -26,6 +26,14 @@ Allowed transitions (`packages/core/src/status.ts`):
 
 A proof or a refutation is never downgraded; it can only be retracted.
 
+Going down is revocation: a `computed` claim goes back to `open`, and a `proved`, `refuted` or
+`proved_informal` claim becomes `retracted`. The memory store has one method for it,
+`retractClaim(claimId, {reason})` ([memory.md](memory.md#claims)). It chooses the lower status
+itself, so it raises none (it never reopens a `retracted` claim, though the table allows that move),
+it needs a reason, and the journal records the change under the caller's actor. A
+line may call it: it is the single change of status a line makes besides `validate`, and the line M2
+is its only caller ([lines.md](lines.md#validate)).
+
 ## Two levels of checking
 
 **The fast check** runs in a Lean REPL ([validator.md](validator.md)). The validator rebuilds the
@@ -60,7 +68,8 @@ claim, a proof of the claim and not of its negation. A claim is also created `op
 statuses come only through these checked changes. Tool output without a Lean proof therefore
 never changes a claim's status: it marks an edge `computed` or is recorded as a node. Lines cannot
 bypass the journal either: the memory store keeps it private ([memory.md](memory.md)), and a line
-reaches a status only through `validate` ([lines.md](lines.md#validate)).
+raises a status only through `validate` ([lines.md](lines.md#validate)). The one other change of
+status a line makes only lowers one: `retractClaim`, the revocation described above.
 
 ## Edges
 
@@ -84,9 +93,10 @@ again, with a reason (the lemma's file changed, a dependency was retracted).
 
 The line M2 follows `lean_checked` edges with logic rules ([graph.md](graph.md)). What the rules
 derive is a proposal: the line writes the composed Lean proof (the link lemmas applied to the proofs
-of the premises) and submits it like any other, so a claim changes status only through a proof of
-its own that passes the validator, and a claim that held only through such a proof goes back to
-`open` when the proof's premises are retracted.
+of the premises) and submits it like any other, so a claim goes up only through a proof of its own
+that passes the validator. A claim that held only through such a proof goes back down by revocation
+(`retractClaim`, the only status change a line makes besides `validate`) when the proof's premises
+are retracted: a candidate back to `open`, a certified claim to `retracted`.
 
 ## What runs where
 

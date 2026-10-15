@@ -147,10 +147,20 @@ call is recorded too). The model defaults to the run's, with the run's thinking 
 
 ### `validate`
 
-`validate({claimId, proof, aux?, negation?, attemptId?})` is the only way a line changes a claim's
+`validate({claimId, proof, aux?, negation?, attemptId?})` is the only way a line raises a claim's
 status, and it goes through the same validator as the provers' checks. The rule holds by
-construction: a line's store cannot write a status, and the journal makes a claim `computed` only
-with a valid validation of that claim ([trust.md](trust.md#the-journal-enforces-it)).
+construction: a line's store has no method that raises a status, and the journal makes a claim
+`computed` only with a valid validation of that claim ([trust.md](trust.md#the-journal-enforces-it)).
+
+A line has one other way to change a status, and it only lowers it: `memory.retractClaim(claimId,
+{reason})` takes back a claim whose status rested on something that was withdrawn. It is the single
+named exception, and its limits are in the store, not in the line's good conduct. It chooses the
+lower status itself, among the revocation transitions of the status table
+([trust.md](trust.md#claim-statuses)): a `computed` claim goes back to `open`, a `proved`, `refuted`
+or `proved_informal` one becomes `retracted`, and an `open` or `retracted` one stays as it is, so it
+raises none and does not reopen a retracted claim. It refuses a blank reason, and the journal
+records the change as written by `line:<id>`. M2 is its only caller, to withdraw a claim that held
+only through a composed proof whose premises are gone ([graph.md](graph.md#composed-proofs)).
 
 - A proof of the problem's claim goes to the problem's workbench, as a prover's would: a valid one
   makes the claim `computed`, becomes the problem's candidate, and ends the problem's search.
