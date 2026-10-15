@@ -44,7 +44,8 @@ code and long descriptions live in their own files.
 the orchestrator, by rule (level 0); `direct` is one of the ten or so tools always declared to the
 model (level 1); `deferred` is found on demand through tool search or code (level 2). `lean.check`
 is `auto`, called by the validator; `compute.sage` is `direct`, given to the provers by
-`harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)). No capability is `deferred` yet.
+`harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)), as are the lookups on the OEIS, the
+LMFDB and FindStat. No capability is `deferred` yet.
 
 Loading checks more than the shape: schemas use only the supported keywords, implementation ids
 are unique, every example and every contract input is valid for the schemas, summary and
@@ -70,7 +71,8 @@ project it imports from.
 **In-process** (`"kind": "inproc"`): code in the harness, built by a factory. The manifest names
 the factory and may give default `settings`. Factories are registered by the composition root
 (`FACTORIES` in `@seshat/orchestrator`); a package that provides one exports it, as
-`@seshat/lean-kimina` exports `kiminaFactory`.
+`@seshat/lean-kimina` exports `kiminaFactory` and `@seshat/models` the factories of the three
+sites it looks things up on.
 
 **MCP** (`"kind": "mcp"`): one tool of an MCP server, reached with
 [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi). Any external program goes this
@@ -260,6 +262,45 @@ printed out. It is stateful, one Sage session per scope, and `direct`. Its imple
 `docker` (the server's container image, without network) and `local` (an installed server). Its
 contract has 16 cases. [compute.md](compute.md) covers the installation, the settings, the
 resources it takes, and what it offers and refuses.
+
+## `oeis.search`
+
+Integer sequences in the On-Line Encyclopedia of Integer Sequences. From consecutive terms, or from a
+sequence's number, it returns how many sequences the site says match and the first page of them,
+each with its number, name, offset, terms (as decimal text, so that none is rounded), keywords and
+address. It is `direct` and justifies no status: a match is a lookup, and gives a form to conjecture.
+Its implementation `site` (factory `oeis`, version `json-search+client-1`) asks the site's JSON
+search through a client of `@seshat/models`, one request at a time with a pause between two; the
+address is the host's `baseUrl` setting (`OEIS_URL` in the repository's profiles). Line M11 reaches it
+through `RegistryOeis`, so its lookups are tool runs from `line:M11`. Its contract has 5 cases: a
+search by terms, one by number, one without an answer (`count` 0, not an error), and a call with
+neither or both of `terms` and `id` (refused before any request). It has not run against the site.
+
+## `lmfdb.query`
+
+Records of the L-functions and modular forms database: a collection of its API, such as `nf_fields`
+(number fields), and the columns to match, give at most `limit` records (10 by default) with the
+collection's own column names. It is `direct` and justifies no status. Its implementation `site`
+(factory `lmfdb`, version `api+client-1`) writes the query string of the API
+(`/api/<collection>/?<column>=<value>&_format=json`) and takes the address from `baseUrl`
+(`LMFDB_URL`). Its contract has 3 cases: number fields by degree and discriminant, no record, and a
+limit. The request is written from the site's documentation as remembered and has never been made.
+
+## `findstat.identify`
+
+Combinatorial statistics in FindStat: objects of a collection (permutations, Dyck paths, graphs),
+each with the value computed on it, give the statistics, by their St number, name and address, whose
+values agree. It is `direct` and justifies no status. Its implementation `site` (factory `findstat`,
+version `statistic-finder+client-1`) posts the collection and the data to the statistic finder and
+takes the address from `baseUrl` (`FINDSTAT_URL`). Its contract has 2 cases: the number of
+inversions on the permutations of 1, 2 and 3, and values that no statistic has. The request and the
+answer are guesses from the site's documentation as remembered and have never been made.
+
+For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,
+the time limit, a status 5xx, 408 or 429), and `harness health` asks each site for its front page.
+The contracts need a host that reaches the sites; `pnpm test` runs the same cases against a local
+server that answers from files written by hand. [models.md](models.md#the-services-as-capabilities)
+covers the requests, the settings, the failures and the tests.
 
 ## Contract tests
 

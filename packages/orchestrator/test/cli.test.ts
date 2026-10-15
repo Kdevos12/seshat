@@ -82,10 +82,20 @@ describe("harness CLI", () => {
     const down = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
-    // Every implementation the host lists, in order: here SageMath's, which nothing serves.
-    const all = await harness(["health"], { LEAN_SERVER_API_URL: url, PATH: "/nowhere", SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp" });
+    // Every implementation the host lists, in order: here SageMath's and the sites', which nothing serves.
+    const nowhere = "http://127.0.0.1:9";
+    const all = await harness(["health"], {
+      LEAN_SERVER_API_URL: url,
+      PATH: "/nowhere",
+      SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp",
+      OEIS_URL: nowhere,
+      LMFDB_URL: nowhere,
+      FINDSTAT_URL: nowhere,
+    });
     assert.equal(all.code, 1);
-    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nok {3}lean\.check\/kimina/m);
+    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nFAIL findstat\.identify\/site \S+ .*\nok {3}lean\.check\/kimina/m);
+    assert.match(all.stdout, /^FAIL lmfdb\.query\/site \S+ /m);
+    assert.match(all.stdout, /^FAIL oeis\.search\/site \S+ /m);
   });
 
   it("runs contract cases and fails when one does not hold", async () => {

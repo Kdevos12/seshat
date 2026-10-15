@@ -8,9 +8,11 @@ counter-model into a refutation that Lean decides. It also recognizes sequences 
 
 Nothing here makes a claim true or false. A verdict computed in TypeScript or by `decide` is a
 test result; the only thing that changes a claim's status is a Lean proof submitted through
-`validate` ([trust.md](trust.md)). The package has no network access of its own, and none of it has
-run against a real Lean, a real SageMath or the real OEIS, FindStat and LMFDB yet
-([what is not done](#what-is-not-done)).
+`validate` ([trust.md](trust.md)). The lookups on the OEIS, FindStat and the LMFDB are capabilities of
+the registry like every other external tool ([the services as
+capabilities](#the-services-as-capabilities)), and the package makes no request outside them. None
+of it has run against a real Lean, a real SageMath or the real sites yet ([what is not
+done](#what-is-not-done)).
 
 ## Batteries
 
@@ -310,9 +312,10 @@ complete antidiagonals read from the first row and from the first column. It ret
 that matched.
 
 `lookupSequence(terms, {oeis})` asks the table first, and the OEIS when the table has no strong match
-(`always: true` asks anyway). The answer merges both, each match marked with its `source`. A service
-that fails does not fail the lookup: the table's answer comes back with a note saying the OEIS did not
-answer.
+(`always: true` asks anyway). The answer merges both, each match marked with its `source`. `oeis` is
+an `OeisSource`, anything with a `search(terms)` that answers like the OEIS; the one the line uses
+asks the registry's `oeis.search` ([below](#the-services-as-capabilities)). A service that fails
+does not fail the lookup: the table's answer comes back with a note saying the OEIS did not answer.
 
 `recordIdentification` writes an `identification` node about a claim and a `cites` edge from the
 claim, `computed`. An identification is a lookup. It says a sequence has these terms, and a claim's
@@ -320,35 +323,73 @@ status does not depend on it: a statement about the numbers where something hold
 the numbers being the even ones. What it gives a prover is a conjecture to try (`n % 2 = 0`) and a
 name to search for in the literature.
 
-### Clients of the services
+### The services as capabilities
 
-| Client | Service | Request |
-|---|---|---|
-| `OeisClient` | The On-Line Encyclopedia of Integer Sequences | `search(terms)`: `GET /search?q=1,2,3&fmt=json`; `lookup('A000045')`: `q=id:A000045`. Both the list and the `{count, results}` shapes of the answer are read. |
-| `LmfdbClient` | The L-functions and modular forms database | `query(collection, fields)`: `GET /api/<collection>/?<field>=<value>&_format=json&_limit=10` |
-| `FindStatClient` | FindStat, combinatorial statistics | `identify(collection, [[object, value], ...])`: `POST /StatisticFinder/` with `{collection, data}` |
+Looking something up on a site is a tool like any other, so each service is a capability of the
+registry ([capabilities.md](capabilities.md)): a manifest, a contract, and an entry in the host
+profiles. Replacing the site by a mirror, or by a local copy of the data, is a change of profile or
+a new implementation, not of the line.
 
-They share a small base. Each takes a `fetch` (the tests give one that answers from a file), a base
-address, a time limit for a request (20 s), a pause between two requests (1 s, to be polite to the
-site), and an `AbortSignal`; one request runs at a time, the same request is answered once from a
-cache, and every failure (a network error, a status other than 200, an answer that is not JSON, one
-without the expected list, the time limit) is a `LookupError`.
+| Capability | Service | Input | Request of the `site` implementation |
+|---|---|---|---|
+| `oeis.search` | The On-Line Encyclopedia of Integer Sequences | `{terms}` (1 to 100; a number past 2^53 as decimal text) or `{id}`, one of the two | `GET /search?q=1,2,3&fmt=json`, or `q=id:A000045`. Both the list and the `{count, results}` shapes of the answer are read. |
+| `lmfdb.query` | The L-functions and modular forms database | `{collection, fields, limit?}` | `GET /api/<collection>/?<field>=<value>&_format=json&_limit=10` |
+| `findstat.identify` | FindStat, combinatorial statistics | `{collection, data: [{object, value}, ...]}` | `POST /StatisticFinder/` with `{collection, data}` |
 
-The OEIS, FindStat and LMFDB are not reachable from the development environment. The tests answer from
-files in `packages/models/test/fixtures/` that were written by hand in the shape the sites give. No
-request has been made to a real site. The OEIS address and JSON fields (`number`, `data`, `name`,
-`offset`, `keyword`, `count`, `results`) are written from its documentation as remembered; the
-FindStat and LMFDB requests and answers are guesses from theirs and are the most likely to need
-adjusting. The clients are libraries of this package, not capabilities of the registry
-([capabilities.md](capabilities.md)); a capability that wraps `lookupSequence` is the way to give them
-a manifest and a contract when they can be tried against the sites.
+One capability for each service, since their inputs and answers have nothing in common, and one
+implementation for each, `site`. It is built by the factory `oeis`, `lmfdb` or `findstat` of
+`packages/models/src/services.ts` (registered in `FACTORIES` of `@seshat/orchestrator`) around a
+client of `clients.ts`; no other code of the harness builds a client of these sites. A mirror, or a
+local copy of the data behind an MCP server, would be a second implementation in the manifest and in
+the host's `use` list, with the same contract. The three are `direct` and produce no status
+(`produces` is empty: a lookup justifies nothing), so `harness run --tool oeis.search` gives the
+provers an `oeis_search` tool the way it gives `compute_sage`, and the line asks `oeis.search` itself.
+`oeis.search` and `lmfdb.query` answer with the request they made, in `url`.
+
+**Settings** of `site` in the host profile: `baseUrl` (the profiles read it from `OEIS_URL`,
+`LMFDB_URL` and `FINDSTAT_URL`, and default to the public addresses), `timeoutSec` (20),
+`minIntervalMs` (1000, the pause between two requests, to be polite to the site) and `userAgent`.
+The client makes one request at a time, answers the same request once from a cache, and takes an
+`AbortSignal`.
+
+**Failures.** A site that cannot be reached (a network error, the time limit, a status 5xx, 408 or
+429) makes the call `unavailable`, so the registry tries the host's next implementation if there is
+one. A site that answers and refuses (any other status), or answers with what the client cannot read
+(not JSON, without the expected list), makes it `failed`, with the message. An input that the schema
+refuses is `invalid_input`, before any request, and an `oeis.search` call with both or neither of
+`terms` and `id` is `failed`, also before any request. A search without an answer is a success:
+`count: 0` with no results, no `records`, no `matches`. `harness health` asks each site for its front
+page (`GET /`), so the health of a whole host now reaches the three sites.
+
+**Contracts.** `oeis.search` has 5 cases, `lmfdb.query` 3 and `findstat.identify` 2, written to run
+on a host that reaches the site: `pnpm harness contract oeis.search` (or `lmfdb.query`,
+`findstat.identify`), which is not part of `pnpm test`. `pnpm test` runs the same cases through the
+registry against `packages/models/test/fake-site.ts`, a local HTTP server that answers the requests
+of the cases from `packages/models/test/fixtures/`, files written by hand in the shape the sites give,
+and any other request as a site with nothing would. That shows the cases and the adapters agree,
+not that the sites answer so. `packages/models/test/services.test.ts` also covers the repository's
+host profiles (with the three addresses set to the fake site), the tool runs, big terms, a site that
+is down, one that answers what is not JSON or refuses, and the refusals of the schemas.
+
+**`RegistryOeis`** is the `OeisSource` the line uses. Each search is a tool run of `oeis.search`
+(from the actor `line:M11`, in the journal with its input and output), and every failure of the call
+(the host does not offer the capability, the site does not answer, the answer cannot be read) comes
+out as a `LookupError`, which `lookupSequence` turns into a note, so that the table's answer stands.
+Only an input that the capability refuses is thrown as it is, since that is a mistake of the line.
+
+The OEIS, FindStat and LMFDB are not reachable from the development environment, and no request has
+been made to a real site. The OEIS address and JSON fields (`number`, `data`, `name`, `offset`,
+`keyword`, `count`, `results`) are written from its documentation as remembered; the FindStat and
+LMFDB requests and answers are guesses from theirs and are the most likely to need adjusting, which
+the contracts will show on the first host that reaches them.
 
 ## The line
 
 `M11` is the line ([lines.md](lines.md)). `packages/orchestrator/src/lines.ts` registers it, so
 `harness run --lines M11` runs it; it needs no other line, and it compares the variants of the
-problem's claim when a line such as M2 has recorded them. `createM11({oeis})` makes one that also
-looks sequences up in the OEIS through a client. It makes no model call.
+problem's claim when a line such as M2 has recorded them. It looks sequences up in the table and in
+the OEIS through the registry's `oeis.search`, as `line:M11`; `createM11({oeis})` makes one that asks
+another `OeisSource` instead. It makes no model call.
 
 | Hook | What it does |
 |---|---|
@@ -375,9 +416,11 @@ memory does not have yet are added, the problem's claim included. The edges that
 proposed are not repeated.
 
 **Identification.** For a statement about a number, the numbers where it holds, and those where it
-fails, are looked up as sequences (`identifyTerms` terms at most), in the table and in the OEIS when a
-client was given. A set that is every number, has fewer than 4, or starts with numbers in a row (the
-statement holds, or fails, from there on) says nothing and is skipped.
+fails, are looked up as sequences (`identifyTerms` terms at most), in the table and, when the table
+has no strong match, in the OEIS through `oeis.search`. A host that does not offer the capability, or
+a site that does not answer, leaves the table's answer with a note in the progress log. A set that is
+every number, has fewer than 4, or starts with numbers in a row (the statement holds, or fails, from
+there on) says nothing and is skipped.
 
 **`small_models`.** A tool for the provers, so that a model can test a lemma or a variant before it
 proves it. With a `statement` it does what the line does for the problem's, on the numbers up to
@@ -416,7 +459,9 @@ briefing, the stop, the tool), and `packages/orchestrator/test/m11.test.ts` runs
 `runBench` with the simulated model and Lean: a statement of magmas refuted with the provers left
 idle, a statement about a number tried through `lean.check`, refuted and identified, a run where
 Lean does not accept the negation and the provers go on with the briefing and the tool, a statement
-with no counter-model, and the options.
+with no counter-model, a statement whose numbers a stand-in OEIS (the factory `oeis` over a `fetch`
+that answers from a file, behind the registry) names, with its two `oeis.search` tool runs in the
+journal, and the options.
 
 ## What is not done
 
@@ -430,6 +475,8 @@ with no counter-model, and the options.
 - No run of the line has used a real model or a real Lean. The proofs of negations that its tests
   accept are the ones the simulated Lean was told to accept; whether Lean accepts them is the first
   thing to check ([lean.md](lean.md#to-verify-against-lean)).
-- The OEIS, FindStat and LMFDB clients have not made a request to their sites (see above). The table of
-  known sequences has 65 sequences, and a query that is not in it is looked up only if an
-  OEIS client is given.
+- `oeis.search`, `lmfdb.query` and `findstat.identify` have not made a request to their sites, and
+  their contracts have not run against them ([the services as
+  capabilities](#the-services-as-capabilities)). The table of known sequences has 65 sequences, and a
+  query that is not in it is looked up only on a host that offers `oeis.search` and reaches the
+  OEIS.

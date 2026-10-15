@@ -7,13 +7,24 @@ import { type Identification, type IdentifyOptions, identifySequence, type Seque
  * take a `fetch` so that a test can answer from a file; none of them ran against its site, which
  * this environment cannot reach, and the FindStat and LMFDB requests and answers are written from
  * their documentation as remembered and may need adjusting ([documentation/models.md]).
+ *
+ * Callers reach them through the registry: `services.ts` makes each the implementation of a capability
+ * (`oeis.search`, `lmfdb.query`, `findstat.identify`), and the line looks sequences up with
+ * `RegistryOeis`.
  */
 export type Fetch = typeof fetch;
 
 export class LookupError extends Error {
-  constructor(message: string) {
+  /**
+   * The site could not be reached: no connection, no answer in time, or a status that says it is down or
+   * busy (5xx, 408, 429). Otherwise it answered, and refused the request or said what this client cannot read.
+   */
+  readonly unreachable: boolean;
+
+  constructor(message: string, options: { unreachable?: boolean } = {}) {
     super(message);
     this.name = "LookupError";
+    this.unreachable = options.unreachable ?? false;
   }
 }
 
@@ -53,7 +64,18 @@ class JsonClient {
   async request(url: string, init: { body?: Json; signal?: AbortSignal } = {}): Promise<unknown> {
     const key = `${init.body === undefined ? "GET" : "POST"} ${url} ${init.body === undefined ? "" : JSON.stringify(init.body)}`;
     if (this.#cache.has(key)) return this.#cache.get(key);
-    // One request at a time, with a pause after the last.
+    const json = await this.#send(url, init, true);
+    this.#cache.set(key, json);
+    return json;
+  }
+
+  /** Whether the site answers a request for its front page with a status 200; throws a `LookupError` if not. */
+  async ping(signal?: AbortSignal): Promise<void> {
+    await this.#send(`${this.baseUrl}/`, signal !== undefined ? { signal } : {}, false);
+  }
+
+  /** One request at a time, with a pause after the last and a time limit; the answer is read as JSON when asked. */
+  async #send(url: string, init: { body?: Json; signal?: AbortSignal }, readJson: boolean): Promise<unknown> {
     const turn = this.#queue.then(async () => {
       const wait = this.#lastRequest + this.#minIntervalMs - Date.now();
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
@@ -66,7 +88,6 @@ class JsonClient {
     const timer = setTimeout(() => timeout.abort(new Error(`no answer within ${this.#timeoutMs} ms`)), this.#timeoutMs);
     const signal = init.signal === undefined ? timeout.signal : AbortSignal.any([init.signal, timeout.signal]);
     const why = () => (signal.reason instanceof Error ? signal.reason.message : String(signal.reason));
-    let json: unknown;
     try {
       let response: Response;
       try {
@@ -77,19 +98,25 @@ class JsonClient {
           signal,
         });
       } catch (error) {
-        throw new LookupError(`${url}: ${signal.aborted ? why() : error instanceof Error ? error.message : String(error)}`);
+        throw new LookupError(`${url}: ${signal.aborted ? why() : error instanceof Error ? error.message : String(error)}`, { unreachable: true });
       }
-      if (!response.ok) throw new LookupError(`${url}: HTTP ${response.status}`);
+      if (!response.ok) {
+        // The site is down or too busy (5xx, 408, 429); any other status is its refusal of this request.
+        const busy = response.status >= 500 || response.status === 408 || response.status === 429;
+        throw new LookupError(`${url}: HTTP ${response.status}`, { unreachable: busy });
+      }
+      if (!readJson) {
+        await response.body?.cancel().catch(() => undefined);
+        return undefined;
+      }
       try {
-        json = await response.json();
+        return await response.json();
       } catch {
-        throw new LookupError(`${url}: ${signal.aborted ? why() : "the answer is not JSON"}`);
+        throw new LookupError(`${url}: ${signal.aborted ? why() : "the answer is not JSON"}`, { unreachable: signal.aborted });
       }
     } finally {
       clearTimeout(timer);
     }
-    this.#cache.set(key, json);
-    return json;
   }
 }
 
@@ -131,16 +158,29 @@ function parseOeisRecord(raw: unknown, baseUrl: string): OeisRecord | undefined 
   };
 }
 
+/** What `lookupSequence` needs of the OEIS: the client below, or the registry's `oeis.search` (`RegistryOeis`). */
+export interface OeisSource {
+  /** The sequences that have these consecutive terms. */
+  search(terms: readonly SequenceTerm[], signal?: AbortSignal): Promise<OeisSearch>;
+}
+
 /**
  * The On-Line Encyclopedia of Integer Sequences, through its JSON search
  * (`/search?q=1,2,3,5&fmt=json`). Both shapes of answer are read: the list of records that the site
  * once gave, and the object with `count` and `results` that it gives now.
  */
-export class OeisClient {
+export class OeisClient implements OeisSource {
   readonly #http: JsonClient;
+  readonly baseUrl: string;
 
   constructor(options: ClientOptions = {}) {
     this.#http = new JsonClient(options, "https://oeis.org");
+    this.baseUrl = this.#http.baseUrl;
+  }
+
+  /** Whether the site answers (status 200). */
+  ping(signal?: AbortSignal): Promise<void> {
+    return this.#http.ping(signal);
   }
 
   async #search(query: string, signal?: AbortSignal): Promise<OeisSearch> {
@@ -159,10 +199,15 @@ export class OeisClient {
     return this.#search(toTerms(terms).join(","), signal);
   }
 
+  /** What the site answers to a search for the sequence with this number. */
+  async byId(id: string, signal?: AbortSignal): Promise<OeisSearch> {
+    if (!/^A\d{6}$/.test(id)) throw new RangeError(`${JSON.stringify(id)} is not an OEIS number such as A000045`);
+    return this.#search(`id:${id}`, signal);
+  }
+
   /** The sequence with this number, or undefined. */
   async lookup(id: string, signal?: AbortSignal): Promise<OeisRecord | undefined> {
-    if (!/^A\d{6}$/.test(id)) throw new RangeError(`${JSON.stringify(id)} is not an OEIS number such as A000045`);
-    return (await this.#search(`id:${id}`, signal)).records.find((r) => r.id === id);
+    return (await this.byId(id, signal)).records.find((r) => r.id === id);
   }
 }
 
@@ -194,7 +239,7 @@ export function oeisMatches(query: readonly bigint[], records: readonly OeisReco
  */
 export async function lookupSequence(
   values: readonly SequenceTerm[],
-  services: { oeis?: OeisClient } = {},
+  services: { oeis?: OeisSource } = {},
   options: IdentifyOptions & { signal?: AbortSignal; always?: boolean } = {},
 ): Promise<Identification> {
   const local = identifySequence(values, options);
@@ -227,9 +272,16 @@ export interface LmfdbResult {
  */
 export class LmfdbClient {
   readonly #http: JsonClient;
+  readonly baseUrl: string;
 
   constructor(options: ClientOptions = {}) {
     this.#http = new JsonClient(options, "https://www.lmfdb.org");
+    this.baseUrl = this.#http.baseUrl;
+  }
+
+  /** Whether the site answers (status 200). */
+  ping(signal?: AbortSignal): Promise<void> {
+    return this.#http.ping(signal);
   }
 
   async query(collection: string, fields: Readonly<Record<string, string | number | boolean>>, options: { limit?: number; signal?: AbortSignal } = {}): Promise<LmfdbResult> {
@@ -263,9 +315,16 @@ export interface FindStatMatch {
  */
 export class FindStatClient {
   readonly #http: JsonClient;
+  readonly baseUrl: string;
 
   constructor(options: ClientOptions = {}) {
     this.#http = new JsonClient(options, "https://www.findstat.org");
+    this.baseUrl = this.#http.baseUrl;
+  }
+
+  /** Whether the site answers (status 200). */
+  ping(signal?: AbortSignal): Promise<void> {
+    return this.#http.ping(signal);
   }
 
   async identify(collection: string, data: ReadonlyArray<readonly [Json, number]>, signal?: AbortSignal): Promise<FindStatMatch[]> {

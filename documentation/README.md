@@ -28,7 +28,7 @@ simulated model and a simulated Lean.
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
-| Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences | `@seshat/models` | Done, tested with a simulated Lean; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
+| Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
 None of this has run against a real Lean or a real model yet, because the development environment
@@ -64,5 +64,5 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
 - [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
   graphs and integers, evaluators, fingerprints, certified refutations, identification of
-  sequences (line M11).
+  sequences, the OEIS, LMFDB and FindStat as capabilities (line M11).
 - [development.md](development.md): conventions, tests, commits.
