@@ -11,6 +11,7 @@ export * from "./identify.ts";
 export * from "./known-sequences.ts";
 export * from "./laws.ts";
 export * from "./lean-eval.ts";
+export * from "./line.ts";
 export * from "./magma.ts";
 export * from "./objects.ts";
 export * from "./random.ts";

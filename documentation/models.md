@@ -283,7 +283,7 @@ Lean; neither has run against a real one.
 ## Identification
 
 `identifySequence(terms)` says which known sequences have the given integers as consecutive terms.
-It looks in a table of about seventy sequences shipped with the package (`knownSequences()`), each
+It looks in a table of 65 sequences shipped with the package (`knownSequences()`), each
 with its OEIS number, name, offset and terms. The table is code, so that it needs no network and
 a wrong entry can be found by a test: a sequence given by a formula or a recurrence is computed with
 exact integers (`bigint`), the decimal expansions of π, e, √2 and the golden ratio are computed with
@@ -343,6 +343,81 @@ adjusting. The clients are libraries of this package, not capabilities of the re
 ([capabilities.md](capabilities.md)); a capability that wraps `lookupSequence` is the way to give them
 a manifest and a contract when they can be tried against the sites.
 
+## The line
+
+`M11` is the line ([lines.md](lines.md)). `packages/orchestrator/src/lines.ts` registers it, so
+`harness run --lines M11` runs it; it needs no other line, and it compares the variants of the
+problem's claim when a line such as M2 has recorded them. `createM11({oeis})` makes one that also
+looks sequences up in the OEIS through a client. It makes no model call.
+
+| Hook | What it does |
+|---|---|
+| `beforeProvers` | Reads the problem's statement with `recognizeStatement`; one of another shape is left alone, and the reason goes to the progress log. Takes the battery, the magmas of the options for a statement of magmas and the numbers from 0 to `maxNumber` for a statement about a number. Gets the verdicts, with the law evaluator for magmas and with `decide` in Lean through `lean.check` for numbers (the evaluator's files are the line's tool runs, from `line:M11`); a statement that Lean cannot try at all is left alone, with the reason. Records the battery and the fingerprint. Then, in order: the counter-models, the neighbors, the identification. |
+| `briefing` | A section `Small models (line M11)` in the session's opening message, written from the records: the fingerprint's counts, the counter-model and what became of its negation, the candidate relations with their link lemmas, the sequences that matched. |
+| `beforeSession` | Stops the prover when the claim has a valid validation of its negation (`stopWhenRefuted`), since the claim is false as it is written and a session would spend the budget for nothing. The problem then ends `unsolved` with `provers stopped: 1 line`; a refuted problem has no outcome of its own yet. |
+| `tools` | `small_models`, below. |
+
+**Counter-models.** For each of the first `counterModels` objects where the statement fails, in the
+battery's order (the smallest first), the line records the `counter_model` node with its `refuted_by`
+edge, submits the negation through `validate` in both forms, and writes what each submission came to
+into the node (`refutation`). It goes on to the next counter-model only while no negation has passed.
+`refute: false` records the first counter-model and submits nothing. A valid negation is a validation
+with `negation: true`; the claim stays `open` until the certifier replays it
+([trust.md](trust.md)), and the briefing says so.
+
+**Neighbors.** The memory has no listing of its claims, so the claims related to the problem's are
+found by following the edges `implies`, `equiv`, `special_case_of`, `strengthens`, `instance_of` and
+`derived_from`, in both directions, up to `neighborDepth` edges away and `neighbors` claims. Those
+whose statement the package reads, about the same kind of object as the problem's, get a fingerprint
+of the same battery (not tried again when they already have one), and every pair among them and the
+problem's claim goes through `planRelations`. The `computed` edges, with their link lemmas, that the
+memory does not have yet are added, the problem's claim included. The edges that another line
+proposed are not repeated.
+
+**Identification.** For a statement about a number, the numbers where it holds, and those where it
+fails, are looked up as sequences (`identifyTerms` terms at most), in the table and in the OEIS when a
+client was given. A set that is every number, has fewer than 4, or starts with numbers in a row (the
+statement holds, or fails, from there on) says nothing and is skipped.
+
+**`small_models`.** A tool for the provers, so that a model can test a lemma or a variant before it
+proves it. With a `statement` it does what the line does for the problem's, on the numbers up to
+`toolMaxNumber`, and says how the statement compares with the one being proved when the battery is
+the same: equivalent, stronger or weaker, or neither. With a `program` (a JavaScript function that
+takes an object and returns true when the property holds) and a `battery` (`magmas`, `groups`,
+`graphs` up to 6 vertices or `integers`), it runs the sandboxed program on the battery. Either way it
+shows the smallest counter-models and says it is a test and no proof. It records nothing.
+
+What the line never does: it changes no status (only `validate` does, with a Lean proof), it adds no
+edge that is not `computed`, and a fingerprint alone refutes nothing. The options, with a run's
+`--line-option M11.<name>=<value>`:
+
+| Option | Default | |
+|---|---|---|
+| `exhaustive`, `sampleSize`, `samples`, `seed` | 3, 4, 120, 1 | The magma battery: all magmas up to `exhaustive` elements (0 to 3), then `samples` magmas of size `sampleSize` (4 to 6) drawn with `seed` |
+| `maxNumber` | 100 | A statement about a number is tried on 0 to this number (at most 1000) |
+| `leanTimeoutSec` | 60 | Lean's time limit for each file of the evaluator |
+| `refute` | true | Submit the negation of a statement that fails |
+| `counterModels` | 3 | The most counter-models to submit while none passes |
+| `stopWhenRefuted` | true | Stop the provers once a negation has passed |
+| `neighbors`, `neighborDepth` | 8, 2 | The claims compared with the problem's, and how far the edges are followed |
+| `identify`, `identifyTerms` | true, 40 | Look the numbers up as sequences, from at most this many terms |
+| `toolMaxNumber` | 30 | The numbers a statement is tried on by the tool |
+
+A value out of range fails the problem's `beforeProvers` with the name of the option.
+
+On the bench, where the problems are solved ones, a counter-model means that the statement as
+formalized is not the theorem its source proves; and most statements use definitions of their own,
+which the line leaves alone. It earns its keep once other lines produce statements of the shapes it
+reads: variants, lemma candidates, instances.
+
+`packages/models/test/line.test.ts` runs the hooks with a stand-in for the context (the options, the
+counter-models and their submissions, the neighbors and their edges, the identification, the
+briefing, the stop, the tool), and `packages/orchestrator/test/m11.test.ts` runs the line in
+`runBench` with the simulated model and Lean: a statement of magmas refuted with the provers left
+idle, a statement about a number tried through `lean.check`, refuted and identified, a run where
+Lean does not accept the negation and the provers go on with the briefing and the tool, a statement
+with no counter-model, and the options.
+
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
@@ -352,6 +427,9 @@ a manifest and a contract when they can be tried against the sites.
 - A statement about groups, graphs or any other structure has no Lean evaluator: a program in
   JavaScript is the evaluator for those.
 - Magmas of size 4 are sampled, never listed. Groups of order 16 and above are partly built.
+- No run of the line has used a real model or a real Lean. The proofs of negations that its tests
+  accept are the ones the simulated Lean was told to accept; whether Lean accepts them is the first
+  thing to check ([lean.md](lean.md#to-verify-against-lean)).
 - The OEIS, FindStat and LMFDB clients have not made a request to their sites (see above). The table of
-  known sequences has about seventy sequences, and a query that is not in it is looked up only if an
+  known sequences has 65 sequences, and a query that is not in it is looked up only if an
   OEIS client is given.

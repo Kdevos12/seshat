@@ -1,5 +1,6 @@
 import { m2Line } from "@seshat/graph";
 import type { LineRegistry } from "@seshat/lines";
+import { M11 } from "@seshat/models";
 import { M1 } from "./m1.ts";
 
 /**
@@ -7,4 +8,4 @@ import { M1 } from "./m1.ts";
  * implemented is not here: a run that enables it stops before it starts, and says so. The task
  * that implements a line adds it here.
  */
-export const LINES: LineRegistry = { M1, M2: m2Line };
+export const LINES: LineRegistry = { M1, M11, M2: m2Line };

@@ -19,6 +19,7 @@ simulated model and a simulated Lean.
 | Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M1 |
 | M1: shared claims by statement identity, strategy and failure classes, "already tried", redundant attempts | `@seshat/memory`, `@seshat/orchestrator` | Done with the text identity, tested with a simulated model and Lean; the Lean identity is not built |
 | Variant graph and logical propagation (line M2): variants, checked edges, propagation rules, composed proofs, the prove/refute twin, proved-modulo labels, PageRank, graph queries | `@seshat/graph` | Done, tested with a simulated Lean; not run against Lean |
+| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M11 |
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
@@ -27,6 +28,7 @@ simulated model and a simulated Lean.
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
+| Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences | `@seshat/models` | Done, tested with a simulated Lean; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 
 None of this has run against a real Lean or a real model yet, because the development environment
