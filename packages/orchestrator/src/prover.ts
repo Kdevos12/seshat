@@ -54,9 +54,16 @@ const MAX_FAILED_SESSIONS = 2;
 
 /**
  * One independent prover, in a Ralph loop: each session is a fresh agent, and only the file as the
- * prover left it and its notes go from one session to the next (agent A of AlphaProof Nexus).
+ * prover left it and its notes go from one session to the next (agent A of AlphaProof Nexus). With
+ * lines, their `afterProver` hooks run when the loop has ended.
  */
 export async function runProver(o: ProverOptions): Promise<ProverResult> {
+  const result = await proveLoop(o);
+  await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
+  return result;
+}
+
+async function proveLoop(o: ProverOptions): Promise<ProverResult> {
   const { workbench, journal } = o;
   const actor = `prover:${o.name}`;
   const tools = o.tools ?? [];
@@ -223,6 +230,8 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
         },
         actor,
       );
+      // The notes a line gives replace the model's for the next session; the journal kept the model's own.
+      if (annotation.notes !== undefined) notes = annotation.notes === "" ? undefined : clipNotes(annotation.notes, o.notesChars);
     }
     o.transcript?.(attemptId, result.messages);
 
