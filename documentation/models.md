@@ -243,13 +243,14 @@ fingerprint (they are equivalent), `x * y = x` is included in associativity, ide
 
 ### The records
 
-The package writes three kinds of nodes ([memory.md](memory.md#nodes)); other packages read them.
+The package writes four kinds of nodes ([memory.md](memory.md#nodes)); other packages read them.
 
 | Kind | About | `data` |
 |---|---|---|
 | `battery` | | `id`, `family`, `digest`, `size`, `generator` (its name and parameters): recorded once for each battery a run uses |
 | `fingerprint` | A claim | `battery`, `digest`, `evaluator` (`law`, `lean` or `program`), `verdicts` (the string), `counts`, `batteryNode`; not recorded again when the claim already has the same |
 | `counter_model` | A claim | `battery`, `digest`, `index`, `object`, `description`, `evaluator`, `witness` (the values that break the conclusion), `refutation` (what each submission of the negation came to) |
+| `identification` | A claim | `subject` (what was looked up, in words), `query` (the terms, as text), `reading` (for a table), `strength`, `matches` (`id`, `name`, `source`, `offset`, `start`, `next`, `prefix`), `note` |
 
 ## Counter-models and refutations
 
@@ -279,6 +280,69 @@ the proof in a fresh process ([trust.md](trust.md), [lean.md](lean.md)); until t
 `open`, with a valid negation recorded. Both the proof forms and this path are tested with a simulated
 Lean; neither has run against a real one.
 
+## Identification
+
+`identifySequence(terms)` says which known sequences have the given integers as consecutive terms.
+It looks in a table of about seventy sequences shipped with the package (`knownSequences()`), each
+with its OEIS number, name, offset and terms. The table is code, so that it needs no network and
+a wrong entry can be found by a test: a sequence given by a formula or a recurrence is computed with
+exact integers (`bigint`), the decimal expansions of π, e, √2 and the golden ratio are computed with
+integer arithmetic, and the few counts that no formula gives (groups, graphs, trees, relations,
+magmas, semigroups) are written out. The tests compare those with the package's own enumerations
+(magmas of size 1 to 5, graphs on 1 to 6 vertices, groups of order 1 to 32, semigroups of size 1 to 3)
+and the constants with an independent computation, and spot-check the others against values written
+from memory of the OEIS entries.
+
+- Terms are numbers, `bigint`s or decimal text; a number that is not a safe integer is refused
+  rather than rounded.
+- A query may start anywhere in a sequence, since the numbers where a statement holds may begin at the
+  middle of one. A match gives the sequence's offset, the index where the query starts, and the next
+  terms (at most five), a prediction to check. The sequences that begin with the query come first.
+- At least four terms (`minTerms`), and at most eight matches (`maxMatches`).
+- `strength` is `strong` for six or more terms with four different values, or ten terms with three;
+  `weak` for a shorter or flatter query that matches (1, 1, 1, 1 matches the sequence of ones, which says little); `none`
+  when nothing matches or the query is too short. It measures how unlikely a match is by chance
+  and nothing else.
+
+`identifyTable(rows)` reads a table the way the OEIS does and looks up each reading: by rows, by
+columns, row sums, first column, last column, main diagonal, and, for a rectangular table, the
+complete antidiagonals read from the first row and from the first column. It returns the readings
+that matched.
+
+`lookupSequence(terms, {oeis})` asks the table first, and the OEIS when the table has no strong match
+(`always: true` asks anyway). The answer merges both, each match marked with its `source`. A service
+that fails does not fail the lookup: the table's answer comes back with a note saying the OEIS did not
+answer.
+
+`recordIdentification` writes an `identification` node about a claim and a `cites` edge from the
+claim, `computed`. An identification is a lookup. It says a sequence has these terms, and a claim's
+status does not depend on it: a statement about the numbers where something holds is not proved by
+the numbers being the even ones. What it gives a prover is a conjecture to try (`n % 2 = 0`) and a
+name to search for in the literature.
+
+### Clients of the services
+
+| Client | Service | Request |
+|---|---|---|
+| `OeisClient` | The On-Line Encyclopedia of Integer Sequences | `search(terms)`: `GET /search?q=1,2,3&fmt=json`; `lookup('A000045')`: `q=id:A000045`. Both the list and the `{count, results}` shapes of the answer are read. |
+| `LmfdbClient` | The L-functions and modular forms database | `query(collection, fields)`: `GET /api/<collection>/?<field>=<value>&_format=json&_limit=10` |
+| `FindStatClient` | FindStat, combinatorial statistics | `identify(collection, [[object, value], ...])`: `POST /StatisticFinder/` with `{collection, data}` |
+
+They share a small base. Each takes a `fetch` (the tests give one that answers from a file), a base
+address, a time limit for a request (20 s), a pause between two requests (1 s, to be polite to the
+site), and an `AbortSignal`; one request runs at a time, the same request is answered once from a
+cache, and every failure (a network error, a status other than 200, an answer that is not JSON, one
+without the expected list, the time limit) is a `LookupError`.
+
+The OEIS, FindStat and LMFDB are not reachable from the development environment. The tests answer from
+files in `packages/models/test/fixtures/` that were written by hand in the shape the sites give. No
+request has been made to a real site. The OEIS address and JSON fields (`number`, `data`, `name`,
+`offset`, `keyword`, `count`, `results`) are written from its documentation as remembered; the
+FindStat and LMFDB requests and answers are guesses from theirs and are the most likely to need
+adjusting. The clients are libraries of this package, not capabilities of the registry
+([capabilities.md](capabilities.md)); a capability that wraps `lookupSequence` is the way to give them
+a manifest and a contract when they can be tried against the sites.
+
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
@@ -288,3 +352,6 @@ Lean; neither has run against a real one.
 - A statement about groups, graphs or any other structure has no Lean evaluator: a program in
   JavaScript is the evaluator for those.
 - Magmas of size 4 are sampled, never listed. Groups of order 16 and above are partly built.
+- The OEIS, FindStat and LMFDB clients have not made a request to their sites (see above). The table of
+  known sequences has about seventy sequences, and a query that is not in it is looked up only if an
+  OEIS client is given.
