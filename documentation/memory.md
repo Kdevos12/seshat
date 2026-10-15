@@ -189,7 +189,11 @@ theorem}`:
 
 - a claim with a file of its own uses it: the orchestrator gives each problem's claim its bench
   file with `setReference(claimId, {source, theorem})` (not an event: the file comes from the
-  problem's source, which `problem.registered` records);
+  problem's source, which `problem.registered` records). Only the orchestrator's root store can
+  call it: a view made with `withActor`, which is what a line is given, throws. The reference is
+  what a proof is compared with, so a line that could replace it could have a proof of another
+  statement accepted. Every claim that is not a problem's is therefore compared with the file
+  rebuilt from its journaled statement and header, whatever a line does;
 - any other formal claim gets `<header>`, a blank line, then
   `theorem <claim id> <statement> := by sorry`;
 - the negation appends to that file `theorem <name>_negation : ¬ (type_of% @<theorem>) := by

@@ -182,8 +182,10 @@ export class MemoryStore {
   readonly identity: StatementIdentity;
   readonly actor: string;
   readonly #journal: Journal;
-  /** Shared by the views `withActor` makes. */
+  /** Shared by the views `withActor` makes. Only the root store writes to it. */
   #references: Map<string, ClaimReference>;
+  /** True for a store made by `withActor`: what a line is given. */
+  #view = false;
 
   constructor(options: MemoryStoreOptions) {
     this.#journal = options.journal;
@@ -193,10 +195,14 @@ export class MemoryStore {
     this.#references = new Map();
   }
 
-  /** The same store, writing as another actor (`line:M1`...). */
+  /**
+   * The same store, writing as another actor (`line:M1`...). A view reads the reference files of the
+   * root store but cannot set one (`setReference`).
+   */
   withActor(actor: string): MemoryStore {
     const view = new MemoryStore({ journal: this.#journal, blobs: this.blobs, identity: this.identity, actor });
     view.#references = this.#references;
+    view.#view = true;
     return view;
   }
 
@@ -404,15 +410,25 @@ export class MemoryStore {
    * Gives a claim the file its validations compare against, instead of the one made from its header
    * and statement. The orchestrator gives each problem's claim its bench file. Not journaled: the
    * file comes from the problem's source, which `problem.registered` records.
+   *
+   * Only the root store can do it, and a view made by `withActor` (what a line is given) throws. The
+   * reference is what a proof is compared with, by the validator and by the certifier, so a line that
+   * could replace it could make a proof of another statement pass (trust.md). A claim that is not a
+   * problem's is therefore always compared with the file rebuilt from its journaled statement and
+   * header.
    */
   setReference(claimId: string, reference: ClaimReference): void {
+    if (this.#view) {
+      throw new Error(`setReference: the store of actor ${this.actor} is a view; only the orchestrator's root store sets a reference file`);
+    }
     if (this.#journal.projection.claim(claimId) === undefined) throw new Error(`unknown claim ${claimId}`);
     this.#references.set(claimId, reference);
   }
 
   /**
-   * The reference file of a claim, or of its negation: the file set with `setReference`, or else
-   * `theorem <claim id> <statement> := by sorry` after the claim's header. An informal claim has none.
+   * The reference file of a claim, or of its negation: the file the root store set with
+   * `setReference`, or else `theorem <claim id> <statement> := by sorry` after the claim's header.
+   * An informal claim has none.
    */
   referenceFor(claimId: string, options: { negation?: boolean } = {}): ClaimReference {
     const claim = this.claim(claimId);
