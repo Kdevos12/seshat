@@ -306,4 +306,35 @@ describe("MemoryStore references", () => {
     assert.equal(claimTheoremName("clm_01ABC"), "clm_01ABC");
     assert.equal(claimTheoremName("9-x.y"), "c_9_x_y");
   });
+
+  it("retract a claim: a candidate goes back to open, a proof or refutation becomes retracted, never higher", async () => {
+    const { memory, journal } = open();
+    const writer = memory.withActor("line:M2");
+    const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "test" });
+    assert.equal(writer.retractClaim(claimId, { reason: "nothing to withdraw" }).status, "open");
+    const validate = (id: string, method: "repl" | "kernel_replay", negation = false) => {
+      const validationId = `val_${id}`;
+      journal.emit(
+        "validation.finished",
+        { validationId, claimId, method, verdict: "valid", reasons: [], axioms: [], submissionHash: "h", ...(negation ? { negation: true } : {}) },
+        "validator",
+      );
+      return validationId;
+    };
+    const candidate = validate("repl", "repl");
+    journal.emit("claim.status_changed", { claimId, from: "open", to: "computed", reason: "fast check", validationId: candidate }, "orchestrator");
+    const back = writer.retractClaim(claimId, { reason: "a premise was retracted" });
+    assert.equal(back.status, "open");
+    const certified = validate("kernel", "kernel_replay");
+    journal.emit("claim.status_changed", { claimId, from: "open", to: "proved", reason: "certified", validationId: certified }, "orchestrator");
+    assert.equal(writer.retractClaim(claimId, { reason: "a premise was retracted" }).status, "retracted");
+    assert.equal(writer.retractClaim(claimId, { reason: "again" }).status, "retracted", "a retracted claim stays retracted");
+    assert.throws(() => writer.retractClaim("clm_x", { reason: "?" }), /unknown claim clm_x/);
+    const changes = readEvents(journal.log.path).filter((e) => e.type === "claim.status_changed");
+    assert.deepEqual(
+      changes.map((e) => [e.actor, (e.data as { to: string }).to]),
+      [["orchestrator", "computed"], ["line:M2", "open"], ["orchestrator", "proved"], ["line:M2", "retracted"]],
+    );
+    journal.close();
+  });
 });

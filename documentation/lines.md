@@ -7,9 +7,9 @@ points of a run. A run enables lines with `harness run --lines` or `--ablation`;
 exactly M0 ([m0-loop.md](m0-loop.md)).
 
 The API is in `@seshat/lines`; the orchestrator runs it (`packages/orchestrator/src/line-runtime.ts`).
-`packages/orchestrator/src/lines.ts` is the registry of the lines a run can enable. M1 is the first
-one built ([m1-identity-memory.md](m1-identity-memory.md)); a run that enables a line that is only
-planned stops before it starts and says so.
+`packages/orchestrator/src/lines.ts` is the registry of the lines a run can enable. M1
+([m1-identity-memory.md](m1-identity-memory.md)) and M2 ([graph.md](graph.md)) are built; a run that
+enables a line that is only planned stops before it starts and says so.
 
 ## The lines
 
@@ -20,7 +20,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 |---|---|---|---|
 | `M1` | canonical identity and shared negative memory | `@seshat/memory` (the line is `packages/orchestrator/src/m1.ts`); the Lean identity will come from `@seshat/lean-meta` | built, with the text identity |
 | `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` | planned |
-| `M2` | variant graph and logical propagation | `@seshat/graph` | planned |
+| `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` | planned |
 | `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` | planned |
 | `M4` | context compiler | `@seshat/context` | planned |
@@ -34,15 +34,17 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | planned |
 
-The packages exist as skeletons, with their dependencies in the lockfile; `@seshat/lean-local`
-(the certifier on the host) is the fourteenth.
+The packages of the lines not written yet exist as skeletons, with their dependencies in the
+lockfile (`@seshat/graph` holds M2 now); `@seshat/lean-local` (the certifier on the host) is the
+fourteenth.
 
 ### Cumulative configs
 
 The plan's ablations are cumulative: each config adds one line to the one before, in §7's order.
 `ablationLines(name)` gives the lines of a config: none for `M0`, and for a line, that line and
 every line before it in `LINE_ORDER`. `M1` is M0 + M1; `M2` is M0 + M1 + M10 + M2; `M9` enables
-every line. `harness run --ablation M2` runs that config.
+every line. `harness run --ablation M2` runs that config, once all its lines are written: today it
+stops and names M10 as planned, and `--lines M1,M2` runs the two that are built.
 
 ## A line
 
@@ -205,4 +207,5 @@ line's model call charged to the problem; the context packet of each request, an
 also checks that only one line gives the statement identity, and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 
-M1 is the only line built, and nothing here has run against a real model or Lean.
+M1 and M2 are the lines built so far. M2 has its own tests ([graph.md](graph.md#tested-and-not-yet)).
+Nothing here has run against a real model or Lean.
