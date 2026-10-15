@@ -5,7 +5,8 @@ import type { HarnessEvent } from "@seshat/core";
 import { createFleet, STRATEGY_HINTS, strategySection, type AllocationData } from "@seshat/fleet";
 import { framingProblems } from "@seshat/guards";
 import { LINES } from "../src/lines.ts";
-import { check, demoRun, ofType, say } from "./m0-helpers.ts";
+import { DISCRETE } from "@seshat/bench";
+import { check, DEMO_FILE, demoRun, ofType, say } from "./m0-helpers.ts";
 
 type Message = TranscriptContext["messages"][number];
 
@@ -201,6 +202,25 @@ describe("the fleet's width", () => {
     // Every draw is equal, so the first candidate would win each time without the exclusion.
     const strategies = allocations(events).map((r) => r.strategy);
     assert.equal(new Set(strategies).size, 3, strategies.join(","));
+  });
+});
+
+describe("the fleet with M6", () => {
+  it("adds its section to the question M6 asks on an open conjecture, and M6 flags nothing in it", async () => {
+    const prompts: string[] = [];
+    const { result, events } = await demoRun({
+      file: DEMO_FILE.replaceAll("research solved", "research open"),
+      filter: { ...DISCRETE, categories: ["research solved", "research open"] },
+      config: { lines: ["M1", "M6", "fleet"], ...seed(15), sessions: 1 },
+      responses: [(context) => { prompts.push(opening(context)); return check("exact trivial_proof"); }],
+    });
+    assert.equal(result.problems[0]?.outcome, "candidate");
+    assert.match(prompts[0] ?? "", /# The question\nDetermine whether this theorem holds\./);
+    assert.match(prompts[0] ?? "", /# Strategy for this session\n/);
+    assert.deepEqual(framingProblems(prompts[0] ?? ""), []);
+    const kinds = ofType(events, "node.recorded").map((e) => e.data.kind);
+    assert.ok(kinds.includes("allocation"));
+    assert.ok(!kinds.includes("drift"), kinds.join(","));
   });
 });
 

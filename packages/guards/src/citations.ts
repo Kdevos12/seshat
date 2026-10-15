@@ -154,11 +154,6 @@ export async function unresolvedReferences(passages: readonly string[], env: Cit
   return [...new Set(bad)];
 }
 
-/** The paragraphs of a prose text (notes), split on blank lines. */
-export function paragraphs(text: string): string[] {
-  return text.split(/\n\s*\n/).filter((p) => p.trim() !== "");
-}
-
 /**
  * The declarations and tactic blocks of a Lean source that are left as `sorry` and presented as
  * known: a comment just above them or inside them appeals to a known result or cites a source (plan
