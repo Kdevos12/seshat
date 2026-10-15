@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { BlobStore, Journal, prepareSketch, readEvents, sha256Hex, statementIdV0 } from "@seshat/core";
+import { BlobStore, canTransition, CLAIM_STATUSES, type ClaimStatus, Journal, prepareSketch, readEvents, sha256Hex, statementIdV0 } from "@seshat/core";
 import { claimSource, claimTheoremName, MemoryStore, negationReference, type StatementIdentity } from "../src/index.ts";
 
 function open(identity?: StatementIdentity): { memory: MemoryStore; journal: Journal; dir: string } {
@@ -305,5 +305,105 @@ describe("MemoryStore references", () => {
     assert.equal(claimSource("import Mathlib\n\n\n", "t", "  (x : ℕ) : x = x "), "import Mathlib\n\ntheorem t (x : ℕ) : x = x := by\n  sorry\n");
     assert.equal(claimTheoremName("clm_01ABC"), "clm_01ABC");
     assert.equal(claimTheoremName("9-x.y"), "c_9_x_y");
+  });
+
+  it("retract a claim: a candidate goes back to open, a proof or refutation becomes retracted, never higher", async () => {
+    const { memory, journal } = open();
+    const writer = memory.withActor("line:M2");
+    const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "test" });
+    assert.equal(writer.retractClaim(claimId, { reason: "nothing to withdraw" }).status, "open");
+    const validate = (id: string, method: "repl" | "kernel_replay", negation = false) => {
+      const validationId = `val_${id}`;
+      journal.emit(
+        "validation.finished",
+        { validationId, claimId, method, verdict: "valid", reasons: [], axioms: [], submissionHash: "h", ...(negation ? { negation: true } : {}) },
+        "validator",
+      );
+      return validationId;
+    };
+    const candidate = validate("repl", "repl");
+    journal.emit("claim.status_changed", { claimId, from: "open", to: "computed", reason: "fast check", validationId: candidate }, "orchestrator");
+    const back = writer.retractClaim(claimId, { reason: "a premise was retracted" });
+    assert.equal(back.status, "open");
+    const certified = validate("kernel", "kernel_replay");
+    journal.emit("claim.status_changed", { claimId, from: "open", to: "proved", reason: "certified", validationId: certified }, "orchestrator");
+    assert.equal(writer.retractClaim(claimId, { reason: "a premise was retracted" }).status, "retracted");
+    assert.equal(writer.retractClaim(claimId, { reason: "again" }).status, "retracted", "a retracted claim stays retracted");
+    assert.throws(() => writer.retractClaim("clm_x", { reason: "?" }), /unknown claim clm_x/);
+    const changes = readEvents(journal.log.path).filter((e) => e.type === "claim.status_changed");
+    assert.deepEqual(
+      changes.map((e) => [e.actor, (e.data as { to: string }).to]),
+      [["orchestrator", "computed"], ["line:M2", "open"], ["orchestrator", "proved"], ["line:M2", "retracted"]],
+    );
+    journal.close();
+  });
+
+  it("retract a claim never raises it: from every status it does nothing or takes a revocation transition, with its reason and actor", async () => {
+    const { memory, journal } = open();
+    const writer = memory.withActor("line:M2");
+    // What a status trusts, lowest first: a retraction may only move a claim down this list.
+    const trust: Record<ClaimStatus, number> = { retracted: 0, open: 1, computed: 2, proved_informal: 3, proved: 4, refuted: 4 };
+    // The revocation transitions of the status table, and nothing else: `retracted` stays, it is not reopened.
+    const revoked: Record<ClaimStatus, ClaimStatus> = {
+      open: "open",
+      computed: "open",
+      proved_informal: "retracted",
+      proved: "retracted",
+      refuted: "retracted",
+      retracted: "retracted",
+    };
+    let n = 0;
+    /** A claim in a status, reached by the checked changes the journal allows. */
+    const claimIn = async (status: ClaimStatus): Promise<string> => {
+      n += 1;
+      const { claimId } = await memory.ensureClaim({ statement: `: ${n} = ${n}`, origin: "test" });
+      const validation = (method: "repl" | "kernel_replay", negation = false): string => {
+        const validationId = `val_${n}_${method}${negation ? "_negation" : ""}`;
+        journal.emit(
+          "validation.finished",
+          { validationId, claimId, method, verdict: "valid", reasons: [], axioms: [], submissionHash: "h", ...(negation ? { negation: true } : {}) },
+          "validator",
+        );
+        return validationId;
+      };
+      const change = (from: ClaimStatus, to: ClaimStatus, validationId?: string): void => {
+        journal.emit("claim.status_changed", { claimId, from, to, reason: "setup", ...(validationId !== undefined ? { validationId } : {}) }, "orchestrator");
+      };
+      if (status === "computed") change("open", "computed", validation("repl"));
+      if (status === "proved") change("open", "proved", validation("kernel_replay"));
+      if (status === "refuted") change("open", "refuted", validation("kernel_replay", true));
+      if (status === "proved_informal" || status === "retracted") change("open", "proved_informal");
+      if (status === "retracted") change("proved_informal", "retracted");
+      assert.equal(memory.claim(claimId)?.status, status);
+      return claimId;
+    };
+
+    for (const status of CLAIM_STATUSES) {
+      const claimId = await claimIn(status);
+      const before = readEvents(journal.log.path).length;
+      const after = writer.retractClaim(claimId, { reason: `revoke ${status}` }).status;
+      assert.equal(after, revoked[status], `from ${status}`);
+      assert.ok(trust[after] <= trust[status], `${status} -> ${after} would raise the claim`);
+      const written = readEvents(journal.log.path).slice(before);
+      if (after === status) {
+        assert.deepEqual(written, [], `from ${status}: nothing is written`);
+        continue;
+      }
+      const [event] = written;
+      assert.equal(written.length, 1);
+      assert.ok(event?.type === "claim.status_changed");
+      assert.deepEqual(
+        [event.actor, event.data.from, event.data.to, event.data.reason, canTransition(status, after)],
+        ["line:M2", status, after, `revoke ${status}`, true],
+      );
+    }
+
+    // A reason is required: without one the claim keeps its status and nothing is written.
+    const proved = await claimIn("proved");
+    const before = readEvents(journal.log.path).length;
+    assert.throws(() => writer.retractClaim(proved, { reason: "  " }), /only with a reason/);
+    assert.equal(memory.claim(proved)?.status, "proved");
+    assert.equal(readEvents(journal.log.path).length, before);
+    journal.close();
   });
 });
