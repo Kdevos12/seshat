@@ -7,9 +7,10 @@ Status: early development (phase P0a). The event journal, the memory store, the 
 claims and negative memory), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes), and the second line, M2 (the variant
-graph and its logical propagation), are written and tested with a
-simulated model and a simulated Lean. The provers can also be given SageMath, an external program
+(independent provers on pi, in sessions that pass on their notes), the second line, M2 (the variant
+graph and its logical propagation), and a third, M11 (small models and counter-models), are written
+and tested with a simulated model and a simulated Lean. The provers can also be given SageMath, an
+external program
 installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
 run against a real Lean or a real model yet.
 
@@ -25,6 +26,7 @@ flowchart TB
   fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::planned
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
+  m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
@@ -53,6 +55,11 @@ flowchart TB
   bench -->|problems| provers
   bench -->|statements| identity
   identity -->|claims| journal
+  bench -->|"problems, when<br/>M11 is on"| m11
+  m11 -->|"briefing, or stops<br/>the provers"| provers
+  m11 -->|"decide files"| leancheck
+  m11 -->|"negation proofs"| fast
+  m11 -->|"nodes, computed edges"| journal
   fleet -.->|"who works on what"| provers
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
@@ -87,7 +94,7 @@ as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are
-the first two lines that use it. M1: one claim per statement, each attempt labeled with its strategy
+three lines that use it. M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session
 ([documentation/memory.md](documentation/memory.md),
 [documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). M2: a graph of variants
@@ -95,9 +102,13 @@ of a claim, joined by edges that become `lean_checked` only when Lean accepts th
 rules follow those edges and turn what they derive into composed proofs that go through the same
 fast check; and a proof of the negation of a claim is tried alongside the provers, whichever side
 loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits for a Lean server
-like the fast check. The other mechanisms will come as lines that a run switches on
-(`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against the run without
-it ([documentation/lines.md](documentation/lines.md)).
+like the fast check. M11: a statement of magmas or of a number is tried on batteries of small
+objects, a counter-model becomes a proof of the negation that Lean must check, and the verdicts
+give candidate edges between claims and a lookup of the numbers where it holds as a sequence
+([documentation/models.md](documentation/models.md)); it waits for a Lean server too. The other
+mechanisms will come as lines that a run switches on (`harness run --lines M1,M10` or
+`--ablation M10`), so that each is measured against the run without it
+([documentation/lines.md](documentation/lines.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
