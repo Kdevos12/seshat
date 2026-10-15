@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "label": "2.2.5.1",
+      "degree": 2,
+      "disc_abs": 5,
+      "disc_sign": 1,
+      "class_number": 1,
+      "coeffs": [
+        -1,
+        -1,
+        1
+      ]
+    }
+  ]
+}
