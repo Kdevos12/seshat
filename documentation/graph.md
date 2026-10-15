@@ -214,7 +214,11 @@ Each submission is a `derivation` node about the claim:
 `revokeUnsupported(memory, state)` is the revocation of the claims: one that is `computed` or `proved`
 only through a valid composed proof, and that the graph no longer derives, goes back to `open`
 (`computed`) or to `retracted` (`proved`), by `MemoryStore.retractClaim`
-([memory.md](memory.md#claims)). A claim with a proof of its own is left alone.
+([memory.md](memory.md#claims)). A claim with a proof of its own is left alone. It judges only the
+claims the state follows (`state.claims()`): the memory holds the derivations of every problem of a
+run, and a claim that another problem composed, outside this state's graph, is not held by this
+state's engine and not this state's to withdraw. A state that reaches the claim through an edge, as
+a seed or not, does judge it.
 
 ## The twin
 

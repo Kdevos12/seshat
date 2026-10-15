@@ -128,19 +128,25 @@ export async function realize(o: RealizeOptions): Promise<Realized[]> {
  * Withdraws the claims that hold only through a composed proof whose premises are gone: a claim that
  * is `computed` or `proved` because a derivation said so (and has no proof of its own) goes back to
  * `open`, or to `retracted` (`MemoryStore.retractClaim`), once the graph no longer derives it.
- * Returns the claims withdrawn. Sync the state first.
+ *
+ * It judges only the claims the state follows (`state.claims()`): the memory holds the derivations
+ * of every problem of the run, and a claim that another problem composed, outside this state's
+ * graph, is not held by this state's engine, which says nothing about it. Returns the claims
+ * withdrawn. Sync the state first.
  */
 export function revokeUnsupported(memory: MemoryStore, state: GraphState, log?: (text: string) => void): string[] {
   const withdrawn: string[] = [];
-  for (const node of memory.nodes(DERIVATION_KIND)) {
-    const data = node.data as unknown as DerivationRecord;
-    if (data.verdict !== "valid" || data.goal !== "proved") continue;
-    const claim = memory.claim(data.claimId);
+  for (const claimId of state.claims()) {
+    const claim = memory.claim(claimId);
     if (claim === undefined || (claim.status !== "computed" && claim.status !== "proved")) continue;
-    if (state.candidate.holds({ goal: "proved", claim: claim.claimId })) continue;
-    memory.retractClaim(claim.claimId, { reason: `its composed proof (${data.rule}) rests on a fact that no longer holds` });
-    withdrawn.push(claim.claimId);
-    log?.(`claim ${claim.claimId} withdrawn: what its composed proof used no longer holds`);
+    const [composed] = memory
+      .nodes(DERIVATION_KIND, { claimId })
+      .map((node) => node.data as unknown as DerivationRecord)
+      .filter((data) => data.verdict === "valid" && data.goal === "proved");
+    if (composed === undefined || state.candidate.holds({ goal: "proved", claim: claimId })) continue;
+    memory.retractClaim(claimId, { reason: `its composed proof (${composed.rule}) rests on a fact that no longer holds` });
+    withdrawn.push(claimId);
+    log?.(`claim ${claimId} withdrawn: what its composed proof used no longer holds`);
   }
   return withdrawn;
 }
