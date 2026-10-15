@@ -82,6 +82,12 @@ proposed the edge. Either way, a claim becomes `proved` only through a certified
 claim, so a wrong edge can mislead a search, never prove anything. An edge's status can go down
 again, with a reason (the lemma's file changed, a dependency was retracted).
 
+The line M2 follows `lean_checked` edges with logic rules ([graph.md](graph.md)). What the rules
+derive is a proposal: the line writes the composed Lean proof (the link lemmas applied to the proofs
+of the premises) and submits it like any other, so a claim changes status only through a proof of
+its own that passes the validator, and a claim that held only through such a proof goes back to
+`open` when the proof's premises are retracted.
+
 ## What runs where
 
 The prover's code runs inside Lean during both checks. The Lean server and the certifier must run

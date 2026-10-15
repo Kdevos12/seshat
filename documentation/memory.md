@@ -105,6 +105,13 @@ await memory.ensureClaim({ statement: "(n : ℕ) : n < 3 → P n", header: probl
 before the target theorem, with the file's `namespace` lines and no `end`, which Lean accepts at
 the end of a file. A claim that needs only Mathlib takes `import Mathlib` instead.
 
+A status goes up only through the validator and the certifier ([trust.md](trust.md)). The store can
+only lower one: `retractClaim(claimId, {reason})` takes back a claim whose status rested on
+something that was withdrawn, which is how a mechanism revokes what it derived (the line M2, for a
+claim that held only through a composed proof). A `computed` claim goes back to `open`; a `proved`,
+`refuted` or `proved_informal` claim becomes `retracted`; an `open` or `retracted` claim stays as
+it is. It emits `claim.status_changed`, which the journal checks like any other.
+
 ## Edges
 
 An edge goes from a claim or node to one target, or to several for `decomposes_into`. Each has a
@@ -132,7 +139,8 @@ it is added or later, only with a valid validation of a claim whose statement is
 the lemma with `ensureClaim`, validate a proof of it, then pass the validation's id.
 
 `addEdge({kind, from, to, status?, attemptId?, toolRunId?, validationId?, note?, link?})` adds an
-edge (`proposed` by default); `setEdgeStatus(edgeId, to, {reason, validationId?})` moves it.
+edge (`proposed` by default); `setEdgeStatus(edgeId, to, {reason, validationId?})` moves it. The
+variants and the propagation over `lean_checked` edges are the line M2 ([graph.md](graph.md)).
 
 ## Nodes
 
@@ -200,6 +208,4 @@ back.
 ## Not done yet
 
 - The Lean-backed statement identity, and the dedup of near-equal statements (plan §3.1).
-- Propagation over `lean_checked` edges and revocation (plan §3.2): the edges are stored, nothing
-  follows them yet except `equivalents`.
 - Indexes beyond the projection's tables: embeddings, fingerprints, the subsumption index.

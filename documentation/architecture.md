@@ -21,6 +21,7 @@
 | `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
 | `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim ([memory.md](memory.md)); M1's strategy and failure classifiers, "already tried" and redundancy ([m1-identity-memory.md](m1-identity-memory.md)) | core |
 | `@seshat/lines` | The line API: line ids and their order, cumulative configs, hooks and their contexts, the checks of a run's lines ([lines.md](lines.md)) | core, memory, registry |
+| `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, lines, memory, registry |
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
@@ -32,7 +33,6 @@ code without touching the lockfile:
 
 | Package | Will hold | Depends on |
 |---|---|---|
-| `@seshat/graph` | Variants, verified edges, propagation with provenance, the prove/refute twin, ATMS labels, PageRank, graph queries (M2) | core, lines, memory, registry |
 | `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, lines, memory, registry |
 | `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11) | core, lines, memory, registry |
 | `@seshat/scheduler` | The saturation kernel and the subgoal scheduler (M12) | core, fleet, graph, lean-meta, lines, memory, registry |
