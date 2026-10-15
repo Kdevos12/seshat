@@ -295,6 +295,28 @@ export class MemoryStore {
     return this.node(nodeId) as MemoryNode;
   }
 
+  /**
+   * Withdraws a claim whose status rested on something that was retracted: a `proved`, `refuted` or
+   * `proved_informal` claim becomes `retracted`, and a `computed` candidate goes back to `open`. An
+   * `open` or `retracted` claim stays as it is. These are the revocation transitions of the status
+   * table (`packages/core/src/status.ts`), and the method picks the lower status itself, so it
+   * cannot raise a claim: a status goes up only through a validation (trust.md). It is the one
+   * change of status a line may make besides `validate`, and the line M2's revocation of a claim it
+   * composed (plan §3.2) is its only caller. It needs a reason, and the journal records the change
+   * under the store's actor.
+   */
+  retractClaim(claimId: string, options: { reason: string }): Claim {
+    if (options.reason.trim() === "") throw new Error(`claim ${claimId} can be retracted only with a reason`);
+    const claim = this.claim(claimId);
+    if (claim === undefined) throw new Error(`unknown claim ${claimId}`);
+    const to: ClaimStatus | undefined =
+      claim.status === "computed" ? "open" : claim.status === "open" || claim.status === "retracted" ? undefined : "retracted";
+    if (to !== undefined) {
+      this.#journal.emit("claim.status_changed", { claimId, from: claim.status, to, reason: options.reason }, this.actor);
+    }
+    return this.claim(claimId) as Claim;
+  }
+
   claim(claimId: string): Claim | undefined {
     const row = this.#journal.projection.claim(claimId);
     return row === undefined ? undefined : toClaim(row);

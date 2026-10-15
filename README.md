@@ -6,8 +6,9 @@ judge, classical tools first.
 Status: early development (phase P0a). The event journal, the memory store, the line API and its first line (M1: shared
 claims and negative memory), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
-[formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
-(independent provers on pi, in sessions that pass on their notes) are written and tested with a
+[formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
+(independent provers on pi, in sessions that pass on their notes), and the second line, M2 (the variant
+graph and its logical propagation), are written and tested with a
 simulated model and a simulated Lean. The provers can also be given SageMath, an external program
 installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
 run against a real Lean or a real model yet.
@@ -44,7 +45,8 @@ flowchart TB
   subgraph MEMORY["Memory: the plan's edge"]
     identity["M1 canonical identity<br/>one claim per statement,<br/>shared by equal problems"]:::built
     tried["M1 negative memory<br/>strategies tried and<br/>how each one failed"]:::built
-    kg["Facts and research graph<br/>verified implications,<br/>lemmas, propagation"]:::planned
+    kg["Facts and research graph<br/>claims, edges and records<br/>in the journal"]:::built
+    prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::wait
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
   end
 
@@ -66,7 +68,10 @@ flowchart TB
   journal --> projection
   projection --> tried
   tried -->|"already tried,<br/>in every session"| provers
-  journal -.-> kg
+  journal --> kg
+  kg --> prop
+  prop -->|"composed proofs"| fast
+  prop -->|"briefing, graph tool,<br/>stop on refutation"| provers
   kg -.-> compiler
   compiler -.->|"context for each session"| provers
 ```
@@ -81,13 +86,18 @@ goes through the capability registry, which writes it to the journal, with its i
 as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
-written (claims, the edges between them and records of every kind, all in the journal), and so is
-the first line that uses it, M1: one claim per statement, each attempt labeled with its strategy
+written (claims, the edges between them and records of every kind, all in the journal), and so are
+the first two lines that use it. M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session
 ([documentation/memory.md](documentation/memory.md),
-[documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). The other mechanisms
-will come as lines that a run switches on (`harness run --lines M1,M10` or `--ablation M10`), so
-that each is measured against the run without it ([documentation/lines.md](documentation/lines.md)).
+[documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). M2: a graph of variants
+of a claim, joined by edges that become `lean_checked` only when Lean accepts their link lemma; logic
+rules follow those edges and turn what they derive into composed proofs that go through the same
+fast check; and a proof of the negation of a claim is tried alongside the provers, whichever side
+loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits for a Lean server
+like the fast check. The other mechanisms will come as lines that a run switches on
+(`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against the run without
+it ([documentation/lines.md](documentation/lines.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
