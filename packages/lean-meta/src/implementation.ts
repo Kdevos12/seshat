@@ -5,6 +5,7 @@ import {
   type HealthCheck,
   type ImplementationFactory,
   type ImplementationInstance,
+  TOOL_TIMEOUT_MARGIN_MS,
   UnavailableError,
 } from "@seshat/registry";
 import { DEFAULT_HEADER, DEFAULT_HEARTBEATS, type LeanMetaInput, type LeanMetaOutput } from "./meta.ts";
@@ -189,8 +190,7 @@ export function leanMetaImplementation(checker: HealthAwareChecker): Implementat
   return {
     async invoke(input, context) {
       const typed = input as unknown as LeanMetaInput;
-      const timeoutSec = typed.timeoutSec ?? Math.max(1, Math.floor(context.timeoutMs / 1000));
-      return (await run(typed, context.signal, timeoutSec)) as unknown as Json;
+      return (await run(typed, context.signal, leanTimeoutSec(typed.timeoutSec, context.timeoutMs))) as unknown as Json;
     },
     async health({ signal }): Promise<HealthCheck> {
       if (checker.health !== undefined && !(await checker.health(signal))) {
@@ -206,6 +206,15 @@ export function leanMetaImplementation(checker: HealthAwareChecker): Implementat
       }
     },
   };
+}
+
+/**
+ * Lean's time limit for a call: its `timeoutSec`, or else the registry's limit less the margin
+ * the registry adds to a `timeoutSec` (`TOOL_TIMEOUT_MARGIN_MS`), so that Lean stops first and
+ * says so, rather than the call being aborted.
+ */
+export function leanTimeoutSec(timeoutSec: number | undefined, callTimeoutMs: number): number {
+  return timeoutSec ?? Math.max(1, Math.floor((callTimeoutMs - TOOL_TIMEOUT_MARGIN_MS) / 1000));
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   type JsonSchema,
 } from "@seshat/registry";
 import type { GoalsInput, GoalsOutput } from "./goals.ts";
+import { leanTimeoutSec } from "./implementation.ts";
 
 export interface PantographOptions {
   /** The REPL's executable, or a launcher such as `lake`. */
@@ -263,7 +264,8 @@ export function pantographImplementation(repl: PantographRepl, version = "pantog
       const call = input as unknown as GoalsInput;
       const states = scopeStates(context.scope);
       const { signal } = context;
-      const timeoutMs = (call.timeoutSec ?? Math.max(1, Math.floor(context.timeoutMs / 1000))) * 1000;
+      // Pantograph's own limit comes before the registry's abort, which would kill the process and every scope's states.
+      const timeoutMs = leanTimeoutSec(call.timeoutSec, context.timeoutMs) * 1000;
       let output: GoalsOutput;
       switch (call.op) {
         case "start":

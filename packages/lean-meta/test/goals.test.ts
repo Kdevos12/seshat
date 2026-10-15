@@ -120,7 +120,11 @@ describe("lean.goals over Pantograph", () => {
       assert.equal((await repl.request("stat", {}, signal())).nGoals, 1);
       await assert.rejects(impl.invoke(call({ op: "goals", state: 0 }), context("a")), /there is no state 0/);
       assert.deepEqual(await impl.invoke(call({ op: "goals", state: 0 }), context("b")), { state: 0, goals: ["⊢ True"] });
-      assert.equal((await repl.request("options.print", {}, signal())).timeout, 60_000);
+      // No timeoutSec: Lean's limit is the registry's (60 s here) less its 15 s margin.
+      assert.equal((await repl.request("options.print", {}, signal())).timeout, 45_000);
+      await impl.invoke(call({ op: "goals", state: 0 }), context("b"));
+      await impl.invoke(call({ op: "start", statement: ": True", timeoutSec: 20 }), context("b"));
+      assert.equal((await repl.request("options.print", {}, signal())).timeout, 20_000);
     } finally {
       await impl.close?.();
     }

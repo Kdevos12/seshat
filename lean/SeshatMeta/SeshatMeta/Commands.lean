@@ -3,7 +3,9 @@ import SeshatMeta.Statement
 /-!
 # `#seshat_defeq`, `#seshat_premises`, `#seshat_profile`, `#seshat_instances`
 
-Each prints one line of JSON in an information message (`documentation/lean-meta.md`).
+Each prints one line of JSON in an information message (`documentation/lean-meta.md`). The
+statements are parsed by `Lean.Parser.Command.declSig`, named in full in the `syntax` rules, and
+the `elab_rules` open its namespace for their `$x:declSig` patterns.
 -/
 
 namespace SeshatMeta
@@ -16,8 +18,10 @@ open Lean Elab Meta
 command (`set_option maxHeartbeats N in #seshat_defeq …`), `{"defeq":null}` when it runs out. The
 two statements are elaborated first; the limit counts from `isDefEq` on. -/
 
-syntax (name := seshatDefeq) "#seshat_defeq " declSig " with " declSig : command
+syntax (name := seshatDefeq) "#seshat_defeq " Lean.Parser.Command.declSig " with "
+  Lean.Parser.Command.declSig : command
 
+open Lean.Parser.Command in
 elab_rules : command
   | `(#seshat_defeq $a:declSig with $b:declSig) => Command.liftTermElabM do
     let a ← elabStatement a
@@ -68,7 +72,7 @@ elab_rules : command
 `classes` are the classes of its instance-implicit binders and of the instance arguments of the
 constants it applies; `instances` are the instances it uses (`Meta.isInstance`). Sorted. -/
 
-syntax (name := seshatProfile) "#seshat_profile " declSig : command
+syntax (name := seshatProfile) "#seshat_profile " Lean.Parser.Command.declSig : command
 
 structure Profile where
   classes : Array Name := #[]
@@ -106,6 +110,7 @@ partial def collectProfile (e : Expr) : StateT Profile CoreM Unit := do
       collectProfile arg
   | _ => pure ()
 
+open Lean.Parser.Command in
 elab_rules : command
   | `(#seshat_profile $sig:declSig) => Command.liftTermElabM do
     let statement ← elabStatement sig
@@ -124,7 +129,8 @@ as metavariables, go into a discrimination tree (`Lean.Meta.DiscrTree`); the sta
 conclusion finds the candidates that unify with it (`DiscrTree.getUnify`), and `isInstanceOf`
 confirms each candidate in both directions. -/
 
-syntax (name := seshatInstances) "#seshat_instances " declSig " using " "[" ident,* "]" : command
+syntax (name := seshatInstances) "#seshat_instances " Lean.Parser.Command.declSig
+  " using " "[" ident,* "]" : command
 
 /-- Whether `special` follows from `general` by instantiation, as `apply general` then
 `assumption` would show it: with `special`'s variables and hypotheses fixed, `general`'s
@@ -143,6 +149,7 @@ def isInstanceOf (special general : Expr) : MetaM Bool :=
         id.assign (.fvar h)
     return true
 
+open Lean.Parser.Command in
 elab_rules : command
   | `(#seshat_instances $sig:declSig using [$facts,*]) => Command.liftTermElabM do
     let statement ← elabStatement sig

@@ -120,6 +120,10 @@ reads the answer: the one information message on the command's lines whose text 
 | An error message anywhere in the file, Lean's time limit, a REPL failure, no answer or two | `failed`, with Lean's messages. |
 | One answer | Its fields, checked (an id must be `st1_` and 32 digits, positions must be in the list). |
 
+Lean's time limit is the call's `timeoutSec`, or else the registry's limit for the call less the
+15 s margin the registry adds to a `timeoutSec` (`leanTimeoutSec`): Lean stops first, and the call
+fails with "Lean ran out of time" (`rejected`) rather than being aborted (`unreachable`).
+
 Its health check asks for the id of `: True` under an empty header and compares it with the one
 above, which shows that the server's project has SeshatMeta and that its canonical form is the one
 documented. Its version, `fb2393de+lean-v4.27.0+fc-bench-v1+seshat-meta-0.1.0`, adds the library's
@@ -167,8 +171,19 @@ answers is refused. Tests put in the table which texts Lean would make the same 
 ## `lean.goals`
 
 `lean.goals` (`capabilities/lean.goals/manifest.json`) works on a proof goal by goal: `direct`, so
-a run can give it to the provers (`harness run --tool lean.goals`), and stateful, one set of states
-per scope. Its operations:
+a run can give it to the provers, and stateful, one set of states per scope. A run gives it only
+when asked (`harness run --tool lean.goals`): no run has it by default.
+
+**It is not sandboxed.** The statements, headers, tactics and files come from the model, and Lean
+runs them in a child process of the harness, as the harness's user. Lean code can do any IO
+(`#eval`, `run_tac`, `elab`): read and write whatever that user can, including `.env` and the
+runs' journals and blobs. Only the environment is cleaned (the process gets `PATH`, `HOME` and the
+few variables of its settings). This breaks the rule that model-written code runs in a sandbox
+([trust.md](trust.md#what-runs-where); `compute.sage` runs in a container without network or a
+writable disk). Until an implementation in a container or under a restricted user exists, give
+`lean.goals` to provers only on a machine and user whose files the model may read and change.
+
+Its operations:
 
 | `op` | Input | Output |
 |---|---|---|
@@ -193,7 +208,9 @@ each command line (`<command> <json>`) with one line of JSON. Commands go one at
   are the goal's hypotheses.
 - `tactic` is `goal.tactic`, `goals` is `goal.print`, a released scope's states go with
   `goal.delete`, and the health check is `stat`. Lean's time limit is Pantograph's option
-  `timeout` (`options.set`), from `timeoutSec`.
+  `timeout` (`options.set`): `timeoutSec`, or else the registry's limit for the call less the
+  15 s the registry adds to a `timeoutSec`, so that a slow tactic stops in Lean, with an answer,
+  before the registry aborts the call (which kills the process).
 - Each scope numbers its states from 0, mapped to Pantograph's ids. An abort kills the process,
   since Lean cannot be interrupted otherwise; the next call starts a new one, and the states of
   the old one are refused ("lost when Lean restarted"), in every scope.
@@ -224,7 +241,9 @@ tried yet:
    and `lake build SeshatMeta`.
 
 Then `pnpm harness health` shows whether SeshatMeta answers, and
-`pnpm harness contract lean.meta` runs the contract.
+`pnpm harness contract lean.meta` runs the contract. Kimina keeps one REPL per header, and the
+headers of `lean.meta` (which import SeshatMeta) differ from those of `lean.check`, so the first
+call under a header loads Mathlib again.
 
 For `lean.goals`, build Pantograph at `v0.3.13` (Lean v4.27.0) with `lake build repl`, and point
 the harness at it with the project's library path, as Pantograph's documentation says:
@@ -234,9 +253,7 @@ export PANTOGRAPH_REPL=/path/to/Pantograph/.lake/build/bin/repl
 export LEAN_PROJECT_DIR=/path/to/formal-conjectures
 export LEAN_PATH=$(cd "$LEAN_PROJECT_DIR" && lake env printenv LEAN_PATH)
 pnpm harness contract lean.goals
-``` Kimina keeps one REPL per header, and the
-headers of `lean.meta` (which import SeshatMeta) differ from those of `lean.check`, so the first
-call under a header loads Mathlib again.
+```
 
 ## To verify against Lean
 

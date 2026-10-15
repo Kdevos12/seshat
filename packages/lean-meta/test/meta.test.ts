@@ -187,11 +187,12 @@ describe("lean.meta over a Lean checker", () => {
     await assert.rejects(out(`{"instanceOf":[2],"covers":[]}`, { op: "instances", statement: ": True", facts }), /instanceOf \[2\]/);
   });
 
-  it("gives Lean the call's time limit", async () => {
+  it("gives Lean the call's time limit, or the registry's less its margin", async () => {
     const checker = new ScriptedChecker(answering(`{"id":"${ID}"}`));
     await invoke(checker, { op: "hash", statement: ": True", timeoutSec: 30 });
     await invoke(checker, { op: "hash", statement: ": True" }, 90_500);
-    assert.deepEqual(checker.options.map((o) => o.timeoutSec), [30, 90]);
+    await invoke(checker, { op: "hash", statement: ": True" }, 10_000);
+    assert.deepEqual(checker.options.map((o) => o.timeoutSec), [30, 75, 1]);
   });
 
   it("checks its health by asking for the id of True", async () => {
@@ -230,6 +231,8 @@ describe("the typed client of lean.meta", () => {
     assert.match(checker.seen[0]?.code ?? "", /\n {2}using \[ge_iff_le\]\n$/);
     assert.equal(checker.options[0]?.timeoutSec, 13);
     assert.match(checker.seen[1]?.code ?? "", /\nset_option maxHeartbeats 1000 in\n/);
+    // Without timeoutSec the registry allows the manifest's 300 s, and Lean gets 15 s less.
+    assert.deepEqual(checker.options.slice(1).map((o) => o.timeoutSec), [285, 285, 285, 285]);
   });
 
   it("says rejected when Lean refuses, and unreachable when no answer came", async () => {
