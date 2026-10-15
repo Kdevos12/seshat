@@ -23,9 +23,10 @@ a node's data can name a blob by its hash.
 
 Lines never touch the journal. The store keeps it in a private field, in every view, so a line has
 no way to emit an event the store has no method for, and the trust rules ([trust.md](trust.md))
-hold by construction: a line moves a claim's status only through `validate`
-([lines.md](lines.md#validate)). A task that needs a write the store lacks adds a narrow method
-here, never a raw `emit`.
+hold by construction: a line raises a claim's status only through `validate`
+([lines.md](lines.md#validate)), and lowers one only through `retractClaim` ([below](#claims)), the
+single named exception. A task that needs a write the store lacks adds a narrow method here, never
+a raw `emit`.
 
 ## Claims
 
@@ -108,9 +109,11 @@ the end of a file. A claim that needs only Mathlib takes `import Mathlib` instea
 A status goes up only through the validator and the certifier ([trust.md](trust.md)). The store can
 only lower one: `retractClaim(claimId, {reason})` takes back a claim whose status rested on
 something that was withdrawn, which is how a mechanism revokes what it derived (the line M2, for a
-claim that held only through a composed proof). A `computed` claim goes back to `open`; a `proved`,
-`refuted` or `proved_informal` claim becomes `retracted`; an `open` or `retracted` claim stays as
-it is. It emits `claim.status_changed`, which the journal checks like any other.
+claim that held only through a composed proof, and its only caller). A `computed` claim goes back to
+`open`; a `proved`, `refuted` or `proved_informal` claim becomes `retracted`; an `open` or
+`retracted` claim stays as it is. The method picks the lower status itself, so it cannot raise a
+claim, and it refuses a blank reason. It emits `claim.status_changed` as the store's actor, which the
+journal checks like any other.
 
 ## Edges
 

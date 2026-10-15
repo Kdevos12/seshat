@@ -121,7 +121,10 @@ export interface ProblemContext {
   llm: Llm;
   /**
    * Submits a Lean proof of a claim, or of its negation, through the validator. The only way a
-   * line changes a claim's status.
+   * line raises a claim's status. The one other change of status a line makes is to lower one:
+   * `memory.retractClaim(claimId, {reason})` takes back a claim whose status rested on something
+   * withdrawn (`computed` back to `open`, a settled claim to `retracted`) and cannot raise any. The
+   * line M2's revocation of a claim it composed is its only caller.
    */
   validate: (request: ValidateRequest) => Promise<ValidateResult>;
   budget: Budget;
