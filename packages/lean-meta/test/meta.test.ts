@@ -335,12 +335,12 @@ describe("the capability lean.meta", () => {
     assert.ok(capability.contract.some((c) => c.fails !== undefined));
   });
 
-  it("is offered by the repository's host profiles", () => {
+  it("is offered with lean.goals by the repository's host profiles", () => {
     const anyFactory: ImplementationFactory = () => ({ invoke: async () => ({}) });
     for (const host of ["local", "server"]) {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
-      const registry = new Registry({ catalog, host: profile, factories: { kimina: anyFactory, "kimina-meta": new SimulatedLeanMeta().factory() } });
-      assert.equal(registry.offers("lean.meta"), true, host);
+      const registry = new Registry({ catalog, host: profile, factories: { kimina: anyFactory, "kimina-meta": new SimulatedLeanMeta().factory(), pantograph: anyFactory } });
+      assert.deepEqual([registry.offers("lean.meta"), registry.offers("lean.goals")], [true, true], host);
     }
   });
 
