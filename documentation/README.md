@@ -45,6 +45,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   hooks and when they run, their contexts, the cumulative configs, how a task adds a line.
 - [m1-identity-memory.md](m1-identity-memory.md): the M1 line: one claim per statement, strategy
   labels, failure classes, the "already tried" section, the redundant-attempts metric.
+- [guards.md](guards.md): the M6 line: neutral framing, resolved citations, no raw error text,
+  anchored revisions, the drift detectors, and the `drift` nodes they write.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
   directory, `harness run` and `harness report`.
