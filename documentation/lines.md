@@ -24,7 +24,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` | planned |
 | `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` | planned |
 | `M4` | context compiler | `@seshat/context` | planned |
-| `M6` | guards against hallucination, and drift detectors | `@seshat/guards` | planned |
+| `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` | planned |
 | `M3` | growing lemma library | `@seshat/library` | planned |
 | `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | planned |

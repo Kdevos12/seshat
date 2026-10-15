@@ -22,6 +22,7 @@ flowchart TB
 
   bench["Bench<br/>575 Lean problems"]:::built
   fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::planned
+  guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
 
@@ -50,6 +51,8 @@ flowchart TB
   bench -->|statements| identity
   identity -->|claims| journal
   fleet -.->|"who works on what"| provers
+  guards -->|"reject a call,<br/>stop a session"| provers
+  guards -->|"drift nodes"| journal
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.-> moretools
@@ -81,7 +84,10 @@ written (claims, the edges between them and records of every kind, all in the jo
 the first line that uses it, M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session
 ([documentation/memory.md](documentation/memory.md),
-[documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). The other mechanisms
+[documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). M6 adds the guards
+against hallucination and the drift detectors: neutral framing, citations that must resolve, no raw
+error text, anchored revisions, and sessions stopped when they loop
+([documentation/guards.md](documentation/guards.md)). The other mechanisms
 will come as lines that a run switches on (`harness run --lines M1,M10` or `--ablation M10`), so
 that each is measured against the run without it ([documentation/lines.md](documentation/lines.md)).
 
