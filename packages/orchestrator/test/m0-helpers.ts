@@ -133,11 +133,13 @@ export function sageRegistry(
     });
 }
 
-/** A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise. */
-export function fauxModels(pricePerMillion = 3): { models: MutableModels; faux: FauxProviderHandle; name: string } {
-  const faux = fauxProvider({
-    models: [{ id: "prover", cost: { input: pricePerMillion, output: pricePerMillion * 5, cacheRead: pricePerMillion / 10, cacheWrite: pricePerMillion } }],
-  });
+/**
+ * A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise.
+ * `extraModels` are the ids of other models of the same provider, named `faux/ID`.
+ */
+export function fauxModels(pricePerMillion = 3, extraModels: readonly string[] = []): { models: MutableModels; faux: FauxProviderHandle; name: string } {
+  const cost = { input: pricePerMillion, output: pricePerMillion * 5, cacheRead: pricePerMillion / 10, cacheWrite: pricePerMillion };
+  const faux = fauxProvider({ models: [{ id: "prover", cost }, ...extraModels.map((id) => ({ id, cost }))] });
   const models = createModels();
   models.setProvider(faux.provider);
   const model = faux.getModel();
@@ -191,9 +193,11 @@ export async function demoRun(options: {
   file?: string | Record<string, string>;
   /** Which problems of the file the bench keeps. Default: `DISCRETE`, solved research problems only. */
   filter?: BenchFilter;
+  /** Ids of other models of the faux provider, which a line may name as `faux/ID`. */
+  extraModels?: readonly string[];
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
   const { checkout, index } = demoBench(options.file, options.filter);
-  const { models, faux, name } = fauxModels(options.pricePerMillion);
+  const { models, faux, name } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
   const dir = options.dir ?? join(tempDir(), "run");
