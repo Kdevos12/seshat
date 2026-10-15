@@ -2,7 +2,7 @@ import { type Briefing, type JsonObject, LINE_TITLES, type Line, type LineTool, 
 import type { Claim, MemoryStore } from "@seshat/memory";
 import { type Registry, RegistryLeanChecker } from "@seshat/registry";
 import { type Battery, graphBattery, groupBattery, integerBattery, magmaBattery } from "./battery.ts";
-import { lookupSequence, type OeisClient } from "./clients.ts";
+import { lookupSequence, type OeisSource } from "./clients.ts";
 import {
   addPlannedEdges,
   type Compared,
@@ -21,6 +21,7 @@ import { evaluateWithLean } from "./lean-eval.ts";
 import type { BatteryObject, IntegerObject, MagmaObject } from "./objects.ts";
 import { type CounterModelData, describeCounterModel, recordCounterModel, submitRefutation } from "./refutation.ts";
 import { runProgram } from "./sandbox.ts";
+import { RegistryOeis } from "./services.ts";
 import { type RecognizedStatement, recognizeStatement } from "./statement.ts";
 
 const ACTOR = "line:M11";
@@ -182,8 +183,12 @@ export function neighborClaims(memory: MemoryStore, claimId: string, depth: numb
 // --- The hooks ---------------------------------------------------------------------------------
 
 export interface M11Services {
-  /** An OEIS client to look sequences up beyond the table shipped with the package. Default: none, the table only. */
-  oeis?: OeisClient;
+  /**
+   * Where to look sequences up beyond the table shipped with the package. Default: the registry's
+   * `oeis.search`, which the host's profile may or may not offer; when it does not, or the site does
+   * not answer, the table's answer stands and says so.
+   */
+  oeis?: OeisSource;
 }
 
 async function beforeProvers(problem: ProblemContext, services: M11Services): Promise<void> {
@@ -297,7 +302,9 @@ async function identify(problem: ProblemContext, options: M11Options, battery: B
     // The first numbers in a row (1, 2, 3, ...) say only that the statement holds, or fails, from there on.
     const terms = values.slice(0, options.identifyTerms);
     if (terms.every((v, i) => i === 0 || v === (terms[i - 1] as number) + 1)) continue;
-    const identification = await lookupSequence(terms, services.oeis !== undefined ? { oeis: services.oeis } : {}, { signal: problem.signal });
+    const oeis = services.oeis ?? new RegistryOeis(problem.registry, { actor: ACTOR });
+    const identification = await lookupSequence(terms, { oeis }, { signal: problem.signal });
+    if (identification.note !== undefined) problem.log(`M11: the numbers where the statement ${what}: ${identification.note}`);
     if (identification.matches.length === 0) continue;
     recordIdentification(problem.memory, { claimId: problem.claimId, subject: `the numbers from ${first.value} to ${last.value} where the statement ${what}`, identification });
     const best = identification.matches[0];
@@ -512,5 +519,5 @@ export function createM11(services: M11Services = {}): Line {
   };
 }
 
-/** The line, without an OEIS client: the table of known sequences only. */
+/** The line, with the OEIS of the registry (`oeis.search`), when the host offers it. */
 export const M11: Line = createM11();

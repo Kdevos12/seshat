@@ -35,7 +35,7 @@ code without touching the lockfile:
 | Package | Will hold | Depends on |
 |---|---|---|
 | `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, lines, memory, registry |
-| `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11) | core, lines, memory, registry |
+| `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11); the implementations of `oeis.search`, `lmfdb.query` and `findstat.identify` | core, lines, memory, registry |
 | `@seshat/scheduler` | The saturation kernel and the subgoal scheduler (M12) | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, graph, lessons, library, lines, memory, registry |
 | `@seshat/guards` | Guards against hallucination, drift detectors (M6) | core, lines, memory, registry |

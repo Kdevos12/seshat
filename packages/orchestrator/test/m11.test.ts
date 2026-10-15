@@ -4,9 +4,10 @@ import { describe, it } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, readEvents } from "@seshat/core";
 import type { Line, LineRegistry } from "@seshat/lines";
-import { type CounterModel, negationProofs, recognizeStatement } from "@seshat/models";
+import { type CounterModel, negationProofs, oeisFactory, recognizeStatement } from "@seshat/models";
+import { type HostProfile, leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
 import { type Instance, SimulatedDecide } from "../../models/test/simulated-lean.ts";
-import { LINES, runBench, type RunConfig } from "../src/index.ts";
+import { LINES, REPO_ROOT, runBench, type RunConfig, type RunOptions } from "../src/index.ts";
 import { call, check, config, DEMO_FILE, demoAnswer, DemoLean, demoBench, demoRegistry, fauxModels, ofType, proofOf, tempDir } from "./m0-helpers.ts";
 
 /**
@@ -26,6 +27,11 @@ theorem left_proj_comm (M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x 
 /-- An even number is below fifty. False: fifty. -/
 @[category research solved, AMS 11]
 theorem even_below_fifty (n : ℕ) (h : n % 2 = 0) : n < 50 := by
+  sorry
+
+/-- A number is never 2 modulo 7. False: 2. -/
+@[category research solved, AMS 11]
+theorem never_two_mod_seven (n : ℕ) : n % 7 ≠ 2 := by
   sorry
 
 end Magmas
@@ -78,6 +84,7 @@ async function m11Run(options: {
   responses: FauxResponseStep[];
   lines?: LineRegistry;
   config?: Partial<RunConfig>;
+  registry?: RunOptions["registry"];
 }) {
   const { checkout, index } = demoBench(options.file ?? FILE);
   const entry = index.problems.find((p) => p.fullName === options.problem);
@@ -92,10 +99,21 @@ async function m11Run(options: {
     checkout,
     dir,
     models,
-    registry: demoRegistry(options.lean),
+    registry: options.registry ?? demoRegistry(options.lean),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), faux, dir };
+}
+
+/**
+ * The repository's catalog on a host that also offers oeis.search, served by the real implementation
+ * over a `fetch` that answers from the test: the lookup goes through the registry, and no request
+ * leaves this machine.
+ */
+function registryWithOeis(lean: LeanChecker, fetch: typeof globalThis.fetch): RunOptions["registry"] {
+  const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
+  const host: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] }, "oeis.search": { use: ["site"], settings: { site: { minIntervalMs: 0 } } } } };
+  return (journal, blobs) => new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean), oeis: oeisFactory({ fetch }) }, journal, blobs });
 }
 
 type Message = TranscriptContext["messages"][number];
@@ -194,6 +212,47 @@ describe("line M11 in a run", () => {
     assert.deepEqual(ofType(events, "claim.status_changed"), []);
     assert.equal(result.problems[0]?.reason, "provers stopped: 1 line");
     assert.equal(faux.getPendingResponseCount(), 1);
+  });
+
+  it("looks the numbers up in the OEIS through the registry's oeis.search, when its table does not know them", async () => {
+    const lean = new MixedLean((i) => (i.kind === "nat" ? i.value % 7 !== 2 : undefined));
+    const asked: string[] = [];
+    // A made-up sequence for the numbers that are 2 modulo 7; the site has nothing for the others.
+    const site = (async (input: string | URL | Request) => {
+      const url = String(input);
+      asked.push(url);
+      return new Response(
+        JSON.stringify(
+          url.includes("q=2%2C9%2C16%2C23")
+            ? { count: 1, results: [{ number: 999999, data: "2,9,16,23,30,37,44,51,58,65,72,79,86,93,100,107,114", name: "Numbers that are 2 mod 7 (made up for the test).", offset: "1,1" }] }
+            : { count: 0, results: null },
+        ),
+      );
+    }) as typeof fetch;
+    const { result, events, faux } = await m11Run({
+      problem: "Magmas.never_two_mod_seven",
+      lean,
+      responses: [check("exact trivial_proof")],
+      registry: registryWithOeis(lean, site),
+      config: { lines: ["M11"], lineOptions: { M11: { refute: false, stopWhenRefuted: false } } },
+    });
+    // Two searches, the numbers where the statement holds and those where it fails, each a tool run of the capability, from the line.
+    const runs = ofType(events, "tool_run.started").filter((t) => t.data.capability === "oeis.search");
+    assert.deepEqual(runs.map((t) => [t.actor, t.data.implementation]), [["line:M11", "site"], ["line:M11", "site"]]);
+    assert.equal(asked.length, 2);
+    assert.match(asked[1] ?? "", /^https:\/\/oeis\.org\/search\?q=2%2C9%2C16%2C23%2C30%2C37%2C44%2C51%2C58%2C65%2C72%2C79%2C86%2C93%2C100&fmt=json$/);
+    assert.deepEqual(ofType(events, "tool_run.finished").filter((t) => runs.some((r) => r.data.toolRunId === t.data.toolRunId)).map((t) => [t.data.outcome, t.data.summary]), [["ok", { count: 0 }], ["ok", { count: 1 }]]);
+
+    const identifications = ofType(events, "node.recorded").filter((n) => n.data.kind === "identification");
+    assert.equal(identifications.length, 1);
+    const found = identifications[0]?.data.data as { subject: string; matches: Array<{ id: string; source: string; offset: number; start: number | null; next: string[] }> };
+    assert.equal(found.subject, "the numbers from 0 to 100 where the statement fails");
+    assert.deepEqual(found.matches.map((m) => [m.id, m.source, m.offset, m.start]), [["A999999", "oeis", 1, 1]]);
+    assert.deepEqual(found.matches[0]?.next, ["107", "114"]);
+    // The line proposed no refutation and left the provers to work: the demo Lean accepts their file.
+    assert.deepEqual(ofType(events, "validation.finished").filter((v) => v.data.negation === true), []);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    assert.equal(result.problems[0]?.outcome, "candidate");
   });
 
   it("goes on with the provers when Lean does not accept the negation, tells them so, compares the claims another line recorded, and tests a lemma on request", async () => {

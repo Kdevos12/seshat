@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { BlobStore, Journal, type LeanSnippet } from "@seshat/core";
 import type { Line, ProblemContext, SessionContext, ValidateRequest, ValidateResult } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
-import type { Registry } from "@seshat/registry";
+import { CapabilityError, type Registry } from "@seshat/registry";
 import {
   createM11,
   describeFindings,
@@ -39,11 +39,27 @@ function openMemory(): MemoryStore {
   return new MemoryStore({ journal: Journal.open(dir, "run_1"), blobs: new BlobStore(join(dir, "blobs")) }).withActor("line:M11");
 }
 
-/** A registry whose `lean.check` is the simulated `decide`: enough for `RegistryLeanChecker`. */
-function registryOf(lean: SimulatedDecide): Registry {
+/** A call of a capability other than `lean.check`. */
+interface RegistryCall {
+  name: string;
+  input: unknown;
+  options: unknown;
+}
+
+/**
+ * A registry whose `lean.check` is the simulated `decide`: enough for `RegistryLeanChecker`. The other
+ * capabilities it offers are the ones given, by name; a host that offers none says `unavailable`.
+ */
+function registryOf(lean: SimulatedDecide, others: Readonly<Record<string, (input: unknown) => unknown>> = {}, calls: RegistryCall[] = []): Registry {
   return {
     hash: "0".repeat(64),
-    invoke: async (_name: string, input: unknown) => ({ output: { results: await lean.check((input as { snippets: LeanSnippet[] }).snippets) } }),
+    invoke: async (name: string, input: unknown, options: unknown) => {
+      if (name === "lean.check") return { output: { results: await lean.check((input as { snippets: LeanSnippet[] }).snippets) } };
+      calls.push({ name, input, options });
+      const answer = others[name];
+      if (answer === undefined) throw new CapabilityError("unavailable", name, `host test does not offer ${name}`);
+      return { output: answer(input) };
+    },
   } as unknown as Registry;
 }
 
@@ -54,6 +70,8 @@ interface Setup {
   options?: Partial<M11Options>;
   validate?: (request: ValidateRequest, calls: number) => ValidateResult;
   lean?: SimulatedDecide;
+  /** Capabilities other than `lean.check` that the host offers, by name. */
+  capabilities?: Readonly<Record<string, (input: unknown) => unknown>>;
   memory?: MemoryStore;
   statement?: string;
 }
@@ -63,6 +81,7 @@ async function problemOf(statement: string, setup: Setup = {}) {
   const { claimId } = await memory.ensureClaim({ statement, origin: "bench:test" });
   const logs: string[] = [];
   const requests: ValidateRequest[] = [];
+  const calls: RegistryCall[] = [];
   const options = { ...M11_DEFAULTS, ...setup.options };
   const problem = {
     line: "M11",
@@ -72,7 +91,7 @@ async function problemOf(statement: string, setup: Setup = {}) {
     target: { theorem: "T.t", statement, source: "", sketch: { prefix: "import Mathlib\n" } },
     domain: [],
     memory,
-    registry: registryOf(setup.lean ?? new SimulatedDecide({ truth: () => true })),
+    registry: registryOf(setup.lean ?? new SimulatedDecide({ truth: () => true }), setup.capabilities, calls),
     validate: async (request: ValidateRequest) => {
       requests.push(request);
       return (setup.validate ?? (() => valid))(request, requests.length);
@@ -81,7 +100,7 @@ async function problemOf(statement: string, setup: Setup = {}) {
     signal: new AbortController().signal,
     options,
   } as unknown as ProblemContext;
-  return { problem, memory, claimId, logs, requests };
+  return { problem, memory, claimId, logs, requests, calls };
 }
 
 const hook = <K extends keyof Line["hooks"]>(line: Line, name: K): NonNullable<Line["hooks"][K]> => {
@@ -360,6 +379,46 @@ describe("beforeProvers on a statement about a number", () => {
     const alone = await problemOf("(n : ℕ) : n % 7 = 2", { options: { maxNumber: 40, refute: false }, lean: sevenths });
     await hook(M11, "beforeProvers")(alone.problem);
     assert.deepEqual(alone.memory.nodes("identification"), []);
+  });
+
+  it("asks the registry's oeis.search for what the table does not know, and goes on without it when the host does not offer it", async () => {
+    const sevenths = new SimulatedDecide({ truth: (i) => (i.kind === "nat" ? i.value % 7 === 2 : undefined) });
+    // The answer of the capability: a made-up sequence for the numbers that are 2 modulo 7, nothing for the others.
+    const oeisSearch = (input: unknown) =>
+      (input as { terms: string[] }).terms.join(",").startsWith("2,9,16")
+        ? {
+            count: 1,
+            url: "https://oeis.org/search?q=2%2C9%2C16&fmt=json",
+            results: [
+              { id: "A999999", name: "Numbers that are 2 mod 7, with 0 in front (made up for the test).", offset: 1, terms: ["0", "2", "9", "16", "23", "30", "37", "44", "51"], keywords: ["nonn"], url: "https://oeis.org/A999999" },
+            ],
+          }
+        : { count: 0, url: "https://oeis.org/search?q=0%2C1%2C3&fmt=json", results: [] };
+    const offered = await problemOf("(n : ℕ) : n % 7 = 2", { options: { maxNumber: 40, refute: false }, lean: sevenths, capabilities: { "oeis.search": oeisSearch } });
+    await hook(M11, "beforeProvers")(offered.problem);
+    assert.equal(offered.calls.length, 2, "the numbers where the statement holds, and those where it fails");
+    assert.deepEqual(offered.calls[0]?.input, { terms: ["2", "9", "16", "23", "30", "37"] });
+    assert.equal((offered.calls[0]?.options as { actor: string }).actor, "line:M11");
+    const nodes = offered.memory.nodes("identification", { claimId: offered.claimId });
+    assert.equal(nodes.length, 1);
+    const data = nodes[0]?.data as { matches: Array<{ id: string; source: string; start: number | null; next: string[] }> };
+    assert.deepEqual(data.matches.map((m) => [m.id, m.source, m.start]), [["A999999", "oeis", 2]]);
+
+    // The table's sequences are not asked for again.
+    const known = await problemOf(EVEN, { options: { maxNumber: 40, refute: false }, lean: evens, capabilities: { "oeis.search": oeisSearch } });
+    await hook(M11, "beforeProvers")(known.problem);
+    assert.deepEqual(known.calls, []);
+
+    // A host that does not offer the capability: the lookup is asked for, fails as a lookup does, and the table has nothing.
+    const absent = await problemOf("(n : ℕ) : n % 7 = 2", { options: { maxNumber: 40, refute: false }, lean: sevenths });
+    await hook(M11, "beforeProvers")(absent.problem);
+    assert.equal(absent.calls.length, 2);
+    assert.deepEqual(absent.memory.nodes("identification"), []);
+    assert.ok(
+      absent.logs.some((l) => l.includes("the OEIS did not answer (oeis.search: host test does not offer oeis.search)")),
+      absent.logs.join("\n"),
+    );
+    assert.equal(fingerprintsOf(absent.memory, absent.claimId).length, 1, "the fingerprint is recorded all the same");
   });
 
   it("does not look up a statement that holds for every number, for too few, or from some number on", async () => {

@@ -33,7 +33,10 @@ flowchart TB
     sage["compute_sage<br/>SageMath"]:::built
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
-    moretools["ATPs, SAT/SMT, OEIS,<br/>Mathlib search,<br/>counterexample search"]:::planned
+    oeis["oeis_search<br/>OEIS"]:::wait
+    lmfdb["lmfdb_query<br/>LMFDB"]:::wait
+    findstat["findstat_identify<br/>FindStat"]:::wait
+    moretools["ATPs, SAT/SMT,<br/>Mathlib search,<br/>counterexample search"]:::planned
   end
 
   subgraph JUDGE["Judge: Lean"]
@@ -58,6 +61,7 @@ flowchart TB
   bench -->|"problems, when<br/>M11 is on"| m11
   m11 -->|"briefing, or stops<br/>the provers"| provers
   m11 -->|"decide files"| leancheck
+  m11 -->|"sequences"| oeis
   m11 -->|"negation proofs"| fast
   m11 -->|"nodes, computed edges"| journal
   fleet -.->|"who works on what"| provers
@@ -66,6 +70,7 @@ flowchart TB
   provers -.-> moretools
   leanmeta -.->|"statement ids"| kg
   provers --> leangoals
+  provers --> oeis & lmfdb & findstat
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
   fast -.->|candidate| certifier
@@ -88,9 +93,10 @@ written.
 
 Today one loop runs, tested with a simulated model and a simulated Lean: each prover edits a Lean
 sketch and checks it with `lean_check`, and the first file that passes the fast check makes the
-statement `computed`, a candidate. SageMath is the only classical tool plugged in. Every tool call
-goes through the capability registry, which writes it to the journal, with its inputs and outputs
-as blobs.
+statement `computed`, a candidate. SageMath is the only classical tool for computing that is plugged
+in; the OEIS, the LMFDB and FindStat can be asked too ([documentation/models.md](documentation/models.md#the-services-as-capabilities)).
+Every tool call goes through the capability registry, which writes it to the journal, with its inputs
+and outputs as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are

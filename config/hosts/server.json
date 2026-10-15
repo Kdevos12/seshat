@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -35,6 +35,30 @@
     },
     "compute.sage": {
       "use": ["docker"]
+    },
+    "oeis.search": {
+      "use": ["site"],
+      "settings": {
+        "site": {
+          "baseUrl": "${env:OEIS_URL:-https://oeis.org}"
+        }
+      }
+    },
+    "lmfdb.query": {
+      "use": ["site"],
+      "settings": {
+        "site": {
+          "baseUrl": "${env:LMFDB_URL:-https://www.lmfdb.org}"
+        }
+      }
+    },
+    "findstat.identify": {
+      "use": ["site"],
+      "settings": {
+        "site": {
+          "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"
+        }
+      }
     }
   }
 }

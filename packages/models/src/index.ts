@@ -18,4 +18,5 @@ export * from "./random.ts";
 export * from "./refutation.ts";
 export * from "./sage.ts";
 export * from "./sandbox.ts";
+export * from "./services.ts";
 export * from "./statement.ts";
