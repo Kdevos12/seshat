@@ -87,17 +87,20 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `briefing(session)` | Before each session, after `beforeSession`. | Give a titled section for the session's opening message, after the notes, the file and the last check. |
 | `tools(session)` | Before each session. | Give the prover extra tools, as neutral specs (name, description, JSON schema of the arguments, `run(args, signal)` returning text) that the orchestrator adapts to pi tools. A failing call goes back to the model as a tool error. Names are lowercase letters, digits and `_`, and may not clash. |
 | `contextPacket(session, request)` | Before each model request of a session, the first one and the wrap-up included. | Return the whole context of the request (M4): it replaces every message after the system prompt and the tool declarations. Undefined leaves the request as it is. At most one enabled line may give this hook. |
+| `beforeCheck(session, proposal)` | Before each `lean_check` runs. | Reject the call, with a reason the model reads as a tool error. The file is not sent to Lean, and the call is no check: no validation, not counted, its declared strategy not recorded. The first line in this order that rejects is taken. |
 | `afterCheck(session, check)` | After each `lean_check` of a session. | Stop the session with a reason (a drift detector). The attempt ends with `stoppedBy: "line:<id>"`, and the model is not asked for notes. A check that makes the candidate still ends the session as `solved`. |
-| `afterAttempt(problem, attempt)` | After each session, before `attempt.finished`. | Return the attempt's classified strategy, the premises its proof uses, and a typed summary of its failure: they go into `attempt.finished`, a later line's fields winning. Not called for a session the harness failed. |
+| `reviewBriefing(session, sections)` | After the lines' `briefing`, before the session starts. | Drop or reword the sections the session gets, never add one. Each line gets the list as the lines before it left it; undefined keeps it. |
+| `afterAttempt(problem, attempt)` | After each session, before `attempt.finished`. | Return the attempt's classified strategy, the premises its proof uses, a typed summary of its failure, and the notes the prover's next session starts from: they go into `attempt.finished` (the notes into the prover), a later line's fields winning. The journal keeps the notes the model wrote; an empty string leaves the next session with none. Not called for a session the harness failed. |
+| `afterProver(problem, end)` | After a prover has ended: its sessions are used, it solved the problem, it ran out of budget, was stopped, kept failing, or a line stopped it. | Learn how it ended (`end.stop`). Not called when the harness failed in the prover, which ends the problem. |
 | `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
 a proof already found stays found (`candidate` or `proved`, with the failure in the reason, as when
-certification fails). In `beforeSession`, `briefing`, `tools` or `afterAttempt`, the prover stops,
-the problem's other provers with it, and the problem ends as `error` unless a proof was found. In
-`contextPacket` or `afterCheck`, the session ends with an error, and the prover goes on as after any
-failed session.
+certification fails). In `beforeSession`, `briefing`, `reviewBriefing`, `tools`, `afterAttempt` or
+`afterProver`, the prover stops, the problem's other provers with it, and the problem ends as `error`
+unless a proof was found. In `contextPacket`, `beforeCheck` or `afterCheck`, the session ends with an
+error, and the prover goes on as after any failed session.
 
 ## What a hook gets
 
@@ -201,7 +204,8 @@ attempt; a run with no line that records nothing of the lines; a problem settled
 proof of another claim and of the problem's), with the provers left idle; unknown, planned and
 unmet lines refused before anything is written; a failing hook; sessions skipped and stopped; a
 line's model call charged to the problem; the context packet of each request, and its failure.
-`cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
+`packages/orchestrator/test/line-gates.test.ts` covers `beforeCheck` (a rejected call is no check),
+`reviewBriefing`, the notes a line gives and `afterProver`. `cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
 also checks that only one line gives the statement identity, and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 
