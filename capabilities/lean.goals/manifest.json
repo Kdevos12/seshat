@@ -155,7 +155,7 @@
       "version": "0.3.13+lean-v4.27.0+fc-bench-v1",
       "kind": "inproc",
       "factory": "pantograph",
-      "description": "Pantograph's REPL v0.3.13 (Lean v4.27.0) as a child process, started with the modules of its settings in the environment of the bench's formal-conjectures checkout. Not run against a real Pantograph yet.",
+      "description": "Pantograph's REPL v0.3.13 (Lean v4.27.0) as a child process, started with the modules of its settings in the environment of the bench's formal-conjectures checkout. Not sandboxed: the model's Lean code runs as the harness's user (documentation/lean-meta.md#leangoals). Not run against a real Pantograph yet.",
       "environment": {
         "lean": "v4.27.0",
         "pantograph": "v0.3.13",

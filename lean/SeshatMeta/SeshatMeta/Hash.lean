@@ -171,15 +171,25 @@ def simpOnly (names : Array Syntax) (e : Expr) : TermElabM Expr := do
   let (result, _) ← Lean.Meta.simp e context
   instantiateMVars result.expr
 
-syntax (name := seshatHash) "#seshat_hash " declSig (" using " "[" ident,* "]")? : command
+/- `declSig` is `Lean.Parser.Command.declSig`, which the `open`s above do not reach: the parsers
+are named in full, and the rules open its namespace. The form with `using` is a rule of its own
+rather than an optional part, so that its pattern needs no optional splice. -/
 
+syntax (name := seshatHash) "#seshat_hash " Lean.Parser.Command.declSig : command
+
+syntax (name := seshatHashUsing) "#seshat_hash " Lean.Parser.Command.declSig
+  " using " "[" ident,* "]" : command
+
+open Lean.Parser.Command in
 elab_rules : command
-  | `(#seshat_hash $sig:declSig $[using [$names,*]]?) => Command.liftTermElabM do
+  | `(#seshat_hash $sig:declSig) => Command.liftTermElabM do
+    answer [("id", Json.str (← statementId (← elabStatement sig)))]
+
+open Lean.Parser.Command in
+elab_rules : command
+  | `(#seshat_hash $sig:declSig using [$names,*]) => Command.liftTermElabM do
     let statement ← elabStatement sig
-    let lemmas := match names with
-      | some names => names.getElems.map (·.raw)
-      | none => #[]
-    let statement ← simpOnly lemmas statement
+    let statement ← simpOnly (names.getElems.map (·.raw)) statement
     answer [("id", Json.str (← statementId statement))]
 
 end SeshatMeta

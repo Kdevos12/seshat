@@ -249,6 +249,9 @@ Proof goals one tactic at a time, through Pantograph's REPL: `start` gives the g
 states from 0, and releasing the scope deletes them. Its implementation `pantograph` (factory
 `pantograph`) runs the REPL as a child process. Its contract has 6 cases, not run against Pantograph
 yet; [lean-meta.md](lean-meta.md#leangoals) covers the operations, the process and the settings.
+It is not sandboxed: the model's Lean code runs as the harness's user, with that user's files, so
+a run gives it to the provers only when asked (`--tool lean.goals`), on a machine where that is
+acceptable, until an implementation in a container exists.
 
 ## `compute.sage`
 
