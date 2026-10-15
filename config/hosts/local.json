@@ -11,6 +11,27 @@
         }
       }
     },
+    "lean.meta": {
+      "use": ["kimina"],
+      "settings": {
+        "kimina": {
+          "url": "${env:LEAN_SERVER_API_URL:-http://localhost:8000}",
+          "apiKey": "${env:LEAN_SERVER_API_KEY:-}"
+        }
+      }
+    },
+    "lean.goals": {
+      "use": ["pantograph"],
+      "settings": {
+        "pantograph": {
+          "command": "${env:PANTOGRAPH_REPL:-repl}",
+          "cwd": "${env:LEAN_PROJECT_DIR:-}",
+          "env": {
+            "LEAN_PATH": "${env:LEAN_PATH:-}"
+          }
+        }
+      }
+    },
     "compute.sage": {
       "use": ["docker", "local"],
       "settings": {

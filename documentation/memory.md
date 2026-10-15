@@ -54,11 +54,12 @@ without comments and with whitespace collapsed (`st0_`), which only catches text
 header with the statement, normalized the same way, so the same text under another header is
 another claim, which keeps its own header; a statement with no header, or one whose header has
 nothing in it, has the id of its text alone. So distinct statements never share a claim, and fewer
-are merged than the elaborated statement will merge. A Lean-backed identity (`st1_`, the hash of
-the elaborated statement) is planned, and reads the header as Lean does; the store takes any
-identity without change. A run uses one identity, since ids of different versions never compare
-equal. A line gives the run its identity (`Line.identity`, [lines.md](lines.md#a-line)); M1 gives
-the text one.
+are merged than the elaborated statement will merge. `LeanIdentity` (`@seshat/lean-meta`,
+[lean-meta.md](lean-meta.md#leanidentity)) is the Lean-backed identity: `st1_`, the hash of the
+elaborated statement, read under its header. The store takes any identity without change. A run
+uses one identity, since ids of different versions never compare equal. A line gives the run its
+identity (`Line.identity`, [lines.md](lines.md#a-line)); M1 gives the text one, and no line gives
+`LeanIdentity` yet.
 
 In a run with lines the orchestrator makes each problem's claim with `ensureClaim` as well (origin
 `bench:<id>`, the problem's domains, and the prefix of the problem's file as `header`), so every
@@ -199,7 +200,7 @@ back.
 
 ## Not done yet
 
-- The Lean-backed statement identity, and the dedup of near-equal statements (plan §3.1).
+- The dedup of near-equal statements (plan §3.1). `LeanIdentity` exists, but no run uses it yet.
 - Propagation over `lean_checked` edges and revocation (plan §3.2): the edges are stored, nothing
   follows them yet except `equivalents`.
 - Indexes beyond the projection's tables: embeddings, fingerprints, the subsumption index.

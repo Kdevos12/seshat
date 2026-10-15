@@ -1,0 +1,229 @@
+{
+  "capability": "lean.meta",
+  "cases": [
+    {
+      "name": "the id of True",
+      "purpose": "The canonical text of True is (C True) and the id is the FNV-1a hash of that text, as documentation/lean-meta.md says; the first call also shows that the server's project has SeshatMeta.",
+      "input": {
+        "op": "hash",
+        "statement": ": True",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "id",
+          "equals": "st1_d76c7ae2a56599db06b0896a06e93c37"
+        }
+      ]
+    },
+    {
+      "name": "bound names do not change the id",
+      "purpose": "(m : Nat) : m = m has the canonical text (P (C Nat) (A (C Eq (s 0)) (C Nat) #0 #0)), the same as (n : ℕ) : n = n, the manifest's example.",
+      "input": {
+        "op": "hash",
+        "statement": "(m : Nat) : m = m",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "id",
+          "equals": "st1_d00bd85fedab3a395168758d0a5ca620"
+        }
+      ]
+    },
+    {
+      "name": "binder kinds and instance paths do not change the id",
+      "purpose": "An implicit binder is written like an explicit one, and the instance arguments of HAdd.hAdd and OfNat.ofNat, closed, are written _: the canonical text is (P (C Nat) (A (C Eq (s 0)) (C Nat) (A (C HAdd.hAdd 0 0 0) (C Nat) (C Nat) (C Nat) _ #0 (A (C OfNat.ofNat 0) (C Nat) (N 0) _)) #0)).",
+      "input": {
+        "op": "hash",
+        "statement": "{n : ℕ} : n + 0 = n",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "id",
+          "equals": "st1_c78985dfb79d4d8f3f1a904f7391d411"
+        }
+      ]
+    },
+    {
+      "name": "a statement about the header's definitions",
+      "purpose": "The header's own definitions elaborate before the command, after the imports and import SeshatMeta.",
+      "input": {
+        "op": "hash",
+        "statement": "(n : ℕ) : Harness.double n = 2 * n",
+        "header": "import Mathlib\n\nnamespace Harness\n\ndef double (n : ℕ) : ℕ := n + n\n\nend Harness",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "id",
+          "matches": "^st1_[0-9a-f]{32}$"
+        }
+      ]
+    },
+    {
+      "name": "a statement Lean refuses",
+      "purpose": "An elaboration error fails the call with Lean's message, and no id.",
+      "input": {
+        "op": "hash",
+        "statement": "(n : ℕ) : notDefinedAnywhere n",
+        "timeoutSec": 300
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "notDefinedAnywhere"
+      }
+    },
+    {
+      "name": "definitionally equal statements",
+      "purpose": "n + 0 reduces to n, so isDefEq says true.",
+      "input": {
+        "op": "defeq",
+        "statement": "(n : ℕ) : n + 0 = n",
+        "other": "(n : ℕ) : n = n",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "defeq",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "name": "different statements",
+      "purpose": "isDefEq says false when the statements differ.",
+      "input": {
+        "op": "defeq",
+        "statement": ": (1 : ℕ) = 1",
+        "other": ": (1 : ℕ) = 2",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "defeq",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "name": "the premises of a proof",
+      "purpose": "The theorems a proof term uses, and only theorems.",
+      "input": {
+        "op": "premises",
+        "code": "import Mathlib\n\ntheorem Harness.swap (a b : ℕ) : a + b = b + a := Nat.add_comm a b\n",
+        "declaration": "Harness.swap",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "premises",
+          "equals": [
+            "Nat.add_comm"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the structure profile of a statement",
+      "purpose": "The class of an instance binder, the classes of instance arguments, and the instances used.",
+      "input": {
+        "op": "profile",
+        "statement": "(G : Type) [Group G] (a : G) : a * a⁻¹ = 1",
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "classes",
+          "some": [
+            {
+              "path": "",
+              "equals": "Group"
+            }
+          ]
+        },
+        {
+          "path": "classes",
+          "some": [
+            {
+              "path": "",
+              "equals": "HMul"
+            }
+          ]
+        },
+        {
+          "path": "instances",
+          "some": [
+            {
+              "path": "",
+              "equals": "instHMul"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a fact a statement is an instance of",
+      "purpose": "The discrimination tree finds the commutativity of addition for 2 + 3 = 3 + 2, unification confirms it, and the fact about multiplication is not a candidate.",
+      "input": {
+        "op": "instances",
+        "statement": ": 2 + 3 = 3 + 2",
+        "facts": [
+          {
+            "name": "mul_one_nat",
+            "statement": "(a : ℕ) : a * 1 = a"
+          },
+          {
+            "name": "add_comm_nat",
+            "statement": "(a b : ℕ) : a + b = b + a"
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "instanceOf",
+          "equals": [
+            "add_comm_nat"
+          ]
+        },
+        {
+          "path": "covers",
+          "equals": []
+        }
+      ]
+    },
+    {
+      "name": "the statements a fact covers",
+      "purpose": "The other direction: a general statement covers its instances, and a hypothesis of the general one is closed by the instance's own.",
+      "input": {
+        "op": "instances",
+        "statement": "(a b : ℕ) (h : a ≤ b) : a < b + 1",
+        "facts": [
+          {
+            "name": "special",
+            "statement": "(h : 2 ≤ 5) : 2 < 5 + 1"
+          },
+          {
+            "name": "unrelated",
+            "statement": ": 2 < 7"
+          }
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "covers",
+          "equals": [
+            "special"
+          ]
+        },
+        {
+          "path": "instanceOf",
+          "equals": []
+        }
+      ]
+    }
+  ]
+}

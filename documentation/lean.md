@@ -100,6 +100,10 @@ The prebuilt image `projectnumina/kimina-lean-server:2.0.0` targets Lean v4.26.0
 Mathlib project, so it does not fit as is. The same build works on a workstation and on the
 dedicated server; only `LEAN_SERVER_API_URL` changes in the harness.
 
+The Lean meta tool (`lean.meta`) runs on the same server, and needs the library `lean/SeshatMeta`
+built in the project ([lean-meta.md](lean-meta.md#deployment)). That library has never been
+compiled. `lean.goals` runs Pantograph's REPL on the harness's machine, in the same project.
+
 ## The certifier (to write)
 
 A small Lean program, run in a fresh process for each candidate:
@@ -133,3 +137,4 @@ of `lean.check` checks each of them against a server
    `unknown identifier`, `type mismatch`, `linarith failed`...), which classify a failed check
    ([m1-identity-memory.md](m1-identity-memory.md#failure-classes)); a message not matched is
    `other`.
+8. The Lean meta tool, from building SeshatMeta on: [lean-meta.md](lean-meta.md#to-verify-against-lean).
