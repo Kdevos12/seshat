@@ -192,6 +192,36 @@ describe("realizing what the graph derives", () => {
     w.close();
   });
 
+  it("withdraws only the claims its own state follows: what another problem composed is not its to judge", async () => {
+    const w = world();
+    // Problem A composed the proof of `base` from `strong`: `base` is a candidate through it.
+    const { base, strong, state: stateA, headerOf } = await strengthening(w);
+    await realize({ memory: w.memory, state: stateA, validate: w.validate, headerOf });
+    assert.equal(w.memory.claim(base)?.status, "computed");
+
+    // Problem B works on a claim elsewhere in the graph. Its state does not reach `base`, so it does
+    // not hold it, and B's propagation (realize, then revoke, as the line does) must leave it alone.
+    const other = await claim(w, ": POther");
+    const stateB = new GraphState(w.memory, [other]);
+    stateB.sync();
+    assert.equal(stateB.claims().includes(base), false);
+    assert.equal(stateB.candidate.holds(P(base)), false);
+    await realize({ memory: w.memory, state: stateB, validate: w.validate, headerOf });
+    stateB.sync();
+    assert.deepEqual(revokeUnsupported(w.memory, stateB), []);
+    assert.equal(w.memory.claim(base)?.status, "computed", "problem A's claim is untouched");
+
+    // A state that reaches the claim through an edge judges it, seed or not: here one that starts at the premise.
+    const stateC = new GraphState(w.memory, [strong]);
+    w.memory.retractClaim(strong, { reason: "a result it used was found wrong" });
+    stateB.sync();
+    stateC.sync();
+    assert.deepEqual(revokeUnsupported(w.memory, stateB), [], "B still leaves it alone");
+    assert.deepEqual(revokeUnsupported(w.memory, stateC), [base]);
+    assert.equal(w.memory.claim(base)?.status, "open");
+    w.close();
+  });
+
   it("composes a refutation from the proof of the negation, which changes no status", async () => {
     const w = world();
     const base = await claim(w, BASE);
