@@ -47,6 +47,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   labels, failure classes, the "already tried" section, the redundant-attempts metric.
 - [guards.md](guards.md): the M6 line: neutral framing, resolved citations, no raw error text,
   anchored revisions, the drift detectors, and the `drift` nodes they write.
+- [fleet.md](fleet.md): the fleet line: posteriors per strategy and model, Thompson sampling, adaptive
+  width, escalation, and the `allocation` nodes.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
   directory, `harness run` and `harness report`.
