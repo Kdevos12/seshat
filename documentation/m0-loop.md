@@ -361,7 +361,9 @@ reached; certification, accepted and rejected; and a run aborted between problem
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line
 submits for other claims (certified after `afterProblem`, rejected, not started once the run is
-stopped), and the reference file the certifier is given.
+stopped), the reference file the certifier is given, and runs with M1, M6 and the fleet on (the
+hooks of the sessions and provers all run before the certifier is asked and `afterProblem` after
+it, a veto of M6 leaves nothing to certify, and the call belongs to no attempt).
 `tools.test.ts` gives the provers a simulated SageMath server (`test/fixtures/fake-sage.ts`, over
 an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
 errors as the model reads them; the tool's description and the prompt's section; the run's
