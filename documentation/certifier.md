@@ -53,21 +53,41 @@ bench (`projectDir`, the working directory of every call):
    certifier is unavailable with Lean's message. `pnpm harness health lean.certify` runs the same
    check. It is shared by the certifications that wait for it, and a failure is not kept: the next
    call looks again;
-2. `lake env lean -o candidate.olean candidate.lean`, in a work directory of its own;
+2. `lake env lean -o candidate.olean candidate.lean`, in a directory of its own;
 3. `lake env lean -o reference.olean reference.lean`, the reference compiled again for each
    certification, after the candidate's process has ended, whether or not the candidate compiled: a
    candidate is rejected for its errors only when the reference compiles, and when neither does the
    call fails (`failed`, "neither the candidate nor the reference compiles") instead of recording
    a rejection;
-4. `lake env lean --run lean/SeshatCertify/Main.lean request.json`, which prints one line of JSON.
+4. `lake env lean --run Main.lean request.json`, with the program's copy and the request in the
+   directory of the replay, which prints one line of JSON.
 
 Each call is a process group of its own, killed as a whole at the time limit or on abort (the
 version check and the probe too: a certification that is aborted does not wait for them, and when no
 certification waits for the check any more its process is killed), and killed if it leaves a process
-holding its output open. The child's environment is `PATH`, `HOME` and the
-few variables the registry passes to every server (`serverEnv`), plus the settings' `env`: no
-secret of the harness reaches it. Output is kept up to 1 MiB per stream. The work directory is
-removed when the certification ends.
+holding its output open. Output is kept up to 1 MiB per stream.
+
+**The environment** of every call is exactly this, and nothing else of the harness's environment
+reaches it: `PATH` (and `SYSTEMROOT`, `WINDIR`, `COMSPEC` and `PATHEXT` where Windows has them);
+`HOME` (`USERPROFILE`) unless the settings' `env` gives an `ELAN_HOME`, because elan looks for its
+toolchains in `$HOME/.elan` then; `TMPDIR` (`TEMP`, `TMP` on Windows), set to the call's own
+directory; and the settings' `env`, which the shipped profiles use for `ELAN_HOME`. In particular
+there is no `XDG_RUNTIME_DIR`, no `DBUS_SESSION_BUS_ADDRESS`, no `DOCKER_*`, no `SSH_AUTH_SOCK`, no
+key or token, and no `LD_PRELOAD`. A sandbox command that needs one of them (`systemd-run --user`
+needs `XDG_RUNTIME_DIR`) gets it by naming it in `env`, which gives it to Lean as well unless the
+sandbox clears the environment.
+
+**The directories.** A certification works in a directory made for it (`mkdtemp` under `workDir`,
+mode 0700, removed at the end) and every call has a directory of its own inside it, made empty just
+before the call and the only thing a sandbox needs to leave writable (`{work}`): `candidate-…` for
+the candidate's compile, `reference-…` for the reference's, `replay-…` for the program. The version
+check and the probe use one outside it. So the candidate's compile cannot write where the reference's
+directory or `request.json` are made later (a directory it plants, or a named pipe at `request.json`
+that would make a write wait for ever), and the replay reads nothing but what the harness put in
+its directory after the compiles had ended: a copy of the program, as it was read when the
+certifier was made (a compile that rewrites `Main.lean` changes nothing for later replays), copies
+of the two object files, and the request. An object file that is not a regular file (a link, a pipe)
+is a failure of the call.
 
 There is one time limit for the whole certification: the call's `timeoutSec` (1 to 3600), or the
 implementation's setting `timeoutSec` (default 600). The registry allows the call that long plus 15
@@ -113,25 +133,91 @@ not depend on.
 
 The compile of step 2 runs the candidate's code: a proof is elaborated by Lean, and a tactic block
 can run any meta program. The structural checks of the validator refuse the usual ways to do so
-([validator.md](validator.md#structural-checks)), but the certifier does not rely on them. The
-compile of step 3 runs the code of the reference, which for a claim that is not a problem's is
-built from a header a model wrote. Both run in a fresh process, and their results are used only as
-data: the program that decides runs afterwards, in a process that has loaded no code of theirs, and
-the kernel refuses an object file that is not well typed. The one thing a compile can do that this
-does not stop is change files: the program, the project, the toolchain, or the other object file.
-A host that runs untrusted models therefore gives the certifier a `sandbox`.
+([validator.md](validator.md#structural-checks)), but they read only the regions a prover edits,
+not a claim's header or statement, and the certifier does not rely on them. The compile of step 3
+runs the code of the reference, which for a claim that is not a problem's is built from a header a
+model wrote. Both run in a fresh process, and their results are used only as data: the program
+that decides runs afterwards, in a process that has loaded no code of theirs, and the kernel
+refuses an object file that is not well typed. The one thing a compile can do that this does not
+stop is change files and use what the user can reach: the program, the project, the toolchain, the
+`.olean` files the replay trusts (the imports are not replayed), the user's own files, the network.
+Without a sandbox, a candidate can therefore make later candidates `certified`.
 
-`sandbox` is a command put before every call of `lake`, with `{work}` (the directory of the
-certification, the only place the call may write) and `{project}` (the Lean project) replaced. An
-example for bubblewrap, not tried here:
+**So the certifier fails closed.** `lean.certify` is unavailable, with this reason, in `pnpm harness
+health lean.certify` and in the run (below), unless the host profile gives the implementation
+either:
 
-```json
-"sandbox": ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-            "--bind", "{work}", "{work}", "--unshare-net", "--unshare-pid", "--die-with-parent", "--"]
-```
+- a `sandbox` command, put before every call of `lake`, with `{work}` (the directory of the call,
+  which it may write) and `{project}` (the Lean project) replaced; or
+- `"unsandboxed": true`, the user's explicit choice to run the code of the candidates as the
+  harness's user, with that user's files and network, as Pantograph's does
+  ([lean-meta.md](lean-meta.md#leangoals)). A host profile you write for your own machine may say
+  so. The shipped ones do not: `local` is unavailable until you add one of the two, and `server`
+  until you add a sandbox, since the host `server` refuses `unsandboxed` whatever its profile says.
 
-Without one, the code runs as the harness's user, with that user's files, as Pantograph's does
-([lean-meta.md](lean-meta.md#leangoals)). The default host profiles give none.
+**What the harness enforces, and what only a sandbox can.** The harness enforces: a time limit per
+certification, with the process group killed; a cap of 1 MiB on each output stream; the minimal
+environment above; a directory of its own for every call, and a program that a compile cannot
+rewrite for later replays. It does not enforce, and without a sandbox nothing does: a limit on
+memory, on disk or on processes (a compile that allocates without end takes the machine's memory
+until the time limit, and the out-of-memory killer may choose another victim), which files the
+process can read or write outside `{work}`, and which network it can reach. A sandbox command is
+how a host limits them. Whether `lake env` works with a read-only project, and whether the toolchain
+is reachable from inside a sandbox, depends on the sandbox and was not tried.
+
+**Recipes, none of them tried here** (no Lean and no sandbox tool in the environment this was written
+in): all three put the project read-only, leave `{work}` as the only place to write, and have no
+network. Check each with `pnpm harness health lean.certify`, which runs the version check and the
+probe through it, then a certification of a known proof.
+
+1. Bubblewrap, with a cap on address space by `prlimit`. `--as` counts the mapped `.olean` files too
+   (Mathlib's are several GB), so give it room, lower it after measuring a certification, and treat
+   it as a cap on a runaway allocation, not a precise memory limit:
+
+   ```json
+   "sandbox": ["prlimit", "--as=68719476736", "--cpu=1800", "--",
+               "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+               "--bind", "{work}", "{work}", "--unshare-net", "--unshare-pid", "--die-with-parent", "--"]
+   ```
+
+   `--tmpfs /tmp` comes before `--bind {work} {work}` so that a `workDir` under `/tmp` stays
+   reachable. There is no `--nproc`: that limit counts all the user's processes, not the sandbox's;
+   the next two limit the number of tasks of the sandbox itself. The toolchain (`ELAN_HOME`, `~/.elan`) and the project are readable because the root is
+   bound read-only; a host that keeps secrets under the home directory should bind only what Lean
+   needs instead of `/`.
+
+2. Bubblewrap under a cgroup, for a memory limit that counts what the process uses (the kernel
+   reclaims the page cache of the object files first): `systemd-run --user` starts a scope with
+   `MemoryMax`. It needs the user's systemd, so name `XDG_RUNTIME_DIR` in the settings' `env`:
+
+   ```json
+   "sandbox": ["systemd-run", "--user", "--scope", "--quiet",
+               "-p", "MemoryMax=16G", "-p", "MemorySwapMax=0", "-p", "TasksMax=512", "--",
+               "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+               "--bind", "{work}", "{work}", "--unshare-net", "--unshare-pid", "--die-with-parent", "--"]
+   ```
+
+3. A container with the project mounted read-only, a limit on memory and processes, no network and a
+   read-only root. The image holds the toolchain (a Lean v4.27.0 installed by elan, with
+   `ELAN_HOME` pointing at it); the harness's `PATH` is not the container's, so name `lake` by its
+   path in `command`:
+
+   ```json
+   "command": "/opt/elan/bin/lake",
+   "sandbox": ["docker", "run", "--rm", "--network", "none", "--memory", "16g", "--memory-swap", "16g",
+               "--pids-limit", "512", "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL",
+               "--security-opt", "no-new-privileges", "--user", "1000:1000",
+               "-v", "{project}:{project}:ro", "-v", "{work}:{work}", "-w", "{project}",
+               "-e", "ELAN_HOME=/opt/elan", "seshat-lean:4.27.0"]
+   ```
+
+   Set `--user` to the uid and gid of the harness's user: `{work}` is mode 0700. The harness starts
+   `docker`, so a rootless Docker needs its `DOCKER_HOST` in the settings' `env`. The container does
+   not inherit the environment of `docker`: `-e` names what Lean gets. `{work}` is all the replay
+   needs besides the project, since it holds the program, the request and the object files.
+
+Not covered by any of them: a disk quota for `{work}` (put it on a size-limited filesystem), and
+the time the sandbox itself takes to start, which counts against the certification's time limit.
 
 ## The capability and its settings
 
@@ -145,30 +231,43 @@ version `0.1.0+lean-v4.27.0+fc-bench-v1`) has these settings, which a host profi
 | `projectDir` | the pinned Lean project, where the candidate's imports resolve; the host profiles take `LEAN_PROJECT_DIR`. Without it the implementation is unavailable | none |
 | `program` | the Lean program | `lean/SeshatCertify/Main.lean` of this repository |
 | `probe` | the Lean source the version check is followed by (empty: none) | `import FormalConjectures.Util.ProblemImports` |
-| `sandbox` | the command before every call | none |
+| `sandbox` | the command before every call, with `{work}` and `{project}` replaced | none |
+| `unsandboxed` | run the candidate's code as the harness's user when there is no `sandbox` (the host `server` refuses it) | `false` |
 | `workDir` | where work directories are made | the system's temporary directory |
 | `timeoutSec` | the limit of a certification that gives none | 600 |
-| `env` | variables added to the child's (`ELAN_HOME` from the host profiles) | none |
+| `env` | variables added to the child's minimal environment (`ELAN_HOME` from the host profiles) | none |
+
+Without `projectDir`, and without a `sandbox` or `unsandboxed: true`, the implementation is
+unavailable and says why ([above](#where-untrusted-code-runs)); an unreadable `program` makes it
+unavailable too.
 
 The Lean version it expects is the manifest's `environment.lean`. `pnpm harness health` runs the
-version check and compiles the probe. The registry gives a health check 15 seconds, and loading the
-bench's modules on a cold disk cache can take longer: the check is then stopped, and run again it
-finds the files in the cache. The contract (`capabilities/lean.certify/contract.json`) has 9 cases: a proof
-without axioms, the three standard axioms, `sorry`, an axiom of the candidate's own,
-`native_decide`, another statement under the same name, a changed definition under the same
-statement, a file that does not compile, and a time limit. A test runs it against the answers a
-certifier is expected to give, which only shows that the expectations are well written.
+version check and compiles the probe, and says whether the code runs in a sandbox. The registry
+gives a health check 15 seconds, and loading the bench's modules on a cold disk cache can take
+longer: the check is then stopped, and run again it finds the files in the cache.
+
+The contract (`capabilities/lean.certify/contract.json`) has 9 cases: a proof without axioms, the
+three standard axioms, `sorry`, an axiom of the candidate's own, `native_decide`, another statement
+under the same name, a changed definition under the same statement, a file that does not compile,
+and a time limit. A test runs it against the answers a certifier is expected to give, which only
+shows that the expectations are well written.
 
 ## In a run
 
 A run certifies when it has a certifier: the one `RunOptions.certifier` gives, or else the host's
 `lean.certify`, if the profile lists it (`RegistryLeanCertifier.forHost(registry)`, which goes
 through the registry, so that every certification is a tool run). `run.started` records which one
-(`config.certifier`, `null` for none). A host that lists the capability but cannot run it, because
-`LEAN_PROJECT_DIR` is not set, Lean is not the pinned version or the project does not compile the
-probe, does not stop the run: each certification fails, the candidates stay candidates, and each
-problem says why in its reason (`certification failed: ...`). `pnpm harness health lean.certify`
-tells before a run does.
+(`config.certifier`, `null` for none).
+
+A host that lists the capability but cannot run it does not stop the run: each certification fails,
+the candidates stay candidates, and each problem says why in its reason (`certification failed:
+...`). Two kinds of reason are told at the start. If the registry cannot make the implementation at
+all (`Registry.usable`, which calls nothing), because `LEAN_PROJECT_DIR` is not set, or there is no
+sandbox command and no `unsandboxed: true` (which is what both shipped profiles come to until the
+user configures one), the run logs `certifier ... is unavailable on host H (reason)` and records the
+reason in `run.started` (`config.certifierUnavailable`). Whether Lean is the pinned version and the
+project compiles the probe is found when the first certification starts, and by `pnpm harness
+health lean.certify` before a run.
 
 [m0-loop.md](m0-loop.md#certification) has what is certified, when, and what each answer does to the
 claim and to the problem's outcome. In short:
@@ -202,20 +301,27 @@ claim and to the problem's outcome. In short:
 
 `packages/lean-local/test` runs `LakeCertifier` against a fake `lake`
 (`fixtures/fake-lake.ts`, a script that prints what the real one would: the version, a copy of the
-source as the object file, a verdict chosen by a marker in the candidate): certified and rejected
+source as the object file, a verdict chosen by a marker in the candidate) and a fake sandbox
+(`fixtures/fake-sandbox.ts`, which tells the fake `lake` where it may write): certified and rejected
 candidates, a kernel refusal, a type that differs from the reference's, axioms outside the allowed
 set, a program that lies about them, a file that does not compile, a reference that does not, Lean
 or the program dying, the time limit with the process group killed, an abort (also during the
 version check, which the aborted call does not wait for, while another call that waits for it
 keeps it), an unavailable or wrong `lake`, a project that compiles nothing (the candidate is not
-rejected, and the probe says so before anything is compiled), the environment the child gets, and a
-sandbox command. `packages/registry/test` runs the
-adapters (`leanCertifyImplementation`, `RegistryLeanCertifier`) and the contract.
-`packages/orchestrator/test/certify.test.ts` runs the certification through the loop with fake
-certifiers and with the registry, with M1, M6 and the fleet on among them
+rejected, and the probe says so before anything is compiled), the environment the child gets
+(exactly the variables listed above, with the harness's credentials, sockets and `HOME`-like
+variables set), a sandbox command with a directory of its own for each call, a compile that plants
+a directory or a named pipe where the next steps would write, a compile that rewrites the program,
+an object file that is a link, and a certifier that is not made without a sandbox or `unsandboxed`.
+`packages/lean-local/test/factory.test.ts` runs the factory through the registry with the
+manifest's own settings: the probe, and the fail-closed rule (the shipped profiles `local` and
+`server` are unavailable, with the reason; `server` refuses `unsandboxed`).
+`packages/registry/test` runs the adapters (`leanCertifyImplementation`, `RegistryLeanCertifier`)
+and the contract. `packages/orchestrator/test/certify.test.ts` runs the certification through the
+loop with fake certifiers and with the registry, with M1, M6 and the fleet on among them
 ([m0-loop.md](m0-loop.md#tested-and-not-yet)), and
 `packages/graph/test/line.test.ts` has M2's twin refute a claim with a certifier. None of them has a
-Lean: what a real `lake` does is the list below.
+Lean, a sandbox or a real `lake`: what those do is the list below.
 
 ## Deployment
 
@@ -226,6 +332,8 @@ The certifier needs the bench's Lean project built, as `lean.check` does
 ```sh
 export LEAN_PROJECT_DIR=/path/to/formal-conjectures
 (cd lean/SeshatCertify && lake build)   # the first compile of the program; fix what it reports
+# lean.certify is unavailable until the host profile has a sandbox (or unsandboxed: true): add one,
+# in a copy of config/hosts/local.json, and pass it with --host
 pnpm harness health lean.certify
 pnpm harness contract lean.certify --out certify-contract.json
 ```
@@ -257,8 +365,12 @@ lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.js
 5. That the object files of the bench's project are found by `lake env` from `LEAN_PROJECT_DIR`
    without trying to fetch or build anything, which a sandbox without network does not allow.
 6. The contract's nine cases, and the reasons' texts they match.
-7. The sandbox: that a command such as the example above lets Lean run in the project and write
-   only to `{work}`.
+7. The sandbox: that one of the recipes above lets Lean run in the project (does `lake env` work with a
+   read-only project? is the toolchain reachable?), write only to `{work}` and stay within the memory
+   limit, and that `pnpm harness health lean.certify` passes through it.
+8. The environment: that `lake env lean` works with the environment listed under
+   [the process](#the-process) (a `HOME` and `PATH`, and an `ELAN_HOME` when the toolchains are not
+   in `$HOME/.elan`), and what else, if anything, elan or lake need.
 
 ## Not done yet
 

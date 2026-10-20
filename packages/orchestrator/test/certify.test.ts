@@ -19,7 +19,7 @@ import {
 } from "@seshat/core";
 import type { Line } from "@seshat/lines";
 import { claimSource, claimTheoremName } from "@seshat/memory";
-import { type HostProfile, leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, RegistryLeanChecker } from "@seshat/registry";
+import { type HostProfile, leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, RegistryLeanChecker, UnavailableError } from "@seshat/registry";
 import { REPO_ROOT, type RunOptions, Workbench } from "../src/index.ts";
 import { LINES } from "../src/lines.ts";
 import { check, DEMO_FILE, DemoLean, demoRegistry, demoRun, ofType, say, tempDir } from "./m0-helpers.ts";
@@ -91,13 +91,14 @@ function at(events: readonly HarnessEvent[], event: HarnessEvent | undefined): n
 
 const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
 
+const certifyHost: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] }, "lean.certify": { use: ["lake"] } } };
+
 /** A host that lists `lean.certify`, served by `certifier` through the registry, as a deployment would. */
 function certifyingHost(certifier: LeanCertifier): (lean: LeanChecker) => RunOptions["registry"] {
-  const host: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] }, "lean.certify": { use: ["lake"] } } };
   return (lean) => (journal, blobs) =>
     new Registry({
       catalog,
-      host,
+      host: certifyHost,
       factories: { kimina: () => leanCheckImplementation(lean), "lake-certify": () => leanCertifyImplementation(certifier) },
       journal,
       blobs,
@@ -186,6 +187,53 @@ describe("certification in a run", () => {
     assert.equal(failing.result.problems[0]?.outcome, "candidate");
     assert.match(failing.result.problems[0]?.reason ?? "", /^certification failed: .*no Lean project/);
     assert.deepEqual(ofType(failing.events, "claim.status_changed").map((c) => c.data.to), ["computed"]);
+  });
+});
+
+describe("a host whose certifier cannot be made", () => {
+  const REASON = "lean.certify refuses to run the candidate's code without a sandbox: give it a sandbox command, or set unsandboxed: true";
+  const refusing = (lean: LeanChecker): RunOptions["registry"] => (journal, blobs) =>
+    new Registry({
+      catalog,
+      host: certifyHost,
+      factories: {
+        kimina: () => leanCheckImplementation(lean),
+        "lake-certify": () => {
+          throw new UnavailableError(REASON);
+        },
+      },
+      journal,
+      blobs,
+    });
+
+  it("is said at the start of the run and recorded in it, and leaves the candidates candidates with the reason", async () => {
+    const logged: string[] = [];
+    const { result, events } = await demoRun({ registry: refusing, responses: [check("exact trivial_proof")], log: (line) => logged.push(line) });
+    assert.ok(
+      logged.some((line) => /^certifier lean\.certify\/lake \d\S* is unavailable on host test \(lake: lean\.certify refuses to run the candidate's code without a sandbox/.test(line)),
+      logged.join("\n"),
+    );
+    assert.ok(!logged.some((line) => line.startsWith("certifier: ")), "it is not announced as the run's certifier");
+    const config = ofType(events, "run.started")[0]?.data.config as { certifier: string; certifierUnavailable?: string };
+    assert.match(config.certifier, /^lean\.certify\/lake \d/);
+    assert.equal(config.certifierUnavailable, `lake: ${REASON}`);
+    // The problem is a candidate, and its reason is the certifier's.
+    assert.equal(result.problems[0]?.outcome, "candidate");
+    assert.match(result.problems[0]?.reason ?? "", /^certification failed: .*refuses to run the candidate's code without a sandbox/);
+    assert.deepEqual(ofType(events, "validation.finished").map((v) => v.data.method), ["repl"]);
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed"]);
+  });
+
+  it("is not said of a certifier that can be made, or of a run that was given its own", async () => {
+    const { certifier: lake } = certifier();
+    const logged: string[] = [];
+    const { events } = await demoRun({ registry: certifyingHost(lake), responses: [check("exact trivial_proof")], log: (line) => logged.push(line) });
+    assert.ok(!logged.some((line) => /is unavailable/.test(line)), logged.join("\n"));
+    assert.equal("certifierUnavailable" in (ofType(events, "run.started")[0]?.data.config as object), false);
+    // A certifier the caller gives is the caller's: the host's profile is not asked.
+    const given = await demoRun({ registry: refusing, certifier: lake, responses: [check("exact trivial_proof")] });
+    assert.equal("certifierUnavailable" in (ofType(given.events, "run.started")[0]?.data.config as object), false);
+    assert.equal(given.result.problems[0]?.outcome, "proved");
   });
 });
 

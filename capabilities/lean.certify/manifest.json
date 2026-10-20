@@ -156,7 +156,7 @@
       "version": "0.1.0+lean-v4.27.0+fc-bench-v1",
       "kind": "inproc",
       "factory": "lake-certify",
-      "description": "lake env lean in the bench's Lean project (Lean v4.27.0, formal-conjectures at the bench revision): the candidate and the reference are compiled in fresh processes, then lean/SeshatCertify replays them through the kernel. The compile runs the candidate's code as the harness's user unless the host profile gives a sandbox command. Never run against a real Lean yet, and lean/SeshatCertify has never been compiled (documentation/certifier.md).",
+      "description": "lake env lean in the bench's Lean project (Lean v4.27.0, formal-conjectures at the bench revision): the candidate and the reference are compiled in fresh processes, then lean/SeshatCertify replays them through the kernel. The compile runs the candidate's code, so the implementation is unavailable unless the host profile gives a sandbox command or opts in with unsandboxed: true, which runs that code as the harness's user (the host server never does). Never run against a real Lean yet, and lean/SeshatCertify has never been compiled (documentation/certifier.md).",
       "environment": {
         "lean": "v4.27.0",
         "program": "lean/SeshatCertify 0.1.0",
@@ -169,6 +169,7 @@
         "program": "",
         "probe": "import FormalConjectures.Util.ProblemImports",
         "sandbox": [],
+        "unsandboxed": false,
         "workDir": "",
         "env": {}
       }

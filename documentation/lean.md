@@ -130,8 +130,9 @@ and the deployment. The Lean library has never been compiled.
 
 A run uses it without being asked when the host's profile lists `lean.certify` (the default
 profiles do): it certifies each problem's candidate, and the proofs and refutations the lines submit
-([m0-loop.md](m0-loop.md#certification)). Where the project is not set up, every candidate stays a
-candidate and its problem says why.
+([m0-loop.md](m0-loop.md#certification)). Where the project is not set up, or the profile has
+neither a sandbox command nor `unsandboxed: true` (neither default profile has one), the
+certifier is unavailable: every candidate stays a candidate and its problem says why.
 
 ## To verify against Lean
 

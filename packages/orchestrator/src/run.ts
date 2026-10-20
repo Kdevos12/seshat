@@ -19,7 +19,7 @@ import {
 } from "@seshat/core";
 import { type JsonObject, type LineRegistry, resolveLines } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
-import { messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { Ledger } from "./budget.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
@@ -201,6 +201,10 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
   const certifier = o.certifier ?? RegistryLeanCertifier.forHost(registry);
+  // A certifier of the host that its factory refuses to make (no project, no sandbox) would fail every
+  // certification of the run: the run says so now, and the journal records why.
+  const unusable = o.certifier === undefined && certifier !== undefined ? await registry.usable(LEAN_CERTIFY) : undefined;
+  const certifierDown = unusable !== undefined && !unusable.ok ? unusable.detail : undefined;
   const toolProblems = checkTools(registry, config.tools);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
   // A tool that cannot be reached now would answer every prover's call with an error.
@@ -233,6 +237,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     prompt: { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) },
     policy: { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] },
     certifier: certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`,
+    ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
     // Only with lines, so that an M0 run records what it always did.
     ...(enabled.lines.length > 0
       ? {
@@ -265,7 +270,9 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   log(
     certifier === undefined
       ? `no certifier on host ${registry.host.host}: a proof that passes the fast check stays a candidate`
-      : `certifier: ${certifier.implementation} ${certifier.version}`,
+      : certifierDown !== undefined
+        ? `certifier ${certifier.implementation} ${certifier.version} is unavailable on host ${registry.host.host} (${certifierDown}): a proof that passes the fast check stays a candidate`
+        : `certifier: ${certifier.implementation} ${certifier.version}`,
   );
 
   // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.

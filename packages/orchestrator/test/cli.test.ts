@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { promisify } from "node:util";
@@ -83,7 +84,7 @@ describe("harness CLI", () => {
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
     // Every implementation the host lists, in order: here SageMath's, which nothing serves, and the
-    // certifier's, which has no Lean project to run in.
+    // certifier's, which has no Lean project to run in and no sandbox to run it in.
     const all = await harness(["health"], {
       LEAN_SERVER_API_URL: url,
       LEAN_PROJECT_DIR: undefined,
@@ -93,8 +94,13 @@ describe("harness CLI", () => {
     assert.equal(all.code, 1);
     assert.match(
       all.stdout,
-      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR\nok {3}lean\.check\/kimina/m,
+      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
     );
+    // With the project set, the default profile's certifier is still down: it has no sandbox, and does not opt in to running without.
+    const set = await harness(["health", "lean.certify"], { LEAN_PROJECT_DIR: tmpdir() });
+    assert.equal(set.code, 1);
+    assert.match(set.stdout, /^FAIL lean\.certify\/lake .*refuses to run the candidate's code without a sandbox/m);
+    assert.doesNotMatch(set.stdout, /LEAN_PROJECT_DIR/);
   });
 
   it("runs contract cases and fails when one does not hold", async () => {

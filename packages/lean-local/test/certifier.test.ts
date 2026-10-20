@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type CertificationRequest, CertifyFailedError, STANDARD_AXIOMS } from "@seshat/core";
@@ -18,6 +18,9 @@ interface Call {
   request?: { reference: string; candidate: string; target: string; allowedAxioms: string[] };
   /** The file a compile (`-o`) read. */
   source?: string;
+  /** The program a replay (`--run`) read. */
+  program?: string;
+  values: { tmpdir?: string; home?: string };
 }
 
 /** A certifier over the fake lake, in a project directory of its own, and what the fake saw. */
@@ -34,6 +37,8 @@ function setup(options: Partial<LakeCertifierOptions> = {}) {
     args: [...NODE, FAKE_LAKE],
     workDir,
     lean: "v4.27.0",
+    // The tests that look at the sandbox give their own.
+    ...(options.sandbox === undefined ? { unsandboxed: true } : {}),
     ...options,
     env: { FAKE_LAKE_LOG: log, FAKE_LAKE_PIDFILE: join(dir, "child.pid"), FAKE_LAKE_VERSION_PIDFILE: join(dir, "version.pid"), ...options.env },
   });
@@ -86,8 +91,9 @@ describe("LakeCertifier", () => {
       ["env", "lean", "--run", "Main.lean"],
     ]);
     for (const call of seen) assert.equal(call.cwd.replace(/^\/private/, ""), project.replace(/^\/private/, ""));
-    assert.equal(seen[3]?.args[3], CERTIFY_PROGRAM);
-    assert.ok(existsSync(CERTIFY_PROGRAM), "the Lean program is where the certifier looks for it");
+    // The program is the repository's, as the certifier read it when it was made, in the directory of the replay.
+    assert.match(seen[3]?.args[3] ?? "", /replay-[^\\/]+[\\/]Main\.lean$/);
+    assert.equal(seen[3]?.program, readFileSync(CERTIFY_PROGRAM, "utf8"));
   });
 
   it("gives the program the two object files, the target and the allowed axioms", async () => {
@@ -95,8 +101,9 @@ describe("LakeCertifier", () => {
     await certifier.certify(request("", { allowedAxioms: ["propext"], target: "Ns.«odd name»" }));
     const asked = calls()[3]?.request;
     assert.ok(asked !== undefined);
-    assert.match(asked.reference, /reference[\\/]reference\.olean$/);
-    assert.match(asked.candidate, /candidate[\\/]candidate\.olean$/);
+    // Copies, in the directory of the replay, so that the replay needs nothing else that a compile wrote.
+    assert.match(asked.reference, /replay-[^\\/]+[\\/]reference\.olean$/);
+    assert.match(asked.candidate, /replay-[^\\/]+[\\/]candidate\.olean$/);
     assert.equal(asked.target, "Ns.«odd name»");
     assert.deepEqual(asked.allowedAxioms, ["propext"]);
   });
@@ -357,23 +364,49 @@ describe("LakeCertifier", () => {
     });
   });
 
-  it("runs lake with a few variables of its own and none of the parent's secrets", async () => {
-    const saved = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "sk-secret";
+  it("gives the child a minimal environment: the path, the home elan needs, a temporary directory of its own, the settings' variables", async () => {
+    // What the harness's own environment holds that the child must not get.
+    const parent = {
+      ANTHROPIC_API_KEY: "sk-secret",
+      GITHUB_TOKEN: "ghp-secret",
+      SSH_AUTH_SOCK: "/tmp/ssh-agent.sock",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      DOCKER_HOST: "unix:///var/run/docker.sock",
+      DOCKER_CONFIG: "/home/parent/.docker",
+      LD_PRELOAD: "/tmp/evil.so",
+      HOME: "/home/parent",
+    };
+    const saved = Object.fromEntries(Object.keys(parent).map((name) => [name, process.env[name]]));
+    Object.assign(process.env, parent);
     try {
-      const { certifier, calls } = setup({ env: { ELAN_HOME: "/opt/elan" } });
+      const { certifier, calls, workDir } = setup({ env: { OWN: "1" } });
       await certifier.certify(request(""));
-      for (const call of calls()) {
-        assert.ok(call.env.includes("PATH") && call.env.includes("ELAN_HOME") && call.env.includes("FAKE_LAKE_LOG"));
-        assert.ok(!call.env.includes("ANTHROPIC_API_KEY"), "a secret of the parent reached the child");
+      const seen = calls();
+      assert.equal(seen.length, 4);
+      for (const call of seen) {
+        // Exactly these, for every process of a certification.
+        assert.deepEqual(call.env, ["FAKE_LAKE_LOG", "FAKE_LAKE_PIDFILE", "FAKE_LAKE_VERSION_PIDFILE", "HOME", "OWN", "PATH", "TMPDIR"]);
+        assert.equal(call.values.home, "/home/parent", "elan looks for its toolchains in $HOME/.elan when ELAN_HOME says nothing");
+        assert.ok(call.values.tmpdir?.startsWith(`${workDir}${sep}`), "the temporary directory is one of the certifier's");
+      }
+      assert.equal(new Set(seen.map((c) => c.values.tmpdir)).size, 4, "each process has a temporary directory of its own");
+
+      // With an ELAN_HOME of the settings, elan needs no home.
+      const elan = setup({ env: { ELAN_HOME: "/opt/elan" } });
+      await elan.certifier.certify(request(""));
+      for (const call of elan.calls()) {
+        assert.deepEqual(call.env, ["ELAN_HOME", "FAKE_LAKE_LOG", "FAKE_LAKE_PIDFILE", "FAKE_LAKE_VERSION_PIDFILE", "PATH", "TMPDIR"]);
       }
     } finally {
-      if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
-      else process.env.ANTHROPIC_API_KEY = saved;
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 
-  it("puts the sandbox command before every call of lake, with the placeholders filled in", async () => {
+  it("puts the sandbox command before every call of lake, each with a directory of its own for {work}", async () => {
     const dir = mkdtempSync(join(tmpdir(), "seshat-sandbox-"));
     const sandboxLog = join(dir, "sandbox.jsonl");
     const { certifier, project, workDir, calls } = setup({
@@ -389,9 +422,82 @@ describe("LakeCertifier", () => {
     // The version, two compiles and the replay all went through it.
     assert.equal(wrapped.length, 4);
     assert.equal(calls().length, 4);
-    assert.deepEqual(wrapped[0]?.args, ["--bind", workDir, "--ro-bind", project]);
-    assert.equal(wrapped[1]?.args[1]?.startsWith(workDir), true, "the work directory of the call, not a placeholder");
+    assert.ok(wrapped.every((w) => w.args[0] === "--bind" && w.args[2] === "--ro-bind" && w.args[3] === project));
     assert.ok(wrapped.every((w) => !w.args.some((a) => a.includes("{"))));
+    // {work} is the directory of the call alone: one for the version check, and for the candidate's compile,
+    // the reference's and the replay, one each inside the certification's, none inside another.
+    const dirs = wrapped.map((w) => w.args[1] as string);
+    assert.deepEqual(dirs.map((d) => basename(d).replace(/-[^-]*$/, "")), ["seshat-check", "candidate", "reference", "replay"]);
+    assert.ok(dirs.every((d) => d.startsWith(`${workDir}${sep}`)));
+    for (const a of dirs) for (const b of dirs) assert.ok(a === b || !b.startsWith(`${a}${sep}`), `${b} is inside ${a}`);
+    assert.equal(new Set(dirs).size, 4);
+  });
+
+  describe("what the candidate's compile can write", () => {
+    /** A certifier whose sandbox lets the compile write in {work} only, as the fake sandbox says to the fake lake. */
+    const sandboxed = (env: Record<string, string> = {}) =>
+      setup({ sandbox: [process.execPath, ...NODE, FAKE_SANDBOX, "--bind", "{work}", "--ro-bind", "{project}", "--"], env });
+
+    it("cannot make request.json a pipe that the certification would wait on for ever", { timeout: 15_000 }, async () => {
+      const { certifier, workDir } = sandboxed();
+      const result = await certifier.certify(request(marker("plant-fifo")), { timeoutSec: 10 });
+      assert.equal(result.verdict, "certified");
+      assert.deepEqual(readdirSync(workDir), []);
+    });
+
+    it("cannot make the directory of the reference exist before the certifier does", { timeout: 15_000 }, async () => {
+      const { certifier, workDir } = sandboxed();
+      const result = await certifier.certify(request(marker("plant-dir")), { timeoutSec: 10 });
+      assert.equal(result.verdict, "certified");
+      assert.deepEqual(readdirSync(workDir), []);
+    });
+  });
+
+  it("replays with the program it read when it was made, whatever a compile did to the file since", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "seshat-program-"));
+    const program = join(dir, "Main.lean");
+    copyFileSync(CERTIFY_PROGRAM, program);
+    const original = readFileSync(program, "utf8");
+    const { certifier, calls } = setup({ program, env: { FAKE_LAKE_TAMPER: program } });
+    assert.equal((await certifier.certify(request(marker("tamper-program")))).verdict, "certified");
+    assert.match(readFileSync(program, "utf8"), /^-- tampered/, "the compile rewrote the file");
+    assert.equal((await certifier.certify(request(""))).verdict, "certified");
+    const runs = calls().filter((c) => c.args[2] === "--run");
+    assert.equal(runs.length, 2);
+    for (const run of runs) assert.equal(run.program, original, "the replay ran the program as it was read");
+  });
+
+  it("is not a verdict when the object file is a link, not a file the compile wrote", async () => {
+    const { certifier } = setup();
+    const error = await failure(certifier.certify(request(marker("symlink-object"))));
+    assert.equal(error.reason, "failed");
+    assert.match(error.message, /wrote no object file/);
+  });
+
+  describe("without a sandbox", () => {
+    const base = { projectDir: tmpdir(), command: "lake" };
+
+    it("is not made unless the options say that the code may run as the harness's user", () => {
+      assert.throws(() => new LakeCertifier(base), /refuses to run the candidate's code without a sandbox/);
+      assert.throws(() => new LakeCertifier({ ...base, sandbox: [] }), /without a sandbox/);
+      assert.throws(() => new LakeCertifier({ ...base, unsandboxed: false }), /without a sandbox/);
+      assert.doesNotThrow(() => new LakeCertifier({ ...base, unsandboxed: true }));
+      assert.doesNotThrow(() => new LakeCertifier({ ...base, sandbox: ["bwrap", "--"] }));
+    });
+
+    it("says in its health check whether it runs the code in a sandbox", async () => {
+      const bare = await setup().certifier.health();
+      assert.equal(bare.ok, true);
+      assert.match(bare.detail, /no sandbox: the candidate's code runs as the harness's user/);
+      const wrapped = await setup({ sandbox: [process.execPath, ...NODE, FAKE_SANDBOX, "--bind", "{work}", "--"] }).certifier.health();
+      assert.equal(wrapped.ok, true);
+      assert.match(wrapped.detail, /sandbox command: .*node/);
+      assert.doesNotMatch(wrapped.detail, /no sandbox/);
+    });
+
+    it("is not made when the replay program cannot be read: nothing was run yet", () => {
+      assert.throws(() => new LakeCertifier({ ...base, unsandboxed: true, program: "/nonexistent/Main.lean" }), /cannot read the replay program \/nonexistent\/Main\.lean/);
+    });
   });
 
   it("keeps certifications apart when they run together", async () => {
