@@ -144,13 +144,13 @@ a deeper failure, or the same depth with fewer errors, or with as many errors an
 |---|---|---|
 | `statement_drift` | the file proves a statement that is not the target (the failure class `statement_changed`: Lean accepts the file but the validator finds the type changed) | |
 | `restated_target` | an auxiliary lemma restates the target: M1's class `restates_target` (equal after normalization), or the injected `nearEquivalent(lemma, target)` says it is nearly equivalent | |
-| `strategy_loop` | N checks in a row have the same strategy label (the one the model declared, else the one computed from the file) and none went further than the session's best | `repeats` (3) |
+| `strategy_loop` | `repeats` checks in a row have the same strategy label (the one the model declared, else the one computed from the file) and none went further than the best check before them. The first check of a session always goes further than nothing and is not one of the `repeats`, so the earliest stop is at check `repeats` + 1 | `repeats` (3) |
 | `length_growth` | the file's code is `lengthFactor` times its size at the last progress and `lengthMinChars` characters longer, with no subgoal closed | `lengthFactor` (2), `lengthMinChars` (800) |
 
 They are tried in this order, and the first finding ends the session. Across sessions, `session_loop`
 counts the sessions of one prover whose last check has the same strategy label and whose best check
-went no further than any session of the prover before it. After `sessionRepeats` (3) of them the
-prover restarts afresh: M6 clears its notes (the journal keeps them) and the next session is told so
+went no further than any session of the prover before it (the prover's first session sets the bar and
+is not counted). After `sessionRepeats` (3) of them the prover restarts afresh: M6 clears its notes (the journal keeps them) and the next session is told so
 in "Course change". The count starts again.
 
 ## Options
@@ -165,8 +165,8 @@ in "Course change". The count starts again.
 | `rawErrors` | true | take Lean's output out of sections and notes |
 | `revisions` | true | reject unanchored revisions |
 | `detectors` | true | the drift detectors |
-| `repeats` | 3 | `strategy_loop`: checks |
-| `sessionRepeats` | 3 | `session_loop`: sessions |
+| `repeats` | 3 | `strategy_loop`: checks in a row without progress, after the one that set the session's best |
+| `sessionRepeats` | 3 | `session_loop`: sessions in a row without progress, after the one that set the prover's best |
 | `lengthFactor` | 2 | `length_growth`: size factor |
 | `lengthMinChars` | 800 | `length_growth`: minimum growth in characters |
 

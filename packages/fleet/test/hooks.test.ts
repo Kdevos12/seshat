@@ -144,8 +144,6 @@ describe("which model works", () => {
 
   it("is drawn from the models' posteriors, so the one that proves is chosen more often", async () => {
     const world = await setup({ widen: false, strategies: false, models });
-    const dir = world.journal;
-    assert.ok(dir !== undefined);
     // Two models' attempts on the claim: the weak one fails, the good one proves.
     for (let k = 1; k <= 8; k++) {
       for (const [model, outcome] of [[models[0], "invalid"], [models[1], "valid"]] as const) {
