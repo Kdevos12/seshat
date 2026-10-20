@@ -263,6 +263,7 @@ describe("the fleet and the provers' notes", () => {
       const own = /NOTE-OF-(\d)/.exec(text)?.[1] as string;
       const other = own === "1" ? "2" : "1";
       assert.match(text, new RegExp(`# Your notes from the previous sessions\\nNOTE-OF-${own}: the key is the lemma foo_bar_${own}\n`));
+      assert.match(text, new RegExp(`-- TAG-${own}\\b`), "and the file it left");
       // Nothing of the other prover: not its notes, not the file it left.
       assert.doesNotMatch(text, new RegExp(`NOTE-OF-${other}|foo_bar_${other}|TAG-${other}`));
       // The memory's typed summaries are there, and say what was tried, not how it was written.
