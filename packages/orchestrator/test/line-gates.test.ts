@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
-import type { Line, ProverEnd } from "@seshat/lines";
+import type { Briefing, Line, ProverEnd } from "@seshat/lines";
 import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
 
 type Message = TranscriptContext["messages"][number];
@@ -157,16 +157,23 @@ describe("reviewBriefing", () => {
     assert.match(prompts[0] ?? "", /# Alpha\nalpha text$/);
   });
 
-  it("refuses a review that adds a section", async () => {
-    const adder = line("M6", { reviewBriefing: async (_s, sections) => [...sections, { title: "Gamma", text: "new" }] });
-    const { result } = await demoRun({
-      lines: { M1: alpha, M6: adder },
-      config: { lines: ["M1", "M6"] },
-      responses: [check("exact trivial_proof")],
+  const refused: ReadonlyArray<readonly [string, (sections: readonly Briefing[]) => Briefing[]]> = [
+    ["adds a section", (sections) => [...sections, { title: "Gamma", text: "new" }]],
+    ["replaces a section by another, with as many sections as it was given", (sections) => [sections[1] as Briefing, { title: "Gamma", text: "new" }]],
+    ["puts the sections in another order", (sections) => [...sections].reverse()],
+  ];
+  for (const [what, review] of refused) {
+    it(`refuses a review that ${what}`, async () => {
+      const bad = line("M6", { reviewBriefing: async (_s, sections) => review(sections) });
+      const { result } = await demoRun({
+        lines: { M1: alpha, M2: beta, M6: bad },
+        config: { lines: ["M1", "M2", "M6"] },
+        responses: [check("exact trivial_proof")],
+      });
+      assert.equal(result.problems[0]?.outcome, "error");
+      assert.match(result.problems[0]?.reason ?? "", /line M6 failed in reviewBriefing: a review may drop or reword sections, not add, replace or reorder them/);
     });
-    assert.equal(result.problems[0]?.outcome, "error");
-    assert.match(result.problems[0]?.reason ?? "", /line M6 failed in reviewBriefing: a review may drop or reword sections, not add them/);
-  });
+  }
 });
 
 describe("the notes a line gives", () => {

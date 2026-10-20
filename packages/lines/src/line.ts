@@ -95,8 +95,10 @@ export interface LineHooks {
   afterCheck?: (session: SessionContext, check: SessionCheck) => Promise<CheckDecision | undefined>;
   /**
    * After the lines' briefing sections are made, before the session starts: the sections the
-   * session gets. Return the list to replace them: a line may drop a section or reword one, not add
-   * one. Each line gets the list as the lines before it left it; undefined keeps it.
+   * session gets. Return the list to replace them: a line may drop a section or reword one (keep
+   * its title), not add, replace or reorder one: each title returned must be one it was given, in
+   * the same order, or the line has failed. Each line gets the list as the lines before it left it;
+   * undefined keeps it.
    */
   reviewBriefing?: (session: SessionContext, sections: readonly Briefing[]) => Promise<Briefing[] | undefined>;
   /**
