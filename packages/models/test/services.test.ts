@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { BlobStore, Journal, type Json, readEvents } from "@seshat/core";
 import { CapabilityError, type HostProfile, type ImplementationFactory, loadCatalog, loadHostProfile, Registry, runContract } from "@seshat/registry";
-import { findstatFactory, lmfdbFactory, LookupError, lookupSequence, oeisFactory, RegistryOeis } from "../src/index.ts";
+import { findstatFactory, lmfdbFactory, LookupError, lookupSequence, OEIS_MAX_TERMS, oeisFactory, RegistryOeis } from "../src/index.ts";
 import { type FakeSite, startFakeSite } from "./fake-site.ts";
 
 /**
@@ -226,6 +226,21 @@ describe("the OEIS through the registry", () => {
     } finally {
       await down.close();
     }
+  });
+
+  it("asks for the first 100 terms of a longer query, since that is all the capability takes", async () => {
+    const manifestLimit = (catalog.capabilities.get("oeis.search")?.manifest.input as { properties: { terms: { maxItems: number } } }).properties.terms.maxItems;
+    assert.equal(manifestLimit, 100);
+    assert.equal(OEIS_MAX_TERMS, manifestLimit);
+    const terms = Array.from({ length: 150 }, (_, i) => i * i + 3 * i + 1);
+    const found = await new RegistryOeis(registryAt(site.url)).search(terms);
+    assert.equal(found.count, 0);
+    const asked = decodeURIComponent(/q=([^&]*)/.exec(site.requests.at(-1) ?? "")?.[1] ?? "").split(",");
+    assert.deepEqual(asked, terms.slice(0, manifestLimit).map(String));
+    // The lookup as a whole does not fail either, and the answer is about the terms it was given.
+    const identification = await lookupSequence(terms, { oeis: new RegistryOeis(registryAt(site.url)) });
+    assert.equal(identification.note, undefined);
+    assert.equal(identification.query.length, 150);
   });
 
   it("does not hide an input the capability refuses", async () => {

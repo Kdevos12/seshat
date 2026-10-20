@@ -128,6 +128,10 @@ describe("the options of the line", () => {
     assert.throws(() => readOptions({ ...M11_DEFAULTS, exhaustive: 4 }), /option M11\.exhaustive is an integer from 0 to 3, not 4/);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, maxNumber: "100" }), /option M11\.maxNumber is an integer from 1 to 1000, not "100"/);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, refute: 1 }), /option M11\.refute is true or false, not 1/);
+    // oeis.search takes at most 100 terms: a longer lookup would be refused by the registry and fail the problem.
+    assert.throws(() => readOptions({ ...M11_DEFAULTS, identifyTerms: 101 }), /option M11\.identifyTerms is an integer from 4 to 100, not 101/);
+    assert.throws(() => readOptions({ ...M11_DEFAULTS, identifyTerms: 150 }), /option M11\.identifyTerms/);
+    assert.equal(readOptions({ ...M11_DEFAULTS, identifyTerms: 100 }).identifyTerms, 100);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, samples: 1.5 }), /option M11\.samples/);
     const { stopWhenRefuted: _, ...missing } = M11_DEFAULTS;
     assert.throws(() => readOptions(missing), /option M11\.stopWhenRefuted is true or false, not undefined/);
