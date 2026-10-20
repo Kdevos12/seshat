@@ -3,15 +3,16 @@
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.
 
-Status: early development (phase P0a). The event journal, the memory store, the line API and its first line (M1: shared
-claims and negative memory), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
-first bench of 575 problems from
+Status: early development (phase P0a). The event journal, the memory store, the line API, the proof
+validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP
+boundary, contract tests), a first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes), and the second line, M2 (the variant
-graph and its logical propagation), are written and tested with a
-simulated model and a simulated Lean. The provers can also be given SageMath, an external program
-installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
-run against a real Lean or a real model yet.
+(independent provers on pi, in sessions that pass on their notes) and four lines (M1: shared claims
+and negative memory; M2: the variant graph and its logical propagation; M6: guards and drift
+detectors; the fleet policy) are written and tested with a simulated model and a simulated Lean. The
+provers can also be given SageMath, an external program installed with Docker or pip
+([documentation/compute.md](documentation/compute.md)). Nothing has run against a real Lean or a
+real model yet.
 
 ## How research flows
 
@@ -22,7 +23,8 @@ flowchart TB
   classDef planned fill:#f1f3f6,stroke:#8a92a3,stroke-width:2px,stroke-dasharray:6 4,color:#1b2230
 
   bench["Bench<br/>575 Lean problems"]:::built
-  fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::planned
+  fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::built
+  guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
 
@@ -53,7 +55,9 @@ flowchart TB
   bench -->|problems| provers
   bench -->|statements| identity
   identity -->|claims| journal
-  fleet -.->|"who works on what"| provers
+  fleet -->|"who works on what"| provers
+  guards -->|"reject a call,<br/>stop a session"| provers
+  guards -->|"drift nodes"| journal
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.-> moretools
@@ -68,6 +72,7 @@ flowchart TB
   journal --> projection
   projection --> tried
   tried -->|"already tried,<br/>in every session"| provers
+  tried -->|"verdicts"| fleet
   journal --> kg
   kg --> prop
   prop -->|"composed proofs"| fast
@@ -87,7 +92,7 @@ as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
 still to write. The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are
-the first two lines that use it. M1: one claim per statement, each attempt labeled with its strategy
+the first lines that use it. M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session
 ([documentation/memory.md](documentation/memory.md),
 [documentation/m1-identity-memory.md](documentation/m1-identity-memory.md)). M2: a graph of variants
@@ -95,9 +100,14 @@ of a claim, joined by edges that become `lean_checked` only when Lean accepts th
 rules follow those edges and turn what they derive into composed proofs that go through the same
 fast check; and a proof of the negation of a claim is tried alongside the provers, whichever side
 loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits for a Lean server
-like the fast check. The other mechanisms will come as lines that a run switches on
-(`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against the run without
-it ([documentation/lines.md](documentation/lines.md)).
+like the fast check. M6 adds the guards against hallucination and the drift detectors: neutral
+framing, citations that must resolve, no raw error text, anchored revisions, and sessions stopped
+when they loop ([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what
+each session works on by Thompson sampling on the verdicts the memory holds, puts more provers on a
+subgoal only where one does badly, and sends hard decisions to a stronger model
+([documentation/fleet.md](documentation/fleet.md)). The other mechanisms will come as lines that a
+run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
+the run without it ([documentation/lines.md](documentation/lines.md)).
 
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
