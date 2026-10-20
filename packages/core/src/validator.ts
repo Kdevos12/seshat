@@ -61,9 +61,27 @@ const FORBIDDEN_TOKENS = [
 
 const AUX_KEYWORDS = new Set(["theorem", "lemma", "def", "abbrev"]);
 
+const IDENTIFIER_CHARACTER = /^[\p{L}\p{N}_'!?]$/u;
+
+/**
+ * A regular expression for a token, as Lean's lexer reads it:
+ * - A token that starts like an identifier is found as a whole word, not glued to what precedes it
+ *   (`xsorry`, `Nat.sorry`, `x1sorry`, which are other names) and not to what follows it
+ *   (`sorry_free`). A number before it is a lexeme of its own, so `1sorry` holds `sorry`.
+ * - A token that starts with a character no identifier has, such as `#eval`, is read wherever it
+ *   stands, since Lean reads `x#eval` as `x` and `#eval`; and the longest token wins, so what follows
+ *   it does not matter (`#eval!` is a command too).
+ * - A token that ends with such a character (`eval%`) needs no boundary after it.
+ */
 function tokenPattern(token: string): RegExp {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}_'.!?])${escaped}(?![\\p{L}\\p{N}_'!?])`, "u");
+  const characters = [...token];
+  const startsLikeIdentifier = IDENTIFIER_CHARACTER.test(characters[0] ?? "");
+  const endsLikeIdentifier = IDENTIFIER_CHARACTER.test(characters.at(-1) ?? "");
+  // The second lookbehind lets digits count as part of a name only when a name's character precedes them: `x1sorry`, not `1sorry` or `h.1sorry`.
+  const before = startsLikeIdentifier ? "(?<![\\p{L}_'.!?])(?<![\\p{L}_'!?]\\p{N}+)" : "";
+  const after = startsLikeIdentifier && endsLikeIdentifier ? "(?![\\p{L}\\p{N}_'!?])" : "";
+  return new RegExp(`${before}${escaped}${after}`, "u");
 }
 const FORBIDDEN_PATTERNS = FORBIDDEN_TOKENS.map((t) => [t, tokenPattern(t)] as const);
 const HOLE_PATTERNS = HOLE_TOKENS.map(tokenPattern);
