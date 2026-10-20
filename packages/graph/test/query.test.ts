@@ -122,11 +122,14 @@ describe("graph queries", () => {
     const found = graphQuery(w.memory, { from: g.r, depth: 1, kinds: ["strengthens", "negation_of"] });
     const text = renderSubgraph(found);
     const short = (id: string) => found.claims.find((c) => c.claimId === id)?.short;
+    // Claims at one depth are listed by id, and two ids made in the same millisecond differ only in their random part.
+    const atOne = ([[g.s, "QS"], [g.n, "QN"]] as Array<[string, string]>)
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([id, statement]) => `${short(id)}  open  : ${statement}`);
     assert.deepEqual(text.split("\n"), [
       "3 claims, 2 edges",
       `${short(g.r)}  open  : QR`,
-      `${short(g.s)}  open  : QS`,
-      `${short(g.n)}  open  : QN`,
+      ...atOne,
       `${short(g.s)} -strengthens[lean_checked]-> ${short(g.r)}`,
       `${short(g.n)} -negation_of[proposed]-> ${short(g.r)}`,
     ]);
