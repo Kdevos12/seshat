@@ -147,6 +147,8 @@ export interface RunSummary {
   problems: number;
   /** Problems whose claim is `proved` (certified). */
   solved: number;
+  /** Problems whose claim is `refuted` (a certified proof of the negation). */
+  refuted: number;
   /** Problems whose claim is `computed`: a proof passed the fast check, not yet certified. */
   candidates: number;
   attempts: number;
@@ -535,6 +537,7 @@ export class Projection {
     return {
       problems: p.n,
       solved: byStatus("proved"),
+      refuted: byStatus("refuted"),
       candidates: byStatus("computed"),
       attempts: a.n,
       usd: a.usd + m.usd,

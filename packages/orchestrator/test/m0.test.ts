@@ -188,7 +188,7 @@ describe("M0 run", () => {
     assert.match(renderRunReport(result.report), /^\| No outcome \(not started, or the run was killed\) \| 1 \|$/m);
   });
 
-  it("makes a candidate proved when the certifier certifies it, and open again when it rejects it", async () => {
+  it("makes a candidate proved when the certifier certifies it, and leaves it computed when it rejects it", async () => {
     const requests: CertificationRequest[] = [];
     const certifier = (verdict: "certified" | "rejected"): LeanCertifier => ({
       implementation: "fake-certifier",
@@ -211,7 +211,12 @@ describe("M0 run", () => {
     const rejected = await demoRun({ certifier: certifier("rejected"), responses: [check("exact trivial_proof")] });
     assert.equal(rejected.result.problems[0]?.outcome, "unsolved");
     assert.match(rejected.result.problems[0]?.reason ?? "", /certification rejected the candidate: kernel: declaration has metavariables/);
-    assert.deepEqual(ofType(rejected.events, "claim.status_changed").map((c) => c.data.to), ["computed", "open"]);
+    // The claim is still a candidate; the validation of the certifier says why it is not more.
+    assert.deepEqual(ofType(rejected.events, "claim.status_changed").map((c) => c.data.to), ["computed"]);
+    const [fast, kernel] = ofType(rejected.events, "validation.finished");
+    assert.deepEqual([kernel?.data.method, kernel?.data.verdict, kernel?.data.reasons], ["kernel_replay", "invalid", ["kernel: declaration has metavariables"]]);
+    assert.equal(kernel?.data.submissionHash, fast?.data.submissionHash);
+    assert.deepEqual([ofType(rejected.events, "run.finished")[0]?.data.solved, ofType(rejected.events, "run.finished")[0]?.data.candidates], [0, 1]);
   });
 
   it("stops between problems when the run is aborted", async () => {

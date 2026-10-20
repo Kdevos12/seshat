@@ -128,6 +128,11 @@ It is the capability `lean.certify`, on the host through `LEAN_PROJECT_DIR` (the
 [certifier.md](certifier.md) has the process, the sandbox the compile should run in, the settings
 and the deployment. The Lean library has never been compiled.
 
+A run uses it without being asked when the host's profile lists `lean.certify` (the default
+profiles do): it certifies each problem's candidate, and the proofs and refutations the lines submit
+([m0-loop.md](m0-loop.md#certification)). Where the project is not set up, every candidate stays a
+candidate and its problem says why.
+
 ## To verify against Lean
 
 These depend on Lean's exact behaviour and are covered only by simulations so far. The contract

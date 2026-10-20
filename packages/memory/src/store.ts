@@ -422,7 +422,7 @@ export class MemoryStore {
       throw new Error(`setReference: the store of actor ${this.actor} is a view; only the orchestrator's root store sets a reference file`);
     }
     if (this.#journal.projection.claim(claimId) === undefined) throw new Error(`unknown claim ${claimId}`);
-    this.#references.set(claimId, reference);
+    this.#references.set(claimId, { source: reference.source, theorem: reference.theorem });
   }
 
   /**
@@ -434,7 +434,9 @@ export class MemoryStore {
     const claim = this.claim(claimId);
     if (claim === undefined) throw new Error(`unknown claim ${claimId}`);
     if (claim.kind === "informal") throw new Error(`claim ${claimId} is informal: it has no Lean reference`);
-    const own = this.#references.get(claimId) ?? claimReference(claim.header ?? "", claimTheoremName(claimId), claim.statement);
+    // A copy: a line that changes what it was given does not change the file the store keeps.
+    const stored = this.#references.get(claimId);
+    const own = stored !== undefined ? { ...stored } : claimReference(claim.header ?? "", claimTheoremName(claimId), claim.statement);
     return options.negation === true ? negationReference(own) : own;
   }
 }

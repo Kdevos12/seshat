@@ -27,6 +27,7 @@
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
+| `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, fleet), the M1 line, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
@@ -45,7 +46,6 @@ code without touching the lockfile:
 | `@seshat/abduction` | The abductive engine and its reranking (M7, M9), suspended and not built ([lines.md](lines.md#suspended-lines)) | core, graph, lean-meta, lines, memory, models, registry |
 | `@seshat/induction` | The inductive engine and theory exploration (M8, M13) | classical, core, library, lines, memory, models, registry |
 | `@seshat/repair` | Typed repairs, Lakatos-style repair (M14) | core, induction, lines, memory, registry |
-| `@seshat/lean-local` | Lean on the host: the certifier (kernel replay, `lean.certify`) | core, lines, memory, registry |
 
 Data that is versioned with the code:
 

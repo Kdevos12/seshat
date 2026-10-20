@@ -1,4 +1,4 @@
-import { type BlobStore, CheckFailedError, type Journal, prepareSketch, ProofValidator, SKETCH_POLICY } from "@seshat/core";
+import { type BlobStore, CheckFailedError, type Journal, type LeanCertifier, prepareSketch, ProofValidator, SKETCH_POLICY } from "@seshat/core";
 import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -9,6 +9,9 @@ export interface ClaimBenchesOptions {
   registry: Registry;
   memory: MemoryStore;
   blobs: BlobStore;
+  /** Certifies the candidates `certifyPending` finds. Without one they stay candidates. */
+  certifier?: LeanCertifier;
+  log?: (line: string) => void;
 }
 
 /** Who submits, and the problem it happens in. */
@@ -25,7 +28,8 @@ export interface ValidateContext {
  * settle the problem like a prover's proof. Any other claim, and any negation, gets a workbench
  * of its own, built on first use from the claim's reference file (`MemoryStore.referenceFor`) and
  * kept for the run. A valid proof makes the claim a candidate; a valid refutation is recorded with
- * `negation: true` and changes no status, since only certification settles a claim.
+ * `negation: true` and changes no status. Only certification settles a claim, and it comes later:
+ * `certifyPending` certifies what the lines submitted, when the problem they worked on is over.
  */
 export class ClaimBenches {
   private readonly o: ClaimBenchesOptions;
@@ -66,6 +70,38 @@ export class ClaimBenches {
   }
 
   /**
+   * Certifies, one after the other, the candidates that have not been: those of the workbenches
+   * made here, and of `extra` (the problem's own, whose candidate a line may have submitted late).
+   * A certified proof makes its claim `proved`, a certified refutation `refuted`; a candidate that
+   * the certifier rejects, or cannot answer for, stays a candidate. Each is tried once. Never
+   * throws: what happened is logged.
+   */
+  async certifyPending(signal: AbortSignal | undefined, extra: readonly Workbench[] = []): Promise<void> {
+    const log = this.o.log ?? (() => {});
+    for (const bench of [...extra, ...this.benches.values()]) {
+      if (!(bench instanceof Workbench) || !bench.awaitsCertification) continue;
+      if (signal?.aborted) return;
+      const what = `${bench.negation ? "refutation" : "proof"} of claim ${bench.claimId}`;
+      try {
+        const certified = await bench.certify(signal);
+        if (certified === undefined) continue;
+        if (certified.result.verdict !== "certified") {
+          log(`the certifier rejected the ${what}: ${certified.result.reasons.join("; ")}`);
+          continue;
+        }
+        const settled = bench.negation ? "refuted" : "proved";
+        log(
+          certified.status === settled
+            ? `the ${what} was certified: the claim is ${settled}`
+            : `the ${what} was certified, but the claim is ${certified.status}`,
+        );
+      } catch (error) {
+        log(`the ${what} could not be certified: ${messageOf(error)}`);
+      }
+    }
+  }
+
+  /**
    * The workbench of a claim or of its negation. A reference that Lean did not answer for (it could
    * not be reached, or the check was stopped) is tried again next time; one that does not compile
    * is not.
@@ -88,6 +124,7 @@ export class ClaimBenches {
         reference: type,
         blobs: this.o.blobs,
         negation,
+        ...(this.o.certifier !== undefined ? { certifier: this.o.certifier } : {}),
       });
       this.benches.set(key, bench);
       return bench;

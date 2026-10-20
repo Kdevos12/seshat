@@ -40,13 +40,14 @@ export interface TokenCost {
 export type AttemptOutcome = "valid" | "invalid" | "no_submission" | "budget_exhausted" | "aborted" | "error";
 
 /**
- * How a problem ended: `proved` (certified), `candidate` (passed the fast check only), `unsolved`
- * (the budget or the sessions ran out, or the certifier rejected the candidate), `skipped` (it could
- * not be set up: its file changed, it cannot be cut into a sketch, or the original does not
- * compile), `aborted` (the run was stopped), `error` (the harness failed, Lean could not be reached,
- * or every prover kept failing).
+ * How a problem ended: `proved` (certified), `refuted` (its negation was proved and certified, which
+ * a line that proves negations can do: the claim is `refuted`, not `proved`), `candidate` (passed the
+ * fast check only, or the certifier could not decide), `unsolved` (the budget or the sessions ran
+ * out, or the certifier rejected the candidate), `skipped` (it could not be set up: its file
+ * changed, it cannot be cut into a sketch, or the original does not compile), `aborted` (the run was
+ * stopped), `error` (the harness failed, Lean could not be reached, or every prover kept failing).
  */
-export type ProblemOutcome = "proved" | "candidate" | "unsolved" | "skipped" | "aborted" | "error";
+export type ProblemOutcome = "proved" | "refuted" | "candidate" | "unsolved" | "skipped" | "aborted" | "error";
 
 export interface EventDataMap {
   "run.started": {
@@ -63,6 +64,8 @@ export interface EventDataMap {
     attempted: number;
     /** Problems whose claim is `proved`. */
     solved: number;
+    /** Problems whose claim is `refuted`: a certified proof of the negation. Absent in journals older than the certifier. */
+    refuted?: number;
     /** Problems whose claim is `computed`: a candidate that is not certified. */
     candidates: number;
     usd: number;

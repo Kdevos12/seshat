@@ -137,6 +137,39 @@ without axioms, the three standard axioms, `sorry`, an axiom of the candidate's 
 statement, a file that does not compile, and a time limit. A test runs it against the answers a
 certifier is expected to give, which only shows that the expectations are well written.
 
+## In a run
+
+A run certifies when it has a certifier: the one `RunOptions.certifier` gives, or else the host's
+`lean.certify`, if the profile lists it (`RegistryLeanCertifier.forHost(registry)`, which goes
+through the registry, so that every certification is a tool run). `run.started` records which one
+(`config.certifier`, `null` for none). A host that lists the capability but cannot run it, because
+`LEAN_PROJECT_DIR` is not set or Lean is not the pinned version, does not stop the run: each
+certification fails, the candidates stay candidates, and each problem says why in its reason
+(`certification failed: ...`). `pnpm harness health lean.certify` tells before a run does.
+
+[m0-loop.md](m0-loop.md#certification) has what is certified, when, and what each answer does to the
+claim and to the problem's outcome. In short:
+
+- A problem's own candidate is certified when its provers are done. A certified proof makes the
+  claim `proved`; a rejected one leaves it `computed`, with the reasons in the `kernel_replay`
+  validation; no answer leaves it `computed` and records no verdict.
+- The proofs and refutations that lines submit through `validate` take the same path. The ones for
+  other claims, for negations (`negation: true`, which make a claim `refuted`), and any late proof of
+  the problem's own claim are certified when the problem's `afterProblem` is over, one after the
+  other. M2's composed proofs, its twin's proof and its composed refutations go through here:
+  nothing distinguishes them from a prover's candidate.
+- Each candidate is certified once per run, and a workbench keeps its first candidate: the
+  problem's own, and one for each other claim and each negation a line submits proofs for. A line
+  cannot make the run pay for certification after certification by submitting more proofs of one
+  claim.
+- The reference the certifier gets as `original` is never a file a line supplied: the problem's own
+  file, or the claim's file rebuilt from its journaled statement and header
+  ([memory.md](memory.md#reference-files)). For a refutation it is that file followed by the
+  negation theorem, so that the target is compared with `¬ statement` as Lean elaborates it.
+- A certified proof of a claim that is already settled the other way is a contradiction, not a
+  status: the validation stays as evidence and the status does not move. The problem ends as
+  `error` when it was its own candidate, and the run's log says so otherwise.
+
 ## Tests
 
 `packages/lean-local/test` runs `LakeCertifier` against a fake `lake`
@@ -147,6 +180,10 @@ set, a program that lies about them, a file that does not compile, a reference t
 or the program dying, the time limit with the process group killed, an abort, an unavailable or
 wrong `lake`, the environment the child gets, and a sandbox command. `packages/registry/test` runs the
 adapters (`leanCertifyImplementation`, `RegistryLeanCertifier`) and the contract.
+`packages/orchestrator/test/certify.test.ts` runs the certification through the loop with fake
+certifiers and with the registry ([m0-loop.md](m0-loop.md#tested-and-not-yet)), and
+`packages/graph/test/line.test.ts` has M2's twin refute a claim with a certifier. None of them has a
+Lean: what a real `lake` does is the list below.
 
 ## Deployment
 
@@ -192,6 +229,10 @@ lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.js
 
 ## Not done yet
 
+- A certification that gave no answer is not tried again in the run, and neither is a rejected
+  candidate's claim with another proof. A transient failure of the certifier therefore costs the
+  candidate its certificate in that run, and nothing certifies the candidates of a finished run
+  afterwards, though every file that was checked is in its blob store (by `submissionHash`).
 - The reference is compiled for every certification. Caching it is safe only where nothing that ran
   untrusted code can write to the cache, so it waits for a sandbox that has been tried.
 - The module is replayed whole, since `Environment.replay` takes a module's constants as a map.

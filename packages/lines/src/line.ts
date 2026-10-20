@@ -368,7 +368,11 @@ export interface ValidateResult {
   verdict: "valid" | "invalid";
   /** The `validation.finished` event, when the check was recorded. */
   validationId?: string;
-  /** The claim's status after the check. */
+  /**
+   * The claim's status after the check. A check raises it to `computed` at most: the orchestrator
+   * certifies what lines submit when the problem ends, and only then can the claim be `proved`
+   * (or `refuted`).
+   */
   status: ClaimStatus;
   reasons: string[];
   /** What the validator said; absent when the claim's reference file could not be checked. */
