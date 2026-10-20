@@ -130,8 +130,20 @@ statement has, or why it has neither; a statement of another shape is left alone
 A *law* is `∀ x y z : M, left = right` where each side is a term in the variables and the one
 operation `*` (or `◇`), which associates to the left as in Lean. Anything else is refused with the
 reason: another symbol, a number, a variable the `∀` does not bind, a second type, more than 8
-variables, a hypothesis that is not a law, a binder that is not a hypothesis. A statement about two
-numbers, or one that uses the proof of its own hypothesis, is not tried either.
+variables, a side with more than 64 occurrences of variables, parentheses nested more than 32 deep, a
+hypothesis that is not a law, a binder that is not a hypothesis. A statement about two numbers, or
+one that uses the proof of its own hypothesis, is not tried either.
+
+**The size of a statement is limited.** `recognizeStatement` reads at most 4 000 characters
+(`MAX_STATEMENT_LENGTH`; the `small_models` tool declares the same `maxLength` for its `statement`
+argument), a side of a law has at most 64 occurrences of variables (`MAX_LAW_OCCURRENCES`) and
+parentheses nest at most 32 deep (`MAX_LAW_NESTING`). The laws that are studied have a few occurrences
+on a side, so no real statement meets these limits; they are there because the parser, the compiler of
+laws and the printer recurse over the term, and the evaluator does its work for every assignment on
+every occurrence. A text of a million variables, or of a hundred thousand parentheses, would otherwise
+build a term that deep and run out of stack, and a long term makes each assignment cost in
+proportion. The limits are checked while the text is read, so such a text is refused with its reason
+before any term exists, and the line leaves the statement alone.
 
 A premise that is itself a quantified law goes in parentheses: `(∀ x y : M, x * y = y * x) → ...`.
 Lean reads the body of a `∀`, `∃` or `fun` (or `forall` and `exists`, written as words) to the end of

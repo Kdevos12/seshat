@@ -25,6 +25,16 @@ export class LawSyntaxError extends Error {
 /** The most variables a law may have: the evaluation tries every assignment, `size ** variables` of them. */
 export const MAX_LAW_VARIABLES = 8;
 
+/**
+ * The most occurrences of variables on one side of a law. The evaluation computes every one of them
+ * for every assignment, and the term is walked recursively: the laws that are studied have a few on
+ * a side, and a side of a million would be a term a million deep.
+ */
+export const MAX_LAW_OCCURRENCES = 64;
+
+/** The deepest nesting of parentheses in a law: the parser recurses once for each level. */
+export const MAX_LAW_NESTING = 32;
+
 type Token = { kind: "ident" | "forall" | "sym"; text: string; at: number };
 
 const IDENT_START = /[\p{L}_]/u;
@@ -112,6 +122,12 @@ export function parseLaw(text: string, options: { implicit?: boolean } = {}): La
     expect(",");
   }
 
+  // The size limits are checked as the term is read, so that a text of a million variables or of
+  // a hundred thousand parentheses is refused before a term that deep exists, and before the
+  // parser (which recurses once for each level of parentheses) can run out of stack.
+  let side = "left";
+  let occurrences = 0;
+  let nesting = 0;
   const term = (): Term => {
     let left = atom();
     while (peek()?.kind === "sym" && OPERATORS.has(peek()?.text ?? "")) {
@@ -122,16 +138,22 @@ export function parseLaw(text: string, options: { implicit?: boolean } = {}): La
   };
   const atom = (): Term => {
     if (isSym("(")) {
+      if (++nesting > MAX_LAW_NESTING) throw new LawSyntaxError(`the law has parentheses nested more than ${MAX_LAW_NESTING} deep`);
       pos++;
       const inner = term();
       expect(")");
+      nesting--;
       return inner;
     }
-    return { kind: "var", name: ident("a variable or '('") };
+    const name = ident("a variable or '('");
+    if (++occurrences > MAX_LAW_OCCURRENCES) throw new LawSyntaxError(`the ${side} side of the law has more than ${MAX_LAW_OCCURRENCES} occurrences of variables`);
+    return { kind: "var", name };
   };
 
   const left = term();
   expect("=");
+  side = "right";
+  occurrences = 0;
   const right = term();
   if (pos < tokens.length) throw new LawSyntaxError(`unexpected ${here()} after the law`);
 

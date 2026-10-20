@@ -92,3 +92,32 @@ describe("equational laws of magmas", () => {
     assert.notEqual(lawKey(parseLaw("x * (y * z) = x")), lawKey(parseLaw("(x * y) * z = x")));
   });
 });
+
+describe("the size of a law", () => {
+  const product = (leaves: number) => Array.from({ length: leaves }, () => "x").join(" * ");
+  /** A product of `leaves` copies of x whose parentheses are balanced: wide, and not deep. */
+  const balanced = (leaves: number): string => (leaves === 1 ? "x" : `(${balanced(Math.floor(leaves / 2))}) * (${balanced(leaves - Math.floor(leaves / 2))})`);
+  const nested = (depth: number) => `${"(".repeat(depth)}x${")".repeat(depth)}`;
+  const refused = (text: string, reason: RegExp) =>
+    assert.throws(() => parseLaw(text), (error) => error instanceof LawSyntaxError && reason.test(error.message), `${text.slice(0, 30)}...`);
+
+  it("reads a side of 64 occurrences of variables, however it is bracketed, and refuses a side of 65", () => {
+    const longest = parseLaw(`${product(64)} = ${product(64)}`);
+    assert.deepEqual(longest.variables, ["x"]);
+    assert.equal(evaluateLaw(longest, xor), true);
+    assert.deepEqual(parseLaw(`${balanced(64)} = ${balanced(64)}`).variables, ["x"]);
+    refused(`${product(65)} = x`, /the left side of the law has more than 64 occurrences of variables/);
+    refused(`x = ${product(65)}`, /the right side of the law has more than 64 occurrences of variables/);
+    refused(`${balanced(65)} = x`, /the left side of the law has more than 64 occurrences of variables/);
+  });
+
+  it("refuses a product of a million variables with a reason: it does not run out of stack over the term it built", () => {
+    refused(`${product(1_000_000)} = x`, /more than 64 occurrences of variables/);
+  });
+
+  it("reads parentheses nested 32 deep and refuses 33, with a reason and not with a stack overflow", () => {
+    assert.deepEqual(parseLaw(`${nested(32)} * x = x`).variables, ["x"]);
+    refused(`${nested(33)} * x = x`, /parentheses nested more than 32 deep/);
+    refused(`x = x * ${nested(100_000)}`, /parentheses nested more than 32 deep/);
+  });
+});

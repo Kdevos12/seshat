@@ -75,6 +75,24 @@ describe("recognizing a statement of magmas", () => {
   });
 });
 
+describe("the size of a statement", () => {
+  const law = "(M : Type) [Mul M] : ∀ x : M, x * x = x";
+  const nested = (depth: number) => `${"(".repeat(depth)}x${")".repeat(depth)}`;
+
+  it("is read up to 4000 characters, spaces included, and a longer statement is not read", () => {
+    assert.equal(recognized(law + " ".repeat(4000 - law.length)).kind, "magma");
+    assert.match(reason(law + " ".repeat(4001 - law.length)), /^the statement has 4001 characters; at most 4000 are read/);
+  });
+
+  it("is refused with a reason when it is huge or nested too deep, and does not run out of stack", () => {
+    assert.match(reason(`(M : Type) [Mul M] : ∀ x : M, ${nested(20_000)} * x = x`), /^the statement has \d+ characters; at most 4000 are read/);
+    assert.equal(recognized(`(M : Type) [Mul M] : ∀ x : M, ${nested(32)} * x = x`).kind, "magma");
+    assert.match(reason(`(M : Type) [Mul M] : ∀ x : M, ${nested(33)} * x = x`), /^the conclusion is not a law of magmas: .*parentheses nested more than 32 deep/);
+    const product = Array.from({ length: 65 }, () => "x").join(" * ");
+    assert.match(reason(`(M : Type) [Mul M] (h : ∀ x : M, ${product} = x) : ∀ x : M, x * x = x`), /^the hypothesis h is not a law of magmas: the left side of the law has more than 64 occurrences of variables/);
+  });
+});
+
 describe("the sort of the type of a magma statement", () => {
   it("is kept as written", () => {
     for (const sort of ["Type", "Type 0", "Type*", "Type _", "Type u", "Type 1"]) {
