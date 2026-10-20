@@ -23,7 +23,7 @@ import type { BatteryObject, IntegerObject, MagmaObject } from "./objects.ts";
 import { type CounterModelData, describeCounterModel, recordCounterModel, submitRefutation } from "./refutation.ts";
 import { runProgram } from "./sandbox.ts";
 import { OEIS_MAX_TERMS, RegistryOeis } from "./services.ts";
-import { type RecognizedStatement, recognizeStatement } from "./statement.ts";
+import { MAX_STATEMENT_LENGTH, type RecognizedStatement, recognizeStatement } from "./statement.ts";
 
 const ACTOR = "line:M11";
 
@@ -513,7 +513,7 @@ function smallModelsTool(session: SessionContext): LineTool {
     parameters: {
       type: "object",
       properties: {
-        statement: { type: "string", description: "The statement in signature form: the binders, then `:` and the proposition." },
+        statement: { type: "string", maxLength: MAX_STATEMENT_LENGTH, description: `The statement in signature form: the binders, then \`:\` and the proposition. At most ${MAX_STATEMENT_LENGTH} characters.` },
         program: { type: "string", description: "A JavaScript function expression that returns true or false for an object of the battery." },
         battery: { type: "string", enum: [...BATTERIES], description: "For a program: the objects to try it on. Default integers. A statement uses the objects its shape asks for." },
       },

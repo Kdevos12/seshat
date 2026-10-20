@@ -228,6 +228,14 @@ describe("beforeProvers on a statement of magmas", () => {
     assert.match(logs.join("\n"), /^M11: the statement is left alone: /);
   });
 
+  it("leaves a statement of more than 4000 characters alone, whatever it says", async () => {
+    const hypotheses = Array.from({ length: 150 }, (_, i) => `(h${i} : ∀ x : M, x * x = x)`).join(" ");
+    const { problem, memory, claimId, logs, requests } = await problemOf(`(M : Type) [Mul M] ${hypotheses} : ∀ x y : M, x * y = y * x`);
+    await hook(M11, "beforeProvers")(problem);
+    assert.deepEqual([fingerprintsOf(memory, claimId), memory.nodes("battery"), requests], [[], [], []]);
+    assert.match(logs.join("\n"), /^M11: the statement is left alone: the statement has \d+ characters; at most 4000 are read/);
+  });
+
   it("fails with the name of the option when a run gave a value out of range", async () => {
     const { problem } = await problemOf(LEFT_PROJECTION_COMMUTES, { options: { exhaustive: 9 } });
     await assert.rejects(hook(M11, "beforeProvers")(problem), /option M11\.exhaustive is an integer from 0 to 3, not 9/);
@@ -630,6 +638,12 @@ describe("the small_models tool", () => {
     assert.match(await call("(M : Type) [Mul M] : ∀ x y z w : M, x * y = z * w"), /^Not tried: the law evaluator would try up to 300611 assignments of the variables, over the 150000 that the cap \(option M11\.lawWork\) leaves for it/);
     assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
     assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
+  });
+
+  it("takes a statement of at most 4000 characters, which its schema says, and says why it did not try a longer one", async () => {
+    const { tool, call } = await toolOf();
+    assert.equal((tool.parameters.properties as { statement: { maxLength?: number } }).statement.maxLength, 4000);
+    assert.match(await call(`${CONSTANT_IN_Y}${" ".repeat(4001)}`), /^Not tried: the statement has \d+ characters; at most 4000 are read\. A statement is in signature form: /);
   });
 
   it("explains what it cannot try, and asks for the statement when none is given", async () => {

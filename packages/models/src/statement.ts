@@ -200,8 +200,17 @@ function occurs(name: string, text: string): boolean {
   return new RegExp(`(?<![\\p{L}\\p{N}_'.])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_'])`, "u").test(text);
 }
 
+/**
+ * The longest statement that the line reads, in characters. The statements it reads are a few binders
+ * and laws, the text is scanned several times, and the laws are bounded one by one
+ * (`MAX_LAW_OCCURRENCES`), so this bounds what a statement from a claim, or from the tool's
+ * `statement` argument, costs before any object is tried.
+ */
+export const MAX_STATEMENT_LENGTH = 4000;
+
 /** Tells which statement a signature is: a magma statement, a natural-number statement, or neither (with the reason). */
 export function recognizeStatement(statement: string): Recognition {
+  if (statement.length > MAX_STATEMENT_LENGTH) return { reason: `the statement has ${statement.length} characters; at most ${MAX_STATEMENT_LENGTH} are read` };
   const split = splitSignature(statement);
   if ("reason" in split) return { reason: split.reason };
   const { binders, conclusion } = split;
