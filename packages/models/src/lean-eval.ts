@@ -19,6 +19,12 @@ export interface LeanEvalOptions {
   batch?: number;
   /** Files in a call to the checker. Default 8. */
   parallel?: number;
+  /**
+   * The most files this call sends to the checker, the ones that retry a file that timed out
+   * included. Default: no limit. When it is reached the objects not yet asked keep no verdict, with
+   * a note, and `capped` says how many.
+   */
+  maxFiles?: number;
   signal?: AbortSignal;
 }
 
@@ -29,11 +35,13 @@ export interface LeanEvaluation {
   notes: Array<string | undefined>;
   /** Files sent to the checker. */
   checks: number;
+  /** Set when `maxFiles` was reached with objects still to ask: how many of them have no verdict for that reason. */
+  capped?: number;
   /** Set when the statement could not be tried at all: the definition does not elaborate, or `decide` settles nothing on the first objects. */
   unusable?: string;
 }
 
-type Outcome = { kind: "pass" } | { kind: "fail" | "unknown"; message: string };
+type Outcome = { kind: "pass" } | { kind: "fail" | "unknown"; message: string; /** Not asked: `maxFiles` was reached first. */ skipped?: true };
 
 class Unusable extends Error {}
 
@@ -72,8 +80,10 @@ export async function evaluateWithLean(checker: LeanChecker, input: LeanEvalInpu
   const parallel = Math.max(1, Math.floor(options.parallel ?? 8));
   const verdicts: Array<boolean | null> = objects.map(() => null);
   const notes: Array<string | undefined> = objects.map(() => undefined);
-  const evaluation = (): LeanEvaluation => ({ verdicts, notes, checks, ...(unusable !== undefined ? { unusable } : {}) });
+  const maxFiles = options.maxFiles === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Math.floor(options.maxFiles));
+  const evaluation = (): LeanEvaluation => ({ verdicts, notes, checks, ...(skipped > 0 ? { capped: skipped } : {}), ...(unusable !== undefined ? { unusable } : {}) });
   let checks = 0;
+  let skipped = 0;
   let unusable: string | undefined;
   if (objects.length === 0) return evaluation();
 
@@ -116,8 +126,13 @@ export async function evaluateWithLean(checker: LeanChecker, input: LeanEvalInpu
         for (const group of queue) for (const i of group) done.set(i, { kind: "unknown", message: "stopped before Lean was asked" });
         break;
       }
-      const round = queue.slice(0, parallel);
-      queue = queue.slice(parallel);
+      const room = maxFiles - checks;
+      if (room <= 0) {
+        for (const group of queue) for (const i of group) done.set(i, { kind: "unknown", message: `the limit of ${maxFiles} files was reached`, skipped: true });
+        break;
+      }
+      const round = queue.slice(0, Math.min(parallel, room));
+      queue = queue.slice(round.length);
       const files = round.map((group) => fileOf(group, negated));
       const results = await checker.check(files, { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
       checks += files.length;
@@ -154,7 +169,12 @@ export async function evaluateWithLean(checker: LeanChecker, input: LeanEvalInpu
         settled++;
       } else {
         const why = fails.get(i);
-        notes[i] = `decide settles neither the statement nor its negation${why !== undefined && why.kind !== "pass" ? `: ${why.message}` : ""}`;
+        if (why?.kind === "unknown" && why.skipped === true) {
+          skipped++;
+          notes[i] = `no verdict: ${why.message}`;
+        } else {
+          notes[i] = `decide settles neither the statement nor its negation${why !== undefined && why.kind !== "pass" ? `: ${why.message}` : ""}`;
+        }
       }
     }
     return settled;
@@ -165,7 +185,10 @@ export async function evaluateWithLean(checker: LeanChecker, input: LeanEvalInpu
     // The first file is a probe: when the definition does not elaborate, or decide settles nothing, the rest would say the same.
     const first = all.slice(0, batch);
     if ((await settle(first)) === 0) {
-      unusable = `decide settles none of the first ${first.length} objects: ${notes[first[0] as number] ?? "no answer"}`;
+      unusable =
+        skipped > 0
+          ? `the limit of ${maxFiles} files was reached before any object had a verdict`
+          : `decide settles none of the first ${first.length} objects: ${notes[first[0] as number] ?? "no answer"}`;
       for (let i = 0; i < notes.length; i++) notes[i] ??= unusable;
       return evaluation();
     }

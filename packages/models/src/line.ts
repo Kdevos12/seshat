@@ -10,6 +10,7 @@ import {
   type EvaluatorKind,
   evaluateMagmaStatement,
   fingerprintsOf,
+  magmaWork,
   planRelations,
   recordBattery,
   recordFingerprint,
@@ -54,6 +55,10 @@ export const M11_DEFAULTS = {
   identifyTerms: 40,
   /** The numbers the `small_models` tool tries a statement about a number on. */
   toolMaxNumber: 30,
+  /** The most files the Lean evaluator sends for a problem (its statement and the claims around it together), and for each call of the tool. */
+  leanFiles: 200,
+  /** The most assignments of variables the law evaluator tries for a problem, and for each call of the tool: the bound of `magmaWork`, checked before it runs. */
+  lawWork: 60_000_000,
 } satisfies JsonObject;
 
 export type M11Options = { [K in keyof typeof M11_DEFAULTS]: (typeof M11_DEFAULTS)[K] extends boolean ? boolean : number };
@@ -87,6 +92,8 @@ export function readOptions(raw: Readonly<JsonObject>): M11Options {
     identify: flag("identify"),
     identifyTerms: integer("identifyTerms", 4, OEIS_MAX_TERMS),
     toolMaxNumber: integer("toolMaxNumber", 1, 200),
+    leanFiles: integer("leanFiles", 0, 10_000),
+    lawWork: integer("lawWork", 0, 10_000_000_000),
   };
 }
 
@@ -106,13 +113,27 @@ interface Tried {
   evaluator: EvaluatorKind;
   /** Set when the statement could not be tried at all. */
   unusable?: string;
+  /** Set when the cap on Lean files cut the evaluation short: what happened, and how many objects have no verdict because of it. */
+  capped?: string;
 }
+
+/** What the evaluators may still spend. */
+interface Allowance {
+  leanFiles: number;
+  lawWork: number;
+}
+
+const allowanceOf = (options: M11Options): Allowance => ({ leanFiles: options.leanFiles, lawWork: options.lawWork });
 
 interface Environment {
   registry: Registry;
   signal: AbortSignal;
   leanTimeoutSec: number;
   attemptId?: string;
+  /** The caps the options set, for the messages. */
+  caps: Allowance;
+  /** What is left of them: every statement tried with this environment takes its share, so that the statements of one problem, or of one call of the tool, spend no more than the cap together. */
+  left: Allowance;
 }
 
 /**
@@ -121,16 +142,33 @@ interface Environment {
  */
 async function tryStatement(env: Environment, statement: RecognizedStatement, battery: Battery, header: string): Promise<Tried> {
   if (statement.kind === "magma") {
-    const { verdicts, witnesses } = evaluateMagmaStatement(statement, battery.objects as readonly MagmaObject[]);
+    const magmas = battery.objects as readonly MagmaObject[];
+    // The evaluator cannot be interrupted once it runs, so the bound is checked first.
+    const work = magmaWork(statement, magmas);
+    if (work > env.left.lawWork) {
+      return {
+        verdicts: [],
+        witnesses: [],
+        evaluator: "law",
+        unusable: `the law evaluator would try up to ${work} assignments of the variables, over the ${env.left.lawWork} that the cap (option M11.lawWork) leaves for it`,
+      };
+    }
+    env.left.lawWork -= work;
+    const { verdicts, witnesses } = evaluateMagmaStatement(statement, magmas);
     return { verdicts, witnesses, evaluator: "law" };
   }
   const checker = new RegistryLeanChecker(env.registry, { actor: ACTOR, ...(env.attemptId !== undefined ? { attemptId: env.attemptId } : {}) });
-  const evaluation = await evaluateWithLean(checker, { header, statement, objects: battery.objects }, { timeoutSec: env.leanTimeoutSec, signal: env.signal });
+  const files = env.left.leanFiles;
+  const evaluation = await evaluateWithLean(checker, { header, statement, objects: battery.objects }, { timeoutSec: env.leanTimeoutSec, signal: env.signal, maxFiles: files });
+  env.left.leanFiles = Math.max(0, files - evaluation.checks);
+  const cap = `the cap of ${env.caps.leanFiles} Lean files (option M11.leanFiles) was reached`;
+  const unusable = evaluation.unusable !== undefined && evaluation.capped !== undefined ? `${cap} before any object had a verdict` : evaluation.unusable;
   return {
     verdicts: evaluation.verdicts,
     witnesses: evaluation.verdicts.map(() => undefined),
     evaluator: "lean",
-    ...(evaluation.unusable !== undefined ? { unusable: evaluation.unusable } : {}),
+    ...(unusable !== undefined ? { unusable } : {}),
+    ...(evaluation.capped !== undefined ? { capped: `${cap}; ${evaluation.capped} objects have no verdict` } : {}),
   };
 }
 
@@ -200,7 +238,7 @@ async function beforeProvers(problem: ProblemContext, services: M11Services): Pr
   }
   const statement = recognized.statement;
   const battery = batteryFor(statement, options);
-  const env: Environment = { registry: problem.registry, signal: problem.signal, leanTimeoutSec: options.leanTimeoutSec };
+  const env: Environment = { registry: problem.registry, signal: problem.signal, leanTimeoutSec: options.leanTimeoutSec, caps: allowanceOf(options), left: allowanceOf(options) };
   const header = problem.target.sketch.prefix;
 
   const tried = await tryStatement(env, statement, battery, header);
@@ -212,6 +250,7 @@ async function beforeProvers(problem: ProblemContext, services: M11Services): Pr
   recordTried(problem.memory, problem.claimId, battery, tried);
   const counts = countVerdicts(verdictString(tried.verdicts));
   problem.log(`M11: on ${battery.id} (${battery.objects.length} objects) the statement holds on ${counts.holds}, fails on ${counts.fails}, no verdict on ${counts.unknown}`);
+  if (tried.capped !== undefined) problem.log(`M11: ${tried.capped}`);
 
   await refute(problem, options, battery, statement, tried);
   if (problem.signal.aborted) return;
@@ -274,8 +313,10 @@ async function compareNeighbors(
     let verdicts = storedVerdicts(problem.memory, claim.claimId, battery);
     if (verdicts === undefined) {
       const other = await tryStatement(env, recognized.statement, battery, claim.header ?? problem.target.sketch.prefix);
-      if (other.unusable !== undefined) {
-        problem.log(`M11: claim ${claim.claimId} could not be tried: ${other.unusable}`);
+      // A fingerprint with holes that the cap made would be compared as if it were whole: it is not recorded.
+      const reason = other.unusable ?? other.capped;
+      if (reason !== undefined) {
+        problem.log(`M11: claim ${claim.claimId} could not be tried: ${reason}`);
         continue;
       }
       recordTried(problem.memory, claim.claimId, battery, other);
@@ -420,12 +461,13 @@ async function statementReport(session: SessionContext, text: string, signal: Ab
   const statement = recognized.statement;
   const options = readOptions(session.options);
   const battery = batteryFor(statement, options, options.toolMaxNumber);
-  const env: Environment = { registry: session.registry, signal, leanTimeoutSec: Math.min(options.leanTimeoutSec, 30), attemptId: session.attemptId };
+  const env: Environment = { registry: session.registry, signal, leanTimeoutSec: Math.min(options.leanTimeoutSec, 30), attemptId: session.attemptId, caps: allowanceOf(options), left: allowanceOf(options) };
   const tried = await tryStatement(env, statement, battery, session.target.sketch.prefix);
   if (tried.unusable !== undefined) return `Not tried: ${tried.unusable}`;
   const fingerprint = verdictString(tried.verdicts);
   const counts = countVerdicts(fingerprint);
   const lines = [`On ${battery.id} (${battery.objects.length} objects, ${EVALUATOR_WORDS[tried.evaluator]}) the statement holds on ${counts.holds} and fails on ${counts.fails}${counts.unknown > 0 ? `, with no verdict on ${counts.unknown}` : ""}.`];
+  if (tried.capped !== undefined) lines.push(`${tried.capped.charAt(0).toUpperCase()}${tried.capped.slice(1)}.`);
   lines.push(...failures(battery, tried.verdicts, "Counter-model"));
   const own = storedVerdicts(session.memory, session.claimId, battery);
   if (own !== undefined) {

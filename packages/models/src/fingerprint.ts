@@ -69,6 +69,21 @@ export function relate(first: string, second: string): Relation {
 }
 
 /**
+ * An upper bound on the work of `evaluateMagmaStatement`: the assignments of values to the variables
+ * that it would try, `size ** variables` for each law of the statement (the hypotheses and the
+ * conclusion) on each magma. It is reached when every law holds on every magma; a law that fails
+ * stops at its first assignment that breaks it, and a hypothesis that fails leaves the conclusion
+ * alone. The evaluator is synchronous, so this is also what the process does before it can do
+ * anything else, at about six million assignments a second.
+ */
+export function magmaWork(statement: MagmaStatement, magmas: readonly Magma[]): number {
+  const variables = [...statement.hypotheses.map((hypothesis) => hypothesis.law.variables.length), statement.conclusion.law.variables.length];
+  let work = 0;
+  for (const { size } of magmas) for (const count of variables) work += size ** count;
+  return work;
+}
+
+/**
  * The verdicts of a statement of magmas on magmas, in TypeScript: `true` where it holds (also where a
  * hypothesis fails, so that it holds vacuously), `false` on a counter-model, with the values of the
  * conclusion's variables that break it.
