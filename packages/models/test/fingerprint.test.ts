@@ -22,6 +22,7 @@ import {
   recordBattery,
   recordFingerprint,
   relate,
+  statementStructure,
   verdictString,
 } from "../src/index.ts";
 
@@ -231,6 +232,30 @@ describe("candidate relations in the memory", () => {
     // A lemma over Type says nothing about the claims over every universe, and the other way round.
     assert.equal(pointwiseLink("implies", over("Type*"), idempotent("Type"), "m11_x"), undefined);
     assert.equal(pointwiseLink("implies", over("Type"), idempotent("Type*"), "m11_x"), undefined);
+  });
+
+  it("compares the sorts themselves: a fixed universe is not a universe parameter, and Type 1 is not Type 2", () => {
+    const over = (sort: string, law: string) => {
+      const result = recognizeStatement(`(M : ${sort}) [Mul M] : ${law}`);
+      assert.ok("statement" in result);
+      return result.statement;
+    };
+    const left = (sort: string) => over(sort, LAWS.leftZero);
+    const idempotent = (sort: string) => over(sort, LAWS.idempotent);
+    // A lemma over every universe does not give an edge from a claim over universe 1 (it says nothing of the others), nor the other way round.
+    assert.equal(pointwiseLink("implies", left("Type 1"), idempotent("Type*"), "m11_x"), undefined);
+    assert.equal(pointwiseLink("implies", left("Type*"), idempotent("Type 1"), "m11_x"), undefined);
+    assert.equal(pointwiseLink("equiv", left("Type 1"), idempotent("Type u"), "m11_x"), undefined);
+    assert.equal(pointwiseLink("implies", left("Type 1"), idempotent("Type 2"), "m11_x"), undefined);
+    assert.equal(pointwiseLink("implies", left("Type 1"), idempotent("Type"), "m11_x"), undefined);
+    // The same fixed universe: the lemma is stated over it, and not over Type*.
+    assert.equal(pointwiseLink("implies", left("Type 1"), idempotent("Type 1"), "m11_x")?.statement, "(M : Type 1) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x : M, x * x = x");
+    assert.equal(statementStructure(left("Type 2")), "(M : Type 2) [Mul M]");
+    // Every spelling of a universe parameter is one sort, and so are Type and Type 0.
+    for (const [first, second] of [["Type _", "Type u"], ["Type u", "Type v"], ["Type*", "Type _"]] as const) {
+      assert.equal(pointwiseLink("implies", left(first), idempotent(second), "m11_x")?.statement, "(M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x : M, x * x = x", `${first} and ${second}`);
+    }
+    assert.equal(statementStructure(left("Type 0")), "(M : Type) [Mul M]");
   });
 
   it("gives no lemma to claims about different structures, and no edge to a claim without a verdict", () => {

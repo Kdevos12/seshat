@@ -52,16 +52,32 @@ const CLOSE = ")]}⟩⦄⟧⁆";
 const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_'!?]*$/u;
 const NAT_TYPES = new Set(["ℕ", "Nat"]);
 const TYPE_SORT = /^Type(?:\*| _| [\p{L}\p{N}_]+)?$/u;
-const SMALL_SORT = /^Type(?: 0)?$/u;
+
+/**
+ * The sort of the statement's type, in one spelling for each sort: `Type` (also written `Type 0`),
+ * `Type*` (a universe parameter, however it is written: `Type*`, `Type _`, `Type u`) or `Type n` for
+ * the fixed universe `n` from 1. Two statements share a lemma only when their sorts are the same:
+ * a lemma over every universe is not about a claim over universe 1, and one over `Type` is not about
+ * either.
+ */
+export function sortOf(statement: MagmaStatement): string {
+  if (!statement.sort.startsWith("Type")) return statement.sort;
+  const rest = statement.sort.slice("Type".length).trim();
+  if (rest === "") return "Type";
+  // A number is a fixed universe; `*`, `_` and a name are a universe parameter.
+  if (/^\d+$/u.test(rest)) return BigInt(rest) === 0n ? "Type" : `Type ${BigInt(rest)}`;
+  return "Type*";
+}
 
 /**
  * Whether the objects that refute a statement must be lifted to its sort. A claim over `Type*`,
  * `Type _` or `Type u` is a statement with a universe parameter, and inside the proof of its
  * negation that universe is a rigid `u_1`: `Fin n : Type` does not fit the claim's first argument,
- * but `ULift (Fin n)` does, for any universe. Only `Type` and `Type 0` take `Fin n` as it is.
+ * but `ULift (Fin n)` does, for any universe, as it does for a fixed universe `Type 1`. Only `Type`
+ * and `Type 0` take `Fin n` as it is.
  */
 export function needsLift(statement: MagmaStatement): boolean {
-  return !SMALL_SORT.test(statement.sort);
+  return sortOf(statement) !== "Type";
 }
 
 /** The index of the bracket that closes the one at `at`, or -1. */
@@ -260,13 +276,13 @@ export function statementBody(statement: RecognizedStatement): string {
 
 /**
  * The binders that the statement's objects fill, in signature form: `(M : Type) [Mul M]` or `(n : ℕ)`.
- * A statement over a universe-polymorphic type has `Type*`, so that a lemma stated with the structure
- * (the link of an edge) is as general as the claims, and statements of different sorts have
- * different structures.
+ * The type has the statement's sort (`sortOf`: `Type`, `Type*` or `Type 1`), so that a lemma stated
+ * with the structure (the link of an edge) is about the claims' own objects, and statements of
+ * different sorts have different structures.
  */
 export function statementStructure(statement: RecognizedStatement): string {
   if (statement.kind === "nat") return `(${statement.variable} : ℕ)`;
-  return `(${statement.type} : ${needsLift(statement) ? "Type*" : "Type"}) [${statement.operation} ${statement.type}]`;
+  return `(${statement.type} : ${sortOf(statement)}) [${statement.operation} ${statement.type}]`;
 }
 
 /** The statement in signature form, as `ensureClaim` takes it. */
