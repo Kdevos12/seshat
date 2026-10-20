@@ -42,8 +42,8 @@ interface LeanCertifier {
 }
 ```
 
-A call that reaches no verdict (the time limit, an abort, no Lean, a failure of the checking
-program) throws `CertifyFailedError` instead of answering `rejected`: it says nothing about the
+A call that reaches no verdict (the time limit, an abort, no Lean, a project in which nothing
+compiles, a failure of the checking program) throws `CertifyFailedError` instead of answering `rejected`: it says nothing about the
 candidate ([certifier.md](certifier.md#what-it-answers)).
 
 ## Kimina Lean Server

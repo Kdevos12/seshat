@@ -167,6 +167,7 @@
         "args": [],
         "projectDir": "",
         "program": "",
+        "probe": "import FormalConjectures.Util.ProblemImports",
         "sandbox": [],
         "workDir": "",
         "env": {}

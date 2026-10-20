@@ -16,6 +16,8 @@ interface Call {
   cwd: string;
   env: string[];
   request?: { reference: string; candidate: string; target: string; allowedAxioms: string[] };
+  /** The file a compile (`-o`) read. */
+  source?: string;
 }
 
 /** A certifier over the fake lake, in a project directory of its own, and what the fake saw. */
@@ -33,7 +35,7 @@ function setup(options: Partial<LakeCertifierOptions> = {}) {
     workDir,
     lean: "v4.27.0",
     ...options,
-    env: { FAKE_LAKE_LOG: log, FAKE_LAKE_PIDFILE: join(dir, "child.pid"), ...options.env },
+    env: { FAKE_LAKE_LOG: log, FAKE_LAKE_PIDFILE: join(dir, "child.pid"), FAKE_LAKE_VERSION_PIDFILE: join(dir, "version.pid"), ...options.env },
   });
   const calls = (): Call[] =>
     existsSync(log)
@@ -134,9 +136,32 @@ describe("LakeCertifier", () => {
       "does not compile: candidate.lean:5:7: error: type mismatch",
     ]);
     assert.deepEqual(result.axioms, []);
-    // Nothing else was run: not the reference, not the program.
-    assert.equal(calls().length, 2);
+    // The reference was compiled as well, to see that the errors are the candidate's; the program was not run.
+    assert.deepEqual(calls().map((c) => c.args[2]), ["--version", "-o", "-o"]);
     assert.deepEqual(readdirSync(workDir), []);
+  });
+
+  it("does not blame the candidate when Lean cannot compile the reference either: a broken environment is no verdict", async () => {
+    // An unbuilt project, or the wrong checkout: Lean ends with 1 for the import errors of every file.
+    const { certifier, workDir, calls } = setup({ env: { FAKE_LAKE_BROKEN_IMPORTS: "1" } });
+    const error = await failure(certifier.certify(request("")));
+    assert.equal(error.reason, "failed");
+    assert.match(error.message, /neither the candidate nor the reference compiles/);
+    assert.match(error.message, /unknown module prefix 'FormalConjectures'/);
+    assert.match(error.message, /Lean environment/);
+    // The reference was compiled after the candidate's process had ended; the program was not run.
+    assert.deepEqual(calls().map((c) => c.args[2]), ["--version", "-o", "-o"]);
+    assert.deepEqual(readdirSync(workDir), []);
+  });
+
+  it("still rejects a candidate with errors when the reference compiles", async () => {
+    const { certifier, calls } = setup();
+    const result = await certifier.certify(request(marker("compile-error")));
+    assert.equal(result.verdict, "rejected");
+    assert.deepEqual(
+      calls().filter((c) => c.args[2] === "-o").map((c) => c.args[4]?.replace(/^.*[\\/]/, "")),
+      ["candidate.lean", "reference.lean"],
+    );
   });
 
   it("is not a verdict when the reference does not compile, or the program cannot replay it", async () => {
@@ -207,17 +232,129 @@ describe("LakeCertifier", () => {
     const gone = await failure(missing.certifier.certify(request("")));
     assert.equal(gone.reason, "unavailable");
     assert.match(gone.message, /cannot start \/nonexistent\/lake/);
-    assert.equal(await missing.certifier.health(), false);
+    const down = await missing.certifier.health();
+    assert.equal(down.ok, false);
+    assert.match(down.detail, /cannot start \/nonexistent\/lake/);
 
     const other = setup({ env: { FAKE_LAKE_VERSION: "Lean (version 4.26.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)" } });
     const wrong = await failure(other.certifier.certify(request("")));
     assert.equal(wrong.reason, "unavailable");
     assert.match(wrong.message, /the pinned version is 4\.27\.0/);
     assert.equal(other.calls().length, 1, "nothing was compiled");
-    assert.equal(await other.certifier.health(), false);
+    const mismatch = await other.certifier.health();
+    assert.equal(mismatch.ok, false);
+    assert.match(mismatch.detail, /the pinned version is 4\.27\.0/);
 
     const fine = setup();
-    assert.equal(await fine.certifier.health(), true);
+    const up = await fine.certifier.health();
+    assert.equal(up.ok, true);
+    assert.match(up.detail, /version 4\.27\.0/);
+  });
+
+  describe("the probe", () => {
+    const PROBE = "import FormalConjectures.Util.ProblemImports";
+
+    it("is compiled once, after the version check, and not again for the certifications that follow", async () => {
+      const { certifier, workDir, calls } = setup({ probe: PROBE });
+      const up = await certifier.health();
+      assert.equal(up.ok, true);
+      assert.match(up.detail, /probe/);
+      await certifier.certify(request(""));
+      await certifier.certify(request(""));
+      const seen = calls();
+      assert.deepEqual(seen.map((c) => c.args.slice(2, 5).map((a) => a.replace(/^.*[\\/]/, ""))).slice(0, 3), [
+        ["--version"],
+        ["-o", "probe.olean", "probe.lean"],
+        ["-o", "candidate.olean", "candidate.lean"],
+      ]);
+      assert.equal(seen[1]?.source, `${PROBE}\n`, "the probe file holds the import");
+      assert.equal(seen.filter((c) => c.args[2] === "--version").length, 1);
+      assert.equal(seen.filter((c) => c.args.some((a) => a.endsWith("probe.lean"))).length, 1);
+      assert.deepEqual(readdirSync(workDir), [], "the probe's directory is removed");
+    });
+
+    it("makes the health check say why the project cannot be used, and keeps certifications from compiling candidates against it", async () => {
+      const { certifier, workDir, calls } = setup({ probe: PROBE, env: { FAKE_LAKE_BROKEN_IMPORTS: "1" } });
+      const down = await certifier.health();
+      assert.equal(down.ok, false);
+      assert.match(down.detail, /cannot compile the probe file \(import FormalConjectures\.Util\.ProblemImports\)/);
+      assert.match(down.detail, /unknown module prefix 'FormalConjectures'/);
+      const error = await failure(certifier.certify(request("")));
+      assert.equal(error.reason, "unavailable");
+      assert.match(error.message, /unknown module prefix 'FormalConjectures'/);
+      // No candidate was compiled, and the failure is not kept: the second call looked again.
+      const compiles = calls().filter((c) => c.args[2] === "-o");
+      assert.equal(compiles.length, 2);
+      assert.ok(compiles.every((c) => c.args[4]?.endsWith("probe.lean")));
+      assert.deepEqual(readdirSync(workDir), []);
+    });
+
+    it("is the pinned Lean's to compile: another version is refused before the probe is made", async () => {
+      const { certifier, calls } = setup({ probe: PROBE, env: { FAKE_LAKE_VERSION: "Lean (version 4.26.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)" } });
+      const down = await certifier.health();
+      assert.equal(down.ok, false);
+      assert.deepEqual(calls().map((c) => c.args[2]), ["--version"]);
+    });
+  });
+
+  describe("an abort during the version check", () => {
+    it("ends the certification at once, and kills the version process", { timeout: 20_000 }, async () => {
+      const { certifier, dir } = setup({ env: { FAKE_LAKE_HANG_VERSION: "1" } });
+      const controller = new AbortController();
+      const pending = failure(certifier.certify(request(""), { signal: controller.signal }));
+      await waitUntil(() => existsSync(join(dir, "version.pid")));
+      const pid = Number(readFileSync(join(dir, "version.pid"), "utf8"));
+      assert.ok(alive(pid), "the version check is running");
+      const aborted = performance.now();
+      controller.abort();
+      const error = await pending;
+      assert.equal(error.reason, "aborted");
+      assert.ok(performance.now() - aborted < 5_000, "the abort was not left waiting for the version check's own limit");
+      await waitUntil(() => !alive(pid));
+      assert.equal(alive(pid), false, "the version process is gone");
+    });
+
+    it("also stops the health check, which says it was aborted", { timeout: 20_000 }, async () => {
+      const { certifier, dir } = setup({ env: { FAKE_LAKE_HANG_VERSION: "1" } });
+      const controller = new AbortController();
+      const pending = certifier.health(controller.signal);
+      await waitUntil(() => existsSync(join(dir, "version.pid")));
+      const pid = Number(readFileSync(join(dir, "version.pid"), "utf8"));
+      const aborted = performance.now();
+      controller.abort();
+      const down = await pending;
+      assert.equal(down.ok, false);
+      assert.match(down.detail, /aborted/);
+      assert.ok(performance.now() - aborted < 5_000);
+      await waitUntil(() => !alive(pid));
+      assert.equal(alive(pid), false);
+    });
+
+    it("does not stop the check that another certification waits for", { timeout: 20_000 }, async () => {
+      const { certifier, calls } = setup({ env: { FAKE_LAKE_VERSION_DELAY_MS: "1500" } });
+      const controller = new AbortController();
+      const first = failure(certifier.certify(request(""), { signal: controller.signal }));
+      const second = certifier.certify(request(""));
+      await waitUntil(() => calls().some((c) => c.args[2] === "--version"));
+      const aborted = performance.now();
+      controller.abort();
+      assert.equal((await first).reason, "aborted");
+      assert.ok(performance.now() - aborted < 1_000, "the first certification did not wait for the check");
+      assert.equal((await second).verdict, "certified");
+      assert.equal(calls().filter((c) => c.args[2] === "--version").length, 1, "one check served the one that stayed");
+    });
+
+    it("starts a new check after the only one that waited has gone", { timeout: 20_000 }, async () => {
+      const { certifier, calls, dir } = setup({ env: { FAKE_LAKE_VERSION_DELAY_MS: "800" } });
+      const controller = new AbortController();
+      const first = failure(certifier.certify(request(""), { signal: controller.signal }));
+      await waitUntil(() => existsSync(join(dir, "version.pid")));
+      controller.abort();
+      assert.equal((await first).reason, "aborted");
+      const result = await certifier.certify(request(""));
+      assert.equal(result.verdict, "certified");
+      assert.equal(calls().filter((c) => c.args[2] === "--version").length, 2, "the stopped check was not reused");
+    });
   });
 
   it("runs lake with a few variables of its own and none of the parent's secrets", async () => {

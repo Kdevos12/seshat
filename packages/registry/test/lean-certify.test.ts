@@ -125,12 +125,18 @@ describe("lean.certify through the registry", () => {
     await assert.rejects(certifier.certify({ ...request, candidate: "" }), (e: unknown) => !(e instanceof CertifyFailedError) && /invalid input for lean\.certify/.test(String(e)));
   });
 
-  it("reports whether the certifier can run Lean in its health check", async () => {
-    const down = Object.assign(new Scripted(), { health: async () => false });
+  it("reports whether the certifier can run Lean in its health check, with the certifier's reason", async () => {
+    const down = Object.assign(new Scripted(), { health: async () => ({ ok: false, detail: "lean cannot compile the probe file: unknown module prefix 'FormalConjectures'" }) });
     const [bad] = await registryOf(down).health("lean.certify");
-    assert.deepEqual([bad?.ok, bad?.detail], [false, "scripted cannot run Lean in its project"]);
-    const up = Object.assign(new Scripted(), { health: async () => true });
+    assert.deepEqual([bad?.ok, bad?.detail], [false, "lean cannot compile the probe file: unknown module prefix 'FormalConjectures'"]);
+    const silent = Object.assign(new Scripted(), { health: async () => ({ ok: false }) });
+    const [mute] = await registryOf(silent).health("lean.certify");
+    assert.deepEqual([mute?.ok, mute?.detail], [false, "scripted cannot run Lean in its project"]);
+    const up = Object.assign(new Scripted(), { health: async () => ({ ok: true, detail: "Lean (version 4.27.0)" }) });
     const [good] = await registryOf(up).health("lean.certify");
-    assert.deepEqual([good?.ok, good?.detail], [true, "scripted 0"]);
+    assert.deepEqual([good?.ok, good?.detail], [true, "scripted 0: Lean (version 4.27.0)"]);
+    const plain = Object.assign(new Scripted(), { health: async () => ({ ok: true }) });
+    const [fine] = await registryOf(plain).health("lean.certify");
+    assert.deepEqual([fine?.ok, fine?.detail], [true, "scripted 0"]);
   });
 });

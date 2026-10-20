@@ -8,6 +8,13 @@
  *
  * A marker is a line `-- fake: <name>` in the file. Every call is appended to the file named by
  * FAKE_LAKE_LOG, as a line of JSON.
+ *
+ * A few variables stand for a state of the Lean installation:
+ *   FAKE_LAKE_VERSION          what `--version` prints
+ *   FAKE_LAKE_BROKEN_IMPORTS   every compile fails the way an unbuilt project does (an import error, exit 1)
+ *   FAKE_LAKE_HANG_VERSION     `--version` never answers
+ *   FAKE_LAKE_VERSION_DELAY_MS `--version` answers after this long
+ *   FAKE_LAKE_VERSION_PIDFILE  the pid of a `--version` call is written to this file
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -16,8 +23,10 @@ const args = process.argv.slice(2);
 const log = process.env.FAKE_LAKE_LOG;
 // The request of a `--run` call is in the log, since the certifier removes the file afterwards.
 const request = args[2] === "--run" ? (JSON.parse(readFileSync(args[4] as string, "utf8")) as { reference: string; candidate: string; target: string; allowedAxioms: string[] }) : undefined;
+// The file a compile reads is in the log too, since the certifier removes its directory afterwards.
+const compiled = args[2] === "-o" && existsSync(args[4] as string) ? readFileSync(args[4] as string, "utf8") : undefined;
 if (log !== undefined) {
-  appendFileSync(log, `${JSON.stringify({ args, cwd: process.cwd(), env: Object.keys(process.env).sort(), request })}\n`);
+  appendFileSync(log, `${JSON.stringify({ args, cwd: process.cwd(), env: Object.keys(process.env).sort(), request, source: compiled })}\n`);
 }
 
 const fail = (message: string, code = 2): never => {
@@ -36,13 +45,23 @@ if (args[0] !== "env" || args[1] !== "lean") fail(`fake lake: unexpected call: $
 const [mode, first, second] = args.slice(2);
 
 if (mode === "--version") {
-  console.log(process.env.FAKE_LAKE_VERSION ?? "Lean (version 4.27.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)");
+  const print = () => console.log(process.env.FAKE_LAKE_VERSION ?? "Lean (version 4.27.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)");
+  if (process.env.FAKE_LAKE_VERSION_PIDFILE !== undefined) writeFileSync(process.env.FAKE_LAKE_VERSION_PIDFILE, String(process.pid));
+  if (process.env.FAKE_LAKE_HANG_VERSION === "1") hang();
+  else if (process.env.FAKE_LAKE_VERSION_DELAY_MS !== undefined) setTimeout(print, Number(process.env.FAKE_LAKE_VERSION_DELAY_MS));
+  else print();
 } else if (mode === "-o") {
   const out = first as string;
   const input = second as string;
   const text = readFileSync(input, "utf8");
   const m = markers(text);
-  if (m.has("hang-with-child")) {
+  if (process.env.FAKE_LAKE_BROKEN_IMPORTS === "1") {
+    // What Lean says when the project is not built, or is the wrong checkout: an error in the imports.
+    console.log(`${input}:1:0: error: unknown module prefix 'FormalConjectures'`);
+    console.log("");
+    console.log("No directory 'FormalConjectures' or file 'FormalConjectures.olean' in the search path entries:");
+    process.exit(1);
+  } else if (m.has("hang-with-child")) {
     // A grandchild in the same process group: killing the group must take it too.
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 120000)"], { stdio: "ignore" });
     writeFileSync(process.env.FAKE_LAKE_PIDFILE as string, String(child.pid));

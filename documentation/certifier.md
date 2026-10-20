@@ -23,29 +23,48 @@ reference file (`original`), the `candidate` file, the `target`'s full name and 
 - `certified`: the module compiles, the kernel accepts every declaration in it, the target states
   what the reference states, and it depends only on the allowed axioms. `axioms` lists them,
   sorted.
-- `rejected`, with `reasons`: the candidate does not compile (Lean's first five errors, at their
-  lines in the candidate file); the program refused it (below).
+- `rejected`, with `reasons`: the candidate does not compile, and the reference does in the same
+  project (Lean's first five errors, at their lines in the candidate file); the program refused it
+  (below).
 
 A call that reaches no verdict throws `CertifyFailedError`, whose `reason` is `timeout`,
-`aborted`, `unavailable` (no `lake`, another Lean than the pinned one) or `failed` (the reference
-does not compile, Lean or the program died, the program printed something that is not a verdict).
-Such a failure says nothing about the candidate, so it is never turned into `rejected`: the claim
-stays a candidate and the failure is recorded as a reason, not as an invalid validation. Only a
-`rejected` verdict is the candidate's fault.
+`aborted`, `unavailable` (no `lake`, another Lean than the pinned one, a project in which the
+probe file does not compile) or `failed` (the reference does not compile, neither the candidate
+nor the reference does, Lean or the program died, the program printed something that is not a
+verdict). Such a failure says nothing about the candidate, so it is never turned into `rejected`:
+the claim stays a candidate and the failure is recorded as a reason, not as an invalid validation.
+Only a `rejected` verdict is the candidate's fault.
+
+Lean ends with 1 for the errors of a file and for import errors alike: an unbuilt project, a
+`LEAN_PROJECT_DIR` that is the wrong checkout, or `.olean` files of another toolchain fail every
+file. So the certifier does not take a candidate's compile errors for the candidate's fault until
+the reference has compiled in the same project (step 3 below), and `pnpm harness health
+lean.certify` compiles a probe file before a run.
 
 ## The process
 
 `LakeCertifier` (`packages/lean-local`) runs, for each certification and in the Lean project of the
 bench (`projectDir`, the working directory of every call):
 
-1. once per certifier, `lake env lean --version`, which must report the pinned version;
+1. once per certifier, `lake env lean --version`, which must report the pinned version, and then,
+   if the setting `probe` is not empty, `lake env lean -o probe.olean probe.lean` on a file that
+   holds it (the manifest sets `import FormalConjectures.Util.ProblemImports`, the prelude of the
+   bench's files). A project that is not built, or is not the bench's checkout, fails here, and the
+   certifier is unavailable with Lean's message. `pnpm harness health lean.certify` runs the same
+   check. It is shared by the certifications that wait for it, and a failure is not kept: the next
+   call looks again;
 2. `lake env lean -o candidate.olean candidate.lean`, in a work directory of its own;
 3. `lake env lean -o reference.olean reference.lean`, the reference compiled again for each
-   certification, after the candidate's process has ended;
+   certification, after the candidate's process has ended, whether or not the candidate compiled: a
+   candidate is rejected for its errors only when the reference compiles, and when neither does the
+   call fails (`failed`, "neither the candidate nor the reference compiles") instead of recording
+   a rejection;
 4. `lake env lean --run lean/SeshatCertify/Main.lean request.json`, which prints one line of JSON.
 
-Each call is a process group of its own, killed as a whole at the time limit or on abort, and killed
-if it leaves a process holding its output open. The child's environment is `PATH`, `HOME` and the
+Each call is a process group of its own, killed as a whole at the time limit or on abort (the
+version check and the probe too: a certification that is aborted does not wait for them, and when no
+certification waits for the check any more its process is killed), and killed if it leaves a process
+holding its output open. The child's environment is `PATH`, `HOME` and the
 few variables the registry passes to every server (`serverEnv`), plus the settings' `env`: no
 secret of the harness reaches it. Output is kept up to 1 MiB per stream. The work directory is
 removed when the certification ends.
@@ -55,9 +74,9 @@ implementation's setting `timeoutSec` (default 600). The registry allows the cal
 seconds, so that the certifier stops itself first and says why; a call that gives no `timeoutSec`
 gets the manifest's 900 seconds, which a host profile can change with `timeoutMs`.
 
-The exit code of a compile is Lean's: 1 means errors in the file (the candidate's, so `rejected`;
-the reference's, so a failure of the call), anything else, such as a signal, is a failure of the
-call. After the program, the certifier checks again what it can: a `certified` verdict with an axiom
+The exit code of a compile is Lean's: 1 means errors in the file (the reference's, so a failure of
+the call; the candidate's, so `rejected` if the reference compiled and a failure of the call if it
+did not), anything else, such as a signal, is a failure of the call. After the program, the certifier checks again what it can: a `certified` verdict with an axiom
 outside `allowedAxioms` becomes `rejected`; a `certified` with reasons, a `rejected` without any,
 and a line that is not a verdict are failures of the call.
 
@@ -125,13 +144,16 @@ version `0.1.0+lean-v4.27.0+fc-bench-v1`) has these settings, which a host profi
 | `command`, `args` | `lake`, and arguments before `env lean ...` | `lake` |
 | `projectDir` | the pinned Lean project, where the candidate's imports resolve; the host profiles take `LEAN_PROJECT_DIR`. Without it the implementation is unavailable | none |
 | `program` | the Lean program | `lean/SeshatCertify/Main.lean` of this repository |
+| `probe` | the Lean source the version check is followed by (empty: none) | `import FormalConjectures.Util.ProblemImports` |
 | `sandbox` | the command before every call | none |
 | `workDir` | where work directories are made | the system's temporary directory |
 | `timeoutSec` | the limit of a certification that gives none | 600 |
 | `env` | variables added to the child's (`ELAN_HOME` from the host profiles) | none |
 
 The Lean version it expects is the manifest's `environment.lean`. `pnpm harness health` runs the
-version check. The contract (`capabilities/lean.certify/contract.json`) has 9 cases: a proof
+version check and compiles the probe. The registry gives a health check 15 seconds, and loading the
+bench's modules on a cold disk cache can take longer: the check is then stopped, and run again it
+finds the files in the cache. The contract (`capabilities/lean.certify/contract.json`) has 9 cases: a proof
 without axioms, the three standard axioms, `sorry`, an axiom of the candidate's own,
 `native_decide`, another statement under the same name, a changed definition under the same
 statement, a file that does not compile, and a time limit. A test runs it against the answers a
@@ -143,9 +165,10 @@ A run certifies when it has a certifier: the one `RunOptions.certifier` gives, o
 `lean.certify`, if the profile lists it (`RegistryLeanCertifier.forHost(registry)`, which goes
 through the registry, so that every certification is a tool run). `run.started` records which one
 (`config.certifier`, `null` for none). A host that lists the capability but cannot run it, because
-`LEAN_PROJECT_DIR` is not set or Lean is not the pinned version, does not stop the run: each
-certification fails, the candidates stay candidates, and each problem says why in its reason
-(`certification failed: ...`). `pnpm harness health lean.certify` tells before a run does.
+`LEAN_PROJECT_DIR` is not set, Lean is not the pinned version or the project does not compile the
+probe, does not stop the run: each certification fails, the candidates stay candidates, and each
+problem says why in its reason (`certification failed: ...`). `pnpm harness health lean.certify`
+tells before a run does.
 
 [m0-loop.md](m0-loop.md#certification) has what is certified, when, and what each answer does to the
 claim and to the problem's outcome. In short:
@@ -182,8 +205,11 @@ claim and to the problem's outcome. In short:
 source as the object file, a verdict chosen by a marker in the candidate): certified and rejected
 candidates, a kernel refusal, a type that differs from the reference's, axioms outside the allowed
 set, a program that lies about them, a file that does not compile, a reference that does not, Lean
-or the program dying, the time limit with the process group killed, an abort, an unavailable or
-wrong `lake`, the environment the child gets, and a sandbox command. `packages/registry/test` runs the
+or the program dying, the time limit with the process group killed, an abort (also during the
+version check, which the aborted call does not wait for, while another call that waits for it
+keeps it), an unavailable or wrong `lake`, a project that compiles nothing (the candidate is not
+rejected, and the probe says so before anything is compiled), the environment the child gets, and a
+sandbox command. `packages/registry/test` runs the
 adapters (`leanCertifyImplementation`, `RegistryLeanCertifier`) and the contract.
 `packages/orchestrator/test/certify.test.ts` runs the certification through the loop with fake
 certifiers and with the registry, with M1, M6 and the fleet on among them
@@ -226,7 +252,8 @@ lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.js
    so that the private names of a definition are the same in both; if it does not, a statement
    that depends on a private definition is rejected by the comparison.
 4. That `lean` ends with 1 when the file has errors and 0 otherwise, and prints its messages on
-   stdout, as the certifier assumes.
+   stdout, as the certifier assumes, and that it ends with 1 and a message for a file whose imports
+   are not built (the certifier takes that for the project's fault when the reference fails too).
 5. That the object files of the bench's project are found by `lake env` from `LEAN_PROJECT_DIR`
    without trying to fetch or build anything, which a sandbox without network does not allow.
 6. The contract's nine cases, and the reasons' texts they match.
