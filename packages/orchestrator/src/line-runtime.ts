@@ -289,7 +289,7 @@ export class ProblemLines {
       const id = entry.line.id;
       const reviewed = await call(id, "reviewBriefing", () => hook(this.sessionContext(entry, info), sections));
       if (reviewed === undefined) continue;
-      if (reviewed.length > sections.length) throw new LineError(id, "reviewBriefing", "a review may drop or reword sections, not add them");
+      if (!isReview(reviewed, sections)) throw new LineError(id, "reviewBriefing", "a review may drop or reword sections, not add, replace or reorder them");
       sections = reviewed;
     }
     const tools: AgentTool<never, unknown>[] = [];
@@ -382,6 +382,21 @@ export class ProblemLines {
   private log(text: string): void {
     this.run.o.log(`${this.p.problemId}: ${text}`);
   }
+}
+
+/**
+ * Whether `reviewed` is `sections` with some dropped and some reworded: each section it keeps has
+ * the title of one of the sections it was given, in the same order. A title that was not given is
+ * an added or replaced section, and a title out of order is a moved one.
+ */
+function isReview(reviewed: readonly Briefing[], sections: readonly Briefing[]): boolean {
+  let from = 0;
+  for (const section of reviewed) {
+    const at = sections.findIndex((candidate, k) => k >= from && candidate.title === section.title);
+    if (at < 0) return false;
+    from = at + 1;
+  }
+  return true;
 }
 
 function budgetOf(ledger: Ledger): Budget {
