@@ -128,3 +128,6 @@ The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0`
 models and says whether their credentials are set.
 
 Documentation: [documentation/](documentation/README.md).
+
+Working on Seshat, alone or with other agents: [CLAUDE.md](CLAUDE.md). The plan and the state of
+its build: [plans/](plans/seshat-plan-ledger.md).
