@@ -21,6 +21,7 @@ import type { Line } from "@seshat/lines";
 import { claimSource, claimTheoremName } from "@seshat/memory";
 import { type HostProfile, leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, RegistryLeanChecker } from "@seshat/registry";
 import { REPO_ROOT, type RunOptions, Workbench } from "../src/index.ts";
+import { LINES } from "../src/lines.ts";
 import { check, DEMO_FILE, DemoLean, demoRegistry, demoRun, ofType, say, tempDir } from "./m0-helpers.ts";
 
 /** A certifier that answers `verdict` to every request, and keeps the requests. */
@@ -40,6 +41,33 @@ function certifier(verdict: "certified" | "rejected" = "certified", reasons: str
 /** A line that runs `beforeProvers` and `afterProblem` with the problem's context. */
 function acting(hooks: Pick<Line["hooks"], "beforeProvers" | "afterProblem">): Line {
   return { id: "M1", title: "the test line", requires: [], hooks };
+}
+
+/**
+ * A line that writes down each point where the lines' hooks run, and changes nothing. In the order
+ * of the lines M10 comes after M1 and before M6 and the fleet, so it is called as they are.
+ */
+function watcher(seen: string[]): Line {
+  return {
+    id: "M10",
+    title: "a watcher of the tests",
+    requires: [],
+    hooks: {
+      beforeSession: async (s) => { seen.push(`beforeSession ${s.prover}/${s.session}`); return undefined; },
+      beforeCheck: async (_s, proposal) => { seen.push(`beforeCheck ${proposal.proof.trim()}`); return undefined; },
+      afterCheck: async (_s, c) => { seen.push(`afterCheck ${c.accepted ? "accepted" : "not accepted"}`); return undefined; },
+      afterAttempt: async (_p, a) => { seen.push(`afterAttempt ${a.prover} ${a.outcome}`); return undefined; },
+      afterProver: async (_p, end) => { seen.push(`afterProver ${end.prover} ${end.stop}`); },
+      afterProblem: async (_p, end) => { seen.push(`afterProblem ${end.outcome}`); },
+    },
+  };
+}
+
+/** `certifier()`, which writes "certify" in `seen` when it is asked. */
+function noted(seen: string[], verdict: "certified" | "rejected" = "certified") {
+  const { certifier: inner, requests } = certifier(verdict);
+  const asked: LeanCertifier = { ...inner, certify: async (request, options) => { seen.push("certify"); return inner.certify(request, options); } };
+  return { requests, certifier: asked };
 }
 
 const IMPORTS = "import FormalConjectures.Util.ProblemImports\n\nnamespace Demo\n\n";
@@ -158,6 +186,81 @@ describe("certification in a run", () => {
     assert.equal(failing.result.problems[0]?.outcome, "candidate");
     assert.match(failing.result.problems[0]?.reason ?? "", /^certification failed: .*no Lean project/);
     assert.deepEqual(ofType(failing.events, "claim.status_changed").map((c) => c.data.to), ["computed"]);
+  });
+});
+
+describe("certification in a run with M1, M6 and the fleet", () => {
+  /** Two provers, so that the fleet's gate has one to hold back. The watcher is the line M10. */
+  const ON = { lines: ["M1", "M10", "M6", "fleet"], provers: 2, sessions: 2, lineOptions: { fleet: { seed: 1 } } as never };
+
+  it("certifies the candidate once the provers are done, and no hook of the lines sees the certification", async () => {
+    const seen: string[] = [];
+    const { certifier: asked, requests } = noted(seen);
+    const { result, events } = await demoRun({ lines: { ...LINES, M10: watcher(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
+    assert.equal(result.problems[0]?.outcome, "proved");
+    // Every hook of a session or a prover ran before the certifier was asked, and the only hook after
+    // it is `afterProblem`, which is told the result.
+    const asking = seen.indexOf("certify");
+    assert.deepEqual(seen.slice(asking), ["certify", "afterProblem proved"]);
+    assert.ok(seen.slice(0, asking).every((s) => /^(beforeSession|beforeCheck|afterCheck|afterAttempt|afterProver) /.test(s)), seen.join("\n"));
+    // The guards saw the model's one call and its one check, and nothing else.
+    assert.deepEqual(seen.filter((s) => /^(beforeCheck|afterCheck) /.test(s)), ["beforeCheck exact trivial_proof", "afterCheck accepted"]);
+    // The certifier was given the file that passed, and the claim is proved on its validation.
+    assert.equal(requests.length, 1);
+    assert.ok(requests[0]?.candidate.includes("exact trivial_proof"));
+    assert.deepEqual(ofType(events, "validation.finished").map((v) => [v.data.method, v.data.verdict]), [["repl", "valid"], ["kernel_replay", "valid"]]);
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed", "proved"]);
+    // M6 flagged nothing: the fleet's allocations are the only nodes the lines recorded.
+    assert.deepEqual(ofType(events, "node.recorded").map((e) => e.data.kind).filter((kind) => kind !== "allocation"), []);
+  });
+
+  it("leaves the problem unsolved when the kernel rejects it, and afterProblem is told so", async () => {
+    const seen: string[] = [];
+    const { certifier: asked, requests } = noted(seen, "rejected");
+    const { result, events } = await demoRun({ lines: { ...LINES, M10: watcher(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
+    assert.equal(result.problems[0]?.outcome, "unsolved");
+    assert.match(result.problems[0]?.reason ?? "", /^certification rejected the candidate: /);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(seen.slice(seen.indexOf("certify")), ["certify", "afterProblem unsolved"]);
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed"]);
+    assert.deepEqual(ofType(events, "validation.finished").map((v) => [v.data.method, v.data.verdict]), [["repl", "valid"], ["kernel_replay", "invalid"]]);
+  });
+
+  it("does not let a veto of M6 reach the certification: only the file that was checked is certified", async () => {
+    const seen: string[] = [];
+    const { certifier: asked, requests } = noted(seen);
+    const { result, events } = await demoRun({
+      lines: { ...LINES, M10: watcher(seen) },
+      config: ON,
+      certifier: asked,
+      responses: [check("-- this is a well-known result\nexact trivial_proof"), check("exact trivial_proof")],
+    });
+    assert.equal(result.problems[0]?.outcome, "proved");
+    // M6 vetoed the first call, which is no check: no validation, no candidate, nothing to certify.
+    assert.equal(seen.filter((s) => s.startsWith("beforeCheck")).length, 2);
+    assert.deepEqual(seen.filter((s) => s.startsWith("afterCheck")), ["afterCheck accepted"]);
+    assert.equal(requests.length, 1);
+    assert.ok(!requests[0]?.candidate.includes("well-known"));
+    assert.deepEqual(ofType(events, "validation.finished").map((v) => [v.data.method, v.data.verdict]), [["repl", "valid"], ["kernel_replay", "valid"]]);
+    assert.deepEqual(seen.slice(seen.indexOf("certify")), ["certify", "afterProblem proved"]);
+  });
+
+  it("goes through the registry as a call that belongs to no attempt, so the report does not count it among the provers' tools", async () => {
+    const { certifier: lake, requests } = certifier();
+    const { result, events, dir } = await demoRun({
+      registry: certifyingHost(lake),
+      config: ON,
+      lines: { ...LINES, M10: watcher([]) },
+      responses: [check("exact trivial_proof")],
+    });
+    assert.equal(result.problems[0]?.outcome, "proved");
+    assert.equal(requests.length, 1);
+    const runs = ofType(events, "tool_run.started").filter((e) => e.data.capability === "lean.certify");
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.data.attemptId, undefined);
+    assert.ok(at(events, runs[0]) > at(events, ofType(events, "attempt.finished").at(-1)));
+    const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8")) as { tools: Record<string, unknown> };
+    assert.deepEqual(Object.keys(report.tools), []);
   });
 });
 

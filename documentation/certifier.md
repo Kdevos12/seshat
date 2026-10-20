@@ -169,6 +169,11 @@ claim and to the problem's outcome. In short:
 - A certified proof of a claim that is already settled the other way is a contradiction, not a
   status: the validation stays as evidence and the status does not move. The problem ends as
   `error` when it was its own candidate, and the run's log says so otherwise.
+- Certification is no tool call of a prover, and no hook of a line sees it. M6's `beforeCheck` and
+  `afterCheck` belong to the prover's `lean_check` calls and the fleet's hooks to its sessions and
+  provers; the certifier is asked once the last prover has ended, and a line learns the result in
+  `afterProblem` only. So a veto of M6 cannot block it, and the registry's tool run of
+  `lean.certify`, which belongs to no attempt, is not among the provers' tools in the report.
 
 ## Tests
 
@@ -181,7 +186,8 @@ or the program dying, the time limit with the process group killed, an abort, an
 wrong `lake`, the environment the child gets, and a sandbox command. `packages/registry/test` runs the
 adapters (`leanCertifyImplementation`, `RegistryLeanCertifier`) and the contract.
 `packages/orchestrator/test/certify.test.ts` runs the certification through the loop with fake
-certifiers and with the registry ([m0-loop.md](m0-loop.md#tested-and-not-yet)), and
+certifiers and with the registry, with M1, M6 and the fleet on among them
+([m0-loop.md](m0-loop.md#tested-and-not-yet)), and
 `packages/graph/test/line.test.ts` has M2's twin refute a claim with a certifier. None of them has a
 Lean: what a real `lake` does is the list below.
 
