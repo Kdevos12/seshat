@@ -129,16 +129,34 @@ function splitSignature(statement: string): { binders: Binder[]; conclusion: str
   return { binders, conclusion: tidy(text.slice(i + 1)) };
 }
 
-/** The pieces of a text split at the arrows `→` and `->` that are outside brackets. */
-function splitArrows(text: string): string[] {
+const BINDER_SYMBOLS = "∀∃λΠΣ";
+const NAME_CHARACTER = /[\p{L}\p{N}_'!?.]/u;
+
+/** Whether `fun` starts at `at`, as a word. */
+function funAt(text: string, at: number): boolean {
+  return text.startsWith("fun", at) && !NAME_CHARACTER.test(text.charAt(at - 1)) && !NAME_CHARACTER.test(text.charAt(at + 3));
+}
+
+/**
+ * The pieces of a text split at the arrows `→` and `->` that are outside brackets; or why it cannot
+ * be split. The body of `∀`, `∃` and `fun` reaches as far right as the text goes, so an arrow that
+ * follows one of them outside brackets is inside its scope: Lean reads
+ * `∀ x : M, p → ∀ y : M, q` as `∀ x : M, (p → ∀ y : M, q)`, not as an implication between two laws.
+ */
+function splitArrows(text: string): string[] | { reason: string } {
   const pieces: string[] = [];
   let depth = 0;
   let from = 0;
+  let binder: number | undefined;
   for (let i = 0; i < text.length; i++) {
     const c = text.charAt(i);
     if (OPEN.includes(c)) depth++;
     else if (CLOSE.includes(c)) depth--;
+    else if (depth === 0 && (BINDER_SYMBOLS.includes(c) || funAt(text, i))) binder ??= i;
     else if (depth === 0 && (c === "→" || (c === "-" && text.charAt(i + 1) === ">"))) {
+      if (binder !== undefined) {
+        return { reason: `the arrow after '${tidy(text.slice(binder, i))}' is inside the scope of the quantifier, which Lean reads to the end of the statement: put the quantified premise in parentheses` };
+      }
       pieces.push(text.slice(from, i));
       i += c === "→" ? 0 : 1;
       from = i + 1;
@@ -193,7 +211,9 @@ function recognizeMagma(binders: Binder[], conclusion: string): Recognition {
     if ("reason" in hypothesis) return hypothesis;
     hypotheses.push(hypothesis);
   }
-  const pieces = splitArrows(conclusion).map(unwrap);
+  const split = splitArrows(conclusion);
+  if (!Array.isArray(split)) return split;
+  const pieces = split.map(unwrap);
   for (const piece of pieces.slice(0, -1)) {
     const premise = read(piece, "a premise");
     if ("reason" in premise) return premise;
