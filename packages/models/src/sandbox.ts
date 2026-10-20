@@ -9,7 +9,11 @@ export interface PredicateLimits {
   callMs: number;
   /** Time for the whole run, the start of the process included. Default 30 000. */
   totalMs: number;
-  /** The memory of the process that runs the program, in megabytes. Default 128. */
+  /**
+   * The V8 heap of the process that runs the program (`--max-old-space-size`), in megabytes. Default
+   * 128. It is a limit on the heap only: the buffers of typed arrays and of other objects outside it
+   * are not limited, and a program can ask for more memory than this.
+   */
   memoryMb: number;
 }
 
@@ -31,18 +35,32 @@ export interface PredicateRun {
 const CHILD = fileURLToPath(new URL("./sandbox-child.ts", import.meta.url));
 
 /**
+ * The environment of the process that runs a program: none of the harness's. Its environment holds
+ * the model providers' keys and the Lean server's, and `node:vm` is not a security boundary, so a
+ * program that got out of its context would otherwise read them. The process is started from its
+ * absolute path and needs nothing; on Windows Node does not start without `SystemRoot`.
+ */
+export function sandboxEnvironment(): NodeJS.ProcessEnv {
+  const systemRoot = process.platform === "win32" ? process.env.SystemRoot : undefined;
+  return systemRoot !== undefined ? { SystemRoot: systemRoot } : {};
+}
+
+/**
  * Runs a JavaScript predicate on JSON arguments, in a process of its own, and gives its verdict on
  * each. The program is one function expression, `(n) => n % 2 === 0` or `function (graph) { ... }`,
  * which must return `true` or `false`.
  *
  * What bounds a program: it runs in a `node:vm` context with no global besides the language's and no
- * `eval` or `new Function`, in a Node process started with `--permission` (no file, no child
- * process, no worker) and a memory limit, which is killed when the run goes over its total time. A
- * call that goes over its time, throws, or returns something other than a boolean has no verdict
- * and the next call goes on. A program that fills the memory or loops past the total time ends the
- * run: the verdicts so far are kept and the others have none. The process does not isolate the
- * network; the context offers none, and this is not a defense against a program written to escape
- * it, only against the mistakes of a program a model wrote.
+ * `eval` or `new Function`, in a Node process started with `--permission` (it reads nothing but its
+ * own script, writes no file, starts no process and no worker), with an empty environment
+ * (`sandboxEnvironment`) and a limit on the V8 heap, which is killed when the run goes over its total
+ * time. A call that goes over its time, throws, or returns something other than a boolean has no
+ * verdict and the next call goes on. A program that fills the heap or loops past the total time ends
+ * the run: the verdicts so far are kept and the others have none. The process does not isolate the
+ * network, and the limit does not cover memory outside the heap (typed arrays); the context offers
+ * no network, and `vm` is not a security boundary. This is not a defense against a program written
+ * to escape it, only against the mistakes of a program a model wrote; documentation/trust.md says
+ * what runs where.
  */
 export async function runPredicate(
   source: string,
@@ -66,7 +84,7 @@ export async function runPredicate(
   const child = spawn(
     process.execPath,
     ["--permission", `--allow-fs-read=${CHILD}`, `--max-old-space-size=${memoryMb}`, "--disable-warning=ExperimentalWarning", CHILD],
-    { stdio: ["pipe", "pipe", "pipe"] },
+    { stdio: ["pipe", "pipe", "pipe"], env: sandboxEnvironment() },
   );
   let received = 0;
   let buffered = "";

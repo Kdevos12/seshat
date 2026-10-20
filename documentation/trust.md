@@ -109,3 +109,16 @@ Line M11 ([models.md](models.md)) sends Lean files of its own to the same server
 statement about a number. The text of a statement reaches such a file as it is, so it is refused
 unless it is free of the tokens that the validator refuses in a prover's regions
 (`forbiddenTokensIn`); the rest of the file is the harness's.
+
+M11 also runs JavaScript that a model wrote, outside Lean: the programs of its `small_models` tool
+([models.md](models.md#the-sandbox)). Each run is a Node child process of the harness, started with
+`--permission`, so it reads nothing but its own script and has no file to write, no child process and
+no worker. Its environment is empty: none of the harness's variables, and so none of its keys, are
+in the process. Time is limited for each call and for the run, and the V8 heap by
+`--max-old-space-size`; memory is not limited as such, since the buffers of typed arrays are outside
+the heap. The network is open: Node's permission model does not restrict it, and the program's
+`node:vm` context offers none. `node:vm` is not a security boundary. A program written to get out of
+its context would find that open network, the files the permission model allows (its own script) and
+the process's memory, which holds nothing of the harness's; nothing stronger than that is promised,
+and a deployment that runs programs of models it does not trust puts the child in a container. The
+verdicts of a program are test results: they change no status.

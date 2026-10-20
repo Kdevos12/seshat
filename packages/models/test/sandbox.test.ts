@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { allMagmas, integerBattery, programArgument, runPredicate, runProgram } from "../src/index.ts";
+
+/** The environment of the child of this process that runs the sandbox's script, read from /proc while it runs. */
+async function childEnvironment(): Promise<string[] | undefined> {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    for (const pid of readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+      try {
+        const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+        if (Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]) !== process.pid) continue;
+        if (!readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("sandbox-child.ts")) continue;
+        return readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter((entry) => entry !== "");
+      } catch {
+        // The process ended, or is not ours to read.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return undefined;
+}
 
 describe("predicates given as JavaScript programs", () => {
   it("runs an arrow function or a function expression on JSON arguments, in order", async () => {
@@ -52,6 +71,33 @@ describe("predicates given as JavaScript programs", () => {
     const runs = await Promise.all(probes.map((p) => runPredicate(p, [0])));
     assert.deepEqual(runs.map((r) => r.verdicts[0]), [true, true, null, null, null]);
     for (const run of runs.slice(2)) assert.match(run.notes[0] ?? "", /error: .*[Cc]ode generation/);
+  });
+
+  it("starts the process with an environment of its own, none of the harness's variables", { skip: process.platform !== "linux" && "reads /proc" }, async () => {
+    // The harness's environment holds the model providers' keys, and node:vm is not a boundary.
+    process.env.SESHAT_SANDBOX_TEST_SECRET = "a key that the program must not be able to read";
+    try {
+      const controller = new AbortController();
+      const running = runPredicate("(n) => { while (true) {} }", [0], { callMs: 60_000, totalMs: 20_000 }, controller.signal);
+      const environment = await childEnvironment();
+      controller.abort();
+      await running;
+      assert.ok(environment !== undefined, "the child process was found");
+      // The names only: a failure must not print the values.
+      assert.deepEqual(environment.map((entry) => entry.slice(0, entry.indexOf("="))), []);
+    } finally {
+      delete process.env.SESHAT_SANDBOX_TEST_SECRET;
+    }
+  });
+
+  it("goes on with the next object when a thrown value cannot be read: a message or a code that throws in turn", async () => {
+    const run = await runPredicate(
+      "(n) => { if (n === 1) throw { get message() { throw new Error('hostile'); } }; if (n === 2) throw { get code() { throw new Error('hostile'); } }; if (n === 3) throw new Proxy({}, { get() { throw new Error('hostile'); } }); return true; }",
+      [0, 1, 2, 3, 4],
+    );
+    assert.deepEqual(run.verdicts, [true, null, null, null, true]);
+    assert.equal(run.stopped, undefined);
+    assert.deepEqual(run.notes.map((note) => note?.slice(0, 6)), [undefined, "error:", "error:", "error:", undefined]);
   });
 
   it("keeps the verdicts so far when the program fills the memory, and the run goes on to its end", async () => {
