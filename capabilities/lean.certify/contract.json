@@ -1,0 +1,319 @@
+{
+  "capability": "lean.certify",
+  "cases": [
+    {
+      "name": "a proof of the statement",
+      "purpose": "A proof without axioms is certified: the candidate compiles in a fresh process, the kernel accepts its declarations, the target's type is the reference's (documentation/certifier.md#what-it-answers).",
+      "input": {
+        "original": {
+          "$file": "cases/reference-add-zero.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-add-zero.lean"
+        },
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "certified"
+        },
+        {
+          "path": "reasons",
+          "length": 0
+        },
+        {
+          "path": "axioms",
+          "length": 0
+        },
+        {
+          "path": "timeMs",
+          "atLeast": 0
+        }
+      ]
+    },
+    {
+      "name": "the axioms of a classical proof",
+      "purpose": "The target's axioms are collected by the certifier itself and come back sorted; the three standard axioms are allowed.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-em.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-em.lean"
+        },
+        "target": "Harness.em",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "certified"
+        },
+        {
+          "path": "axioms.0",
+          "equals": "Classical.choice"
+        },
+        {
+          "path": "axioms.1",
+          "equals": "Quot.sound"
+        },
+        {
+          "path": "axioms.2",
+          "equals": "propext"
+        },
+        {
+          "path": "axioms",
+          "length": 3
+        }
+      ]
+    },
+    {
+      "name": "a proof that uses sorry",
+      "purpose": "sorryAx is never allowed: a proof with a hole is rejected, and the axiom is reported.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-add-zero.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-sorry.lean"
+        },
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "axioms.0",
+          "equals": "sorryAx"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "axioms that are not allowed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a proof that uses an axiom of its own",
+      "purpose": "An axiom the candidate declares is outside the allowed set, even if its type is the reference's.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-add-zero.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-custom-axiom.lean"
+        },
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "axioms.0",
+          "equals": "Harness.cheat"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "axioms that are not allowed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a proof by native_decide",
+      "purpose": "Lean.ofReduceBool, which native_decide uses, is outside the allowed set: a result computed by compiled code is not the kernel's.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-lt.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-native-decide.lean"
+        },
+        "target": "Harness.lt_twenty",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "axioms that are not allowed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a proof of another statement",
+      "purpose": "The target is compared with the reference's as terms: a theorem of the same name that states something else is rejected.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-two.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-other-statement.lean"
+        },
+        "target": "Harness.two",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "does not state what the reference states"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a changed definition",
+      "purpose": "The target's type is the same text, but the definition it depends on has another value: the definitions the statement rests on are compared too.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-f.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-changed-definition.lean"
+        },
+        "target": "Harness.f_one",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "which the statement depends on, is not the reference's"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a file that does not compile",
+      "purpose": "A candidate that does not compile is rejected, with Lean's error and its place in the candidate file.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-add-zero.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-error.lean"
+        },
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 300
+      },
+      "expect": [
+        {
+          "path": "verdict",
+          "equals": "rejected"
+        },
+        {
+          "path": "reasons",
+          "some": [
+            {
+              "path": "",
+              "matches": "^does not compile: candidate\\.lean:\\d+:\\d+: error"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a time limit",
+      "purpose": "A certification that runs past its limit is not a verdict: the call fails, so that the candidate is not marked invalid for being slow.",
+      "input": {
+        "original": {
+          "$file": "cases/reference-add-zero.lean"
+        },
+        "candidate": {
+          "$file": "cases/proof-sleep.lean"
+        },
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 5
+      },
+      "timeoutMs": 120000,
+      "fails": {
+        "code": "failed",
+        "matches": "took longer than its limit"
+      }
+    }
+  ]
+}

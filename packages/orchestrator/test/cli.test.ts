@@ -82,10 +82,19 @@ describe("harness CLI", () => {
     const down = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
-    // Every implementation the host lists, in order: here SageMath's, which nothing serves.
-    const all = await harness(["health"], { LEAN_SERVER_API_URL: url, PATH: "/nowhere", SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp" });
+    // Every implementation the host lists, in order: here SageMath's, which nothing serves, and the
+    // certifier's, which has no Lean project to run in.
+    const all = await harness(["health"], {
+      LEAN_SERVER_API_URL: url,
+      LEAN_PROJECT_DIR: undefined,
+      PATH: "/nowhere",
+      SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp",
+    });
     assert.equal(all.code, 1);
-    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nok {3}lean\.check\/kimina/m);
+    assert.match(
+      all.stdout,
+      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR\nok {3}lean\.check\/kimina/m,
+    );
   });
 
   it("runs contract cases and fails when one does not hold", async () => {

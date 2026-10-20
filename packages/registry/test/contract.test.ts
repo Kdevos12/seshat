@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { LeanCheckResult, LeanMessage, LeanSnippet } from "@seshat/core";
+import type { CertificationRequest, CertificationResult, LeanCheckResult, LeanMessage, LeanSnippet } from "@seshat/core";
 import {
   checkExpectations,
+  leanCertifyImplementation,
   leanCheckImplementation,
   loadCatalog,
   Registry,
   runContract,
+  type HealthAwareCertifier,
   type HealthAwareChecker,
   type ImplementationFactory,
 } from "../src/index.ts";
@@ -155,6 +157,55 @@ describe("the lean.check contract", () => {
       factories: { kimina: () => leanCheckImplementation(new ExpectedLean()) },
     });
     const report = await runContract(registry, "lean.check");
+    assert.equal(report.cases.length, 9);
+    assert.deepEqual(report.cases.filter((c) => !c.passed).map((c) => [c.name, c.failures]), []);
+  });
+});
+
+/**
+ * A certifier that answers each case of the lean.certify contract as Lean is expected to, from the
+ * proof it is given. Like `ExpectedLean`, it checks that the contract's expectations are well
+ * written: whether Lean and the replay program really answer so is what running the contract
+ * against the host's implementation tells.
+ */
+class ExpectedCertify implements HealthAwareCertifier {
+  readonly implementation = "expected-certify";
+  readonly version = "0";
+
+  async certify(request: CertificationRequest): Promise<CertificationResult> {
+    const { candidate, target } = request;
+    const done = (verdict: CertificationResult["verdict"], reasons: string[], axioms: string[]): CertificationResult => ({
+      verdict,
+      reasons,
+      axioms,
+      timeMs: 5,
+    });
+    const outside = (axiom: string) => done("rejected", [`${target} depends on axioms that are not allowed: [${axiom}]`], [axiom]);
+    if (candidate.includes("IO.sleep")) throw new Error("the certification took longer than its limit of 5 s");
+    if (candidate.includes("this_lemma_does_not_exist")) {
+      return done("rejected", ["does not compile: candidate.lean:2:9: error: unknown constant 'Nat.this_lemma_does_not_exist'"], []);
+    }
+    if (candidate.includes("(2 : Nat) + 2 = 4")) return done("rejected", [`${target} does not state what the reference states`], []);
+    if (candidate.includes("(_n : Nat) : Nat := 2")) {
+      return done("rejected", ["Harness.f, which the statement depends on, is not the reference's"], []);
+    }
+    if (candidate.includes("Harness.cheat")) return outside("Harness.cheat");
+    if (candidate.includes("native_decide")) return outside("Lean.ofReduceBool");
+    if (candidate.includes("sorry")) return outside("sorryAx");
+    if (candidate.includes("Classical.em")) return done("certified", [], ["Classical.choice", "Quot.sound", "propext"]);
+    return done("certified", [], []);
+  }
+}
+
+describe("the lean.certify contract", () => {
+  it("is consistent with the answers a certifier is expected to give", async () => {
+    const catalog = loadCatalog(new URL("../../../capabilities", import.meta.url).pathname);
+    const registry = new Registry({
+      catalog,
+      host: { host: "test", capabilities: { "lean.certify": { use: ["lake"] } } },
+      factories: { "lake-certify": () => leanCertifyImplementation(new ExpectedCertify()) },
+    });
+    const report = await runContract(registry, "lean.certify");
     assert.equal(report.cases.length, 9);
     assert.deepEqual(report.cases.filter((c) => !c.passed).map((c) => [c.name, c.failures]), []);
   });

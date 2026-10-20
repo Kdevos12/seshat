@@ -53,7 +53,9 @@ compiled module through the kernel, collects the target's axioms itself, and com
 type with the reference type as terms. This is the design of
 [lean4checker](https://github.com/leanprover/lean4checker) and
 [SafeVerify](https://github.com/GasStationManager/SafeVerify). Its interface is `LeanCertifier`
-(`packages/core/src/lean.ts`); the implementation needs Lean and comes with the Lean environment.
+(`packages/core/src/lean.ts`); `@seshat/lean-local` implements it and the capability `lean.certify`
+provides it ([certifier.md](certifier.md)). It answers `certified` or `rejected`; a call that
+cannot decide (the time limit, an abort, no Lean) is an error, not a verdict.
 
 ## The journal enforces it
 
@@ -101,6 +103,8 @@ are retracted: a candidate back to `open`, a certified claim to `retracted`.
 ## What runs where
 
 The prover's code runs inside Lean during both checks. The Lean server and the certifier must run
-in a sandbox: no network, read-only reference files, limits on time and memory. The reference type
+in a sandbox: no network, read-only reference files, limits on time and memory. The certifier takes
+a `sandbox` command for its compiles and says what it protects
+([certifier.md](certifier.md#where-untrusted-code-runs)). The reference type
 is computed by the harness from the pristine original file, never from a file a prover could
 touch.

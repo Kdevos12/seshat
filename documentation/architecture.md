@@ -45,7 +45,7 @@ code without touching the lockfile:
 | `@seshat/abduction` | The abductive engine and its reranking (M7, M9), suspended and not built ([lines.md](lines.md#suspended-lines)) | core, graph, lean-meta, lines, memory, models, registry |
 | `@seshat/induction` | The inductive engine and theory exploration (M8, M13) | classical, core, library, lines, memory, models, registry |
 | `@seshat/repair` | Typed repairs, Lakatos-style repair (M14) | core, induction, lines, memory, registry |
-| `@seshat/lean-local` | Lean on the host: the certifier (kernel replay) | core, lines, memory, registry |
+| `@seshat/lean-local` | Lean on the host: the certifier (kernel replay, `lean.certify`) | core, lines, memory, registry |
 
 Data that is versioned with the code:
 
@@ -54,6 +54,7 @@ Data that is versioned with the code:
 | `capabilities/` | One manifest and one contract per capability ([capabilities.md](capabilities.md)). |
 | `config/hosts/` | Host profiles: what each machine uses, and where. |
 | `bench/` | Bench indexes ([bench.md](bench.md)). |
+| `lean/` | Lean libraries that run in the bench's project: SeshatMeta ([lean-meta.md](lean-meta.md)) and SeshatCertify ([certifier.md](certifier.md)). |
 
 ## A problem, end to end (M0)
 

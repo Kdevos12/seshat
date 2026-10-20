@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The certifier runs lake in the Lean project LEAN_PROJECT_DIR; a server should give it a sandbox command (documentation/certifier.md). SageMath runs in its container only.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -29,6 +29,17 @@
           "cwd": "${env:LEAN_PROJECT_DIR:-}",
           "env": {
             "LEAN_PATH": "${env:LEAN_PATH:-}"
+          }
+        }
+      }
+    },
+    "lean.certify": {
+      "use": ["lake"],
+      "settings": {
+        "lake": {
+          "projectDir": "${env:LEAN_PROJECT_DIR:-}",
+          "env": {
+            "ELAN_HOME": "${env:ELAN_HOME:-}"
           }
         }
       }
