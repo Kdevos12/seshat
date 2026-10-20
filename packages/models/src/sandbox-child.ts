@@ -15,9 +15,24 @@ interface Request {
   callMs: number;
 }
 
+/** What a thrown value says, in one line. It never throws, whatever the value is: a getter of the program's can. */
 function messageOf(error: unknown): string {
-  const text = String((error as { message?: unknown } | null)?.message ?? error);
-  return text.replace(/\s+/g, " ").slice(0, 200);
+  try {
+    const text = String((error as { message?: unknown } | null)?.message ?? error);
+    return text.replace(/\s+/g, " ").slice(0, 200);
+  } catch {
+    return "(the thrown value cannot be read)";
+  }
+}
+
+/** The answer for a call that threw: `t` for the call's time limit, else `e` and the message. It never throws. */
+function answerForThrown(error: unknown): string {
+  try {
+    if ((error as { code?: unknown } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") return "t";
+  } catch {
+    // A `code` that throws is not the time limit.
+  }
+  return `e${messageOf(error)}`;
 }
 
 createInterface({ input: process.stdin }).once("line", (line) => {
@@ -40,7 +55,7 @@ createInterface({ input: process.stdin }).once("line", (line) => {
       const result = call.runInContext(context, { timeout: request.callMs }) as number;
       answer = result === 1 ? "1" : result === 0 ? "0" : "n";
     } catch (error) {
-      answer = (error as { code?: string } | null)?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT" ? "t" : `e${messageOf(error)}`;
+      answer = answerForThrown(error);
     }
     process.stdout.write(`${answer}\n`);
   }

@@ -162,21 +162,25 @@ statement; it needs a `LeanChecker`, which in a run is `RegistryLeanChecker` ove
 
 ### The sandbox
 
-A program from a model is not trusted. It runs in a process of its own (`node --permission`, so it
-has no file, no child process and no worker, and `--max-old-space-size`), inside a `node:vm`
-context with no global besides the language's, no `eval` or `new Function`, and data that reaches it
-as JSON text only. Three limits apply, and each has a default: 200 ms for a call, 30 seconds for the
-run, 128 MB of memory (`PredicateLimits`).
+A program from a model is not trusted. It runs in a process of its own: `node --permission`, so it
+reads nothing but its own script and has no file to write, no child process and no worker; an empty
+environment (`sandboxEnvironment()`), so none of the harness's keys are in its memory; and
+`--max-old-space-size`. Inside it, a `node:vm` context has no global besides the language's, no
+`eval` or `new Function`, and data that reaches it as JSON text only. Three limits apply, and each
+has a default: 200 ms for a call, 30 seconds for the run, 128 MB of V8 heap (`PredicateLimits`).
 
 - A call that goes over its time, throws, or returns something that is not `true` or `false` has no
-  verdict (`null`, with the reason in `notes`), and the run goes on with the next object.
-- A program that fills the memory, or that the run's total time or a cancellation kills, ends the
+  verdict (`null`, with the reason in `notes`), and the run goes on with the next object, also when
+  the thrown value cannot be read (a `message` that throws in turn).
+- A program that fills the heap, or that the run's total time or a cancellation kills, ends the
   run: the verdicts already given are kept, the others have none, and `stopped` says why.
 - A program that does not compile, an empty one and one over 20 000 characters are refused.
 
 It is a guard against the mistakes of a program that a model wrote, not a defense against one
-written to escape: the process does not isolate the network (the context offers none), and the
-memory limit is the process's, not the program's.
+written to escape. `node:vm` is not a security boundary; the process does not isolate the network
+(Node's permission model does not restrict it, and the context offers none); and the 128 MB is the V8
+heap, not memory: the buffers of typed arrays are outside it, and a program can use more.
+[trust.md](trust.md#what-runs-where) says what it could reach.
 
 ### The Lean evaluator
 
