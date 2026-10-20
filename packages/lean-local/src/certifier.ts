@@ -156,6 +156,13 @@ export class LakeCertifier implements LeanCertifier {
     const started = performance.now();
     const limitSec = options.timeoutSec ?? this.timeoutSec;
     if (options.signal?.aborted === true) throw new CertifyFailedError("aborted", "the certification was aborted");
+    // The names are read before anything runs: one that is not a Lean name is the caller's mistake.
+    let names: { target: string[]; allowedAxioms: string[][] };
+    try {
+      names = { target: nameComponents(request.target), allowedAxioms: request.allowedAxioms.map(nameComponents) };
+    } catch (error) {
+      throw new CertifyFailedError("failed", `the request names something that is not a Lean name: ${messageOf(error)}`);
+    }
     await this.ensureLean(options.signal);
     const root = await mkdtemp(join(this.workDir, "seshat-certify-"));
     const call: Call = {
@@ -186,14 +193,14 @@ export class LakeCertifier implements LeanCertifier {
         );
       }
       if ("errors" in candidate) return done("rejected", candidate.errors.map((e) => `does not compile: ${e}`), []);
-      const replay = await this.replay(candidate.olean, reference.olean, request, call);
+      const replay = await this.replay(candidate.olean, reference.olean, names, call);
       if (replay.code !== 0) {
         throw new CertifyFailedError("failed", `the replay program ended with ${how(replay)}${tail(replay.stderr)}`);
       }
       const verdict = parseVerdict(replay.stdout);
       // The policy is checked here as well, so that it does not rest on the program alone.
-      const allowed = new Set(request.allowedAxioms);
-      const outside = verdict.axioms.filter((a) => !allowed.has(a));
+      const allowed = new Set(request.allowedAxioms.map(canonicalName));
+      const outside = verdict.axioms.filter((a) => !allowed.has(canonicalName(a)));
       if (verdict.verdict === "certified") {
         if (verdict.reasons.length > 0) throw new CertifyFailedError("failed", "the replay program certified with reasons against");
         if (outside.length > 0) {
@@ -242,7 +249,12 @@ export class LakeCertifier implements LeanCertifier {
    * everything it reads: the program, as read when the certifier was made, the two object files, copied,
    * and the request. Nothing in it was written by a process that ran the candidate's code.
    */
-  private async replay(candidate: string, reference: string, request: CertificationRequest, call: Call): Promise<ProcessResult> {
+  private async replay(
+    candidate: string,
+    reference: string,
+    names: { target: string[]; allowedAxioms: string[][] },
+    call: Call,
+  ): Promise<ProcessResult> {
     const dir = await mkdtemp(join(call.root, "replay-"));
     const programFile = join(dir, "Main.lean");
     const referenceFile = join(dir, "reference.olean");
@@ -253,7 +265,7 @@ export class LakeCertifier implements LeanCertifier {
     await copyFile(candidate, candidateFile, constants.COPYFILE_EXCL);
     await writeFile(
       requestFile,
-      JSON.stringify({ reference: referenceFile, candidate: candidateFile, target: request.target, allowedAxioms: request.allowedAxioms }),
+      JSON.stringify({ reference: referenceFile, candidate: candidateFile, target: names.target, allowedAxioms: names.allowedAxioms }),
       { encoding: "utf8", flag: "wx" },
     );
     return await this.lake(["env", "lean", "--run", programFile, requestFile], dir, call);
@@ -386,6 +398,44 @@ export class LakeCertifier implements LeanCertifier {
     if (result.code === 0) return;
     const why = result.code === 1 ? errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`).join("; ") : `ended with ${how(result)}${tail(result.stderr)}`;
     throw new CertifyFailedError("unavailable", `lean cannot compile the probe file (${shown}), so the project is not usable: ${why}`);
+  }
+}
+
+/**
+ * The components of a Lean name written as in source: split at the dots that are outside `«»`, with
+ * the guillemets taken off, so `Arxiv.«1609.08688».f` has the three components `Arxiv`, `1609.08688`
+ * and `f`. The replay program is sent the components, since Lean's `String.toName` splits at every
+ * dot and does not read `«»`. Throws on a name that is not one: an empty component, a `«` never closed.
+ */
+export function nameComponents(name: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (const char of name) {
+    if (quoted) {
+      if (char === "»") quoted = false;
+      else current += char;
+    } else if (char === "«") {
+      quoted = true;
+    } else if (char === ".") {
+      parts.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (quoted) throw new Error(`${JSON.stringify(name)} opens « and never closes it`);
+  parts.push(current);
+  if (parts.some((part) => part === "")) throw new Error(`${JSON.stringify(name)} has an empty component`);
+  return parts;
+}
+
+/** A name in a form that does not depend on how it was written: `propext` and `«propext»` are one name. */
+function canonicalName(name: string): string {
+  try {
+    return JSON.stringify(nameComponents(name));
+  } catch {
+    return `not a name: ${name}`;
   }
 }
 

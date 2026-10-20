@@ -103,11 +103,17 @@ and a line that is not a verdict are failures of the call.
 ## The Lean program
 
 `lean/SeshatCertify/Main.lean` reads the request (`{"reference", "candidate", "target",
-"allowedAxioms"}`, the two `.olean` files and names) and prints `{"verdict", "reasons", "axioms"}`
-with exit code 0; a failure that is not the candidate's (the reference cannot be replayed, the
-request does not parse) prints nothing and exits with another code. It runs none of the candidate's
-code: it reads the two object files as data, with the imports loaded without their initializers
-(`importModules` with `loadExts := false`). It
+"allowedAxioms"}`: the two `.olean` files, and names as arrays of their components) and prints
+`{"verdict", "reasons", "axioms"}` with exit code 0. The names are sent as components because Lean's
+`String.toName` splits at every dot and does not read `«»`, so `Arxiv.«1609.08688».f` would be four
+pieces: the harness reads the source form (`nameComponents`) and the program builds the `Name` from
+the components. A verdict `rejected` is only for what the candidate did (its imports, an unsafe or
+partial constant, a declaration the kernel refuses, a target that is missing or states something else,
+an axiom that is not allowed); anything else that goes wrong (the request does not parse, an object
+file cannot be read, the reference cannot be replayed, any other exception) prints nothing and exits
+with another code, and the harness takes it for a failure of the call. It runs none of the
+candidate's code: it reads the two object files as data, with the imports loaded without their
+initializers (`importModules (loadExts := false)`, passed explicitly). It
 
 1. refuses a candidate whose imports differ from the reference's, or that declares an unsafe or
    partial constant (`Environment.replay` skips those);
@@ -343,16 +349,17 @@ To run the program by hand on two files, from the project directory:
 ```sh
 lake env lean -o /tmp/ref.olean /tmp/ref.lean
 lake env lean -o /tmp/cand.olean /tmp/cand.lean
-echo '{"reference":"/tmp/ref.olean","candidate":"/tmp/cand.olean","target":"Ns.name","allowedAxioms":["propext","Classical.choice","Quot.sound"]}' > /tmp/request.json
+echo '{"reference":"/tmp/ref.olean","candidate":"/tmp/cand.olean","target":["Ns","name"],"allowedAxioms":[["propext"],["Classical","choice"],["Quot","sound"]]}' > /tmp/request.json
 lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.json
 ```
 
 ## To verify against Lean
 
-1. That `lean/SeshatCertify` builds at v4.27.0: `readModuleData`, `importModules`,
-   `Environment.replay`, `CollectAxioms.collect`, `Expr.getUsedConstants`, `findSysroot` and the
-   `Json` functions, and the `BEq` instances of the constant structures it compares with `==`, were
-   read from Lean's sources, not run.
+1. That `lean/SeshatCertify` builds at v4.27.0: `readModuleData`, `importModules` (and its named
+   argument `loadExts`), `Environment.replay`, `CollectAxioms.collect`, `Expr.getUsedConstants`,
+   `findSysroot`, `Name.str` and the `Json` functions, and the `BEq` instances of the constant
+   structures it compares with `==`, were read from Lean's sources, not run. Nor was any `match`
+   or `try` of the program: the narrowing of what it calls a rejection is as untested as the rest.
 2. That `lake env lean --run` interprets the program in a time that does not matter next to the
    compile, and that `Environment.replay` of a module of a formal-conjectures file, and of a big
    proof, takes the time and memory one expects.
@@ -368,7 +375,10 @@ lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.js
 7. The sandbox: that one of the recipes above lets Lean run in the project (does `lake env` work with a
    read-only project? is the toolchain reachable?), write only to `{work}` and stay within the memory
    limit, and that `pnpm harness health lean.certify` passes through it.
-8. The environment: that `lake env lean` works with the environment listed under
+8. That a target built from its components (`Name.str` for each) is the name the file declares, for a bench
+   name such as `Arxiv.«1609.08688».maximalLength_le` (the middle component a string, not a number),
+   and for the negation theorem's name.
+9. The environment: that `lake env lean` works with the environment listed under
    [the process](#the-process) (a `HOME` and `PATH`, and an `ELAN_HOME` when the toolchains are not
    in `$HOME/.elan`), and what else, if anything, elan or lake need.
 
