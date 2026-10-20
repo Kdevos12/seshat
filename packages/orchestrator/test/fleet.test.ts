@@ -134,12 +134,12 @@ describe("the fleet's models", () => {
 });
 
 describe("the fleet's width", () => {
-  const widen = { minAttempts: 1, widenBelow: 0.9, strategies: false, models: ["faux/prover"] };
+  const widen = { minAttempts: 2, widenBelow: 0.9, strategies: false, models: ["faux/prover"] };
 
-  it("starts one prover, and the others when the posterior of a single agent is low", async () => {
+  it("starts one prover, and lets the others in as soon as the attempts that made the posterior low are in the memory", async () => {
     const { result, events } = await demoRun({
-      config: { ...FLEET, ...seed(9, widen), provers: 3, sessions: 2 },
-      responses: Array.from({ length: 30 }, () => anySession("omega")),
+      config: { ...FLEET, ...seed(9, widen), provers: 3, sessions: 3 },
+      responses: Array.from({ length: 40 }, () => anySession("omega")),
     });
     assert.equal(result.problems[0]?.outcome, "unsolved");
     const order = events.filter((e) => e.type === "attempt.started" || e.type === "attempt.finished");
@@ -150,15 +150,19 @@ describe("the fleet's width", () => {
     const byProver = (prover: string) => records.filter((r) => r.prover === prover);
     assert.equal(byProver("p1")[0]?.waited, false);
     assert.deepEqual([byProver("p2")[0]?.waited, byProver("p3")[0]?.waited], [true, true]);
-    // One failure puts the rate at 1/3, under 0.9: the width is 3, so p2 and p3 came in while p1 lived on.
-    assert.equal(byProver("p2")[0]?.width, 3);
-    // p2 and p3 were let in when p1's first session ended, while p1's second session was still to end.
-    const allocationAt = (prover: string) => events.findIndex((e) => e.type === "node.recorded" && e.data.kind === "allocation" && (e.data.data as AllocationData).prover === prover);
-    const p1Ends = events.flatMap((e, k) => (e.type === "attempt.finished" && ofType(events, "attempt.started").some((s) => s.data.attemptId === e.data.attemptId && s.data.prover === "p1") ? [k] : []));
-    assert.equal(p1Ends.length, 2);
-    assert.ok(allocationAt("p2") > (p1Ends[0] ?? Infinity) && allocationAt("p2") < (p1Ends[1] ?? 0), "p2 was let in while p1 worked on");
-    assert.ok(allocationAt("p3") > (p1Ends[0] ?? Infinity) && allocationAt("p3") < (p1Ends[1] ?? 0), "p3 was let in while p1 worked on");
-    assert.equal(ofType(events, "attempt.started").length, 6);
+    // One attempt is not enough evidence (2 are asked for). Two failures put the rate at 1/4, under 0.9:
+    // the width is 3 from p1's third session, and p2 and p3 come in on a posterior made of both attempts.
+    assert.deepEqual(byProver("p1").map((r) => [r.attempts, r.width]), [[0, 1], [1, 1], [2, 3]]);
+    assert.deepEqual([byProver("p2")[0]?.attempts, byProver("p2")[0]?.width, byProver("p3")[0]?.attempts, byProver("p3")[0]?.width], [2, 3, 2, 3]);
+    // They come in when p1's third session starts, which is after its second attempt is journaled, not when that session
+    // ends: p1's third session has done no work yet (Lean has not answered it) when p2 and p3 are let in.
+    const third = ofType(events, "attempt.started").find((e) => e.data.prover === "p1" && e.data.iteration === 3)?.data.attemptId;
+    const lean = events.findIndex((e) => e.type === "validation.finished" && e.data.attemptId === third);
+    const letIn = (prover: string) => events.findIndex((e) => e.type === "node.recorded" && e.data.kind === "allocation" && (e.data.data as AllocationData).prover === prover);
+    assert.ok(lean > 0 && letIn("p2") > 0 && letIn("p3") > 0, "the events are there");
+    assert.ok(letIn("p2") < lean, `p2 was let in at event ${letIn("p2")}, after Lean answered p1's third session at ${lean}`);
+    assert.ok(letIn("p3") < lean, `p3 was let in at event ${letIn("p3")}, after Lean answered p1's third session at ${lean}`);
+    assert.equal(ofType(events, "attempt.started").length, 9);
   });
 
   it("keeps the provers to one at a time while a single agent does well enough", async () => {
@@ -166,7 +170,7 @@ describe("the fleet's width", () => {
       config: { ...FLEET, ...seed(10, { strategies: false, models: ["faux/prover"] }), provers: 2, sessions: 2 },
       responses: Array.from({ length: 30 }, () => anySession("omega")),
     });
-    // The rate stays over 0.3 after one failure (1/3) and falls under it after two (1/4, with the default of 2 attempts): p2 waits for p1's second session.
+    // With the default of 2 attempts the rate is not read after one failure: p2 waits until p1 has no session left.
     const started = ofType(events, "attempt.started").map((e) => `${e.data.prover}.${e.data.iteration}`);
     assert.deepEqual(started.slice(0, 2), ["p1.1", "p1.2"]);
     assert.equal(allocations(events).find((r) => r.prover === "p2")?.waited, true);
