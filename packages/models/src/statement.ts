@@ -1,4 +1,4 @@
-import { maskCommentsAndStrings } from "@seshat/core";
+import { forbiddenTokensIn, maskCommentsAndStrings } from "@seshat/core";
 import { compileLaw, type Law, LawSyntaxError, parseLaw } from "./laws.ts";
 import type { Magma } from "./objects.ts";
 
@@ -91,9 +91,19 @@ function tidy(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** The binders of a signature, then its type; or why it has another shape. */
+/**
+ * The binders of a signature, then its type; or why it has another shape. The text is read with its
+ * comments and strings blanked, which is also the text that goes into a Lean file (the body of a
+ * statement about a number is written as it is), so it is refused when it holds a token that the
+ * validator refuses in a proof: `#eval`, `macro_rules`, `IO`... A declaration can be ended by the
+ * text and commands added after it, and the statements come from claims and from the provers' tool.
+ */
 function splitSignature(statement: string): { binders: Binder[]; conclusion: string } | { reason: string } {
   const text = maskCommentsAndStrings(statement);
+  const forbidden = forbiddenTokensIn(text);
+  if (forbidden.length > 0) {
+    return { reason: `the statement holds the token${forbidden.length > 1 ? "s" : ""} ${forbidden.map((t) => `'${t}'`).join(", ")}, and a statement with a token that the validator refuses in a proof is not written into a Lean file` };
+  }
   const binders: Binder[] = [];
   let i = 0;
   for (;;) {

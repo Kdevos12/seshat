@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   AUX_END,
   type CertificationRequest,
+  forbiddenTokensIn,
   type LeanCertifier,
   PROOF_BEGIN,
   ProofValidator,
@@ -35,6 +36,19 @@ describe("scanRegion", () => {
     assert.deepEqual(scanRegion('exact "--" ').problems, ["string literals are not allowed in the editable regions"]);
     assert.deepEqual(scanRegion("exact «a--b»").problems, ["«» names are not allowed in the editable regions"]);
     assert.deepEqual(scanRegion("simp /- oops").problems, ["a block comment is not closed"]);
+  });
+});
+
+describe("forbiddenTokensIn", () => {
+  it("lists the forbidden tokens of a text whose comments are blanked, in the order of the list, with whole-word matching", () => {
+    assert.deepEqual(forbiddenTokensIn("n = n #eval IO.Process.exit 7 macro_rules"), ["#eval", "macro_rules", "IO"]);
+    assert.deepEqual(forbiddenTokensIn("exact _root_.Lean.ofReduceBool"), ["Lean"]);
+    assert.deepEqual(forbiddenTokensIn("exact ofReduceBool"), ["ofReduceBool"]);
+    assert.deepEqual(forbiddenTokensIn("sorry"), ["sorry"]);
+    assert.deepEqual(forbiddenTokensIn("Nat.Prime n ∧ sorry_free n ∧ n.IOx = macro"), ["macro"]);
+    assert.deepEqual(forbiddenTokensIn("n % 2 = 0"), []);
+    // The same screen as the structural check's, which lets holes through only under the sketch policy.
+    assert.deepEqual(structuralCheck({ aux: "", proof: "  sorry" }), ["proof: 'sorry' is not allowed"]);
   });
 });
 

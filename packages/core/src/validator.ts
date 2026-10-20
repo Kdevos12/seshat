@@ -129,17 +129,27 @@ export function scanRegion(text: string): RegionScan {
   return { masked: out.join(""), problems: [...problems] };
 }
 
+/**
+ * The forbidden tokens that a piece of Lean text holds, in the order of the list, `sorry` and
+ * `admit` included. The text has its comments blanked already (`scanRegion(text).masked`, or
+ * `maskCommentsAndStrings`). `structuralCheck` applies this to the editable regions; code that writes
+ * text from a model into a Lean file of its own applies it to that text.
+ */
+export function forbiddenTokensIn(masked: string): string[] {
+  // `_root_.Lean.Meta` must not slip past the token boundary.
+  const text = masked.replace(/_root_\./g, " ");
+  return FORBIDDEN_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([token]) => token);
+}
+
 /** Checks the two regions without Lean. Returns the reasons the submission is refused. */
 export function structuralCheck(submission: Submission, policy: ValidationPolicy = DEFAULT_POLICY): string[] {
   const reasons: string[] = [];
   const scans = { aux: scanRegion(submission.aux), proof: scanRegion(submission.proof) };
   for (const [region, scan] of Object.entries(scans)) {
     for (const problem of scan.problems) reasons.push(`${region}: ${problem}`);
-    // `_root_.Lean.Meta` must not slip past the token boundary.
-    const text = scan.masked.replace(/_root_\./g, " ");
-    for (const [token, pattern] of FORBIDDEN_PATTERNS) {
+    for (const token of forbiddenTokensIn(scan.masked)) {
       if (policy.holes && HOLE_TOKENS.includes(token)) continue;
-      if (pattern.test(text)) reasons.push(`${region}: '${token}' is not allowed`);
+      reasons.push(`${region}: '${token}' is not allowed`);
     }
   }
   if (scans.proof.masked.trim() === "") reasons.push("proof: the proof is empty");

@@ -104,3 +104,8 @@ The prover's code runs inside Lean during both checks. The Lean server and the c
 in a sandbox: no network, read-only reference files, limits on time and memory. The reference type
 is computed by the harness from the pristine original file, never from a file a prover could
 touch.
+
+Line M11 ([models.md](models.md)) sends Lean files of its own to the same server, for `decide` on a
+statement about a number. The text of a statement reaches such a file as it is, so it is refused
+unless it is free of the tokens that the validator refuses in a prover's regions
+(`forbiddenTokensIn`); the rest of the file is the harness's.

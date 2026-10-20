@@ -133,6 +133,14 @@ reason: another symbol, a number, a variable the `∀` does not bind, a second t
 variables, a hypothesis that is not a law, a binder that is not a hypothesis. A statement about two
 numbers, or one that uses the proof of its own hypothesis, is not tried either.
 
+A statement that holds a token the validator refuses in a proof (`#eval`, `macro_rules`, `IO`,
+`Lean`, ...; core's `forbiddenTokensIn`, the list of `structuralCheck`) is not recognized either, and
+the reason names the tokens. The body of a statement about a number is written as it is into the
+evaluator's Lean file (`abbrev m11_stmt ... := <body>`), where text such as `n = n #eval ...` ends the
+declaration and adds commands; and statements come from the claims of a run and from the `statement`
+argument of the provers' tool. The screen reads the text with its comments and strings blanked,
+which is the text that is written.
+
 A statement holds on an object when every object that satisfies the hypotheses satisfies the
 conclusion. So on a magma that breaks a hypothesis the statement holds vacuously; the object
 *breaks* it when the hypotheses hold and the conclusion does not, and then it is a counter-model.
