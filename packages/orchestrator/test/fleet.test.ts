@@ -16,6 +16,11 @@ function textOf(message: Message): string {
   return typeof content === "string" ? content : content.map((c) => c.text ?? "").join("");
 }
 
+/** The arguments of the tool calls the model has made in a session so far, as text. */
+function toolCalls(context: TranscriptContext): string {
+  return context.messages.flatMap((m) => (m.role === "assistant" ? m.content.flatMap((c) => (c.type === "toolCall" ? [JSON.stringify(c.arguments)] : [])) : [])).join("\n");
+}
+
 /** The opening message of a session. */
 function opening(context: TranscriptContext): string {
   return textOf(context.messages.find((m) => m.role === "user") as Message);
@@ -229,17 +234,41 @@ describe("the fleet with M6", () => {
 });
 
 describe("the fleet and the provers' notes", () => {
-  it("gives a prover the typed summaries of the others' attempts and none of their text", async () => {
-    const prompts: string[] = [];
+  it("gives each prover its own notes and the typed summaries of the others' attempts, never the others' text", async () => {
+    const openings: string[] = [];
+    let started = 0;
+    // Session 1 of a prover checks a file tagged with a number and ends with notes that name the tag; session 2 only reads its opening.
+    const respond = (context: TranscriptContext): AssistantMessage => {
+      const first = opening(context);
+      if (context.messages.some((m) => m.role === "toolResult")) {
+        const tag = /TAG-(\d)/.exec(toolCalls(context))?.[1];
+        return say(`NOTE-OF-${tag}: the key is the lemma foo_bar_${tag}`);
+      }
+      if (first.includes("NOTE-OF-")) {
+        openings.push(first);
+        return say("done");
+      }
+      started += 1;
+      return check("omega", `-- TAG-${started}`);
+    };
     await demoRun({
-      config: { ...FLEET, ...seed(14, { widen: false }), provers: 2, sessions: 1 },
-      responses: [
-        check("omega"),
-        say("SECRET-NOTE-OF-A-PROVER: the key is the lemma foo_bar"),
-        (context) => { prompts.push(opening(context)); return say("done"); },
-      ],
+      config: { ...FLEET, ...seed(14, { widen: false }), provers: 2, sessions: 2 },
+      responses: Array.from({ length: 12 }, () => respond),
     });
-    // Whichever prover started second, its opening message has no other prover's notes.
-    assert.ok(prompts.every((p) => !p.includes("SECRET-NOTE")));
+    assert.equal(openings.length, 2, "each prover got to a second session, with notes");
+    const owners = openings.map((o) => [...new Set([...o.matchAll(/NOTE-OF-(\d)/g)].map((m) => m[1]))]);
+    assert.deepEqual(owners.map((tags) => tags.length), [1, 1], "one prover's notes in each opening");
+    assert.deepEqual(owners.flat().sort(), ["1", "2"], "and not the same prover's in both");
+    for (const text of openings) {
+      const own = /NOTE-OF-(\d)/.exec(text)?.[1] as string;
+      const other = own === "1" ? "2" : "1";
+      assert.match(text, new RegExp(`# Your notes from the previous sessions\\nNOTE-OF-${own}: the key is the lemma foo_bar_${own}\n`));
+      // Nothing of the other prover: not its notes, not the file it left.
+      assert.doesNotMatch(text, new RegExp(`NOTE-OF-${other}|foo_bar_${other}|TAG-${other}`));
+      // The memory's typed summaries are there, and say what was tried, not how it was written.
+      assert.match(text, /# Already tried\nTyped summaries of the attempts on this statement or an equivalent one, by you and the other provers \(their text is not kept\):\nautomation: \d attempts?, unsolved goals\n/);
+    }
+    // Whichever prover opened its second session last found both first attempts in the memory.
+    assert.ok(openings.some((text) => text.includes("automation: 2 attempts, unsolved goals")), "the other prover's attempt is counted");
   });
 });
