@@ -11,6 +11,7 @@ import {
   type RecognizedStatement,
   statementBody,
   statementSignature,
+  statementStructure,
 } from "../src/index.ts";
 
 function recognized(text: string): RecognizedStatement {
@@ -71,6 +72,24 @@ describe("recognizing a statement of magmas", () => {
     assert.equal(check({ size: 2, table: [0, 1, 1, 0] }).verdict, "vacuous");
     assert.equal(check({ size: 1, table: [0] }).verdict, "holds");
     assert.equal([...verdicts.values()].filter((v) => v === "fails").length, 1);
+  });
+});
+
+describe("the sort of the type of a magma statement", () => {
+  it("is kept as written", () => {
+    for (const sort of ["Type", "Type 0", "Type*", "Type _", "Type u", "Type 1"]) {
+      assert.equal((recognized(`(M : ${sort}) [Mul M] : ∀ x y : M, x * y = y * x`) as MagmaStatement).sort, sort);
+    }
+  });
+
+  it("is in the structure of a universe-polymorphic statement (Type*), and not in the definition the evaluator tries on Fin n", () => {
+    const starred = recognized("(M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x y : M, x * y = y * x");
+    assert.equal(statementStructure(starred), "(M : Type*) [Mul M]");
+    assert.equal(statementStructure(recognized("(M : Type u) [Mul M] : ∀ x : M, x * x = x")), "(M : Type*) [Mul M]");
+    assert.equal(statementStructure(recognized("(M : Type) [Mul M] : ∀ x : M, x * x = x")), "(M : Type) [Mul M]");
+    assert.equal(statementStructure(recognized("(M : Type 0) [Mul M] : ∀ x : M, x * x = x")), "(M : Type) [Mul M]");
+    // The evaluator instantiates the definition at `Fin n : Type`, whatever the claim's sort.
+    assert.equal(leanDefinition(starred), "abbrev m11_stmt (M : Type) [Mul M] : Prop := (∀ x y : M, x * y = x) → ∀ x y : M, x * y = y * x");
   });
 });
 

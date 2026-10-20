@@ -38,7 +38,7 @@ end Magmas
 `;
 const LEFT_PROJECTION_COMMUTES = "(M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x y : M, x * y = y * x";
 const EVEN_BELOW_FIFTY = "(n : ℕ) (h : n % 2 = 0) : n < 50";
-const COMMUTATIVE = "(M : Type) [Mul M] : ∀ x y : M, x * y = y * x";
+const COMMUTATIVE = "(M : Type*) [Mul M] : ∀ x y : M, x * y = y * x";
 
 const normalize = (text: string) => text.split("\n").map((l) => l.trim()).filter((l) => l !== "").join("\n");
 
@@ -131,6 +131,8 @@ describe("line M11 in a run", () => {
 
   it("refutes a false statement of magmas: the negation passes Lean's check, the claim stays open and the provers do not start", async () => {
     const proof = firstProof(LEFT_PROJECTION_COMMUTES, { kind: "magma", id: "2:0011", size: 2, table: [0, 0, 1, 1] });
+    // The claim is over Type*: the counter-model is on ULift (Fin 2), which fits the universe parameter.
+    assert.match(proof, /^intro hall\nhave key := @hall \(ULift \(Fin 2\)\) /);
     const { result, events, faux } = await m11Run({
       problem: "Magmas.left_proj_comm",
       lean: new MixedLean(() => true, [proof]),
@@ -302,7 +304,8 @@ describe("line M11 in a run", () => {
     const implies = ofType(events, "edge.added").filter((e) => e.data.kind === "implies");
     assert.deepEqual(implies.map((e) => [e.actor, e.data.status, e.data.from, e.data.to]), [["line:M11", "computed", variant, [claimId]]]);
     assert.equal(implies[0]?.data.link?.name, `m11_implies_${variant}_${claimId}`);
-    assert.equal(implies[0]?.data.link?.statement, "(M : Type) [Mul M] (h : ∀ x y : M, x * y = y * x) : (∀ x y : M, x * y = x) → ∀ x y : M, x * y = y * x");
+    // Both claims are over Type*, so the lemma is too.
+    assert.equal(implies[0]?.data.link?.statement, "(M : Type*) [Mul M] (h : ∀ x y : M, x * y = y * x) : (∀ x y : M, x * y = x) → ∀ x y : M, x * y = y * x");
     assert.ok(ofType(events, "edge.added").every((e) => e.data.status !== "lean_checked"));
     assert.ok(ofType(events, "edge.status_changed").every((e) => e.data.to !== "lean_checked"));
 

@@ -124,7 +124,7 @@ statement has, or why it has neither; a statement of another shape is left alone
 
 | Shape | Written as | Tried on |
 |---|---|---|
-| Magma | `(M : Type) [Mul M] (h : law) ... : law`, or the hypotheses as premises of the conclusion (`: (law) → law`), or no hypothesis; `Type*` and `Type u` are accepted, and `[Magma G]` with `◇` as in the equational theories project | The magmas of a battery |
+| Magma | `(M : Type) [Mul M] (h : law) ... : law`, or the hypotheses as premises of the conclusion (`: (law) → law`), or no hypothesis; `Type*` and `Type u` are accepted (and kept: [counter-models](#counter-models-and-refutations)), and `[Magma G]` with `◇` as in the equational theories project | The magmas of a battery |
 | Number | `(n : ℕ) (h : P n) ... : Q n`, or `: ∀ n : ℕ, Q n` | The integers of a battery |
 
 A *law* is `∀ x y z : M, left = right` where each side is a term in the variables and the one
@@ -275,6 +275,25 @@ which `decide` shows to be false. A second form puts the table in a `def aux_...
 when the first is invalid, and returns what each came to. Both pass the validator's structural check
 (`structuralCheck`: no forbidden token, no string, auxiliary names starting with `aux_`), which the
 tests run.
+
+**The sort of the type.** The statement keeps the sort of its first binder (`MagmaStatement.sort`).
+A claim over `Type*`, `Type _` or `Type u` has a universe parameter, and the negation theorem, which
+Lean elaborates from `@claim`, has it as a parameter `u_1` that is rigid inside the proof: `hall`
+takes `M : Type u_1`, and `Fin 2 : Type` is not one. For these claims (`needsLift`: any sort but
+`Type` and `Type 0`) both forms put the counter-model on `ULift (Fin 2)`, the table transported
+through `down` and `up`, and the table stays a definition on `Fin 2`:
+
+```lean
+intro hall
+have key := @hall (ULift (Fin 2)) ⟨fun a b => ULift.up (([0, 0, 1, 1] : List (Fin 2)).getD (a.down.val * 2 + b.down.val) 0)⟩
+revert key
+decide
+```
+
+The evaluator is not affected: it instantiates its own definition at `Fin n : Type`. The lemma that
+links two claims is stated with their sort (`Type*` for a universe-polymorphic one), and claims of
+different sorts get none, since a lemma over `Type` does not give an edge between statements over
+every universe.
 
 What the validation path does with it: a valid proof of a negation is recorded as a validation with
 `negation: true` and changes no status. The claim becomes `refuted` only when the certifier replays
@@ -463,18 +482,53 @@ with no counter-model, a statement whose numbers a stand-in OEIS (the factory `o
 that answers from a file, behind the registry) names, with its two `oeis.search` tool runs in the
 journal, and the options.
 
+## To verify against Lean
+
+What depends on Lean's exact behaviour and has only run against simulations. The harness's own list
+is in [lean.md](lean.md#to-verify-against-lean). The first item here is the one that decides whether
+a refutation of a claim over `Type*` can ever pass; it takes a minute on a Lean server with Mathlib:
+
+1. **The negation of a claim over `Type*`, in both forms.** Elaborate this file:
+
+   ```lean
+   import Mathlib
+
+   theorem t (M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x y : M, x * y = y * x := sorry
+
+   theorem t_negation : ¬ (type_of% @t) := by
+     intro hall
+     have key := @hall (ULift (Fin 2)) ⟨fun a b => ULift.up (([0, 0, 1, 1] : List (Fin 2)).getD (a.down.val * 2 + b.down.val) 0)⟩
+     revert key
+     decide
+
+   def aux_table (a b : Fin 2) : Fin 2 := ([0, 0, 1, 1] : List (Fin 2)).getD (a.val * 2 + b.val) 0
+
+   theorem t_negation' : ¬ (type_of% @t) := by
+     intro hall
+     exact absurd (@hall (ULift (Fin 2)) ⟨fun a b => ULift.up (aux_table a.down b.down)⟩) (by decide)
+   ```
+
+   What to look at: that `t_negation` has a universe parameter (`#check @t_negation`) and `hall :
+   ∀ (M : Type u_1) [Mul M], ...`, so that `@hall (Fin 2) ...` fails with a type mismatch and
+   `ULift (Fin 2)` is accepted in its place; that `decide` finds the `Fintype` and `DecidableEq`
+   instances of `ULift (Fin 2)` and evaluates the proposition; and that both theorems elaborate with
+   no error. The same file with `(M : Type)` and `Fin 2` is the plain form, which should also check.
+   If `decide` cannot find an instance, the forms of `negationProofs` need to supply it.
+2. **The files of the Lean evaluator.** The text of the files (`abbrev`, the `Fin` instance from a
+   `List`, `decide` on the instantiated statement) is written from what Lean 4 and Mathlib accept,
+   and `pnpm harness contract lean.check` does not cover it.
+3. **The proofs of the negation of a claim over `Type`, and of a number.** The forms above with `Fin
+   n`, and `@hall 7` for a number, which are tested only against a simulated Lean.
+
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
-- The Lean evaluator has not run against a real Lean. The text of the files (`abbrev`, the `Fin`
-  instance from a `List`, `decide` on the instantiated statement) is written from what Lean 4 and
-  Mathlib accept, and `pnpm harness contract lean.check` does not cover it.
 - A statement about groups, graphs or any other structure has no Lean evaluator: a program in
   JavaScript is the evaluator for those.
 - Magmas of size 4 are sampled, never listed. Groups of order 16 and above are partly built.
 - No run of the line has used a real model or a real Lean. The proofs of negations that its tests
   accept are the ones the simulated Lean was told to accept; whether Lean accepts them is the first
-  thing to check ([lean.md](lean.md#to-verify-against-lean)).
+  thing to check ([above](#to-verify-against-lean)).
 - `oeis.search`, `lmfdb.query` and `findstat.identify` have not made a request to their sites, and
   their contracts have not run against them ([the services as
   capabilities](#the-services-as-capabilities)). The table of known sequences has 65 sequences, and a
