@@ -134,10 +134,10 @@ variables, a hypothesis that is not a law, a binder that is not a hypothesis. A 
 numbers, or one that uses the proof of its own hypothesis, is not tried either.
 
 A premise that is itself a quantified law goes in parentheses: `(∀ x y : M, x * y = y * x) → ...`.
-Lean reads the body of a `∀`, `∃` or `fun` to the end of the statement, so in
-`∀ x y : M, x * y = y * x → ...` the arrow belongs to the body and the statement has one premise
-fewer than it appears to. A statement with an arrow after an unparenthesised quantifier is refused,
-with the reason, instead of being split where Lean would not split it.
+Lean reads the body of a `∀`, `∃` or `fun` (or `forall` and `exists`, written as words) to the end of
+the statement, so in `∀ x y : M, x * y = y * x → ...` the arrow belongs to the body and the statement
+has one premise fewer than it appears to. A statement with an arrow after an unparenthesised
+quantifier is refused, with the reason, instead of being split where Lean would not split it.
 
 A statement that holds a token the validator refuses in a proof (`#eval`, `macro_rules`, `IO`,
 `Lean`, ...; core's `forbiddenTokensIn`, the list of `structuralCheck`) is not recognized either, and
