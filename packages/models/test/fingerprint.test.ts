@@ -185,6 +185,24 @@ describe("candidate relations in the memory", () => {
     assert.match(equivalence?.note ?? "", /candidate equivalence: the fingerprints on magmas:3\+4x120@1 \(3461 objects\) are equal/);
   });
 
+  it("states the lemma of universe-polymorphic claims with Type*, and gives none to claims of different sorts", () => {
+    const over = (sort: string) => {
+      const result = recognizeStatement(`(M : ${sort}) [Mul M] : ${LAWS.leftZero}`);
+      assert.ok("statement" in result);
+      return result.statement;
+    };
+    const idempotent = (sort: string) => {
+      const result = recognizeStatement(`(M : ${sort}) [Mul M] : ${LAWS.idempotent}`);
+      assert.ok("statement" in result);
+      return result.statement;
+    };
+    assert.equal(pointwiseLink("implies", over("Type*"), idempotent("Type u"), "m11_x")?.statement, "(M : Type*) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x : M, x * x = x");
+    assert.equal(pointwiseLink("implies", over("Type"), idempotent("Type 0"), "m11_x")?.statement, "(M : Type) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x : M, x * x = x");
+    // A lemma over Type says nothing about the claims over every universe, and the other way round.
+    assert.equal(pointwiseLink("implies", over("Type*"), idempotent("Type"), "m11_x"), undefined);
+    assert.equal(pointwiseLink("implies", over("Type"), idempotent("Type*"), "m11_x"), undefined);
+  });
+
   it("gives no lemma to claims about different structures, and no edge to a claim without a verdict", () => {
     const magma = magmaStatement(LAWS.leftZero);
     const nat = recognizeStatement("(n : ℕ) : n < 5");

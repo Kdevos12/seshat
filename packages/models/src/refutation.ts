@@ -4,7 +4,7 @@ import type { Edge, MemoryNode, MemoryStore } from "@seshat/memory";
 import type { Battery } from "./battery.ts";
 import type { EvaluatorKind } from "./fingerprint.ts";
 import type { IntegerObject, MagmaObject } from "./objects.ts";
-import { leanArguments, type RecognizedStatement } from "./statement.ts";
+import { leanArguments, needsLift, type RecognizedStatement } from "./statement.ts";
 
 /** An object that a statement fails on: a magma for a statement of magmas, a number for a statement about a number. */
 export type CounterModel = MagmaObject | IntegerObject;
@@ -25,10 +25,12 @@ function instanceOf(statement: RecognizedStatement, object: CounterModel): { arg
   if (object.kind !== "magma") throw new TypeError("a statement about magmas is refuted by a magma");
   const name = `aux_m11_${sha256Hex(object.id).slice(0, 12)}`;
   const n = object.size;
+  // The table is a definition on `Fin n` either way; a universe-polymorphic claim takes its instance on `ULift (Fin n)`.
+  const lift = needsLift(statement);
   return {
-    arguments: leanArguments(statement, object),
+    arguments: leanArguments(statement, object, { lift }),
     aux: `def ${name} (a b : Fin ${n}) : Fin ${n} := ([${object.table.join(", ")}] : List (Fin ${n})).getD (a.val * ${n} + b.val) 0`,
-    shortArguments: `(Fin ${n}) ⟨${name}⟩`,
+    shortArguments: lift ? `(ULift (Fin ${n})) ⟨fun a b => ULift.up (${name} a.down b.down)⟩` : `(Fin ${n}) ⟨${name}⟩`,
   };
 }
 
@@ -47,6 +49,12 @@ function instanceOf(statement: RecognizedStatement, object: CounterModel): { arg
  * (a hypothesis binder is a pi binder like any other), and `decide` shows that this implication is
  * false. The second form (`absurd`) puts the table in a `def aux_...`; it is for the case where the
  * first does not check, since this code has not run against a real Lean.
+ *
+ * A claim over `Type*` (or `Type _`, `Type u`) has a universe parameter, and inside the proof of its
+ * negation that universe is a rigid `u_1`, so `Fin 2 : Type` is not an argument for `hall`. The
+ * proofs then use `ULift (Fin 2)`, with the table transported through `down` and `up` (`needsLift`):
+ * `@hall (ULift (Fin 2)) ⟨fun a b => ULift.up (...)⟩`. Whether Lean accepts them, and `decide` the
+ * `Fintype` and `DecidableEq` instances of `ULift`, is the first item of the list in models.md.
  */
 export function negationProofs(statement: RecognizedStatement, object: CounterModel): NegationProof[] {
   const at = instanceOf(statement, object);

@@ -18,6 +18,12 @@ export interface MagmaStatement {
   kind: "magma";
   /** The name of the type of the magma, such as `M`. */
   type: string;
+  /**
+   * The sort of that type as the binder writes it: `Type`, `Type 0`, `Type*`, `Type _`, `Type u`,
+   * `Type 1`. In the claim a sort that is not `Type` is a universe parameter, which the proof of a
+   * negation cannot fill with `Fin n` ({@link needsLift}).
+   */
+  sort: string;
   /** The class of its operation: `Mul` (written `*`) or `Magma` (written `◇` in the equational theories project). */
   operation: "Mul" | "Magma";
   hypotheses: Array<{ text: string; law: Law }>;
@@ -46,6 +52,17 @@ const CLOSE = ")]}⟩⦄⟧⁆";
 const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_'!?]*$/u;
 const NAT_TYPES = new Set(["ℕ", "Nat"]);
 const TYPE_SORT = /^Type(?:\*| _| [\p{L}\p{N}_]+)?$/u;
+const SMALL_SORT = /^Type(?: 0)?$/u;
+
+/**
+ * Whether the objects that refute a statement must be lifted to its sort. A claim over `Type*`,
+ * `Type _` or `Type u` is a statement with a universe parameter, and inside the proof of its
+ * negation that universe is a rigid `u_1`: `Fin n : Type` does not fit the claim's first argument,
+ * but `ULift (Fin n)` does, for any universe. Only `Type` and `Type 0` take `Fin n` as it is.
+ */
+export function needsLift(statement: MagmaStatement): boolean {
+  return !SMALL_SORT.test(statement.sort);
+}
 
 /** The index of the bracket that closes the one at `at`, or -1. */
 function closing(text: string, at: number): number {
@@ -174,7 +191,7 @@ function recognizeMagma(binders: Binder[], conclusion: string): Recognition {
   }
   const last = read(pieces[pieces.length - 1] as string, "the conclusion");
   if ("reason" in last) return last;
-  return { statement: { kind: "magma", type, operation: operation[1] as "Mul" | "Magma", hypotheses, conclusion: last } };
+  return { statement: { kind: "magma", type, sort: (binders[0] as Binder).type, operation: operation[1] as "Mul" | "Magma", hypotheses, conclusion: last } };
 }
 
 function recognizeNat(variable: string, rest: Binder[], conclusion: string): Recognition {
@@ -204,9 +221,15 @@ export function statementBody(statement: RecognizedStatement): string {
   return [...statement.hypotheses.map((h) => `(${h.text})`), statement.conclusion.text].join(" → ");
 }
 
-/** The binders that the statement's objects fill, in signature form: `(M : Type) [Mul M]` or `(n : ℕ)`. */
+/**
+ * The binders that the statement's objects fill, in signature form: `(M : Type) [Mul M]` or `(n : ℕ)`.
+ * A statement over a universe-polymorphic type has `Type*`, so that a lemma stated with the structure
+ * (the link of an edge) is as general as the claims, and statements of different sorts have
+ * different structures.
+ */
 export function statementStructure(statement: RecognizedStatement): string {
-  return statement.kind === "nat" ? `(${statement.variable} : ℕ)` : `(${statement.type} : Type) [${statement.operation} ${statement.type}]`;
+  if (statement.kind === "nat") return `(${statement.variable} : ℕ)`;
+  return `(${statement.type} : ${needsLift(statement) ? "Type*" : "Type"}) [${statement.operation} ${statement.type}]`;
 }
 
 /** The statement in signature form, as `ensureClaim` takes it. */
@@ -217,10 +240,11 @@ export function statementSignature(statement: RecognizedStatement): string {
 
 /**
  * The Lean definition `m11_stmt` that the evaluator instantiates: the statement as a proposition
- * about its structure. It writes `Nat`, which needs no import, where the claim says `ℕ`.
+ * about its structure. It writes `Nat`, which needs no import, where the claim says `ℕ`, and `Type`
+ * whatever the claim's sort, since the evaluator instantiates it at `Fin n : Type`.
  */
 export function leanDefinition(statement: RecognizedStatement, name = "m11_stmt"): string {
-  const structure = statement.kind === "nat" ? `(${statement.variable} : Nat)` : statementStructure(statement);
+  const structure = statement.kind === "nat" ? `(${statement.variable} : Nat)` : `(${statement.type} : Type) [${statement.operation} ${statement.type}]`;
   return `abbrev ${name} ${structure} : Prop := ${statementBody(statement)}`;
 }
 
@@ -230,14 +254,23 @@ export function leanMagmaInstance(magma: Magma): string {
   return `⟨fun a b => ([${magma.table.join(", ")}] : List (Fin ${n})).getD (a.val * ${n} + b.val) 0⟩`;
 }
 
-/** The arguments of the statement's structure for a magma (`(Fin 3) ⟨...⟩`) or a number (`7`), to follow `@m11_stmt`. */
-export function leanArguments(statement: RecognizedStatement, object: Magma | number): string {
+/** A magma as an instance on `ULift (Fin n)`, the table transported through `down` and `up`: the carrier of a universe-polymorphic claim. */
+export function leanLiftedMagmaInstance(magma: Magma): string {
+  const n = magma.size;
+  return `⟨fun a b => ULift.up (([${magma.table.join(", ")}] : List (Fin ${n})).getD (a.down.val * ${n} + b.down.val) 0)⟩`;
+}
+
+/**
+ * The arguments of the statement's structure for a magma (`(Fin 3) ⟨...⟩`) or a number (`7`), to
+ * follow `@m11_stmt`. With `lift`, the magma is on `ULift (Fin 3)` (`needsLift`).
+ */
+export function leanArguments(statement: RecognizedStatement, object: Magma | number, options: { lift?: boolean } = {}): string {
   if (statement.kind === "nat") {
     if (typeof object !== "number") throw new TypeError("a statement about a natural number is tried on numbers");
     return String(object);
   }
   if (typeof object === "number") throw new TypeError("a statement about magmas is tried on magmas");
-  return `(Fin ${object.size}) ${leanMagmaInstance(object)}`;
+  return options.lift === true ? `(ULift (Fin ${object.size})) ${leanLiftedMagmaInstance(object)}` : `(Fin ${object.size}) ${leanMagmaInstance(object)}`;
 }
 
 /** What a magma does to a statement: all its hypotheses hold and its conclusion does (`holds`), a hypothesis fails (`vacuous`), or the conclusion fails with the hypotheses true (`fails`). */
