@@ -4,8 +4,9 @@ A harness for autonomous mathematical research with LLMs: models through their A
 judge, classical tools first.
 
 Status: early development (phase P0a). The event journal, the memory store, the line API, the proof
-validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP
-boundary, contract tests), a first bench of 575 problems from
+validator, the certifier (a kernel replay in a fresh Lean process), a client for Kimina Lean Server,
+the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
+575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
 (independent provers on pi, in sessions that pass on their notes) and four lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M6: guards and drift
@@ -38,7 +39,7 @@ flowchart TB
 
   subgraph JUDGE["Judge: Lean"]
     fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::wait
-    certifier["Certifier<br/>kernel replay"]:::planned
+    certifier["Certifier (lean_certify)<br/>fresh process, kernel<br/>replay, axioms and<br/>statement compared"]:::wait
   end
 
   journal["Event journal<br/>the only source of truth<br/>JSONL, hash chain, blobs"]:::built
@@ -89,8 +90,9 @@ sketch and checks it with `lean_check`, and the first file that passes the fast 
 statement `computed`, a candidate. SageMath is the only classical tool plugged in. Every tool call
 goes through the capability registry, which writes it to the journal, with its inputs and outputs
 as blobs.
-Lean is the judge: no statement becomes `proved` without the certifier's kernel replay, which is
-still to write. The memory is what the plan counts on to beat existing systems: its store is
+Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
+([documentation/certifier.md](documentation/certifier.md)). The certifier is written and tested with a
+fake `lake`; its Lean program has never been compiled, and a run does not call it yet. The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are
 the first lines that use it. M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session

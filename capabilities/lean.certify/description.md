@@ -1,0 +1,6 @@
+Certifies a Lean proof: the second level of trust, the one that makes a claim `proved` or `refuted`. The candidate file is compiled in a fresh process of the pinned Lean project; then every declaration of the compiled module is replayed through the kernel (`Lean.Environment.replay`, as lean4checker does); the target's axioms are collected from the checked environment; and the target is compared with the reference's as terms (the approach of SafeVerify): its type, and every definition of the file that the type depends on. The answer is a `verdict`:
+
+- `certified`: the kernel accepted the module, the target states what the reference states, and it depends only on the `allowedAxioms`. `axioms` lists what it depends on, sorted.
+- `rejected`: the candidate does not compile, the kernel refuses a declaration, the target differs from the reference's, or it uses an axiom that is not allowed (`sorryAx` and `Lean.ofReduceBool` never are). `reasons` says which.
+
+A call that reaches no verdict (the time limit, an abort, Lean missing or of another version, the checking program failing) is a failure of the call, not a `rejected` verdict: it says nothing about the candidate, which stays a candidate. The code of the candidate runs while it compiles, so the host should run the compile under a sandbox (documentation/certifier.md).

@@ -29,7 +29,7 @@ simulated model and a simulated Lean.
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
-| Certifier (kernel replay) | Lean code | Needs a Lean environment |
+| Certifier: kernel replay in a fresh process, the capability `lean.certify` | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify` | TypeScript done, tested with a fake `lake`; the Lean program never compiled |
 
 None of this has run against a real Lean or a real model yet, because the development environment
 blocks the Lean toolchain downloads and has no model credentials.
@@ -58,7 +58,9 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
   directory, `harness run` and `harness report`.
-- [lean.md](lean.md): Lean checkers, the Kimina client, the certifier, deployment.
+- [lean.md](lean.md): Lean checkers, the Kimina client, deployment.
+- [certifier.md](certifier.md): the certifier: what it answers, the process, the Lean program, where
+  untrusted code runs, its settings, deployment, what is still to verify against Lean.
 - [lean-meta.md](lean-meta.md): the Lean meta tool: SeshatMeta's commands, the canonical form and
   `st1_` ids, `lean.meta`, `LeanIdentity`, `lean.goals` over Pantograph, deployment.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
