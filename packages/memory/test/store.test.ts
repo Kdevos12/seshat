@@ -318,6 +318,19 @@ describe("MemoryStore references", () => {
     journal.close();
   });
 
+  it("give out copies of a reference: a line that changes one changes nothing", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "bench:x" });
+    const given = { source: "theorem a : 1 = 1 := by\n  sorry\n", theorem: "a" };
+    memory.setReference(claimId, given);
+    given.source = "theorem a : True := trivial\n";
+    const view = memory.withActor("line:M1");
+    view.referenceFor(claimId).source = "theorem a : True := trivial\n";
+    assert.deepEqual(view.referenceFor(claimId), { source: "theorem a : 1 = 1 := by\n  sorry\n", theorem: "a" });
+    assert.deepEqual(memory.referenceFor(claimId), view.referenceFor(claimId));
+    journal.close();
+  });
+
   it("write a statement after the header, separated by a blank line", () => {
     assert.equal(claimSource("", "t", ": True"), "theorem t : True := by\n  sorry\n");
     assert.equal(claimSource("import Mathlib\n\n\n", "t", "  (x : ℕ) : x = x "), "import Mathlib\n\ntheorem t (x : ℕ) : x = x := by\n  sorry\n");

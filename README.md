@@ -66,8 +66,8 @@ flowchart TB
   provers --> leangoals
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
-  fast -.->|candidate| certifier
-  certifier -.->|"computed → proved"| journal
+  fast -->|candidate| certifier
+  certifier -->|"computed → proved<br/>or refuted"| journal
   TOOLS -->|"every call"| journal
   provers -->|"attempts: strategy,<br/>failure class, detail"| journal
   journal --> projection
@@ -91,8 +91,11 @@ statement `computed`, a candidate. SageMath is the only classical tool plugged i
 goes through the capability registry, which writes it to the journal, with its inputs and outputs
 as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
-([documentation/certifier.md](documentation/certifier.md)). The certifier is written and tested with a
-fake `lake`; its Lean program has never been compiled, and a run does not call it yet. The memory is what the plan counts on to beat existing systems: its store is
+([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the
+host has a certifier, and the lines' proofs of other claims and of negations too: a certified proof
+makes a claim `proved`, a certified proof of its negation `refuted`. The certifier is written and
+tested with a fake `lake`; its Lean program has never been compiled.
+The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are
 the first lines that use it. M1: one claim per statement, each attempt labeled with its strategy
 and how it failed, and an "already tried" section in every session

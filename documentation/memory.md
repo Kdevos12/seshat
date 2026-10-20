@@ -193,7 +193,8 @@ theorem}`:
   call it: a view made with `withActor`, which is what a line is given, throws. The reference is
   what a proof is compared with, so a line that could replace it could have a proof of another
   statement accepted. Every claim that is not a problem's is therefore compared with the file
-  rebuilt from its journaled statement and header, whatever a line does;
+  rebuilt from its journaled statement and header, whatever a line does. `referenceFor` gives a
+  copy, so a line that edits the one it was given changes nothing;
 - any other formal claim gets `<header>`, a blank line, then
   `theorem <claim id> <statement> := by sorry`;
 - the negation appends to that file `theorem <name>_negation : ¬ (type_of% @<theorem>) := by

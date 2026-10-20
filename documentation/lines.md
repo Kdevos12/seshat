@@ -34,8 +34,9 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 
-The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile,
-and so does `@seshat/lean-local` (the certifier on the host).
+The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile.
+`@seshat/lean-local` (the certifier on the host) is no line, and it is written
+([certifier.md](certifier.md)).
 
 ### Suspended lines
 
@@ -106,7 +107,7 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `reviewBriefing(session, sections)` | After the lines' `briefing`, before the session starts. | Drop or reword the sections the session gets (keep the title), never add, replace or reorder one: every title returned must be one it was given, in the same order, or the line has failed. Each line gets the list as the lines before it left it; undefined keeps it. |
 | `afterAttempt(problem, attempt)` | After each session, before `attempt.finished`. | Return the attempt's classified strategy, the premises its proof uses, a typed summary of its failure, and the notes the prover's next session starts from: they go into `attempt.finished` (the notes into the prover), a later line's fields winning. The journal keeps the notes the model wrote; an empty string leaves the next session with none. Not called for a session the harness failed. |
 | `afterProver(problem, end)` | After a prover has ended: its sessions are used, it solved the problem, it ran out of budget, was stopped, kept failing, or a line stopped it. | Learn how it ended (`end.stop`). Not called when the harness failed in the prover, which ends the problem. |
-| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. |
+| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what the lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is `proved` or `refuted` only when a certified proof has settled the claim by then. |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
@@ -165,7 +166,10 @@ call is recorded too). The model defaults to the run's, with the run's thinking 
 `validate({claimId, proof, aux?, negation?, attemptId?})` is the only way a line raises a claim's
 status, and it goes through the same validator as the provers' checks. The rule holds by
 construction: a line's store has no method that raises a status, and the journal makes a claim
-`computed` only with a valid validation of that claim ([trust.md](trust.md#the-journal-enforces-it)).
+`computed` only with a valid validation of that claim, and `proved` or `refuted` only with a
+certified one ([trust.md](trust.md#the-journal-enforces-it)). `validate` itself reaches the fast
+check at most: the certification of what it recorded comes when the problem ends
+([m0-loop.md](m0-loop.md#certification)), so a result says `computed` and never `proved`.
 
 A line has one other way to change a status, and it only lowers it: `memory.retractClaim(claimId,
 {reason})` takes back a claim whose status rested on something that was withdrawn. It is the single
@@ -181,11 +185,16 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
   makes the claim `computed`, becomes the problem's candidate, and ends the problem's search.
 - Any other claim, and any negation, gets a workbench of its own, built on first use from the
   claim's reference file (`MemoryStore.referenceFor`) and kept for the run. A valid proof makes
-  that claim `computed`. A reference file that does not compile makes every submission for it
-  invalid, with the reason; one Lean did not answer for is tried again next time.
+  that claim `computed`, and the certifier makes it `proved` when the problem ends. A reference
+  file that does not compile makes every submission for it invalid, with the reason; one Lean did
+  not answer for is tried again next time. A line cannot change that file: the claim's reference
+  is the problem's own file or the one rebuilt from its journaled statement and header
+  ([memory.md](memory.md#reference-files)).
 - A valid proof of the negation is recorded as a validation with `negation: true` and changes no
-  status: only certification makes a claim `refuted` ([trust.md](trust.md)), and it is not wired
-  for refutations yet.
+  status when it is submitted. When the problem ends it is certified, and a certified one makes
+  the claim `refuted` ([trust.md](trust.md)). The first valid proof of each claim, and of each
+  negation, is the one certified in a run (the problem's own claim has the problem's workbench, and
+  its first valid proof is the problem's candidate).
 - A file with holes is not a validation, as for the provers. An informal claim cannot be
   validated.
 

@@ -44,8 +44,8 @@ them: the second problem's `problem.registered` carries the first one's `claimId
   candidate makes it `proved` if it is still `computed` (or `open`); a later problem's valid check
   or certification of an already settled claim is recorded as a validation and leaves the status
   alone.
-- `run.finished.solved` and `candidates` count the problems whose claim has that status, so both
-  problems of a shared claim count; the report's outcomes are per problem.
+- `run.finished.solved`, `refuted` and `candidates` count the problems whose claim has that status,
+  so both problems of a shared claim count; the report's outcomes are per problem.
 - **Sharing needs the same prefix.** `TextIdentity` reads the header, so the same signature under
   another prefix (other imports, `open`s or definitions) is another claim, and no two distinct
   statements share one. The prefix is everything in the file before the problem's docstring,

@@ -57,6 +57,20 @@ type with the reference type as terms. This is the design of
 provides it ([certifier.md](certifier.md)). It answers `certified` or `rejected`; a call that
 cannot decide (the time limit, an abort, no Lean) is an error, not a verdict.
 
+The orchestrator certifies when the host has a certifier ([m0-loop.md](m0-loop.md#certification)):
+a problem's candidate once its provers are done, and, when the problem ends, what its lines
+submitted through `validate`, proofs of other claims and proofs of negations alike. The answer is
+recorded as a `kernel_replay` validation of the claim, with `negation: true` for a refutation.
+
+- `certified`: the claim becomes `proved`, or `refuted` if the proof was of the negation.
+- `rejected`: the claim stays `computed`, and the invalid validation holds the reasons. A rejection
+  does not lower a status: only `retractClaim` does that.
+- no answer: nothing is recorded as a verdict, and the claim stays `computed`.
+
+The certifier compares a candidate with a reference file that no line chose: the problem's own file,
+or, for any other claim, the file rebuilt from the claim's journaled statement and header
+([memory.md](memory.md#reference-files)). A line has no way to give a claim a file of its own.
+
 ## The journal enforces it
 
 A `claim.status_changed` event to `proved` or `refuted` is refused unless it names a
