@@ -41,7 +41,9 @@ The code is in `packages/orchestrator/src`:
    budgets and concurrency, the other tools with their implementations and versions, the bench's
    hash and source, the registry's hash (manifests and host profile), the prompts' version and
    hash, the validation policy, the certifier (`RunOptions.certifier`, or else the host's
-   `lean.certify`, if its profile lists one; the run logs which, or that there is none), the code
+   `lean.certify`, if its profile lists one; the run logs which, or that there is none, and when the
+   host's cannot be made at all, such as without a sandbox command, logs that it is unavailable and
+   records the reason as `certifierUnavailable`), the code
    revision, and the enabled lines with their
    options (only when there are some, so that an M0 run records what it always did).
 3. Works on the problems in order, `concurrency` at a time.
@@ -68,7 +70,7 @@ a row ended with a harness error (`errors`). The reason is in `run.finished`.
 |---|---|
 | `proved` | A certified proof settled the claim, which is `proved`: the problem's own candidate, or one a line submitted, or the proof of another problem with the same statement. |
 | `refuted` | A certified proof of the negation settled the claim, which is `refuted`. A prover never does this, since it works on the statement; a line that proves negations can (M2's twin, [graph.md](graph.md#the-twin)). |
-| `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in, a Lean environment in which not even the reference compiles). The claim is `computed`, and the reason says why the certifier gave none. |
+| `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in, a Lean environment in which not even the reference compiles, a host profile with no sandbox for the certifier). The claim is `computed`, and the reason says why the certifier gave none. |
 | `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate: the kernel refused a proof that the fast check accepted, so the problem has none. The claim stays `computed` and the reasons are in the `kernel_replay` validation. |
 | `skipped` | The problem could not be set up: its file differs from the index, it cannot be cut into a sketch, or the original does not compile. |
 | `aborted` | The run was stopped. |
@@ -361,7 +363,8 @@ reached; certification, accepted and rejected; and a run aborted between problem
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line
 submits for other claims (certified after `afterProblem`, rejected, not started once the run is
-stopped), the reference file the certifier is given, and runs with M1, M6 and the fleet on (the
+stopped), the reference file the certifier is given, a host whose certifier cannot be made (said at
+the start, recorded in `run.started`), and runs with M1, M6 and the fleet on (the
 hooks of the sessions and provers all run before the certifier is asked and `afterProblem` after
 it, a veto of M6 leaves nothing to certify, and the call belongs to no attempt).
 `tools.test.ts` gives the provers a simulated SageMath server (`test/fixtures/fake-sage.ts`, over

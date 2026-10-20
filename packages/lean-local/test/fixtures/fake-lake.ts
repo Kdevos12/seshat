@@ -9,6 +9,13 @@
  * A marker is a line `-- fake: <name>` in the file. Every call is appended to the file named by
  * FAKE_LAKE_LOG, as a line of JSON.
  *
+ * Some markers stand for code that a compile runs. Its reach is the directory the sandbox command
+ * leaves it to write (FAKE_SANDBOX_WRITABLE, set by fixtures/fake-sandbox.ts):
+ *   plant-fifo       makes request.json a named pipe there
+ *   plant-dir        makes the directory `reference` there
+ *   tamper-program   overwrites the file FAKE_LAKE_TAMPER (the replay program, in a test)
+ *   symlink-object   makes the object file a link to the source
+ *
  * A few variables stand for a state of the Lean installation:
  *   FAKE_LAKE_VERSION          what `--version` prints
  *   FAKE_LAKE_BROKEN_IMPORTS   every compile fails the way an unbuilt project does (an import error, exit 1)
@@ -16,8 +23,9 @@
  *   FAKE_LAKE_VERSION_DELAY_MS `--version` answers after this long
  *   FAKE_LAKE_VERSION_PIDFILE  the pid of a `--version` call is written to this file
  */
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const log = process.env.FAKE_LAKE_LOG;
@@ -25,8 +33,14 @@ const log = process.env.FAKE_LAKE_LOG;
 const request = args[2] === "--run" ? (JSON.parse(readFileSync(args[4] as string, "utf8")) as { reference: string; candidate: string; target: string; allowedAxioms: string[] }) : undefined;
 // The file a compile reads is in the log too, since the certifier removes its directory afterwards.
 const compiled = args[2] === "-o" && existsSync(args[4] as string) ? readFileSync(args[4] as string, "utf8") : undefined;
+// The program of a `--run` call, likewise.
+const program = args[2] === "--run" && existsSync(args[3] as string) ? readFileSync(args[3] as string, "utf8") : undefined;
 if (log !== undefined) {
-  appendFileSync(log, `${JSON.stringify({ args, cwd: process.cwd(), env: Object.keys(process.env).sort(), request, source: compiled })}\n`);
+  const { TMPDIR: tmpdir, HOME: home } = process.env;
+  appendFileSync(
+    log,
+    `${JSON.stringify({ args, cwd: process.cwd(), env: Object.keys(process.env).sort(), values: { tmpdir, home }, request, source: compiled, program })}\n`,
+  );
 }
 
 const fail = (message: string, code = 2): never => {
@@ -79,7 +93,12 @@ if (mode === "--version") {
     console.log(`${input}:5:7: error: type mismatch`);
     process.exit(1);
   } else if (!m.has("no-object-file")) {
-    writeFileSync(out, text);
+    const reach = process.env.FAKE_SANDBOX_WRITABLE as string;
+    if (m.has("plant-fifo")) execFileSync("mkfifo", [join(reach, "request.json")]);
+    if (m.has("plant-dir")) mkdirSync(join(reach, "reference"));
+    if (m.has("tamper-program")) writeFileSync(process.env.FAKE_LAKE_TAMPER as string, "-- tampered by the candidate's compile\n");
+    if (m.has("symlink-object")) symlinkSync(input, out);
+    else writeFileSync(out, text);
   }
 } else if (mode === "--run") {
   if (request === undefined || !existsSync(request.reference) || !existsSync(request.candidate)) fail("fake lake: an object file is missing");

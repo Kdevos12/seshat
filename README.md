@@ -93,8 +93,10 @@ as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
 ([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the
 host has a certifier, and the lines' proofs of other claims and of negations too: a certified proof
-makes a claim `proved`, a certified proof of its negation `refuted`. The certifier is written and
-tested with a fake `lake`; its Lean program has never been compiled.
+makes a claim `proved`, a certified proof of its negation `refuted`. The certifier is unavailable
+until the host profile gives it a sandbox command or opts in to running candidates' code unsandboxed
+(neither shipped profile does). It is written and tested with a fake `lake`; its Lean program has
+never been compiled.
 The memory is what the plan counts on to beat existing systems: its store is
 written (claims, the edges between them and records of every kind, all in the journal), and so are
 the first lines that use it. M1: one claim per statement, each attempt labeled with its strategy

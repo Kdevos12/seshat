@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { constants, readFileSync } from "node:fs";
+import { copyFile, lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type CertificationRequest,
@@ -9,11 +10,23 @@ import {
   type LeanCertifier,
   type LeanCertifyOptions,
 } from "@seshat/core";
-import { messageOf, serverEnv } from "@seshat/registry";
+import { messageOf } from "@seshat/registry";
 import { type ProcessResult, runProcess, SpawnError } from "./process.ts";
 
 /** The Lean program of this repository, which replays the compiled files (`lean/SeshatCertify`). */
 export const CERTIFY_PROGRAM = fileURLToPath(new URL("../../../lean/SeshatCertify/Main.lean", import.meta.url));
+
+/**
+ * Why `lean.certify` is unavailable when it has neither a sandbox command nor the explicit choice to
+ * run without one. The compile runs the candidate's code, so the certifier fails closed.
+ */
+export const SANDBOX_REQUIRED =
+  "lean.certify refuses to run the candidate's code without a sandbox: give it a sandbox command, or set unsandboxed: true to run that code as the harness's user, at your own risk (documentation/certifier.md#where-untrusted-code-runs)";
+
+/** Undefined when the options give a sandbox command or say `unsandboxed`; otherwise `SANDBOX_REQUIRED`. */
+export function sandboxRequired(options: { sandbox?: readonly string[] | undefined; unsandboxed?: boolean | undefined }): string | undefined {
+  return (options.sandbox?.length ?? 0) > 0 || options.unsandboxed === true ? undefined : SANDBOX_REQUIRED;
+}
 
 export const DEFAULT_CERTIFY_TIMEOUT_SEC = 600;
 const VERSION_TIMEOUT_MS = 60_000;
@@ -33,12 +46,21 @@ export interface LakeCertifierOptions {
   program?: string;
   /**
    * A command put before every call of `lake`, which runs the code of the files it compiles: a
-   * sandbox such as `bwrap`, a container runner. `{work}` stands for the directory the call may
-   * write to and `{project}` for the Lean project. Default: none, and the code runs as the
-   * harness's user.
+   * sandbox such as `bwrap`, a container runner. `{work}` stands for the directory of the call,
+   * the only place it may write (each call has one of its own, made for it and removed after) and
+   * `{project}` for the Lean project.
    */
   sandbox?: readonly string[];
-  /** Variables added to the few the child inherits (`PATH`, `HOME`...), such as `ELAN_HOME`. */
+  /**
+   * Runs the code of the files without a sandbox, as the harness's user, with that user's files.
+   * Without a `sandbox` the certifier is not made unless this is true: the choice is the user's.
+   */
+  unsandboxed?: boolean;
+  /**
+   * Variables added to the few the child gets (`PATH`; `HOME` unless `ELAN_HOME` is given; a
+   * temporary directory of its own), such as `ELAN_HOME`. Nothing else of the harness's
+   * environment reaches it.
+   */
   env?: Record<string, string>;
   /** The Lean version `lake env lean --version` must report, `4.27.0` or `v4.27.0`. */
   lean?: string;
@@ -60,7 +82,8 @@ export interface LakeCertifierOptions {
 
 /** What one certification shares between its steps. */
 interface Call {
-  work: string;
+  /** The directory of the certification, which holds a directory for each step. */
+  root: string;
   /** `performance.now()` when the time limit ends. */
   deadline: number;
   limitSec: number;
@@ -79,6 +102,11 @@ interface Verdict {
  * runs `lean/SeshatCertify` on the two files, which replays the candidate's declarations through
  * the kernel, compares the target with the reference's as terms and collects its axioms.
  *
+ * Each call runs in a directory of its own, made for it and empty, which is all a sandbox needs to
+ * leave writable ({@link LakeCertifierOptions.sandbox}); the replay gets copies of the program (as
+ * read when the certifier was made) and of the two object files, so that nothing a compile wrote
+ * is read but the object file it was asked for.
+ *
  * `rejected` is the candidate's: it does not compile, or the program refuses it. Everything else
  * that stops a verdict (the time limit, an abort, a Lean that is missing or of another version, a
  * program that crashes or answers something else, a reference that does not compile) is a
@@ -91,6 +119,8 @@ export class LakeCertifier implements LeanCertifier {
   private readonly command: string;
   private readonly args: readonly string[];
   private readonly program: string;
+  /** The program as it was when the certifier was made, before any candidate's code could have run. */
+  private readonly programText: string;
   private readonly sandbox: readonly string[];
   private readonly env: Record<string, string>;
   private readonly lean: string | undefined;
@@ -101,12 +131,19 @@ export class LakeCertifier implements LeanCertifier {
   private leanCheck: { promise: Promise<string>; controller: AbortController; waiters: number; ok: boolean } | undefined;
 
   constructor(options: LakeCertifierOptions) {
+    const refusal = sandboxRequired(options);
+    if (refusal !== undefined) throw new Error(refusal);
     this.implementation = options.implementation ?? "lake-certify";
     this.version = options.version ?? "0";
     this.projectDir = options.projectDir;
     this.command = options.command ?? "lake";
     this.args = options.args ?? [];
     this.program = options.program ?? CERTIFY_PROGRAM;
+    try {
+      this.programText = readFileSync(this.program, "utf8");
+    } catch (error) {
+      throw new Error(`cannot read the replay program ${this.program}: ${messageOf(error)}`);
+    }
     this.sandbox = options.sandbox ?? [];
     this.env = options.env ?? {};
     this.lean = options.lean?.replace(/^v/, "");
@@ -120,9 +157,9 @@ export class LakeCertifier implements LeanCertifier {
     const limitSec = options.timeoutSec ?? this.timeoutSec;
     if (options.signal?.aborted === true) throw new CertifyFailedError("aborted", "the certification was aborted");
     await this.ensureLean(options.signal);
-    const work = await mkdtemp(join(this.workDir, "seshat-certify-"));
+    const root = await mkdtemp(join(this.workDir, "seshat-certify-"));
     const call: Call = {
-      work,
+      root,
       deadline: started + limitSec * 1000,
       limitSec,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
@@ -149,13 +186,7 @@ export class LakeCertifier implements LeanCertifier {
         );
       }
       if ("errors" in candidate) return done("rejected", candidate.errors.map((e) => `does not compile: ${e}`), []);
-      const requestFile = join(work, "request.json");
-      await writeFile(
-        requestFile,
-        JSON.stringify({ reference: reference.olean, candidate: candidate.olean, target: request.target, allowedAxioms: request.allowedAxioms }),
-        "utf8",
-      );
-      const replay = await this.lake(["env", "lean", "--run", this.program, requestFile], call);
+      const replay = await this.replay(candidate.olean, reference.olean, request, call);
       if (replay.code !== 0) {
         throw new CertifyFailedError("failed", `the replay program ended with ${how(replay)}${tail(replay.stderr)}`);
       }
@@ -173,7 +204,7 @@ export class LakeCertifier implements LeanCertifier {
       }
       return done(verdict.verdict, verdict.reasons, verdict.axioms);
     } finally {
-      await rm(work, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   }
 
@@ -189,16 +220,16 @@ export class LakeCertifier implements LeanCertifier {
     }
   }
 
-  /** Compiles a file to an object file: its path, or the errors Lean reported. */
+  /** Compiles a file to an object file, in a directory made for the compile: its path, or the errors Lean reported. */
   private async compile(kind: "candidate" | "reference", text: string, call: Call): Promise<{ olean: string } | { errors: string[] }> {
-    const dir = join(call.work, kind);
-    await mkdir(dir);
+    const dir = await mkdtemp(join(call.root, `${kind}-`));
     const source = join(dir, `${kind}.lean`);
     const olean = join(dir, `${kind}.olean`);
     await writeFile(source, text, "utf8");
-    const result = await this.lake(["env", "lean", "-o", olean, source], call);
+    const result = await this.lake(["env", "lean", "-o", olean, source], dir, call);
     if (result.code === 0) {
-      if (!(await exists(olean))) throw new CertifyFailedError("failed", `lean compiled the ${kind} and wrote no object file`);
+      // The compile has ended, and may have written anything in its directory: only a file counts, not a link or a pipe.
+      if (!(await isFile(olean))) throw new CertifyFailedError("failed", `lean compiled the ${kind} and wrote no object file (a regular file)`);
       return { olean };
     }
     // Lean ends with 1 when the file has errors; anything else (a signal, an out of memory) is not the file's doing.
@@ -206,17 +237,43 @@ export class LakeCertifier implements LeanCertifier {
     throw new CertifyFailedError("failed", `lean ended with ${how(result)} while compiling the ${kind}${tail(result.stderr)}`);
   }
 
-  /** One call of `lake`, within what is left of the time limit. */
-  private async lake(args: readonly string[], call: Call): Promise<ProcessResult> {
+  /**
+   * Runs the replay program in a directory made after the compiles have ended, which holds
+   * everything it reads: the program, as read when the certifier was made, the two object files, copied,
+   * and the request. Nothing in it was written by a process that ran the candidate's code.
+   */
+  private async replay(candidate: string, reference: string, request: CertificationRequest, call: Call): Promise<ProcessResult> {
+    const dir = await mkdtemp(join(call.root, "replay-"));
+    const programFile = join(dir, "Main.lean");
+    const referenceFile = join(dir, "reference.olean");
+    const candidateFile = join(dir, "candidate.olean");
+    const requestFile = join(dir, "request.json");
+    await writeFile(programFile, this.programText, { encoding: "utf8", flag: "wx" });
+    await copyFile(reference, referenceFile, constants.COPYFILE_EXCL);
+    await copyFile(candidate, candidateFile, constants.COPYFILE_EXCL);
+    await writeFile(
+      requestFile,
+      JSON.stringify({ reference: referenceFile, candidate: candidateFile, target: request.target, allowedAxioms: request.allowedAxioms }),
+      { encoding: "utf8", flag: "wx" },
+    );
+    return await this.lake(["env", "lean", "--run", programFile, requestFile], dir, call);
+  }
+
+  /** One call of `lake` in the directory `work`, within what is left of the time limit. */
+  private async lake(args: readonly string[], work: string, call: Call): Promise<ProcessResult> {
     const remainingMs = call.deadline - performance.now();
     if (remainingMs <= 0) throw new CertifyFailedError("timeout", `the certification took longer than its limit of ${call.limitSec} s`);
-    const result = await this.spawn(args, call.work, remainingMs, call.signal);
+    const result = await this.spawn(args, work, remainingMs, call.signal);
     if (result.stopped === "timeout") {
       throw new CertifyFailedError("timeout", `the certification took longer than its limit of ${call.limitSec} s`);
     }
     return result;
   }
 
+  /**
+   * Starts `lake` (behind the sandbox command, if there is one) in the Lean project, with the
+   * directory `work` as `{work}` and as the temporary directory, and the minimal environment.
+   */
   private async spawn(args: readonly string[], work: string, timeoutMs: number, signal?: AbortSignal): Promise<ProcessResult> {
     const sandbox = this.sandbox.map((part) => part.replaceAll("{work}", work).replaceAll("{project}", this.projectDir));
     const [command, ...rest] = [...sandbox, this.command, ...this.args, ...args];
@@ -224,7 +281,7 @@ export class LakeCertifier implements LeanCertifier {
     try {
       result = await runProcess(command as string, rest, {
         cwd: this.projectDir,
-        env: serverEnv(this.env),
+        env: childEnv(this.env, work),
         timeoutMs,
         ...(signal !== undefined ? { signal } : {}),
       });
@@ -292,38 +349,43 @@ export class LakeCertifier implements LeanCertifier {
     });
   }
 
-  /** The first line `lean --version` printed, and a note on the probe when there is one. */
+  /** The first line `lean --version` printed, a note on the probe when there is one, and on the sandbox. */
   private async checkLean(signal: AbortSignal): Promise<string> {
-    const result = await this.spawn(["env", "lean", "--version"], this.workDir, VERSION_TIMEOUT_MS, signal);
-    if (result.stopped === "timeout" || result.code !== 0) {
-      throw new CertifyFailedError("unavailable", `lake env lean --version ended with ${how(result)}${tail(result.stderr)}`);
-    }
-    if (this.lean !== undefined && !result.stdout.includes(`version ${this.lean}`)) {
-      throw new CertifyFailedError("unavailable", `lean reports ${result.stdout.trim().slice(0, 200)}; the pinned version is ${this.lean}`);
-    }
-    const found = clip(result.stdout.trim().split("\n")[0] ?? "");
-    if (this.probe === undefined) return found;
-    await this.compileProbe(this.probe, signal);
-    return `${found}; the probe file compiles`;
-  }
-
-  /** Compiles the probe in a directory of its own: Lean's errors are the project's, so the certifier is unavailable. */
-  private async compileProbe(probe: string, signal: AbortSignal): Promise<void> {
-    const dir = await mkdtemp(join(this.workDir, "seshat-probe-"));
+    const dir = await mkdtemp(join(this.workDir, "seshat-check-"));
     try {
-      const source = join(dir, "probe.lean");
-      await writeFile(source, probe.endsWith("\n") ? probe : `${probe}\n`, "utf8");
-      const shown = clip(probe.trim().split("\n").join(" ; "));
-      const result = await this.spawn(["env", "lean", "-o", join(dir, "probe.olean"), source], dir, PROBE_TIMEOUT_MS, signal);
-      if (result.stopped === "timeout") {
-        throw new CertifyFailedError("unavailable", `lean did not compile the probe file (${shown}) in ${PROBE_TIMEOUT_MS / 1000} s`);
+      const result = await this.spawn(["env", "lean", "--version"], dir, VERSION_TIMEOUT_MS, signal);
+      if (result.stopped === "timeout" || result.code !== 0) {
+        throw new CertifyFailedError("unavailable", `lake env lean --version ended with ${how(result)}${tail(result.stderr)}`);
       }
-      if (result.code === 0) return;
-      const why = result.code === 1 ? errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`).join("; ") : `ended with ${how(result)}${tail(result.stderr)}`;
-      throw new CertifyFailedError("unavailable", `lean cannot compile the probe file (${shown}), so the project is not usable: ${why}`);
+      if (this.lean !== undefined && !result.stdout.includes(`version ${this.lean}`)) {
+        throw new CertifyFailedError("unavailable", `lean reports ${result.stdout.trim().slice(0, 200)}; the pinned version is ${this.lean}`);
+      }
+      const found = clip(result.stdout.trim().split("\n")[0] ?? "");
+      if (this.probe !== undefined) await this.compileProbe(this.probe, dir, signal);
+      return [found, ...(this.probe !== undefined ? ["the probe file compiles"] : []), this.sandboxNote()].join("; ");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  private sandboxNote(): string {
+    return this.sandbox.length > 0
+      ? `sandbox command: ${basename(this.sandbox[0] as string)}`
+      : "no sandbox: the candidate's code runs as the harness's user";
+  }
+
+  /** Compiles the probe: Lean's errors are the project's, so the certifier is unavailable. */
+  private async compileProbe(probe: string, dir: string, signal: AbortSignal): Promise<void> {
+    const source = join(dir, "probe.lean");
+    await writeFile(source, probe.endsWith("\n") ? probe : `${probe}\n`, "utf8");
+    const shown = clip(probe.trim().split("\n").join(" ; "));
+    const result = await this.spawn(["env", "lean", "-o", join(dir, "probe.olean"), source], dir, PROBE_TIMEOUT_MS, signal);
+    if (result.stopped === "timeout") {
+      throw new CertifyFailedError("unavailable", `lean did not compile the probe file (${shown}) in ${PROBE_TIMEOUT_MS / 1000} s`);
+    }
+    if (result.code === 0) return;
+    const why = result.code === 1 ? errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`).join("; ") : `ended with ${how(result)}${tail(result.stderr)}`;
+    throw new CertifyFailedError("unavailable", `lean cannot compile the probe file (${shown}), so the project is not usable: ${why}`);
   }
 }
 
@@ -348,12 +410,33 @@ function errorsOf(output: string, prefix: string): string[] {
   return errors.length > 5 ? [...shown, `and ${errors.length - 5} more errors`] : shown;
 }
 
-async function exists(path: string): Promise<boolean> {
+/** Whether the path is a regular file itself: a link to one, or a pipe, is not. */
+async function isFile(path: string): Promise<boolean> {
   try {
-    return (await stat(path)).isFile();
+    return (await lstat(path)).isFile();
   } catch {
     return false;
   }
+}
+
+/**
+ * The environment of every process of a certification: `PATH` (and the system variables Windows
+ * needs), `HOME` (or `USERPROFILE`) unless the settings give an `ELAN_HOME`, since elan looks for the
+ * toolchains in `$HOME/.elan` then, a temporary directory of the call's own, and the settings'
+ * `env`. No credential, socket or other variable of the harness's environment reaches the child.
+ */
+function childEnv(own: Record<string, string>, work: string, parent: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  const pass = (names: readonly string[]) => {
+    for (const name of names) {
+      const value = parent[name];
+      if (value !== undefined) env[name] = value;
+    }
+  };
+  pass(["PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"]);
+  if (own.ELAN_HOME === undefined) pass(["HOME", "USERPROFILE"]);
+  for (const name of process.platform === "win32" ? ["TMPDIR", "TEMP", "TMP"] : ["TMPDIR"]) env[name] = work;
+  return { ...env, ...own };
 }
 
 function parseVerdict(stdout: string): Verdict {

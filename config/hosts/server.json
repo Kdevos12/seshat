@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The certifier runs lake in the Lean project LEAN_PROJECT_DIR; a server should give it a sandbox command (documentation/certifier.md). SageMath runs in its container only.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The certifier runs lake in the Lean project LEAN_PROJECT_DIR and is unavailable until this profile gives it a sandbox command: this host never runs it unsandboxed (documentation/certifier.md#where-untrusted-code-runs). SageMath runs in its container only.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
