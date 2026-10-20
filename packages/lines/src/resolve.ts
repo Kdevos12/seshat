@@ -1,5 +1,5 @@
 import type { Json } from "@seshat/core";
-import { isLineId, LINE_ORDER, LINE_TITLES, type LineId } from "./ids.ts";
+import { isLineId, LINE_ORDER, LINE_TITLES, type LineId, SUSPENDED_LINES } from "./ids.ts";
 import type { JsonObject, Line } from "./line.ts";
 
 /** The lines implemented so far, by id. */
@@ -13,10 +13,10 @@ export interface EnabledLine {
 
 /**
  * Checks the lines a run enables and puts them in `LINE_ORDER`. `problems` says what is wrong:
- * an unknown or repeated id, a line that is planned but not implemented, a missing requirement,
- * options for a line that is not enabled, that the line does not have, or of another type than the
- * default (a default of `null` takes any value), or two lines that both give the context packet or
- * the statement identity. A run with problems does not start.
+ * an unknown or repeated id, a suspended line, a line that is planned but not implemented, a
+ * missing requirement, options for a line that is not enabled, that the line does not have, or of
+ * another type than the default (a default of `null` takes any value), or two lines that both give
+ * the context packet or the statement identity. A run with problems does not start.
  */
 export function resolveLines(
   ids: readonly string[],
@@ -34,6 +34,10 @@ export function resolveLines(
     seen.add(id);
     if (!isLineId(id)) {
       problems.push(`unknown line ${JSON.stringify(id)}; the lines are ${LINE_ORDER.join(", ")}`);
+      continue;
+    }
+    if (SUSPENDED_LINES.has(id)) {
+      problems.push(`line ${id} (${LINE_TITLES[id]}) is suspended: it is not built, and no run enables it (documentation/lines.md)`);
       continue;
     }
     const line = implemented[id];

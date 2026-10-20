@@ -180,6 +180,7 @@ describe("harness run --lines", () => {
     const options: Array<[string[], RegExp]> = [
       [["--lines", "M10,M99"], /^the lines of the run: line M10 \(classical battery per subgoal before any model, domain router, ATP and SMT\) is planned, not implemented yet; unknown line "M99"/m],
       [["--ablation", "M2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
+      [["--ablation", "M9"], /^the lines of the run: line M10 .* is planned, not implemented yet; .*line M9 \(reranking from our own labels, without training\) is suspended: it is not built, and no run enables it \(documentation\/lines.md\)$/m],
       [["--lines", "M10", "--line-option", "M10.k=2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
       // M1 is implemented, with one option.
       [["--lines", "M1", "--line-option", "M1.k=2"], /^the lines of the run: line M1 has no option k; its options are maxLines$/m],
