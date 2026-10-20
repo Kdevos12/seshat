@@ -111,6 +111,33 @@ describe("recognizing a statement about a natural number", () => {
   });
 });
 
+describe("a statement that holds a token the validator forbids", () => {
+  // The body of a statement about a number is written into `abbrev m11_stmt ... := <body>` in a Lean
+  // file: a body that ends the declaration could add commands, and the prover's regions are screened
+  // for exactly these tokens by the validator.
+  const hostile = "(n : ℕ) : n = n\n#eval IO.Process.exit 7\nmacro_rules | `(tactic| rfl) => `(tactic| skip)";
+
+  it("is not recognized, and the reason names the tokens", () => {
+    const why = reason(hostile);
+    assert.match(why, /^the statement holds the tokens '#eval', 'macro_rules', 'tactic', 'IO', and a statement with a token that the validator refuses in a proof is not written into a Lean file$/);
+    assert.match(reason("(n : ℕ) (h : n = n #exit) : n = n"), /the statement holds the token '#exit'/);
+    assert.match(reason(": ∀ n : ℕ, n = n #eval 1"), /the statement holds the token '#eval'/);
+    assert.match(reason("(n : ℕ) : _root_.Lean.Meta.foo n = 1"), /the statement holds the token 'Lean',/);
+    assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x\n#eval 1"), /the statement holds the token '#eval'/);
+  });
+
+  it("is judged on the text Lean will read: a token in a comment or a string is blanked, and does not count", () => {
+    assert.deepEqual(recognized("(n : ℕ) : n = n -- #eval 1"), { kind: "nat", variable: "n", body: "n = n" });
+    assert.deepEqual(recognized("(n : ℕ) : n = n /- macro_rules -/ ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
+  });
+
+  it("leaves a statement with names that only contain the tokens alone", () => {
+    assert.equal(recognized("(n : ℕ) (h : Nat.Prime n) : n = 2 ∨ n % 2 = 1").kind, "nat");
+    assert.equal(recognized("(n : ℕ) : Nat.sqrt n * Nat.sqrt n ≤ n").kind, "nat");
+    assert.equal(recognized("(n : ℕ) : n.sorry_free = n.IOx").kind, "nat");
+  });
+});
+
 describe("the Lean text for an object", () => {
   it("writes a magma as an instance on Fin, and a number as itself", () => {
     const magma = { size: 2, table: [0, 1, 1, 0] };

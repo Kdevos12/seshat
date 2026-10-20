@@ -549,6 +549,15 @@ describe("the small_models tool", () => {
     await assert.rejects(call(undefined), /give a statement or a program, one of the two/);
   });
 
+  it("does not write a statement that holds a forbidden token into a Lean file", async () => {
+    const lean = new SimulatedDecide({ truth: () => true });
+    const { call } = await toolOf({ lean, statement: EVEN });
+    const before = lean.calls.length;
+    const answer = await call("(n : ℕ) : n = n\n#eval IO.Process.exit 7\nmacro_rules | `(tactic| rfl) => `(tactic| skip)");
+    assert.match(answer, /^Not tried: the statement holds the tokens '#eval', 'macro_rules'/);
+    assert.equal(lean.calls.length, before, "Lean was not asked");
+  });
+
   it("tries a program, a JavaScript function, on the numbers, the magmas, the groups or the graphs", async () => {
     const { callWith } = await toolOf();
     const numbers = await callWith({ program: "(n) => n % 3 !== 2" });
