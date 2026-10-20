@@ -50,6 +50,27 @@ describe("forbiddenTokensIn", () => {
     // The same screen as the structural check's, which lets holes through only under the sketch policy.
     assert.deepEqual(structuralCheck({ aux: "", proof: "  sorry" }), ["proof: 'sorry' is not allowed"]);
   });
+
+  it("finds a token that starts with a character no identifier has wherever it stands: Lean reads x#eval as x and #eval", () => {
+    assert.deepEqual(forbiddenTokensIn("n = n x#eval 1"), ["#eval"]);
+    assert.deepEqual(forbiddenTokensIn("a_b'#eval 1"), ["#eval"]);
+    assert.deepEqual(forbiddenTokensIn("h.#eval 1"), ["#eval"]);
+    assert.deepEqual(forbiddenTokensIn("x1#print axioms"), ["#print"]);
+    assert.deepEqual(forbiddenTokensIn("(x)#exit"), ["#exit"]);
+    // The longest token wins in Lean's lexer, so what follows such a token does not matter: `#eval!` is a command as well.
+    assert.deepEqual(forbiddenTokensIn("n = n #eval! 1"), ["#eval"]);
+    assert.deepEqual(forbiddenTokensIn("n = n #evalfoo"), ["#eval"]);
+    // The same for a token that ends with a character no identifier has, at its end: `eval%x` is `eval%` and `x`.
+    assert.deepEqual(forbiddenTokensIn("exact eval%x"), ["eval%"]);
+    assert.deepEqual(forbiddenTokensIn("exact xeval% y"), []);
+  });
+
+  it("finds a keyword after a number, which Lean reads as a token of its own, and not after an identifier that ends in digits", () => {
+    assert.deepEqual(forbiddenTokensIn("exact foo 1sorry"), ["sorry"]);
+    assert.deepEqual(forbiddenTokensIn("exact foo 12run_cmd"), ["run_cmd"]);
+    assert.deepEqual(forbiddenTokensIn("exact h.1sorry"), ["sorry"]);
+    assert.deepEqual(forbiddenTokensIn("exact x1sorry + x_12macro + a'3import + b!4elab"), []);
+  });
 });
 
 describe("structuralCheck", () => {
@@ -75,6 +96,12 @@ describe("structuralCheck", () => {
     refused("", '  simp [show "a" = "a" from rfl]', /string literals are not allowed/);
     refused("", "  -- only a comment", /the proof is empty/);
     refused("axiom aux_x : False", "  simp", /'axiom' is not allowed/);
+  });
+
+  it("refuses a command glued to what precedes it, in either region", () => {
+    refused("", "  exact foo x#eval 1", /proof: '#eval' is not allowed/);
+    refused("", "  trivial\n  exact foo 1#exit", /proof: '#exit' is not allowed/);
+    refused("theorem aux_a : True := by trivial x#print axioms aux_a", "  simp", /aux: '#print' is not allowed/);
     refused("set_option debug.skipKernelTC true in\ntheorem aux_x : True := trivial", "  simp", /'debug' is not allowed/);
   });
 
@@ -147,6 +174,10 @@ describe("ProofValidator", () => {
     const validator = new ProofValidator(checker);
     const reference = { fullName: sketch.fullName, ppType: "T" };
     assert.equal((await validator.validate(sketch, withProof("  native_decide"), reference)).verdict, "invalid");
+    // A command glued to the proof before it is refused, too: it would have run in the REPL.
+    const glued = await validator.validate(sketch, withProof("  simp\n  exact foo x#eval 1"), reference);
+    assert.equal(glued.verdict, "invalid");
+    assert.match(glued.reasons.join(), /proof: '#eval' is not allowed/);
     const unmarked = await validator.validate(sketch, "theorem x : True := trivial", reference);
     assert.match(unmarked.reasons.join(), /restore the markers/);
     assert.equal(checker.calls.length, 0);

@@ -104,6 +104,10 @@ function splitSignature(statement: string): { binders: Binder[]; conclusion: str
   if (forbidden.length > 0) {
     return { reason: `the statement holds the token${forbidden.length > 1 ? "s" : ""} ${forbidden.map((t) => `'${t}'`).join(", ")}, and a statement with a token that the validator refuses in a proof is not written into a Lean file` };
   }
+  // `#` starts a command (`#eval`, `#print`, `#check`...), and nothing the line reads has one: a statement is a signature.
+  if (text.includes("#")) {
+    return { reason: "the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it" };
+  }
   const binders: Binder[] = [];
   let i = 0;
   for (;;) {

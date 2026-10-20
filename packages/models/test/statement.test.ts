@@ -149,6 +149,21 @@ describe("a statement that holds a token the validator forbids", () => {
     assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x\n#eval 1"), /the statement holds the token '#eval'/);
   });
 
+  it("is not recognized when the token is glued to what precedes it: Lean reads x#eval as x and #eval", () => {
+    assert.match(reason("(n : ℕ) : n = n x#eval 1"), /the statement holds the token '#eval'/);
+    assert.match(reason("(n : ℕ) : n = 1#exit"), /the statement holds the token '#exit'/);
+    assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x∧True x#print axioms"), /the statement holds the token '#print'/);
+    assert.match(reason("(n : ℕ) : n = n #eval! 1"), /the statement holds the token '#eval'/);
+  });
+
+  it("is not recognized when it holds a #, which starts a command and which nothing the line reads needs", () => {
+    assert.match(reason("(n : ℕ) : n = n\n#check n"), /^the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it$/);
+    assert.match(reason("(n : ℕ) : #(Nat.divisors n) = 2"), /the statement holds '#'/);
+    assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x #reduce 1"), /the statement holds '#'/);
+    // In a comment or a string it is blanked with the rest.
+    assert.equal(recognized("(n : ℕ) : n = n -- #check n").kind, "nat");
+  });
+
   it("is judged on the text Lean will read: a token in a comment or a string is blanked, and does not count", () => {
     assert.deepEqual(recognized("(n : ℕ) : n = n -- #eval 1"), { kind: "nat", variable: "n", body: "n = n" });
     assert.deepEqual(recognized("(n : ℕ) : n = n /- macro_rules -/ ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
