@@ -12,7 +12,7 @@ import {
   type FauxResponseStep,
   type MutableModels,
 } from "@earendil-works/pi-ai";
-import { buildIndex, DISCRETE, type BenchIndex } from "@seshat/bench";
+import { type BenchFilter, buildIndex, DISCRETE, type BenchIndex } from "@seshat/bench";
 import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@seshat/core";
 import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
@@ -41,13 +41,13 @@ export function tempDir(prefix = "mh-m0-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** A checkout with one problem file (or several, by file name), and its bench index. */
-export function demoBench(file: string | Record<string, string> = DEMO_FILE): { checkout: string; index: BenchIndex } {
+/** A checkout with one problem file (or several, by file name), and its bench index (`DISCRETE` unless a filter is given). */
+export function demoBench(file: string | Record<string, string> = DEMO_FILE, filter: BenchFilter = DISCRETE): { checkout: string; index: BenchIndex } {
   const checkout = tempDir("mh-checkout-");
   mkdirSync(join(checkout, "FormalConjectures"), { recursive: true });
   const files = typeof file === "string" ? { "Demo.lean": file } : file;
   for (const [name, text] of Object.entries(files)) writeFileSync(join(checkout, "FormalConjectures", name), text);
-  const { errors: _errors, ...index } = buildIndex(checkout, "demo-bench", DISCRETE);
+  const { errors: _errors, ...index } = buildIndex(checkout, "demo-bench", filter);
   return { checkout, index };
 }
 
@@ -133,11 +133,13 @@ export function sageRegistry(
     });
 }
 
-/** A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise. */
-export function fauxModels(pricePerMillion = 3): { models: MutableModels; faux: FauxProviderHandle; name: string } {
-  const faux = fauxProvider({
-    models: [{ id: "prover", cost: { input: pricePerMillion, output: pricePerMillion * 5, cacheRead: pricePerMillion / 10, cacheWrite: pricePerMillion } }],
-  });
+/**
+ * A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise.
+ * `extraModels` are the ids of other models of the same provider, named `faux/ID`.
+ */
+export function fauxModels(pricePerMillion = 3, extraModels: readonly string[] = []): { models: MutableModels; faux: FauxProviderHandle; name: string } {
+  const cost = { input: pricePerMillion, output: pricePerMillion * 5, cacheRead: pricePerMillion / 10, cacheWrite: pricePerMillion };
+  const faux = fauxProvider({ models: [{ id: "prover", cost }, ...extraModels.map((id) => ({ id, cost }))] });
   const models = createModels();
   models.setProvider(faux.provider);
   const model = faux.getModel();
@@ -189,9 +191,13 @@ export async function demoRun(options: {
   lines?: LineRegistry;
   /** The bench's Lean file, or its files by name. Default: `DEMO_FILE`. */
   file?: string | Record<string, string>;
+  /** Which problems of the file the bench keeps. Default: `DISCRETE`, solved research problems only. */
+  filter?: BenchFilter;
+  /** Ids of other models of the faux provider, which a line may name as `faux/ID`. */
+  extraModels?: readonly string[];
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
-  const { checkout, index } = demoBench(options.file);
-  const { models, faux, name } = fauxModels(options.pricePerMillion);
+  const { checkout, index } = demoBench(options.file, options.filter);
+  const { models, faux, name } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
   const dir = options.dir ?? join(tempDir(), "run");
