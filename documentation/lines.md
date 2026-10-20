@@ -27,23 +27,36 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
 | `M3` | growing lemma library | `@seshat/library` | planned |
-| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | planned |
+| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M8` | inductive engine | `@seshat/induction` | planned |
 | `M13` | theory exploration and classical conjecturing | `@seshat/induction` | planned |
 | `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
-| `M9` | reranking from our own labels, without training | `@seshat/abduction` | planned |
+| `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 
 The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile,
 and so does `@seshat/lean-local` (the certifier on the host).
+
+### Suspended lines
+
+`SUSPENDED_LINES` holds M7 and M9, the abductive engine (homology detection) and the reranking of
+its candidates. They were suspended on 2026-10-20: semantic jumps found by deriving an expression
+through the variant graph ([graph.md](graph.md)) do the same structural work, and more accurately in
+practice. Their design stays in the plan, but they are not built: a run that enables one stops
+before it starts and says the line is suspended, and the cumulative configs leave them out. The
+direction noted instead, for when the core is ready, is problem reformulation (a sub-problem or
+sub-expression, a more general or analogous problem, a problem in a higher dimension), toward one
+native tool per major method of Pólya's *How to Solve It*.
 
 ### Cumulative configs
 
 The plan's ablations are cumulative: each config adds one line to the one before, in §7's order.
 `ablationLines(name)` gives the lines of a config: none for `M0`, and for a line, that line and
-every line before it in `LINE_ORDER`. `M1` is M0 + M1; `M2` is M0 + M1 + M10 + M2; `M9` enables
-every line. `harness run --ablation M2` runs that config, once all its lines are written: today it
-stops and names M10 as planned, and `--lines M1,M2` runs the two that are built.
+every line before it in `LINE_ORDER` but the [suspended](#suspended-lines) ones. `M1` is M0 + M1;
+`M2` is M0 + M1 + M10 + M2; `M8` is every line up to M8 but M7. A suspended line stays in its own
+config, so `--ablation M7` and `--ablation M9` stop and say why. `harness run --ablation M2` runs
+that config, once all its lines are written: today it stops and names M10 as planned, and
+`--lines M1,M2` runs the two that are built.
 
 ## A line
 
