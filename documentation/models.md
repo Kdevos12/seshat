@@ -428,7 +428,10 @@ one. A site that answers and refuses (any other status), or answers with what th
 refuses is `invalid_input`, before any request, and an `oeis.search` call with both or neither of
 `terms` and `id` is `failed`, also before any request. A search without an answer is a success:
 `count: 0` with no results, no `records`, no `matches`. `harness health` asks each site for its front
-page (`GET /`), so the health of a whole host now reaches the three sites.
+page (`GET /`), so the health of a whole host reaches the three sites. The profiles mark the three
+`optional` ([capabilities.md](capabilities.md#host-profiles)): a site that does not answer is a `warn`
+line, and the command exits with 0 when nothing else is down, so a host without outbound access still
+passes it. The line goes on without a site in the same way (the table's answer stands, with a note).
 
 **Contracts.** `oeis.search` has 5 cases, `lmfdb.query` 3 and `findstat.identify` 2, written to run
 on a host that reaches the site: `pnpm harness contract oeis.search` (or `lmfdb.query`,
