@@ -82,7 +82,7 @@ describe("harness CLI", () => {
     const down = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
-    // Every implementation the host lists, in order: here SageMath's and the sites', which nothing serves.
+    // Every implementation the host lists, in order: here SageMath's, which is required, and the sites', which are optional and which nothing serves.
     const nowhere = "http://127.0.0.1:9";
     const all = await harness(["health"], {
       LEAN_SERVER_API_URL: url,
@@ -92,10 +92,26 @@ describe("harness CLI", () => {
       LMFDB_URL: nowhere,
       FINDSTAT_URL: nowhere,
     });
+    // The command fails because of SageMath alone.
     assert.equal(all.code, 1);
-    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nFAIL findstat\.identify\/site \S+ .*\nok {3}lean\.check\/kimina/m);
-    assert.match(all.stdout, /^FAIL lmfdb\.query\/site \S+ /m);
-    assert.match(all.stdout, /^FAIL oeis\.search\/site \S+ /m);
+    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn findstat\.identify\/site \S+ .*\nok {3}lean\.check\/kimina/m);
+    assert.match(all.stdout, /^warn lmfdb\.query\/site \S+ /m);
+    assert.match(all.stdout, /^warn oeis\.search\/site \S+ /m);
+    assert.doesNotMatch(all.stdout, /^FAIL (findstat|lmfdb|oeis)/m);
+  });
+
+  it("does not fail the health of a host whose public sites cannot be reached", async () => {
+    // The three sites are optional in the repository's profiles: a host without outbound access still passes.
+    const nowhere = { OEIS_URL: "http://127.0.0.1:9", LMFDB_URL: "http://127.0.0.1:9", FINDSTAT_URL: "http://127.0.0.1:9" };
+    for (const id of ["oeis.search", "lmfdb.query", "findstat.identify"]) {
+      const { code, stdout, stderr } = await harness(["health", id], nowhere);
+      assert.equal(code, 0, stdout + stderr);
+      assert.match(stdout, new RegExp(`^warn ${id.replace(".", "\\.")}/site \\S+ \\(\\d+ ms\\): `, "m"));
+    }
+    // The server profile too.
+    const server = await harness(["health", "oeis.search", "--host", "server"], nowhere);
+    assert.equal(server.code, 0, server.stdout + server.stderr);
+    assert.match(server.stdout, /^warn oeis\.search\/site /m);
   });
 
   it("runs contract cases and fails when one does not hold", async () => {

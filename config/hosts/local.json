@@ -1,6 +1,6 @@
 {
   "host": "local",
-  "description": "A workstation. Kimina Lean Server runs on this machine, or LEAN_SERVER_API_URL points to the dedicated server's. SageMath runs in its container when Docker is there, otherwise from a local install (SAGEMATH_MCP_COMMAND, default sagemath-mcp). The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL.",
+  "description": "A workstation. Kimina Lean Server runs on this machine, or LEAN_SERVER_API_URL points to the dedicated server's. SageMath runs in its container when Docker is there, otherwise from a local install (SAGEMATH_MCP_COMMAND, default sagemath-mcp). The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL. They are optional: `harness health` shows a site that does not answer as a warning and does not fail on it.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -42,6 +42,7 @@
     },
     "oeis.search": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:OEIS_URL:-https://oeis.org}"
@@ -50,6 +51,7 @@
     },
     "lmfdb.query": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:LMFDB_URL:-https://www.lmfdb.org}"
@@ -58,6 +60,7 @@
     },
     "findstat.identify": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"

@@ -139,6 +139,12 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation unavailable and names the variable. Secrets are never written in profiles; they
   come from the environment.
 - `timeoutMs` replaces the manifest's time limit on this host.
+- `optional: true` says the host offers the capability but the harness can do without it, such as a
+  public site that a host without outbound access cannot reach. `harness health` prints an
+  implementation of it that does not answer as `warn` and does not fail on it, also when the
+  capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
+  implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -298,9 +304,11 @@ answer are guesses from the site's documentation as remembered and have never be
 
 For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,
 the time limit, a status 5xx, 408 or 429), and `harness health` asks each site for its front page.
-The contracts need a host that reaches the sites; `pnpm test` runs the same cases against a local
-server that answers from files written by hand. [models.md](models.md#the-services-as-capabilities)
-covers the requests, the settings, the failures and the tests.
+The three are `optional` in the host profiles, so on a host without outbound access `harness health`
+shows them as `warn` and still exits with 0. The contracts need a host that reaches the sites;
+`pnpm test` runs the same cases against a local server that answers from files written by hand.
+[models.md](models.md#the-services-as-capabilities) covers the requests, the settings, the failures
+and the tests.
 
 ## Contract tests
 
@@ -344,7 +352,7 @@ speed with the old one's is not implemented yet.)
 |---|---|
 | `harness capabilities [--host H]` | Lists the capabilities and the implementations the host uses. |
 | `harness describe ID` | Prints the manifest as a model sees it. |
-| `harness health [ID] [--host H]` | Reaches every implementation the host lists; exits with 1 if one is down. |
+| `harness health [ID] [--host H]` | Reaches every implementation the host lists, printing `ok`, `warn` (down, in a capability the profile marks `optional`) or `FAIL`; exits with 1 if one that is not optional is down. |
 | `harness contract ID [--host H] [--implementation I] [--case NAME]... [--out FILE]` | Runs the contract cases. |
 | `harness models [PROVIDER]` | Lists the model providers and whether their credentials are set, or the models of one provider. |
 | `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |

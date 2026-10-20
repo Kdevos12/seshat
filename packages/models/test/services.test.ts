@@ -77,6 +77,15 @@ describe("the OEIS, the LMFDB and FindStat as capabilities", () => {
     }
   });
 
+  it("are optional in the repository's host profiles, and no other capability is", () => {
+    // A host without outbound access must still pass `harness health`: a site that does not answer is a warning.
+    for (const host of ["local", "server"]) {
+      const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
+      const optional = Object.entries(profile.capabilities).flatMap(([id, binding]) => (binding.optional === true ? [id] : []));
+      assert.deepEqual(optional.sort(), [...CAPABILITIES].sort(), host);
+    }
+  });
+
   it("are tool runs of the journal, with the summary of the answer and the answer itself kept", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mh-services-"));
     const journal = Journal.open(dir, "run_test");

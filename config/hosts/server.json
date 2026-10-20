@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL. They are optional: `harness health` shows a site that does not answer as a warning and does not fail on it.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -38,6 +38,7 @@
     },
     "oeis.search": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:OEIS_URL:-https://oeis.org}"
@@ -46,6 +47,7 @@
     },
     "lmfdb.query": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:LMFDB_URL:-https://www.lmfdb.org}"
@@ -54,6 +56,7 @@
     },
     "findstat.identify": {
       "use": ["site"],
+      "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"
