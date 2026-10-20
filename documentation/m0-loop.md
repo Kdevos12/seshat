@@ -68,7 +68,7 @@ a row ended with a harness error (`errors`). The reason is in `run.finished`.
 |---|---|
 | `proved` | A certified proof settled the claim, which is `proved`: the problem's own candidate, or one a line submitted, or the proof of another problem with the same statement. |
 | `refuted` | A certified proof of the negation settled the claim, which is `refuted`. A prover never does this, since it works on the statement; a line that proves negations can (M2's twin, [graph.md](graph.md#the-twin)). |
-| `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in). The claim is `computed`, and the reason says why the certifier gave none. |
+| `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in, a Lean environment in which not even the reference compiles). The claim is `computed`, and the reason says why the certifier gave none. |
 | `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate: the kernel refused a proof that the fast check accepted, so the problem has none. The claim stays `computed` and the reasons are in the `kernel_replay` validation. |
 | `skipped` | The problem could not be set up: its file differs from the index, it cannot be cut into a sketch, or the original does not compile. |
 | `aborted` | The run was stopped. |

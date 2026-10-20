@@ -9,6 +9,7 @@ const SETTINGS: JsonSchema = {
     args: { type: "array", items: { type: "string" } },
     projectDir: { type: "string" },
     program: { type: "string" },
+    probe: { type: "string" },
     sandbox: { type: "array", items: { type: "string", minLength: 1 } },
     workDir: { type: "string" },
     timeoutSec: { type: "integer", minimum: 1, maximum: 3600 },
@@ -20,10 +21,11 @@ const SETTINGS: JsonSchema = {
 
 /**
  * The registry factory `lake-certify`: `lean.certify` over a pinned Lean project, with the
- * settings `command`, `args`, `projectDir`, `program`, `sandbox`, `workDir`, `timeoutSec` and `env`
- * (an empty `projectDir`, `program` or `workDir`, or an empty variable, is left out). The Lean
- * version the implementation is pinned to is the `lean` of the spec's environment. Without a
- * project directory the certifier cannot find the modules a file imports, so it is unavailable.
+ * settings `command`, `args`, `projectDir`, `program`, `probe`, `sandbox`, `workDir`, `timeoutSec`
+ * and `env` (an empty `projectDir`, `program`, `probe` or `workDir`, or an empty variable, is left
+ * out). The Lean version the implementation is pinned to is the `lean` of the spec's environment.
+ * Without a project directory the certifier cannot find the modules a file imports, so it is
+ * unavailable.
  */
 export function lakeCertifyFactory(): ImplementationFactory {
   return ({ spec, settings }) => {
@@ -34,6 +36,7 @@ export function lakeCertifyFactory(): ImplementationFactory {
       args?: string[];
       projectDir?: string;
       program?: string;
+      probe?: string;
       sandbox?: string[];
       workDir?: string;
       timeoutSec?: number;
@@ -48,6 +51,7 @@ export function lakeCertifyFactory(): ImplementationFactory {
       command: s.command,
       ...(s.args !== undefined ? { args: s.args } : {}),
       ...(s.program !== undefined && s.program !== "" ? { program: s.program } : {}),
+      ...(s.probe !== undefined && s.probe !== "" ? { probe: s.probe } : {}),
       ...(s.sandbox !== undefined ? { sandbox: s.sandbox } : {}),
       ...(s.workDir !== undefined && s.workDir !== "" ? { workDir: s.workDir } : {}),
       ...(s.timeoutSec !== undefined ? { timeoutSec: s.timeoutSec } : {}),

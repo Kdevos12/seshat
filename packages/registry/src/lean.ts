@@ -110,8 +110,8 @@ export interface LeanCertifyInput {
   timeoutSec?: number;
 }
 
-/** A `LeanCertifier` that can also say whether its Lean is there, as `LakeCertifier` does. */
-export type HealthAwareCertifier = LeanCertifier & { health?(signal?: AbortSignal): Promise<boolean> };
+/** A `LeanCertifier` that can also say whether its Lean is there and usable, and why not, as `LakeCertifier` does. */
+export type HealthAwareCertifier = LeanCertifier & { health?(signal?: AbortSignal): Promise<{ ok: boolean; detail?: string }> };
 
 /**
  * `lean.certify` provided by any `LeanCertifier`. A certifier that cannot reach Lean at all
@@ -134,10 +134,12 @@ export function leanCertifyImplementation(certifier: HealthAwareCertifier): Impl
   };
   const probe = certifier.health?.bind(certifier);
   if (probe !== undefined) {
-    instance.health = async ({ signal }): Promise<HealthCheck> =>
-      (await probe(signal))
-        ? { ok: true, detail: `${certifier.implementation} ${certifier.version}` }
-        : { ok: false, detail: `${certifier.implementation} cannot run Lean in its project` };
+    instance.health = async ({ signal }): Promise<HealthCheck> => {
+      const health = await probe(signal);
+      const name = `${certifier.implementation} ${certifier.version}`;
+      if (health.ok) return { ok: true, detail: health.detail === undefined ? name : `${name}: ${health.detail}` };
+      return { ok: false, detail: health.detail ?? `${certifier.implementation} cannot run Lean in its project` };
+    };
   }
   return instance;
 }

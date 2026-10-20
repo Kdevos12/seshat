@@ -259,7 +259,8 @@ The certifier ([certifier.md](certifier.md)): a candidate file, the reference fi
 name and the allowed axioms in; a verdict (`certified` or `rejected`, with reasons and the target's
 axioms) out. It is `auto` and the one capability that `produces` `proved` and `refuted`, with a
 `certificate` that says how. A call that reaches no verdict fails, as a call; it never answers
-`rejected` for a failure that is not the candidate's. Its implementation `lake` (factory
+`rejected` for a failure that is not the candidate's (a project in which not even the reference
+compiles is one). Its implementation `lake` (factory
 `lake-certify`, in `@seshat/lean-local`) runs `lake env lean` in the project `LEAN_PROJECT_DIR`;
 the orchestrator reaches it through `RegistryLeanCertifier.forHost(registry)`, a `LeanCertifier`
 whose certifications are tool runs, and `leanCertifyImplementation(certifier)` makes any

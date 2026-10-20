@@ -9,7 +9,7 @@ import {
   type LeanCertifier,
   type LeanCertifyOptions,
 } from "@seshat/core";
-import { serverEnv } from "@seshat/registry";
+import { messageOf, serverEnv } from "@seshat/registry";
 import { type ProcessResult, runProcess, SpawnError } from "./process.ts";
 
 /** The Lean program of this repository, which replays the compiled files (`lean/SeshatCertify`). */
@@ -17,6 +17,8 @@ export const CERTIFY_PROGRAM = fileURLToPath(new URL("../../../lean/SeshatCertif
 
 export const DEFAULT_CERTIFY_TIMEOUT_SEC = 600;
 const VERSION_TIMEOUT_MS = 60_000;
+/** Compiling the probe loads the project's modules, which takes longer on a cold disk cache. */
+const PROBE_TIMEOUT_MS = 300_000;
 const MAX_REASONS = 8;
 const MAX_REASON_CHARS = 600;
 
@@ -40,6 +42,13 @@ export interface LakeCertifierOptions {
   env?: Record<string, string>;
   /** The Lean version `lake env lean --version` must report, `4.27.0` or `v4.27.0`. */
   lean?: string;
+  /**
+   * A Lean file (its text) that the first use and the health check compile before anything else: the
+   * import of the bench's prelude, such as `import FormalConjectures.Util.ProblemImports`. It shows
+   * a project that is not built, a checkout that is not the bench's, or `.olean` files of another
+   * toolchain, which Lean reports as errors in every file. Default: none, only the version is checked.
+   */
+  probe?: string;
   /** Where each certification makes its work directory. Default: the system's temporary directory. */
   workDir?: string;
   /** The time limit of a certification that gives none, in seconds. Default 600. */
@@ -85,9 +94,11 @@ export class LakeCertifier implements LeanCertifier {
   private readonly sandbox: readonly string[];
   private readonly env: Record<string, string>;
   private readonly lean: string | undefined;
+  private readonly probe: string | undefined;
   private readonly workDir: string;
   private readonly timeoutSec: number;
-  private leanChecked: Promise<void> | undefined;
+  /** The check of the Lean installation: one at a time, shared by the calls that wait for it, kept once it succeeded. */
+  private leanCheck: { promise: Promise<string>; controller: AbortController; waiters: number; ok: boolean } | undefined;
 
   constructor(options: LakeCertifierOptions) {
     this.implementation = options.implementation ?? "lake-certify";
@@ -99,6 +110,7 @@ export class LakeCertifier implements LeanCertifier {
     this.sandbox = options.sandbox ?? [];
     this.env = options.env ?? {};
     this.lean = options.lean?.replace(/^v/, "");
+    this.probe = options.probe !== undefined && options.probe.trim() !== "" ? options.probe : undefined;
     this.workDir = options.workDir ?? tmpdir();
     this.timeoutSec = options.timeoutSec ?? DEFAULT_CERTIFY_TIMEOUT_SEC;
   }
@@ -107,7 +119,7 @@ export class LakeCertifier implements LeanCertifier {
     const started = performance.now();
     const limitSec = options.timeoutSec ?? this.timeoutSec;
     if (options.signal?.aborted === true) throw new CertifyFailedError("aborted", "the certification was aborted");
-    await this.ensureLean();
+    await this.ensureLean(options.signal);
     const work = await mkdtemp(join(this.workDir, "seshat-certify-"));
     const call: Call = {
       work,
@@ -124,11 +136,19 @@ export class LakeCertifier implements LeanCertifier {
     try {
       // The candidate first: its code has run, and has stopped, before the reference is made.
       const candidate = await this.compile("candidate", request.candidate, call);
-      if ("errors" in candidate) return done("rejected", candidate.errors.map((e) => `does not compile: ${e}`), []);
+      // Lean ends with 1 for the errors of a file and for import errors alike, and a project that is
+      // not built, or not the bench's, fails every file. A candidate is rejected for its errors only if
+      // the reference compiles in the same project.
       const reference = await this.compile("reference", request.original, call);
       if ("errors" in reference) {
-        throw new CertifyFailedError("failed", `the reference does not compile: ${reference.errors.join("; ")}`);
+        throw new CertifyFailedError(
+          "failed",
+          "errors" in candidate
+            ? `neither the candidate nor the reference compiles, so the Lean environment is probably broken (the reference: ${reference.errors.join("; ")})`
+            : `the reference does not compile: ${reference.errors.join("; ")}`,
+        );
       }
+      if ("errors" in candidate) return done("rejected", candidate.errors.map((e) => `does not compile: ${e}`), []);
       const requestFile = join(work, "request.json");
       await writeFile(
         requestFile,
@@ -157,13 +177,15 @@ export class LakeCertifier implements LeanCertifier {
     }
   }
 
-  /** Whether `lake env lean` runs and reports the pinned version. */
-  async health(): Promise<boolean> {
+  /**
+   * Whether `lake env lean` runs, reports the pinned version, and compiles the probe: the same check
+   * the first certification makes, with what was wrong when it fails.
+   */
+  async health(signal?: AbortSignal): Promise<{ ok: boolean; detail: string }> {
     try {
-      await this.ensureLean();
-      return true;
-    } catch {
-      return false;
+      return { ok: true, detail: await this.ensureLean(signal) };
+    } catch (error) {
+      return { ok: false, detail: messageOf(error) };
     }
   }
 
@@ -214,26 +236,93 @@ export class LakeCertifier implements LeanCertifier {
     return result;
   }
 
-  /** Checks once that `lake env lean` runs, and that it is the Lean the bench is pinned to. */
-  private ensureLean(): Promise<void> {
-    if (this.leanChecked === undefined) {
-      const check = this.checkLean();
-      this.leanChecked = check;
-      // A failure is not kept: the next call looks again.
-      check.catch(() => {
-        if (this.leanChecked === check) this.leanChecked = undefined;
-      });
+  /**
+   * Checks once that `lake env lean` runs, that it is the Lean the bench is pinned to, and that the
+   * probe compiles; gives what it found. The check is shared by the calls that wait for it. A call
+   * whose signal aborts leaves at once, and when none is left the check's process is killed and the
+   * next call starts a new one. A failure is not kept: the next call looks again.
+   */
+  private ensureLean(signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted === true) return Promise.reject(new CertifyFailedError("aborted", "the certification was aborted"));
+    let check = this.leanCheck;
+    if (check === undefined) {
+      const controller = new AbortController();
+      const made = { controller, waiters: 0, ok: false, promise: this.checkLean(controller.signal) };
+      check = made;
+      this.leanCheck = made;
+      made.promise.then(
+        () => {
+          made.ok = true;
+        },
+        () => {
+          if (this.leanCheck === made) this.leanCheck = undefined;
+        },
+      );
     }
-    return this.leanChecked;
+    const shared = check;
+    if (shared.ok) return shared.promise;
+    shared.waiters += 1;
+    return new Promise<string>((resolve, reject) => {
+      let waiting = true;
+      const leave = () => {
+        if (!waiting) return;
+        waiting = false;
+        signal?.removeEventListener("abort", onAbort);
+        shared.waiters -= 1;
+      };
+      const onAbort = () => {
+        leave();
+        if (shared.waiters === 0 && !shared.ok) {
+          shared.controller.abort();
+          if (this.leanCheck === shared) this.leanCheck = undefined;
+        }
+        reject(new CertifyFailedError("aborted", "the certification was aborted"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      shared.promise.then(
+        (found) => {
+          leave();
+          resolve(found);
+        },
+        (error: unknown) => {
+          leave();
+          reject(error);
+        },
+      );
+    });
   }
 
-  private async checkLean(): Promise<void> {
-    const result = await this.spawn(["env", "lean", "--version"], this.workDir, VERSION_TIMEOUT_MS);
+  /** The first line `lean --version` printed, and a note on the probe when there is one. */
+  private async checkLean(signal: AbortSignal): Promise<string> {
+    const result = await this.spawn(["env", "lean", "--version"], this.workDir, VERSION_TIMEOUT_MS, signal);
     if (result.stopped === "timeout" || result.code !== 0) {
       throw new CertifyFailedError("unavailable", `lake env lean --version ended with ${how(result)}${tail(result.stderr)}`);
     }
     if (this.lean !== undefined && !result.stdout.includes(`version ${this.lean}`)) {
       throw new CertifyFailedError("unavailable", `lean reports ${result.stdout.trim().slice(0, 200)}; the pinned version is ${this.lean}`);
+    }
+    const found = clip(result.stdout.trim().split("\n")[0] ?? "");
+    if (this.probe === undefined) return found;
+    await this.compileProbe(this.probe, signal);
+    return `${found}; the probe file compiles`;
+  }
+
+  /** Compiles the probe in a directory of its own: Lean's errors are the project's, so the certifier is unavailable. */
+  private async compileProbe(probe: string, signal: AbortSignal): Promise<void> {
+    const dir = await mkdtemp(join(this.workDir, "seshat-probe-"));
+    try {
+      const source = join(dir, "probe.lean");
+      await writeFile(source, probe.endsWith("\n") ? probe : `${probe}\n`, "utf8");
+      const shown = clip(probe.trim().split("\n").join(" ; "));
+      const result = await this.spawn(["env", "lean", "-o", join(dir, "probe.olean"), source], dir, PROBE_TIMEOUT_MS, signal);
+      if (result.stopped === "timeout") {
+        throw new CertifyFailedError("unavailable", `lean did not compile the probe file (${shown}) in ${PROBE_TIMEOUT_MS / 1000} s`);
+      }
+      if (result.code === 0) return;
+      const why = result.code === 1 ? errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`).join("; ") : `ended with ${how(result)}${tail(result.stderr)}`;
+      throw new CertifyFailedError("unavailable", `lean cannot compile the probe file (${shown}), so the project is not usable: ${why}`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   }
 }
