@@ -3,8 +3,8 @@
 A harness for autonomous mathematical research with LLMs: models through their APIs, Lean as the
 judge, classical tools first.
 
-Status: early development (phase P0a). The event journal, the memory store, the line API and its first line (M1: shared
-claims and negative memory), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
+Status: early development (phase P0a). The event journal, the memory store, the line API and its first lines (M1: shared
+claims and negative memory; M6: guards and drift detectors; the fleet policy), the proof validator, a client for Kimina Lean Server, the capability registry (manifests, host profiles, MCP boundary, contract tests), a
 first bench of 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), and the M0 loop
 (independent provers on pi, in sessions that pass on their notes) are written and tested with a

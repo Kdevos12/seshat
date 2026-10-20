@@ -34,8 +34,8 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | planned |
 
-The packages exist as skeletons, with their dependencies in the lockfile; `@seshat/lean-local`
-(the certifier on the host) is the fourteenth.
+The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile,
+and so does `@seshat/lean-local` (the certifier on the host).
 
 ### Cumulative configs
 
@@ -208,5 +208,7 @@ line's model call charged to the problem; the context packet of each request, an
 `reviewBriefing`, the notes a line gives and `afterProver`. `cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
 also checks that only one line gives the statement identity, and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
+`m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
+[fleet.md](fleet.md#tests-and-what-is-not-done)).
 
-M1 is the only line built, and nothing here has run against a real model or Lean.
+M1, M6 and the fleet are the lines built, and nothing here has run against a real model or Lean.
