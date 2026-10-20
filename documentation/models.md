@@ -344,9 +344,12 @@ decide
 ```
 
 The evaluator is not affected: it instantiates its own definition at `Fin n : Type`. The lemma that
-links two claims is stated with their sort (`Type*` for a universe-polymorphic one), and claims of
-different sorts get none, since a lemma over `Type` does not give an edge between statements over
-every universe.
+links two claims is stated over the claims' own sort, and the sorts are compared as they are
+(`sortOf`: `Type`, also written `Type 0`; `Type*`, also written `Type _` or `Type u`; or `Type n`
+for a fixed universe from 1). Two claims of the same sort get a lemma stated with it
+(`(M : Type*) [Mul M]`, `(M : Type 1) [Mul M]`); claims of different sorts get none, and the edge
+stays `computed`, since a lemma over every universe is not about a claim over `Type 1`, and a lemma
+over `Type` is about neither.
 
 What the validation path does with it: a valid proof of a negation is recorded as a validation with
 `negation: true` and changes no status. The claim becomes `refuted` only when the certifier replays
