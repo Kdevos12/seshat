@@ -402,7 +402,10 @@ is down, one that answers what is not JSON or refuses, and the refusals of the s
 (from the actor `line:M11`, in the journal with its input and output), and every failure of the call
 (the host does not offer the capability, the site does not answer, the answer cannot be read) comes
 out as a `LookupError`, which `lookupSequence` turns into a note, so that the table's answer stands.
-Only an input that the capability refuses is thrown as it is, since that is a mistake of the line.
+The capability takes at most 100 terms (`OEIS_MAX_TERMS`, the `maxItems` of its manifest, which a test
+keeps equal): a longer query is asked by its first 100 terms, and the option `identifyTerms` stops at
+100. Any other input that the capability refuses is thrown as it is, since that is a mistake of the
+line.
 
 The OEIS, FindStat and LMFDB are not reachable from the development environment, and no request has
 been made to a real site. The OEIS address and JSON fields (`number`, `data`, `name`, `offset`,
@@ -470,7 +473,7 @@ edge that is not `computed`, and a fingerprint alone refutes nothing. The option
 | `counterModels` | 3 | The most counter-models to submit while none passes |
 | `stopWhenRefuted` | true | Stop the provers once a negation has passed |
 | `neighbors`, `neighborDepth` | 8, 2 | The claims compared with the problem's, and how far the edges are followed |
-| `identify`, `identifyTerms` | true, 40 | Look the numbers up as sequences, from at most this many terms |
+| `identify`, `identifyTerms` | true, 40 | Look the numbers up as sequences, from at most this many terms (4 to 100, the most `oeis.search` takes) |
 | `toolMaxNumber` | 30 | The numbers a statement is tried on by the tool |
 
 A value out of range fails the problem's `beforeProvers` with the name of the option.

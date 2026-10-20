@@ -21,7 +21,7 @@ import { evaluateWithLean } from "./lean-eval.ts";
 import type { BatteryObject, IntegerObject, MagmaObject } from "./objects.ts";
 import { type CounterModelData, describeCounterModel, recordCounterModel, submitRefutation } from "./refutation.ts";
 import { runProgram } from "./sandbox.ts";
-import { RegistryOeis } from "./services.ts";
+import { OEIS_MAX_TERMS, RegistryOeis } from "./services.ts";
 import { type RecognizedStatement, recognizeStatement } from "./statement.ts";
 
 const ACTOR = "line:M11";
@@ -49,7 +49,7 @@ export const M11_DEFAULTS = {
   /** The most claims related to the problem's whose fingerprints are compared with its own, and how many edges away they are searched. */
   neighbors: 8,
   neighborDepth: 2,
-  /** Look the numbers where a statement holds, or fails, up as a sequence, from at most this many terms. */
+  /** Look the numbers where a statement holds, or fails, up as a sequence, from at most this many terms (4 to 100, what `oeis.search` takes). */
   identify: true,
   identifyTerms: 40,
   /** The numbers the `small_models` tool tries a statement about a number on. */
@@ -85,7 +85,7 @@ export function readOptions(raw: Readonly<JsonObject>): M11Options {
     neighbors: integer("neighbors", 0, 50),
     neighborDepth: integer("neighborDepth", 1, 4),
     identify: flag("identify"),
-    identifyTerms: integer("identifyTerms", 4, 200),
+    identifyTerms: integer("identifyTerms", 4, OEIS_MAX_TERMS),
     toolMaxNumber: integer("toolMaxNumber", 1, 200),
   };
 }

@@ -31,6 +31,8 @@ import { type SequenceTerm, toTerms } from "./identify.ts";
  * the tests answer from files (documentation/models.md).
  */
 export const OEIS_SEARCH = "oeis.search";
+/** The most terms `oeis.search` takes: the `maxItems` of its manifest (a test keeps the two equal). */
+export const OEIS_MAX_TERMS = 100;
 export const LMFDB_QUERY = "lmfdb.query";
 export const FINDSTAT_IDENTIFY = "findstat.identify";
 
@@ -137,10 +139,11 @@ export function oeisFactory(options: { fetch?: Fetch } = {}): ImplementationFact
 
 /**
  * The OEIS through the registry, for `lookupSequence`: every search is a tool run of `oeis.search` on
- * the host's implementation. Like `RegistryLeanChecker`, it keeps a failure of the service out of the
- * caller's way: a host that does not offer the capability, a site that does not answer, an answer that
- * cannot be read all come as a `LookupError` (which `lookupSequence` turns into a note). Only an
- * input the capability refuses is an error of the caller, and is thrown as it is.
+ * the host's implementation, of the first `OEIS_MAX_TERMS` terms of the query. Like
+ * `RegistryLeanChecker`, it keeps a failure of the service out of the caller's way: a host that does
+ * not offer the capability, a site that does not answer, an answer that cannot be read all come as a
+ * `LookupError` (which `lookupSequence` turns into a note). Only an input the capability refuses is
+ * an error of the caller, and is thrown as it is.
  */
 export class RegistryOeis implements OeisSource {
   readonly #registry: Registry;
@@ -154,7 +157,8 @@ export class RegistryOeis implements OeisSource {
   }
 
   async search(terms: readonly SequenceTerm[], signal?: AbortSignal): Promise<OeisSearch> {
-    const input = { terms: toTerms(terms).map(String) } satisfies OeisSearchInput;
+    // A longer query is asked by its first terms: the capability refuses more than it takes.
+    const input = { terms: toTerms(terms).slice(0, OEIS_MAX_TERMS).map(String) } satisfies OeisSearchInput;
     try {
       const { output } = await this.#registry.invoke(OEIS_SEARCH, input, {
         ...(this.#attemptId !== undefined ? { attemptId: this.#attemptId } : {}),
