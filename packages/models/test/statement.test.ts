@@ -107,6 +107,21 @@ describe("an arrow inside the scope of a quantifier", () => {
     assert.doesNotMatch(reason("(M : Type) [Mul M] : funny → ∀ y : M, y * y = y"), /the arrow after/);
   });
 
+  it("is the same when the quantifier is written as a word: forall, exists", () => {
+    assert.match(reason("(M : Type) [Mul M] : forall x : M, x * x = x -> forall y : M, y * y = y"), /the arrow after 'forall x : M, x \* x = x'/);
+    assert.match(reason("(M : Type) [Mul M] : forall x : M, x * x = x → ∀ y : M, y * y = y"), /the arrow after 'forall x : M, x \* x = x'/);
+    assert.match(reason("(M : Type) [Mul M] : exists x : M, x * x = x → ∀ y : M, y * y = y"), /the arrow after 'exists x : M, x \* x = x'/);
+    assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x → exists y : M, y * y = y"), /the arrow after '∀ x : M, x \* x = x'/);
+    // A name that contains the word, or a field of that name, is no binder.
+    assert.doesNotMatch(reason("(M : Type) [Mul M] : forallx → ∀ y : M, y * y = y"), /the arrow after/);
+    assert.doesNotMatch(reason("(M : Type) [Mul M] : my_exists → ∀ y : M, y * y = y"), /the arrow after/);
+    assert.doesNotMatch(reason("(M : Type) [Mul M] : x.forall → ∀ y : M, y * y = y"), /the arrow after/);
+    assert.doesNotMatch(reason("(M : Type) [Mul M] : exists' → ∀ y : M, y * y = y"), /the arrow after/);
+    // With the premise in parentheses the word is read as the symbol is.
+    const parenthesized = recognized("(M : Type) [Mul M] : (forall x : M, x * x = x) -> forall y : M, y * y = y") as MagmaStatement;
+    assert.deepEqual(parenthesized.hypotheses.map((h) => h.text), ["forall x : M, x * x = x"]);
+  });
+
   it("is read as one when the premise is in parentheses", () => {
     const parenthesized = recognized("(M : Type) [Mul M] : (∀ x : M, x * x = x) → ∀ y : M, y * y = y") as MagmaStatement;
     assert.deepEqual(parenthesized.hypotheses.map((h) => h.text), ["∀ x : M, x * x = x"]);

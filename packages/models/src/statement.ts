@@ -134,18 +134,21 @@ function splitSignature(statement: string): { binders: Binder[]; conclusion: str
 }
 
 const BINDER_SYMBOLS = "∀∃λΠΣ";
+/** The words that open a binder, as `∀` and `λ` do: Lean reads `forall` and `exists` as the symbols, and `parseLaw` reads `forall` so. */
+const BINDER_WORDS = ["fun", "forall", "exists"];
 const NAME_CHARACTER = /[\p{L}\p{N}_'!?.]/u;
 
-/** Whether `fun` starts at `at`, as a word. */
-function funAt(text: string, at: number): boolean {
-  return text.startsWith("fun", at) && !NAME_CHARACTER.test(text.charAt(at - 1)) && !NAME_CHARACTER.test(text.charAt(at + 3));
+/** Whether one of the binder words starts at `at`, as a word: `funny`, `my_exists` and `x.forall` are names. */
+function binderWordAt(text: string, at: number): boolean {
+  return BINDER_WORDS.some((word) => text.startsWith(word, at) && !NAME_CHARACTER.test(text.charAt(at - 1)) && !NAME_CHARACTER.test(text.charAt(at + word.length)));
 }
 
 /**
  * The pieces of a text split at the arrows `→` and `->` that are outside brackets; or why it cannot
- * be split. The body of `∀`, `∃` and `fun` reaches as far right as the text goes, so an arrow that
- * follows one of them outside brackets is inside its scope: Lean reads
- * `∀ x : M, p → ∀ y : M, q` as `∀ x : M, (p → ∀ y : M, q)`, not as an implication between two laws.
+ * be split. The body of `∀`, `∃` and `fun` (`forall` and `exists` are the same, written as words)
+ * reaches as far right as the text goes, so an arrow that follows one of them outside brackets is
+ * inside its scope: Lean reads `∀ x : M, p → ∀ y : M, q` as `∀ x : M, (p → ∀ y : M, q)`, not as an
+ * implication between two laws.
  */
 function splitArrows(text: string): string[] | { reason: string } {
   const pieces: string[] = [];
@@ -156,7 +159,7 @@ function splitArrows(text: string): string[] | { reason: string } {
     const c = text.charAt(i);
     if (OPEN.includes(c)) depth++;
     else if (CLOSE.includes(c)) depth--;
-    else if (depth === 0 && (BINDER_SYMBOLS.includes(c) || funAt(text, i))) binder ??= i;
+    else if (depth === 0 && (BINDER_SYMBOLS.includes(c) || binderWordAt(text, i))) binder ??= i;
     else if (depth === 0 && (c === "→" || (c === "-" && text.charAt(i + 1) === ">"))) {
       if (binder !== undefined) {
         return { reason: `the arrow after '${tidy(text.slice(binder, i))}' is inside the scope of the quantifier, which Lean reads to the end of the statement: put the quantified premise in parentheses` };
