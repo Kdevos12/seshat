@@ -158,7 +158,7 @@ An evaluator gives a verdict on each object of a battery: `true` (the statement 
 
 | Evaluator | For | How | Where |
 |---|---|---|---|
-| Laws in TypeScript | Magma statements | Every assignment of the variables is tried (`size ** variables` of them, the first failure ends the magma) on a law compiled once. `compileMagmaStatement`, `evaluateLaw`, `lawWitness` give the verdict, and the assignment that breaks the law | `laws.ts`, `statement.ts` |
+| Laws in TypeScript | Magma statements | Every assignment of the variables is tried (`size ** variables` of them, the first failure ends the magma) on a law compiled once, after `magmaWork` has bounded the work ([caps](#the-caps)). `compileMagmaStatement`, `evaluateLaw`, `lawWitness` give the verdict, and the assignment that breaks the law | `laws.ts`, `statement.ts` |
 | A program in JavaScript | Any predicate on numbers, magmas (`{size, table}`) and graphs (`{n, edges}`) | `runPredicate(source, args)` and `runProgram(source, objects)`: the program is one function expression that returns a boolean | `sandbox.ts` |
 | Lean | Magma and number statements | `evaluateWithLean(checker, {header, statement, objects})` | `lean-eval.ts` |
 
@@ -212,6 +212,10 @@ the file as sent ([lean.md](lean.md)).
 - The first file is a probe. When an error falls before the examples (the definition does not
   elaborate) or `decide` settles none of the first objects, the evaluation stops there and says so
   in `unusable`, instead of sending the rest.
+- `maxFiles` limits the files one call sends, the retries of files that timed out included. When it is
+  reached the objects not yet asked have no verdict, with a note, and `capped` counts them; when none
+  has a verdict by then the evaluation is `unusable`, since the limit was reached before any object
+  had one. In a run the limit is what is left of an allowance ([caps](#the-caps)).
 - The table of a magma is a core `List` indexed by `a.val * n + b.val`, so the instance does not
   depend on Mathlib.
 
@@ -220,6 +224,34 @@ claim's, and a counter-model becomes a refutation only through `validate`
 ([lines.md](lines.md#validate)). The tests answer the files with a simulated Lean that reads the
 `example` lines and decides each from the statement's meaning (`SimulatedDecide`); it checks the
 layout of the files and the logic around them, not that a real Lean accepts the syntax.
+
+### The caps
+
+Neither evaluator spends the run's budget in dollars, so each has a cap of its own, in the line's
+options ([below](#the-line)). The problem's statement and the claims around it share one allowance of
+each, spent in the order they are tried (the problem's first), and each call of the `small_models`
+tool has an allowance of its own.
+
+- `leanFiles` (default 200) bounds the files the Lean evaluator sends, the retries of files that
+  timed out included. A statement about the numbers 0 to 100 takes 7 to 14 files (11 for one that
+  fails on every odd number), so the default covers the problem's statement and eight claims around
+  it. A `maxNumber` of 1000 takes 63 to 126 files for each statement and wants a larger cap, and a
+  statement that `decide` cannot settle, whose files keep timing out, takes 62 files for the first 16
+  numbers alone. When the cap is reached the objects not yet asked have no verdict. The problem's own
+  fingerprint is recorded with those holes (`?`) and the log says how many; a claim around the
+  problem that was cut short is not recorded, since a fingerprint with holes that the cap made would
+  be compared as if it were whole. A cap of 0 turns the Lean evaluator off.
+- `lawWork` (default 60 000 000) bounds the assignments of values to variables that the law evaluator
+  tries. `magmaWork(statement, magmas)` gives the bound before anything runs: `size ** variables` for
+  each law of the statement (the hypotheses and the conclusion) on each magma. That is the work when
+  every law holds on every magma; a law that fails stops at its first counter-assignment, so the
+  work done is usually much less. The evaluator is synchronous: while it runs nothing else does, and
+  nothing can cancel it. It does about six million assignments a second here, so the default is about
+  ten seconds at worst. On the default battery (3 461 magmas) one law of 3 variables is 97 671
+  assignments, of 5 variables 932 391, of 6 variables 2.9 million, of 7 variables 9.3 million, and of
+  8 variables, the most the parser allows, 29.7 million (about 5 s). A statement over what the cap
+  leaves is not tried, and the log says what its bound is and what was left. A cap of 0 turns the law
+  evaluator off.
 
 ## Fingerprints
 
@@ -450,8 +482,9 @@ with `negation: true`; the claim stays `open` until the certifier replays it
 found by following the edges `implies`, `equiv`, `special_case_of`, `strengthens`, `instance_of` and
 `derived_from`, in both directions, up to `neighborDepth` edges away and `neighbors` claims. Those
 whose statement the package reads, about the same kind of object as the problem's, get a fingerprint
-of the same battery (not tried again when they already have one), and every pair among them and the
-problem's claim goes through `planRelations`. The `computed` edges, with their link lemmas, that the
+of the same battery (not tried again when they already have one), within what is left of the
+problem's allowances ([caps](#the-caps)), and every pair among them and the problem's claim goes
+through `planRelations`. The `computed` edges, with their link lemmas, that the
 memory does not have yet are added, the problem's claim included. The edges that another line
 proposed are not repeated.
 
@@ -485,6 +518,8 @@ edge that is not `computed`, and a fingerprint alone refutes nothing. The option
 | `neighbors`, `neighborDepth` | 8, 2 | The claims compared with the problem's, and how far the edges are followed |
 | `identify`, `identifyTerms` | true, 40 | Look the numbers up as sequences, from at most this many terms (4 to 100, the most `oeis.search` takes) |
 | `toolMaxNumber` | 30 | The numbers a statement is tried on by the tool |
+| `leanFiles` | 200 | The most files the Lean evaluator sends for a problem (its statement and the claims around it together) and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
+| `lawWork` | 60 000 000 | The most assignments of variables the law evaluator may try, as `magmaWork` bounds them, for a problem and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
 
 A value out of range fails the problem's `beforeProvers` with the name of the option.
 

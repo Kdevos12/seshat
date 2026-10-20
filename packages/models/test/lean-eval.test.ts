@@ -95,6 +95,45 @@ describe("the Lean evaluator", () => {
     assert.match(lean.calls[0]?.code ?? "", /abbrev m11_stmt \(M : Type\) \[Mul M\] : Prop := \(∀ x y : M, x \* y = x\) → ∀ x y : M, x \* y = y \* x\nexample : @m11_stmt \(Fin 1\) ⟨fun a b => \(\[0\] : List \(Fin 1\)\)\.getD \(a\.val \* 1 \+ b\.val\) 0⟩ := by decide/);
   });
 
+  it("sends no more files than the cap, and says which objects have no verdict for that reason", async () => {
+    const lean = new SimulatedDecide({ truth: (i) => i.kind === "nat" && i.value % 2 === 0 });
+    const result = await evaluateWithLean(lean, { header: "", statement: statementOf("(n : ℕ) : n % 2 = 0"), objects: integers(100) }, { maxFiles: 9 });
+    // Without a cap the 101 numbers take 11 files: 2 for the probe, 6 for the others, 3 more for the negations.
+    assert.equal(lean.calls.length, 9);
+    assert.equal(result.checks, 9);
+    const bare = result.verdicts.flatMap((v, i) => (v === null ? [i] : []));
+    assert.ok(bare.length > 0 && bare.length < 101, `${bare.length} objects without a verdict`);
+    assert.equal(result.capped, bare.length);
+    for (const i of bare) assert.match(result.notes[i] ?? "", /no verdict: the limit of 9 files was reached/);
+    // The verdicts that exist are Lean's, and right.
+    result.verdicts.forEach((v, i) => {
+      if (v !== null) assert.equal(v, i % 2 === 0, `number ${i}`);
+    });
+    assert.equal(result.unusable, undefined);
+    // A cap that is not reached changes nothing.
+    const free = await evaluateWithLean(new SimulatedDecide({ truth: (i) => i.kind === "nat" && i.value % 2 === 0 }), { header: "", statement: statementOf("(n : ℕ) : n % 2 = 0"), objects: integers(100) }, { maxFiles: 11 });
+    assert.equal(free.checks, 11);
+    assert.equal(free.capped, undefined);
+    assert.ok(free.verdicts.every((v) => v !== null));
+  });
+
+  it("gives up on a statement whose files keep timing out when the cap is reached, and says so", async () => {
+    const never = new SimulatedDecide({ truth: () => true, timeoutAbove: 0 });
+    const result = await evaluateWithLean(never, { header: "", statement: statementOf("(n : ℕ) : n = n"), objects: integers(200) }, { maxFiles: 20 });
+    // Without a cap the probe alone takes 31 files to split down to one object, and the negations 31 more.
+    assert.equal(never.calls.length, 20);
+    assert.match(result.unusable ?? "", /the limit of 20 files was reached before any object had a verdict/);
+    assert.ok(result.verdicts.every((v) => v === null));
+  });
+
+  it("sends nothing when the cap is zero", async () => {
+    const lean = new SimulatedDecide({ truth: () => true });
+    const result = await evaluateWithLean(lean, { header: "", statement: statementOf("(n : ℕ) : n = n"), objects: integers(5) }, { maxFiles: 0 });
+    assert.equal(lean.calls.length, 0);
+    assert.equal(result.checks, 0);
+    assert.match(result.unusable ?? "", /the limit of 0 files was reached before any object had a verdict/);
+  });
+
   it("refuses objects that do not fit the statement", async () => {
     const lean = new SimulatedDecide({ truth: () => true });
     await assert.rejects(evaluateWithLean(lean, { header: "", statement: statementOf("(n : ℕ) : n = n"), objects: allMagmas(1) }), /non-negative integers/);

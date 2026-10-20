@@ -15,6 +15,7 @@ import {
   type MagmaObject,
   magmaBattery,
   type MagmaStatement,
+  magmaWork,
   planRelations,
   pointwiseLink,
   recognizeStatement,
@@ -108,6 +109,35 @@ describe("the fingerprints of known laws on the battery of magmas", () => {
     // Neither of these implies the other, and a model of one is a counter-model of the other.
     assert.equal(relate(fingerprint(battery, LAWS.associative), fingerprint(battery, LAWS.commutative)), "unrelated");
     assert.equal(relate(fingerprint(battery, LAWS.idempotent), fingerprint(battery, LAWS.associative)), "unrelated");
+  });
+});
+
+describe("the work of the law evaluator", () => {
+  const battery = magmaBattery();
+  const laws = [
+    "∀ x : M, x * x = x",
+    "∀ x y : M, x * y = y * x",
+    "∀ x y z : M, x * (y * z) = (x * y) * z",
+    "∀ x y z w : M, x * y = z * w",
+    "∀ a b c d e : M, a * b = c * (d * e)",
+    "∀ a b c d e f : M, a * b = (c * d) * (e * f)",
+    "∀ a b c d e f g : M, (a * b) * c = (d * e) * (f * g)",
+    "∀ a b c d e f g h : M, (a * b) * (c * d) = (e * f) * (g * h)",
+  ];
+
+  it("is size ** variables for each law and each magma: the table of the documentation", () => {
+    // 1 magma of size 1, 10 of size 2, 3 330 of size 3, and 120 of size 4: 1 + 10 * 2^k + 3330 * 3^k + 120 * 4^k.
+    const expected = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => 1 + 10 * 2 ** k + 3330 * 3 ** k + 120 * 4 ** k);
+    assert.deepEqual(laws.map((law) => magmaWork(magmaStatement(law), battery.objects)), expected);
+    assert.deepEqual(expected, [10_491, 31_931, 97_671, 300_611, 932_391, 2_919_731, 9_250_071, 29_715_011]);
+  });
+
+  it("adds the work of the hypotheses to the conclusion's, and is nothing for no magma", () => {
+    const result = recognizeStatement("(M : Type) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x y z : M, x * (y * z) = (x * y) * z");
+    assert.ok("statement" in result && result.statement.kind === "magma");
+    // 31 931 for the hypothesis and 97 671 for the conclusion.
+    assert.equal(magmaWork(result.statement, battery.objects), 31_931 + 97_671);
+    assert.equal(magmaWork(result.statement, []), 0);
   });
 });
 

@@ -132,6 +132,12 @@ describe("the options of the line", () => {
     assert.throws(() => readOptions({ ...M11_DEFAULTS, identifyTerms: 101 }), /option M11\.identifyTerms is an integer from 4 to 100, not 101/);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, identifyTerms: 150 }), /option M11\.identifyTerms/);
     assert.equal(readOptions({ ...M11_DEFAULTS, identifyTerms: 100 }).identifyTerms, 100);
+    // The caps on what a problem may spend: how many files Lean gets, how many assignments the law evaluator tries.
+    assert.equal(M11_DEFAULTS.leanFiles, 200);
+    assert.equal(M11_DEFAULTS.lawWork, 60_000_000);
+    assert.throws(() => readOptions({ ...M11_DEFAULTS, leanFiles: -1 }), /option M11\.leanFiles is an integer from 0 to 10000, not -1/);
+    assert.throws(() => readOptions({ ...M11_DEFAULTS, lawWork: 1.5 }), /option M11\.lawWork is an integer from 0 to 10000000000, not 1\.5/);
+    assert.equal(readOptions({ ...M11_DEFAULTS, leanFiles: 0, lawWork: 0 }).leanFiles, 0);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, samples: 1.5 }), /option M11\.samples/);
     const { stopWhenRefuted: _, ...missing } = M11_DEFAULTS;
     assert.throws(() => readOptions(missing), /option M11\.stopWhenRefuted is true or false, not undefined/);
@@ -453,6 +459,68 @@ describe("beforeProvers on a statement about a number", () => {
   });
 });
 
+describe("the caps on what a problem may spend", () => {
+  const evens = () => new SimulatedDecide({ truth: (i) => (i.kind === "nat" ? i.value % 2 === 0 : undefined) });
+
+  it("share the Lean files among the problem's statement and the claims around it", async () => {
+    const lean = evens();
+    const { problem, memory, claimId, logs } = await problemOf(EVEN, { lean, options: { leanFiles: 20, refute: false, identify: false } });
+    const neighbors: string[] = [];
+    for (const statement of ["(n : ℕ) : n % 4 = 0", "(n : ℕ) : n % 3 = 0", "(n : ℕ) : n % 5 = 0"]) {
+      const id = (await memory.ensureClaim({ statement, origin: "line:M2" })).claimId;
+      memory.addEdge({ kind: "special_case_of", from: id, to: claimId });
+      neighbors.push(id);
+    }
+    await hook(M11, "beforeProvers")(problem);
+    // Each statement takes 11 files on the 101 numbers: the cap runs out in the second.
+    assert.equal(lean.calls.length, 20);
+    assert.equal(fingerprintsOf(memory, claimId).length, 1);
+    // A claim the cap cut short is not recorded: a fingerprint with holes would be compared as if it were whole.
+    assert.deepEqual(neighbors.map((id) => fingerprintsOf(memory, id).length), [0, 0, 0]);
+    const log = logs.join("\n");
+    assert.match(log, /M11: claim \w+ could not be tried: the cap of 20 Lean files \(option M11\.leanFiles\) was reached; \d+ objects have no verdict/);
+    assert.equal((log.match(/could not be tried: the cap of 20 Lean files/g) ?? []).length, 3);
+  });
+
+  it("say in the log when the problem's own statement is cut short, and keep the verdicts it has", async () => {
+    const lean = evens();
+    const { problem, memory, claimId, logs } = await problemOf(EVEN, { lean, options: { leanFiles: 9, refute: false, identify: false } });
+    await hook(M11, "beforeProvers")(problem);
+    assert.equal(lean.calls.length, 9);
+    const [fingerprint] = fingerprintsOf(memory, claimId);
+    assert.ok((fingerprint?.data.counts.unknown ?? 0) > 0);
+    assert.ok((fingerprint?.data.counts.holds ?? 0) > 0);
+    assert.match(logs.join("\n"), /M11: the cap of 9 Lean files \(option M11\.leanFiles\) was reached; \d+ objects have no verdict/);
+  });
+
+  it("do not try a statement of magmas whose laws would take more assignments than the cap leaves", async () => {
+    // h: 2 variables, conclusion: 3. On the 3 461 magmas of the default battery that is 2 + 120 + 119 880 + 9 600 = 129 602 assignments.
+    const refused = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 129_601 } });
+    await hook(M11, "beforeProvers")(refused.problem);
+    assert.deepEqual([fingerprintsOf(refused.memory, refused.claimId), refused.memory.nodes("battery")], [[], []]);
+    assert.match(refused.logs.join("\n"), /M11: the statement could not be tried: the law evaluator would try up to 129602 assignments of the variables, over the 129601 that the cap \(option M11\.lawWork\) leaves for it/);
+    assert.equal(refused.requests.length, 0);
+
+    // A cap that equals the work is enough.
+    const allowed = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 129_602 } });
+    await hook(M11, "beforeProvers")(allowed.problem);
+    assert.equal(fingerprintsOf(allowed.memory, allowed.claimId).length, 1);
+  });
+
+  it("share the law work among the problem's statement and the claims around it", async () => {
+    // 97 671 assignments for the problem's x * y = x * z, 31 931 for each of the two variants of two variables.
+    const { problem, memory, claimId, logs } = await problemOf(CONSTANT_IN_Y, { options: { lawWork: 140_000 } });
+    const first = (await memory.ensureClaim({ statement: SQUARE_IS_PRODUCT, origin: "line:M2" })).claimId;
+    const second = (await memory.ensureClaim({ statement: LEFT_PROJECTION, origin: "line:M2" })).claimId;
+    memory.addEdge({ kind: "special_case_of", from: first, to: claimId });
+    memory.addEdge({ kind: "special_case_of", from: second, to: claimId });
+    await hook(M11, "beforeProvers")(problem);
+    assert.equal(fingerprintsOf(memory, claimId).length, 1);
+    assert.equal([first, second].filter((id) => fingerprintsOf(memory, id).length === 1).length, 1);
+    assert.equal((logs.join("\n").match(/could not be tried: the law evaluator would try up to 31931 assignments of the variables, over the 10398 that the cap \(option M11\.lawWork\) leaves for it/g) ?? []).length, 1);
+  });
+});
+
 describe("what the provers are told", () => {
   it("is nothing for a claim the line did not try", async () => {
     const memory = openMemory();
@@ -544,6 +612,24 @@ describe("the small_models tool", () => {
     assert.match(answer, /^On integers:0\.\.20 \(21 objects, by `decide` in Lean\) the statement holds on 12 and fails on 9\.\nCounter-model: the number 12\.\nCounter-model: the number 13\.\nCounter-model: the number 14\./);
     // The problem's own claim is about magmas: the batteries differ, so there is nothing to compare.
     assert.doesNotMatch(answer, /statement you are proving/);
+  });
+
+  it("are the same for each call, which has the whole cap for itself", async () => {
+    const lean = new SimulatedDecide({ truth: (i) => (i.kind === "nat" ? i.value < 12 : undefined) });
+    const { call } = await toolOf({ lean, options: { toolMaxNumber: 100, leanFiles: 5, lawWork: 150_000 } });
+    const numbers = await call("(n : ℕ) : n < 12");
+    assert.equal(lean.calls.length, 5);
+    assert.match(numbers, /with no verdict on \d+\./);
+    assert.match(numbers, /The cap of 5 Lean files \(option M11\.leanFiles\) was reached/);
+    // The call before it did not use up what the next one has.
+    await call("(n : ℕ) : n < 12");
+    assert.equal(lean.calls.length, 10);
+
+    // x * y = z * w: 1 + 160 + 269 730 + 30 720 = 300 611 assignments, over 150 000. The problem's own law takes 97 671 each time it is tried:
+    // two calls are within the cap because each has the whole of it (together they would not be).
+    assert.match(await call("(M : Type) [Mul M] : ∀ x y z w : M, x * y = z * w"), /^Not tried: the law evaluator would try up to 300611 assignments of the variables, over the 150000 that the cap \(option M11\.lawWork\) leaves for it/);
+    assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
+    assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
   });
 
   it("explains what it cannot try, and asks for the statement when none is given", async () => {
