@@ -93,6 +93,29 @@ describe("the sort of the type of a magma statement", () => {
   });
 });
 
+describe("an arrow inside the scope of a quantifier", () => {
+  // Lean reads `∀ x : M, p → ∀ y : M, q` as `∀ x : M, (p → ∀ y : M, q)`: the body of a quantifier
+  // reaches as far right as the text goes. Splitting at the arrow would turn it into an implication
+  // between two laws, which is another statement.
+  it("is not read as an implication between the laws on its sides", () => {
+    assert.match(reason("(M : Type) [Mul M] : ∀ x : M, x * x = x → ∀ y : M, y * y = y"), /the arrow after '∀ x : M, x \* x = x' is inside the scope of the quantifier/);
+    assert.match(reason("(M : Type) [Mul M] (h : ∀ x : M, x * x = x) : (∀ x y : M, x * y = x) → ∀ z : M, z * z = z → ∀ w : M, w * w = w"), /the arrow after/);
+    assert.match(reason("(M : Type) [Mul M] : ∀ x y : M, x * y = y * x -> ∀ z : M, z * z = z"), /the arrow after/);
+    // ∃ and fun have a body that reaches to the end too, and an identifier that merely starts with fun is no binder.
+    assert.match(reason("(M : Type) [Mul M] : ∃ x : M, x * x = x → ∀ y : M, y * y = y"), /the arrow after '∃ x : M, x \* x = x'/);
+    assert.match(reason("(M : Type) [Mul M] : fun x : M => x * x = x → ∀ y : M, y * y = y"), /the arrow after 'fun x : M => x \* x = x'/);
+    assert.doesNotMatch(reason("(M : Type) [Mul M] : funny → ∀ y : M, y * y = y"), /the arrow after/);
+  });
+
+  it("is read as one when the premise is in parentheses", () => {
+    const parenthesized = recognized("(M : Type) [Mul M] : (∀ x : M, x * x = x) → ∀ y : M, y * y = y") as MagmaStatement;
+    assert.deepEqual(parenthesized.hypotheses.map((h) => h.text), ["∀ x : M, x * x = x"]);
+    assert.equal(parenthesized.conclusion.text, "∀ y : M, y * y = y");
+    const chain = recognized("(M : Type) [Mul M] : (∀ x : M, x * x = x) → (∀ x y : M, x * y = x) → ∀ z : M, z * z = z") as MagmaStatement;
+    assert.equal(chain.hypotheses.length, 2);
+  });
+});
+
 describe("recognizing a statement about a natural number", () => {
   it("makes the hypotheses premises of the conclusion", () => {
     const withHypothesis = recognized("(n : ℕ) (hn : n % 2 = 1) : n * n % 2 = 1");
