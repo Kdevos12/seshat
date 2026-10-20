@@ -261,6 +261,9 @@ export function createFleet(env: FleetEnv = {}): Line {
           problem.last.set(session.prover, strategy);
           run.assigned.set(session.attemptId, strategy);
         }
+        // This session starts after the prover's last attempt was journaled, so the provers that wait read a
+        // posterior that holds it. They look again now that this prover has taken its place and its strategy.
+        problem.gate.wake();
         if (strategy === undefined && model === undefined) return undefined;
         session.memory.recordNode({
           kind: "allocation",
@@ -293,8 +296,8 @@ export function createFleet(env: FleetEnv = {}): Line {
         const state = problemState(run, problem.problemId);
         state.running.delete(attempt.prover);
         run.assigned.delete(attempt.attemptId);
-        // The posterior moved: provers waiting for a place look again.
-        state.gate.wake();
+        // The waiting provers are not woken here: `afterAttempt` runs before the attempt is journaled as finished,
+        // so they would read a posterior without it. The prover's next session, or its end, wakes them.
         return undefined;
       },
 

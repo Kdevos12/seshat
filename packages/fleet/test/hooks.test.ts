@@ -24,29 +24,43 @@ async function setup(options: JsonObject = {}, fleet = createFleet()) {
   const context = (prover: string, session: number): SessionContext =>
     ({ ...problem(), prover, session, sessions: 99, attemptId: `att_${prover}_${session}`, model: "faux/prover", regions: { aux: "", proof: "" } }) as unknown as SessionContext;
 
-  /** One session as the orchestrator runs it: the decision, the attempt's events, `afterAttempt`. */
-  async function session(prover: string, number: number, finish: { outcome: "valid" | "invalid" | "no_submission"; failureClass?: string; strategy?: string } | undefined) {
+  type Finish = { outcome: "valid" | "invalid" | "no_submission"; failureClass?: string; strategy?: string };
+
+  /** The start of a session: the decision of `beforeSession`, and the attempt that starts with it. */
+  async function begin(prover: string, number: number) {
     const ctx = context(prover, number);
     const decision = await hooks.beforeSession?.(ctx);
-    if (finish === undefined) return decision;
     attempts += 1;
     journal.emit(
       "attempt.started",
       { attemptId: ctx.attemptId, claimId, prover, iteration: number, model: decision?.model ?? "faux/prover", ...(decision?.strategy !== undefined ? { strategy: decision.strategy } : {}) },
       `prover:${prover}`,
     );
+    return decision;
+  }
+
+  /** The end of a session in the orchestrator's order: `afterAttempt` runs first, and only after it is `attempt.finished` journaled. */
+  async function end(prover: string, number: number, finish: Finish) {
+    const attemptId = context(prover, number).attemptId;
+    await hooks.afterAttempt?.(problem(), { attemptId, prover, session: number } as unknown as FinishedAttempt);
     journal.emit(
       "attempt.finished",
       {
-        attemptId: ctx.attemptId, outcome: finish.outcome, ...(finish.failureClass !== undefined ? { failureClass: finish.failureClass } : {}),
+        attemptId, outcome: finish.outcome, ...(finish.failureClass !== undefined ? { failureClass: finish.failureClass } : {}),
         ...(finish.strategy !== undefined ? { strategy: finish.strategy } : {}), stoppedBy: "model", durationMs: 1, turns: 1, usd: 0, inputTokens: 0, outputTokens: 0,
       },
       `prover:${prover}`,
     );
-    await hooks.afterAttempt?.(problem(), { attemptId: ctx.attemptId, prover, session: number } as unknown as FinishedAttempt);
+  }
+
+  /** A whole session, or only the decision for it when `finish` is undefined (no attempt is written then). */
+  async function session(prover: string, number: number, finish: Finish | undefined) {
+    if (finish === undefined) return hooks.beforeSession?.(context(prover, number));
+    const decision = await begin(prover, number);
+    await end(prover, number, finish);
     return decision;
   }
-  return { memory, journal, claimId, hooks, context, problem, session, controller, count: () => attempts };
+  return { memory, journal, claimId, hooks, context, problem, session, begin, end, controller, count: () => attempts };
 }
 
 describe("what the next session is told", () => {
@@ -189,18 +203,21 @@ describe("the width of the work", () => {
     assert.deepEqual([first?.data.waited, later?.data.waited], [false, true]);
   });
 
-  it("lets it in when the posterior gets low, without p1 ending", async () => {
+  it("lets it in when the posterior gets low, without p1 ending, once the attempt that lowered it is in the memory", async () => {
     const world = await setup({ strategies: false, models: ["PROVIDER/A"], minAttempts: 1, widenBelow: 0.9 });
-    await world.session("p1", 1, undefined);
+    await world.begin("p1", 1);
     let second: unknown;
     const pending = world.hooks.beforeSession?.(world.context("p2", 1))?.then((d) => (second = d));
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(second, undefined);
-    // p1's session fails: the rate is 1/3, under 0.9, so the width is 3.
-    await world.session("p1", 1, { outcome: "invalid", failureClass: "unsolved_goals" });
+    // p1's session fails: the rate is 1/3, under 0.9, so the width is 3. The orchestrator runs `afterAttempt`
+    // before it journals the attempt, so only p1's next session, which starts after that, can show p2 the attempt.
+    await world.end("p1", 1, { outcome: "invalid", failureClass: "unsolved_goals" });
+    await world.begin("p1", 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(second, { model: "PROVIDER/A" }, "p2 is let in on the posterior that holds p1's first attempt");
     await pending;
-    assert.deepEqual(second, { model: "PROVIDER/A" });
-    assert.equal(allocations(world.memory, world.claimId).at(-1)?.data.width, 3);
+    assert.equal(allocations(world.memory, world.claimId).filter((a) => a.data.prover === "p2").at(-1)?.data.width, 3);
   });
 
   it("lets a waiting prover go when the problem ends, and the prover then starts nothing", async () => {

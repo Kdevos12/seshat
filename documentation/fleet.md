@@ -100,9 +100,12 @@ many of them work as the width of each subgoal allows.
 The `Gate` applies it without the provers talking: prover `p3` may start a session when fewer than
 `width` provers with a lower number are alive on its subgoal, and fewer than `maxWidthProblem` are
 alive on the problem. The lowest prover alive is never kept waiting, so the gate cannot deadlock. A
-waiting prover looks again after every attempt of the problem (the posterior has moved), when a
-prover ends, and when the problem ends; its signal then stops it. A prover is alive until its loop
-ends (`afterProver`).
+waiting prover looks again when another prover starts a session, when a prover ends, and when the
+problem ends (its signal then stops it). A session starts after the attempt before it was
+journaled, so what a prover reads then holds every attempt that finished. The fleet does not wake
+the others in `afterAttempt`: the orchestrator runs that hook before it journals the attempt as
+finished, and a prover woken there would read a posterior one attempt old. A prover is alive until
+its loop ends (`afterProver`).
 
 With `widen` off every prover starts at once, as in M0; the strategies are still told, and still
 differ among provers that work together.
@@ -157,21 +160,23 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 ## The hooks it uses
 
 `beforeSession` (the decision above), `briefing` (the section "Strategy for this session", worded to
-ask for no demonstration: M6's framing check finds nothing in it), `afterAttempt` (the prover's place is
-free and the waiting provers look again), `afterProver` and `afterProblem` (the policy's state of the
-prover and the problem is dropped). The line API got `afterProver` for this and for M6
-([lines.md](lines.md)).
+ask for no demonstration: M6's framing check finds nothing in it), `afterAttempt` (the strategy the
+prover was on is free for the others), `afterProver` (the prover is no longer ahead of anyone, and the
+waiting provers look again) and `afterProblem` (the policy's state of the problem is dropped). The
+line API got `afterProver` for this and for M6 ([lines.md](lines.md)).
 
 ## Tests and what is not done
 
 `packages/fleet/test` covers the pieces: the seeded source and the Beta and Gamma draws, the
 posteriors on scripted attempts, Thompson choices with a seeded source (a strong arm wins most
 draws, a flat one is explored), the width and its caps, the gate (order, caps, release when a prover
-or the problem ends), the escalation, and the hooks on a real journal with stub contexts.
+or the problem ends), the escalation, and the hooks on a real journal with stub contexts that run
+`afterAttempt` before they journal the attempt, as the orchestrator does.
 `packages/orchestrator/test/fleet.test.ts` runs the line in whole runs with the simulated Lean and a
 faux model: the strategy told and journaled, the same seed drawing the same strategy, a strategy kept
 while Lean gets further, the models chosen and escalated, a model that does not exist, the width
-(provers let in as the posterior falls, kept out while a single agent does well), the strategies of
+(provers let in when the attempts that made the posterior low are in the memory, before the first
+prover's next session does any work; kept out while a single agent does well), the strategies of
 provers that work at once, its section next to M6's question on an open conjecture, and the notes of
 one prover never reaching another.
 

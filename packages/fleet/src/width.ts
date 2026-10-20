@@ -104,7 +104,7 @@ export class Gate {
     }
   }
 
-  /** A session ended, so the posterior may have moved: waiting provers look again. */
+  /** The posterior may have moved, or a place been freed: waiting provers look again. The caller wakes them once the attempt that moved it is journaled. */
   wake(): void {
     for (const wake of [...this.#waiting]) wake();
   }
