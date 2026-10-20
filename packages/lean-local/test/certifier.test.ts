@@ -5,7 +5,7 @@ import { basename, join, sep } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type CertificationRequest, CertifyFailedError, STANDARD_AXIOMS } from "@seshat/core";
-import { CERTIFY_PROGRAM, LakeCertifier, type LakeCertifierOptions } from "../src/index.ts";
+import { CERTIFY_PROGRAM, LakeCertifier, type LakeCertifierOptions, nameComponents } from "../src/index.ts";
 
 const FAKE_LAKE = fileURLToPath(new URL("./fixtures/fake-lake.ts", import.meta.url));
 const FAKE_SANDBOX = fileURLToPath(new URL("./fixtures/fake-sandbox.ts", import.meta.url));
@@ -15,7 +15,7 @@ interface Call {
   args: string[];
   cwd: string;
   env: string[];
-  request?: { reference: string; candidate: string; target: string; allowedAxioms: string[] };
+  request?: { reference: string; candidate: string; target: string[]; allowedAxioms: string[][] };
   /** The file a compile (`-o`) read. */
   source?: string;
   /** The program a replay (`--run`) read. */
@@ -104,8 +104,56 @@ describe("LakeCertifier", () => {
     // Copies, in the directory of the replay, so that the replay needs nothing else that a compile wrote.
     assert.match(asked.reference, /replay-[^\\/]+[\\/]reference\.olean$/);
     assert.match(asked.candidate, /replay-[^\\/]+[\\/]candidate\.olean$/);
-    assert.equal(asked.target, "Ns.«odd name»");
-    assert.deepEqual(asked.allowedAxioms, ["propext"]);
+    assert.deepEqual(asked.target, ["Ns", "odd name"]);
+    assert.deepEqual(asked.allowedAxioms, [["propext"]]);
+  });
+
+  describe("names", () => {
+    it("are split at the dots outside «», with the guillemets taken off", () => {
+      const cases: [string, string[]][] = [
+        ["T", ["T"]],
+        ["Demo.add_zero'", ["Demo", "add_zero'"]],
+        ["Classical.choice", ["Classical", "choice"]],
+        ["Arxiv.«1609.08688».maximalLength_le", ["Arxiv", "1609.08688", "maximalLength_le"]],
+        ["A.«odd name_negation»", ["A", "odd name_negation"]],
+        ["«A.B».c", ["A.B", "c"]],
+        ["«propext»", ["propext"]],
+        ["ErdosProblems.«125».erdos_125", ["ErdosProblems", "125", "erdos_125"]],
+      ];
+      for (const [name, parts] of cases) assert.deepEqual(nameComponents(name), parts, name);
+      for (const bad of ["", "a..b", ".a", "a.", "«open", "a.«b", "«»"]) {
+        assert.throws(() => nameComponents(bad), /empty component|never closes/, JSON.stringify(bad));
+      }
+    });
+
+    it("reach the program as components, as bench names and negation names need", async () => {
+      const { certifier, calls } = setup();
+      const targets = ["Arxiv.«1609.08688».maximalLength_le", "A.«odd name_negation»"];
+      for (const target of targets) await certifier.certify(request("", { target, allowedAxioms: ["Classical.choice", "A.«odd axiom»"] }));
+      const asked = calls().flatMap((c) => (c.request === undefined ? [] : [c.request]));
+      assert.deepEqual(asked.map((r) => r.target), [["Arxiv", "1609.08688", "maximalLength_le"], ["A", "odd name_negation"]]);
+      assert.deepEqual(asked[0]?.allowedAxioms, [["Classical", "choice"], ["A", "odd axiom"]]);
+    });
+
+    it("are refused before anything runs when they are not Lean names", async () => {
+      const { certifier, calls } = setup();
+      for (const target of ["a..b", "«open", ""]) {
+        const error = await failure(certifier.certify(request("", { target })));
+        assert.equal(error.reason, "failed", target);
+        assert.match(error.message, /something that is not a Lean name/, target);
+      }
+      const axiom = await failure(certifier.certify(request("", { allowedAxioms: ["propext", "Classical..choice"] })));
+      assert.match(axiom.message, /not a Lean name/);
+      assert.deepEqual(calls(), [], "not even the version was asked");
+    });
+
+    it("are compared as names when the axioms are checked, however they are spelled", async () => {
+      const { certifier } = setup();
+      // The program prints Classical.choice, Quot.sound and propext; the request spells them with «».
+      const spelled = await certifier.certify(request("", { allowedAxioms: ["«Classical».choice", "Quot.«sound»", "«propext»"] }));
+      assert.equal(spelled.verdict, "certified");
+      assert.deepEqual(spelled.reasons, []);
+    });
   });
 
   it("rejects a candidate that the program rejects, with the program's reasons", async () => {
@@ -188,6 +236,8 @@ describe("LakeCertifier", () => {
       ["exit-3", /lean ended with code 3 while compiling the candidate/],
       ["no-object-file", /lean compiled the candidate and wrote no object file/],
       ["program-crash", /the replay program ended with code 134: Stack overflow detected/],
+      // What the program does with an exception that is not a refusal of the candidate's (an object file it cannot read).
+      ["unreadable-object", /the replay program ended with code 1: seshat-certify: failed to read file/],
       ["garbage", /the replay program printed \{"verdict": "certified", "reasons": \[, which is not JSON/],
       ["no-verdict", /the replay program printed no verdict/],
       ["not-a-verdict", /which is not a verdict/],

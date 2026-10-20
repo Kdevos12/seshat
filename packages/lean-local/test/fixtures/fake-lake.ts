@@ -30,7 +30,7 @@ import { join } from "node:path";
 const args = process.argv.slice(2);
 const log = process.env.FAKE_LAKE_LOG;
 // The request of a `--run` call is in the log, since the certifier removes the file afterwards.
-const request = args[2] === "--run" ? (JSON.parse(readFileSync(args[4] as string, "utf8")) as { reference: string; candidate: string; target: string; allowedAxioms: string[] }) : undefined;
+const request = args[2] === "--run" ? (JSON.parse(readFileSync(args[4] as string, "utf8")) as { reference: string; candidate: string; target: string[]; allowedAxioms: string[][] }) : undefined;
 // The file a compile reads is in the log too, since the certifier removes its directory afterwards.
 const compiled = args[2] === "-o" && existsSync(args[4] as string) ? readFileSync(args[4] as string, "utf8") : undefined;
 // The program of a `--run` call, likewise.
@@ -107,16 +107,17 @@ if (mode === "--version") {
   const m = markers(readFileSync(asked.candidate, "utf8"));
   console.log("fake lake: replaying the module");
   const verdict = (v: string, reasons: string[], axioms: string[]) => console.log(JSON.stringify({ verdict: v, reasons, axioms }));
-  if (reference.has("program-fails-on-reference")) fail(`the reference does not declare ${asked.target}`, 1);
+  if (reference.has("program-fails-on-reference")) fail(`the reference does not declare ${asked.target.join(".")}`, 1);
   else if (m.has("hang-replay")) hang();
   else if (m.has("program-crash")) fail("Stack overflow detected. Aborting.", 134);
+  else if (m.has("unreadable-object")) fail("seshat-certify: failed to read file 'candidate.olean', invalid header", 1);
   else if (m.has("garbage")) console.log('{"verdict": "certified", "reasons": [');
   else if (m.has("no-verdict")) console.log("this is not json");
   else if (m.has("not-a-verdict")) console.log(JSON.stringify({ verdict: "maybe", reasons: [], axioms: [] }));
   else if (m.has("kernel-reject")) verdict("rejected", ["the kernel refused the module: (kernel) declaration type mismatch at Foo.bar"], []);
-  else if (m.has("type-mismatch")) verdict("rejected", [`${asked.target} does not state what the reference states`], ["propext"]);
+  else if (m.has("type-mismatch")) verdict("rejected", [`${asked.target.join(".")} does not state what the reference states`], ["propext"]);
   else if (m.has("extra-axioms")) {
-    verdict("rejected", [`${asked.target} depends on axioms that are not allowed: [sorryAx]`], ["propext", "sorryAx"]);
+    verdict("rejected", [`${asked.target.join(".")} depends on axioms that are not allowed: [sorryAx]`], ["propext", "sorryAx"]);
   } else if (m.has("lying-certified")) verdict("certified", [], ["propext", "sorryAx"]);
   else if (m.has("certified-with-reasons")) verdict("certified", ["something is wrong"], []);
   else if (m.has("rejected-without-reason")) verdict("rejected", [], []);

@@ -19,10 +19,15 @@ in the Lean project of the bench. This program runs none of the candidate's code
 3. collects the target's axioms itself (`CollectAxioms`) and refuses any outside the allowed set.
 
 The request is a JSON file
-`{"reference": "<.olean>", "candidate": "<.olean>", "target": "Ns.name", "allowedAxioms": ["propext", ...]}`.
+`{"reference": "<.olean>", "candidate": "<.olean>", "target": ["Ns", "name"], "allowedAxioms": [["propext"], ...]}`:
+a name is the array of its components, since `String.toName` reads `Arxiv.«1609.08688».f` as four
+pieces split at the dots, `«` and `»` kept in them, and the harness has the source form to read.
 The answer is one line of JSON on stdout, `{"verdict": "certified" | "rejected", "reasons": [...],
-"axioms": [...]}`, with exit code 0. A failure that is not the candidate's (a request that does not
-parse, a reference that cannot be replayed) prints nothing on stdout and exits with another code.
+"axioms": [...]}`, with exit code 0. `rejected` is for what the candidate did: its imports, an unsafe
+or partial constant, a declaration the kernel refuses, a target that is missing or states something
+else, an axiom that is not allowed. Anything else that goes wrong (a request that does not parse, a
+file that cannot be read, a reference that cannot be replayed, any other exception) prints nothing on
+stdout and exits with another code, since it says nothing about the candidate.
 
 This program has never been compiled: it was written against the sources of Lean v4.27.0 (and of
 lean4checker and SafeVerify) in an environment without Lean. `lake build` in this directory is the
@@ -40,20 +45,29 @@ structure CertifyRequest where
   target : Name
   allowedAxioms : Array Name
 
+/-- A name from its components: `#["Arxiv", "1609.08688", "f"]` is `Arxiv.«1609.08688».f`. -/
+def nameOfComponents (parts : Array String) : Name :=
+  parts.foldl (fun name part => Name.str name part) Name.anonymous
+
 def CertifyRequest.parse (text : String) : Except String CertifyRequest := do
   let json ← Json.parse text
   let field (key : String) : Except String String := do
     (← json.getObjVal? key).getStr?
+  let name (value : Json) : Except String Name := do
+    let parts ← (← value.getArr?).mapM (fun part => part.getStr?)
+    if parts.isEmpty then
+      throw "a name has no components"
+    return nameOfComponents parts
   let reference ← field "reference"
   let candidate ← field "candidate"
-  let target ← field "target"
+  let target ← name (← json.getObjVal? "target")
   let axioms ← (← json.getObjVal? "allowedAxioms").getArr?
-  let axioms ← axioms.mapM (fun a => a.getStr?)
+  let allowed ← axioms.mapM name
   return {
     reference := ⟨reference⟩
     candidate := ⟨candidate⟩
-    target := target.toName
-    allowedAxioms := axioms.map String.toName
+    target := target
+    allowedAxioms := allowed
   }
 
 /-- A compiled module: what its `.olean` holds, and the constants it declares itself, by name. -/
@@ -85,12 +99,13 @@ def Outcome.toJson (o : Outcome) : Json :=
     ("axioms", Lean.toJson (o.axioms.map toString))
   ]
 
-/-- The module's declarations, each sent to the kernel; the kernel's exception is the reason. -/
-def replayModule (base : Environment) (m : CompiledModule) : IO Environment := do
+/-- The module's declarations, each sent to the kernel: the environment, or the kernel's refusal. -/
+def replayModule (base : Environment) (m : CompiledModule) : IO (Except String Environment) := do
   try
-    base.replay m.own
+    let env ← base.replay m.own
+    return Except.ok env
   catch e =>
-    throw <| IO.userError s!"the kernel refused the module: {e}"
+    return Except.error (toString e)
 
 /--
 What the meaning of a constant rests on, one step down. A definition or an opaque constant is its
@@ -158,7 +173,10 @@ def axiomsOf (env : Environment) (name : Name) : Array Name := Id.run do
   let (_, state) := ((CollectAxioms.collect name).run env).run {}
   return state.axioms
 
-/-- The candidate against the reference. What fails here is the candidate's: it is the reason. -/
+/--
+The candidate against the reference. What the candidate did wrong is the reason. An exception that is
+not a refusal of the kernel (a file that cannot be read, say) is not the candidate's and is not caught.
+-/
 def judge (req : CertifyRequest) (reference : CompiledModule) (base refEnv : Environment) : IO Outcome := do
   let candidate ← loadModule req.candidate
   let sameImports := candidate.data.imports.map (fun i => i.module) == reference.data.imports.map (fun i => i.module)
@@ -169,43 +187,47 @@ def judge (req : CertifyRequest) (reference : CompiledModule) (base refEnv : Env
       return refuse s!"the module declares the unsafe constant {name}"
     if info.isPartial then
       return refuse s!"the module declares the partial constant {name}"
-  let env ← replayModule base candidate
-  unless candidate.own.contains req.target do
-    return refuse s!"the candidate does not declare {req.target}"
-  let mut reasons : Array String := #[]
-  for name in statementClosure reference.own refEnv req.target do
-    match refEnv.find? name, env.find? name with
-    | some expected, some given =>
-      unless sameStatement expected given do
-        if name == req.target then
-          reasons := reasons.push s!"{name} does not state what the reference states"
-        else
-          reasons := reasons.push s!"{name}, which the statement depends on, is not the reference's"
-    | some _, none =>
-      reasons := reasons.push s!"{name}, which the statement depends on, is missing"
-    | none, _ => pure ()
-  let found := axiomsOf env req.target
-  let outside := found.filter (fun a => !req.allowedAxioms.contains a)
-  unless outside.isEmpty do
-    reasons := reasons.push s!"{req.target} depends on axioms that are not allowed: {outside.toList}"
-  return { reasons := reasons, axioms := found }
+  match (← replayModule base candidate) with
+  | .error message =>
+    return refuse s!"the kernel refused the module: {message}"
+  | .ok env =>
+    unless candidate.own.contains req.target do
+      return refuse s!"the candidate does not declare {req.target}"
+    let mut reasons : Array String := #[]
+    for name in statementClosure reference.own refEnv req.target do
+      match refEnv.find? name, env.find? name with
+      | some expected, some given =>
+        unless sameStatement expected given do
+          if name == req.target then
+            reasons := reasons.push s!"{name} does not state what the reference states"
+          else
+            reasons := reasons.push s!"{name}, which the statement depends on, is not the reference's"
+      | some _, none =>
+        reasons := reasons.push s!"{name}, which the statement depends on, is missing"
+      | none, _ => pure ()
+    let found := axiomsOf env req.target
+    let outside := found.filter (fun a => !req.allowedAxioms.contains a)
+    unless outside.isEmpty do
+      reasons := reasons.push s!"{req.target} depends on axioms that are not allowed: {outside.toList}"
+    return { reasons := reasons, axioms := found }
 
 /--
 Replays the reference (what fails there is not the candidate's doing, and is an exception), then
-judges the candidate against it. The two modules have the same imports, so they are imported once.
+judges the candidate against it. The two modules have the same imports, so they are imported once,
+without loading the environment extensions' initializers (`loadExts := false`): none of the code of
+the modules runs.
 -/
 def certify (req : CertifyRequest) : IO Outcome := do
   let reference ← loadModule req.reference
-  let base ← importModules reference.data.imports {} 0
-  let refEnv ← replayModule base reference
+  let base ← importModules (loadExts := false) reference.data.imports {} 0
+  let refEnv ← match (← replayModule base reference) with
+    | .ok env => pure env
+    | .error message => throw <| IO.userError s!"the reference cannot be replayed: {message}"
   match refEnv.find? req.target with
   | some (.thmInfo _) => pure ()
   | some _ => throw <| IO.userError s!"{req.target} is not a theorem in the reference"
   | none => throw <| IO.userError s!"the reference does not declare {req.target}"
-  try
-    judge req reference base refEnv
-  catch e =>
-    return refuse s!"{e}"
+  judge req reference base refEnv
 
 end SeshatCertify
 
