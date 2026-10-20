@@ -21,7 +21,7 @@ describe("StreakCounter", () => {
 });
 
 describe("the strategy loop", () => {
-  it("stops a session at the third check with one strategy and no Lean progress", () => {
+  it("stops a session at the third check in a row with one strategy and no Lean progress (its fourth: the first always goes further than nothing)", () => {
     const found = script(new SessionWatch(), [
       ["induction", at(4)],
       ["induction", at(4)],
