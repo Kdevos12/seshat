@@ -139,5 +139,5 @@ of `lean.check` checks each of them against a server
    ([m1-identity-memory.md](m1-identity-memory.md#failure-classes)); a message not matched is
    `other`.
 8. The Lean meta tool, from building SeshatMeta on: [lean-meta.md](lean-meta.md#to-verify-against-lean).
-7. For `lean.lsp`: what depends on the language server and on the search sites, listed in
+9. For `lean.lsp`: what depends on the language server and on the search sites, listed in
    [lean-lsp.md](lean-lsp.md#to-verify-against-lean).
