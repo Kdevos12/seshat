@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 06:11 UTC. `main` at f49ffc8, 540 tests.
+Updated 2026-10-21 06:18 UTC. `main` at 54661e6, 540 tests.
 
 ## Tasks
 
@@ -26,7 +26,7 @@ Updated 2026-10-21 06:11 UTC. `main` at f49ffc8, 540 tests.
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate` | main | not started (last) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | next | |
-| 16 | `lean.lsp` | main | in review | `task/t16` |
+| 16 | `lean.lsp` | main | fix round 1 after review | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge` | main | not started (after 15) | |
@@ -273,3 +273,5 @@ Task 7: fix round 2 implemented (commits 482dca3 7b01ef7 8ce131e 3733ef5 3c6274d
 Task 7: scoped re-review dispatched (FIX_BASE 6335470, head c79681e; asked to judge R2-1b keep or drop)
 Usage-limit stop 13: the session limit cut the T16 reviewer, the T4 re-reviewer and the T7 re-reviewer about 01:40 UTC (reset 06:00); all three resumed 06:05 UTC
 Merge rehearsal T4 then T7 on main f49ffc8 (wt/rehearse, detached, local only; git rerere on so the real merges replay the resolutions): T4 merges cleanly; T7 conflicts in README (status, diagram edges, two prose paragraphs), the two host profiles' descriptions, lines.md, lines.ts (LINES = { M1, M11, M2: m2Line, M6, fleet }), implementations.ts (lake-certify plus oeis, lmfdb, findstat), meta.test.ts (T7's stand-in for every inproc factory), cli.test.ts (one health test for SageMath, the sites and the certifier, plus T7's sites test), registry.test.ts (both tests), all resolved as unions; one failure after: T4's shipped-profiles test named its factories, fixed with stand-ins for every factory; wiring commit for the second to merge (Ruling 25's rule): M11's refutation is replayed when the host has a certifier and the problem ends refuted (new m11 test with a fake certifier), models.md's beforeSession row says so; pnpm check 837/837, links ok; patch kept in the scratchpad (merge-t4-t7/)
+Task 16: review: spec ❌ (I1 multi_attempt screens a tactic apart from the line prefix the server splices it onto, so `#ev` + column + `al 1` reaches Lean as `#eval 1`; I2 line-mode goal and state_search read a still_elaborating timeout as "no goal"), quality Needs fixes; no Critical; surface, trust (produces nothing, no verdict words), degradation, binding, registry and budget judged sound; inherited: core's R2-1 hole (fixed on task/t7; regression test added by the controller when T16 merges after T7); minors M1 Lean messages not sanitized, M2 leanclient floats under uvx, M3 a test unsets HTTPS_PROXY, M4 numbering, M5 status row names a probe not in the repository, M6 README planned node, M7 sandbox wording thinner than lean.goals, M8 verdict-like wording, M9 site classification too broad, M10 dead code, M11 cleanup coverage, M12 line separators shift positions, M13 input blob carries the sketch, M14 host args not guarded, M15 structure
+Task 16: fix round 1 sent to the implementer (I1 I2, minors M1-M12, M14, M15 optional; FIX_BASE 447bc39; findings file task-16-findings-r1.md); decisions: pin leanclient exactly with --with, orjson and certifi may float (M2); host args are the operator's and trusted, documented, not refused (M14); M13 deferred to Task 15 and the final review (the registry records inputs uniformly)
