@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type EventDataMap, type HarnessEvent, readEvents } from "@seshat/core";
+import { type EventDataMap, type HarnessEvent, readEvents, SITE_PROVER_SESSION } from "@seshat/core";
 import { type Redundancy, redundancy } from "@seshat/memory";
 
 export interface ProblemLine {
@@ -46,6 +46,13 @@ export interface RunReport {
    */
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
   /**
+   * The spend by site, the biggest first: the provers' sessions under `prover.session`, the lines'
+   * one-shot calls under the site they name, and `unknown` for a call recorded before the tags. It
+   * shows what share of the budget each place takes, which caps what a cheaper way of deciding there
+   * can save. `harness ablate` reads it with `siteSpend` and `mergeSiteSpend`.
+   */
+  sites: SiteLine[];
+  /**
    * The redundant attempts (plan §6): of the attempts that carry a strategy label, the share that
    * failed in a way an earlier attempt on the claim, or on an equivalent one, had already failed.
    * Absent when no attempt has a label, which is every run without the M1 line.
@@ -53,11 +60,101 @@ export interface RunReport {
   redundancy?: Redundancy;
 }
 
+/** What one site of the harness spent (documentation/ledger.md, "Sites"). */
+export interface SiteLine {
+  site: string;
+  /** Model responses: a session's turns, or one for a one-shot call. */
+  calls: number;
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Its part of the total cost, from 0 to 1. */
+  share: number;
+}
+
 export interface ToolUse {
   calls: number;
   outcomes: Record<string, number>;
   attempts: number;
   proofs: number;
+}
+
+/**
+ * The spend of a run by site, the biggest first, read from its events alone: an attempt under the
+ * site it started with (`prover.session` when it names none), at its own totals, or at the sum of
+ * its charges when it never finished; a one-shot call under its site, or `unknown`. A function of
+ * events, so that any tool that reads journals can use it.
+ */
+export function siteSpend(events: readonly HarnessEvent[]): SiteLine[] {
+  const sites = new Map<string, Omit<SiteLine, "share">>();
+  const add = (site: string, usd: number, inputTokens: number, outputTokens: number, calls: number) => {
+    const entry = sites.get(site) ?? { site, calls: 0, usd: 0, inputTokens: 0, outputTokens: 0 };
+    entry.calls += calls;
+    entry.usd += usd;
+    entry.inputTokens += inputTokens;
+    entry.outputTokens += outputTokens;
+    sites.set(site, entry);
+  };
+  const siteOf = new Map<string, string>();
+  const charged = new Map<string, { usd: number; inputTokens: number; outputTokens: number; calls: number }>();
+  const ended = new Set<string>();
+  for (const event of events) {
+    switch (event.type) {
+      case "attempt.started":
+        siteOf.set(event.data.attemptId, event.data.site ?? SITE_PROVER_SESSION);
+        break;
+      case "attempt.charged": {
+        const d = event.data;
+        const sum = charged.get(d.attemptId) ?? { usd: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
+        sum.usd += d.usd;
+        sum.inputTokens += d.inputTokens;
+        sum.outputTokens += d.outputTokens;
+        sum.calls += 1;
+        charged.set(d.attemptId, sum);
+        break;
+      }
+      case "attempt.finished": {
+        const d = event.data;
+        ended.add(d.attemptId);
+        add(siteOf.get(d.attemptId) ?? SITE_PROVER_SESSION, d.usd, d.inputTokens, d.outputTokens, d.turns);
+        break;
+      }
+      case "model_call.finished": {
+        const d = event.data;
+        add(d.site ?? "unknown", d.usd, d.inputTokens, d.outputTokens, 1);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  for (const [attemptId, sum] of charged) {
+    if (!ended.has(attemptId)) add(siteOf.get(attemptId) ?? SITE_PROVER_SESSION, sum.usd, sum.inputTokens, sum.outputTokens, sum.calls);
+  }
+  return withShares([...sites.values()]);
+}
+
+/** Adds up the spend of several runs by site (an ablation compares configs over many runs), the biggest first. */
+export function mergeSiteSpend(runs: ReadonlyArray<readonly SiteLine[]>): SiteLine[] {
+  const sites = new Map<string, Omit<SiteLine, "share">>();
+  for (const run of runs) {
+    for (const line of run) {
+      const entry = sites.get(line.site) ?? { site: line.site, calls: 0, usd: 0, inputTokens: 0, outputTokens: 0 };
+      entry.calls += line.calls;
+      entry.usd += line.usd;
+      entry.inputTokens += line.inputTokens;
+      entry.outputTokens += line.outputTokens;
+      sites.set(line.site, entry);
+    }
+  }
+  return withShares([...sites.values()]);
+}
+
+function withShares(lines: Array<Omit<SiteLine, "share">>): SiteLine[] {
+  const total = lines.reduce((sum, line) => sum + line.usd, 0);
+  return lines
+    .sort((a, b) => b.usd - a.usd || a.site.localeCompare(b.site))
+    .map((line) => ({ ...line, share: total > 0 ? line.usd / total : 0 }));
 }
 
 function count(map: Record<string, number>, key: string): void {
@@ -82,6 +179,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
   const proofAttempts = new Set<string>();
   const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
+  // What a session that never finished cost, from its charges.
+  const charges = new Map<string, { usd: number; inputTokens: number; outputTokens: number }>();
   let usd = 0;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -105,8 +204,18 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         count(outcomes, d.outcome);
         break;
       }
+      case "attempt.charged": {
+        const d = event.data;
+        const sum = charges.get(d.attemptId) ?? { usd: 0, inputTokens: 0, outputTokens: 0 };
+        sum.usd += d.usd;
+        sum.inputTokens += d.inputTokens;
+        sum.outputTokens += d.outputTokens;
+        charges.set(d.attemptId, sum);
+        break;
+      }
       case "attempt.finished": {
         const d = event.data;
+        charges.delete(d.attemptId);
         attempts.total += 1;
         count(attempts.outcomes, d.outcome);
         if (d.stoppedBy !== undefined) count(attempts.stoppedBy, d.stoppedBy);
@@ -154,6 +263,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         break;
     }
   }
+  for (const sum of charges.values()) {
+    usd += sum.usd;
+    inputTokens += sum.inputTokens;
+    outputTokens += sum.outputTokens;
+  }
   const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
@@ -190,6 +304,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    sites: siteSpend(events),
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
   };
 }
@@ -249,6 +364,11 @@ export function renderRunReport(report: RunReport): string {
     ),
     ...(report.modelCalls !== undefined
       ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
+      : []),
+    ...(report.sites.length > 0
+      ? [
+          `Spend by site: ${report.sites.map((s) => `${s.site} ${money(s.usd)} (${(s.share * 100).toFixed(0)}%, ${s.calls} call(s))`).join("; ")}.`,
+        ]
       : []),
     ...(report.redundancy !== undefined
       ? [

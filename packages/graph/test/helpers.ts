@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { AUX_BEGIN, AUX_END, BlobStore, extractSubmission, Journal, PROOF_BEGIN, PROOF_END, statementIdV0 } from "@seshat/core";
 import type { EdgeKind } from "@seshat/core";
-import type { Llm, ValidateResult } from "@seshat/lines";
+import { type Llm, type ValidateResult, withJson } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import { ClaimBenches } from "../../orchestrator/src/validate.ts";
@@ -156,13 +156,11 @@ export function reject(w: World, claimId: string, negation = false): void {
 /** A model that answers from a script: `answer(prompt, call number)`. Records every prompt. */
 export function scripted(answer: (prompt: string, call: number) => string | Promise<string>): { llm: Llm; prompts: string[] } {
   const prompts: string[] = [];
-  const llm: Llm = {
-    complete: async (request) => {
-      prompts.push(request.prompt);
-      const text = await answer(request.prompt, prompts.length);
-      return { text, cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "test/model", modelCallId: `mc_${prompts.length}` };
-    },
-  };
+  const llm: Llm = withJson(async (request) => {
+    prompts.push(request.prompt);
+    const text = await answer(request.prompt, prompts.length);
+    return { text, cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "test/model", modelCallId: `mc_${prompts.length}` };
+  });
   return { llm, prompts };
 }
 

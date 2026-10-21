@@ -130,7 +130,7 @@ The problem's context (`ProblemContext`):
 | `domain` | The problem's domains, such as `msc:11`. |
 | `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. A line never touches the journal: its store has no access to it. |
 | `registry` | The run's capability registry. Calls through it are tool runs in the journal; pass `actor: "line:<id>"`, and the attempt inside a session. |
-| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?})` returns the text, its cost, the model and the call's id. |
+| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?, site?})` returns the text, its cost, the model and the call's id; `completeJson({..., schema})` returns an answer checked against a schema ([below](#llm)). |
 | `validate` | Submits a Lean proof of a claim, or of its negation, through the validator. |
 | `budget` | The problem's budget as it stands: its limit, what was spent, whether it is exhausted. |
 | `log` | A line of the run's progress log, prefixed with the problem and the line. |
@@ -162,6 +162,25 @@ and is recorded as `model_call.finished` from `line:<id>`, with the request and 
 as blobs (`requestHash`, `responseHash`) and the call's cost and tokens. A call fails when the
 problem has ended, when its budget is spent, or when the model answers with an error (the failed
 call is recorded too). The model defaults to the run's, with the run's thinking level.
+
+**Site.** Give every call a `site`, a short dotted name for where in the harness it is made:
+`graph.attempt`, `abduction.rerank`, `conjecture.relevance`, `fidelity.review`. It is recorded on
+the call's `model_call.finished`, and the report adds the spend up by site, so that one can see
+what share of the budget each place takes ([ledger.md](ledger.md#sites)). A call without a site is
+recorded as `<line>.unlabeled` (`m2.unlabeled`); a site that is not made of dotted lowercase words
+is refused before the call is paid for. The provers' sessions are the site `prover.session`.
+
+**`completeJson`.** `completeJson<T>({system?, prompt, schema, site?, ...})` is for every one-shot
+call whose answer a program reads. `schema` is a `JsonSchema` of `@seshat/registry`, the subset
+manifests use; the call adds it to the prompt, so the prompt describes the content and not the
+format. The answer is read as JSON (bare, in a code fence, or the outermost object or array of a
+text), and checked. When it is not JSON or does not match, the model is asked once more with its
+refused answer and what was wrong. A second failure rejects with a `JsonAnswerError`: the problems
+of each answer, the two calls' ids and the last text. The retry is a call like the first: it is
+charged to the problem's budget and recorded as its own `model_call.finished`, with the same site.
+A call that fails (the budget is spent, the model errs) is not retried. The result has the
+checked `value`, the text, the cost of every call made, and the ids of the calls (`modelCallIds`).
+`withJson(complete)` builds an `Llm` from a plain `complete`, for the orchestrator and for tests.
 
 ### `validate`
 
