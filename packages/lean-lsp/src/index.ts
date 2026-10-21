@@ -1,4 +1,5 @@
 export * from "./binding.ts";
+export * from "./factory.ts";
 export * from "./implementation.ts";
 export * from "./layout.ts";
 export * from "./present.ts";
