@@ -39,7 +39,7 @@ Event types:
 | Type | Data |
 |---|---|
 | `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `codeRev?` |
-| `run.finished` | `runId`, `attempted`, `solved`, `candidates`, `usd`, `stopped?` |
+| `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
 | `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
@@ -84,7 +84,7 @@ A `model_call.finished` records a one-shot model call a mechanism made outside a
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
 Attempt outcomes: `valid`, `invalid`, `no_submission`, `budget_exhausted`, `aborted`, `error`.
-Problem outcomes: `proved`, `candidate`, `unsolved`, `skipped`, `aborted`, `error`. Why a session
+Problem outcomes: `proved`, `refuted`, `candidate`, `unsolved`, `skipped`, `aborted`, `error`. Why a session
 ended (`stoppedBy`), why a run stopped early (`stopped`) and what each outcome means are in
 [m0-loop.md](m0-loop.md).
 
@@ -152,8 +152,12 @@ event at that seq, belongs to another journal: it is deleted and rebuilt. So is 
 written by another version of the tables: `PROJECTION_VERSION` (now 3) is kept in SQLite's
 `user_version`.
 
-`runSummary()` gives the number of problems, `solved` (claim `proved`), `candidates` (claim
-`computed`), attempts, cost in dollars and tokens: the attempts' and the model calls'.
+`runSummary()` gives the number of problems, `solved` (claim `proved`), `refuted` (claim
+`refuted`), `candidates` (claim `computed`), attempts, cost in dollars and tokens: the attempts'
+and the model calls'. The three counts are the claims': a problem is counted when its claim has the
+status, whoever settled it, so two problems that share a claim count twice, and a claim whose proof
+the kernel rejected is a candidate while its problem is `unsolved`. They are not the problems'
+outcomes (`problem.finished`, and the report, which counts those).
 
 ## Blobs
 

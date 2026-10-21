@@ -53,7 +53,23 @@ compiled module through the kernel, collects the target's axioms itself, and com
 type with the reference type as terms. This is the design of
 [lean4checker](https://github.com/leanprover/lean4checker) and
 [SafeVerify](https://github.com/GasStationManager/SafeVerify). Its interface is `LeanCertifier`
-(`packages/core/src/lean.ts`); the implementation needs Lean and comes with the Lean environment.
+(`packages/core/src/lean.ts`); `@seshat/lean-local` implements it and the capability `lean.certify`
+provides it ([certifier.md](certifier.md)). It answers `certified` or `rejected`; a call that
+cannot decide (the time limit, an abort, no Lean) is an error, not a verdict.
+
+The orchestrator certifies when the host has a certifier ([m0-loop.md](m0-loop.md#certification)):
+a problem's candidate once its provers are done, and, when the problem ends, what its lines
+submitted through `validate`, proofs of other claims and proofs of negations alike. The answer is
+recorded as a `kernel_replay` validation of the claim, with `negation: true` for a refutation.
+
+- `certified`: the claim becomes `proved`, or `refuted` if the proof was of the negation.
+- `rejected`: the claim stays `computed`, and the invalid validation holds the reasons. A rejection
+  does not lower a status: only `retractClaim` does that.
+- no answer: nothing is recorded as a verdict, and the claim stays `computed`.
+
+The certifier compares a candidate with a reference file that no line chose: the problem's own file,
+or, for any other claim, the file rebuilt from the claim's journaled statement and header
+([memory.md](memory.md#reference-files)). A line has no way to give a claim a file of its own.
 
 ## The journal enforces it
 
@@ -100,7 +116,18 @@ are retracted: a candidate back to `open`, a certified claim to `retracted`.
 
 ## What runs where
 
-The prover's code runs inside Lean during both checks. The Lean server and the certifier must run
-in a sandbox: no network, read-only reference files, limits on time and memory. The reference type
+The prover's code runs inside Lean during both checks. The Lean server and the certifier should run
+in a sandbox: no network, read-only reference files, limits on time and memory. The harness
+enforces less than that, and says what: the certifier has a time limit per certification (the
+process group is killed), a cap on its output, a minimal environment (no credentials, no sockets),
+and a directory of its own for every call; limits on memory, on disk and on files and network are a
+sandbox command's, which the harness does not provide. So `lean.certify` fails closed: it is
+unavailable until the host profile gives it a `sandbox` command or opts in with `unsandboxed: true`
+(the user's explicit choice to run the code of candidates as the harness's user), and the host
+`server` never runs it unsandboxed; neither shipped profile opts in
+([certifier.md](certifier.md#where-untrusted-code-runs), with recipes for a sandbox with a memory
+cap, none tried here). The Lean server of the fast check and Pantograph have no such rule: they run
+the model's code as the harness's user or in the server's own container
+([lean.md](lean.md), [lean-meta.md](lean-meta.md#leangoals)). The reference type
 is computed by the harness from the pristine original file, never from a file a prover could
 touch.

@@ -72,7 +72,7 @@ export function parseAxiomsMessage(text: string, constant: string): string[] | u
 }
 
 export interface CertificationRequest {
-  /** The original problem file. The reference statement is elaborated from it. */
+  /** The original problem file, or the reference file of a claim. The reference statement is elaborated from it. */
   original: string;
   /** The assembled candidate file, without the harness's check commands. */
   candidate: string;
@@ -88,15 +88,41 @@ export interface CertificationResult {
   timeMs: number;
 }
 
+export interface LeanCertifyOptions {
+  /** The time limit of the whole certification (compiling the candidate and replaying it), in seconds. Default: the certifier's. */
+  timeoutSec?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * The certification could not be decided: the time limit passed, the call was aborted, Lean could
+ * not be reached, or the checking program failed in a way that says nothing about the candidate.
+ * It is thrown, never returned as a `rejected` verdict, so that a candidate is not marked invalid
+ * for a failure that is not its own: the claim stays a candidate and nothing is recorded as a
+ * validation (documentation/certifier.md#what-it-answers).
+ */
+export class CertifyFailedError extends Error {
+  readonly reason: "timeout" | "aborted" | "unavailable" | "failed";
+
+  constructor(reason: CertifyFailedError["reason"], message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
 /**
  * The second level of trust. A REPL check reads messages that code running during elaboration
  * could forge, so a proof it accepts is only a candidate. A certifier compiles the candidate in a
  * fresh process, replays every declaration of the compiled module through the kernel, collects the
  * target's axioms itself and compares the target's type with the reference's as terms (the design
  * of lean4checker and SafeVerify). Only a certified proof makes a claim `proved`.
+ *
+ * `rejected` is the candidate's fault (it does not compile, the kernel refuses a declaration, the
+ * target uses an axiom outside the allowed set, its type is not the reference's). A failure that is
+ * not the candidate's is a `CertifyFailedError`.
  */
 export interface LeanCertifier {
   readonly implementation: string;
   readonly version: string;
-  certify(request: CertificationRequest, options?: { signal?: AbortSignal }): Promise<CertificationResult>;
+  certify(request: CertificationRequest, options?: LeanCertifyOptions): Promise<CertificationResult>;
 }

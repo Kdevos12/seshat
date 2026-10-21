@@ -103,7 +103,11 @@ Messages are split by line: those in the file go back to the prover; the axioms 
 info on the line of `#print axioms`; the type is the only other info message after it.
 
 A pass makes a candidate. `ProofValidator.certify` hands a candidate to the `LeanCertifier`, when
-one is configured ([trust.md](trust.md#two-levels-of-checking)).
+one is configured ([trust.md](trust.md#two-levels-of-checking)), with the original file, the file
+that passed, the target and the policy's allowed axioms. It returns undefined without a certifier,
+refuses a candidate that is not valid, and passes on the `timeoutSec` and `signal` it is given.
+The orchestrator's `Workbench.certify` calls it for the problem's candidate and for the proofs and
+refutations the lines submit, and records the answer ([m0-loop.md](m0-loop.md#certification)).
 
 ## Holes
 

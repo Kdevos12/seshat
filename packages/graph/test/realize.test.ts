@@ -14,7 +14,7 @@ import {
   realize,
   revokeUnsupported,
 } from "../src/index.ts";
-import { claim, HEADER, headerIdentity, link, proofOf, prove, toyAnswer, world, type World } from "./helpers.ts";
+import { claim, HEADER, headerIdentity, link, proofOf, prove, reject, toyAnswer, world, type World } from "./helpers.ts";
 
 const BASE = "(n : ℕ) : n + 0 = n";
 const STRONG = "(n : ℕ) : n + 0 = n ∧ 0 + n = n";
@@ -132,6 +132,36 @@ describe("realizing what the graph derives", () => {
     // The claims are not read under one header: no proof either.
     const other = await realize({ memory: w.memory, state: new GraphState(w.memory, [base]), validate: w.validate, headerOf: (id) => (id === base ? "import Other" : HEADER), tried: new Set() });
     assert.match(other[0]?.reasons[0] ?? "", /do not share a header/);
+    w.close();
+  });
+
+  it("does not compose a proof from a premise whose proof the kernel refused", async () => {
+    const w = world();
+    const { base, strong, state, headerOf } = await strengthening(w);
+    // The fast check accepted the strengthening's proof and the certifier refused it: the claim is
+    // still `computed`, a candidate for the graph, but a proof built on that file would be refused too.
+    reject(w, strong);
+    assert.equal(w.memory.claim(strong)?.status, "computed");
+    const source = memorySource(w.memory);
+    assert.equal(source.proofOf(strong, "proved"), undefined);
+    const [skipped] = await realize({ memory: w.memory, state, validate: w.validate, headerOf });
+    assert.equal(skipped?.verdict, "skipped");
+    assert.match(skipped?.reasons[0] ?? "", /has no proof on record/);
+    assert.equal(composedChecks(w).length, 0, "nothing was sent to Lean");
+    assert.equal(w.memory.claim(base)?.status, "open");
+    w.close();
+  });
+
+  it("composes from a premise's proof that was not refused, even when an earlier one was", async () => {
+    const w = world();
+    const { base, strong, state, headerOf } = await strengthening(w);
+    reject(w, strong);
+    // A second proof of the premise, another file, that the kernel has not looked at.
+    await prove(w, strong, "exact trivial_proof\n  -- another way");
+    const source = memorySource(w.memory);
+    assert.match(source.proofOf(strong, "proved")?.proof ?? "", /another way/);
+    const [done] = await realize({ memory: w.memory, state, validate: w.validate, headerOf });
+    assert.deepEqual([done?.fact, done?.verdict], [P(base), "valid"]);
     w.close();
   });
 
