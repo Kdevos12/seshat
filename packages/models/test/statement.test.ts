@@ -195,6 +195,17 @@ describe("a statement that holds a token the validator forbids", () => {
     assert.equal(recognized("(n : ℕ) (h : n = xsorry) : n = n").kind, "nat");
   });
 
+  it("is not recognized when the token is glued after a symbol token that ends in letters: [MOD, [ZMOD, ⟫_, #check", () => {
+    // `[MOD` is a token of Mathlib: Lean cuts it off there, and `run_cmd` after it is a command of its own.
+    assert.match(reason("(n : ℕ) : n ≡ n [MODrun_cmd 1"), /the statement holds the token 'run_cmd'/);
+    assert.match(reason("(a b n : ℕ) : a ≡ b [ZMODmacro x]"), /the statement holds the token 'macro'/);
+    assert.match(reason("(a b n : ℕ) : a ≡ b [MODIO]"), /the statement holds the token 'IO'/);
+    assert.match(reason("(n : ℕ) : ⟪n, n⟫_run_cmd 1"), /the statement holds the token 'run_cmd'/);
+    assert.match(reason("(n : ℕ) : n = n #checkrun_cmd 1"), /the statement holds the token 'run_cmd'/);
+    // The congruence itself is a statement.
+    assert.equal(recognized("(n : ℕ) : n ≡ 1 [MOD 7]").kind, "nat");
+  });
+
   it("is not recognized when it holds a #, which starts a command and which nothing the line reads needs", () => {
     assert.match(reason("(n : ℕ) : n = n\n#check n"), /^the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it$/);
     assert.match(reason("(n : ℕ) : #(Nat.divisors n) = 2"), /the statement holds '#'/);

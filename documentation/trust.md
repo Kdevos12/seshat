@@ -109,6 +109,10 @@ Line M11 ([models.md](models.md)) sends Lean files of its own to the same server
 statement about a number. The text of a statement reaches such a file as it is, so it is refused
 unless it is free of the tokens that the validator refuses in a prover's regions
 (`forbiddenTokensIn`) and of `#`, which starts a command; the rest of the file is the harness's.
+That screen reads text as Lean's lexer does and trusts a run of letters as a name only where the lexer
+starts a token for sure (after a space, `(`, `,` or `)`), because a keyword glued after a symbol token
+that ends in letters (`#check`, Mathlib's `[MOD`) is a token of its own
+([validator.md](validator.md#structural-checks)).
 
 M11 also runs JavaScript that a model wrote, outside Lean: the programs of its `small_models` tool
 ([models.md](models.md#the-sandbox)). Each run is a Node child process of the harness, started with
