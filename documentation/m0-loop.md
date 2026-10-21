@@ -15,7 +15,7 @@ The code is in `packages/orchestrator/src`:
 | `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks and the candidate of one problem. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
 | `session.ts` | `runSession`: one pi agent with the `lean_check` tool and the run's other tools, and its limits. |
-| `tools.ts` | The other tools: `direct` capabilities as tools of a session. |
+| `tools.ts` | The other tools: `direct` capabilities as tools of a session, and their bindings (`lean.lsp`). |
 | `prompt.ts` | The prompts, versioned. |
 | `feedback.ts` | What a check says to the prover, and the failure class of a check. |
 | `budget.ts` | Ledgers of dollars and tokens. |
@@ -195,6 +195,15 @@ the tool gave none), and a sentence of the harness for a timeout, an input the s
 output the harness does not accept. When the tool cannot be reached, the model is told to go on
 without it, and the tool is not called again in that session.
 
+A capability can have a binding (`ToolBinding` in `tools.ts`), for the inputs that belong to the
+run and not to the model: they are left out of the tool's parameters, whatever the model puts there
+is dropped, and the run sets them for each call; the binding can also write the answer for the
+model in place of the field-per-line form. `lean.lsp` ([lean-lsp.md](lean-lsp.md)) is the one that
+has it: the problem's sketch is set by the run, `aux` and `proof` default to the regions of the
+attempt's last `lean_check` (`Workbench.lastSubmission`, or the regions the session started with),
+and the answers read as goals, messages and lists of lemmas. `toolBinding(id, ...)` gives it to
+`lean.lsp` alone, so every other tool is as before.
+
 ## Prompts
 
 `prompt.ts` holds the system prompt, the first message of a session and the wrap-up message. The
@@ -313,6 +322,9 @@ reached; certification, accepted and rejected; and a run aborted between problem
 an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
 errors as the model reads them; the tool's description and the prompt's section; the run's
 refusals of tools it cannot give; and the pinning to the first implementation that answers.
+`lean-lsp.test.ts` gives them a simulated lean-lsp-mcp (the stand-in of `packages/lean-lsp`): the
+file each call reads, the sketch the model cannot set, the journal, no change of status, a search
+site down, the server dying, and the budget.
 `cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options too), and
 `harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
 ([lines.md](lines.md#tested-and-not-yet)); with no line enabled, the loop is the one the tests above

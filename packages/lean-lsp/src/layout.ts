@@ -1,0 +1,90 @@
+import { assemble, AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END, type Sketch, type Submission } from "@seshat/core";
+import type { Place, Region } from "./protocol.ts";
+
+/**
+ * The sketch file with the prover's regions in it, and where the regions are. Lines of the regions
+ * are counted from 1 as `lean_check` counts them ("PROOF line 3"); a line of the fixed part is
+ * named by its place in the file. Columns are the file's.
+ */
+export interface Layout {
+  /** The whole file, with the marker lines, as `lean_check` checks it. */
+  text: string;
+  lines: readonly string[];
+  /** The file's line (from 1) of each region's two marker lines. */
+  begin: Readonly<Record<Region, number>>;
+  end: Readonly<Record<Region, number>>;
+}
+
+export class LayoutError extends Error {}
+
+export function layoutOf(sketch: Sketch, regions: Submission): Layout {
+  const text = assemble(sketch, regions, true);
+  const lines = text.split("\n");
+  const find = (marker: string): number => {
+    const hits = lines.flatMap((line, k) => (line.trim() === marker.trim() ? [k + 1] : []));
+    if (hits.length !== 1) throw new LayoutError(`the sketch has ${hits.length} lines '${marker.trim()}', not one`);
+    return hits[0] as number;
+  };
+  const begin = { aux: find(AUX_BEGIN), proof: find(PROOF_BEGIN) };
+  const end = { aux: find(AUX_END), proof: find(PROOF_END) };
+  if (!(begin.aux < end.aux && end.aux < begin.proof && begin.proof < end.proof)) {
+    throw new LayoutError("the markers of the sketch are out of order");
+  }
+  return { text, lines, begin, end };
+}
+
+/** How many lines a region has in the file. */
+export function regionLines(layout: Layout, region: Region): number {
+  return layout.end[region] - layout.begin[region] - 1;
+}
+
+/** The file's line of a region's line, or why there is none. */
+export function fileLine(layout: Layout, region: Region, line: number): number {
+  const count = regionLines(layout, region);
+  const name = region.toUpperCase();
+  if (count === 0) throw new LayoutError(`${name} is empty, so it has no line ${line}`);
+  if (line < 1 || line > count) throw new LayoutError(`${name} has ${count} line${count === 1 ? "" : "s"}; there is no line ${line}`);
+  return layout.begin[region] + line;
+}
+
+/** Where a line of the file is, in the prover's terms. */
+export function placeOf(layout: Layout, line: number): Place {
+  for (const region of ["aux", "proof"] as const) {
+    if (line > layout.begin[region] && line < layout.end[region]) return { region, line: line - layout.begin[region] };
+  }
+  return { region: "fixed", line };
+}
+
+/** The file's line, as it stands there. */
+export function lineText(layout: Layout, line: number): string {
+  return layout.lines[line - 1] ?? "";
+}
+
+/** The column (from 1) of the first character of a line that is not a blank; 1 for a blank line. */
+export function firstColumn(text: string): number {
+  const index = [...text].findIndex((c) => !/\s/.test(c));
+  return index < 0 ? 1 : index + 1;
+}
+
+/** Length in characters, as the server counts columns. */
+export function characters(text: string): number {
+  return [...text].length;
+}
+
+/** Refuses a column past the end of its line (one past is the end itself). */
+export function checkColumn(text: string, column: number): void {
+  const length = characters(text);
+  if (column > length + 1) throw new LayoutError(`column ${column} is past the end of the line, which has ${length} characters`);
+}
+
+/** The place in words, as `lean_check` writes it: `PROOF line 3`, or `line 12 of the fixed part`. */
+export function describePlace(place: Place, column?: number): string {
+  const where = place.region === "fixed" ? `line ${place.line} of the fixed part` : `${place.region.toUpperCase()} line ${place.line}`;
+  return column === undefined ? where : `${where}, column ${column}`;
+}
+
+/** Whether a line is one of the four marker lines. */
+export function isMarker(line: string): boolean {
+  const trimmed = line.trim();
+  return [AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END].some((marker) => marker.trim() === trimmed);
+}

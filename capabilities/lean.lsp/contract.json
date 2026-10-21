@@ -1,0 +1,506 @@
+{
+  "capability": "lean.lsp",
+  "cases": [
+    {
+      "name": "the goals around a line",
+      "purpose": "goal without a column gives the goals before and after the line; line 1 of PROOF is the sketch's sorry, which closes the goal.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "line": 1,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "goalsBefore",
+          "equals": [
+            "n : Nat\n⊢ n + 0 = n"
+          ]
+        },
+        {
+          "path": "goalsAfter",
+          "length": 0
+        },
+        {
+          "path": "region",
+          "equals": "proof"
+        },
+        {
+          "path": "lineText",
+          "matches": "^ {2}sorry$"
+        }
+      ]
+    },
+    {
+      "name": "the goal at a position",
+      "purpose": "goal with a column reads the goal at that position of the file; column 3 is the start of the first tactic, after the 2-space indent.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "line": 1,
+        "column": 3,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "goals"
+        },
+        {
+          "path": "goals",
+          "equals": [
+            "n : Nat\n⊢ n + 0 = n"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the goal after the last tactic",
+      "purpose": "At the end of a tactic that closes the goal there is no goal left: complete.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "proof": "simp",
+        "line": 1,
+        "column": 7,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "complete"
+        },
+        {
+          "path": "goals",
+          "length": 0
+        }
+      ]
+    },
+    {
+      "name": "a goal in the AUX region",
+      "purpose": "Lines of AUX are counted from the AUX marker line, as lean_check counts them, and AUX has no indentation.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "aux": "theorem aux_zero (n : Nat) : n + 0 = n := by\n  simp",
+        "region": "aux",
+        "line": 2,
+        "column": 3,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "goals"
+        },
+        {
+          "path": "goals",
+          "equals": [
+            "n : Nat\n⊢ n + 0 = n"
+          ]
+        },
+        {
+          "path": "region",
+          "equals": "aux"
+        }
+      ]
+    },
+    {
+      "name": "the type expected of a term",
+      "purpose": "term_goal at the argument of exact gives the type the term must have.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "term_goal",
+        "proof": "exact Nat.add_zero n",
+        "line": 1,
+        "column": 9,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "expectedType",
+          "matches": "n \\+ 0 = n"
+        }
+      ]
+    },
+    {
+      "name": "the messages of a sketch with a hole",
+      "purpose": "diagnostics reports the sorry of the sketch as a warning, in the fixed part (the theorem's line), and no error.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "diagnostics",
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "errors",
+          "equals": 0
+        },
+        {
+          "path": "messages",
+          "some": [
+            {
+              "path": "severity",
+              "equals": "warning"
+            },
+            {
+              "path": "message",
+              "matches": "sorry"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the messages of a proof with an error",
+      "purpose": "An error is located in the prover's terms: the region and the line in it.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "diagnostics",
+        "proof": "exact notDefinedAnywhere",
+        "severity": "error",
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "errors",
+          "atLeast": 1
+        },
+        {
+          "path": "messages",
+          "every": [
+            {
+              "path": "severity",
+              "equals": "error"
+            }
+          ]
+        },
+        {
+          "path": "messages",
+          "some": [
+            {
+              "path": "region",
+              "equals": "proof"
+            },
+            {
+              "path": "line",
+              "equals": 1
+            },
+            {
+              "path": "message",
+              "matches": "notDefinedAnywhere"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tactics tried at a line",
+      "purpose": "multi_attempt puts each tactic in place of the line and reads the goals at its end: omega and simp close the goal, an unknown name is an error.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "multi_attempt",
+        "line": 1,
+        "tactics": [
+          "omega",
+          "simp",
+          "exact notDefinedAnywhere"
+        ],
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "attempts",
+          "length": 3
+        },
+        {
+          "path": "attempts.0.tactic",
+          "equals": "omega"
+        },
+        {
+          "path": "attempts.0.result",
+          "equals": "closed"
+        },
+        {
+          "path": "attempts.1.result",
+          "equals": "closed"
+        },
+        {
+          "path": "attempts.2.result",
+          "equals": "error"
+        }
+      ]
+    },
+    {
+      "name": "a tactic that lean_check would refuse",
+      "purpose": "The tactics are screened as a proof region is: a command that runs code is refused before Lean sees it.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "multi_attempt",
+        "line": 1,
+        "tactics": [
+          "#eval 1"
+        ],
+        "timeoutSec": 240
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "Refused before Lean ran"
+      }
+    },
+    {
+      "name": "a region that lean_check would refuse",
+      "purpose": "The regions of the file are screened as lean_check screens them.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "line": 1,
+        "proof": "native_decide",
+        "timeoutSec": 240
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "Refused before Lean ran"
+      }
+    },
+    {
+      "name": "a line outside the region",
+      "purpose": "A line is a line of the region; the answer says how many it has.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "goal",
+        "line": 9,
+        "timeoutSec": 240
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "PROOF has 1 line; there is no line 9"
+      }
+    },
+    {
+      "name": "Loogle by name",
+      "purpose": "loogle asks the public site; this case needs a host that reaches it.",
+      "input": {
+        "op": "loogle",
+        "query": "Nat.add_comm"
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "results",
+          "some": [
+            {
+              "path": "name",
+              "matches": "add_comm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LeanSearch by meaning",
+      "purpose": "leansearch asks the public site; this case needs a host that reaches it.",
+      "input": {
+        "op": "leansearch",
+        "query": "addition of natural numbers is commutative"
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "results",
+          "some": [
+            {
+              "path": "name",
+              "matches": "add_comm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lemmas for a goal",
+      "purpose": "state_search reads the goal with lean_goal and asks Lean Finder about it; this case needs a host that reaches the site.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "state_search",
+        "line": 1,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "goal",
+          "matches": "⊢ n \\+ 0 = n"
+        },
+        {
+          "path": "results",
+          "some": [
+            {
+              "path": "name",
+              "matches": "."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "premises for a goal",
+      "purpose": "hammer_premise reads the goal and asks the premise server; this case needs a host that reaches the site.",
+      "input": {
+        "sketch": {
+          "fullName": "seshat_contract",
+          "declaredName": "seshat_contract",
+          "statement": "(n : Nat) : n + 0 = n",
+          "prefix": "",
+          "header": "theorem seshat_contract (n : Nat) : n + 0 = n := by",
+          "originalProof": "sorry",
+          "suffix": "\n",
+          "indent": "  "
+        },
+        "op": "hammer_premise",
+        "line": 1,
+        "timeoutSec": 240
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "ok"
+        },
+        {
+          "path": "premises",
+          "some": [
+            {
+              "path": "",
+              "matches": "."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
