@@ -55,6 +55,21 @@ describe("the layout of the sketch file", () => {
     assert.throws(() => layoutOf({ ...SKETCH, prefix: `${PROOF_BEGIN}\n` }, { aux: "", proof: "sorry" }), /has 2 lines '-- HARNESS:PROOF:BEGIN', not one/);
   });
 
+  it("is the file as the language server counts its lines: a CRLF is a line feed, any other break is refused", () => {
+    const crlf = layoutOf({ ...SKETCH, prefix: "-- header\r\n" }, { aux: "", proof: "simp\r\nring" });
+    assert.ok(!crlf.text.includes("\r"), "the file the harness writes has line feeds only");
+    assert.equal(crlf.lines[0], "-- header");
+    assert.deepEqual([regionLines(crlf, "proof"), lineText(crlf, fileLine(crlf, "proof", 2))], [2, "  ring"]);
+    // The problem's own file is not screened like a prover's regions; it is refused whole.
+    for (const [name, ch] of [["U+2028", "\u2028"], ["U+0085", "\u0085"], ["a carriage return", "\r"]] as const) {
+      assert.throws(
+        () => layoutOf({ ...SKETCH, prefix: `-- head${ch}er\n` }, { aux: "", proof: "sorry" }),
+        (e: unknown) => e instanceof LayoutError && e.message.includes(name) && /line break/.test(e.message),
+        name,
+      );
+    }
+  });
+
   it("finds columns", () => {
     assert.equal(firstColumn("  simp"), 3);
     assert.equal(firstColumn("simp"), 1);

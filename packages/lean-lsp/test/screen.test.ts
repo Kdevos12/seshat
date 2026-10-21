@@ -34,6 +34,32 @@ describe("what lean.lsp refuses before anything is asked", () => {
     ]);
   });
 
+  it("refuses the line breaks that only the language server counts: they hide code from this screen and shift the lines", () => {
+    // Lean ends a line comment at a line feed; the server's splitlines also ends it at each of these, so the
+    // text after one is code to the server's trial documents and a comment to the screen.
+    const breaks: Array<[string, string]> = [
+      ["U+2028", "\u2028"],
+      ["U+2029", "\u2029"],
+      ["a carriage return", "\r"],
+      ["U+000B", "\u000b"],
+      ["U+000C", "\u000c"],
+      ["U+0085", "\u0085"],
+      ["U+001C", "\u001c"],
+      ["U+001D", "\u001d"],
+      ["U+001E", "\u001e"],
+    ];
+    for (const [name, ch] of breaks) {
+      const proof = screenRegions({ aux: "", proof: `simp -- note${ch}#eval 1` });
+      assert.ok(proof.some((r) => r.startsWith("proof: remove ") && r.includes(name) && r.includes("line break")), `${name} in the proof: ${proof.join(" | ")}`);
+      const aux = screenRegions({ aux: `-- note${ch}#eval 1\nlemma aux_a : True := trivial`, proof: "simp" });
+      assert.ok(aux.some((r) => r.startsWith("aux: remove ") && r.includes(name)), `${name} in aux: ${aux.join(" | ")}`);
+    }
+    assert.deepEqual(screenRegions({ aux: "", proof: "simp\r\nring" }), [], "a CRLF is one line break for the server and for Lean");
+    assert.deepEqual(screenRegions({ aux: "", proof: "simp\n\nring\t-- é ∀" }), [], "and other characters are not touched");
+    const tactics = screenTactics(["omega", "simp\u2028done"]);
+    assert.ok(tactics.length === 1 && tactics[0]?.startsWith("tactic 2: remove U+2028"), tactics.join(" | "));
+  });
+
   it("says that nothing was asked", () => {
     const error = new RefusedError(["proof: 'IO' is not allowed", "aux: 'import' is not allowed"]);
     assert.equal(error.message, "Refused before Lean ran; nothing was asked:\n- proof: 'IO' is not allowed\n- aux: 'import' is not allowed");

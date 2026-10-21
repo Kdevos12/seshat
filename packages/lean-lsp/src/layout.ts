@@ -17,8 +17,43 @@ export interface Layout {
 
 export class LayoutError extends Error {}
 
+/**
+ * The characters that the language server's `splitlines()` counts as a line break and Lean does not:
+ * a carriage return that no line feed follows, vertical tab, form feed, the file, group and record
+ * separators, NEL, and the Unicode line and paragraph separators. A CRLF is one line break for both.
+ */
+const FOREIGN_BREAK = /\r(?!\n)|[\u000b\u000c\u001c-\u001e\u0085\u2028\u2029]/;
+
+const BREAK_NAMES: Record<string, string> = {
+  "\u000b": "vertical tab",
+  "\u000c": "form feed",
+  "\u001c": "file separator",
+  "\u001d": "group separator",
+  "\u001e": "record separator",
+  "\u0085": "next line",
+  "\u2028": "line separator",
+  "\u2029": "paragraph separator",
+};
+
+/** The first such character in `text`, in words, or undefined. */
+export function foreignBreak(text: string): string | undefined {
+  const found = FOREIGN_BREAK.exec(text)?.[0];
+  if (found === undefined) return undefined;
+  if (found === "\r") return "a carriage return that no line feed follows";
+  return `U+${(found.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, "0")} (${BREAK_NAMES[found] ?? "line break"})`;
+}
+
+/**
+ * The file as the language server reads it. A CRLF is written as a line feed, so that the lines of
+ * the harness are the server's; any other line break of the server's is refused (a prover's regions
+ * are refused with it, in `screenRegions`; this is the problem's own text).
+ */
 export function layoutOf(sketch: Sketch, regions: Submission): Layout {
-  const text = assemble(sketch, regions, true);
+  const text = assemble(sketch, regions, true).replace(/\r\n/g, "\n");
+  const stray = foreignBreak(text);
+  if (stray !== undefined) {
+    throw new LayoutError(`the problem's file holds ${stray}, which the language server counts as a line break and Lean does not, so its lines cannot be told apart`);
+  }
   const lines = text.split("\n");
   const find = (marker: string): number => {
     const hits = lines.flatMap((line, k) => (line.trim() === marker.trim() ? [k + 1] : []));

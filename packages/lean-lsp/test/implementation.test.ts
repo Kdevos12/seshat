@@ -220,6 +220,22 @@ describe("lean.lsp: what it refuses", () => {
     await impl.close();
   });
 
+  it("refuses a line break that only the language server counts, and writes a CRLF as a line feed", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl, project } = build(fake);
+    await assert.rejects(
+      invoke(impl, onSketch({ op: "goal", line: 1, proof: "simp -- note\u2028#eval 1" })),
+      (e: unknown) => e instanceof RefusedError && /- proof: remove U\+2028 .*line break/.test(e.message),
+    );
+    await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, tactics: ["omega\u0085"] })), (e: unknown) => e instanceof RefusedError && /tactic 1: remove U\+0085/.test(e.message));
+    assert.deepEqual([fake.connections, fake.calls.length], [0, 0]);
+    const answer = out(await invoke(impl, onSketch({ op: "goal", line: 2, proof: "simp\r\nring" })));
+    assert.equal(answer.lineText, "  ring");
+    const file = readFileSync(join(project, String(fake.of("lean_goal")[0]?.file_path)), "utf8");
+    assert.ok(!file.includes("\r"), "the file has line feeds only, so that its lines are the server's");
+    await impl.close();
+  });
+
   it("says what is wrong with a position", async () => {
     const fake = new FakeLeanLspMcp();
     const { impl } = build(fake);

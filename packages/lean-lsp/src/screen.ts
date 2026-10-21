@@ -1,5 +1,5 @@
 import { SKETCH_POLICY, structuralCheck, type Submission } from "@seshat/core";
-import { isMarker } from "./layout.ts";
+import { foreignBreak, isMarker } from "./layout.ts";
 
 /** A refusal before anything is sent to the server: the reasons, one per line. */
 export class RefusedError extends Error {
@@ -16,12 +16,18 @@ export class RefusedError extends Error {
  * from: no marker line inside a region, and the structural check of the sketch policy (no shortcut
  * to a proof, no code that runs while Lean elaborates, only `aux_` declarations in AUX). The
  * language server elaborates what it is given, so what `lean_check` refuses is refused here too.
+ * One more check is the server's own: it splits lines at characters that Lean does not, so that
+ * text which this screen reads as a comment is code in the documents the server builds.
  */
 export function screenRegions(regions: Submission): string[] {
   const reasons: string[] = [];
   for (const [region, text] of Object.entries(regions)) {
     for (const line of text.split("\n")) {
       if (isMarker(line)) reasons.push(`${region}: remove the line '${line.trim()}': pass the regions without their marker lines`);
+    }
+    const stray = foreignBreak(text);
+    if (stray !== undefined) {
+      reasons.push(`${region}: remove ${stray}: the language server counts it as a line break and Lean does not, so lines and positions would no longer agree`);
     }
   }
   return [...reasons, ...structuralCheck(regions, SKETCH_POLICY)];
