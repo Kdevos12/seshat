@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 06:21 UTC. `main` at 74d3ab4, 623 tests.
+Updated 2026-10-21 06:22 UTC. `main` at 6041952, 623 tests.
 
 ## Tasks
 
@@ -25,7 +25,7 @@ Updated 2026-10-21 06:21 UTC. `main` at 74d3ab4, 623 tests.
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate` | main | not started (last) | |
-| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | next | |
+| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | implementing | `task/t15` |
 | 16 | `lean.lsp` | main | fix round 1 after review | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
@@ -43,9 +43,9 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 24): T7 and T16, in flight (T4 merged); then T15, T17, T21, T19, T20, T10, T13, T18,
-  T22, T14 and the final review. At most three agents at once, because the account's usage limits
-  bind.
+- Main team (Ruling 24): T7, T16 and T15 in flight (T4 merged); then T17, T21, T19, T20, T10,
+  T13, T18, T22, T14 and the final review. At most three agents at once, because the account's
+  usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
   the main team needs from them: [collaborator-tasks.md](collaborator-tasks.md), "Between the
   teams".
@@ -293,3 +293,5 @@ Task 4: scoped re-review of fix round 1: I1 I2 M1-M12 all addressed, choices acc
 Task 4: deferred to the final review (re-review r1): N1 replay() copies the object files with no deadline after an lstat made before the reference's compile, so a process outliving the candidate's compile (unsandboxed, or a sandbox without PID isolation) could swap in a FIFO and hang the run (fix: open with O_NOFOLLOW|O_NONBLOCK and fstat, or copy right after each compile, or kill a grouped call's process group once it exits); N2 a refutation of a shared claim goes to the claim's one negation workbench, so only the first submitter's problem can end refuted (fix: a negation workbench per problem, or document next to lines.md:190-193 and graph.md:365-367); N3 events.ts and projection.ts omit "no certifier" from why a candidate is uncertified; out of scope: a beforeProvers line failure after a submission is not named in the reason, and a refutation certified after a beforeProvers failure leaves the problem error (lines.md promises the exception for afterProblem only)
 Task 4: merged: main a9dfa04 brought into task/t4 (db856be, no conflict), pnpm check 623/623, links ok, task/t4 pushed; merged into main 74d3ab4 (--no-ff; its tree equals task/t4's checked tree); pushed a9dfa04..74d3ab4
 Task 4: complete; not run against a real Lean, lake or sandbox: lean/SeshatCertify/Main.lean has never been compiled; the shipped profiles leave lean.certify unavailable until a sandbox is set (Ruling 22)
+Merged branches stay on origin: deleting task/t4 on the remote was refused by this environment's git proxy (HTTP 403, a policy denial; not retried); its worktree and local branch are removed
+Task 15: implementer dispatched (worktree wt/t15, branch task/t15 from main 6041952 with T4 merged; named risks: only the orchestrator appends task events, done only when the criterion holds, torn last line on resume, budgets rebuilt from the journal, lines with state rebuild or are refused on resume, routing table from real failure classes and drift kinds, completeJson one retry charged, J1 site tags; resume must not certify twice and must certify what the killed run had not)
