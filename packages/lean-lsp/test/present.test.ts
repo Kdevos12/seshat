@@ -23,7 +23,7 @@ describe("what a prover reads of an answer of lean.lsp", () => {
     const at = { op: "goal", region: "aux", line: 2, column: 3, lineText: "  simp" };
     assert.equal(present({ ...at, status: "goals", goals: ["⊢ True"] }), "Goal at AUX line 2, column 3, `simp`:\n⊢ True");
     assert.equal(present({ ...at, status: "goals", goals: ["⊢ A", "⊢ B"] }), "Goal at AUX line 2, column 3, `simp` (2):\nGoal 1 of 2:\n⊢ A\nGoal 2 of 2:\n⊢ B");
-    assert.equal(present({ ...at, status: "complete", goals: [] }), "AUX line 2, column 3, `simp`: no goals left. The proof is complete at this point.");
+    assert.equal(present({ ...at, status: "complete", goals: [] }), "AUX line 2, column 3, `simp`: Lean's language server reports no goal left here. That is not a verdict: only lean_check judges a proof.");
     assert.equal(present({ ...at, status: "no_goal_here" }), "AUX line 2, column 3, `simp`: no proof state here. The position is outside a tactic block, or on a line without a tactic.");
     assert.equal(present({ ...at, status: "still_elaborating" }), "AUX line 2, column 3, `simp`: Lean was still elaborating when the time limit came. Ask again, or give a larger timeoutSec.");
   });

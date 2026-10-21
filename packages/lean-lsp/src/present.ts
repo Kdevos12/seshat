@@ -62,7 +62,7 @@ function goal(o: LeanLspOutput): string[] {
     case "goals":
       return [`Goal at ${at}${(o.goals ?? []).length === 1 ? ":" : ` (${(o.goals ?? []).length}):`}`, ...goalBlock(o.goals ?? [])];
     case "complete":
-      return [`${at}: no goals left. The proof is complete at this point.`];
+      return [`${at}: Lean's language server reports no goal left here. That is not a verdict: only lean_check judges a proof.`];
     case "no_goal_here":
       return [`${at}: no proof state here. The position is outside a tactic block, or on a line without a tactic.`];
     case "still_elaborating":
