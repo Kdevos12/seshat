@@ -29,7 +29,7 @@ import {
   type Site,
 } from "./protocol.ts";
 import { asRecord, attemptsOf, classify, clip, goalList, hitsOf, messagesOf, stripToolPrefix, unwrapDiagnostics } from "./results.ts";
-import { RefusedError, screenQuery, screenRegions, screenTactics } from "./screen.ts";
+import { RefusedError, screenAttempts, screenQuery, screenRegions, screenTactics } from "./screen.ts";
 import { Scratch } from "./scratch.ts";
 import { LeanLspServer, ServerFailure } from "./server.ts";
 
@@ -76,15 +76,19 @@ interface Down {
   reason: string;
 }
 
-/** What a call that reads the sketch file works on. */
-interface Spot {
+/** Where in the sketch file a call works, before the file is written. */
+interface Located {
   layout: Layout;
-  file: string;
   region: Region;
   /** The line asked, in the region; and in the file. */
   line: number;
   fileLine: number;
   text: string;
+}
+
+/** What a call that reads the sketch file works on: the place, and the file the server reads. */
+interface Spot extends Located {
+  file: string;
 }
 
 type Asked = { value: Json } | { unavailable: string } | { noGoal: string };
@@ -231,17 +235,22 @@ export class LeanLspImplementation implements ImplementationInstance {
   }
 
   private async multiAttempt(call: LeanLspInput, scope: string, context: InvokeContext): Promise<LeanLspOutput> {
-    const tactics = call.tactics;
-    if (tactics === undefined || tactics.length === 0) throw new Error("multi_attempt needs tactics, the list of tactics to try");
+    const given = call.tactics;
+    if (given === undefined || given.length === 0) throw new Error("multi_attempt needs tactics, the list of tactics to try");
+    // The file has line feeds only, and so do the tactics that the server joins to it.
+    const tactics = given.map((tactic) => tactic.replace(/\r\n/g, "\n"));
     const reasons = screenTactics(tactics);
     if (reasons.length > 0) throw new RefusedError(reasons);
-    const at = this.place(call, scope, { needsLine: true });
+    // The server joins a tactic to the start of the line, up to a column (by default the first
+    // non-blank character). The harness names the column, so that the text it screens is the text
+    // the server joins, whatever the server counts as blank.
+    const column = (found: Located) => call.column ?? firstColumn(found.text);
+    const at = this.place(call, scope, {
+      needsLine: true,
+      screen: (found) => screenAttempts(found.layout, found, column(found), tactics),
+    });
     const raw = asRecord(
-      await this.tool(
-        "lean_multi_attempt",
-        { file_path: at.file, line: at.fileLine, snippets: tactics, ...(call.column !== undefined ? { column: call.column } : {}) },
-        context,
-      ),
+      await this.tool("lean_multi_attempt", { file_path: at.file, line: at.fileLine, snippets: tactics, column: column(at) }, context),
     );
     return compact({ op: "multi_attempt", status: "ok", ...this.where(call, at), attempts: attemptsOf(raw?.items, at.layout) });
   }
@@ -345,8 +354,11 @@ export class LeanLspImplementation implements ImplementationInstance {
 
   // --- the sketch file ---
 
-  /** Builds the file from the sketch and the regions, writes it, and finds the line asked about. */
-  private place(call: LeanLspInput, scope: string, o: { needsLine: boolean }): Spot {
+  /**
+   * Builds the file from the sketch and the regions, finds the line asked about, lets `screen` refuse
+   * the call, and then writes the file: a refused call writes nothing.
+   */
+  private place(call: LeanLspInput, scope: string, o: { needsLine: boolean; screen?: (found: Located) => string[] }): Spot {
     const sketch = call.sketch;
     if (sketch === undefined) throw new Error(`${call.op} works on the problem's sketch, which the harness gives to the tool of a run; a direct call passes it as sketch`);
     const regions = { aux: call.aux ?? "", proof: call.proof ?? sketch.originalProof };
@@ -364,8 +376,10 @@ export class LeanLspImplementation implements ImplementationInstance {
       text = lineText(layout, line0);
       if (call.column !== undefined) checkColumn(text, call.column);
     }
-    const file = this.o.scratch.write(scope, layout.text);
-    return { layout, file, region, line, fileLine: line0, text };
+    const found: Located = { layout, region, line, fileLine: line0, text };
+    const more = o.screen?.(found) ?? [];
+    if (more.length > 0) throw new RefusedError(more);
+    return { ...found, file: this.o.scratch.write(scope, layout.text) };
   }
 
   /** The position asked, for the answer. */

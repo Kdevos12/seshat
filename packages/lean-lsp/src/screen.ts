@@ -1,5 +1,6 @@
 import { SKETCH_POLICY, structuralCheck, type Submission } from "@seshat/core";
-import { foreignBreak, isMarker } from "./layout.ts";
+import { attemptLines, foreignBreak, isMarker, type Layout, tacticLines } from "./layout.ts";
+import type { Region } from "./protocol.ts";
 
 /** A refusal before anything is sent to the server: the reasons, one per line. */
 export class RefusedError extends Error {
@@ -41,6 +42,57 @@ export function screenTactics(tactics: readonly string[]): string[] {
   return tactics.flatMap((tactic, k) =>
     screenRegions({ aux: "", proof: tactic }).map((reason) => `tactic ${k + 1}: ${reason.replace(/^proof: /, "")}`),
   );
+}
+
+/** Where a `multi_attempt` is made: the region and its line, and the line's place in the file. */
+export interface AttemptSite {
+  region: Region;
+  /** The line in the region, from 1. */
+  line: number;
+  /** The line in the file, from 1. */
+  fileLine: number;
+}
+
+/**
+ * The screen of what `multi_attempt` has the server elaborate, which is not the tactic alone. The
+ * server replaces, from the line asked, as many lines of the file as the tactic has with the first
+ * `column - 1` characters of the line and the tactic (see `attemptLines`). So a name cut in two by the
+ * column is whole in the document, and the text a comment hid may not be hidden any more. Each
+ * tactic is put into the document, the document's regions are read back, and they go through the
+ * screen of regions. A tactic that has more lines than the region has from the line asked would
+ * replace the marker that ends the region and the lines after it, which are not the prover's: refused.
+ */
+export function screenAttempts(layout: Layout, site: AttemptSite, column: number, tactics: readonly string[]): string[] {
+  const reasons: string[] = [];
+  const name = site.region.toUpperCase();
+  // The region's lines from the line asked to its last one.
+  const room = layout.end[site.region] - site.fileLine;
+  tactics.forEach((tactic, k) => {
+    const label = `tactic ${k + 1}`;
+    const count = tacticLines(tactic).length;
+    if (count > room) {
+      reasons.push(
+        `${label} has ${count} lines, and the server replaces as many lines of the file as a tactic has, from the line asked; ${name} has ${room} from there, so it would replace the end of the region and what follows it`,
+      );
+      return;
+    }
+    const document = attemptLines(layout, site.fileLine, column, tactic);
+    const regions = {
+      aux: document.slice(layout.begin.aux, layout.end.aux - 1).join("\n"),
+      proof: document.slice(layout.begin.proof, layout.end.proof - 1).join("\n"),
+    };
+    const joined = document
+      .slice(site.fileLine - 1, site.fileLine - 1 + count)
+      .map((line) => line.trim())
+      .join(" ⏎ ");
+    const shown = joined.length > 120 ? `${joined.slice(0, 117)}...` : joined;
+    const how =
+      column > 1
+        ? `is joined to the first ${column - 1} character${column === 2 ? "" : "s"} of ${name} line ${site.line}, so that the server elaborates \`${shown}\``
+        : `takes the place of ${name} line ${site.line}, so that the server elaborates the lines around it with \`${shown}\``;
+    for (const reason of screenRegions(regions)) reasons.push(`${label} ${how}: ${reason}`);
+  });
+  return reasons;
 }
 
 const MAX_QUERY = 500;

@@ -121,7 +121,7 @@
           "minLength": 1,
           "maxLength": 1000
         },
-        "description": "multi_attempt: tactics to try in place of the line, each one or several lines"
+        "description": "multi_attempt: tactics to try in place of the line, each one or several lines. A tactic replaces as many lines as it has, from `line`, and must end inside the region"
       },
       "query": {
         "type": "string",

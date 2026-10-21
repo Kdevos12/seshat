@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { PROOF_END } from "@seshat/core";
-import { RefusedError, screenQuery, screenRegions, screenTactics } from "../src/index.ts";
+import { fileLine, layoutOf, RefusedError, screenAttempts, screenQuery, screenRegions, screenTactics } from "../src/index.ts";
+import { SKETCH } from "./helpers.ts";
 
 describe("what lean.lsp refuses before anything is asked", () => {
   it("lets through what lean_check lets through, holes included", () => {
@@ -58,6 +59,39 @@ describe("what lean.lsp refuses before anything is asked", () => {
     assert.deepEqual(screenRegions({ aux: "", proof: "simp\n\nring\t-- é ∀" }), [], "and other characters are not touched");
     const tactics = screenTactics(["omega", "simp\u2028done"]);
     assert.ok(tactics.length === 1 && tactics[0]?.startsWith("tactic 2: remove U+2028"), tactics.join(" | "));
+  });
+
+  it("screens what multi_attempt has the server elaborate: the tactic joined to the start of its line", () => {
+    const attempt = (proof: string, line: number, column: number, tactics: string[]) => {
+      const layout = layoutOf(SKETCH, { aux: "", proof });
+      return screenAttempts(layout, { region: "proof", line, fileLine: fileLine(layout, "proof", line) }, column, tactics);
+    };
+    // Each half is clean alone (screenRegions and screenTactics), and the join is not.
+    assert.deepEqual([screenRegions({ aux: "", proof: "Le" }), screenTactics(["an.Elab.Command.x"])], [[], []]);
+    assert.deepEqual(attempt("Le", 1, 5, ["an.Elab.Command.x"]), [
+      "tactic 1 is joined to the first 4 characters of PROOF line 1, so that the server elaborates `Lean.Elab.Command.x`: proof: 'Lean' is not allowed",
+    ]);
+    assert.deepEqual(attempt("run_", 1, 7, ["cmd 1"]).map((r) => r.replace(/^.*: proof/, "proof")), ["proof: 'run_cmd' is not allowed"]);
+    assert.deepEqual(attempt("#ev", 1, 6, ["al 1"]).map((r) => r.replace(/^.*: proof/, "proof")), ["proof: '#eval' is not allowed"]);
+    // The continuation lines of a tactic come after the same characters again.
+    assert.match(attempt("#ev\nsimp", 1, 6, ["skip\nal 1"]).join("\n"), /elaborates `#evskip ⏎ #eval 1`: proof: '#eval' is not allowed/);
+    // What a comment hid may not be hidden once the tactic closes it.
+    assert.match(attempt("/- note\n#eval 1\n-/\nsimp", 1, 1, ["-/"]).join("\n"), /takes the place of PROOF line 1, so that the server elaborates the lines around it with `-\/`: proof: '#eval' is not allowed/);
+    // A clean splice is accepted, at any column and with several lines.
+    assert.deepEqual(attempt("intro n\nsimp\nring", 2, 3, ["omega", "simp\nring", "exact (by simp)"]), []);
+    assert.deepEqual(attempt("simp", 1, 1, ["omega"]), []);
+    // A column inside the line keeps the characters before it, and nothing else changes.
+    assert.deepEqual(attempt("exact foo", 1, 9, ["bar"]), []);
+  });
+
+  it("refuses a tactic that has more lines than the region has from the line asked", () => {
+    const layout = layoutOf(SKETCH, { aux: "", proof: "intro n\nsimp" });
+    const site = (line: number) => ({ region: "proof" as const, line, fileLine: fileLine(layout, "proof", line) });
+    assert.deepEqual(screenAttempts(layout, site(2), 3, ["a\nb"]), [
+      "tactic 1 has 2 lines, and the server replaces as many lines of the file as a tactic has, from the line asked; PROOF has 1 from there, so it would replace the end of the region and what follows it",
+    ]);
+    assert.deepEqual(screenAttempts(layout, site(1), 3, ["a\nb"]), []);
+    assert.deepEqual(screenAttempts(layout, site(1), 3, ["a\nb\nc"]).length, 1);
   });
 
   it("says that nothing was asked", () => {

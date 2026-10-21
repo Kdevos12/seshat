@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END, renderSketch } from "@seshat/core";
-import { characters, checkColumn, describePlace, fileLine, firstColumn, isMarker, LayoutError, layoutOf, lineText, placeOf, regionLines } from "../src/index.ts";
+import {
+  attemptLines,
+  characters,
+  checkColumn,
+  describePlace,
+  fileLine,
+  firstColumn,
+  isMarker,
+  LayoutError,
+  layoutOf,
+  lineText,
+  placeOf,
+  regionLines,
+  serverLines,
+  tacticLines,
+} from "../src/index.ts";
 import { RICH, SKETCH } from "./helpers.ts";
 
 describe("the layout of the sketch file", () => {
@@ -68,6 +83,35 @@ describe("the layout of the sketch file", () => {
         name,
       );
     }
+  });
+
+  it("counts lines as the server does: a final line feed ends a line and starts none", () => {
+    assert.deepEqual(serverLines("a\nb\n"), ["a", "b"]);
+    assert.deepEqual(serverLines("a\n\n"), ["a", ""]);
+    assert.deepEqual(serverLines("a\nb"), ["a", "b"]);
+    assert.deepEqual(serverLines(""), []);
+    assert.deepEqual(tacticLines("simp\nring\n\n"), ["simp", "ring"], "trailing line feeds go");
+    assert.deepEqual(tacticLines(""), [""], "an empty tactic is one empty line");
+    assert.deepEqual(tacticLines("\nsimp"), ["", "simp"]);
+  });
+
+  it("builds the document that multi_attempt has the server elaborate, as build_attempt_text does", () => {
+    const layout = layoutOf(SKETCH, { aux: "", proof: "intro n\nsimp\nring" });
+    const proof = (lines: string[]) => lines.slice(layout.begin.proof, layout.end.proof - 1);
+    const at = fileLine(layout, "proof", 2);
+    // The characters before the column stay, and the tactic follows them.
+    assert.deepEqual(proof(attemptLines(layout, at, 3, "omega")), ["  intro n", "  omega", "  ring"]);
+    assert.deepEqual(proof(attemptLines(layout, at, 5, "omega")), ["  intro n", "  siomega", "  ring"]);
+    assert.deepEqual(proof(attemptLines(layout, at, 1, "omega")), ["  intro n", "omega", "  ring"]);
+    // A tactic of two lines replaces two lines, each after the same characters.
+    assert.deepEqual(proof(attemptLines(layout, at, 3, "simp\nomega")), ["  intro n", "  simp", "  omega"]);
+    assert.deepEqual(proof(attemptLines(layout, at, 5, "p\nq")), ["  intro n", "  sip", "  siq"]);
+    // Trailing line feeds are not lines; the document has the lines of the file otherwise.
+    assert.deepEqual(attemptLines(layout, at, 3, "omega\n\n"), attemptLines(layout, at, 3, "omega"));
+    assert.equal(attemptLines(layout, at, 3, "omega").length, serverLines(layout.text).length);
+    // Columns count characters, as Python does: a pair of UTF-16 units is one.
+    const wide = layoutOf(SKETCH, { aux: "", proof: "𝕜 x" });
+    assert.equal(lineText({ ...wide, lines: attemptLines(wide, fileLine(wide, "proof", 1), 4, "y") }, fileLine(wide, "proof", 1)), "  𝕜y");
   });
 
   it("finds columns", () => {
