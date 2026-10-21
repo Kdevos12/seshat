@@ -3,8 +3,14 @@ import type {
   ClaimStatus,
   Json,
   ProblemOutcome,
+  RouteAction,
+  RouteSignalType,
   Sketch,
   Submission,
+  TaskAcceptance,
+  TaskBudget,
+  TaskKind,
+  TaskStatus,
   TokenCost,
   ValidationReport,
 } from "@seshat/core";
@@ -386,4 +392,82 @@ export interface Budget {
   /** Spent so far, by the sessions and the lines' model calls. */
   readonly usd: number;
   readonly exhausted: boolean;
+}
+
+/** A task of the ledger as a line sees it (documentation/ledger.md). */
+export interface TaskInfo {
+  taskId: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  /** Why it has its status: the reason of its last move. */
+  reason?: string;
+  /** Who works on it, once someone does. */
+  owner?: string;
+  claimId?: string;
+  edgeId?: string;
+  dependsOn: readonly string[];
+  /** What must hold for the task to be `done`, in terms of claim and edge statuses. */
+  acceptance: TaskAcceptance;
+  budget: TaskBudget;
+  parentTaskId?: string;
+  /** The line that proposed it; absent for a task the orchestrator made. */
+  proposedBy?: string;
+  title?: string;
+  /** While `blocked`: what it waits for. */
+  blockedBy?: readonly string[];
+}
+
+/** A routing decision about a task (documentation/ledger.md, "Routing"). */
+export interface RoutingInfo {
+  taskId: string;
+  action: RouteAction;
+  signal: { type: RouteSignalType; value: string };
+  reason: string;
+  attemptId?: string;
+  nodeId?: string;
+}
+
+/**
+ * A task a line asks for. The orchestrator commits it, or refuses it with a reason: it makes the
+ * task for the problem the line is working on, with the line as its proposer and, unless the
+ * ledger says otherwise, its owner. A line does not choose a task's status or its owner.
+ */
+export interface TaskProposal {
+  kind: TaskKind;
+  /** Default: the problem's claim, for the kinds that are about a claim. */
+  claimId?: string;
+  edgeId?: string;
+  /** Tasks of the problem that must be done first. */
+  dependsOn?: readonly string[];
+  acceptance: TaskAcceptance;
+  budget?: TaskBudget;
+  /** The task this one continues or replaces, for example the one a routing decision was about. */
+  parentTaskId?: string;
+  title?: string;
+}
+
+export type TaskProposalResult = { accepted: true; taskId: string } | { accepted: false; reason: string };
+
+/** Which tasks `TaskApi.list` returns; every given criterion must hold. */
+export interface TaskQuery {
+  statuses?: readonly TaskStatus[];
+  kinds?: readonly TaskKind[];
+  claimId?: string;
+  owner?: string;
+}
+
+/**
+ * The ledger as a line sees it: the problem's tasks, read-only, and a way to propose more. The
+ * orchestrator alone writes the ledger; a line that wants work done asks, and reads the answer.
+ */
+export interface TaskApi {
+  /** The problem's tasks, in the order they were made. */
+  list: (query?: TaskQuery) => TaskInfo[];
+  get: (taskId: string) => TaskInfo | undefined;
+  /** The problem's tasks that may start now: `ready`, owned or not. */
+  ready: () => TaskInfo[];
+  /** The routing decisions about one task, or about every task of the problem. */
+  routings: (taskId?: string) => RoutingInfo[];
+  /** Proposes a task. Nothing is written when the orchestrator refuses it. */
+  propose: (proposal: TaskProposal) => TaskProposalResult;
 }

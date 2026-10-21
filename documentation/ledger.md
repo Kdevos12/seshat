@@ -9,8 +9,8 @@ status, in the journal, and a task never holds one for it.
 The ledger is infrastructure, not an ablation line: with no line enabled, a run of M0 records one
 `prove` task per prover and behaves as it did before.
 
-This page describes the part in `@seshat/core`: the events, the transitions and the rules the
-journal enforces.
+This page describes the events, the transitions and the rules the journal enforces
+(`@seshat/core`), and `TaskLedger`, the orchestrator's handle on them (`@seshat/scheduler`).
 
 ## Tasks
 
@@ -101,6 +101,32 @@ A task event never carries a claim status and never changes one. A claim becomes
 `proved` or `refuted` only through the validations that [trust.md](trust.md) describes; the
 ledger can only notice it, and a task whose criterion asks for more than the claim has is refused
 its `done`.
+
+## TaskLedger
+
+`TaskLedger` (`packages/scheduler/src/ledger.ts`) is what the orchestrator writes the ledger with.
+It wraps the events above as moves, and the journal's rules still decide: a move that is not
+allowed throws, and nothing is written.
+
+| Method | What it does |
+|---|---|
+| `create(task)` | Makes a `pending` task and returns its id. |
+| `assign(taskId, owner, reason)` | Gives a task that has not started an owner. |
+| `markReady`, `start`, `complete`, `fail`, `cancel`, `block` | The moves of the table above. `complete` is refused while the criterion does not hold. |
+| `holds(taskId)`, `completeIfHolds(taskId, reason)` | Reads the criterion; completes a running task whose criterion holds. |
+| `promote(problemId?)` | Moves to `ready` the `pending` tasks whose dependencies are done, and the `blocked` ones whose blockers are tasks that are done. A task that waits for an `ext:` key is released by `markReady`. |
+| `interrupt(reason, problemId?)` | After `run.resumed`: `running` tasks back to `ready`. |
+| `closeProblem(problemId, reason)` | Cancels every task of the problem that has not ended. |
+| `route(decision)` | Writes a `task.routed`. |
+| `propose(context, proposal)` | Commits what a line proposed, or refuses it with a reason. |
+
+A line never gets a `TaskLedger`. It proposes through its context (`TaskApi` in
+[lines.md](lines.md)), and `propose` makes the task the problem's, `pending`, proposed by the line and
+owned by it, unless the orchestrator assigns it to someone else. A proposal names no status and no
+owner. Its dependencies and parent must be tasks of the same problem, and a problem takes at most
+200 proposed tasks (the option `maxProposed`), so that a line that proposes without end is stopped
+with a reason it can read. What the journal refuses (a claim that does not exist, a criterion of the
+wrong shape) comes back as the reason, and nothing is written.
 
 ## Routing decisions
 
