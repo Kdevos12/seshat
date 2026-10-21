@@ -1,8 +1,5 @@
 import type { Sketch } from "@seshat/core";
 
-/** The capability this package serves. */
-export const LEAN_LSP = "lean.lsp";
-
 /** The lean-lsp-mcp release that the manifest pins and this package is written against. */
 export const LEAN_LSP_MCP_VERSION = "0.31.0";
 

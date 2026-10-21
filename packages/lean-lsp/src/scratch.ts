@@ -63,11 +63,6 @@ export class Scratch {
     for (const scope of [...this.files.keys()]) this.remove(scope);
   }
 
-  /** The text last written for a scope. */
-  textOf(scope: string): string | undefined {
-    return this.files.get(scope)?.text;
-  }
-
   private prepare(): void {
     if (this.ready && existsSync(this.dir)) return;
     mkdirSync(this.dir, { recursive: true });
