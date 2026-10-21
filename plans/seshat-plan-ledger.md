@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 06:22 UTC. `main` at 6041952, 623 tests.
+Updated 2026-10-21 11:04 UTC. `main` at 44f4259, 623 tests.
 
 ## Tasks
 
@@ -295,3 +295,4 @@ Task 4: merged: main a9dfa04 brought into task/t4 (db856be, no conflict), pnpm c
 Task 4: complete; not run against a real Lean, lake or sandbox: lean/SeshatCertify/Main.lean has never been compiled; the shipped profiles leave lean.certify unavailable until a sandbox is set (Ruling 22)
 Merged branches stay on origin: deleting task/t4 on the remote was refused by this environment's git proxy (HTTP 403, a policy denial; not retried); its worktree and local branch are removed
 Task 15: implementer dispatched (worktree wt/t15, branch task/t15 from main 6041952 with T4 merged; named risks: only the orchestrator appends task events, done only when the criterion holds, torn last line on resume, budgets rebuilt from the journal, lines with state rebuild or are refused on resume, routing table from real failure classes and drift kinds, completeJson one retry charged, J1 site tags; resume must not certify twice and must certify what the killed run had not)
+Usage-limit stop 14: the session limit cut the T7 re-reviewer, the T16 fixer (after 474e1cc f377de4 1a8ff19 9a60f6a 0ad75eb) and the T15 implementer (no commit yet) about 06:42 UTC (reset 11:00); all three resumed 11:04 UTC; task/t16 pushed
