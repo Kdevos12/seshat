@@ -195,7 +195,7 @@ describe("tools besides lean_check: lean.lsp", () => {
     });
     const [attemptId] = ofType(events, "attempt.started").map((e) => e.data.attemptId as string);
     const [goal, diagnostics] = seen(dir, attemptId as string, "lean_lsp");
-    assert.match(goal?.[0] ?? "", /no goals left\. The proof is complete at this point\./);
+    assert.match(goal?.[0] ?? "", /Lean's language server reports no goal left here\. That is not a verdict: only lean_check judges a proof\./);
     assert.match(diagnostics?.[0] ?? "", /^Lean's messages on the file: 0 error\(s\), 0 warning\(s\)\.$/);
     assert.equal(ofType(events, "validation.finished").length, 0);
     assert.equal(ofType(events, "claim.status_changed").length, 0);

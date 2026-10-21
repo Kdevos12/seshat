@@ -25,7 +25,7 @@ the line as it stands in the file, where the proof's lines carry the indentation
 
 | `op` | Input | Answer |
 |---|---|---|
-| `goal` | `line`; `column` optional | Without a column, the goals before and after the line. With one, the goals at that position, and `status`: `goals`, `complete` (no goal left), `no_goal_here`. Either way, `still_elaborating` and no goals when Lean did not finish within `timeoutSec`. |
+| `goal` | `line`; `column` optional | Without a column, the goals before and after the line. With one, the goals at that position, and `status`: `goals`, `complete` (the language server reports no goal left; the prover reads "Lean's language server reports no goal left here. That is not a verdict: only lean_check judges a proof."), `no_goal_here`. Either way, `still_elaborating` and no goals when Lean did not finish within `timeoutSec`. |
 | `term_goal` | `line`, `column` optional | The type expected of the term at the position (the line's end without a column), or `no_term_goal`. |
 | `diagnostics` | `region` and `severity` optional | Lean's messages on the file, errors first, each with its region, line, column and the line of code; at most 25, with the count of the rest. |
 | `multi_attempt` | `line`, `tactics` (1 to 8), `column` optional | For each tactic, tried in place of the line (from the column, by default the first non-blank character, to the line's end, as many lines as the tactic has, which must end inside the region): `closed` (no goal and no error), `open` (the goals left) or `error` (Lean's messages). Nothing is saved. |
