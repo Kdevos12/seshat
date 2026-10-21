@@ -36,6 +36,29 @@ describe("lean.lsp over the server: the operations on the sketch file", () => {
     await impl.close();
   });
 
+  it("says that Lean was still elaborating, for the goals before and after a line as for a position", async () => {
+    // The server waits for the elaboration before it looks at the column: on a time limit it answers
+    // `still_elaborating` and no goals, whether or not a column was given.
+    const timeout = { structured: { line_context: "  sorry", goals: [], goals_before: null, goals_after: null, status: "still_elaborating" } };
+    const fake = new FakeLeanLspMcp().on("lean_goal", () => timeout);
+    const { impl } = build(fake);
+    const line = out(await invoke(impl, onSketch({ op: "goal", line: 1, timeoutSec: 5 })));
+    assert.deepEqual(line, { op: "goal", status: "still_elaborating", region: "proof", line: 1, lineText: "  sorry" });
+    const position = out(await invoke(impl, onSketch({ op: "goal", line: 1, column: 3, timeoutSec: 5 })));
+    assert.deepEqual([position.status, position.goals, "goalsBefore" in position], ["still_elaborating", undefined, false]);
+    await impl.close();
+  });
+
+  it("says that Lean was still elaborating, and does not search, when the goal for a search is not there yet", async () => {
+    const timeout = { structured: { line_context: "  sorry", goals: [], goals_before: null, goals_after: null, status: "still_elaborating" } };
+    const fake = new FakeLeanLspMcp().on("lean_goal", () => timeout);
+    const { impl } = build(fake);
+    const answer = out(await invoke(impl, onSketch({ op: "state_search", line: 1, timeoutSec: 5 })));
+    assert.deepEqual(answer, { op: "state_search", status: "still_elaborating", region: "proof", line: 1, column: 3, lineText: "  sorry" });
+    assert.equal(fake.of("lean_leanfinder").length, 0, "no goal, no search");
+    await impl.close();
+  });
+
   it("builds the file from the sketch and the regions, in a scratch directory of the project that git ignores", async () => {
     const fake = new FakeLeanLspMcp();
     const { impl, project } = build(fake);

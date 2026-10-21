@@ -188,11 +188,14 @@ export class LeanLspImplementation implements ImplementationInstance {
       ),
     );
     const where = this.where(call, at);
+    const status = typeof raw?.status === "string" ? raw.status : undefined;
+    // The server waits for the elaboration before it looks at the column, so on a time limit it
+    // answers `still_elaborating` with no goals, in the line form as in the position form.
+    if (status === "still_elaborating") return compact({ op: "goal", status: "still_elaborating", ...where });
     if (call.column === undefined) {
       return compact({ op: "goal", status: "ok", ...where, goalsBefore: goalList(raw?.goals_before), goalsAfter: goalList(raw?.goals_after) });
     }
-    const status = typeof raw?.status === "string" ? raw.status : "goals";
-    return compact({ op: "goal", status: GOAL_STATUS[status] ?? status, ...where, goals: goalList(raw?.goals) });
+    return compact({ op: "goal", status: GOAL_STATUS[status ?? "goals"] ?? status ?? "goals", ...where, goals: goalList(raw?.goals) });
   }
 
   private async termGoal(call: LeanLspInput, scope: string, context: InvokeContext): Promise<LeanLspOutput> {
@@ -262,6 +265,8 @@ export class LeanLspImplementation implements ImplementationInstance {
     const raw = asRecord(await this.tool("lean_goal", { file_path: at.file, line: at.fileLine, column, ...this.timeout(call) }, context));
     const status = typeof raw?.status === "string" ? raw.status : "goals";
     const goal = goalList(raw?.goals)[0];
+    // The goal is not there yet: nothing to search for, and nothing to say about the position.
+    if (status === "still_elaborating") return compact({ op: "state_search", status: "still_elaborating", ...where });
     if (status !== "goals" || goal === undefined) {
       return compact({ op: "state_search", status: GOAL_STATUS[status] ?? status, ...where, note: "There is no goal here to search for." });
     }

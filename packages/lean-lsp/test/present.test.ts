@@ -28,6 +28,16 @@ describe("what a prover reads of an answer of lean.lsp", () => {
     assert.equal(present({ ...at, status: "still_elaborating" }), "AUX line 2, column 3, `simp`: Lean was still elaborating when the time limit came. Ask again, or give a larger timeoutSec.");
   });
 
+  it("says that Lean was still elaborating, and not that there is no goal, for a line and for a search by the goal", () => {
+    const line = { region: "proof", line: 1, lineText: "  sorry" };
+    const goal = present({ op: "goal", status: "still_elaborating", ...line });
+    assert.equal(goal, "PROOF line 1, `sorry`: Lean was still elaborating when the time limit came. Ask again, or give a larger timeoutSec.");
+    assert.doesNotMatch(goal, /no goal/i);
+    const search = present({ op: "state_search", status: "still_elaborating", ...line, column: 3 });
+    assert.equal(search, "PROOF line 1, column 3, `sorry`: Lean was still elaborating when the time limit came, so no search was made. Ask again, or give a larger timeoutSec.");
+    assert.doesNotMatch(search, /no goal to search for/);
+  });
+
   it("shows the expected type of a term, or that there is none", () => {
     const at = { op: "term_goal", region: "proof", line: 1, column: 9, lineText: "  exact h" };
     assert.equal(present({ ...at, status: "ok", expectedType: "n = n" }), "Expected type at PROOF line 1, column 9, `exact h`:\nn = n");

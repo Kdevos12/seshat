@@ -116,6 +116,9 @@ function hits(source: string, results: readonly Hit[]): string[] {
 }
 
 function stateSearch(o: LeanLspOutput): string[] {
+  if (o.status === "still_elaborating") {
+    return [`${position(o)}: Lean was still elaborating when the time limit came, so no search was made. Ask again, or give a larger timeoutSec.`];
+  }
   if (o.goal === undefined) return [`${position(o)}: ${o.status === "complete" ? "no goals left." : "no goal to search for."}`];
   const head = `Lean Finder, asked about the goal at ${position(o)}:`;
   const goalLines = o.goal.split("\n").map((line) => `  ${line}`);

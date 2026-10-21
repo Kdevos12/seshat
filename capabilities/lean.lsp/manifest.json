@@ -174,7 +174,7 @@
       },
       "status": {
         "type": "string",
-        "description": "ok; goal with a column: goals, complete, no_goal_here or still_elaborating; term_goal: no_term_goal; diagnostics: partial; state_search and hammer_premise: complete or no_goal_here; any search: unavailable"
+        "description": "ok; goal with a column: goals, complete, no_goal_here; goal and state_search: still_elaborating when Lean did not finish within timeoutSec; term_goal: no_term_goal; diagnostics: partial; state_search and hammer_premise: complete or no_goal_here; any search: unavailable"
       },
       "region": {
         "enum": [

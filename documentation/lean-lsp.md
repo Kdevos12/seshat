@@ -25,7 +25,7 @@ the line as it stands in the file, where the proof's lines carry the indentation
 
 | `op` | Input | Answer |
 |---|---|---|
-| `goal` | `line`; `column` optional | Without a column, the goals before and after the line. With one, the goals at that position, and `status`: `goals`, `complete` (no goal left), `no_goal_here`, or `still_elaborating`. |
+| `goal` | `line`; `column` optional | Without a column, the goals before and after the line. With one, the goals at that position, and `status`: `goals`, `complete` (no goal left), `no_goal_here`. Either way, `still_elaborating` and no goals when Lean did not finish within `timeoutSec`. |
 | `term_goal` | `line`, `column` optional | The type expected of the term at the position (the line's end without a column), or `no_term_goal`. |
 | `diagnostics` | `region` and `severity` optional | Lean's messages on the file, errors first, each with its region, line, column and the line of code; at most 25, with the count of the rest. |
 | `multi_attempt` | `line`, `tactics` (1 to 8), `column` optional | For each tactic, tried in place of the line (from the column, by default the first non-blank character, to the line's end, as many lines as the tactic has, which must end inside the region): `closed` (no goal and no error), `open` (the goals left) or `error` (Lean's messages). Nothing is saved. |
@@ -35,7 +35,9 @@ the line as it stands in the file, where the proof's lines carry the indentation
 | `hammer_premise` | `line`, `column` optional, `limit` | Names of premises to try in `simp only [...]`, `aesop` or `grind` for the goal at the position (16 by default). |
 
 `timeoutSec` (up to 300) says how long Lean may take to elaborate the file for `goal`, `diagnostics`
-and `state_search`; a file still being elaborated is reported as such. The answers are written
+and `state_search`; a file still being elaborated is reported as such (`status: still_elaborating`
+for `goal`, in the line form too, and for `state_search`, which then searches nothing; `partial` for
+`diagnostics`), never as a line with no goal. The answers are written
 for the model, not as JSON ([The answer](#the-answer)), and are clipped at 8000 characters like any
 tool's. `pnpm harness describe lean.lsp` prints what the model reads about the tool;
 `capabilities/lean.lsp/` holds it.
