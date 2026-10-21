@@ -71,6 +71,29 @@ describe("forbiddenTokensIn", () => {
     assert.deepEqual(forbiddenTokensIn("exact h.1sorry"), ["sorry"]);
     assert.deepEqual(forbiddenTokensIn("exact x1sorry + x_12macro + a'3import + b!4elab"), []);
   });
+
+  it("finds a keyword that Lean reads as a token of its own, whatever precedes it: a symbol, a number in any form, a letter no name has", () => {
+    const tokenAfter: Array<[string, string]> = [
+      // `!` and `?` end a name, they do not start one; a quote starts a character; λ, Π and Σ are not letters of names.
+      ["exact !sorry", "sorry"], ["exact ?run_cmd", "run_cmd"], ["exact 'a'macro", "macro"], ["exact λelab", "elab"], ["exact Πsyntax", "syntax"], ["exact Σinitialize", "initialize"],
+      // Letters of other scripts, and the accented Latin letters that only some versions of Lean take for part of a name.
+      ["exact жsorry", "sorry"], ["exact 中IO", "IO"], ["exact éelab", "elab"],
+      // A number is a token of its own, also when it has letters or an underscore in it.
+      ["exact 1e5sorry", "sorry"], ["exact 1_000sorry", "sorry"], ["exact 0xbeefsorry", "sorry"], ["exact 0b1sorry", "sorry"], ["exact 1.5sorry", "sorry"], ["exact ₁sorry", "sorry"],
+      // A dot that is not the middle of a name: after a bracket, after another dot, after a space.
+      ["exact (e).sorry", "sorry"], ["exact a..macro", "macro"], ["exact f .elab", "elab"], ["exact x. sorry", "sorry"], ["exact x.1.elab", "elab"],
+    ];
+    for (const [text, token] of tokenAfter) assert.deepEqual(forbiddenTokensIn(text), [token], text);
+  });
+
+  it("does not find a keyword that continues a name, as Lean's lexer reads one", () => {
+    const names = [
+      "xsorry", "x1sorry", "x_12macro", "a'3import", "b!4elab", "_elab", "x!sorry", "x?sorry", "x'sorry", "x₁sorry", "αmacro", "sorry_free", "my_run_cmd", "sorrys",
+      // Dotted names, also after the symbols that precede a name.
+      "Nat.sorry_lemma", "a.b.elab", "h.elab", "!x.sorry", "?x.elab", "!!x.macro", "(f x).y.elab",
+    ];
+    for (const name of names) assert.deepEqual(forbiddenTokensIn(`exact ${name}`), [], name);
+  });
 });
 
 describe("structuralCheck", () => {
@@ -96,13 +119,17 @@ describe("structuralCheck", () => {
     refused("", '  simp [show "a" = "a" from rfl]', /string literals are not allowed/);
     refused("", "  -- only a comment", /the proof is empty/);
     refused("axiom aux_x : False", "  simp", /'axiom' is not allowed/);
+    refused("set_option debug.skipKernelTC true in\ntheorem aux_x : True := trivial", "  simp", /'debug' is not allowed/);
   });
 
   it("refuses a command glued to what precedes it, in either region", () => {
     refused("", "  exact foo x#eval 1", /proof: '#eval' is not allowed/);
     refused("", "  trivial\n  exact foo 1#exit", /proof: '#exit' is not allowed/);
     refused("theorem aux_a : True := by trivial x#print axioms aux_a", "  simp", /aux: '#print' is not allowed/);
-    refused("set_option debug.skipKernelTC true in\ntheorem aux_x : True := trivial", "  simp", /'debug' is not allowed/);
+    // A keyword that Lean reads as a token of its own: after `!`, after λ, after a number.
+    refused("", "  trivial\n  !run_tac pure ()", /proof: 'run_tac' is not allowed/);
+    refused("theorem aux_a : True := by trivial λmacro_rules", "  simp", /aux: 'macro_rules' is not allowed/);
+    refused("", "  trivial\n  exact foo 1e5run_cmd", /proof: 'run_cmd' is not allowed/);
   });
 
   it("lets holes through under the sketch policy, and nothing else", () => {

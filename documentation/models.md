@@ -157,10 +157,12 @@ the reason names the tokens. The body of a statement about a number is written a
 evaluator's Lean file (`abbrev m11_stmt ... := <body>`), where text such as `n = n #eval ...` ends the
 declaration and adds commands; and statements come from the claims of a run and from the `statement`
 argument of the provers' tool. The screen reads the text with its comments and strings blanked,
-which is the text that is written. It finds `#eval` also glued to what precedes it (`n = n x#eval 1`,
-which Lean reads as `x` and the command), and a statement that holds a `#` at all is refused with its
-own reason: `#` starts a command (`#check`, `#reduce`, `#print`...), and nothing the line reads needs
-it, since a statement is a signature.
+which is the text that is written. It reads names as Lean's lexer does ([validator.md](validator.md)):
+it finds `#eval` also glued to what precedes it (`n = n x#eval 1`, which Lean reads as `x` and the
+command), and a keyword after a symbol or a number (`!run_cmd`, `1e5sorry`), but not one inside a name
+(`xsorry`). A statement that holds a `#` at all is refused with its own reason: `#` starts a command
+(`#check`, `#reduce`, `#print`...), and nothing the line reads needs it, since a statement is a
+signature.
 
 A statement holds on an object when every object that satisfies the hypotheses satisfies the
 conclusion. So on a magma that breaks a hypothesis the statement holds vacuously; the object

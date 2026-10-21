@@ -189,6 +189,12 @@ describe("a statement that holds a token the validator forbids", () => {
     assert.match(reason("(n : ℕ) : n = n #eval! 1"), /the statement holds the token '#eval'/);
   });
 
+  it("is not recognized when the token follows a symbol or a number that Lean reads apart from it: !run_cmd, 1e5sorry", () => {
+    assert.match(reason("(n : ℕ) : n = n !run_cmd foo"), /holds the token 'run_cmd'/);
+    assert.match(reason("(n : ℕ) (h : n = 1e5sorry) : n = n"), /holds the token 'sorry'/);
+    assert.equal(recognized("(n : ℕ) (h : n = xsorry) : n = n").kind, "nat");
+  });
+
   it("is not recognized when it holds a #, which starts a command and which nothing the line reads needs", () => {
     assert.match(reason("(n : ℕ) : n = n\n#check n"), /^the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it$/);
     assert.match(reason("(n : ℕ) : #(Nat.divisors n) = 2"), /the statement holds '#'/);
