@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 import type { Json } from "@seshat/core";
@@ -63,6 +63,8 @@ export interface LeanLspOptions {
   scratch: Scratch;
   /** The Lean project, as it must not appear in what a prover reads. */
   projectDir: string;
+  /** Its real path, when that is another (a link in the path): the server may name the project by it. */
+  projectReal?: string;
   /** After a site fails, it is not asked again for this long. */
   cooldownMs: number;
   /** The Mathlib snapshot Lean Finder searches, when the host names one. */
@@ -217,7 +219,7 @@ export class LeanLspImplementation implements ImplementationInstance {
     const raw = unwrapDiagnostics(
       await this.tool("lean_diagnostic_messages", { file_path: at.file, ...(call.severity !== undefined ? { severity: call.severity } : {}), ...this.timeout(call) }, context),
     );
-    const all = messagesOf(raw?.items, at.layout, { code: true }).filter((m) => call.region === undefined || m.region === call.region);
+    const all = messagesOf(raw?.items, at.layout, { code: true, scrub: (text) => this.sanitize(text) }).filter((m) => call.region === undefined || m.region === call.region);
     const failed = Array.isArray(raw?.failed_dependencies) ? raw.failed_dependencies.filter((d): d is string => typeof d === "string") : [];
     const partial = raw?.partial === true || raw?.timed_out === true;
     const shown = all.slice(0, MAX_MESSAGES);
@@ -255,7 +257,7 @@ export class LeanLspImplementation implements ImplementationInstance {
     const raw = asRecord(
       await this.tool("lean_multi_attempt", { file_path: at.file, line: at.fileLine, snippets: tactics, column: column(at) }, context),
     );
-    return compact({ op: "multi_attempt", status: "ok", ...this.where(call, at), attempts: attemptsOf(raw?.items, at.layout) });
+    return compact({ op: "multi_attempt", status: "ok", ...this.where(call, at), attempts: attemptsOf(raw?.items, at.layout, (text) => this.sanitize(text)) });
   }
 
   private async stateSearch(call: LeanLspInput, scope: string, context: InvokeContext): Promise<LeanLspOutput> {
@@ -401,14 +403,20 @@ export class LeanLspImplementation implements ImplementationInstance {
     return call.timeoutSec !== undefined ? { timeout_s: call.timeoutSec } : {};
   }
 
-  /** The project and the scratch file are not for a prover to read. */
+  /**
+   * The project and the scratch file are not for a prover to read: the project's directory, as it
+   * was given and by its real path, becomes `<project>`, and the scratch file `the sketch file`. Other
+   * paths in the words of Lean or of the server (the home directory, the toolchain) are not touched.
+   */
   private sanitize(text: string): string {
-    const project = this.o.projectDir;
-    return text
-      .split(join(project, this.o.scratch.relativeDir)).join("<scratch>")
-      .split(this.o.scratch.relativeDir).join("<scratch>")
-      .split(project).join("<project>")
-      .replace(/<scratch>\/[A-Za-z0-9_-]+\.lean/g, "the sketch file");
+    const { projectDir, projectReal, scratch } = this.o;
+    // The longer path first, in case one holds the other.
+    const projects = [...new Set([projectDir, projectReal ?? projectDir])].sort((a, b) => b.length - a.length);
+    let clean = text;
+    for (const project of projects) clean = clean.split(join(project, scratch.relativeDir)).join("<scratch>");
+    clean = clean.split(scratch.relativeDir).join("<scratch>");
+    for (const project of projects) clean = clean.split(project).join("<project>");
+    return clean.replace(/<scratch>\/[A-Za-z0-9_-]+\.lean/g, "the sketch file");
   }
 }
 
@@ -514,6 +522,7 @@ export function leanLspFactory(options: LeanLspFactoryOptions = {}): Implementat
     }
     const projectDir = resolve(s.projectDir);
     if (!existsSync(projectDir) || !statSync(projectDir).isDirectory()) throw new UnavailableError(`the Lean project ${projectDir} is not a directory`);
+    const projectReal = realpathSync(projectDir);
     // The server refuses to start on any other directory.
     const file = (name: string) => existsSync(join(projectDir, name)) && statSync(join(projectDir, name)).isFile();
     if (!file("lean-toolchain") || !(file("lakefile.lean") || file("lakefile.toml"))) {
@@ -531,6 +540,7 @@ export function leanLspFactory(options: LeanLspFactoryOptions = {}): Implementat
       server,
       scratch: new Scratch(projectDir, s.scratchDir ?? ".seshat-lsp"),
       projectDir,
+      ...(projectReal !== projectDir ? { projectReal } : {}),
       cooldownMs: whole(s.siteCooldownSec, 60) * 1000,
       ...(s.leanFinderVersion ? { leanFinderVersion: s.leanFinderVersion } : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),

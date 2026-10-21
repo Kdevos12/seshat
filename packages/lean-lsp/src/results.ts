@@ -10,6 +10,9 @@ const TYPE_CHARS = 500;
 const DESCRIPTION_CHARS = 300;
 const CODE_CHARS = 120;
 
+/** Cleans a text before a prover reads it. */
+export type Scrub = (text: string) => string;
+
 export function clip(text: string, chars: number): string {
   return text.length <= chars ? text : `${text.slice(0, chars - 3)}...`;
 }
@@ -37,8 +40,11 @@ const SEVERITY_ORDER: Record<string, number> = { error: 0, warning: 1, info: 2, 
  * Lean's messages as the server gives them (file lines and columns from 1), located in the
  * prover's terms: the region and the line in it. Errors come first. `code` is the source line,
  * which only means something for a message about the file as it is (not for a trial document).
+ * `scrub` cleans the text of a message and its hint, which are Lean's own words and may name the
+ * host's paths.
  */
-export function messagesOf(items: Json | undefined, layout: Layout, options: { code: boolean }): Message[] {
+export function messagesOf(items: Json | undefined, layout: Layout, options: { code: boolean; scrub?: Scrub }): Message[] {
+  const scrub = options.scrub ?? ((text: string) => text);
   if (!Array.isArray(items)) return [];
   const messages = items.flatMap((item): Message[] => {
     const raw = asRecord(item);
@@ -56,9 +62,9 @@ export function messagesOf(items: Json | undefined, layout: Layout, options: { c
         line: place.line,
         column: typeof raw.column === "number" ? raw.column : 0,
         ...(source !== "" ? { code: clip(source, CODE_CHARS) } : {}),
-        message: clip(message.trim(), MESSAGE_CHARS),
+        message: clip(scrub(message.trim()), MESSAGE_CHARS),
         ...(category !== undefined && category !== "diagnostic" ? { category } : {}),
-        ...(hint !== undefined ? { hint: clip(hint, 300) } : {}),
+        ...(hint !== undefined ? { hint: clip(scrub(hint), 300) } : {}),
       },
     ];
   });
@@ -69,14 +75,14 @@ export function messagesOf(items: Json | undefined, layout: Layout, options: { c
 }
 
 /** What `multi_attempt` found for each tactic, with the server's lines and goals read as above. */
-export function attemptsOf(items: Json | undefined, layout: Layout): Attempt[] {
+export function attemptsOf(items: Json | undefined, layout: Layout, scrub?: Scrub): Attempt[] {
   if (!Array.isArray(items)) return [];
   return items.flatMap((item): Attempt[] => {
     const raw = asRecord(item);
     const tactic = text(raw?.snippet);
     if (raw === undefined || tactic === undefined) return [];
     const goals = goalList(raw.goals);
-    const messages = messagesOf(raw.diagnostics, layout, { code: false });
+    const messages = messagesOf(raw.diagnostics, layout, { code: false, ...(scrub !== undefined ? { scrub } : {}) });
     const result = messages.some((m) => m.severity === "error") ? "error" : goals.length === 0 ? "closed" : "open";
     return [{ tactic, result, goals, messages }];
   });

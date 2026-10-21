@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { extractSubmission, renderSketch, SKETCH_POLICY, structuralCheck, type Json } from "@seshat/core";
@@ -287,6 +287,35 @@ describe("lean.lsp: what it refuses", () => {
       return true;
     });
     fake.failing.clear();
+    await impl.close();
+  });
+
+  it("keeps the project's paths out of Lean's own messages, as the server names the project or by its real path", async () => {
+    const project = tempProject();
+    const link = join(tempDir(), "link");
+    symlinkSync(project, link);
+    const scratch = `${project}/.seshat-lsp/att_1-0123abcd.lean`;
+    const said = (path: string) => `unknown module prefix 'Foo'\nNo directory 'Foo' in the search path entries:\n${path}/.lake/build/lib/lean\n${scratch}:5:3`;
+    const items = [
+      { severity: "error", message: said(project), line: 5, column: 3, lean_tags: null, category: "diagnostic", hint: `see ${link}/README.md and ${project}/lake-manifest.json` },
+      { severity: "error", message: said(link), line: 5, column: 3, lean_tags: null, category: "diagnostic", hint: null },
+    ];
+    const fake = new FakeLeanLspMcp();
+    fake.on("lean_diagnostic_messages", () => ({ structured: { result: { partial: false, success: false, timed_out: false, items, failed_dependencies: [] } } }));
+    fake.on("lean_multi_attempt", () => ({
+      structured: { items: [{ snippet: "simp", goals: [], diagnostics: [{ severity: "error", message: said(project), line: 5, column: 3, lean_tags: null, category: "diagnostic", hint: `see ${project}/README.md` }], timed_out: false, proof_status: null }] },
+    }));
+    const { impl } = build(fake, { projectDir: link });
+    const diagnostics = JSON.stringify(await invoke(impl, onSketch({ op: "diagnostics" })));
+    const attempt = JSON.stringify(await invoke(impl, onSketch({ op: "multi_attempt", line: 1, tactics: ["simp"] })));
+    const answers: Array<[string, string]> = [["diagnostics", diagnostics], ["multi_attempt", attempt]];
+    for (const [name, text] of answers) {
+      assert.ok(!text.includes(project) && !text.includes(link), `${name} names the project: ${text}`);
+      assert.ok(!text.includes(".seshat-lsp"), `${name} names the scratch directory: ${text}`);
+      assert.ok(text.includes("<project>/.lake/build/lib/lean"), `${name}: ${text}`);
+      assert.ok(text.includes("the sketch file:5:3"), `${name}: ${text}`);
+    }
+    assert.ok(diagnostics.includes("see <project>/README.md and <project>/lake-manifest.json"), "the hint is cleaned too");
     await impl.close();
   });
 
