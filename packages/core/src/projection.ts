@@ -1,8 +1,9 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { canonicalJson, type Json, mergePatch } from "./canonical-json.ts";
-import type { HarnessEvent, ProblemOutcome, SourceRef } from "./events.ts";
-import type { AttemptRole, ClaimKind, EdgeKind } from "./records.ts";
+import type { AttemptCarry, EventDataMap, HarnessEvent, ProblemOutcome, SourceRef } from "./events.ts";
+import { type AttemptRole, type ClaimKind, type EdgeKind, SITE_PROVER_SESSION } from "./records.ts";
 import type { ClaimStatus, EdgeStatus } from "./status.ts";
+import type { RouteAction, RouteSignalType, TaskAcceptance, TaskBudget, TaskKind, TaskStatus } from "./tasks.ts";
 
 export interface ClaimRow {
   claim_id: string;
@@ -44,6 +45,17 @@ export interface AttemptRow {
   strategy: string | null;
   premises: string[] | null;
   failure_detail: string | null;
+  /** The task the attempt worked for. */
+  task_id: string | null;
+  /** Where its model calls were made; null: `prover.session`. */
+  site: string | null;
+  /** What its model responses cost so far, from `attempt.charged`: what a session that never finished spent. */
+  charged_usd: number;
+  charged_input_tokens: number;
+  charged_output_tokens: number;
+  charged_requests: number;
+  /** What the prover carried to its next session. */
+  carry: AttemptCarry | null;
 }
 
 export interface ToolRunRow {
@@ -78,6 +90,8 @@ export interface ValidationRow {
   seq: number;
   /** True for a validation of the claim's negation. */
   negation: boolean;
+  /** The problem whose workbench made the check. */
+  problem_id: string | null;
 }
 
 export interface EdgeRow {
@@ -120,6 +134,71 @@ export interface ModelCallRow {
   output_tokens: number;
   duration_ms: number;
   seq: number;
+  /** Where the call was made; null in journals older than the tags. */
+  site: string | null;
+}
+
+export interface TaskRow {
+  task_id: string;
+  kind: TaskKind;
+  problem_id: string | null;
+  claim_id: string | null;
+  edge_id: string | null;
+  owner: string | null;
+  acceptance: TaskAcceptance;
+  budget: TaskBudget;
+  depends_on: string[];
+  parent_task_id: string | null;
+  proposed_by: string | null;
+  title: string | null;
+  status: TaskStatus;
+  /** Why it has its status: the last transition's reason. */
+  reason: string | null;
+  /** While `blocked`: what it waits for. */
+  blocked_by: string[] | null;
+  created_seq: number;
+  updated_seq: number;
+  /** The seq of its last move to `running`. */
+  running_seq: number | null;
+}
+
+/** Which tasks `tasks` returns; every given criterion must hold. */
+export interface TaskFilter {
+  problemId?: string;
+  claimId?: string;
+  owner?: string;
+  statuses?: readonly TaskStatus[];
+  kinds?: readonly TaskKind[];
+}
+
+export interface TaskRouteRow {
+  seq: number;
+  task_id: string;
+  action: RouteAction;
+  signal_type: RouteSignalType;
+  signal_value: string;
+  reason: string;
+  attempt_id: string | null;
+  node_id: string | null;
+}
+
+export interface ResumptionRow {
+  seq: number;
+  resumption: number;
+  data: EventDataMap["run.resumed"];
+}
+
+/** What a set of attempts and model calls cost. */
+export interface Spend {
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  requests: number;
+}
+
+/** What one site of the harness spent. */
+export interface SiteSpend extends Spend {
+  site: string;
 }
 
 /** Which edges `edges` returns; every given criterion must hold. */
@@ -167,7 +246,7 @@ export interface RunSummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 3;
+export const PROJECTION_VERSION = 4;
 
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
@@ -185,8 +264,11 @@ create table if not exists attempts (
   attempt_id text primary key, claim_id text not null, prover text not null, iteration integer not null,
   model text not null, outcome text, failure_class text, stopped_by text, error text, usd real, input_tokens integer,
   output_tokens integer, duration_ms integer, turns integer, started_seq integer not null, finished_seq integer,
-  role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text);
+  role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text,
+  task_id text, site text, charged_usd real not null default 0, charged_input_tokens integer not null default 0,
+  charged_output_tokens integer not null default 0, charged_requests integer not null default 0, carry_json text);
 create index if not exists attempts_by_claim on attempts (claim_id);
+create index if not exists attempts_by_task on attempts (task_id);
 create table if not exists tool_runs (
   tool_run_id text primary key, attempt_id text, capability text not null, implementation text not null,
   version text not null, input_hash text not null, outcome text, duration_ms integer,
@@ -198,7 +280,7 @@ create index if not exists lessons_by_claim on lessons (claim_id);
 create table if not exists validations (
   validation_id text primary key, claim_id text not null, attempt_id text, method text not null, verdict text not null,
   reasons_json text not null, axioms_json text not null, submission_hash text not null, seq integer not null,
-  negation integer not null);
+  negation integer not null, problem_id text);
 create table if not exists edges (
   edge_id text primary key, kind text not null, from_id text not null, status text not null, attempt_id text,
   tool_run_id text, validation_id text, note text, link_name text, link_statement text,
@@ -214,7 +296,19 @@ create index if not exists nodes_by_kind on nodes (kind, claim_id);
 create table if not exists model_calls (
   model_call_id text primary key, line text not null, problem_id text, attempt_id text, model text not null,
   outcome text not null, usd real not null, input_tokens integer not null, output_tokens integer not null,
-  duration_ms integer not null, seq integer not null);
+  duration_ms integer not null, seq integer not null, site text);
+create index if not exists model_calls_by_problem on model_calls (problem_id);
+create table if not exists tasks (
+  task_id text primary key, kind text not null, problem_id text, claim_id text, edge_id text, owner text,
+  acceptance_json text not null, budget_json text not null, depends_on_json text not null, parent_task_id text,
+  proposed_by text, title text, status text not null, reason text, blocked_by_json text,
+  created_seq integer not null, updated_seq integer not null, running_seq integer);
+create index if not exists tasks_by_problem on tasks (problem_id);
+create table if not exists task_routes (
+  seq integer primary key, task_id text not null, action text not null, signal_type text not null,
+  signal_value text not null, reason text not null, attempt_id text, node_id text);
+create index if not exists task_routes_by_task on task_routes (task_id);
+create table if not exists resumptions (seq integer primary key, resumption integer not null, data_json text not null);
 `;
 
 /**
@@ -314,6 +408,11 @@ export class Projection {
       case "run.started":
       case "run.finished":
         return;
+      case "run.resumed": {
+        db.prepare("insert into resumptions (seq, resumption, data_json) values (?, ?, ?)").run(
+          event.seq, event.data.resumption, canonicalJson(event.data));
+        return;
+      }
       case "problem.registered": {
         const d = event.data;
         db.prepare(
@@ -345,9 +444,19 @@ export class Projection {
       case "attempt.started": {
         const d = event.data;
         db.prepare(
-          `insert into attempts (attempt_id, claim_id, prover, iteration, model, started_seq, role, declared_strategy, subgoal)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(d.attemptId, d.claimId, d.prover, d.iteration, d.model, event.seq, d.role ?? null, d.strategy ?? null, d.subgoal ?? null);
+          `insert into attempts (attempt_id, claim_id, prover, iteration, model, started_seq, role, declared_strategy, subgoal,
+           task_id, site) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          d.attemptId, d.claimId, d.prover, d.iteration, d.model, event.seq, d.role ?? null, d.strategy ?? null, d.subgoal ?? null,
+          d.taskId ?? null, d.site ?? null);
+        return;
+      }
+      case "attempt.charged": {
+        const d = event.data;
+        db.prepare(
+          `update attempts set charged_usd = charged_usd + ?, charged_input_tokens = charged_input_tokens + ?,
+           charged_output_tokens = charged_output_tokens + ?, charged_requests = charged_requests + 1 where attempt_id = ?`,
+        ).run(d.usd, d.inputTokens, d.outputTokens, d.attemptId);
         return;
       }
       case "attempt.finished": {
@@ -355,12 +464,12 @@ export class Projection {
         db.prepare(
           `update attempts set outcome = ?, failure_class = ?, stopped_by = ?, error = ?, usd = ?, input_tokens = ?,
            output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ?, strategy = ?, premises_json = ?, failure_detail = ?,
-           declared_strategy = coalesce(?, declared_strategy)
+           declared_strategy = coalesce(?, declared_strategy), carry_json = ?
            where attempt_id = ?`,
         ).run(
           d.outcome, d.failureClass ?? null, d.stoppedBy ?? null, d.error ?? null, d.usd, d.inputTokens, d.outputTokens,
           d.durationMs, d.turns, event.seq, d.strategy ?? null, d.premises === undefined ? null : canonicalJson(d.premises),
-          d.failureDetail ?? null, d.declaredStrategy ?? null, d.attemptId);
+          d.failureDetail ?? null, d.declaredStrategy ?? null, d.carry === undefined ? null : canonicalJson(d.carry), d.attemptId);
         return;
       }
       case "tool_run.started": {
@@ -386,10 +495,10 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `insert into validations (validation_id, claim_id, attempt_id, method, verdict, reasons_json, axioms_json,
-           submission_hash, seq, negation) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           submission_hash, seq, negation, problem_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.validationId, d.claimId, d.attemptId ?? null, d.method, d.verdict, canonicalJson(d.reasons),
-          canonicalJson(d.axioms), d.submissionHash, event.seq, d.negation === true ? 1 : 0);
+          canonicalJson(d.axioms), d.submissionHash, event.seq, d.negation === true ? 1 : 0, d.problemId ?? null);
         return;
       }
       case "edge.added": {
@@ -427,10 +536,44 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `insert into model_calls (model_call_id, line, problem_id, attempt_id, model, outcome, usd, input_tokens,
-           output_tokens, duration_ms, seq) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           output_tokens, duration_ms, seq, site) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.modelCallId, d.line, d.problemId ?? null, d.attemptId ?? null, d.model, d.outcome, d.usd, d.inputTokens,
-          d.outputTokens, d.durationMs, event.seq);
+          d.outputTokens, d.durationMs, event.seq, d.site ?? null);
+        return;
+      }
+      case "task.created": {
+        const d = event.data;
+        db.prepare(
+          `insert into tasks (task_id, kind, problem_id, claim_id, edge_id, owner, acceptance_json, budget_json, depends_on_json,
+           parent_task_id, proposed_by, title, status, created_seq, updated_seq) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        ).run(
+          d.taskId, d.kind, d.problemId ?? null, d.claimId ?? null, d.edgeId ?? null, d.owner ?? null, canonicalJson(d.acceptance),
+          canonicalJson(d.budget), canonicalJson(d.dependsOn), d.parentTaskId ?? null, d.proposedBy ?? null, d.title ?? null,
+          event.seq, event.seq);
+        return;
+      }
+      case "task.assigned": {
+        const d = event.data;
+        db.prepare("update tasks set owner = ?, updated_seq = ? where task_id = ?").run(d.owner, event.seq, d.taskId);
+        return;
+      }
+      case "task.status_changed": {
+        const d = event.data;
+        db.prepare(
+          `update tasks set status = ?, reason = ?, blocked_by_json = ?, updated_seq = ?,
+           running_seq = case when ? = 'running' then ? else running_seq end where task_id = ?`,
+        ).run(
+          d.to, d.reason, d.to === "blocked" && d.blockedBy !== undefined ? canonicalJson(d.blockedBy) : null, event.seq, d.to,
+          event.seq, d.taskId);
+        return;
+      }
+      case "task.routed": {
+        const d = event.data;
+        db.prepare(
+          `insert into task_routes (seq, task_id, action, signal_type, signal_value, reason, attempt_id, node_id)
+           values (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(event.seq, d.taskId, d.action, d.signal.type, d.signal.value, d.reason, d.attemptId ?? null, d.nodeId ?? null);
         return;
       }
     }
@@ -526,6 +669,147 @@ export class Projection {
     return this.db.prepare("select * from model_calls where model_call_id = ?").get(modelCallId) as ModelCallRow | undefined;
   }
 
+  task(taskId: string): TaskRow | undefined {
+    const row = this.db.prepare("select * from tasks where task_id = ?").get(taskId) as StoredTask | undefined;
+    return row === undefined ? undefined : taskRow(row);
+  }
+
+  /** The tasks that meet every criterion of the filter, in the order they were made. */
+  tasks(filter: TaskFilter = {}): TaskRow[] {
+    const where: string[] = [];
+    const values: SQLInputValue[] = [];
+    for (const [column, value] of [["problem_id", filter.problemId], ["claim_id", filter.claimId], ["owner", filter.owner]] as const) {
+      if (value === undefined) continue;
+      where.push(`${column} = ?`);
+      values.push(value);
+    }
+    for (const [column, list] of [["status", filter.statuses], ["kind", filter.kinds]] as const) {
+      if (list === undefined) continue;
+      where.push(`${column} in (${list.map(() => "?").join(", ") || "null"})`);
+      values.push(...list);
+    }
+    const sql = `select * from tasks${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_seq`;
+    return (this.db.prepare(sql).all(...values) as unknown as StoredTask[]).map(taskRow);
+  }
+
+  /** The routing decisions about a task (every task, without an id), in order. */
+  taskRoutes(taskId?: string): TaskRouteRow[] {
+    return (
+      taskId === undefined
+        ? this.db.prepare("select * from task_routes order by seq").all()
+        : this.db.prepare("select * from task_routes where task_id = ? order by seq").all(taskId)
+    ) as unknown as TaskRouteRow[];
+  }
+
+  /** The times the run was resumed, in order. */
+  resumptions(): ResumptionRow[] {
+    const rows = this.db.prepare("select * from resumptions order by seq").all() as unknown as Array<{ seq: number; resumption: number; data_json: string }>;
+    return rows.map((r) => ({ seq: r.seq, resumption: r.resumption, data: JSON.parse(r.data_json) as EventDataMap["run.resumed"] }));
+  }
+
+  /** The seq of the last `run.resumed`, or -1 if the run was never resumed. */
+  lastResumedSeq(): number {
+    const row = this.db.prepare("select max(seq) as seq from resumptions").get() as { seq: number | null };
+    return row.seq ?? -1;
+  }
+
+  /** The attempts that worked for a task, in order. */
+  attemptsOfTask(taskId: string): AttemptRow[] {
+    const rows = this.db.prepare("select * from attempts where task_id = ? order by started_seq").all(taskId) as unknown as StoredAttempt[];
+    return rows.map(attemptRow);
+  }
+
+  /** The attempts that started and have no end: the ones a crash cut. */
+  openAttempts(): AttemptRow[] {
+    const rows = this.db.prepare("select * from attempts where finished_seq is null order by started_seq").all() as unknown as StoredAttempt[];
+    return rows.map(attemptRow);
+  }
+
+  /** The tool runs that started and have no end. */
+  openToolRuns(): ToolRunRow[] {
+    return this.db.prepare("select * from tool_runs where finished_seq is null order by started_seq").all() as unknown as ToolRunRow[];
+  }
+
+  /** The problem's checks that were made by its workbench, in order. */
+  validationsOfProblem(problemId: string): ValidationRow[] {
+    const rows = this.db.prepare("select * from validations where problem_id = ? order by seq").all(problemId) as unknown as StoredValidation[];
+    return rows.map(validationRow);
+  }
+
+  /**
+   * What the attempts and the model calls for a problem cost: the attempts of its tasks, whether or
+   * not they finished (a session that never ended costs what its responses did), and the model
+   * calls its lines made.
+   */
+  problemSpend(problemId: string): Spend {
+    return this.spend(
+      { from: "attempts join tasks using (task_id) where tasks.problem_id = ?", params: [problemId] },
+      { from: "model_calls where problem_id = ?", params: [problemId] },
+    );
+  }
+
+  /** What one task's attempts cost. */
+  taskSpend(taskId: string): Spend {
+    return this.spend({ from: "attempts where task_id = ?", params: [taskId] });
+  }
+
+  /** What the whole run cost so far: every attempt and every model call. */
+  totalSpend(): Spend {
+    return this.spend({ from: "attempts", params: [] }, { from: "model_calls", params: [] });
+  }
+
+  private spend(attempts: { from: string; params: SQLInputValue[] }, calls?: { from: string; params: SQLInputValue[] }): Spend {
+    const a = this.db.prepare(
+      `select coalesce(sum(coalesce(attempts.usd, attempts.charged_usd)), 0) as usd,
+       coalesce(sum(coalesce(attempts.input_tokens, attempts.charged_input_tokens)), 0) as input_tokens,
+       coalesce(sum(coalesce(attempts.output_tokens, attempts.charged_output_tokens)), 0) as output_tokens,
+       coalesce(sum(coalesce(attempts.turns, attempts.charged_requests)), 0) as requests from ${attempts.from}`,
+    ).get(...attempts.params) as { usd: number; input_tokens: number; output_tokens: number; requests: number };
+    const m =
+      calls === undefined
+        ? { usd: 0, input_tokens: 0, output_tokens: 0, requests: 0 }
+        : (this.db.prepare(
+            `select coalesce(sum(usd), 0) as usd, coalesce(sum(input_tokens), 0) as input_tokens,
+             coalesce(sum(output_tokens), 0) as output_tokens, count(*) as requests from ${calls.from}`,
+          ).get(...calls.params) as { usd: number; input_tokens: number; output_tokens: number; requests: number });
+    return {
+      usd: a.usd + m.usd,
+      inputTokens: a.input_tokens + m.input_tokens,
+      outputTokens: a.output_tokens + m.output_tokens,
+      requests: a.requests + m.requests,
+    };
+  }
+
+  /**
+   * What each site of the harness spent (documentation/ledger.md, "Sites"): the sessions of the
+   * provers under their attempts' site (`prover.session`), the lines' one-shot calls under theirs;
+   * a call from a journal older than the tags is `unknown`. The biggest spender first.
+   */
+  spendBySite(): SiteSpend[] {
+    const sites = new Map<string, SiteSpend>();
+    const add = (site: string, usd: number, inputTokens: number, outputTokens: number, requests: number) => {
+      const entry = sites.get(site) ?? { site, usd: 0, inputTokens: 0, outputTokens: 0, requests: 0 };
+      entry.usd += usd;
+      entry.inputTokens += inputTokens;
+      entry.outputTokens += outputTokens;
+      entry.requests += requests;
+      sites.set(site, entry);
+    };
+    const attempts = this.db.prepare(
+      `select coalesce(site, ?) as site, coalesce(sum(coalesce(usd, charged_usd)), 0) as usd,
+       coalesce(sum(coalesce(input_tokens, charged_input_tokens)), 0) as input_tokens,
+       coalesce(sum(coalesce(output_tokens, charged_output_tokens)), 0) as output_tokens,
+       coalesce(sum(coalesce(turns, charged_requests)), 0) as requests from attempts group by 1`,
+    ).all(SITE_PROVER_SESSION) as unknown as Array<{ site: string; usd: number; input_tokens: number; output_tokens: number; requests: number }>;
+    for (const r of attempts) add(r.site, r.usd, r.input_tokens, r.output_tokens, r.requests);
+    const calls = this.db.prepare(
+      `select coalesce(site, 'unknown') as site, coalesce(sum(usd), 0) as usd, coalesce(sum(input_tokens), 0) as input_tokens,
+       coalesce(sum(output_tokens), 0) as output_tokens, count(*) as requests from model_calls group by 1`,
+    ).all() as unknown as Array<{ site: string; usd: number; input_tokens: number; output_tokens: number; requests: number }>;
+    for (const r of calls) add(r.site, r.usd, r.input_tokens, r.output_tokens, r.requests);
+    return [...sites.values()].sort((x, y) => y.usd - x.usd || x.site.localeCompare(y.site));
+  }
+
   /** Counts and costs of the run: the attempts' and the lines' model calls. */
   runSummary(): RunSummary {
     const p = this.db.prepare("select count(*) as n from problems").get() as { n: number };
@@ -533,22 +817,17 @@ export class Projection {
       (this.db.prepare(
         "select count(*) as n from problems join claims using (claim_id) where claims.status = ?",
       ).get(status) as { n: number }).n;
-    const costs = (table: string) =>
-      this.db.prepare(
-        `select count(*) as n, coalesce(sum(usd), 0) as usd, coalesce(sum(input_tokens), 0) as input_tokens,
-         coalesce(sum(output_tokens), 0) as output_tokens from ${table}`,
-      ).get() as { n: number; usd: number; input_tokens: number; output_tokens: number };
-    const a = costs("attempts");
-    const m = costs("model_calls");
+    const attempts = (this.db.prepare("select count(*) as n from attempts").get() as { n: number }).n;
+    const total = this.totalSpend();
     return {
       problems: p.n,
       solved: byStatus("proved"),
       refuted: byStatus("refuted"),
       candidates: byStatus("computed"),
-      attempts: a.n,
-      usd: a.usd + m.usd,
-      inputTokens: a.input_tokens + m.input_tokens,
-      outputTokens: a.output_tokens + m.output_tokens,
+      attempts,
+      usd: total.usd,
+      inputTokens: total.inputTokens,
+      outputTokens: total.outputTokens,
     };
   }
 
@@ -569,10 +848,31 @@ function claimRow({ domain_json, ...rest }: StoredClaim): ClaimRow {
   return { ...rest, domain: domain_json === null ? [] : (JSON.parse(domain_json) as string[]) };
 }
 
-type StoredAttempt = Omit<AttemptRow, "premises"> & { premises_json: string | null };
+type StoredAttempt = Omit<AttemptRow, "premises" | "carry"> & { premises_json: string | null; carry_json: string | null };
 
-function attemptRow({ premises_json, ...rest }: StoredAttempt): AttemptRow {
-  return { ...rest, premises: premises_json === null ? null : (JSON.parse(premises_json) as string[]) };
+function attemptRow({ premises_json, carry_json, ...rest }: StoredAttempt): AttemptRow {
+  return {
+    ...rest,
+    premises: premises_json === null ? null : (JSON.parse(premises_json) as string[]),
+    carry: carry_json === null ? null : (JSON.parse(carry_json) as AttemptCarry),
+  };
+}
+
+type StoredTask = Omit<TaskRow, "acceptance" | "budget" | "depends_on" | "blocked_by"> & {
+  acceptance_json: string;
+  budget_json: string;
+  depends_on_json: string;
+  blocked_by_json: string | null;
+};
+
+function taskRow({ acceptance_json, budget_json, depends_on_json, blocked_by_json, ...rest }: StoredTask): TaskRow {
+  return {
+    ...rest,
+    acceptance: JSON.parse(acceptance_json) as TaskAcceptance,
+    budget: JSON.parse(budget_json) as TaskBudget,
+    depends_on: JSON.parse(depends_on_json) as string[],
+    blocked_by: blocked_by_json === null ? null : (JSON.parse(blocked_by_json) as string[]),
+  };
 }
 
 type StoredValidation = Omit<ValidationRow, "reasons" | "axioms" | "negation"> & {

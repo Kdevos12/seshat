@@ -1,6 +1,7 @@
 import type { Json } from "./canonical-json.ts";
 import type { AttemptRole, ClaimKind, EdgeKind, EdgeLink } from "./records.ts";
 import type { ClaimStatus, EdgeStatus } from "./status.ts";
+import type { RouteAction, RouteSignalType, TaskAcceptance, TaskBudget, TaskKind, TaskStatus } from "./tasks.ts";
 
 /**
  * Every fact the harness learns is an event appended to the journal. The SQLite projection and all
@@ -35,6 +36,32 @@ export interface TokenCost {
   usd: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+/**
+ * What a crash left at the end of a journal: a last line that is not a whole event. `dropped`: the
+ * fragment was cut off and is gone (its byte count and hash are kept here); `completed`: the line
+ * was a whole event, verified by the hash chain, missing only its newline, and it was kept.
+ */
+export interface TornTail {
+  action: "dropped" | "completed";
+  bytes: number;
+  /** sha256 of the bytes after the last newline. */
+  sha256: string;
+}
+
+/**
+ * What a prover carries from one session to the next, as blobs: its regions, the text of its last
+ * check, and the notes the next session starts from. A resumed prover starts from the carry of its
+ * last finished session; a field that is absent is not set.
+ */
+export interface AttemptCarry {
+  /** Blob of `{aux, proof}`. */
+  regions: string;
+  /** Blob of the last check as the prover read it. */
+  lastCheck?: string;
+  /** Blob of the notes. */
+  notes?: string;
 }
 
 export type AttemptOutcome = "valid" | "invalid" | "no_submission" | "budget_exhausted" | "aborted" | "error";
@@ -87,6 +114,23 @@ export interface EventDataMap {
      * or `errors` (problems ended with a harness error in a row).
      */
     stopped?: string;
+  };
+  /**
+   * The run continues after the process that ran it ended without finishing (a crash, a kill, a
+   * usage limit), or after it stopped early. Written first by the orchestrator, before it closes what
+   * the earlier process left open (documentation/ledger.md, "Resume").
+   */
+  "run.resumed": {
+    runId: string;
+    /** 1 for the first resumption of the run, then 2... */
+    resumption: number;
+    /** A last line that the crash cut, and what was done with it. */
+    tornTail?: TornTail;
+    /** What the journal accounts for as spent when the run continues: the budgets start from this. */
+    spent: TokenCost;
+    /** What was left open and is closed now. */
+    interrupted: { attempts: number; toolRuns: number; tasks: number };
+    codeRev?: string;
   };
   "problem.registered": {
     problemId: string;
@@ -144,6 +188,18 @@ export interface EventDataMap {
     strategy?: string;
     /** The part of the claim's sketch the attempt works on, when it works on one. */
     subgoal?: string;
+    /** The task the attempt works for. It must be running. */
+    taskId?: string;
+    /** Where the model calls of the attempt are made. Absent: `prover.session`. */
+    site?: string;
+  };
+  /**
+   * A model response of a session was paid for. The attempt's totals are in `attempt.finished`;
+   * these events keep the cost of a session that never finished, which the budgets of a resumed run
+   * count.
+   */
+  "attempt.charged": TokenCost & {
+    attemptId: string;
   };
   "attempt.finished": TokenCost & {
     attemptId: string;
@@ -164,6 +220,8 @@ export interface EventDataMap {
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
     failureDetail?: string;
+    /** What the prover carries to its next session. */
+    carry?: AttemptCarry;
   };
   "tool_run.started": {
     toolRunId: string;
@@ -202,6 +260,8 @@ export interface EventDataMap {
     submissionHash: string;
     /** True when the submission proves the negation of the claim's statement: a refutation. */
     negation?: boolean;
+    /** The problem whose workbench checked the submission: the problem that certifies what it made a candidate. */
+    problemId?: string;
   };
   "edge.added": {
     edgeId: string;
@@ -248,12 +308,64 @@ export interface EventDataMap {
     /** `provider/id`. */
     model: string;
     outcome: "ok" | "error" | "aborted";
+    /** Where the call is made, such as `graph.attempt` (`SITE`). Absent in journals older than the tags. */
+    site?: string;
     /** Blob of the request (model, system prompt, prompt, token limit). */
     requestHash: string;
     /** Blob of the response's text. */
     responseHash?: string;
     error?: string;
     durationMs: number;
+  };
+  /**
+   * A task of the ledger (documentation/ledger.md). Written by the orchestrator only: a line
+   * proposes, the orchestrator commits. A task starts `pending`.
+   */
+  "task.created": {
+    taskId: string;
+    kind: TaskKind;
+    problemId?: string;
+    claimId?: string;
+    edgeId?: string;
+    /** Tasks that must be `done` before this one is `ready`. */
+    dependsOn: string[];
+    /** Who works on it: an actor such as `prover:p1` or `line:M12`. Set here or by `task.assigned`. */
+    owner?: string;
+    /** What must hold for the task to be `done`, in terms of claim and edge statuses. */
+    acceptance: TaskAcceptance;
+    budget: TaskBudget;
+    parentTaskId?: string;
+    /** The line that proposed the task; absent for a task the orchestrator made. */
+    proposedBy?: string;
+    /** A few words on what it is for. */
+    title?: string;
+  };
+  "task.assigned": {
+    taskId: string;
+    owner: string;
+    reason: string;
+  };
+  "task.status_changed": {
+    taskId: string;
+    from: TaskStatus;
+    to: TaskStatus;
+    reason: string;
+    /** For `blocked`: the task ids, or `ext:<name>` keys, that it waits for. */
+    blockedBy?: string[];
+  };
+  /**
+   * A routing decision: what to do about a task that met a typed signal. The event is the decision
+   * and nothing more: it changes no status, of a task or of a claim.
+   */
+  "task.routed": {
+    taskId: string;
+    action: RouteAction;
+    signal: { type: RouteSignalType; value: string };
+    reason: string;
+    /** The attempt whose failure it answers. */
+    attemptId?: string;
+    /** The `drift` node it answers. */
+    nodeId?: string;
   };
 }
 
@@ -282,6 +394,12 @@ export const EVENT_TYPES: readonly EventType[] = [
   "node.recorded",
   "node.updated",
   "model_call.finished",
+  "run.resumed",
+  "attempt.charged",
+  "task.created",
+  "task.assigned",
+  "task.status_changed",
+  "task.routed",
 ];
 
 export function isEventType(value: unknown): value is EventType {
