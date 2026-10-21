@@ -138,19 +138,31 @@ Both regions are scanned with comments blanked. Refused anywhere in the regions:
   `unsafeIO`, `unsafeBaseIO`, `unsafeEIO`, `Environment`, `setEnv`, `modifyEnv`, `addDecl`,
   `addDeclCore`, `addDeclWithoutChecking`, `addAndCompile`.
 
-Tokens match as Lean's lexer reads them:
+Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
+part of a longer name. After a syntax error Lean goes on from the next token (`parseCommand` skips one
+token, `consumeInput`, and tries a command again), so a command word that the lexer reads as a token
+runs, wherever it stands and whatever precedes it, and one inside a longer name does not.
 
-- A token that starts like an identifier matches as a whole word: `Nat.sorry_lemma`, `xsorry` and
-  `x1sorry` are other names and do not match `sorry`. A number before it is a lexeme of its own, so
-  `1sorry` does.
-- A token that starts with a character no identifier has (`#eval`, `#exit`, `#print`) matches wherever it
+- A token that starts like a name (`sorry`, `run_cmd`, `IO`) matches unless it continues a name.
+  `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma`, `h.elab` and `sorry_free` are names and do not match.
+  What stands before a name does not make the token part of it: `!sorry`, `?run_cmd`, `'a'macro`,
+  `λelab` (λ, Π and Σ are no letters of names), `жsorry`, `(e).sorry` and `a..sorry` hold the token, and
+  so do `1sorry`, `1e5sorry`, `1_000sorry` and `0xbeefsorry`: a number is a lexeme of its own, and
+  whatever begins with a digit is refused, whichever way Lean reads it.
+- A token that starts with a character no name has (`#eval`, `#exit`, `#print`) matches wherever it
   stands, since Lean reads `x#eval` as `x` and the command `#eval`; and the longest token wins in the
   lexer, so what follows does not matter (`#eval!` is a command too). A token that ends with such a
   character (`eval%`) needs no boundary after it.
 
-Two cases are left to the Lean checks: a keyword glued to a hexadecimal, binary or octal number
-(`0xbeefsorry`), and one that follows a letter which Lean does not allow in a name but which the rule
-counts as part of one (every Unicode letter is).
+A name is read with Lean's own tables (`isIdFirst` and `isIdRest` of `Init/Meta/Defs.lean`): it begins
+with an ASCII letter, `_`, or a Greek, Coptic or letter-like character (not λ, Π and Σ), and goes on with
+these, ASCII digits, `'`, `!`, `?` and subscripts; parts are divided by a dot that a name follows. The
+tables hold what every version of Lean takes for a name. The accented Latin letters that Lean 4.27 also
+takes are left out on purpose: where a version and the table disagree, a keyword after such a letter is
+refused, and is not trusted as part of a name. The same goes for a name of more than 256 characters or
+16 parts. The check is a regular expression with bounded look-behind: a text of a million
+characters costs about a second at worst (a name glued to the tokens over and over), and a
+million characters of proof 16 ms.
 
 In the auxiliary region, each command must be a `theorem`, `lemma`, `def` or `abbrev` (optionally
 after `open ... in` or `set_option ... in`), named `aux_...` so that it cannot shadow a name of the

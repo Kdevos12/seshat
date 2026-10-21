@@ -61,26 +61,44 @@ const FORBIDDEN_TOKENS = [
 
 const AUX_KEYWORDS = new Set(["theorem", "lemma", "def", "abbrev"]);
 
-const IDENTIFIER_CHARACTER = /^[\p{L}\p{N}_'!?]$/u;
+/*
+ * What Lean's lexer takes for a name (`isIdFirst` and `isIdRest` of `Init/Meta/Defs.lean`): a name
+ * begins with an ASCII letter, `_`, or a Greek or letter-like character (not λ, Π and Σ), and goes
+ * on with these and digits, `'`, `!`, `?` and subscripts. The tables hold what every version of Lean
+ * takes for a name, and not the accented Latin letters that Lean 4.27 added: where a version and
+ * this table disagree, a keyword after such a letter is refused, and not trusted as part of a name.
+ */
+const LETTER_LIKE = "\\u{391}-\\u{39f}\\u{3a1}\\u{3a2}\\u{3a4}-\\u{3a9}\\u{3b1}-\\u{3ba}\\u{3bc}-\\u{3fb}\\u{1f00}-\\u{1ffe}\\u{2100}-\\u{214f}\\u{1d49c}-\\u{1d59f}";
+const NAME_START = `A-Za-z_${LETTER_LIKE}`;
+const NAME_PART = `${NAME_START}0-9'!?\\u{2080}-\\u{2089}\\u{2090}-\\u{209c}\\u{1d62}-\\u{1d6a}`;
+const NAME_START_CHARACTER = new RegExp(`^[${NAME_START}]$`, "u");
+const NAME_PART_CHARACTER = new RegExp(`^[${NAME_PART}]$`, "u");
 
 /**
- * A regular expression for a token, as Lean's lexer reads it:
- * - A token that starts like an identifier is found as a whole word, not glued to what precedes it
- *   (`xsorry`, `Nat.sorry`, `x1sorry`, which are other names) and not to what follows it
- *   (`sorry_free`). A number before it is a lexeme of its own, so `1sorry` holds `sorry`.
- * - A token that starts with a character no identifier has, such as `#eval`, is read wherever it
- *   stands, since Lean reads `x#eval` as `x` and `#eval`; and the longest token wins, so what follows
- *   it does not matter (`#eval!` is a command too).
+ * A regular expression for a token, as Lean's lexer reads text. After a syntax error Lean goes on
+ * from the next token and runs a command that starts there, so a forbidden word is a danger when
+ * the lexer reads it as a token of its own, and no danger when it is part of a longer name:
+ * - A token that starts like a name (`sorry`, `run_cmd`, `IO`) is found unless it continues a name:
+ *   `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma` and `h.elab` are names, and `sorry_free` too.
+ *   What stands before a name does not make the token part of it: `!sorry`, `λsorry`, `(e).sorry`
+ *   and `a..sorry` hold `sorry`, and so do `1sorry`, `1e5sorry` and `0xbeefsorry`, since a number is a
+ *   lexeme of its own (anything that begins with a digit is refused, whichever way Lean reads it).
+ * - A token that starts with a character no name has, such as `#eval`, is found wherever it stands,
+ *   since Lean reads `x#eval` as `x` and `#eval`; and the longest token wins in the lexer, so what
+ *   follows it does not matter (`#eval!` is a command too).
  * - A token that ends with such a character (`eval%`) needs no boundary after it.
+ * A name of more than 256 characters, or of more than 16 parts, is not taken for one.
  */
 function tokenPattern(token: string): RegExp {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const characters = [...token];
-  const startsLikeIdentifier = IDENTIFIER_CHARACTER.test(characters[0] ?? "");
-  const endsLikeIdentifier = IDENTIFIER_CHARACTER.test(characters.at(-1) ?? "");
-  // The second lookbehind lets digits count as part of a name only when a name's character precedes them: `x1sorry`, not `1sorry` or `h.1sorry`.
-  const before = startsLikeIdentifier ? "(?<![\\p{L}_'.!?])(?<![\\p{L}_'!?]\\p{N}+)" : "";
-  const after = startsLikeIdentifier && endsLikeIdentifier ? "(?![\\p{L}\\p{N}_'!?])" : "";
+  const startsLikeName = NAME_START_CHARACTER.test(characters[0] ?? "");
+  const endsLikeName = NAME_PART_CHARACTER.test(characters.at(-1) ?? "");
+  const name = `[${NAME_START}][${NAME_PART}]{0,255}`;
+  // The beginning of a name that ends right before the token: after no character of a name and no dot,
+  // and after any symbols (`!`, `?`, `.`) that Lean reads as tokens of their own.
+  const before = startsLikeName ? `(?<!(?<![${NAME_PART}.])[!?.]*${name}(?:\\.${name}){0,15}\\.?)` : "";
+  const after = startsLikeName && endsLikeName ? `(?![${NAME_PART}])` : "";
   return new RegExp(`${before}${escaped}${after}`, "u");
 }
 const FORBIDDEN_PATTERNS = FORBIDDEN_TOKENS.map((t) => [t, tokenPattern(t)] as const);
