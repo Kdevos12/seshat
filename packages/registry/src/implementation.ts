@@ -47,6 +47,8 @@ export class UnavailableError extends Error {}
 export interface FactoryContext {
   capability: CapabilityManifest;
   spec: InprocImplementationSpec;
+  /** The name of the host profile (`local`, `server`), for an implementation whose rules depend on where it runs. */
+  host?: string;
   /** The manifest's settings, replaced key by key by the host's, with variables substituted. */
   settings: Record<string, Json>;
 }

@@ -8,7 +8,10 @@ import { applied, closedProp, parseSignature } from "./signature.ts";
 export interface ProofSource {
   /** A formal claim's statement in signature form. */
   statementOf(claimId: string): string | undefined;
-  /** A valid proof of a claim (`proved`) or of its negation (`refuted`), as the two editable regions. */
+  /**
+   * A valid proof of a claim (`proved`) or of its negation (`refuted`), as the two editable regions.
+   * Not one that the certifier refused.
+   */
   proofOf(claimId: string, goal: Goal): Submission | undefined;
   /** The link lemma of a `lean_checked` edge with the proof that checked it, and the edge's targets. */
   link(edgeId: string): Promise<{ statement: string; submission: Submission; to: string[] } | undefined>;
@@ -35,8 +38,15 @@ export function memorySource(memory: MemoryStore, headerOf?: (claimId: string) =
       return claim === undefined || claim.kind !== "formal" ? undefined : claim.statement;
     },
     proofOf: (claimId, goal) => {
-      for (const v of memory.validations(claimId).reverse()) {
-        if (v.verdict !== "valid" || v.negation !== (goal === "refuted")) continue;
+      const negation = goal === "refuted";
+      const validations = memory.validations(claimId);
+      // A file the fast check accepted and the certifier refused stays a candidate, but it is no
+      // premise: a proof composed from it would be refused too.
+      const refused = new Set(
+        validations.filter((v) => v.method === "kernel_replay" && v.verdict === "invalid" && v.negation === negation).map((v) => v.submissionHash),
+      );
+      for (const v of [...validations].reverse()) {
+        if (v.verdict !== "valid" || v.negation !== negation || refused.has(v.submissionHash)) continue;
         const submission = submissionOf(v.submissionHash);
         if (submission !== undefined) return submission;
       }

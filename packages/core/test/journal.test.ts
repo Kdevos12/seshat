@@ -85,7 +85,7 @@ describe("Journal", () => {
     assert.equal(p.attempt("att_1")?.outcome, "invalid");
     assert.deepEqual(p.lessons("clm_1").map((l) => l.text), ["omega cannot see through digits"]);
     assert.deepEqual(p.problems()[0]?.source, source);
-    assert.deepEqual(p.runSummary(), { problems: 1, solved: 0, candidates: 0, attempts: 1, usd: 0.25, inputTokens: 100, outputTokens: 50 });
+    assert.deepEqual(p.runSummary(), { problems: 1, solved: 0, refuted: 0, candidates: 0, attempts: 1, usd: 0.25, inputTokens: 100, outputTokens: 50 });
     journal.close();
   });
 

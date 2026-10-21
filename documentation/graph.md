@@ -17,9 +17,9 @@ The memory stores claims and the edges between them ([memory.md](memory.md)). Th
 
 The trust rules do not change ([trust.md](trust.md)). The graph never gives a claim a status: every
 change goes through `validate`, so a derived result is `computed` at most, as any proof that passes
-the fast check; only the certifier makes `proved` or `refuted`, and it is not wired for these
-claims yet. Only `lean_checked` edges propagate. A wrong edge can mislead a search, never prove
-anything.
+the fast check; only the certifier makes `proved` or `refuted`, and the run runs it on what the
+line submitted when the problem ends ([m0-loop.md](m0-loop.md#certification)). Only `lean_checked`
+edges propagate. A wrong edge can mislead a search, never prove anything.
 
 ## Using it
 
@@ -188,13 +188,20 @@ the step is:
 | `refuted_by/counterexample` | `exact L X` |
 
 It fails, with the reason, when a premise has no proof on record, an edge lost its link proof, or
-the claims do not share a header (their statements would not mean the same in one file).
+the claims do not share a header (their statements would not mean the same in one file). A proof
+that the certifier refused is not on record for this purpose: the claim stays `computed` after a
+refusal, so the graph still counts it as a candidate premise, but a proof composed from a file the
+kernel refused would be refused too, and the derivation is skipped (a later proof of the premise
+that the kernel has not looked at can serve).
 
 `realize({memory, state, validate, headerOf, minLevel?, limit?, tried?, signal?, ...})` does the
 rest. It syncs the state, then for each derived fact about a claim that is still open, shortest
 derivation first, composes the proof and submits it through `validate` (the proof of the negation
 for an `R:` fact, which changes no status). The claim becomes `computed` if Lean accepts it, and
-the state is synced again, so that a claim just settled serves the next derivation. A proof that
+the state is synced again, so that a claim just settled serves the next derivation. The certifier
+checks the composed proof when the problem ends: the claim becomes `proved`, or `refuted` for a
+composed refutation, and from then on it is a base fact of the graph, as it holds through a proof
+of its own that carries its premises' proofs. A proof that
 fails is not sent twice, and the failure is recorded. It stops at `limit` (8 by default) or when
 `signal` aborts; a check cut off by the abort says nothing about the proof, so no derivation is
 recorded for it and it may be sent again.
@@ -352,8 +359,12 @@ The `twin` node is about the problem's claim:
 
 What the line does not do:
 
-- A problem whose claim the graph refutes ends as `unsolved`: a run has no `refuted` outcome, and the
-  claim does not become `refuted` without the certifier.
+- A problem whose claim the graph refutes ends as `refuted` when the certifier certified the
+  refutation (the twin's proof of the negation, then the composed refutation of the claim, which
+  the run certifies once `afterProblem` is over). Without a certifier, or when it rejects or cannot
+  decide, nothing is refuted and the problem ends as `unsolved`. The refutation must be the
+  problem's own: a problem that shares the claim with one whose graph refuted it stays `unsolved`
+  until its own lines or provers find something.
 - Stopping a session takes effect at its next `lean_check` or when it ends; a model request in
   flight is not cut.
 - It creates the twin and no other variant. Strengthenings, special cases and generalizations come
@@ -391,7 +402,8 @@ counts under `M2`. Nothing aggregates the derivations and the twins into the rep
 - Composed proofs: the steps of a chain, auxiliary declarations renamed apart, missing pieces.
   `realize`: a composed proof submitted to the simulated Lean before a claim becomes `computed`
   (never `proved`), a refused proof recorded and not sent twice, a chain in order and within the
-  limit, a claim withdrawn when its premise is, a refutation that changes no status.
+  limit, a claim withdrawn when its premise is, a refutation that changes no status, and a premise
+  whose proof the certifier refused (no proof on record: nothing is sent to Lean).
 - The twin: the neutral framing, the answers of a model read, one side stopping the other.
 - Labels and nogoods on an AND/OR graph, bottlenecks, bounds, incremental recomputation.
 - PageRank against the closed forms of two small graphs, and graph queries with short ids.
@@ -410,8 +422,9 @@ Not done:
   generated reference files of the claims it creates have not been run against Lean either
   ([memory.md](memory.md#reference-files)). The first real run settles these
   ([lean.md](lean.md#to-verify-against-lean)).
-- Certification of the claims other than the problem's is not wired, so composed claims stay
-  `computed`, and a refutation never becomes `refuted`. The graph already reads both levels.
+- The certifier runs after `afterProblem`, so the propagation of a problem sees its own submissions
+  at the candidate level only; the certified level they reach is read by the next problem's
+  `beforeProvers`. Nothing here has run against a real certifier ([certifier.md](certifier.md)).
 - Statement identity is textual ([memory.md](memory.md#claims)): two equivalent statements written
   differently are two claims, until the Lean-backed identity (M1).
 - PageRank and the lemma ranking are not called by any line yet, and the briefing is the only

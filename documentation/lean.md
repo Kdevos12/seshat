@@ -35,9 +35,16 @@ does not count it against the prover.
 
 ```ts
 interface LeanCertifier {
-  certify(request: { original: string; candidate: string; target: string; allowedAxioms: readonly string[] }): Promise<{ verdict: "certified" | "rejected"; reasons: string[]; axioms: string[]; timeMs: number }>;
+  certify(
+    request: { original: string; candidate: string; target: string; allowedAxioms: readonly string[] },
+    options?: { timeoutSec?: number; signal?: AbortSignal },
+  ): Promise<{ verdict: "certified" | "rejected"; reasons: string[]; axioms: string[]; timeMs: number }>;
 }
 ```
+
+A call that reaches no verdict (the time limit, an abort, no Lean, a project in which nothing
+compiles, a failure of the checking program) throws `CertifyFailedError` instead of answering `rejected`: it says nothing about the
+candidate ([certifier.md](certifier.md#what-it-answers)).
 
 ## Kimina Lean Server
 
@@ -104,18 +111,28 @@ The Lean meta tool (`lean.meta`) runs on the same server, and needs the library 
 built in the project ([lean-meta.md](lean-meta.md#deployment)). That library has never been
 compiled. `lean.goals` runs Pantograph's REPL on the harness's machine, in the same project.
 
-## The certifier (to write)
+## The certifier
 
-A small Lean program, run in a fresh process for each candidate:
+`@seshat/lean-local` implements `LeanCertifier` with `lake`, and the Lean library
+`lean/SeshatCertify` replays the compiled files. For each candidate, in fresh processes of the
+project above:
 
-1. Compile the original file and the candidate with `lake env lean -o`.
+1. Compile the candidate and the reference with `lake env lean -o`.
 2. Load the candidate's compiled module, import its imports, and replay its declarations through
    the kernel (`Lean.Environment.replay`, as lean4checker does).
-3. Check that the target exists, that its type equals the original's target type as a term, and
-   that the axioms it depends on, collected by walking the replayed environment, are allowed.
+3. Check that the target exists, that its type equals the reference's target type as a term, with
+   the definitions it depends on, and that the axioms it depends on, collected by walking the
+   replayed environment, are allowed.
 
-The reference module is compiled once per problem from the pristine file. The candidate is
-compiled in a sandbox without network and with read-only access to the reference.
+It is the capability `lean.certify`, on the host through `LEAN_PROJECT_DIR` (the project above).
+[certifier.md](certifier.md) has the process, the sandbox the compile should run in, the settings
+and the deployment. The Lean library has never been compiled.
+
+A run uses it without being asked when the host's profile lists `lean.certify` (the default
+profiles do): it certifies each problem's candidate, and the proofs and refutations the lines submit
+([m0-loop.md](m0-loop.md#certification)). Where the project is not set up, or the profile has
+neither a sandbox command nor `unsandboxed: true` (neither default profile has one), the
+certifier is unavailable: every candidate stays a candidate and its problem says why.
 
 ## To verify against Lean
 
@@ -138,3 +155,4 @@ of `lean.check` checks each of them against a server
    ([m1-identity-memory.md](m1-identity-memory.md#failure-classes)); a message not matched is
    `other`.
 8. The Lean meta tool, from building SeshatMeta on: [lean-meta.md](lean-meta.md#to-verify-against-lean).
+9. The certifier, from building SeshatCertify on: [certifier.md](certifier.md#to-verify-against-lean).

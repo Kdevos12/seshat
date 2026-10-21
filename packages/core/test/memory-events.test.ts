@@ -142,7 +142,7 @@ describe("memory events", () => {
     assert.deepEqual(p.nodes("lesson", "clm_a").map((n) => n.node_id), ["nod_1"]);
     assert.deepEqual(p.nodes("lesson", "clm_b"), []);
     assert.equal(p.modelCall("mc_1")?.usd, 0.25);
-    assert.deepEqual(p.runSummary(), { problems: 1, solved: 0, candidates: 0, attempts: 1, usd: 0.75, inputTokens: 15, outputTokens: 26 });
+    assert.deepEqual(p.runSummary(), { problems: 1, solved: 0, refuted: 0, candidates: 0, attempts: 1, usd: 0.75, inputTokens: 15, outputTokens: 26 });
     journal.close();
 
     const path = join(dir, "projection.sqlite");

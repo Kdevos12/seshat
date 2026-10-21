@@ -287,8 +287,10 @@ describe("MemoryStore references", () => {
     const { memory, journal } = open();
     const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "bench:x" });
     const source = "import Mathlib\n\nnamespace Erdos1\n\n/-- doc -/\ntheorem erdos_1 : 1 = 1 := by\n  sorry\n\nend Erdos1\n";
-    memory.withActor("orchestrator").setReference(claimId, { source, theorem: "Erdos1.erdos_1" });
+    memory.setReference(claimId, { source, theorem: "Erdos1.erdos_1" });
     assert.deepEqual(memory.referenceFor(claimId), { source, theorem: "Erdos1.erdos_1" });
+    // The views of the root store read it.
+    assert.deepEqual(memory.withActor("line:M1").referenceFor(claimId), { source, theorem: "Erdos1.erdos_1" });
     const negation = memory.referenceFor(claimId, { negation: true });
     assert.equal(negation.theorem, "erdos_1_negation");
     assert.ok(negation.source.startsWith(source.trimEnd()));
@@ -297,6 +299,35 @@ describe("MemoryStore references", () => {
     const open_ = negationReference({ source: "namespace A\ntheorem «odd name» : True := trivial\n", theorem: "A.«odd name»" });
     assert.equal(open_.theorem, "A.«odd name_negation»");
     assert.throws(() => memory.setReference("clm_x", { source, theorem: "x" }), /unknown claim clm_x/);
+    journal.close();
+  });
+
+  it("let only the root store set a reference: a line's view cannot replace the file a proof is compared with", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", header: "import Mathlib\n", origin: "test" });
+    const own = memory.referenceFor(claimId);
+    const view = memory.withActor("line:M1");
+    const forged = { source: "theorem anything : True := trivial\n", theorem: "anything" };
+    assert.throws(() => view.setReference(claimId, forged), /is a view; only the orchestrator's root store sets a reference file/);
+    // A view of a view is a view too, and nothing changed for the root store or for the view.
+    assert.throws(() => view.withActor("line:M2").setReference(claimId, forged), /is a view/);
+    assert.deepEqual(memory.referenceFor(claimId), own);
+    assert.deepEqual(view.referenceFor(claimId), own);
+    // The file of a claim that was never given one is rebuilt from the journaled statement and header.
+    assert.equal(view.referenceFor(claimId).source, claimSource("import Mathlib\n", claimTheoremName(claimId), "(n : ℕ) : n + 0 = n"));
+    journal.close();
+  });
+
+  it("give out copies of a reference: a line that changes one changes nothing", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: ": 1 = 1", origin: "bench:x" });
+    const given = { source: "theorem a : 1 = 1 := by\n  sorry\n", theorem: "a" };
+    memory.setReference(claimId, given);
+    given.source = "theorem a : True := trivial\n";
+    const view = memory.withActor("line:M1");
+    view.referenceFor(claimId).source = "theorem a : True := trivial\n";
+    assert.deepEqual(view.referenceFor(claimId), { source: "theorem a : 1 = 1 := by\n  sorry\n", theorem: "a" });
+    assert.deepEqual(memory.referenceFor(claimId), view.referenceFor(claimId));
     journal.close();
   });
 

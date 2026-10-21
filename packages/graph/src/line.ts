@@ -76,9 +76,11 @@ interface Work {
  * - tells each prover what the graph knows: the open lemmas the claim would follow from, and the
  *   `graph_neighbors` tool to read the neighborhood of a claim. (`graph_query` is the context compiler's, M4.)
  *
- * A problem the graph refutes ends as `unsolved`: a run has no `refuted` outcome. Each line object
- * keeps its per-problem state, so register one per run (`createM2Line`); `m2Line` is the instance
- * the orchestrator registers.
+ * A problem the graph refutes ends as `refuted` when the certifier certifies the refutation its
+ * lines submitted (the run does that once `afterProblem` is over); without a certifier, or when it
+ * rejects the refutation or cannot decide, the problem ends as `unsolved`. Each line object keeps
+ * its per-problem state, so register one per run (`createM2Line`); `m2Line` is the instance the
+ * orchestrator registers.
  */
 export function createM2Line(): Line {
   const works = new Map<string, Work>();

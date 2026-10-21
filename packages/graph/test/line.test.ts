@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { HarnessEvent } from "@seshat/core";
+import type { CertificationRequest, HarnessEvent, LeanCertifier } from "@seshat/core";
 import type { Line, LineRegistry } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { LINES } from "../../orchestrator/src/lines.ts";
@@ -80,7 +80,7 @@ describe("the line M2 in a run", () => {
       responses: Array.from({ length: 8 }, () => router),
     });
     const problem = result.problems[0];
-    assert.equal(problem?.outcome, "unsolved", "a run has no refuted outcome: the problem is not solved");
+    assert.equal(problem?.outcome, "unsolved", "without a certifier nothing is refuted: the problem is not solved");
     const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
 
     // The refutation side asked once, with the neutral framing, and the negation was proved.
@@ -106,6 +106,54 @@ describe("the line M2 in a run", () => {
     assert.deepEqual(nodes(events, "derivation").map((n) => [n.goal, n.rule, n.verdict]), [["refuted", "negation_of/proved", "valid"]]);
     // Every model call of the line is recorded as the line's.
     assert.deepEqual(ofType(events, "model_call.finished").filter((m) => m.data.line === "M2").length, 1);
+  });
+
+  it("ends the problem refuted when the certifier certifies the twin's proof and the composed refutation", { timeout: 30000 }, async () => {
+    const { line, seen } = watched();
+    const requests: CertificationRequest[] = [];
+    const certifier: LeanCertifier = {
+      implementation: "fake-certifier",
+      version: "0",
+      certify: async (request) => {
+        requests.push(request);
+        return { verdict: "certified", reasons: [], axioms: ["propext"], timeMs: 1 };
+      },
+    };
+    const router = async (context: TranscriptContext) => {
+      if (isTwin(context)) return say(lean("exact trivial_proof"));
+      const memory = seen.memory as MemoryStore;
+      await until(() => memory.edges({ to: seen.claimId as string, kinds: ["negation_of"] }).some((e) => memory.claim(e.from)?.status === "computed"), "the negation to be proved");
+      return context.messages.some((m) => m.role === "toolResult") ? say("I will stop here.") : check("bad");
+    };
+    const { result, events } = await demoRun({
+      lines: { M2: line },
+      config: { lines: ["M2"], provers: 1, sessions: 3 },
+      lean: new DemoLean(toyAnswer),
+      certifier,
+      responses: Array.from({ length: 8 }, () => router),
+    });
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
+    assert.equal(result.problems[0]?.outcome, "refuted");
+
+    // The submissions of the line went through the certifier like a prover's candidate: the link
+    // lemma and the twin's proof (claims of their own), and the composed refutation of the claim.
+    const kernel = ofType(events, "validation.finished").filter((v) => v.data.method === "kernel_replay");
+    assert.deepEqual(kernel.map((v) => [v.data.verdict, v.data.negation ?? false]), [["valid", false], ["valid", false], ["valid", true]]);
+    assert.equal(requests.length, 3);
+    assert.match(requests[2]?.target ?? "", /_negation$/);
+    // Each claim the certifier settled was a candidate first, and the refuted claim was open.
+    const changes = ofType(events, "claim.status_changed");
+    assert.deepEqual(changes.filter((c) => c.data.to === "proved" || c.data.to === "refuted").map((c) => [c.data.from, c.data.to]), [
+      ["computed", "proved"],
+      ["computed", "proved"],
+      ["open", "refuted"],
+    ]);
+    assert.deepEqual(changes.filter((c) => c.data.claimId === claimId).map((c) => [c.data.from, c.data.to, c.data.validationId]), [
+      ["open", "refuted", kernel[2]?.data.validationId],
+    ]);
+    // The negation's claim is proved, so the graph holds the refutation at the certified level.
+    const twin = ofType(events, "edge.added").find((e) => e.data.kind === "negation_of" && e.data.to.includes(claimId))?.data.from;
+    assert.deepEqual(changes.filter((c) => c.data.claimId === twin).map((c) => c.data.to), ["computed", "proved"]);
   });
 
   it("stops the refutation side when a prover proves the claim first, and tells the provers about the twin", { timeout: 30000 }, async () => {
