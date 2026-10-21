@@ -19,6 +19,7 @@ import { checkColumn, fileLine, firstColumn, type Layout, layoutOf, lineText } f
 import {
   type AllowedTool,
   DISABLED_TOOLS,
+  LEANCLIENT_VERSION,
   type LeanLspInput,
   type LeanLspOutput,
   type Op,
@@ -480,11 +481,13 @@ function whole(value: number | string | undefined, fallback: number): number {
 }
 
 /**
- * The arguments that start the server when the host gives none: with `uvx`, the pinned release; with
- * any other command (an installed server, a wrapper), none.
+ * The arguments that start the server when the host gives none: with `uvx`, the pinned release and
+ * the pinned leanclient (the other dependencies float: `mcp` is fixed by the release itself, `orjson`
+ * and `certifi` do not change what a tool answers); with any other command (an installed server, a
+ * wrapper), none.
  */
 export function defaultArgs(command: string, version: string): string[] {
-  return basename(command) === "uvx" ? ["--from", `lean-lsp-mcp==${version}`, "lean-lsp-mcp"] : [];
+  return basename(command) === "uvx" ? ["--from", `lean-lsp-mcp==${version}`, "--with", `leanclient==${LEANCLIENT_VERSION}`, "lean-lsp-mcp"] : [];
 }
 
 /** The environment the server gets: what the harness sets, which a host's own variables cannot change. */

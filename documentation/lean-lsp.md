@@ -161,12 +161,17 @@ pnpm harness contract lean.lsp                        # needs Lean; four cases a
 pnpm harness run --checkout DIR --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```
 
-By default the harness starts `uvx --from lean-lsp-mcp==0.31.0 lean-lsp-mcp`, which fetches the
-pinned release from PyPI on the first start. To use an installed server instead, set
-`LEAN_LSP_MCP_COMMAND` to its executable (`pip install lean-lsp-mcp==0.31.0` in a virtual
-environment, which also fixes the server's dependencies: it asks `mcp[cli]==2.0.0` but
-`leanclient>=0.13.2`, so `uvx` takes the newest `leanclient`; release 0.31.0 was seen with
-`leanclient` 0.13.2). With a command other than `uvx` the harness passes no arguments.
+By default the harness starts `uvx --from lean-lsp-mcp==0.31.0 --with leanclient==0.13.2
+lean-lsp-mcp`, which fetches the pinned release from PyPI on the first start. `leanclient` is pinned
+exactly because the release asks only `leanclient>=0.13.2`, and `leanclient` decides what a goal, a
+barrier and a position are: a newer one could change the answers without the handshake showing it.
+Release 0.31.0 was written and seen with 0.13.2. The other dependencies are not pinned by the
+harness: `mcp[cli]` is fixed by the release itself (`==2.0.0`), while `orjson` and `certifi` float
+(`orjson>=3.11.9`, `certifi>=2026.7.22`: they do not change what a tool answers, and a floating
+`certifi` keeps the certificate bundle current). To use an installed server instead, set
+`LEAN_LSP_MCP_COMMAND` to its executable (`pip install lean-lsp-mcp==0.31.0 leanclient==0.13.2` in a
+virtual environment, which then also fixes `orjson` and `certifi` at what it installed). With a
+command other than `uvx` the harness passes no arguments.
 
 The project is the bench's formal-conjectures checkout when the provers work on bench problems
 ([lean.md](lean.md#deployment-for-the-bench)): its imports must resolve there. Lean runs as the
@@ -283,7 +288,7 @@ None needs Python, Lean or a network.
   forged sketch, the journal, no status change, a site down, the server dying, the budget.
 - `real-server.test.ts` runs the real lean-lsp-mcp, for a host that has it, and is skipped otherwise.
   It needs neither Lean nor the network: set `LEAN_LSP_MCP_PYTHON` to a Python with
-  `pip install lean-lsp-mcp==0.31.0` (a virtual environment's `bin/python`) and run
+  `pip install lean-lsp-mcp==0.31.0 leanclient==0.13.2` (a virtual environment's `bin/python`) and run
   `LEAN_LSP_MCP_PYTHON=/path/to/venv/bin/python pnpm test`. It compares `attemptLines` with the
   server's own `build_attempt_text` on 1500 random cases, and fails on any other release.
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type Json } from "@seshat/core";
 import { loadHostProfile, Registry, runContract, type HostProfile } from "@seshat/registry";
-import { defaultArgs, DISABLED_TOOLS, ALLOWED_TOOLS, FILE_OPS, LEAN_LSP_MCP_VERSION, leanLspFactory, OPS, SITES, SITE_OF_TOOL } from "../src/index.ts";
+import { defaultArgs, DISABLED_TOOLS, ALLOWED_TOOLS, FILE_OPS, LEAN_LSP_MCP_VERSION, LEANCLIENT_VERSION, leanLspFactory, OPS, SITES, SITE_OF_TOOL } from "../src/index.ts";
 import { ALL_TOOLS, FakeLeanLspMcp, USED_TOOLS } from "./fixtures/fake-lean-lsp-mcp.ts";
 import { capability, catalog, REPO, SKETCH, spec, standIns, tempProject } from "./helpers.ts";
 
@@ -52,11 +52,14 @@ describe("the manifest of lean.lsp", () => {
     assert.equal(spec.factory, "lean-lsp");
     assert.equal(manifest.implementations.length, 1);
     assert.equal(manifest.implementations[0]?.id, "lean-lsp-mcp");
-    assert.deepEqual(defaultArgs("uvx", spec.version), ["--from", "lean-lsp-mcp==0.31.0", "lean-lsp-mcp"]);
-    assert.deepEqual(defaultArgs("/usr/local/bin/uvx", spec.version), ["--from", "lean-lsp-mcp==0.31.0", "lean-lsp-mcp"]);
+    // leanclient is pinned exactly beside the release: the server only asks for a minimum of it.
+    assert.equal(LEANCLIENT_VERSION, "0.13.2");
+    assert.deepEqual(defaultArgs("uvx", spec.version), ["--from", "lean-lsp-mcp==0.31.0", "--with", "leanclient==0.13.2", "lean-lsp-mcp"]);
+    assert.deepEqual(defaultArgs("/usr/local/bin/uvx", spec.version), ["--from", "lean-lsp-mcp==0.31.0", "--with", "leanclient==0.13.2", "lean-lsp-mcp"]);
     assert.deepEqual(defaultArgs("lean-lsp-mcp", spec.version), []);
     const environment = (spec as unknown as { environment: Record<string, string> }).environment;
     assert.equal(environment.server, `lean-lsp-mcp ${LEAN_LSP_MCP_VERSION}`);
+    assert.equal(environment.leanclient, `leanclient ${LEANCLIENT_VERSION}`);
   });
 
   it("uses 8 of the server's 22 tools, and switches the other 14 off in the server", () => {
