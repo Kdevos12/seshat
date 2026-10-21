@@ -43,6 +43,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [architecture.md](architecture.md): packages, data flow, design rules.
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
+- [ledger.md](ledger.md): the task ledger: tasks and their transitions, acceptance criteria, what
+  the journal enforces, routing decisions, charges, sites, resume.
 - [memory.md](memory.md): the memory store: claims, statement identities, edges, nodes and their
   kinds, queries, reference files.
 - [lines.md](lines.md): the line API: the plan's mechanisms as lines a run switches on, their
