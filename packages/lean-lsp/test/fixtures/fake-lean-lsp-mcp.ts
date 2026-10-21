@@ -201,7 +201,7 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
-// --- the canned answers, in the shapes the real server gives (see the probes in documentation/lean-lsp.md) ---
+// --- the canned answers, in the shapes the real server gives (checked against the real server by real-server.test.ts, which is opt-in: documentation/lean-lsp.md, "Tests") ---
 
 const isMarkerOrBlank = (line: string) => line.trim() === "" || line.trim().startsWith("-- HARNESS");
 
