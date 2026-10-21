@@ -392,6 +392,9 @@ lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.js
   candidate's claim with another proof. A transient failure of the certifier therefore costs the
   candidate its certificate in that run, and nothing certifies the candidates of a finished run
   afterwards, though every file that was checked is in its blob store (by `submissionHash`).
+- The fleet counts a proof the fast check accepted as a success of its strategy and its model
+  ([fleet.md](fleet.md#posteriors)), also when the certifier then rejects it. The rejection is a
+  validation of the claim that no posterior reads yet.
 - The reference is compiled for every certification. Caching it is safe only where nothing that ran
   untrusted code can write to the cache, so it waits for a sandbox that has been tried.
 - The module is replayed whole, since `Environment.replay` takes a module's constants as a map.
