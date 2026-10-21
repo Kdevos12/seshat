@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import type { Json } from "@seshat/core";
 import { UnavailableError } from "@seshat/registry";
 import { DISABLED_TOOLS, leanLspFactory, type LeanLspImplementation } from "../src/index.ts";
@@ -31,7 +31,23 @@ async function seen(impl: LeanLspImplementation, name: string): Promise<string> 
   return answer.results[0]?.name ?? "";
 }
 
+/** The variables that a test of this file sets in the process's environment, as the process had them. */
+const SET_BY_TESTS = ["HTTPS_PROXY", "SESHAT_TEST_SECRET"] as const;
+const AT_START: Record<string, string | undefined> = Object.fromEntries(SET_BY_TESTS.map((name) => [name, process.env[name]]));
+
+/** Puts a variable back as it was: its value, or no variable if there was none. A proxy is never unset. */
+function restoreEnv(saved: Record<string, string | undefined>): void {
+  for (const [name, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
 describe("lean.lsp over a server process on stdio", () => {
+  after(() => {
+    for (const name of SET_BY_TESTS) assert.equal(process.env[name], AT_START[name], `${name} is as the process had it before the tests`);
+  });
+
   it("starts the server on the project, with the other 14 tools switched off, and finds the eight it uses", async () => {
     const { impl, project } = child();
     try {
@@ -57,20 +73,23 @@ describe("lean.lsp over a server process on stdio", () => {
   });
 
   it("gives the server the sites a host names, and none of the harness's own environment", async () => {
+    const before = { HTTPS_PROXY: process.env.HTTPS_PROXY, SESHAT_TEST_SECRET: process.env.SESHAT_TEST_SECRET };
     process.env.SESHAT_TEST_SECRET = "do-not-pass";
     process.env.HTTPS_PROXY = "http://proxy.invalid:3128";
-    const { impl } = child({ loogleUrl: "http://127.0.0.1:8088", hammerUrl: "http://127.0.0.1:8090", leanFinderUrl: "http://127.0.0.1:8089", maxOpenFiles: 9 });
     try {
-      assert.equal(await seen(impl, "LOOGLE_URL"), "http://127.0.0.1:8088");
-      assert.equal(await seen(impl, "LEAN_HAMMER_URL"), "http://127.0.0.1:8090");
-      assert.equal(await seen(impl, "LEAN_FINDER_URL"), "http://127.0.0.1:8089");
-      assert.equal(await seen(impl, "LEAN_LSP_MAX_OPEN_FILES"), "9");
-      assert.equal(await seen(impl, "SESHAT_TEST_SECRET"), "(unset)");
-      assert.equal(await seen(impl, "HTTPS_PROXY"), "(unset)", "a proxy is the host's to name, in the env setting");
+      const { impl } = child({ loogleUrl: "http://127.0.0.1:8088", hammerUrl: "http://127.0.0.1:8090", leanFinderUrl: "http://127.0.0.1:8089", maxOpenFiles: 9 });
+      try {
+        assert.equal(await seen(impl, "LOOGLE_URL"), "http://127.0.0.1:8088");
+        assert.equal(await seen(impl, "LEAN_HAMMER_URL"), "http://127.0.0.1:8090");
+        assert.equal(await seen(impl, "LEAN_FINDER_URL"), "http://127.0.0.1:8089");
+        assert.equal(await seen(impl, "LEAN_LSP_MAX_OPEN_FILES"), "9");
+        assert.equal(await seen(impl, "SESHAT_TEST_SECRET"), "(unset)");
+        assert.equal(await seen(impl, "HTTPS_PROXY"), "(unset)", "a proxy is the host's to name, in the env setting");
+      } finally {
+        await impl.close();
+      }
     } finally {
-      await impl.close();
-      delete process.env.SESHAT_TEST_SECRET;
-      delete process.env.HTTPS_PROXY;
+      restoreEnv(before);
     }
   });
 
