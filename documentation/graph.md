@@ -188,7 +188,11 @@ the step is:
 | `refuted_by/counterexample` | `exact L X` |
 
 It fails, with the reason, when a premise has no proof on record, an edge lost its link proof, or
-the claims do not share a header (their statements would not mean the same in one file).
+the claims do not share a header (their statements would not mean the same in one file). A proof
+that the certifier refused is not on record for this purpose: the claim stays `computed` after a
+refusal, so the graph still counts it as a candidate premise, but a proof composed from a file the
+kernel refused would be refused too, and the derivation is skipped (a later proof of the premise
+that the kernel has not looked at can serve).
 
 `realize({memory, state, validate, headerOf, minLevel?, limit?, tried?, signal?, ...})` does the
 rest. It syncs the state, then for each derived fact about a claim that is still open, shortest
@@ -398,7 +402,8 @@ counts under `M2`. Nothing aggregates the derivations and the twins into the rep
 - Composed proofs: the steps of a chain, auxiliary declarations renamed apart, missing pieces.
   `realize`: a composed proof submitted to the simulated Lean before a claim becomes `computed`
   (never `proved`), a refused proof recorded and not sent twice, a chain in order and within the
-  limit, a claim withdrawn when its premise is, a refutation that changes no status.
+  limit, a claim withdrawn when its premise is, a refutation that changes no status, and a premise
+  whose proof the certifier refused (no proof on record: nothing is sent to Lean).
 - The twin: the neutral framing, the answers of a model read, one side stopping the other.
 - Labels and nogoods on an AND/OR graph, bottlenecks, bounds, incremental recomputation.
 - PageRank against the closed forms of two small graphs, and graph queries with short ids.
