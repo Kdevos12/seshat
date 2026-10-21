@@ -1,6 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Json } from "@seshat/core";
-import { CapabilityError, type CapabilityManifest, messageOf, type Registry } from "@seshat/registry";
+import type { Json, Sketch, Submission } from "@seshat/core";
+import { leanLspBinding } from "@seshat/lean-lsp";
+import { CapabilityError, type CapabilityManifest, type JsonSchema, messageOf, type Registry } from "@seshat/registry";
 
 /** The name a model calls a capability by: its id with `_` for `.`, such as `compute_sage`. */
 export function toolName(id: string): string {
@@ -64,6 +65,26 @@ export async function pinTools(
   return { tools, problems, notes };
 }
 
+/**
+ * How a run adapts a capability's tool to the prover that uses it, for the capabilities some of
+ * whose inputs belong to the harness and not to the model (the problem's sketch, for `lean.lsp`).
+ * A hidden field is not in the tool's parameters, a value the model gives for it is dropped, and
+ * `bind` sets it; `present` writes the answer for the model in place of one line per field.
+ */
+export interface ToolBinding {
+  /** Top-level input fields that the harness sets. */
+  readonly hidden?: readonly string[];
+  /** The input of the registry call, from the arguments of the model's call. */
+  bind?(params: Record<string, Json>): Record<string, Json>;
+  /** The answer as the model reads it; default: `renderOutput`. */
+  present?(output: Json): string;
+}
+
+/** The binding of a capability for a prover on this sketch, when it has one; `current` gives the regions the prover last checked. */
+export function toolBinding(id: string, o: { sketch: Sketch; current: () => Submission }): ToolBinding | undefined {
+  return id === "lean.lsp" ? leanLspBinding(o) : undefined;
+}
+
 export interface CapabilityToolOptions {
   registry: Registry;
   /** The attempt the calls belong to; also the scope of a stateful capability. */
@@ -73,6 +94,8 @@ export interface CapabilityToolOptions {
   implementation?: string;
   /** Length limit of the text a call returns to the model. */
   maxChars?: number;
+  /** Inputs the harness sets and how the answer reads; see `ToolBinding`. */
+  binding?: ToolBinding;
 }
 
 export interface CapabilityToolDetails {
@@ -103,19 +126,20 @@ export function capabilityTool(id: string, o: CapabilityToolOptions): AgentTool<
     label: manifest.title,
     description: toolDescription(manifest),
     // The manifest's input schema is plain JSON Schema, which pi validates as it is.
-    parameters: manifest.input as never,
+    parameters: withoutFields(manifest.input, o.binding?.hidden ?? []) as never,
     executionMode: "sequential",
     execute: async (_id, params, signal) => {
       if (unreachable !== undefined) return answer(`Error: ${name} is unavailable in this session (${unreachable}).`, { outcome: "unavailable" }, true);
       try {
-        const result = await o.registry.invoke(id, params as Json, {
+        const input = o.binding?.bind !== undefined ? o.binding.bind(params as unknown as Record<string, Json>) : (params as Json);
+        const result = await o.registry.invoke(id, input, {
           attemptId: o.attemptId,
           actor: o.actor,
           ...(o.implementation !== undefined ? { implementation: o.implementation } : {}),
           ...(manifest.stateful === true ? { scope: o.attemptId } : {}),
           ...(signal !== undefined ? { signal } : {}),
         });
-        return answer(renderOutput(result.output), { outcome: "ok", toolRunId: result.toolRunId });
+        return answer((o.binding?.present ?? renderOutput)(result.output), { outcome: "ok", toolRunId: result.toolRunId });
       } catch (error) {
         if (!(error instanceof CapabilityError)) return answer(`Error: the harness failed: ${messageOf(error)}`, { outcome: "error" }, true);
         const details: CapabilityToolDetails = { outcome: error.code, ...(error.toolRunId !== undefined ? { toolRunId: error.toolRunId } : {}) };
@@ -127,6 +151,14 @@ export function capabilityTool(id: string, o: CapabilityToolOptions): AgentTool<
       }
     },
   };
+}
+
+/** The schema of an object without some of its properties, which also stop being required. */
+function withoutFields(schema: JsonSchema, hidden: readonly string[]): JsonSchema {
+  if (hidden.length === 0 || schema.properties === undefined) return schema;
+  const properties = Object.fromEntries(Object.entries(schema.properties).filter(([name]) => !hidden.includes(name)));
+  const required = schema.required?.filter((name) => !hidden.includes(name));
+  return { ...schema, properties, ...(required !== undefined ? { required } : {}) };
 }
 
 function errorText(error: CapabilityError): string {

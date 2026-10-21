@@ -99,6 +99,7 @@ export class Workbench {
   private found: Candidate | undefined;
   private readonly listeners: Array<(candidate: Candidate) => void> = [];
   private readonly started: string[] = [];
+  private readonly checked = new Map<string, Submission>();
 
   constructor(options: WorkbenchOptions) {
     this.journal = options.journal;
@@ -144,7 +145,13 @@ export class Workbench {
     return renderSketch(this.sketch, submission.aux, submission.proof);
   }
 
+  /** The regions of the attempt's last check, whatever its verdict; undefined before its first. */
+  lastSubmission(attemptId: string): Submission | undefined {
+    return this.checked.get(attemptId);
+  }
+
   async check(submission: Submission, context: { attemptId?: string; actor: string; signal?: AbortSignal }): Promise<CheckResult> {
+    if (context.attemptId !== undefined) this.checked.set(context.attemptId, submission);
     const submitted = this.render(submission);
     this.blobs?.put(submitted);
     const markers = markerProblems(submission);
