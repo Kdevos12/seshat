@@ -56,6 +56,14 @@ when its text changed, one file per attempt, and deleted when the attempt ends
 alone in its attempt, so the file holds the regions of the call that is running; calls of
 different attempts run at the same time.
 
+The server splits a file into lines at more characters than Lean does (Python's `splitlines()`: a
+carriage return that no line feed follows, vertical tab, form feed, the file, group and record
+separators, NEL, U+2028 and U+2029). Text with one of them would be a comment to the screen and code
+in the trial documents of `multi_attempt` (the server splits the file and joins it again), and every
+line after it would be off by one. So a region or a tactic that holds one is refused, a CRLF (one
+break for both) is written as a line feed, and a problem whose own file holds one of the others is
+refused as a whole.
+
 The server's answers are read back in the prover's terms: a line of the file becomes `PROOF line 3`
 (or `AUX line 2`, or `line 9 of the fixed part` for the theorem's header and the rest of the file),
 the project's path in a message becomes `<project>`, and the scratch file's `the sketch file`.
