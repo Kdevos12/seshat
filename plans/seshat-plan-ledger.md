@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 01:35 UTC. `main` at 36115f2, 540 tests.
+Updated 2026-10-21 01:39 UTC. `main` at 28e78d2, 540 tests.
 
 ## Tasks
 
@@ -17,7 +17,7 @@ Updated 2026-10-21 01:35 UTC. `main` at 36115f2, 540 tests.
 | 4 | Certifier: `lean.certify`, kernel replay | main | re-review of fix round 1 (Rulings 22, 23) | `task/t4` |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
 | 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
-| 7 | M11: small models, fingerprints, lookups | main | fix round 2 after re-review | `task/t7` |
+| 7 | M11: small models, fingerprints, lookups | main | re-review of fix round 2 | `task/t7` |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
 | 10 | M12: saturation kernel, subgoal scheduler | main | not started | |
@@ -269,3 +269,5 @@ Task 16: implementer DONE_WITH_CONCERNS (commits 77a4464 447bc39 on task/t16, ba
 Task 16: review dispatched (6fec828..447bc39; named risks: surface and allowlist, screening incl. the core token-screen hole R2-1, no status change, site degradation, pinning of leanclient, sandbox stance in trust.md, sanitizing, scratch cleanup, ToolBinding sketch, registry and budget, docs and :::wait)
 Task 4: fix round 1 implemented (commits b191e72 83a11be 7f5b77c e3d3f7f 383ff43 e53b06b on task/t4, 623/623; task/t4 pushed); I1 a broken Lean environment is no verdict (the reference is compiled when the candidate fails; health compiles a one-line file), I2 fail closed per Ruling 22 (unavailable without a sandbox or `unsandboxed: true`, minimal environment, a directory per call), M3 per Ruling 23, M1 M2 M4-M12; choices: a contradiction on another claim is logged and named in the reason, not an error; an unavailable certifier stays selected and the run records certifierUnavailable; e53b06b documents the fleet gap deferred to Task 19; shared changes: registry additions, HealthAwareCertifier.health return type
 Task 4: scoped re-review dispatched (FIX_BASE be6e9e2, head e53b06b; the strongest tier because the certifier is the trust anchor and the fix diff is large: 39 files, +1890 -377)
+Task 7: fix round 2 implemented (commits 482dca3 7b01ef7 8ce131e 3733ef5 3c6274d c79681e on task/t7, 591/591; task/t7 pushed); R2-1 the core token screen finds a forbidden command glued to what precedes it, M11 refuses `#`; M2 forall/exists words; R2-3 exact sorts; R2-4 limits (4000 chars, 64 occurrences, nesting 32, also in the tool schema); R2-2 lawWork in steps weighted by law size (default 500M, worst accepted case about 8.4 s); c79681e (R2-1b, beyond the findings, droppable alone): the screen reads names as Lean's lexer does; concerns: Task 4 also edits validator.ts (token list), two m11.test.ts expectations and the beforeSession row of models.md change when T4 merges, ULift negation unverified against a real Lean
+Task 7: scoped re-review dispatched (FIX_BASE 6335470, head c79681e; asked to judge R2-1b keep or drop)
