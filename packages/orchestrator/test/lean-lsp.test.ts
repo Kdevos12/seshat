@@ -209,7 +209,8 @@ describe("tools besides lean_check: lean.lsp", () => {
 
   it("goes on when a search site is down: the answer says so, the site is left alone, and the run is not failed", async () => {
     const fake = new FakeLeanLspMcp();
-    fake.failing.set("lean_loogle", "loogle error:\nConnectionError: connection refused");
+    // The words of the exception urllib raises, as the server passes them on.
+    fake.failing.set("lean_loogle", "loogle error:\n<urlopen error [Errno 111] Connection refused>");
     const { result, events, dir } = await demoRun({
       registry: lspRegistry(fake, leanProject()),
       config: { tools: ["lean.lsp"], sessions: 1 },
@@ -224,8 +225,8 @@ describe("tools besides lean_check: lean.lsp", () => {
     const [attemptId] = ofType(events, "attempt.started").map((e) => e.data.attemptId as string);
     const answers = seen(dir, attemptId as string, "lean_lsp");
     assert.deepEqual(answers.map(([, isError]) => isError), [false, false, false]);
-    assert.match(answers[0]?.[0] ?? "", /^Loogle cannot be reached \(ConnectionError: connection refused\); it is not asked again for 60 second\(s\)\. Go on without it\.$/);
-    assert.match(answers[1]?.[0] ?? "", /^Loogle is out of reach \(ConnectionError: connection refused\); it is not asked again for 60 more second\(s\)\. Go on without it\.$/);
+    assert.match(answers[0]?.[0] ?? "", /^Loogle cannot be reached \(<urlopen error \[Errno 111\] Connection refused>\); it is not asked again for 60 second\(s\)\. Go on without it\.$/);
+    assert.match(answers[1]?.[0] ?? "", /^Loogle is out of reach \(<urlopen error \[Errno 111\] Connection refused>\); it is not asked again for 60 more second\(s\)\. Go on without it\.$/);
     assert.match(answers[2]?.[0] ?? "", /^Before PROOF line 1/, "the other operations are not affected");
     assert.equal(fake.of("lean_loogle").length, 1, "the site was asked once");
     const finished = ofType(events, "tool_run.finished").filter((e) => (e.data.summary as { status?: string } | undefined)?.status !== undefined);

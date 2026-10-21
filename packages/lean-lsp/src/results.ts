@@ -137,10 +137,28 @@ export type Failure =
   | { kind: "tool"; message: string };
 
 /**
- * Sorts the failure of a tool. The four tools that ask a site fail with the exception text of the
- * network call (a refused connection, a status, a time limit) or with the server's own rate limit:
- * both are the site being out of reach, which is no fault of the query. The few failures that
- * the site itself answers, or the server answers about the position, are told apart first.
+ * What the network call of a site tool raises when the site is out of reach, in the words of the
+ * exceptions that urllib, http.client and ssl raise (a failed lookup or a refused connection, an HTTP
+ * status, a connection that was cut, a time limit of the socket), and what the server says when its
+ * own client-side limit refuses the call. A time limit of the language server names its method and
+ * says "after N s": it is not here.
+ */
+const NETWORK_FAILURE = [
+  /^<urlopen error\b/i,
+  /^HTTP Error \d{3}\b/i,
+  /^(?:Rate|Tool) limit exceeded\b/i,
+  /^Remote end closed connection\b/i,
+  /^(?:\[Errno \d+\] )?Connection (?:reset by peer|aborted)\b/i,
+  /^(?:_ssl\.c:\d+: )?(?:The (?:read|write|handshake) operation )?timed out\.?$/i,
+];
+
+/**
+ * Sorts the failure of a tool. A tool that asks a site is out of reach only when its failure is one
+ * of the network's (`NETWORK_FAILURE`): that is no fault of the query, and the site is left alone for
+ * a while. The failures that the site or the server answer about the query or the position are told
+ * apart first. Anything else is a failure of the call, even from a tool that asks a site: the premise
+ * tool reads the goal from the language server before it asks its site, and what goes wrong there is
+ * Lean's, not the site's.
  */
 export function classify(tool: AllowedTool, message: string): Failure {
   const said = stripToolPrefix(tool, message);
@@ -149,8 +167,10 @@ export function classify(tool: AllowedTool, message: string): Failure {
   if (/^loogle query error:/i.test(said)) return { kind: "query", message: said };
   const noGoal = /^No goals found at line \d+, column \d+ \(status: ([^)]*)\)/.exec(said);
   if (noGoal !== null) return { kind: "no_goal", status: noGoal[1] as string };
+  // Loogle puts what went wrong with its remote call on the line after its own name.
   const first = said.split("\n").find((line) => line.trim() !== "" && !/^loogle error:?$/i.test(line.trim())) ?? said;
   // The server's hint to switch Loogle to a local copy is for the host, not for a prover.
   const reason = first.replace(/\s*Use --loogle-local to avoid limits\.?/i, "").trim();
+  if (!NETWORK_FAILURE.some((pattern) => pattern.test(reason))) return { kind: "tool", message: said };
   return { kind: "site", site, reason: clip(reason, 300) };
 }
