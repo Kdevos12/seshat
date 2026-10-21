@@ -20,11 +20,13 @@ import {
 import { type JsonObject, type LineRegistry, resolveLines } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { TaskLedger } from "@seshat/scheduler";
 import { Ledger } from "./budget.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
 import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
+import { createProverTasks, endProverTask } from "./prover-tasks.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
@@ -275,6 +277,9 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
         : `certifier: ${certifier.implementation} ${certifier.version}`,
   );
 
+  // The task ledger: the orchestrator is its only writer (documentation/ledger.md).
+  const tasks = new TaskLedger(journal);
+
   // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
   let runLines: RunLines | undefined;
   let benches: ClaimBenches | undefined;
@@ -290,6 +295,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       registry,
       memory,
       benches,
+      tasks,
       models: o.models,
       model: config.model,
       resolveModel: (name) => resolveModel(o.models, name),
@@ -382,6 +388,8 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     );
     const finish = (outcome: ProblemOutcome, reason?: string, proof?: string): ProblemResult => {
       const durationMs = Math.round(performance.now() - started);
+      // What the problem did not finish is over with it: a task that was never started, or one a line proposed.
+      tasks.closeProblem(entry.id, `the problem ended: ${outcome}`);
       journal.emit(
         "problem.finished",
         { problemId: entry.id, claimId, outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd, durationMs },
@@ -440,11 +448,22 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
 
       ledger.onExhausted(() => controller.abort(ABORT_BUDGET));
       const workbench = new Workbench({
-        journal, registry, problem, claimId, reference, blobs, ...(certifier !== undefined ? { certifier } : {}),
+        journal, registry, problem, claimId, problemId: entry.id, reference, blobs, ...(certifier !== undefined ? { certifier } : {}),
       });
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
       const transcript = (attemptId: string, messages: AgentMessage[]) =>
         writeFileSync(join(o.dir, "transcripts", `${attemptId}.json`), `${JSON.stringify(messages)}\n`);
+
+      // One task per prover: the ledger's record of the work (documentation/ledger.md). They exist before
+      // the lines' `beforeProvers`, so that the lines can read them.
+      const proverTasks = createProverTasks(tasks, {
+        problemId: entry.id,
+        claimId,
+        theorem: entry.fullName,
+        provers: config.provers,
+        sessions: config.sessions,
+        problemUsd: config.budget.problemUsd,
+      });
 
       // With lines: the problem's lines, their `beforeProvers`, and `afterProblem` before the end.
       let lines: ProblemLines | undefined;
@@ -474,9 +493,18 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       const settled: PromiseSettledResult<ProverResult>[] = idle
         ? []
         : await Promise.allSettled(
-            Array.from({ length: config.provers }, (_, i) =>
-              runProver({
-                name: `p${i + 1}`,
+            proverTasks.map((task) => {
+              let ended = false;
+              const end = (how: Parameters<typeof endProverTask>[2]) => {
+                if (ended) return;
+                ended = true;
+                endProverTask(tasks, task, how);
+              };
+              tasks.start(task.taskId, `prover ${task.name} starts`);
+              return runProver({
+                name: task.name,
+                taskId: task.taskId,
+                blobs,
                 workbench,
                 journal,
                 models: o.models,
@@ -490,13 +518,16 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
                 signal: controller.signal,
                 transcript,
                 tools: pinned.tools,
+                onEnd: (result) =>
+                  end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" }),
                 ...(lines !== undefined ? { lines } : {}),
               }).catch((error: unknown) => {
                 // A harness failure stops the problem's other provers too.
                 controller.abort(ABORT_STOPPED);
+                end({ crash: messageOf(error) });
                 throw error;
-              }),
-            ),
+              });
+            }),
           );
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = workbench.attemptIds.length;

@@ -40,6 +40,8 @@ export interface SessionOptions {
   limits: SessionLimits;
   /** Charged with every model response. */
   ledger: Ledger;
+  /** Told of every model response's cost as it is charged, so that the journal keeps what a session that never finishes spent. */
+  onCharge?: (cost: TokenCost) => void;
   /** The problem's signal, aborted with `ABORT_SOLVED`, `ABORT_BUDGET` or `ABORT_STOPPED`. */
   signal: AbortSignal;
   /** When a limit ends the session, ask the model for its notes (one more response). */
@@ -211,6 +213,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     cost.inputTokens += charge.inputTokens;
     cost.outputTokens += charge.outputTokens;
     o.ledger.charge(charge);
+    o.onCharge?.(charge);
   });
   const abort = () => agent.abort();
   o.signal.addEventListener("abort", abort, { once: true });

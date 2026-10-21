@@ -128,6 +128,44 @@ owner. Its dependencies and parent must be tasks of the same problem, and a prob
 with a reason it can read. What the journal refuses (a claim that does not exist, a criterion of the
 wrong shape) comes back as the reason, and nothing is written.
 
+## What M0 records
+
+A run with no line enabled records, for each problem that is worked on, one `prove` task per
+prover, and no other task. The problem's reference file has been checked by then (a problem that is
+skipped has no task), and the tasks are made before the lines' `beforeProvers`, so that a line can
+read them.
+
+| Moment | Event |
+|---|---|
+| The problem will be worked on | `task.created` per prover: `kind: prove`, the problem and its claim, owner `prover:pN`, the criterion "the claim is at least `computed`", the budget (`usd`: the problem's, `sessions`: the prover's), a title. Then `pending` to `ready`, since nothing is waited for. |
+| A prover starts | `ready` to `running`. Its attempts say `taskId` and `site` (`prover.session`) in `attempt.started`. |
+| A prover ends | The task ends ([below](#how-a-provers-task-ends)); the tasks that waited for it become `ready`. |
+| The problem ends | Before `problem.finished`: every task of the problem that has not ended is `cancelled`, with the reason "the problem ended: `<outcome>`". These are the tasks no prover took up and the ones lines proposed that nobody ran. |
+
+### How a prover's task ends
+
+The task ends when the prover does, before the lines' `afterProver`:
+
+| The prover | The task |
+|---|---|
+| found a proof that passed the fast check | `done`, if the claim is at least `computed`, which it is |
+| used its sessions | `failed`, unless the claim reached the criterion without it |
+| found its budget spent (the problem's or the run's) | `failed`, with the same exception |
+| had two sessions in a row end with an error (the model or Lean could not be reached) | `failed`, with the same exception |
+| was stopped (the run was stopped) | `cancelled`: "the run was stopped" |
+| was stopped by a line's `beforeSession` | `cancelled`: "a line stopped prover pN" |
+| crashed (a failure of the harness) | `failed`: "the harness failed in prover pN: ..." |
+
+The exception is the claim that reached the criterion through another prover's proof: the task is
+then `cancelled`, "another prover's proof passed first; this task is pointless", because its goal
+was reached without it. `done` is for the prover whose own proof passed. The journal would refuse a
+`done` for any task whose criterion did not hold, and the orchestrator never asks for one.
+
+A `done` prover task means a candidate, not a proof: its criterion is `computed`. The certification
+that follows ([m0-loop.md](m0-loop.md#certification)) is a step of the orchestrator, recorded as a
+`kernel_replay` validation, not a task; the claim becomes `proved` or `refuted` only through it, and
+the task statuses never stand for a claim's.
+
 ## Routing decisions
 
 `task.routed` (`taskId`, `action`, `signal`, `reason`, `attemptId?`, `nodeId?`) is a decision about

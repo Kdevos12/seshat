@@ -133,6 +133,7 @@ The problem's context (`ProblemContext`):
 | `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?, site?})` returns the text, its cost, the model and the call's id; `completeJson({..., schema})` returns an answer checked against a schema ([below](#llm)). |
 | `validate` | Submits a Lean proof of a claim, or of its negation, through the validator. |
 | `budget` | The problem's budget as it stands: its limit, what was spent, whether it is exhausted. |
+| `tasks` | The problem's task ledger ([ledger.md](ledger.md)): its tasks, read-only, and a way to propose more ([below](#tasks)). |
 | `log` | A line of the run's progress log, prefixed with the problem and the line. |
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
@@ -181,6 +182,31 @@ charged to the problem's budget and recorded as its own `model_call.finished`, w
 A call that fails (the budget is spent, the model errs) is not retried. The result has the
 checked `value`, the text, the cost of every call made, and the ids of the calls (`modelCallIds`).
 `withJson(complete)` builds an `Llm` from a plain `complete`, for the orchestrator and for tests.
+
+### `tasks`
+
+The ledger holds the work of a problem as tasks ([ledger.md](ledger.md)): the provers' own, and
+the ones lines ask for. A line reads it and proposes; it never writes it. Only the orchestrator
+appends task events, and the journal refuses them from anyone else.
+
+| Method | What it gives |
+|---|---|
+| `list({statuses?, kinds?, claimId?, owner?})` | The problem's tasks, in the order they were made, as `TaskInfo`: id, kind, status, the reason of its last move, owner, claim or edge, dependencies, acceptance criterion, budget, parent, proposer, title, what it waits for. |
+| `get(taskId)` | One task of the problem, or `undefined`. A task of another problem is not shown. |
+| `ready()` | The tasks that may start now: `ready`, owned or not. |
+| `routings(taskId?)` | The routing decisions about a task, or about the problem's tasks ([ledger.md](ledger.md#routing-decisions)). |
+| `propose(task)` | Asks for a task. Returns `{accepted: true, taskId}` or `{accepted: false, reason}`. |
+
+A proposal is `{kind, claimId?, edgeId?, dependsOn?, acceptance, budget?, parentTaskId?, title?}`.
+It names neither a status nor an owner; if a line sends them, they are not read. The orchestrator
+makes the task the problem's, `pending`, proposed by `line:<id>` and owned by it, and moves it to
+`ready` when what it depends on is `done`. It refuses, with a reason and without writing
+anything, a dependency or a parent that is not a task of the problem, a claim or an edge that does
+not exist, a criterion of the wrong shape, a budget that is not made of non-negative numbers, and
+the two hundred and first task a problem is proposed. A proposal that names no claim and no edge is
+about the problem's claim. Running a proposed task, and choosing among the `ready` ones, belong to
+the lines that schedule work (M12) and to the fleet; a task that nobody runs is `cancelled` when the
+problem ends.
 
 ### `validate`
 

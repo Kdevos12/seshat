@@ -14,6 +14,7 @@ The code is in `packages/orchestrator/src`:
 | `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
 | `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks, the candidate and its certification, for one claim or its negation. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
+| `prover-tasks.ts` | The ledger's tasks of M0: one `prove` task per prover, and how each ends ([ledger.md](ledger.md#what-m0-records)). |
 | `session.ts` | `runSession`: one pi agent with the `lean_check` tool and the run's other tools, and its limits. |
 | `tools.ts` | The other tools: `direct` capabilities as tools of a session. |
 | `prompt.ts` | The prompts, versioned. |
@@ -59,12 +60,12 @@ a row ended with a harness error (`errors`). The reason is in `run.finished`.
 2. Reads the file from the checkout in plain-header form, checks it against the bench index, and
    cuts it into a sketch ([validator.md](validator.md#sketches)).
 3. Checks the original file once, for the reference type of the statement.
-4. Starts the provers in parallel. They share the problem's `Workbench` and its budget.
+4. Makes one `prove` task per prover in the task ledger ([ledger.md](ledger.md#what-m0-records)), then starts the provers in parallel, each starting its task. They share the problem's `Workbench` and its budget. A prover's task ends with the prover.
 5. When a prover finds a candidate, writes its file to `proofs/` and, if there is a certifier,
    certifies it ([below](#certification)).
 6. With lines, runs their `afterProblem`, then certifies what they submitted for other claims or
    for negations ([below](#certification)).
-7. Records `problem.finished`: outcome, reason, attempts, cost and time.
+7. Cancels the tasks of the problem that have not ended, and records `problem.finished`: outcome, reason, attempts, cost and time.
 
 | Outcome | When |
 |---|---|
@@ -152,6 +153,11 @@ A prover runs at most `sessions` sessions. Each session is an attempt in the jou
 - the file with the regions of the prover's last check (at first, an empty AUX region and the
   original proof, usually `sorry`);
 - what Lean said in that check.
+
+Every model response of a session is also written as it is charged (`attempt.charged`), so that the
+journal keeps what a session that never ended cost; and `attempt.finished` carries, as blob hashes,
+what the next session starts from: the prover's regions, the text of its last check, its notes
+(`carry`). A resumed run starts its budgets and its provers from these ([ledger.md](ledger.md#charges-and-carry)).
 
 The model's final message in a session becomes the prover's notes, cut at `notesChars`
 characters, and is recorded as `lesson.recorded`. New notes replace the old ones; the system

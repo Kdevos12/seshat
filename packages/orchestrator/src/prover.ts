@@ -1,6 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptOutcome, type Journal, newId, type Submission } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
 import type { Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
@@ -15,6 +15,10 @@ export interface ProverOptions {
   name: string;
   workbench: Workbench;
   journal: Journal;
+  /** Keeps what the prover carries from one session to the next. */
+  blobs: BlobStore;
+  /** The prover's task in the ledger, which the orchestrator started: its attempts work for it. */
+  taskId?: string;
   models: Models;
   model: Model<Api>;
   /** `provider/id`, as recorded in attempts. */
@@ -35,6 +39,8 @@ export interface ProverOptions {
   tools?: readonly PinnedTool[];
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
+  /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
+  onEnd?: (result: ProverResult) => void;
 }
 
 /**
@@ -59,6 +65,7 @@ const MAX_FAILED_SESSIONS = 2;
  */
 export async function runProver(o: ProverOptions): Promise<ProverResult> {
   const result = await proveLoop(o);
+  o.onEnd?.(result);
   await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
   return result;
 }
@@ -106,6 +113,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         prover: o.name,
         iteration: session,
         model: info.model,
+        site: SITE_PROVER_SESSION,
+        ...(o.taskId !== undefined ? { taskId: o.taskId } : {}),
         ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
         ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
       },
@@ -140,6 +149,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         actor,
         limits: o.limits,
         ledger: o.ledger,
+        onCharge: (cost) => journal.emit("attempt.charged", { attemptId, ...cost }, actor),
         signal: o.signal,
         wrapUp: session < o.sessions,
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
@@ -177,6 +187,12 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
             ...(result.submission !== undefined ? { aux: result.submission.aux } : {}),
           })
         : undefined;
+    // What the next session starts from, kept in the journal so that a resumed run can start from it too.
+    const carry = (): AttemptCarry => ({
+      regions: o.blobs.putJson({ aux: regions.aux, proof: regions.proof }),
+      ...(lastCheck !== undefined ? { lastCheck: o.blobs.put(lastCheck) } : {}),
+      ...(notes !== undefined ? { notes: o.blobs.put(notes) } : {}),
+    });
     const finished = () => ({
       attemptId,
       outcome,
@@ -189,6 +205,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
+      carry: carry(),
     });
     if (o.lines === undefined) {
       journal.emit("attempt.finished", finished(), actor);
@@ -220,6 +237,9 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         o.transcript?.(attemptId, result.messages);
         throw error;
       }
+      // The notes a line gives replace the model's for the next session; the journal kept the model's own
+      // in `lesson.recorded`, and the carry holds the ones the next session starts from.
+      if (annotation.notes !== undefined) notes = annotation.notes === "" ? undefined : clipNotes(annotation.notes, o.notesChars);
       journal.emit(
         "attempt.finished",
         {
@@ -230,8 +250,6 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         },
         actor,
       );
-      // The notes a line gives replace the model's for the next session; the journal kept the model's own.
-      if (annotation.notes !== undefined) notes = annotation.notes === "" ? undefined : clipNotes(annotation.notes, o.notesChars);
     }
     o.transcript?.(attemptId, result.messages);
 
