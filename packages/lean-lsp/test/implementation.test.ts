@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { renderSketch, type Json } from "@seshat/core";
+import { extractSubmission, renderSketch, SKETCH_POLICY, structuralCheck, type Json } from "@seshat/core";
 import { UnavailableError } from "@seshat/registry";
 import { ALLOWED_TOOLS, RefusedError } from "../src/index.ts";
 import { FakeLeanLspMcp, GOAL, USED_TOOLS } from "./fixtures/fake-lean-lsp-mcp.ts";
@@ -121,7 +121,9 @@ describe("lean.lsp over the server: the operations on the sketch file", () => {
       { tactic: "exact bad", result: "error", goals: [GOAL], messages: [{ severity: "error", region: "proof", line: 1, column: 9, message: "unknown identifier 'bad'" }] },
     ]);
     const [sent] = fake.of("lean_multi_attempt");
-    assert.deepEqual([sent?.line, sent?.snippets, "column" in (sent ?? {})], [5, ["omega", "ring", "exact bad"], false]);
+    // The harness names the column the server would default to (the first non-blank character), so
+    // that the text it screens is the text the server joins to the tactic.
+    assert.deepEqual([sent?.line, sent?.snippets, sent?.column], [5, ["omega", "ring", "exact bad"], 3]);
     await invoke(impl, onSketch({ op: "multi_attempt", line: 1, column: 3, tactics: ["simp"] }));
     assert.equal(fake.of("lean_multi_attempt")[1]?.column, 3);
     await impl.close();
@@ -273,6 +275,129 @@ describe("lean.lsp: what it refuses", () => {
     const used = new Set(fake.calls.map((c) => c.tool));
     assert.deepEqual([...used].filter((t) => !(ALLOWED_TOOLS as readonly string[]).includes(t)), []);
     assert.deepEqual([...used].sort(), [...ALLOWED_TOOLS].sort(), "and every one of the eight is used");
+    await impl.close();
+  });
+});
+
+describe("lean.lsp: multi_attempt joins a tactic to the start of its line, and screens what the server elaborates", () => {
+  // The server does not try a tactic alone: it replaces the line from the line asked with the first
+  // `column - 1` characters of that line followed by the tactic (and every further line of the tactic
+  // after the same characters). Each text below is clean alone and in the region, and not joined.
+  const SPLICES: Array<[string, string, number, string[], RegExp]> = [
+    ["a name cut in two", "Le", 5, ["an.Elab.Command.x"], /'Lean' is not allowed/],
+    ["a command cut in two", "run_", 7, ["cmd 1"], /'run_cmd' is not allowed/],
+    ["a #eval cut in two", "#ev", 6, ["al 1"], /'#eval' is not allowed/],
+    ["a command cut in two on the second line of a tactic", "#ev\nsimp", 6, ["skip\nal 1"], /'#eval' is not allowed/],
+    ["a comment closed by the tactic, which frees the line after it", "/- note\n#eval 1\n-/\nsimp", 3, ["-/"], /'#eval' is not allowed/],
+  ];
+
+  for (const [name, proof, column, tactics, reason] of SPLICES) {
+    it(`refuses ${name}, before the server hears of it`, async () => {
+      const fake = new FakeLeanLspMcp();
+      const { impl } = build(fake);
+      // Each part is accepted alone: that is what makes the splice a way round the screen.
+      await assert.doesNotReject(invoke(impl, onSketch({ op: "diagnostics", proof })));
+      for (const tactic of tactics) await assert.doesNotReject(invoke(impl, onSketch({ op: "diagnostics", proof: tactic })));
+      const before = fake.calls.length;
+      await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, column, proof, tactics })), (e: unknown) => {
+        assert.ok(e instanceof RefusedError, String(e));
+        assert.match(e.message, reason);
+        assert.match(e.message, /^Refused before Lean ran; nothing was asked:\n- tactic 1 /, "it names the tactic");
+        return true;
+      });
+      assert.equal(fake.of("lean_multi_attempt").length, 0, "the server was not asked");
+      assert.equal(fake.calls.length, before, "and nothing else was either");
+      await impl.close();
+    });
+  }
+
+  it("says what the server elaborates, and where the tactic is joined", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, column: 5, proof: "Le", tactics: ["an.Elab.Command.x"] })), (e: unknown) => {
+      assert.ok(e instanceof RefusedError);
+      assert.equal(e.reasons.length, 1);
+      assert.equal(e.reasons[0], "tactic 1 is joined to the first 4 characters of PROOF line 1, so that the server elaborates `Lean.Elab.Command.x`: proof: 'Lean' is not allowed");
+      return true;
+    });
+    await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, column: 1, proof: "/- note\n#eval 1\n-/\nsimp", tactics: ["-/"] })), (e: unknown) => {
+      assert.ok(e instanceof RefusedError);
+      assert.equal(e.reasons[0], "tactic 1 takes the place of PROOF line 1, so that the server elaborates the lines around it with `-/`: proof: '#eval' is not allowed");
+      return true;
+    });
+    await impl.close();
+  });
+
+  it("lets a clean splice through, with the column the server will join at", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    const answer = out(await invoke(impl, onSketch({ op: "multi_attempt", line: 2, column: 3, proof: "intro n\nsimp\nring", tactics: ["omega", "simp\nring"] })));
+    assert.equal((answer.attempts as Json[]).length, 2);
+    assert.deepEqual(fake.of("lean_multi_attempt").map((a) => [a.line, a.column, a.snippets]), [[6, 3, ["omega", "simp\nring"]]]);
+    assert.deepEqual(
+      fake.trials.map((t) => t.text.split("\n").slice(4, 8)),
+      [["  intro n", "  omega", "  ring", "  -- HARNESS:PROOF:END"], ["  intro n", "  simp", "  ring", "  -- HARNESS:PROOF:END"]],
+    );
+    await impl.close();
+  });
+
+  it("refuses a tactic with more lines than the region has from the line asked: the server would replace what follows the region", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp", tactics: ["intro n\nsimp"] })), (e: unknown) => {
+      assert.ok(e instanceof RefusedError);
+      assert.equal(
+        e.reasons[0],
+        "tactic 1 has 2 lines, and the server replaces as many lines of the file as a tactic has, from the line asked; PROOF has 1 from there, so it would replace the end of the region and what follows it",
+      );
+      return true;
+    });
+    assert.equal(fake.calls.length, 0);
+    // The same tactic fits where the region has the lines.
+    await assert.doesNotReject(invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp\nring", tactics: ["intro n\nsimp"] })));
+    await impl.close();
+  });
+
+  it("sends the tactics with line feeds only, as the file has them", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    await invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp\nring", tactics: ["simp\r\nring"] }));
+    assert.deepEqual(fake.of("lean_multi_attempt")[0]?.snippets, ["simp\nring"]);
+    await impl.close();
+  });
+
+  it("never lets through a splice whose document, as the server builds it, the policy would refuse", async () => {
+    // The oracle is the fake's own port of the server's build_attempt_text and the core policy, not the screen under test.
+    const proofs = ["Le", "run_", "#ev", "simp", "intro n\nsimp", "/- note\n#eval 1\n-/\nsimp", "-- c", "sim"];
+    const tactics = ["an.Elab.Command.x", "cmd 1", "al 1", "omega", "skip\nal 1", "-/", "x#ev\nal 1", "p\nrun_cmd 1"];
+    const columns = [undefined, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    let accepted = 0;
+    let refused = 0;
+    for (const proof of proofs) {
+      for (const tactic of tactics) {
+        for (const column of columns) {
+          const input = onSketch({ op: "multi_attempt", line: 1, proof, tactics: [tactic], ...(column !== undefined ? { column } : {}) });
+          const sent = fake.of("lean_multi_attempt").length;
+          const trials = fake.trials.length;
+          const result = await invoke(impl, input).then(
+            () => "accepted" as const,
+            (e: unknown) => (e instanceof Error ? ("refused" as const) : Promise.reject(e)),
+          );
+          if (result === "accepted") {
+            accepted++;
+            assert.equal(fake.trials.length, trials + 1, JSON.stringify(input));
+            const text = fake.trials[trials]?.text ?? "";
+            assert.deepEqual(structuralCheck(extractSubmission(text), SKETCH_POLICY), [], `accepted, but the server would elaborate:\n${text}\n${JSON.stringify(input)}`);
+          } else {
+            refused++;
+            assert.equal(fake.of("lean_multi_attempt").length, sent, "a refused call is not sent");
+          }
+        }
+      }
+    }
+    assert.ok(accepted > 50 && refused > 50, `the combinations cover both outcomes: ${accepted} accepted, ${refused} refused`);
     await impl.close();
   });
 });

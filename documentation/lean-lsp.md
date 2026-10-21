@@ -28,7 +28,7 @@ the line as it stands in the file, where the proof's lines carry the indentation
 | `goal` | `line`; `column` optional | Without a column, the goals before and after the line. With one, the goals at that position, and `status`: `goals`, `complete` (no goal left), `no_goal_here`, or `still_elaborating`. |
 | `term_goal` | `line`, `column` optional | The type expected of the term at the position (the line's end without a column), or `no_term_goal`. |
 | `diagnostics` | `region` and `severity` optional | Lean's messages on the file, errors first, each with its region, line, column and the line of code; at most 25, with the count of the rest. |
-| `multi_attempt` | `line`, `tactics` (1 to 8), `column` optional | For each tactic, tried in place of the line (from the column, by default the first non-blank character, to the line's end, as many lines as the tactic has): `closed` (no goal and no error), `open` (the goals left) or `error` (Lean's messages). Nothing is saved. |
+| `multi_attempt` | `line`, `tactics` (1 to 8), `column` optional | For each tactic, tried in place of the line (from the column, by default the first non-blank character, to the line's end, as many lines as the tactic has, which must end inside the region): `closed` (no goal and no error), `open` (the goals left) or `error` (Lean's messages). Nothing is saved. |
 | `loogle` | `query`, `limit` | Mathlib by name, type pattern or conclusion (8 results by default). |
 | `leansearch` | `query`, `limit` | Mathlib by what a lemma says (5 results by default). |
 | `state_search` | `line`, `column` optional, `limit` | Lemmas for the goal at the position: the goal is read with `lean_goal`, and its text is the query to Lean Finder (5 results). |
@@ -68,13 +68,32 @@ The server's answers are read back in the prover's terms: a line of the file bec
 (or `AUX line 2`, or `line 9 of the fixed part` for the theorem's header and the rest of the file),
 the project's path in a message becomes `<project>`, and the scratch file's `the sketch file`.
 
+### How a tactic is tried
+
+`multi_attempt` does not hand the tactic to Lean alone. For each tactic the server builds a document
+from the file (`build_attempt_text` in lean-lsp-mcp 0.31.0): from the line asked, as many lines of the
+file are replaced as the tactic has, and each becomes the first `column - 1` characters of that line
+followed by one line of the tactic. A name or a command can therefore be cut in two, half in the line
+and half in the tactic (`Le` and `an.Elab...`, `#ev` and `al 1`), and a tactic can close a comment that
+hid code (`-/`). Each half is clean alone and the join is not.
+
+So the harness names the column itself when the prover gives none (the server's default, the first
+non-blank character, is what it sends), builds each document as the server does (`attemptLines`), reads
+its two regions back, and runs the screen of regions on them: a refusal says the tactic, where it is
+joined and what the server would elaborate. A tactic that has more lines than the region has from the
+line asked is refused, because the server would replace the marker that ends the region and the
+lines after it. A tactic with a CRLF is sent with line feeds. `attemptLines` was compared with the
+server's own `build_attempt_text` on 3000 random cases (astral characters, tabs, no-break spaces,
+several lines, trailing line feeds) and gave the same document in each. The comparison is the opt-in
+test `real-server.test.ts` ([Tests](#tests)); it needs the real server's Python package, not Lean.
+
 ## What it never does
 
 | Rule | How |
 |---|---|
 | **Eight operations, no more.** | The client calls 8 of the server's 22 tools (`lean_goal`, `lean_term_goal`, `lean_diagnostic_messages`, `lean_multi_attempt`, `lean_loogle`, `lean_leansearch`, `lean_leanfinder`, `lean_hammer_premise`) and refuses any other by name, whatever the server lists. The other 14 (`lean_build`, `lean_run_code`, `lean_file_outline`, `lean_declaration_file`, `lean_local_search`, `lean_hover_info`, `lean_verify`, `lean_profile_proof`, and six more) are also switched off in the server (`LEAN_MCP_DISABLED_TOOLS`), so a prover that reached the process by another way would not find them. |
 | **No path.** | No input names a file. The only file a call touches is its attempt's scratch file; the project's other files are not read, and a path in an argument fails the tool's schema before it reaches the registry. |
-| **Nothing the model writes runs unscreened.** | The regions and every tactic go through the policy of `lean_check` (`SKETCH_POLICY`: no `#eval`, `IO`, `import`, `native_decide`...) and are refused with the same reasons, before the server hears of them. A query is plain text: one line of at most 500 characters. |
+| **Nothing the model writes runs unscreened.** | The regions and every tactic go through the policy of `lean_check` (`SKETCH_POLICY`: no `#eval`, `IO`, `import`, `native_decide`...) and are refused with the same reasons, before the server hears of them. A tactic is screened twice: alone, and in the document the server will elaborate for it, which joins it to the start of its line ([How a tactic is tried](#how-a-tactic-is-tried)). A query is plain text: one line of at most 500 characters. |
 | **No verdict.** | The tool `produces` nothing, and no field of its answer is a verdict. `complete` and `closed` are information about the language server's view of a file; only `lean_check`, through the validator, records a validation or changes a claim's status ([trust.md](trust.md)). A run that uses only `lean_lsp` ends with the claim `open`. |
 | **No failure of the run.** | A search site that cannot be reached is an answer (`status: unavailable`, and why), not an error, and is left alone for 60 seconds. A server that stops makes the tool unavailable for the rest of the session, and the prover goes on with `lean_check`. A run does not start with `--tool lean.lsp` when the server is not there ([Health](#health)). |
 | **Charged like any tool.** | A call is part of a turn of the prover: the model's response is what costs, and the turn limit and the budgets stop a prover that only looks. Every call is a tool run in the journal, with its input and output as blobs. |
@@ -248,6 +267,11 @@ None needs Python, Lean or a network.
   no verdict, the pin, the declared sites) and the contract, run against the stand-in.
 - `packages/orchestrator/test/lean-lsp.test.ts`: a run with the tool: the file each call reads, the
   forged sketch, the journal, no status change, a site down, the server dying, the budget.
+- `real-server.test.ts` runs the real lean-lsp-mcp, for a host that has it, and is skipped otherwise.
+  It needs neither Lean nor the network: set `LEAN_LSP_MCP_PYTHON` to a Python with
+  `pip install lean-lsp-mcp==0.31.0` (a virtual environment's `bin/python`) and run
+  `LEAN_LSP_MCP_PYTHON=/path/to/venv/bin/python pnpm test`. It compares `attemptLines` with the
+  server's own `build_attempt_text` on 1500 random cases, and fails on any other release.
 
 The contract (`capabilities/lean.lsp/contract.json`, 15 cases) is for a host with Lean. It works on
 a file without imports (`theorem seshat_contract (n : Nat) : n + 0 = n := by sorry`), so the project

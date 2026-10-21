@@ -112,6 +112,38 @@ export function checkColumn(text: string, column: number): void {
   if (column > length + 1) throw new LayoutError(`column ${column} is past the end of the line, which has ${length} characters`);
 }
 
+/**
+ * The file's lines as the server counts them: Python's `splitlines()` of a text that has line feeds
+ * only (see `layoutOf`), which leaves out the empty line that a final line feed ends.
+ */
+export function serverLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/** A tactic's lines as the server counts them: its trailing line feeds go, and an empty tactic is one empty line. */
+export function tacticLines(tactic: string): string[] {
+  const text = tactic.replace(/\n+$/, "");
+  return text === "" ? [""] : text.split("\n");
+}
+
+/**
+ * The lines of the document that `lean_multi_attempt` has the server elaborate for a tactic. This is
+ * `build_attempt_text` of lean-lsp-mcp 0.31.0 (lean_lsp_mcp/attempt_utils.py): from `line` (the file's,
+ * from 1), as many lines of the file are replaced as the tactic has; each becomes the first
+ * `column - 1` characters of `line` (code points, as Python counts) followed by one line of the tactic.
+ * The document is what `layout.text` and the server's own `splitlines()` give, so a tactic that
+ * the harness screens is screened as the server will read it.
+ */
+export function attemptLines(layout: Layout, line: number, column: number, tactic: string): string[] {
+  const lines = serverLines(layout.text);
+  const prefix = [...(lines[line - 1] ?? "")].slice(0, Math.max(0, column - 1)).join("");
+  const parts = tacticLines(tactic);
+  const end = Math.min(line - 1 + parts.length, lines.length);
+  return [...lines.slice(0, line - 1), ...parts.map((part) => prefix + part), ...lines.slice(end)];
+}
+
 /** The place in words, as `lean_check` writes it: `PROOF line 3`, or `line 12 of the fixed part`. */
 export function describePlace(place: Place, column?: number): string {
   const where = place.region === "fixed" ? `line ${place.line} of the fixed part` : `${place.region.toUpperCase()} line ${place.line}`;

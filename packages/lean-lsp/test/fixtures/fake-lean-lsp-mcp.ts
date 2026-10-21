@@ -68,6 +68,8 @@ export class FakeLeanLspMcp {
   projectDir: string | undefined;
   /** Every `tools/call` received, in order, valid or not; `file` is the text of the file the call names, as it was when the call came. */
   readonly calls: Array<{ tool: string; args: Args; file?: string }> = [];
+  /** The documents the real server would build for the tactics of each `lean_multi_attempt`, in order (see `buildAttemptText`). */
+  readonly trials: Array<{ tactic: string; text: string }> = [];
   /** Connections opened with `transport()`. */
   connections = 0;
   /** The text a tool fails with, until removed. It is worded as the server words an error: the framework adds the prefix. */
@@ -221,6 +223,22 @@ function lineOf(fake: FakeLeanLspMcp, args: Args): { lines: string[]; line: numb
   return { lines, line, context: lines[line - 1] as string };
 }
 
+/**
+ * The document that lean-lsp-mcp 0.31.0 builds for one tactic of `lean_multi_attempt`: a port of
+ * `build_attempt_text` (lean_lsp_mcp/attempt_utils.py). `column` counts from 0 in characters, `line` from 1.
+ * From the line asked, as many lines of the file are replaced as the tactic has; the first becomes the
+ * line's first `column` characters and the tactic's first line, and each further one the same
+ * characters and the tactic's next line.
+ */
+export function buildAttemptText(lines: readonly string[], line: number, context: string, column: number, snippet: string): string {
+  const text = snippet.replace(/\n+$/, "");
+  const parts = text === "" ? [""] : text.split("\n");
+  const indent = [...context].slice(0, column).join("");
+  const payload = parts.map((part) => indent + part);
+  const end = Math.min(line - 1 + parts.length, lines.length);
+  return `${[...lines.slice(0, line - 1), ...payload, ...lines.slice(end)].join("\n")}\n`;
+}
+
 const DEFAULTS: Record<string, Handler> = {
   lean_goal(args, fake) {
     const at = lineOf(fake, args);
@@ -265,7 +283,8 @@ const DEFAULTS: Record<string, Handler> = {
   lean_multi_attempt(args, fake) {
     const at = lineOf(fake, args);
     if ("error" in at) return at;
-    const column = args.column === undefined ? at.context.search(/\S/) : Number(args.column) - 1;
+    const column = args.column === undefined ? Math.max(0, at.context.search(/\S/)) : Number(args.column) - 1;
+    for (const snippet of args.snippets as string[]) fake.trials.push({ tactic: snippet, text: buildAttemptText(at.lines, at.line, at.context, column, snippet) });
     const items = (args.snippets as string[]).map((snippet) => ({
       snippet,
       goals: /^(omega|simp|done)\b/.test(snippet) ? [] : [GOAL],
