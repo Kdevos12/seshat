@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 01:05 UTC. `main` at 6f06fd6, 540 tests.
+Updated 2026-10-21 01:20 UTC. `main` at e3cf6bc, 540 tests.
 
 ## Tasks
 
@@ -26,7 +26,7 @@ Updated 2026-10-21 01:05 UTC. `main` at 6f06fd6, 540 tests.
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate` | main | not started (last) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | next | |
-| 16 | `lean.lsp` | main | implementing | `task/t16` |
+| 16 | `lean.lsp` | main | in review | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge` | main | not started (after 15) | |
@@ -265,3 +265,5 @@ Usage-limit stop 11: the 5-hour limit cut the T4 fixer, the T7 re-reviewer and t
 - Ruling 26: the harness's Lean library is `lean/SeshatLib/` (modules `SeshatLib.<Domain>`), not `lean/HarnessLib/` as Task 9 and PC12 say — cost if wrong: a rename.
 2026-10-20 21:00 UTC: the plan, the rulings, this ledger (cleaned of agent ids and model names), the three approved plan changes and the collaborator's brief and log move into the repository (plans/), with CLAUDE.md for every agent; the repository's plans/seshat-plan.md is canonical from now on, mirrored to the project's shared files. Task branches task/t4, task/t7 and task/t16 are pushed to origin and pushed again after each report; merged task branches and their worktrees are removed.
 Usage-limit stop 12: the 5-hour limit cut the T4 fixer (after 7f5b77c), the T7 fixer (after 3733ef5) and the T16 implementer (uncommitted work) about 20:34 UTC (reset 01:00); all three resumed 01:04 UTC; task/t4 and task/t7 pushed
+Task 16: implementer DONE_WITH_CONCERNS (commits 77a4464 447bc39 on task/t16, base 6fec828, 651/651; task/t16 pushed); one tool lean_lsp(op) over lean-lsp-mcp 0.31.0 with PC7's 8 operations; concerns: nothing run against a real Lean, not sandboxed (like lean.goals), goal text goes to public search sites, Loogle's rate limit is shared, leanclient floats under uvx; merge notes: README moretools node, meta.test.ts stand-ins (T7), lockfile
+Task 16: review dispatched (6fec828..447bc39; named risks: surface and allowlist, screening incl. the core token-screen hole R2-1, no status change, site degradation, pinning of leanclient, sandbox stance in trust.md, sanitizing, scratch cleanup, ToolBinding sketch, registry and budget, docs and :::wait)
