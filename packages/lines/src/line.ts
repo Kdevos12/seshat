@@ -153,6 +153,11 @@ export interface ProblemContext {
    */
   validate: (request: ValidateRequest) => Promise<ValidateResult>;
   budget: Budget;
+  /**
+   * The problem's task ledger (documentation/ledger.md): its tasks, read-only, and a way to
+   * propose more. The orchestrator alone writes the ledger.
+   */
+  tasks: TaskApi;
   /** A line of the run's progress log. */
   log: (text: string) => void;
   /** Aborted when the problem ends: solved, out of budget, or the run stopped. */

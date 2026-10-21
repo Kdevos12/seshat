@@ -51,6 +51,8 @@ export interface CheckResult {
 export interface Candidate {
   /** The attempt that found it; absent for a proof a line submitted outside a session. */
   attemptId?: string;
+  /** The problem whose workbench's check made it a candidate: the problem that certifies it. */
+  problemId?: string;
   validationId: string;
   report: ValidationReport;
 }
@@ -83,6 +85,8 @@ export interface WorkbenchOptions {
   registry: Registry;
   problem: WorkbenchFile;
   claimId: string;
+  /** The problem the workbench is the claim's reference file of; its checks are recorded as that problem's. */
+  problemId?: string;
   reference: Reference;
   /** Default: `SKETCH_POLICY`. */
   policy?: ValidationPolicy;
@@ -113,6 +117,7 @@ export class Workbench {
   readonly registry: Registry;
   readonly problem: WorkbenchFile;
   readonly claimId: string;
+  readonly problemId: string | undefined;
   readonly reference: Reference;
   readonly policy: ValidationPolicy;
   readonly certifier: LeanCertifier | undefined;
@@ -129,6 +134,7 @@ export class Workbench {
     this.registry = options.registry;
     this.problem = options.problem;
     this.claimId = options.claimId;
+    this.problemId = options.problemId;
     this.reference = options.reference;
     this.policy = options.policy ?? SKETCH_POLICY;
     this.certifier = options.certifier;
@@ -168,11 +174,16 @@ export class Workbench {
     return renderSketch(this.sketch, submission.aux, submission.proof);
   }
 
-  async check(submission: Submission, context: { attemptId?: string; actor: string; signal?: AbortSignal }): Promise<CheckResult> {
+  async check(
+    submission: Submission,
+    context: { attemptId?: string; actor: string; signal?: AbortSignal; problemId?: string },
+  ): Promise<CheckResult> {
     const submitted = this.render(submission);
     this.blobs?.put(submitted);
     const markers = markerProblems(submission);
     const attempt = context.attemptId !== undefined ? { attemptId: context.attemptId } : {};
+    const problemId = context.problemId ?? this.problemId;
+    const owner = problemId !== undefined ? { problemId } : {};
     const checker = new RegistryLeanChecker(this.registry, { ...attempt, actor: context.actor });
     const report =
       markers.length > 0
@@ -200,6 +211,7 @@ export class Workbench {
         axioms: report.axioms,
         submissionHash: report.submissionHash,
         ...(this.negation ? { negation: true } : {}),
+        ...owner,
       },
       "validator",
     );
@@ -219,7 +231,7 @@ export class Workbench {
       );
     }
     if (this.found !== undefined) return { report, validationId, accepted: false };
-    this.found = { ...attempt, validationId, report };
+    this.found = { ...attempt, ...owner, validationId, report };
     for (const listener of this.listeners.splice(0)) listener(this.found);
     return { report, validationId, accepted: true };
   }
@@ -268,6 +280,7 @@ export class Workbench {
         axioms: result.axioms,
         submissionHash: candidate.report.submissionHash,
         ...(this.negation ? { negation: true } : {}),
+        ...(candidate.problemId !== undefined ? { problemId: candidate.problemId } : {}),
       },
       certifier.implementation,
     );

@@ -85,7 +85,12 @@ export class ClaimBenches {
     }
     const result = await bench.check(
       { aux: request.aux ?? "", proof: request.proof },
-      { actor: context.actor, signal: context.signal, ...(request.attemptId !== undefined ? { attemptId: request.attemptId } : {}) },
+      {
+        actor: context.actor,
+        signal: context.signal,
+        ...(request.attemptId !== undefined ? { attemptId: request.attemptId } : {}),
+        ...(context.problem !== undefined ? { problemId: context.problem.problemId } : {}),
+      },
     );
     if (result.accepted && context.problem !== undefined && bench !== context.problem.workbench) {
       this.owners.set(bench, context.problem.problemId);
