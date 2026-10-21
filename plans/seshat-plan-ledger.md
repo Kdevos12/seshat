@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 01:20 UTC. `main` at e3cf6bc, 540 tests.
+Updated 2026-10-21 01:35 UTC. `main` at 36115f2, 540 tests.
 
 ## Tasks
 
@@ -14,7 +14,7 @@ Updated 2026-10-21 01:20 UTC. `main` at e3cf6bc, 540 tests.
 | 1 | Memory foundation, line API | main | merged | |
 | 2 | M1: statement identity, shared negative memory | main | merged | |
 | 3 | `lean.meta`, `lean.goals`, Lean identity | main | merged | |
-| 4 | Certifier: `lean.certify`, kernel replay | main | fix round 1 after review (Rulings 22, 23) | `task/t4` |
+| 4 | Certifier: `lean.certify`, kernel replay | main | re-review of fix round 1 (Rulings 22, 23) | `task/t4` |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
 | 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
 | 7 | M11: small models, fingerprints, lookups | main | fix round 2 after re-review | `task/t7` |
@@ -267,3 +267,5 @@ Usage-limit stop 11: the 5-hour limit cut the T4 fixer, the T7 re-reviewer and t
 Usage-limit stop 12: the 5-hour limit cut the T4 fixer (after 7f5b77c), the T7 fixer (after 3733ef5) and the T16 implementer (uncommitted work) about 20:34 UTC (reset 01:00); all three resumed 01:04 UTC; task/t4 and task/t7 pushed
 Task 16: implementer DONE_WITH_CONCERNS (commits 77a4464 447bc39 on task/t16, base 6fec828, 651/651; task/t16 pushed); one tool lean_lsp(op) over lean-lsp-mcp 0.31.0 with PC7's 8 operations; concerns: nothing run against a real Lean, not sandboxed (like lean.goals), goal text goes to public search sites, Loogle's rate limit is shared, leanclient floats under uvx; merge notes: README moretools node, meta.test.ts stand-ins (T7), lockfile
 Task 16: review dispatched (6fec828..447bc39; named risks: surface and allowlist, screening incl. the core token-screen hole R2-1, no status change, site degradation, pinning of leanclient, sandbox stance in trust.md, sanitizing, scratch cleanup, ToolBinding sketch, registry and budget, docs and :::wait)
+Task 4: fix round 1 implemented (commits b191e72 83a11be 7f5b77c e3d3f7f 383ff43 e53b06b on task/t4, 623/623; task/t4 pushed); I1 a broken Lean environment is no verdict (the reference is compiled when the candidate fails; health compiles a one-line file), I2 fail closed per Ruling 22 (unavailable without a sandbox or `unsandboxed: true`, minimal environment, a directory per call), M3 per Ruling 23, M1 M2 M4-M12; choices: a contradiction on another claim is logged and named in the reason, not an error; an unavailable certifier stays selected and the run records certifierUnavailable; e53b06b documents the fleet gap deferred to Task 19; shared changes: registry additions, HealthAwareCertifier.health return type
+Task 4: scoped re-review dispatched (FIX_BASE be6e9e2, head e53b06b; the strongest tier because the certifier is the trust anchor and the fix diff is large: 39 files, +1890 -377)
