@@ -29,6 +29,7 @@ import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { createProverTasks, endProverTask } from "./prover-tasks.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
+import { Router } from "./routing.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -279,6 +280,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
 
   // The task ledger: the orchestrator is its only writer (documentation/ledger.md).
   const tasks = new TaskLedger(journal);
+  const router = new Router(journal, tasks);
 
   // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
   let runLines: RunLines | undefined;
@@ -518,6 +520,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
                 signal: controller.signal,
                 transcript,
                 tools: pinned.tools,
+                onAttemptEnd: (attempt) => void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId }),
                 onEnd: (result) =>
                   end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" }),
                 ...(lines !== undefined ? { lines } : {}),

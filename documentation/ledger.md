@@ -169,9 +169,54 @@ the task statuses never stand for a claim's.
 ## Routing decisions
 
 `task.routed` (`taskId`, `action`, `signal`, `reason`, `attemptId?`, `nodeId?`) is a decision about
-a task that met a typed signal. The action is `retry_fresh`, `reset_upstream` or `branch`; the
-signal is a failure class of a check, a kind of drift, or a refuted subgoal. The event is the
-decision and nothing more: it changes no task status and no claim status.
+a task that met a typed signal. The signal has a type and a value: a failure class of a check
+(`failure_class`, [m1-identity-memory.md](m1-identity-memory.md#failure-classes)), a kind of drift a
+guard found (`drift_kind`, [guards.md](guards.md)), or a refuted part of a decomposition
+(`subgoal_refuted`, the part's claim id). The event is the decision and nothing more: it changes no
+task status and no claim status, and the journal accepts it from the orchestrator only.
+
+The action is one of three:
+
+| Action | Meaning |
+|---|---|
+| `retry_fresh` | A new session on the same task. The error is local: the next session reads what Lean said and fixes it. |
+| `reset_upstream` | Go back to the planning above the task and decompose the parent again. The error is in what the task rests on, not in its proof. |
+| `branch` | Open an alternative task under other constraints. The task is stuck, and more of the same would not get further. |
+
+The table is in `packages/orchestrator/src/routing.ts`, typed over `FailureClass` and `DriftKind`, so
+that a class or a kind added later does not compile until it is routed:
+
+| Signal | Action |
+|---|---|
+| `refused`, `lean_unavailable`, `timeout`, `syntax`, `unknown_identifier`, `type_mismatch`, `tactic_failed`, `unsolved_goals`, `holes`, `axioms`, `other` | `retry_fresh` |
+| `statement_changed`, `restates_target` | `reset_upstream` |
+| drift `statement_drift`, `restated_target` | `reset_upstream` |
+| `subgoal_refuted` | `reset_upstream` |
+| drift `strategy_loop`, `session_loop` | `branch` |
+| drift `length_growth`, `unresolved_citation`, `sorry_as_known`, `raw_error_text`, `unanchored_revision`, `non_neutral_framing` | `retry_fresh` |
+
+Each row has its reason in the table, and the decision's `reason` is "what was seen: why this
+action", for example "the last check failed as restates_target: an auxiliary lemma states the target
+again, so it decomposes nothing; go back to the parent and decompose it differently".
+
+When the orchestrator decides, after each attempt, for the task the attempt worked for:
+
+- the class of the attempt's last check, when the attempt ended `invalid`;
+- each `drift` node a guard recorded for the attempt whose action stopped the session or restarted
+  the prover (`stopped_session`, `restarted`), with the node's id in `nodeId`. The findings a guard
+  dealt with in place (`rejected_call`, `removed_text`, `dropped_section`, `noted`) are not signals
+  for the task: nothing failed, and the node holds them;
+- each part of a decomposition of the task's claim that is `refuted` and was not routed for the task
+  before.
+
+An attempt that is valid, aborted, out of budget, an error or without a check has no decision.
+
+The orchestrator only records. `retry_fresh` is what the prover's loop does next in any case, so its
+decision explains the next session. `reset_upstream` and `branch` are for the lines that plan work
+(M12; M7 and M14 plug in at `branch`): they read the decisions through `TaskApi.routings`
+([lines.md](lines.md#tasks)) and propose the tasks that follow, with the task the decision was about
+as their parent. A line that proposes work never changes the decision, and the decision never
+changes a status.
 
 ## Charges and carry
 
