@@ -34,7 +34,7 @@ flowchart TB
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
     leanlsp["lean_lsp<br/>Lean language server"]:::wait
-    moretools["ATPs, SAT/SMT, OEIS,<br/>Mathlib search,<br/>counterexample search"]:::planned
+    moretools["ATPs, SAT/SMT, OEIS,<br/>counterexample search"]:::planned
   end
 
   subgraph JUDGE["Judge: Lean"]
