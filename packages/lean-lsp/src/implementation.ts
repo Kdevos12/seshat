@@ -77,7 +77,7 @@ interface Down {
 }
 
 /** What a call that reads the sketch file works on. */
-interface Place {
+interface Spot {
   layout: Layout;
   file: string;
   region: Region;
@@ -346,7 +346,7 @@ export class LeanLspImplementation implements ImplementationInstance {
   // --- the sketch file ---
 
   /** Builds the file from the sketch and the regions, writes it, and finds the line asked about. */
-  private place(call: LeanLspInput, scope: string, o: { needsLine: boolean }): Place {
+  private place(call: LeanLspInput, scope: string, o: { needsLine: boolean }): Spot {
     const sketch = call.sketch;
     if (sketch === undefined) throw new Error(`${call.op} works on the problem's sketch, which the harness gives to the tool of a run; a direct call passes it as sketch`);
     const regions = { aux: call.aux ?? "", proof: call.proof ?? sketch.originalProof };
@@ -369,7 +369,7 @@ export class LeanLspImplementation implements ImplementationInstance {
   }
 
   /** The position asked, for the answer. */
-  private where(call: LeanLspInput, at: Place): Pick<LeanLspOutput, "region" | "line" | "column" | "lineText"> {
+  private where(call: LeanLspInput, at: Spot): Pick<LeanLspOutput, "region" | "line" | "column" | "lineText"> {
     return {
       region: at.region,
       line: at.line,
