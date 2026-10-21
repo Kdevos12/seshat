@@ -366,7 +366,9 @@ problem with a proof or a refutation, tokens, attempts
 by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
 checks with their median and 90th percentile times (the count includes one reference check per
 problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
-and how many of those attempts found a proof. It also says what it does not measure: the fidelity of the formal statements, taken as
+and how many of those attempts found a proof. It gives the spend by site (`prover.session` for the
+provers' sessions, the sites of the lines' one-shot calls), each with its share of the total
+([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
 
 ## Tested, and not yet

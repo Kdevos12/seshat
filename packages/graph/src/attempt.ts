@@ -75,7 +75,7 @@ export async function proveWithModel(o: ModelAttemptOptions, claimId: string, fr
   let last: ModelAttempt = { verdict: "none", tries: 0, reasons: [] };
   for (let k = 0; k < tries; k++) {
     if (o.signal?.aborted || o.stop?.() === true) break;
-    const answer = await o.llm.complete({ system: SYSTEM, prompt: attemptPrompt(framing, reference, failures) });
+    const answer = await o.llm.complete({ system: SYSTEM, prompt: attemptPrompt(framing, reference, failures), site: "graph.attempt" });
     made += 1;
     const proposal = extractProposal(answer.text);
     if (proposal === undefined) {

@@ -156,6 +156,11 @@ site, the attempts under their own site and the one-shot calls under theirs; a c
 before the tags is `unknown`. The share of the budget that each site takes is what a cheaper
 decision backend could save at most.
 
+The report has the spend by site (`sites` in `report.json`, a line in `report.md`): for each site
+its calls, cost, tokens and share of the total, the biggest first. `siteSpend(events)` computes it
+from a journal's events, and `mergeSiteSpend` adds several runs' lists together; `harness ablate`,
+when it exists, reads it from there for the table that compares the configs.
+
 ## Resume
 
 `run.resumed` (`runId`, `resumption`, `tornTail?`, `spent`, `interrupted`, `codeRev?`) is written by

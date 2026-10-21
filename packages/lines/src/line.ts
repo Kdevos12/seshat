@@ -15,7 +15,7 @@ import type {
   ValidationReport,
 } from "@seshat/core";
 import type { MemoryStore, StatementIdentity } from "@seshat/memory";
-import type { Registry } from "@seshat/registry";
+import type { JsonSchema, Registry } from "@seshat/registry";
 import type { LineId } from "./ids.ts";
 
 /** A JSON object: a line's options, a tool's argument schema. */
@@ -338,6 +338,37 @@ export interface LlmRequest {
   maxTokens?: number;
   /** `provider/id`. Default: the run's model. */
   model?: string;
+  /**
+   * Where in the harness the call is made, in dotted lowercase words such as `graph.attempt`,
+   * `abduction.rerank` or `conjecture.relevance`. It is recorded on the call's `model_call.finished`,
+   * and the report adds up the spend by site (documentation/ledger.md, "Sites"). Give every call one:
+   * a call without is recorded as `<line>.unlabeled`.
+   */
+  site?: string;
+}
+
+/** A call whose answer must be JSON of a given shape. */
+export interface JsonRequest extends LlmRequest {
+  /**
+   * The shape of the answer, in the subset of JSON Schema that manifests use (`JsonSchema` of
+   * `@seshat/registry`). The schema is added to the prompt: describe the content, not the format.
+   */
+  schema: JsonSchema;
+}
+
+export interface JsonResult<T = Json> {
+  /** The answer, checked against the schema. The type is the caller's claim: the schema is what was checked. */
+  value: T;
+  /** The text the model wrote. */
+  text: string;
+  /** The cost of every call made: both, after a retry. */
+  cost: TokenCost;
+  /** `provider/id` of the model that answered. */
+  model: string;
+  /** The `model_call.finished` event of the call whose answer was taken. */
+  modelCallId: string;
+  /** The events of every call made, in order: one, or two after a retry. */
+  modelCallIds: readonly string[];
 }
 
 export interface LlmResult {
@@ -351,11 +382,18 @@ export interface LlmResult {
 
 /**
  * One-shot model calls, without tools. Each call is charged to the problem's budget and recorded
- * as a `model_call.finished` event, with its request and response as blobs. A call fails (rejects)
- * when the budget is exhausted, the problem ends, or the model answers with an error.
+ * as a `model_call.finished` event, with its site and its request and response as blobs. A call
+ * fails (rejects) when the budget is exhausted, the problem ends, or the model answers with an error.
  */
 export interface Llm {
   complete: (request: LlmRequest) => Promise<LlmResult>;
+  /**
+   * A call whose answer is JSON that matches `request.schema`. An answer that is not JSON, or does
+   * not match, is sent back to the model once with what was wrong; a second failure rejects with a
+   * `JsonAnswerError` that says what was wrong with each answer. Both calls are charged and
+   * recorded like any call, with the same site. Build one from a `complete` with `withJson`.
+   */
+  completeJson: <T = Json>(request: JsonRequest) => Promise<JsonResult<T>>;
 }
 
 export interface ValidateRequest {
