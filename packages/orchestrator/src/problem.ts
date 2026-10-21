@@ -62,6 +62,16 @@ export interface Certification {
   status: ClaimStatus;
 }
 
+/**
+ * What to say of a certified proof or refutation whose claim is not left as it says. The claim is
+ * `proved` or `refuted` the other way, which is a contradiction (the kernel has certified both a
+ * proof and a refutation of one statement), or it was withdrawn. `what` is "the candidate", or
+ * "the proof of claim X" or "the refutation of claim X".
+ */
+export function conflictNote(what: string, status: ClaimStatus): string {
+  return `${what} was certified, but its claim is ${status}${status === "proved" || status === "refuted" ? ": a contradiction" : ""}`;
+}
+
 /** What a workbench checks against: a Lean file (a problem's, or a claim's reference file) and its sketch. */
 export interface WorkbenchFile {
   source: string;

@@ -68,13 +68,13 @@ a row ended with a harness error (`errors`). The reason is in `run.finished`.
 
 | Outcome | When |
 |---|---|
-| `proved` | A certified proof settled the claim, which is `proved`: the problem's own candidate, or one a line submitted, or the proof of another problem with the same statement. |
-| `refuted` | A certified proof of the negation settled the claim, which is `refuted`. A prover never does this, since it works on the statement; a line that proves negations can (M2's twin, [graph.md](graph.md#the-twin)). |
+| `proved` | A certified proof settled the claim, which is `proved`: the problem's own candidate (a prover's, or a line's proof of the problem's claim). A claim that another problem proved does not make a problem `proved`, even when the two share the claim: the problem needs a certification of its own. |
+| `refuted` | A certified proof of the negation, submitted by the problem's own lines, settled the claim, which is `refuted`. A prover never does this, since it works on the statement; a line that proves negations can (M2's twin, [graph.md](graph.md#the-twin)). A claim that another problem refuted does not make a problem `refuted`. |
 | `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in, a Lean environment in which not even the reference compiles, a host profile with no sandbox for the certifier). The claim is `computed`, and the reason says why the certifier gave none. |
 | `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate: the kernel refused a proof that the fast check accepted, so the problem has none. The claim stays `computed` and the reasons are in the `kernel_replay` validation. |
 | `skipped` | The problem could not be set up: its file differs from the index, it cannot be cut into a sketch, or the original does not compile. |
 | `aborted` | The run was stopped. |
-| `error` | Lean could not be reached for the reference check, every prover kept failing, or the harness failed. |
+| `error` | Lean could not be reached for the reference check, every prover kept failing, the harness failed, or a certified proof or refutation of the problem's claim contradicted the claim's status (a proof of a refuted claim, a refutation of a proved one). |
 
 ### Certification
 
@@ -84,10 +84,13 @@ validation of the claim, with `negation: true` for a refutation, and acts on it:
 
 - `certified`: the claim becomes `proved` (a proof) or `refuted` (a proof of the negation), if it
   is still `open`, `computed` or `proved_informal`. A claim that another problem with the same
-  statement has settled keeps its status: the validation is recorded and nothing changes. A claim
-  that was settled the other way is a contradiction (a proof of a refuted claim, or the reverse):
-  the validation stays as evidence and the status does not move. The problem ends as `error` when
-  it was its own candidate, and the run's log says so when it was a line's.
+  statement has settled the same way keeps its status: the validation is recorded and nothing
+  changes. A claim that was settled the other way is a contradiction (a proof of a refuted claim, or
+  a refutation of a proved one): the validation stays as evidence and the status does not move. The
+  problem that submitted it ends as `error` when the claim is its own, whether it was its provers'
+  candidate or a refutation of its claim that its lines submitted, and the reason says so. When the
+  claim is another one that its lines submitted a proof or a refutation for, the problem's outcome
+  stands, the run's log says so and the reason notes it.
 - `rejected`: nothing changes. The claim stays `computed` and the validation, which is `invalid`,
   holds the reasons. Nothing in the harness lowers a claim's status but `retractClaim`
   ([memory.md](memory.md#claims)), so a rejection does not send it back to `open`.
@@ -100,12 +103,15 @@ A candidate is certified once in a run, whatever came of it, and a workbench kee
 candidate: the problem's own, and one for each other claim and each negation that lines submit
 proofs for. If the certifier rejects a line's proof of a claim, its later proofs of that claim are
 not certified in the run, so a line cannot make the run pay for one certification after another.
+The problem whose submission made a candidate is the one that certifies it, when its own lines are
+done: a problem's end does not certify what the lines of another problem, still working, have
+submitted, and the time it takes is charged to the problem that submitted it.
 
-What is certified, and when:
+What is certified, and when, for a problem:
 
 1. The problem's own candidate, as soon as the provers are done, so that the lines'
    `afterProblem` see the claim `proved`.
-2. After `afterProblem`, the candidates the lines submitted through `validate` ([lines.md](lines.md#validate)):
+2. After `afterProblem`, the candidates this problem's lines submitted through `validate` ([lines.md](lines.md#validate)):
    proofs of other claims, which become `proved`; proofs of negations, which make their claim
    `refuted`; and a proof of the problem's own claim found late. M2's composed proofs and its
    twin's proof and refutations are among them: they reach the certifier by the same path as a
@@ -115,9 +121,21 @@ What is certified, and when:
    from the claim's journaled statement and header for any other; a line cannot give a claim a
    file of its own ([memory.md](memory.md#reference-files)).
 
-A problem that ended `unsolved` or `candidate` ends as `proved` or `refuted` when a certified
-proof or refutation has settled its claim by the time it ends: the outcome follows the claim,
-whoever submitted the proof. Any other outcome stands.
+A problem's outcome comes from its own results only. It is `proved` when its own candidate was
+certified. It is `refuted` when a refutation of its claim that its own lines submitted was
+certified, after `afterProblem`, and the same holds for a proof of its claim that a line found late:
+a problem that ended `unsolved` or `candidate` ends as `proved` or `refuted` then. The certification
+of another problem's proof or refutation, even of a problem that shares its claim, does not move a
+problem's outcome: it stays `unsolved` (or `candidate`) until its own provers or lines find
+something, and the claim's status is the other problem's doing. `run.finished` counts the claims
+instead ([journal.md](journal.md#projection)): a problem counts as solved, refuted or a
+candidate when its claim has that status, so two problems that share a claim count twice, and a
+claim whose proof the kernel refused stays `computed` and counts as a candidate while its problem
+is `unsolved`. The report counts the outcomes.
+
+A line that fails in `afterProblem` makes the problem an `error`, except that a proof, a refutation
+or a candidate found stays found: the outcome is decided after the lines' submissions are certified,
+and the failure goes into the reason.
 
 Each problem has its own abort signal, aborted with a reason: `solved` (a prover found the
 candidate), `budget` (the problem's or the run's budget ran out) or `stopped` (the run was stopped,

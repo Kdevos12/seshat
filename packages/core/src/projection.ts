@@ -145,11 +145,17 @@ export interface ProblemRow {
 
 export interface RunSummary {
   problems: number;
-  /** Problems whose claim is `proved` (certified). */
+  /**
+   * The three counts are the claims': a problem is counted when its claim has the status, whichever
+   * problem settled it, so two problems that share a claim are counted twice. The problems'
+   * outcomes (`problem.finished`) are another count.
+   *
+   * Problems whose claim is `proved` (certified).
+   */
   solved: number;
   /** Problems whose claim is `refuted` (a certified proof of the negation). */
   refuted: number;
-  /** Problems whose claim is `computed`: a proof passed the fast check, not yet certified. */
+  /** Problems whose claim is `computed`: a proof passed the fast check and is not certified (no answer from the certifier, or the kernel rejected it). */
   candidates: number;
   attempts: number;
   usd: number;

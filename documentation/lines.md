@@ -107,15 +107,17 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `reviewBriefing(session, sections)` | After the lines' `briefing`, before the session starts. | Drop or reword the sections the session gets (keep the title), never add, replace or reorder one: every title returned must be one it was given, in the same order, or the line has failed. Each line gets the list as the lines before it left it; undefined keeps it. |
 | `afterAttempt(problem, attempt)` | After each session, before `attempt.finished`. | Return the attempt's classified strategy, the premises its proof uses, a typed summary of its failure, and the notes the prover's next session starts from: they go into `attempt.finished` (the notes into the prover), a later line's fields winning. The journal keeps the notes the model wrote; an empty string leaves the next session with none. Not called for a session the harness failed. |
 | `afterProver(problem, end)` | After a prover has ended: its sessions are used, it solved the problem, it ran out of budget, was stopped, kept failing, or a line stopped it. | Learn how it ended (`end.stop`). Not called when the harness failed in the prover, which ends the problem. |
-| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what the lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is `proved` or `refuted` only when a certified proof has settled the claim by then. |
+| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what this problem's lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is the problem's own so far: `proved` when its own candidate was certified, never `refuted` (a line's refutation is certified after the hook), and never `proved` because another problem proved a claim they share. |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
 a proof already found stays found (`candidate` or `proved`, with the failure in the reason, as when
-certification fails). In `beforeSession`, `briefing`, `reviewBriefing`, `tools`, `afterAttempt` or
-`afterProver`, the prover stops, the problem's other provers with it, and the problem ends as `error`
-unless a proof was found. In `contextPacket`, `beforeCheck` or `afterCheck`, the session ends with an
-error, and the prover goes on as after any failed session.
+certification fails). For `afterProblem` that includes a refutation of the problem's claim that its
+lines submitted and that was certified after the hook failed: the problem ends `refuted`. In
+`beforeSession`, `briefing`, `reviewBriefing`, `tools`, `afterAttempt` or `afterProver`, the prover
+stops, the problem's other provers with it, and the problem ends as `error` unless a proof was
+found. In `contextPacket`, `beforeCheck` or `afterCheck`, the session ends with an error, and the
+prover goes on as after any failed session.
 
 ## What a hook gets
 
@@ -185,16 +187,19 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
   makes the claim `computed`, becomes the problem's candidate, and ends the problem's search.
 - Any other claim, and any negation, gets a workbench of its own, built on first use from the
   claim's reference file (`MemoryStore.referenceFor`) and kept for the run. A valid proof makes
-  that claim `computed`, and the certifier makes it `proved` when the problem ends. A reference
-  file that does not compile makes every submission for it invalid, with the reason; one Lean did
-  not answer for is tried again next time. A line cannot change that file: the claim's reference
+  that claim `computed`, and the certifier makes it `proved` when the problem's lines are done.
+  The first valid proof of the claim is its candidate, whichever problem's line sent it, and that
+  problem certifies it; a later valid proof from another problem is recorded as a validation and is
+  nobody's candidate. A reference file that does not compile makes every submission for it invalid,
+  with the reason; one Lean did not answer for is tried again next time. A line cannot change that file: the claim's reference
   is the problem's own file or the one rebuilt from its journaled statement and header
   ([memory.md](memory.md#reference-files)).
 - A valid proof of the negation is recorded as a validation with `negation: true` and changes no
-  status when it is submitted. When the problem ends it is certified, and a certified one makes
-  the claim `refuted` ([trust.md](trust.md)). The first valid proof of each claim, and of each
-  negation, is the one certified in a run (the problem's own claim has the problem's workbench, and
-  its first valid proof is the problem's candidate).
+  status when it is submitted. When the problem's lines are done it is certified, and a certified
+  one makes the claim `refuted` ([trust.md](trust.md)); for the problem's own claim that is also
+  what ends the problem as `refuted`. The first valid proof of each claim, and of each negation,
+  is the one certified in a run (the problem's own claim has the problem's workbench, and its first
+  valid proof is the problem's candidate).
 - A file with holes is not a validation, as for the provers. An informal claim cannot be
   validated.
 

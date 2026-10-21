@@ -207,7 +207,11 @@ export class ProblemLines {
         signal: own,
       }),
       validate: (request) =>
-        o.benches.validate(request, { actor, signal: own, problem: { claimId: this.p.claimId, workbench: this.p.workbench } }),
+        o.benches.validate(request, {
+          actor,
+          signal: own,
+          problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench },
+        }),
       budget: budgetOf(this.p.ledger),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
