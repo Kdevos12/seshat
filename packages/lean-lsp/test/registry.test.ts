@@ -238,7 +238,7 @@ describe("lean.lsp through the registry", () => {
       await registry.health("lean.lsp");
       const [server] = started;
       assert.equal(server?.command, "uvx");
-      assert.deepEqual(server?.args, ["--from", "lean-lsp-mcp==0.31.0", "lean-lsp-mcp"]);
+      assert.deepEqual(server?.args, ["--from", "lean-lsp-mcp==0.31.0", "--with", "leanclient==0.13.2", "lean-lsp-mcp"]);
       assert.equal(server?.env?.LEAN_PROJECT_PATH, project);
       assert.equal(server?.env?.LEAN_MCP_DISABLED_TOOLS?.split(",").length, 14);
     });

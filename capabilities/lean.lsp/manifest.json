@@ -460,9 +460,10 @@
       "version": "0.31.0",
       "kind": "inproc",
       "factory": "lean-lsp",
-      "description": "lean-lsp-mcp 0.31.0 (PyPI) as a child process over stdio, by default started with uvx, on a Lean project: 8 of its 22 tools behind an allowlist, the other 14 switched off in the server (LEAN_MCP_DISABLED_TOOLS) and never called. The harness writes one scratch file per attempt in the project and names no other file. Not sandboxed: the server and Lean run as the harness's user (documentation/lean-lsp.md). The searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. Not run against a real Lean yet.",
+      "description": "lean-lsp-mcp 0.31.0 (PyPI) with leanclient 0.13.2 as a child process over stdio, by default started with uvx, on a Lean project: 8 of its 22 tools behind an allowlist, the other 14 switched off in the server (LEAN_MCP_DISABLED_TOOLS) and never called. The harness writes one scratch file per attempt in the project and names no other file. Not sandboxed: the server and Lean run as the harness's user (documentation/lean-lsp.md). The searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. Not run against a real Lean yet.",
       "environment": {
         "server": "lean-lsp-mcp 0.31.0",
+        "leanclient": "leanclient 0.13.2",
         "lean": "v4.27.0",
         "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7",
         "site.loogle": "https://loogle.lean-lang.org",

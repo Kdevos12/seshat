@@ -6,6 +6,13 @@ export const LEAN_LSP = "lean.lsp";
 /** The lean-lsp-mcp release that the manifest pins and this package is written against. */
 export const LEAN_LSP_MCP_VERSION = "0.31.0";
 
+/**
+ * The leanclient release that the pinned server was seen with. The server only asks for `>=` this
+ * one, and leanclient decides what a goal, a barrier and a position are, which the handshake cannot
+ * see change: so the default command line pins it exactly.
+ */
+export const LEANCLIENT_VERSION = "0.13.2";
+
 /** The operations of the capability: the interactive tools of the plan's PC7, and nothing else. */
 export const OPS = [
   "goal",
