@@ -254,6 +254,21 @@ describe("lean.lsp through the registry", () => {
       { command: "/opt/lsp/lean-lsp-mcp", loogleUrl: "http://localhost:8088", maxOpenFiles: 12 },
     );
   });
+
+  it("passes the host's args as given: they are the operator's, and the page says what a flag can change", async () => {
+    // Not refused, unlike the variables of `env` that change what the server may do: the decision is
+    // that `args` is trusted (documentation/lean-lsp.md, "Settings").
+    await over(
+      async ({ registry, started }) => {
+        const [health] = await registry.health("lean.lsp");
+        assert.equal(health?.ok, true);
+        const [server] = started;
+        assert.deepEqual(server?.args, ["--repl", "--loogle-local", "--lean-project-path", "/elsewhere"]);
+        assert.equal(server?.env?.LEAN_MCP_DISABLED_TOOLS?.split(",").length, 14, "the harness still sets its own variables");
+      },
+      { command: "/opt/lsp/lean-lsp-mcp", args: ["--repl", "--loogle-local", "--lean-project-path", "/elsewhere"] },
+    );
+  });
 });
 
 describe("the host profiles of the repository", () => {

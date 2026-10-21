@@ -196,7 +196,7 @@ The host profiles (`config/hosts/local.json`, `server.json`) list `lean.lsp` wit
 | Setting | Variable the profiles read | Meaning |
 |---|---|---|
 | `command` | `LEAN_LSP_MCP_COMMAND` | The server's executable; default `uvx`. |
-| `args` | | Its arguments; default as above for `uvx`, none otherwise. |
+| `args` | | Its arguments; default as above for `uvx`, none otherwise. The operator's, and trusted (below). |
 | `projectDir` | `LEAN_PROJECT_DIR` | The Lean project (required: without it the capability is unavailable and says how to name one). |
 | `scratchDir` | | The scratch directory, relative to the project; default `.seshat-lsp`. |
 | `loogleUrl` | `LOOGLE_URL` | A Loogle of the host's, in place of the public site. |
@@ -213,6 +213,16 @@ process gets no variable of the harness's environment besides those programs nee
 `LEAN_PROJECT_PATH` and `LEAN_MCP_DISABLED_TOOLS` itself, and `env` may not set them or any other
 variable that would change what the server may do (`LEAN_REPL*`, `LEAN_LOOGLE_LOCAL`,
 `LEAN_MCP_INSTRUCTIONS`...): the profile is refused.
+
+`args` is not held to that rule. It is the operator's, like `command`, and trusted: the harness
+passes it as given and does not read it. The server turns each of its flags into the variable of
+the same name when it starts, over the one the harness set, so a flag can do what the refused
+variable would: `--disable-tools` replaces the list of the 14 tools that are switched off,
+`--repl` starts a Lean REPL beside the language server, and `--loogle-local` has the server clone,
+build and run a Loogle. A profile that adds one of them (or any flag besides the defaults) leaves
+the surface that this page describes and the tests cover. The harness's own side still holds, since
+the closed schema and the allowlist of the client let only the eight tools be called with the
+arguments listed here, but what the server does behind them is then the operator's to vouch for.
 
 ### Health
 
