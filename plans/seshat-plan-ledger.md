@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 06:18 UTC. `main` at 54661e6, 540 tests.
+Updated 2026-10-21 06:21 UTC. `main` at 74d3ab4, 623 tests.
 
 ## Tasks
 
@@ -14,7 +14,7 @@ Updated 2026-10-21 06:18 UTC. `main` at 54661e6, 540 tests.
 | 1 | Memory foundation, line API | main | merged | |
 | 2 | M1: statement identity, shared negative memory | main | merged | |
 | 3 | `lean.meta`, `lean.goals`, Lean identity | main | merged | |
-| 4 | Certifier: `lean.certify`, kernel replay | main | re-review of fix round 1 (Rulings 22, 23) | `task/t4` |
+| 4 | Certifier: `lean.certify`, kernel replay | main | merged (`74d3ab4`); its Lean program never compiled; unavailable until a host sets a sandbox (Ruling 22) | |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
 | 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
 | 7 | M11: small models, fingerprints, lookups | main | re-review of fix round 2 | `task/t7` |
@@ -43,7 +43,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 24): T4, T7 and T16, in flight; then T15, T17, T21, T19, T20, T10, T13, T18,
+- Main team (Ruling 24): T7 and T16, in flight (T4 merged); then T15, T17, T21, T19, T20, T10, T13, T18,
   T22, T14 and the final review. At most three agents at once, because the account's usage limits
   bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -58,12 +58,26 @@ Notes from the main team, newest last. Read them at the start of each session.
   and 4 (the certifier) merge into `main` next: they change `packages/orchestrator/src/lines.ts`,
   `run.ts`, the README's status paragraph and diagram, and `documentation/lines.md`, which your
   merges touch too. Pull before you start Task 6 and again before each merge.
+- 2026-10-21: Task 4 (the certifier) is merged. A run certifies a candidate only on a host whose
+  profile gives `lean.certify` a sandbox command, or opts in with `unsandboxed: true` (Ruling 22);
+  the shipped profiles do neither, so a candidate stays `computed` with the reason. A problem's
+  outcome follows only the certifications of its own provers' candidate and of its own lines'
+  submissions (Ruling 23). Task 7 (M11) merges next.
 
 ## Interface changes
 
 Changes to shared files that the other team builds on, newest last (CLAUDE.md, "Who writes what").
 
-- None yet since the collaborator joined.
+- Task 4, merged in `74d3ab4`: `packages/core`: the certifier's interface (`LeanCertifier`,
+  `CertificationRequest`, `CertificationResult`), the validation method `kernel_replay`, the outcome
+  `refuted` of `problem.finished` and the count `run.finished.refuted`, the optional
+  `run.started.config.certifierUnavailable`; `packages/memory`: `referenceFor(claimId, { negation })`
+  and the root-only `setReference`; `packages/registry`: `Registry.usable(id)`, the optional
+  `FactoryContext.host`, `leanCertifyImplementation` and `RegistryLeanCertifier`, whose `health`
+  returns `{ ok, detail? }`; `packages/orchestrator`: `RunOptions.certifier`, and the lines'
+  `validate` context carries the `problemId`; `config/hosts/*.json`: a `lean.certify` entry each,
+  with no sandbox. Pages: [certifier.md](../documentation/certifier.md),
+  [trust.md](../documentation/trust.md), [lines.md](../documentation/lines.md).
 
 ## Log
 
@@ -275,3 +289,7 @@ Usage-limit stop 13: the session limit cut the T16 reviewer, the T4 re-reviewer 
 Merge rehearsal T4 then T7 on main f49ffc8 (wt/rehearse, detached, local only; git rerere on so the real merges replay the resolutions): T4 merges cleanly; T7 conflicts in README (status, diagram edges, two prose paragraphs), the two host profiles' descriptions, lines.md, lines.ts (LINES = { M1, M11, M2: m2Line, M6, fleet }), implementations.ts (lake-certify plus oeis, lmfdb, findstat), meta.test.ts (T7's stand-in for every inproc factory), cli.test.ts (one health test for SageMath, the sites and the certifier, plus T7's sites test), registry.test.ts (both tests), all resolved as unions; one failure after: T4's shipped-profiles test named its factories, fixed with stand-ins for every factory; wiring commit for the second to merge (Ruling 25's rule): M11's refutation is replayed when the host has a certifier and the problem ends refuted (new m11 test with a fake certifier), models.md's beforeSession row says so; pnpm check 837/837, links ok; patch kept in the scratchpad (merge-t4-t7/)
 Task 16: review: spec ❌ (I1 multi_attempt screens a tactic apart from the line prefix the server splices it onto, so `#ev` + column + `al 1` reaches Lean as `#eval 1`; I2 line-mode goal and state_search read a still_elaborating timeout as "no goal"), quality Needs fixes; no Critical; surface, trust (produces nothing, no verdict words), degradation, binding, registry and budget judged sound; inherited: core's R2-1 hole (fixed on task/t7; regression test added by the controller when T16 merges after T7); minors M1 Lean messages not sanitized, M2 leanclient floats under uvx, M3 a test unsets HTTPS_PROXY, M4 numbering, M5 status row names a probe not in the repository, M6 README planned node, M7 sandbox wording thinner than lean.goals, M8 verdict-like wording, M9 site classification too broad, M10 dead code, M11 cleanup coverage, M12 line separators shift positions, M13 input blob carries the sketch, M14 host args not guarded, M15 structure
 Task 16: fix round 1 sent to the implementer (I1 I2, minors M1-M12, M14, M15 optional; FIX_BASE 447bc39; findings file task-16-findings-r1.md); decisions: pin leanclient exactly with --with, orjson and certifi may float (M2); host args are the operator's and trusted, documented, not refused (M14); M13 deferred to Task 15 and the final review (the registry records inputs uniformly)
+Task 4: scoped re-review of fix round 1: I1 I2 M1-M12 all addressed, choices accepted (M9 contradictions, an unavailable certifier stays selected, M11 claim-based counts documented), e53b06b accurate; no new Critical or Important
+Task 4: deferred to the final review (re-review r1): N1 replay() copies the object files with no deadline after an lstat made before the reference's compile, so a process outliving the candidate's compile (unsandboxed, or a sandbox without PID isolation) could swap in a FIFO and hang the run (fix: open with O_NOFOLLOW|O_NONBLOCK and fstat, or copy right after each compile, or kill a grouped call's process group once it exits); N2 a refutation of a shared claim goes to the claim's one negation workbench, so only the first submitter's problem can end refuted (fix: a negation workbench per problem, or document next to lines.md:190-193 and graph.md:365-367); N3 events.ts and projection.ts omit "no certifier" from why a candidate is uncertified; out of scope: a beforeProvers line failure after a submission is not named in the reason, and a refutation certified after a beforeProvers failure leaves the problem error (lines.md promises the exception for afterProblem only)
+Task 4: merged: main a9dfa04 brought into task/t4 (db856be, no conflict), pnpm check 623/623, links ok, task/t4 pushed; merged into main 74d3ab4 (--no-ff; its tree equals task/t4's checked tree); pushed a9dfa04..74d3ab4
+Task 4: complete; not run against a real Lean, lake or sandbox: lean/SeshatCertify/Main.lean has never been compiled; the shipped profiles leave lean.certify unavailable until a sandbox is set (Ruling 22)
