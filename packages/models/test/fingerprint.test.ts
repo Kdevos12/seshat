@@ -126,18 +126,36 @@ describe("the work of the law evaluator", () => {
     "∀ a b c d e f g h : M, (a * b) * (c * d) = (e * f) * (g * h)",
   ];
 
-  it("is size ** variables for each law and each magma: the table of the documentation", () => {
-    // 1 magma of size 1, 10 of size 2, 3 330 of size 3, and 120 of size 4: 1 + 10 * 2^k + 3330 * 3^k + 120 * 4^k.
-    const expected = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => 1 + 10 * 2 ** k + 3330 * 3 ** k + 120 * 4 ** k);
+  // 1 magma of size 1, 10 of size 2, 3 330 of size 3, and 120 of size 4: the assignments of k variables are 1 + 10 * 2^k + 3330 * 3^k + 120 * 4^k.
+  const assignments = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => 1 + 10 * 2 ** k + 3330 * 3 ** k + 120 * 4 ** k);
+
+  it("is, for each law and each magma, size ** variables assignments of the law's occurrences of variables plus 4 steps: the table of the documentation", () => {
+    assert.deepEqual(assignments, [10_491, 31_931, 97_671, 300_611, 932_391, 2_919_731, 9_250_071, 29_715_011]);
+    // The occurrences of variables in the two sides of each law above.
+    const occurrences = [3, 4, 6, 4, 5, 6, 7, 8];
+    const expected = assignments.map((count, i) => count * ((occurrences[i] as number) + 4));
     assert.deepEqual(laws.map((law) => magmaWork(magmaStatement(law), battery.objects)), expected);
-    assert.deepEqual(expected, [10_491, 31_931, 97_671, 300_611, 932_391, 2_919_731, 9_250_071, 29_715_011]);
+    assert.deepEqual(expected, [73_437, 255_448, 976_710, 2_404_888, 8_391_519, 29_197_310, 101_750_781, 356_580_132]);
+  });
+
+  it("counts every occurrence of a variable, so that a long term costs in proportion and not as a short one", () => {
+    // Five variables a to e, and a product of `perSide` occurrences on each side (the two sides are the same term).
+    const product = (perSide: number) => Array.from({ length: perSide }, (_, i) => "abcde"[i % 5]).join(" * ");
+    const long = (perSide: number) => magmaStatement(`∀ a b c d e : M, ${product(perSide)} = ${product(perSide)}`);
+    assert.equal(magmaWork(long(5), battery.objects), 932_391 * (10 + 4));
+    // The most the parser allows: 64 occurrences on each side, 132 steps for each of the 932 391 assignments.
+    assert.equal(magmaWork(long(64), battery.objects), 932_391 * (128 + 4));
+    // The count is of occurrences, not of depth: a balanced tree of 64 occurrences costs what a chain of 64 does.
+    const tree = (n: number): string => (n === 1 ? "a" : `(${tree(Math.floor(n / 2))}) * (${tree(n - Math.floor(n / 2))})`);
+    const balanced = magmaStatement(`∀ a b c d e : M, ${tree(60)} * b * c * d * e = ${tree(60)} * b * c * d * e`);
+    assert.equal(magmaWork(balanced, battery.objects), magmaWork(long(64), battery.objects));
   });
 
   it("adds the work of the hypotheses to the conclusion's, and is nothing for no magma", () => {
     const result = recognizeStatement("(M : Type) [Mul M] (h : ∀ x y : M, x * y = x) : ∀ x y z : M, x * (y * z) = (x * y) * z");
     assert.ok("statement" in result && result.statement.kind === "magma");
-    // 31 931 for the hypothesis and 97 671 for the conclusion.
-    assert.equal(magmaWork(result.statement, battery.objects), 31_931 + 97_671);
+    // 31 931 assignments of 3 + 4 steps for the hypothesis, and 97 671 of 6 + 4 for the conclusion.
+    assert.equal(magmaWork(result.statement, battery.objects), 31_931 * 7 + 97_671 * 10);
     assert.equal(magmaWork(result.statement, []), 0);
   });
 });

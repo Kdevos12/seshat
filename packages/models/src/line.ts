@@ -57,8 +57,8 @@ export const M11_DEFAULTS = {
   toolMaxNumber: 30,
   /** The most files the Lean evaluator sends for a problem (its statement and the claims around it together), and for each call of the tool. */
   leanFiles: 200,
-  /** The most assignments of variables the law evaluator tries for a problem, and for each call of the tool: the bound of `magmaWork`, checked before it runs. */
-  lawWork: 60_000_000,
+  /** The most steps the law evaluator takes for a problem, and for each call of the tool: the bound of `magmaWork` (the assignments of variables, each costing the occurrences of variables in the law and 4), checked before it runs. */
+  lawWork: 500_000_000,
 } satisfies JsonObject;
 
 export type M11Options = { [K in keyof typeof M11_DEFAULTS]: (typeof M11_DEFAULTS)[K] extends boolean ? boolean : number };
@@ -150,7 +150,7 @@ async function tryStatement(env: Environment, statement: RecognizedStatement, ba
         verdicts: [],
         witnesses: [],
         evaluator: "law",
-        unusable: `the law evaluator would try up to ${work} assignments of the variables, over the ${env.left.lawWork} that the cap (option M11.lawWork) leaves for it`,
+        unusable: `the law evaluator would take up to ${work} steps, over the ${env.left.lawWork} that the cap (option M11.lawWork) leaves for it`,
       };
     }
     env.left.lawWork -= work;

@@ -176,6 +176,21 @@ function collect(term: Term, into: string[]): void {
   }
 }
 
+/**
+ * The occurrences of variables in a term, `x * (x * y)` having three: what the evaluator computes
+ * for each side of a law at each assignment. Counted with a stack of its own, so that a term of any
+ * depth, also one built by hand and not read by `parseLaw`, can be measured.
+ */
+export function termSize(term: Term): number {
+  let size = 0;
+  const pending: Term[] = [term];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    if (next.kind === "var") size++;
+    else pending.push(next.left, next.right);
+  }
+  return size;
+}
+
 /** A term as Lean writes it: `x * y * z` for `(x * y) * z` and `x * (y * z)` for the other nesting. */
 export function printTerm(term: Term, symbol = "*"): string {
   if (term.kind === "var") return term.name;

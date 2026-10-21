@@ -142,8 +142,8 @@ on a side, so no real statement meets these limits; they are there because the p
 laws and the printer recurse over the term, and the evaluator does its work for every assignment on
 every occurrence. A text of a million variables, or of a hundred thousand parentheses, would otherwise
 build a term that deep and run out of stack, and a long term makes each assignment cost in
-proportion. The limits are checked while the text is read, so such a text is refused with its reason
-before any term exists, and the line leaves the statement alone.
+proportion ([the caps](#the-caps) count that). The limits are checked while the text is read, so such
+a text is refused with its reason before any term exists, and the line leaves the statement alone.
 
 A premise that is itself a quantified law goes in parentheses: `(∀ x y : M, x * y = y * x) → ...`.
 Lean reads the body of a `∀`, `∃` or `fun` (or `forall` and `exists`, written as words) to the end of
@@ -173,7 +173,7 @@ An evaluator gives a verdict on each object of a battery: `true` (the statement 
 
 | Evaluator | For | How | Where |
 |---|---|---|---|
-| Laws in TypeScript | Magma statements | Every assignment of the variables is tried (`size ** variables` of them, the first failure ends the magma) on a law compiled once, after `magmaWork` has bounded the work ([caps](#the-caps)). `compileMagmaStatement`, `evaluateLaw`, `lawWitness` give the verdict, and the assignment that breaks the law | `laws.ts`, `statement.ts` |
+| Laws in TypeScript | Magma statements | Every assignment of the variables is tried (`size ** variables` of them, the first failure ends the magma) on a law compiled once, after `magmaWork` has bounded the steps ([caps](#the-caps)). `compileMagmaStatement`, `evaluateLaw`, `lawWitness` give the verdict, and the assignment that breaks the law | `laws.ts`, `statement.ts` |
 | A program in JavaScript | Any predicate on numbers, magmas (`{size, table}`) and graphs (`{n, edges}`) | `runPredicate(source, args)` and `runProgram(source, objects)`: the program is one function expression that returns a boolean | `sandbox.ts` |
 | Lean | Magma and number statements | `evaluateWithLean(checker, {header, statement, objects})` | `lean-eval.ts` |
 
@@ -256,17 +256,39 @@ tool has an allowance of its own.
   fingerprint is recorded with those holes (`?`) and the log says how many; a claim around the
   problem that was cut short is not recorded, since a fingerprint with holes that the cap made would
   be compared as if it were whole. A cap of 0 turns the Lean evaluator off.
-- `lawWork` (default 60 000 000) bounds the assignments of values to variables that the law evaluator
-  tries. `magmaWork(statement, magmas)` gives the bound before anything runs: `size ** variables` for
-  each law of the statement (the hypotheses and the conclusion) on each magma. That is the work when
-  every law holds on every magma; a law that fails stops at its first counter-assignment, so the
-  work done is usually much less. The evaluator is synchronous: while it runs nothing else does, and
-  nothing can cancel it. It does about six million assignments a second here, so the default is about
-  ten seconds at worst. On the default battery (3 461 magmas) one law of 3 variables is 97 671
-  assignments, of 5 variables 932 391, of 6 variables 2.9 million, of 7 variables 9.3 million, and of
-  8 variables, the most the parser allows, 29.7 million (about 5 s). A statement over what the cap
-  leaves is not tried, and the log says what its bound is and what was left. A cap of 0 turns the law
-  evaluator off.
+- `lawWork` (default 500 000 000) bounds the steps that the law evaluator takes.
+  `magmaWork(statement, magmas)` gives the bound before anything runs. For each law of the statement
+  (the hypotheses and the conclusion) on each magma it counts `size ** variables` assignments of
+  values to the variables; an assignment costs one step for each occurrence of a variable in the law,
+  since the evaluator computes both sides in full, and 4 more for the next assignment and the
+  comparison. Counting the assignments alone did not bound the time: the same assignments of a law
+  with 128 occurrences take more than ten times as long as those of a law with 4. The size limits of
+  [Statements](#statements) keep every law within 128 occurrences, and this cap then bounds the time.
+  That is the work when every law holds on every magma; a law that fails stops at its first
+  counter-assignment, so the work done is usually much less. The evaluator is synchronous: while it
+  runs nothing else does, and nothing can cancel it. On the machine these numbers come from a step
+  takes about 8 ns in short laws and about 18 ns in the longest the parser allows, so the default
+  is 4 s for short laws and 9 s for the longest: about ten seconds at worst, with room for a slower
+  machine. A statement over what the cap leaves is not tried, and the log says what its bound is and
+  what was left. A cap of 0 turns the law evaluator off.
+
+The bound against the time, for laws that hold on every magma (so that every assignment is tried), on
+the default battery (3 461 magmas), as measured here (a refused statement was timed by running it
+without the cap):
+
+| Statement | Assignments | Steps | Time | Default cap |
+|---|---|---|---|---|
+| one law, 7 variables, 7 occurrences on each side | 9.3 million | 167 million | 1.2 s | allowed |
+| one law, 8 variables (the most), 8 occurrences on each side | 29.7 million | 594 million | 4.9 s | refused, 1.2 times the cap |
+| one law, 5 variables, 64 occurrences on each side (the most) | 932 391 | 123 million | 2.1 s | allowed |
+| one law, 6 variables, 64 occurrences on each side | 2.9 million | 385 million | 6.6 s | allowed |
+| four such laws of 5 variables | 3.7 million | 492 million | 8.4 s | allowed: the longest the cap lets through |
+| one law, 7 variables, 64 occurrences on each side | 9.3 million | 1.2 thousand million | 22 s | refused |
+| one law, 8 variables, 64 occurrences on each side | 29.7 million | 3.9 thousand million | 71 s | refused |
+
+A law that is true of every magma is the worst case; one that fails on most magmas stops at its first
+counter-assignment. A statement that the cap refuses is tried by raising the option, with
+`--line-option M11.lawWork=600000000` for the second row.
 
 ## Fingerprints
 
@@ -540,7 +562,7 @@ edge that is not `computed`, and a fingerprint alone refutes nothing. The option
 | `identify`, `identifyTerms` | true, 40 | Look the numbers up as sequences, from at most this many terms (4 to 100, the most `oeis.search` takes) |
 | `toolMaxNumber` | 30 | The numbers a statement is tried on by the tool |
 | `leanFiles` | 200 | The most files the Lean evaluator sends for a problem (its statement and the claims around it together) and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
-| `lawWork` | 60 000 000 | The most assignments of variables the law evaluator may try, as `magmaWork` bounds them, for a problem and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
+| `lawWork` | 500 000 000 | The most steps the law evaluator may take, as `magmaWork` bounds them (the assignments of variables, each costing the occurrences of variables in the law and 4), for a problem and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
 
 A value out of range fails the problem's `beforeProvers` with the name of the option.
 

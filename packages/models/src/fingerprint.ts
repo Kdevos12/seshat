@@ -1,6 +1,7 @@
 import type { EdgeLink, Json } from "@seshat/core";
 import type { Edge, MemoryNode, MemoryStore } from "@seshat/memory";
 import type { Battery, BatteryFamily } from "./battery.ts";
+import { termSize } from "./laws.ts";
 import type { Magma } from "./objects.ts";
 import { compileMagmaStatement, type MagmaStatement, type RecognizedStatement, statementBody, statementStructure } from "./statement.ts";
 
@@ -68,18 +69,24 @@ export function relate(first: string, second: string): Relation {
   return "unrelated";
 }
 
+/** What one assignment of values to the variables of a law costs besides the occurrences of variables in its sides: the step to the next assignment, and the comparison of the two sides. */
+const ASSIGNMENT_STEPS = 4;
+
 /**
- * An upper bound on the work of `evaluateMagmaStatement`: the assignments of values to the variables
- * that it would try, `size ** variables` for each law of the statement (the hypotheses and the
- * conclusion) on each magma. It is reached when every law holds on every magma; a law that fails
- * stops at its first assignment that breaks it, and a hypothesis that fails leaves the conclusion
- * alone. The evaluator is synchronous, so this is also what the process does before it can do
- * anything else, at about six million assignments a second.
+ * An upper bound on the work of `evaluateMagmaStatement`, in steps: for each law of the statement
+ * (the hypotheses and the conclusion) on each magma, `size ** variables` assignments of values to the
+ * variables, each costing one step for every occurrence of a variable in the law, since the evaluator
+ * computes both sides in full, and `ASSIGNMENT_STEPS` more. The assignments alone would not bound the
+ * time: the same assignments of a law with 128 occurrences take many times as long as those of a law
+ * with 4. The bound is reached when every law holds on every magma; a law that fails stops at its first
+ * assignment that breaks it, and a hypothesis that fails leaves the conclusion alone. The evaluator is
+ * synchronous, so this is also what the process does before it can do anything else.
  */
 export function magmaWork(statement: MagmaStatement, magmas: readonly Magma[]): number {
-  const variables = [...statement.hypotheses.map((hypothesis) => hypothesis.law.variables.length), statement.conclusion.law.variables.length];
+  const laws = [...statement.hypotheses.map((hypothesis) => hypothesis.law), statement.conclusion.law];
+  const costs = laws.map((law) => ({ variables: law.variables.length, steps: termSize(law.left) + termSize(law.right) + ASSIGNMENT_STEPS }));
   let work = 0;
-  for (const { size } of magmas) for (const count of variables) work += size ** count;
+  for (const { size } of magmas) for (const { variables, steps } of costs) work += size ** variables * steps;
   return work;
 }
 
