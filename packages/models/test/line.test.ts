@@ -134,7 +134,7 @@ describe("the options of the line", () => {
     assert.equal(readOptions({ ...M11_DEFAULTS, identifyTerms: 100 }).identifyTerms, 100);
     // The caps on what a problem may spend: how many files Lean gets, how many assignments the law evaluator tries.
     assert.equal(M11_DEFAULTS.leanFiles, 200);
-    assert.equal(M11_DEFAULTS.lawWork, 60_000_000);
+    assert.equal(M11_DEFAULTS.lawWork, 500_000_000);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, leanFiles: -1 }), /option M11\.leanFiles is an integer from 0 to 10000, not -1/);
     assert.throws(() => readOptions({ ...M11_DEFAULTS, lawWork: 1.5 }), /option M11\.lawWork is an integer from 0 to 10000000000, not 1\.5/);
     assert.equal(readOptions({ ...M11_DEFAULTS, leanFiles: 0, lawWork: 0 }).leanFiles, 0);
@@ -501,31 +501,46 @@ describe("the caps on what a problem may spend", () => {
     assert.match(logs.join("\n"), /M11: the cap of 9 Lean files \(option M11\.leanFiles\) was reached; \d+ objects have no verdict/);
   });
 
-  it("do not try a statement of magmas whose laws would take more assignments than the cap leaves", async () => {
-    // h: 2 variables, conclusion: 3. On the 3 461 magmas of the default battery that is 2 + 120 + 119 880 + 9 600 = 129 602 assignments.
-    const refused = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 129_601 } });
+  it("do not try a statement of magmas whose laws would take more steps than the cap leaves", async () => {
+    // h has 2 variables and 3 occurrences of variables, the conclusion 3 variables and 6. On the 3 461 magmas of the default battery
+    // that is 31 931 assignments of 3 + 4 steps and 97 671 of 6 + 4: 223 517 + 976 710 = 1 200 227 steps.
+    const refused = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 1_200_226 } });
     await hook(M11, "beforeProvers")(refused.problem);
     assert.deepEqual([fingerprintsOf(refused.memory, refused.claimId), refused.memory.nodes("battery")], [[], []]);
-    assert.match(refused.logs.join("\n"), /M11: the statement could not be tried: the law evaluator would try up to 129602 assignments of the variables, over the 129601 that the cap \(option M11\.lawWork\) leaves for it/);
+    assert.match(refused.logs.join("\n"), /M11: the statement could not be tried: the law evaluator would take up to 1200227 steps, over the 1200226 that the cap \(option M11\.lawWork\) leaves for it/);
     assert.equal(refused.requests.length, 0);
 
     // A cap that equals the work is enough.
-    const allowed = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 129_602 } });
+    const allowed = await problemOf(LEFT_PROJECTION_ASSOCIATES, { options: { lawWork: 1_200_227 } });
     await hook(M11, "beforeProvers")(allowed.problem);
     assert.equal(fingerprintsOf(allowed.memory, allowed.claimId).length, 1);
   });
 
+  it("do not try long laws that the number of their assignments alone would let through", async () => {
+    // Six variables and 64 occurrences on each side, as a hypothesis twice and as the conclusion: 2 919 731 assignments of 132 steps each, three times.
+    // The assignments (8.8 million) are far under what the cap allowed when it counted those; the steps are 1.16 thousand million, over the 500 million.
+    // The laws fail at once on most magmas, so that an evaluator that was let in would be done soon: the bound does not wait for that.
+    const side = (shift: number) => Array.from({ length: 64 }, (_, i) => "abcdef"[(i + shift) % 6]).join(" * ");
+    const law = `∀ a b c d e f : M, ${side(0)} = ${side(1)}`;
+    const { problem, memory, claimId, logs, requests } = await problemOf(`(M : Type) [Mul M] (h1 : ${law}) (h2 : ${law}) : ${law}`);
+    await hook(M11, "beforeProvers")(problem);
+    assert.deepEqual([fingerprintsOf(memory, claimId), memory.nodes("battery"), requests], [[], [], []]);
+    const steps = 3 * 2_919_731 * (128 + 4);
+    assert.match(logs.join("\n"), new RegExp(`M11: the statement could not be tried: the law evaluator would take up to ${steps} steps, over the 500000000 that the cap \\(option M11\\.lawWork\\) leaves for it`));
+  });
+
   it("share the law work among the problem's statement and the claims around it", async () => {
-    // 97 671 assignments for the problem's x * y = x * z, 31 931 for each of the two variants of two variables.
-    const { problem, memory, claimId, logs } = await problemOf(CONSTANT_IN_Y, { options: { lawWork: 140_000 } });
+    // 781 368 steps for the problem's x * y = x * z (97 671 assignments of 4 + 4), 255 448 for x * y = x * x (31 931 of 4 + 4) and 223 517 for x * y = x (31 931 of 3 + 4).
+    const { problem, memory, claimId, logs } = await problemOf(CONSTANT_IN_Y, { options: { lawWork: 1_100_000 } });
     const first = (await memory.ensureClaim({ statement: SQUARE_IS_PRODUCT, origin: "line:M2" })).claimId;
     const second = (await memory.ensureClaim({ statement: LEFT_PROJECTION, origin: "line:M2" })).claimId;
     memory.addEdge({ kind: "special_case_of", from: first, to: claimId });
     memory.addEdge({ kind: "special_case_of", from: second, to: claimId });
     await hook(M11, "beforeProvers")(problem);
     assert.equal(fingerprintsOf(memory, claimId).length, 1);
-    assert.equal([first, second].filter((id) => fingerprintsOf(memory, id).length === 1).length, 1);
-    assert.equal((logs.join("\n").match(/could not be tried: the law evaluator would try up to 31931 assignments of the variables, over the 10398 that the cap \(option M11\.lawWork\) leaves for it/g) ?? []).length, 1);
+    // The problem leaves 318 632, the first claim takes 255 448 of them, and the second needs 223 517 of the 63 184 that are left.
+    assert.deepEqual([first, second].map((id) => fingerprintsOf(memory, id).length), [1, 0]);
+    assert.equal((logs.join("\n").match(/could not be tried: the law evaluator would take up to 223517 steps, over the 63184 that the cap \(option M11\.lawWork\) leaves for it/g) ?? []).length, 1);
   });
 });
 
@@ -624,7 +639,7 @@ describe("the small_models tool", () => {
 
   it("are the same for each call, which has the whole cap for itself", async () => {
     const lean = new SimulatedDecide({ truth: (i) => (i.kind === "nat" ? i.value < 12 : undefined) });
-    const { call } = await toolOf({ lean, options: { toolMaxNumber: 100, leanFiles: 5, lawWork: 150_000 } });
+    const { call } = await toolOf({ lean, options: { toolMaxNumber: 100, leanFiles: 5, lawWork: 1_500_000 } });
     const numbers = await call("(n : ℕ) : n < 12");
     assert.equal(lean.calls.length, 5);
     assert.match(numbers, /with no verdict on \d+\./);
@@ -633,9 +648,9 @@ describe("the small_models tool", () => {
     await call("(n : ℕ) : n < 12");
     assert.equal(lean.calls.length, 10);
 
-    // x * y = z * w: 1 + 160 + 269 730 + 30 720 = 300 611 assignments, over 150 000. The problem's own law takes 97 671 each time it is tried:
-    // two calls are within the cap because each has the whole of it (together they would not be).
-    assert.match(await call("(M : Type) [Mul M] : ∀ x y z w : M, x * y = z * w"), /^Not tried: the law evaluator would try up to 300611 assignments of the variables, over the 150000 that the cap \(option M11\.lawWork\) leaves for it/);
+    // x * y = z * w: 300 611 assignments (1 + 160 + 269 730 + 30 720) of 4 + 4 steps, 2 404 888 steps, over 1 500 000. The problem's own law takes 781 368 each time it is tried
+    // (97 671 assignments of 8 steps): two calls are within the cap because each has the whole of it (together they would not be).
+    assert.match(await call("(M : Type) [Mul M] : ∀ x y z w : M, x * y = z * w"), /^Not tried: the law evaluator would take up to 2404888 steps, over the 1500000 that the cap \(option M11\.lawWork\) leaves for it/);
     assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
     assert.match(await call(CONSTANT_IN_Y), /^On magmas:3\+4x120@1/);
   });
