@@ -101,10 +101,11 @@ non-blank character, is what it sends), builds each document as the server does 
 its two regions back, and runs the screen of regions on them: a refusal says the tactic, where it is
 joined and what the server would elaborate. A tactic that has more lines than the region has from the
 line asked is refused, because the server would replace the marker that ends the region and the
-lines after it. A tactic with a CRLF is sent with line feeds. `attemptLines` was compared with the
-server's own `build_attempt_text` on 3000 random cases (astral characters, tabs, no-break spaces,
-several lines, trailing line feeds) and gave the same document in each. The comparison is the opt-in
-test `real-server.test.ts` ([Tests](#tests)); it needs the real server's Python package, not Lean.
+lines after it. A tactic with a CRLF is sent with line feeds. `attemptLines` is compared with the
+server's own `build_attempt_text` on 1500 seeded random cases (astral characters, tabs, no-break
+spaces, several lines, trailing line feeds), and gave the same document in each (and in 3000 when it
+was first written). The comparison is the opt-in test `real-server.test.ts` ([Tests](#tests)); it
+needs the real server's Python package, not Lean.
 
 ## What it never does
 
@@ -228,8 +229,9 @@ variable that would change what the server may do (`LEAN_REPL*`, `LEAN_LOOGLE_LO
 passes it as given and does not read it. The server turns each of its flags into the variable of
 the same name when it starts, over the one the harness set, so a flag can do what the refused
 variable would: `--disable-tools` replaces the list of the 14 tools that are switched off,
-`--repl` starts a Lean REPL beside the language server, and `--loogle-local` has the server clone,
-build and run a Loogle. A profile that adds one of them (or any flag besides the defaults) leaves
+`--repl` starts a Lean REPL beside the language server (the server tries its REPL for
+`multi_attempt` only when the call has no column, and the harness always sends one), and
+`--loogle-local` has the server clone, build and run a Loogle. A profile that adds one of them (or any flag besides the defaults) leaves
 the surface that this page describes and the tests cover. The harness's own side still holds, since
 the closed schema and the allowlist of the client let only the eight tools be called with the
 arguments listed here, but what the server does behind them is then the operator's to vouch for.
