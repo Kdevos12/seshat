@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 01:39 UTC. `main` at 28e78d2, 540 tests.
+Updated 2026-10-21 06:11 UTC. `main` at f49ffc8, 540 tests.
 
 ## Tasks
 
@@ -271,3 +271,5 @@ Task 4: fix round 1 implemented (commits b191e72 83a11be 7f5b77c e3d3f7f 383ff43
 Task 4: scoped re-review dispatched (FIX_BASE be6e9e2, head e53b06b; the strongest tier because the certifier is the trust anchor and the fix diff is large: 39 files, +1890 -377)
 Task 7: fix round 2 implemented (commits 482dca3 7b01ef7 8ce131e 3733ef5 3c6274d c79681e on task/t7, 591/591; task/t7 pushed); R2-1 the core token screen finds a forbidden command glued to what precedes it, M11 refuses `#`; M2 forall/exists words; R2-3 exact sorts; R2-4 limits (4000 chars, 64 occurrences, nesting 32, also in the tool schema); R2-2 lawWork in steps weighted by law size (default 500M, worst accepted case about 8.4 s); c79681e (R2-1b, beyond the findings, droppable alone): the screen reads names as Lean's lexer does; concerns: Task 4 also edits validator.ts (token list), two m11.test.ts expectations and the beforeSession row of models.md change when T4 merges, ULift negation unverified against a real Lean
 Task 7: scoped re-review dispatched (FIX_BASE 6335470, head c79681e; asked to judge R2-1b keep or drop)
+Usage-limit stop 13: the session limit cut the T16 reviewer, the T4 re-reviewer and the T7 re-reviewer about 01:40 UTC (reset 06:00); all three resumed 06:05 UTC
+Merge rehearsal T4 then T7 on main f49ffc8 (wt/rehearse, detached, local only; git rerere on so the real merges replay the resolutions): T4 merges cleanly; T7 conflicts in README (status, diagram edges, two prose paragraphs), the two host profiles' descriptions, lines.md, lines.ts (LINES = { M1, M11, M2: m2Line, M6, fleet }), implementations.ts (lake-certify plus oeis, lmfdb, findstat), meta.test.ts (T7's stand-in for every inproc factory), cli.test.ts (one health test for SageMath, the sites and the certifier, plus T7's sites test), registry.test.ts (both tests), all resolved as unions; one failure after: T4's shipped-profiles test named its factories, fixed with stand-ins for every factory; wiring commit for the second to merge (Ruling 25's rule): M11's refutation is replayed when the host has a certifier and the problem ends refuted (new m11 test with a fake certifier), models.md's beforeSession row says so; pnpm check 837/837, links ok; patch kept in the scratchpad (merge-t4-t7/)
