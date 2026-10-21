@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-20 21:00 UTC. `main` at 3d81cd5, 540 tests.
+Updated 2026-10-21 01:05 UTC. `main` at 6f06fd6, 540 tests.
 
 ## Tasks
 
@@ -264,3 +264,4 @@ Usage-limit stop 11: the 5-hour limit cut the T4 fixer, the T7 re-reviewer and t
 - Ruling 25: a collaborator's agents own Tasks 6 (M10), 9 (M3, M5) and 11 (M4), in that order, working in this repository by `CLAUDE.md` with their brief in `plans/collaborator-tasks.md`; the collaborator wires Task 6's battery into Task 9's non-triviality test itself (this replaces the Task 14 part of Ruling 3); where a task of one team needs a piece the other team has not merged yet, it builds against the interface the plan gives and whichever task lands second wires the two together — the owner's request of 2026-10-20 at 16:52 — cost if wrong: M10, M3, M5 and M4 land when the collaborator delivers them, and Task 14 waits for them.
 - Ruling 26: the harness's Lean library is `lean/SeshatLib/` (modules `SeshatLib.<Domain>`), not `lean/HarnessLib/` as Task 9 and PC12 say — cost if wrong: a rename.
 2026-10-20 21:00 UTC: the plan, the rulings, this ledger (cleaned of agent ids and model names), the three approved plan changes and the collaborator's brief and log move into the repository (plans/), with CLAUDE.md for every agent; the repository's plans/seshat-plan.md is canonical from now on, mirrored to the project's shared files. Task branches task/t4, task/t7 and task/t16 are pushed to origin and pushed again after each report; merged task branches and their worktrees are removed.
+Usage-limit stop 12: the 5-hour limit cut the T4 fixer (after 7f5b77c), the T7 fixer (after 3733ef5) and the T16 implementer (uncommitted work) about 20:34 UTC (reset 01:00); all three resumed 01:04 UTC; task/t4 and task/t7 pushed
