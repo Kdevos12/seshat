@@ -17,10 +17,10 @@ import {
   SKETCH_POLICY,
   toPlainHeader,
 } from "@seshat/core";
-import type { Line } from "@seshat/lines";
+import type { Line, ProblemContext } from "@seshat/lines";
 import { claimSource, claimTheoremName } from "@seshat/memory";
 import { type HostProfile, leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, RegistryLeanChecker, UnavailableError } from "@seshat/registry";
-import { REPO_ROOT, type RunOptions, Workbench } from "../src/index.ts";
+import { M1, REPO_ROOT, type RunOptions, Workbench } from "../src/index.ts";
 import { LINES } from "../src/lines.ts";
 import { check, DEMO_FILE, DemoLean, demoRegistry, demoRun, ofType, say, tempDir } from "./m0-helpers.ts";
 
@@ -44,23 +44,34 @@ function acting(hooks: Pick<Line["hooks"], "beforeProvers" | "afterProblem">): L
 }
 
 /**
- * A line that writes down each point where the lines' hooks run, and changes nothing. In the order
- * of the lines M10 comes after M1 and before M6 and the fleet, so it is called as they are.
+ * M1, with each point where the lines' hooks run written down in `seen`, and nothing else changed.
+ * M1 is the first line in the order of the lines, so it sees each call before another line can end
+ * the chain (M6's veto of a `lean_check` call, for instance). The watcher takes no id of its own: a
+ * line of the plan that is built later cannot clash with it.
  */
-function watcher(seen: string[]): Line {
+function watching(seen: string[]): Line {
+  const own = M1.hooks;
   return {
-    id: "M10",
-    title: "a watcher of the tests",
-    requires: [],
+    ...M1,
     hooks: {
+      ...own,
       beforeSession: async (s) => { seen.push(`beforeSession ${s.prover}/${s.session}`); return undefined; },
       beforeCheck: async (_s, proposal) => { seen.push(`beforeCheck ${proposal.proof.trim()}`); return undefined; },
       afterCheck: async (_s, c) => { seen.push(`afterCheck ${c.accepted ? "accepted" : "not accepted"}`); return undefined; },
-      afterAttempt: async (_p, a) => { seen.push(`afterAttempt ${a.prover} ${a.outcome}`); return undefined; },
+      afterAttempt: async (p, a) => { seen.push(`afterAttempt ${a.prover} ${a.outcome}`); return own.afterAttempt?.(p, a); },
       afterProver: async (_p, end) => { seen.push(`afterProver ${end.prover} ${end.stop}`); },
       afterProblem: async (_p, end) => { seen.push(`afterProblem ${end.outcome}`); },
     },
   };
+}
+
+/** A promise, and the call that resolves it: holds one problem's hook until another has moved. */
+function gate(): { opened: Promise<void>; open: () => void } {
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { opened, open };
 }
 
 /** `certifier()`, which writes "certify" in `seen` when it is asked. */
@@ -238,13 +249,13 @@ describe("a host whose certifier cannot be made", () => {
 });
 
 describe("certification in a run with M1, M6 and the fleet", () => {
-  /** Two provers, so that the fleet's gate has one to hold back. The watcher is the line M10. */
-  const ON = { lines: ["M1", "M10", "M6", "fleet"], provers: 2, sessions: 2, lineOptions: { fleet: { seed: 1 } } as never };
+  /** Two provers, so that the fleet's gate has one to hold back. These runs use `watching(seen)` as M1. */
+  const ON = { lines: ["M1", "M6", "fleet"], provers: 2, sessions: 2, lineOptions: { fleet: { seed: 1 } } };
 
   it("certifies the candidate once the provers are done, and no hook of the lines sees the certification", async () => {
     const seen: string[] = [];
     const { certifier: asked, requests } = noted(seen);
-    const { result, events } = await demoRun({ lines: { ...LINES, M10: watcher(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
+    const { result, events } = await demoRun({ lines: { ...LINES, M1: watching(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
     assert.equal(result.problems[0]?.outcome, "proved");
     // Every hook of a session or a prover ran before the certifier was asked, and the only hook after
     // it is `afterProblem`, which is told the result.
@@ -265,7 +276,7 @@ describe("certification in a run with M1, M6 and the fleet", () => {
   it("leaves the problem unsolved when the kernel rejects it, and afterProblem is told so", async () => {
     const seen: string[] = [];
     const { certifier: asked, requests } = noted(seen, "rejected");
-    const { result, events } = await demoRun({ lines: { ...LINES, M10: watcher(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
+    const { result, events } = await demoRun({ lines: { ...LINES, M1: watching(seen) }, config: ON, certifier: asked, responses: [check("exact trivial_proof")] });
     assert.equal(result.problems[0]?.outcome, "unsolved");
     assert.match(result.problems[0]?.reason ?? "", /^certification rejected the candidate: /);
     assert.equal(requests.length, 1);
@@ -278,7 +289,7 @@ describe("certification in a run with M1, M6 and the fleet", () => {
     const seen: string[] = [];
     const { certifier: asked, requests } = noted(seen);
     const { result, events } = await demoRun({
-      lines: { ...LINES, M10: watcher(seen) },
+      lines: { ...LINES, M1: watching(seen) },
       config: ON,
       certifier: asked,
       responses: [check("-- this is a well-known result\nexact trivial_proof"), check("exact trivial_proof")],
@@ -298,7 +309,7 @@ describe("certification in a run with M1, M6 and the fleet", () => {
     const { result, events, dir } = await demoRun({
       registry: certifyingHost(lake),
       config: ON,
-      lines: { ...LINES, M10: watcher([]) },
+      lines: { ...LINES, M1: watching([]) },
       responses: [check("exact trivial_proof")],
     });
     assert.equal(result.problems[0]?.outcome, "proved");
@@ -395,7 +406,7 @@ describe("refutations in a run", () => {
       responses: [say("I found no proof."), check("exact trivial_proof")],
     });
     assert.deepEqual(result.problems.map((p) => p.outcome), ["refuted", "error"]);
-    assert.match(result.problems[1]?.reason ?? "", /the candidate was certified, but its claim is refuted/);
+    assert.equal(result.problems[1]?.reason, "the candidate was certified, but its claim is refuted: a contradiction");
     const claims = ofType(events, "claim.created");
     assert.equal(claims.length, 1);
     assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["refuted"]);
@@ -406,6 +417,125 @@ describe("refutations in a run", () => {
       ["repl", false],
       ["kernel_replay", false],
     ]);
+  });
+});
+
+describe("problems that share a claim", () => {
+  it("leaves unsolved a problem that found nothing of its own, though its claim is proved, and the run counts the claim for each", async () => {
+    const { certifier: certified } = certifier();
+    const seen: string[] = [];
+    const { result, events } = await demoRun({
+      file: TWICE,
+      problems: 2,
+      lines: { ...LINES, M1: watching(seen) },
+      config: { lines: ["M1"], sessions: 1 },
+      certifier: certified,
+      responses: [check("exact trivial_proof"), say("I found no proof.")],
+    });
+    // The first problem's candidate was certified and proved the claim. The second found nothing: it
+    // is told that it is unsolved, and ends so, since a certification of someone else's proof is not
+    // its own. Both problems have the same claim, which is proved.
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["proved", "unsolved"]);
+    assert.deepEqual(ofType(events, "problem.finished").map((e) => e.data.outcome), ["proved", "unsolved"]);
+    assert.deepEqual(seen.filter((s) => s.startsWith("afterProblem")), ["afterProblem proved", "afterProblem unsolved"]);
+    assert.equal(ofType(events, "claim.created").length, 1);
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed", "proved"]);
+    // The counts of `run.finished` are the claims': a problem is counted when its claim has the status.
+    const finished = ofType(events, "run.finished")[0]?.data;
+    assert.deepEqual([finished?.solved, finished?.refuted, finished?.candidates], [2, 0, 0]);
+    assert.equal(result.report.outcomes.proved, 1);
+    assert.equal(result.report.outcomes.unsolved, 1);
+  });
+
+  it("ends refuted only the problem whose lines refuted the claim", async () => {
+    const { certifier: certified } = certifier();
+    const line = acting({
+      beforeProvers: async (problem) => {
+        if (problem.target.theorem !== "Demo.add_zero'") return;
+        await problem.validate({ claimId: problem.claimId, negation: true, proof: "exact trivial_proof" });
+      },
+    });
+    const { result, events } = await demoRun({
+      file: TWICE,
+      problems: 2,
+      lines: { M1: line },
+      config: { lines: ["M1"], sessions: 1 },
+      certifier: certified,
+      responses: [say("I found no proof."), say("I found no proof.")],
+    });
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["refuted", "unsolved"]);
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["refuted"]);
+    const finished = ofType(events, "run.finished")[0]?.data;
+    assert.deepEqual([finished?.solved, finished?.refuted, finished?.candidates], [0, 2, 0]);
+  });
+
+  it("ends as an error the problem whose lines refuted a claim that another problem proved", async () => {
+    // The reverse of the test above: the contradiction is the same, so it ends the same way.
+    const { certifier: certified } = certifier();
+    const logged: string[] = [];
+    const line = acting({
+      beforeProvers: async (problem) => {
+        if (problem.target.theorem === "Demo.add_zero'") return;
+        await problem.validate({ claimId: problem.claimId, negation: true, proof: "exact trivial_proof" });
+      },
+    });
+    const { result, events } = await demoRun({
+      file: TWICE,
+      problems: 2,
+      lines: { M1: line },
+      config: { lines: ["M1"], sessions: 1 },
+      certifier: certified,
+      responses: [check("exact trivial_proof"), say("I found no proof.")],
+      log: (text) => logged.push(text),
+    });
+    const claimId = ofType(events, "claim.created")[0]?.data.claimId;
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["proved", "error"]);
+    assert.equal(result.problems[1]?.reason, `the refutation of claim ${claimId} was certified, but its claim is proved: a contradiction`);
+    assert.ok(logged.some((line) => line.includes(`the refutation of claim ${claimId} was certified, but its claim is proved`)), logged.join("\n"));
+    // The claim stays proved, and the certification of the refutation is on record, as evidence.
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed", "proved"]);
+    assert.deepEqual(ofType(events, "validation.finished").map((v) => [v.data.method, v.data.negation ?? false, v.data.verdict]), [
+      ["repl", false, "valid"],
+      ["kernel_replay", false, "valid"],
+      ["repl", true, "valid"],
+      ["kernel_replay", true, "valid"],
+    ]);
+  });
+});
+
+describe("a line that fails in afterProblem", () => {
+  const broken = async (): Promise<void> => Promise.reject(new Error("the line broke"));
+  const refute = async (problem: ProblemContext): Promise<void> => {
+    await problem.validate({ claimId: problem.claimId, negation: true, proof: "exact trivial_proof" });
+  };
+
+  it("does not hide a refutation that the lines' submissions got certified", async () => {
+    const { certifier: certified } = certifier();
+    const { result, events } = await demoRun({
+      lines: { M1: acting({ beforeProvers: refute, afterProblem: broken }) },
+      config: { lines: ["M1"], sessions: 1 },
+      certifier: certified,
+      responses: [say("I found no proof.")],
+    });
+    assert.equal(result.problems[0]?.outcome, "refuted");
+    assert.equal(result.problems[0]?.reason, "provers stopped: 1 sessions; line M1 failed in afterProblem: the line broke");
+    assert.equal(ofType(events, "problem.finished")[0]?.data.outcome, "refuted");
+    assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["refuted"]);
+  });
+
+  it("keeps a proof already found, and ends as an error when none was", async () => {
+    const { certifier: certified } = certifier();
+    const line = acting({ afterProblem: broken });
+    const found = await demoRun({ lines: { M1: line }, config: { lines: ["M1"] }, certifier: certified, responses: [check("exact trivial_proof")] });
+    assert.equal(found.result.problems[0]?.outcome, "proved");
+    assert.equal(found.result.problems[0]?.reason, "line M1 failed in afterProblem: the line broke");
+    // A candidate without a certifier stays a candidate.
+    const alone = await demoRun({ lines: { M1: line }, config: { lines: ["M1"] }, responses: [check("exact trivial_proof")] });
+    assert.equal(alone.result.problems[0]?.outcome, "candidate");
+    assert.equal(alone.result.problems[0]?.reason, "line M1 failed in afterProblem: the line broke");
+    const nothing = await demoRun({ lines: { M1: line }, config: { lines: ["M1"], sessions: 1 }, certifier: certified, responses: [say("I found no proof.")] });
+    assert.equal(nothing.result.problems[0]?.outcome, "error");
+    assert.equal(nothing.result.problems[0]?.reason, "line M1 failed in afterProblem: the line broke");
   });
 });
 
@@ -530,6 +660,92 @@ describe("what the lines submit for other claims", () => {
     assert.equal(result.problems[0]?.outcome, "proved");
     assert.equal(requests.length, 1);
     assert.deepEqual(ofType(events, "claim.status_changed").filter((c) => c.data.claimId === other).map((c) => c.data.to), ["computed"]);
+  });
+
+  it("says so, and notes it in the problem's reason, when a certified proof contradicts the status of its claim, in either direction", async () => {
+    const { certifier: certified } = certifier();
+    const logged: string[] = [];
+    const ids: { x?: string; y?: string } = {};
+    const header = "import Mathlib";
+    const line = acting({
+      beforeProvers: async (problem) => {
+        ids.x = (await problem.memory.ensureClaim({ statement: "(n : ℕ) : 0 + n = n", header, origin: "test" })).claimId;
+        ids.y = (await problem.memory.ensureClaim({ statement: "(n : ℕ) : n * 1 = n", header, origin: "test" })).claimId;
+        // Claim x is proved first and then refuted, claim y the other way round. They are certified in this order.
+        await problem.validate({ claimId: ids.x, proof: "exact trivial_proof" });
+        await problem.validate({ claimId: ids.x, negation: true, proof: "exact trivial_proof" });
+        await problem.validate({ claimId: ids.y, negation: true, proof: "exact trivial_proof" });
+        await problem.validate({ claimId: ids.y, proof: "exact trivial_proof" });
+      },
+    });
+    const { result, events } = await demoRun({
+      lines: { M1: line },
+      config: { lines: ["M1"], sessions: 1 },
+      certifier: certified,
+      responses: [check("exact trivial_proof")],
+      log: (text) => logged.push(text),
+    });
+    const [x, y] = [ids.x as string, ids.y as string];
+    // The problem's own claim is proved: the contradictions are about other claims, and do not undo that.
+    assert.equal(result.problems[0]?.outcome, "proved");
+    const proofOfY = `the proof of claim ${y} was certified, but its claim is refuted: a contradiction`;
+    const refutationOfX = `the refutation of claim ${x} was certified, but its claim is proved: a contradiction`;
+    assert.equal(result.problems[0]?.reason, `${refutationOfX}; ${proofOfY}`);
+    for (const message of [refutationOfX, proofOfY]) assert.ok(logged.some((l) => l.includes(message)), logged.join("\n"));
+    // The first certification of each claim settled it, and the second moved nothing. Both are on record.
+    const status = (claimId: string) => ofType(events, "claim.status_changed").filter((c) => c.data.claimId === claimId).map((c) => c.data.to);
+    assert.deepEqual([status(x), status(y)], [["computed", "proved"], ["computed", "refuted"]]);
+    const kernel = ofType(events, "validation.finished").filter((v) => v.data.method === "kernel_replay");
+    assert.deepEqual(kernel.map((v) => [v.data.claimId, v.data.negation ?? false, v.data.verdict]).slice(1), [
+      [x, false, "valid"],
+      [x, true, "valid"],
+      [y, true, "valid"],
+      [y, false, "valid"],
+    ]);
+  });
+
+  it("certifies only what a problem's own lines submitted, and not before that problem's lines are done", async () => {
+    // Two problems at a time. The second has submitted a proof of a claim when the first is over. The
+    // first problem's end must leave it to the second, which certifies it after its own `afterProblem`.
+    const { certifier: certified } = certifier();
+    const [FIRST, SECOND] = ["Demo.add_zero'", "Demo.two_mul'"];
+    const statements: Record<string, string> = { [FIRST as string]: "(n : ℕ) : 0 + n = n", [SECOND as string]: "(n : ℕ) : n * 1 = n" };
+    const submitted: Record<string, string> = {};
+    const secondSubmitted = gate();
+    const firstOver = gate();
+    let certifiedWhenTold: boolean | undefined;
+    const line = acting({
+      beforeProvers: async (problem) => {
+        const claimId = (await problem.memory.ensureClaim({ statement: statements[problem.target.theorem] as string, header: "import Mathlib", origin: "test" })).claimId;
+        submitted[problem.target.theorem] = claimId;
+        await problem.validate({ claimId, proof: "exact trivial_proof" });
+        if (problem.target.theorem === SECOND) secondSubmitted.open();
+      },
+      afterProblem: async (problem) => {
+        if (problem.target.theorem === FIRST) return await secondSubmitted.opened;
+        await firstOver.opened;
+        certifiedWhenTold = problem.memory.validations(submitted[SECOND as string] as string).some((v) => v.method === "kernel_replay");
+      },
+    });
+    const { result, events } = await demoRun({
+      problems: 2,
+      lines: { M1: line },
+      config: { lines: ["M1"], sessions: 1, concurrency: 2 },
+      certifier: certified,
+      responses: [say("I found no proof."), say("I found no proof.")],
+      // `[1/2]` is written once the first problem is over, `problem.finished` included.
+      log: (text) => { if (text.startsWith("[1/2]")) firstOver.open(); },
+    });
+    assert.deepEqual(result.problems.map((p) => p.outcome).sort(), ["unsolved", "unsolved"]);
+    assert.equal(certifiedWhenTold, false, "the first problem's end certified the second problem's submission");
+    // Each was certified once, by its own problem, and made its claim proved. The second's came after
+    // the first problem ended, and before the second did.
+    const kernel = ofType(events, "validation.finished").filter((v) => v.data.method === "kernel_replay");
+    assert.deepEqual(kernel.map((v) => v.data.claimId).sort(), Object.values(submitted).sort());
+    assert.deepEqual(ofType(events, "claim.status_changed").filter((c) => c.data.to === "proved").map((c) => c.data.claimId).sort(), Object.values(submitted).sort());
+    const [firstEnd, secondEnd] = ofType(events, "problem.finished");
+    const late = kernel.find((v) => v.data.claimId === submitted[SECOND as string]);
+    assert.ok(at(events, firstEnd) < at(events, late) && at(events, late) < at(events, secondEnd));
   });
 });
 

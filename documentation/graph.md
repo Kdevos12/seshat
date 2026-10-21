@@ -358,7 +358,9 @@ What the line does not do:
 - A problem whose claim the graph refutes ends as `refuted` when the certifier certified the
   refutation (the twin's proof of the negation, then the composed refutation of the claim, which
   the run certifies once `afterProblem` is over). Without a certifier, or when it rejects or cannot
-  decide, nothing is refuted and the problem ends as `unsolved`.
+  decide, nothing is refuted and the problem ends as `unsolved`. The refutation must be the
+  problem's own: a problem that shares the claim with one whose graph refuted it stays `unsolved`
+  until its own lines or provers find something.
 - Stopping a session takes effect at its next `lean_check` or when it ends; a model request in
   flight is not cut.
 - It creates the twin and no other variant. Strengthenings, special cases and generalizations come

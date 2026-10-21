@@ -23,13 +23,13 @@ import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, ty
 import { Ledger } from "./budget.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
-import { type Certification, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
+import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
-import { ClaimBenches } from "./validate.ts";
+import { ClaimBenches, type PendingResult } from "./validate.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
 export interface RunConfig {
@@ -380,18 +380,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       },
       "orchestrator",
     );
-    /**
-     * A problem that is `unsolved` or only a `candidate` ends as `proved` or `refuted` when a
-     * certified proof or refutation has settled its claim, whoever submitted it: a line, or the
-     * problem that shares the claim. Any other outcome stands.
-     */
-    const outcomeOf = (outcome: ProblemOutcome): ProblemOutcome => {
-      if (outcome !== "unsolved" && outcome !== "candidate") return outcome;
-      const status = journal.projection.claim(claimId)?.status;
-      return status === "proved" || status === "refuted" ? status : outcome;
-    };
-    const finish = (planned: ProblemOutcome, reason?: string, proof?: string): ProblemResult => {
-      const outcome = outcomeOf(planned);
+    const finish = (outcome: ProblemOutcome, reason?: string, proof?: string): ProblemResult => {
       const durationMs = Math.round(performance.now() - started);
       journal.emit(
         "problem.finished",
@@ -405,22 +394,24 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     };
     /**
      * The end of a problem whose lines reached `beforeProvers`: their `afterProblem`, the
-     * certification of what they submitted, then `finish`. A line that fails in `afterProblem` makes
-     * the problem a harness error, except that a proof found stays found, as when certification
-     * fails. The lines have nothing more to submit once `afterProblem` is over, so the candidates
-     * of other claims, of negations, and a late one of this claim are certified after it.
+     * certification of what they submitted, then `finish`. `afterProblem` is told the outcome as it
+     * stands: the problem's own candidate has been certified, what the lines submitted has not. The
+     * lines have nothing more to submit once `afterProblem` is over, so their candidates for other
+     * claims, for negations, and a late one for this claim are certified after it, and only this
+     * problem's (`ClaimBenches.certifyPending`). A line that fails in `afterProblem` makes the problem
+     * a harness error, except that a proof or a refutation found stays found, as when certification
+     * fails.
      */
     const settle = async (lines: ProblemLines, workbench: Workbench, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult> => {
       let failure: string | undefined;
       try {
-        await lines.afterProblem({ outcome: outcomeOf(outcome), ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd });
+        await lines.afterProblem({ outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd });
       } catch (error) {
         failure = messageOf(error);
       }
-      await benches?.certifyPending(o.signal, [workbench]);
-      if (failure === undefined) return finish(outcome, reason, proof);
-      if (outcome !== "proved" && outcome !== "candidate") return finish("error", failure);
-      return finish(outcome, reason !== undefined ? `${reason}; ${failure}` : failure, proof);
+      const pending = await benches?.certifyPending({ problemId: entry.id, claimId, workbench }, o.signal);
+      const ended = endOf({ outcome, ...(reason !== undefined ? { reason } : {}) }, claimId, pending, failure);
+      return finish(ended.outcome, ended.reason, proof);
     };
 
     if (namingFailure !== undefined) return finish("error", `the memory could not name the statement: ${namingFailure}`);
@@ -598,7 +589,42 @@ function certifiedOutcome(certified: Certification): { outcome: ProblemOutcome; 
   // A claim that is not `proved` after its proof was certified was settled the other way, or withdrawn.
   return certified.status === "proved"
     ? { outcome: "proved" }
-    : { outcome: "error", reason: `the candidate was certified, but its claim is ${certified.status}` };
+    : { outcome: "error", reason: conflictNote("the candidate", certified.status) };
+}
+
+/**
+ * How a problem ends after its lines' `afterProblem` and the certification of what they submitted.
+ * Only the problem's own results count for its outcome (documentation/m0-loop.md, "Certification"):
+ * a certified proof or refutation of its claim that its lines submitted makes an `unsolved` or
+ * `candidate` problem `proved` or `refuted`; a claim that another problem settled does not, whether
+ * the other problem shares the claim or not. A certified proof or refutation that contradicts the
+ * problem's own claim makes it an `error`, whichever way the contradiction goes; one about another
+ * claim is noted in the reason and changes nothing else. A failure of a line in `afterProblem` ends
+ * the problem as an error, unless a proof or a refutation was found (or a candidate).
+ */
+function endOf(
+  planned: { outcome: ProblemOutcome; reason?: string },
+  claimId: string,
+  pending: PendingResult | undefined,
+  failure: string | undefined,
+): { outcome: ProblemOutcome; reason?: string } {
+  const conflicts = pending?.conflicts ?? [];
+  let outcome = planned.outcome;
+  // The reason of an outcome that was not an error says why the problem was not solved, not why it failed.
+  let reason = planned.reason;
+  if (conflicts.some((c) => c.claimId === claimId)) {
+    if (outcome !== "error") reason = undefined;
+    outcome = "error";
+  } else if (pending?.settled !== undefined && (outcome === "unsolved" || outcome === "candidate")) {
+    outcome = pending.settled;
+  }
+  const notes = conflicts.map((c) => c.message);
+  if (failure !== undefined && outcome !== "proved" && outcome !== "refuted" && outcome !== "candidate") {
+    return { outcome: "error", reason: [...notes, failure].join("; ") };
+  }
+  if (reason !== undefined) notes.unshift(reason);
+  if (failure !== undefined) notes.push(failure);
+  return notes.length > 0 ? { outcome, reason: notes.join("; ") } : { outcome };
 }
 
 function slug(name: string): string {

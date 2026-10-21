@@ -154,7 +154,10 @@ written by another version of the tables: `PROJECTION_VERSION` (now 3) is kept i
 
 `runSummary()` gives the number of problems, `solved` (claim `proved`), `refuted` (claim
 `refuted`), `candidates` (claim `computed`), attempts, cost in dollars and tokens: the attempts'
-and the model calls'.
+and the model calls'. The three counts are the claims': a problem is counted when its claim has the
+status, whoever settled it, so two problems that share a claim count twice, and a claim whose proof
+the kernel rejected is a candidate while its problem is `unsolved`. They are not the problems'
+outcomes (`problem.finished`, and the report, which counts those).
 
 ## Blobs
 

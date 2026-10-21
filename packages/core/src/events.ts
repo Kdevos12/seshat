@@ -40,12 +40,15 @@ export interface TokenCost {
 export type AttemptOutcome = "valid" | "invalid" | "no_submission" | "budget_exhausted" | "aborted" | "error";
 
 /**
- * How a problem ended: `proved` (certified), `refuted` (its negation was proved and certified, which
- * a line that proves negations can do: the claim is `refuted`, not `proved`), `candidate` (passed the
+ * How a problem ended: `proved` (its own candidate, or a proof of its claim that its own lines
+ * submitted, was certified), `refuted` (a proof of the negation of its claim, submitted by its own
+ * lines, was certified, which a line that proves negations can do: the claim is `refuted`, not
+ * `proved`; a claim that another problem settled does not count), `candidate` (passed the
  * fast check only, or the certifier could not decide), `unsolved` (the budget or the sessions ran
  * out, or the certifier rejected the candidate), `skipped` (it could not be set up: its file
  * changed, it cannot be cut into a sketch, or the original does not compile), `aborted` (the run was
- * stopped), `error` (the harness failed, Lean could not be reached, or every prover kept failing).
+ * stopped), `error` (the harness failed, Lean could not be reached, every prover kept failing, or
+ * a certified proof or refutation of its claim contradicted the claim's status).
  */
 export type ProblemOutcome = "proved" | "refuted" | "candidate" | "unsolved" | "skipped" | "aborted" | "error";
 
@@ -62,11 +65,21 @@ export interface EventDataMap {
     runId: string;
     /** Problems that had at least one attempt. */
     attempted: number;
-    /** Problems whose claim is `proved`. */
+    /**
+     * The three counts are the claims': a problem is counted when its claim has the status,
+     * whichever problem settled it, so two problems that share a claim are counted twice. They are
+     * not the problems' outcomes (`problem.finished`): a problem that found nothing of its own is
+     * `unsolved` while its claim is `proved`.
+     *
+     * Problems whose claim is `proved`.
+     */
     solved: number;
     /** Problems whose claim is `refuted`: a certified proof of the negation. Absent in journals older than the certifier. */
     refuted?: number;
-    /** Problems whose claim is `computed`: a candidate that is not certified. */
+    /**
+     * Problems whose claim is `computed`: a proof passed the fast check and is not certified,
+     * because the certifier gave no answer or the kernel rejected it (that problem is `unsolved`).
+     */
     candidates: number;
     usd: number;
     /**

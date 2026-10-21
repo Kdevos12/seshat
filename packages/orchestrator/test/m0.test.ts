@@ -216,6 +216,8 @@ describe("M0 run", () => {
     const [fast, kernel] = ofType(rejected.events, "validation.finished");
     assert.deepEqual([kernel?.data.method, kernel?.data.verdict, kernel?.data.reasons], ["kernel_replay", "invalid", ["kernel: declaration has metavariables"]]);
     assert.equal(kernel?.data.submissionHash, fast?.data.submissionHash);
+    // The counts of `run.finished` are the claims': this claim is still `computed`, so it is counted
+    // as a candidate, though its problem is `unsolved`.
     assert.deepEqual([ofType(rejected.events, "run.finished")[0]?.data.solved, ofType(rejected.events, "run.finished")[0]?.data.candidates], [0, 1]);
   });
 

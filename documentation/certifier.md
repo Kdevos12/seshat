@@ -285,7 +285,9 @@ claim and to the problem's outcome. In short:
   other claims, for negations (`negation: true`, which make a claim `refuted`), and any late proof of
   the problem's own claim are certified when the problem's `afterProblem` is over, one after the
   other. M2's composed proofs, its twin's proof and its composed refutations go through here:
-  nothing distinguishes them from a prover's candidate.
+  nothing distinguishes them from a prover's candidate. A problem certifies its own lines'
+  submissions only: the problem whose submission made a workbench's candidate certifies it, and a
+  problem that ends earlier leaves the others' to them.
 - Each candidate is certified once per run, and a workbench keeps its first candidate: the
   problem's own, and one for each other claim and each negation a line submits proofs for. A line
   cannot make the run pay for certification after certification by submitting more proofs of one
@@ -294,9 +296,11 @@ claim and to the problem's outcome. In short:
   file, or the claim's file rebuilt from its journaled statement and header
   ([memory.md](memory.md#reference-files)). For a refutation it is that file followed by the
   negation theorem, so that the target is compared with `¬ statement` as Lean elaborates it.
-- A certified proof of a claim that is already settled the other way is a contradiction, not a
-  status: the validation stays as evidence and the status does not move. The problem ends as
-  `error` when it was its own candidate, and the run's log says so otherwise.
+- A certified proof of a claim that is already settled the other way (a proof of a refuted claim, a
+  refutation of a proved one) is a contradiction, not a status: the validation stays as evidence
+  and the status does not move. The problem ends as `error` when the claim is its own (its
+  candidate, or a refutation of it that its lines submitted); for another claim the run's log says
+  so and the problem's reason notes it.
 - Certification is no tool call of a prover, and no hook of a line sees it. M6's `beforeCheck` and
   `afterCheck` belong to the prover's `lean_check` calls and the fleet's hooks to its sessions and
   provers; the certifier is asked once the last prover has ended, and a line learns the result in
