@@ -7,7 +7,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { type Json, type LeanChecker, PROOF_BEGIN, PROOF_END, prepareSketch } from "@seshat/core";
 import { leanLspFactory } from "@seshat/lean-lsp";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
-import { FakeLeanLspMcp } from "../../lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts";
+import { FakeLeanLspMcp, GOAL } from "../../lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts";
 import { capabilityTool, checkTools, REPO_ROOT, RunSetupError, toolBinding, toolName, type RunOptions } from "../src/index.ts";
 import { call, check, DEMO_FILE, demoRun, ofType, say } from "./m0-helpers.ts";
 
@@ -367,5 +367,69 @@ describe("the run with --tool lean.lsp", () => {
     });
     assert.ok(existsSync(join(project, ".seshat-lsp")));
     assert.deepEqual(readdirSync(join(project, ".seshat-lsp")).filter((f) => f.endsWith(".lean")), []);
+  });
+
+  /** The scratch files in the project, now. */
+  const scratchFiles = (project: string): string[] => readdirSync(join(project, ".seshat-lsp")).filter((f) => f.endsWith(".lean"));
+
+  it("removes the attempt's scratch file when its session ends in an error, before the next session starts", async () => {
+    const fake = new FakeLeanLspMcp();
+    const project = leanProject();
+    let atSecondSession: string[] | undefined;
+    const { events } = await demoRun({
+      registry: lspRegistry(fake, project),
+      config: { tools: ["lean.lsp"], sessions: 2 },
+      responses: [
+        call("lean_lsp", { op: "goal", line: 1 }),
+        () => {
+          throw new Error("the model's API failed");
+        },
+        () => {
+          // The first session is over, the run is not: the registry is still open.
+          atSecondSession = scratchFiles(project);
+          return check("exact trivial_proof");
+        },
+      ],
+    });
+    assert.deepEqual(ofType(events, "attempt.finished").map((e) => [e.data.outcome, e.data.stoppedBy, e.data.error]), [
+      ["error", "error", "the model's API failed"],
+      ["valid", "solved", undefined],
+    ]);
+    assert.equal(fake.of("lean_goal").length, 1);
+    assert.match(fake.calls[0]?.file ?? "", /sorry/, "the file was there while the call was served");
+    assert.deepEqual(atSecondSession, [], "the first attempt's file was gone when the second session began");
+    assert.deepEqual(scratchFiles(project), []);
+  });
+
+  it("releases the attempt, and so removes its scratch file, when the run is aborted while a call is on its way", async () => {
+    const fake = new FakeLeanLspMcp();
+    const project = leanProject();
+    const controller = new AbortController();
+    fake.on("lean_goal", () => {
+      controller.abort();
+      return { structured: { line_context: "  sorry", goals: null, goals_before: [GOAL], goals_after: [], status: null } };
+    });
+    const released: string[] = [];
+    const base = lspRegistry(fake, project);
+    const registry: typeof base = (lean) => (journal, blobs) => {
+      const made = base(lean)(journal, blobs);
+      const release = made.release.bind(made);
+      made.release = async (scope) => {
+        released.push(scope);
+        await release(scope);
+      };
+      return made;
+    };
+    const { result, events } = await demoRun({
+      registry,
+      config: { tools: ["lean.lsp"], sessions: 1 },
+      signal: controller.signal,
+      responses: [call("lean_lsp", { op: "goal", line: 1 }), check("exact trivial_proof")],
+    });
+    assert.equal(result.stopped, "aborted");
+    assert.equal(fake.of("lean_goal").length, 1, "the call was on its way when the run was aborted");
+    assert.match(fake.calls[0]?.file ?? "", /sorry/, "the file was there while the call was served");
+    assert.deepEqual(released, ofType(events, "attempt.started").map((e) => e.data.attemptId), "the attempt was released although it did not end by itself");
+    assert.deepEqual(scratchFiles(project), []);
   });
 });
