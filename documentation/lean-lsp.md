@@ -8,11 +8,14 @@ server, at a pinned release. The plan asks for it in PC7: provers that can look 
 and search for lemmas do better than provers that only see `lean_check`'s verdict. Whether they do
 here is what Task 14 measures, with this tool set against M0 with `lean_check` only.
 
-**Not run against a real Lean yet.** The development environment has no Lean toolchain. What ran:
-the real server (release 0.31.0, from PyPI) with its language server and its network back-ends
-replaced by canned values, to see its tool list, its argument checks and the shape of its results;
-and everything else against a stand-in server ([Tests](#tests)). `pnpm harness contract lean.lsp`
-on a host with a Lean project is what settles the rest ([To verify against Lean](#to-verify-against-lean)).
+**Not run against a real Lean yet.** The development environment has no Lean toolchain. Most of the
+tests run against a stand-in server whose shapes were taken from the real release. Besides them
+there is an opt-in test of the real server (release 0.31.0, from PyPI) with its language server and
+its network call replaced by canned values: its tools, their argument checks, rate limits and error
+texts, and the shapes of their answers are the server's own, and what Lean and the sites answer is
+canned. It is committed, and says how to run it in [Tests](#tests); it is skipped on a host that
+does not have the server's Python package. `pnpm harness contract lean.lsp` on a host with a Lean
+project is what settles the rest ([To verify against Lean](#to-verify-against-lean)).
 
 ## What a prover gets
 
@@ -306,7 +309,7 @@ Two more things follow from how it is built:
 
 ## Tests
 
-None needs Python, Lean or a network.
+Except for `real-server.test.ts`, which is opt-in, none needs Python, Lean or a network.
 
 - `packages/lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts` is a stand-in for the server: it lists the
   tools, checks every call against the recorded arguments of the real release, reads the file the
@@ -323,11 +326,22 @@ None needs Python, Lean or a network.
   no verdict, the pin, the declared sites) and the contract, run against the stand-in.
 - `packages/orchestrator/test/lean-lsp.test.ts`: a run with the tool: the file each call reads, the
   forged sketch, the journal, no status change, a site down, the server dying, the budget.
-- `real-server.test.ts` runs the real lean-lsp-mcp, for a host that has it, and is skipped otherwise.
-  It needs neither Lean nor the network: set `LEAN_LSP_MCP_PYTHON` to a Python with
-  `pip install lean-lsp-mcp==0.31.0 leanclient==0.13.2` (a virtual environment's `bin/python`) and run
-  `LEAN_LSP_MCP_PYTHON=/path/to/venv/bin/python pnpm test`. It compares `attemptLines` with the
-  server's own `build_attempt_text` on 1500 random cases, and fails on any other release.
+- `real-server.test.ts` runs the real lean-lsp-mcp, for a host that has it, and is skipped otherwise
+  (the skip says why). It needs neither Lean nor the network: set `LEAN_LSP_MCP_PYTHON` to a Python
+  with `pip install lean-lsp-mcp==0.31.0 leanclient==0.13.2` (a virtual environment's `bin/python`)
+  and run `LEAN_LSP_MCP_PYTHON=/path/to/venv/bin/python pnpm test`. It fails on any other release.
+  It has two parts. One compares `attemptLines` with the server's own `build_attempt_text` on 1500
+  random cases. The other starts the server through the harness's implementation, with
+  `fixtures/real_server_canned.py` replacing the language server (a canned client and scratch pool)
+  and `urllib.request.urlopen`, the one call that every search ends in, by canned values; the server's
+  own code does the rest. It checks the handshake (the release and the eight tools, none of the 14
+  others); the eight operations in the shapes the harness reads, with the document that the real
+  `build_attempt_text` made of a `multi_attempt` call equal to the one the screen examined; the
+  language server's timeout as `still_elaborating`, in line mode as at a position; the seven kinds of
+  network failure as urllib raises them, each an outage with the reason in the server's words; an
+  answer that is not JSON, which fails the call; and the server's own limits (Loogle 3 requests and
+  Lean Finder 10 in 30 s). What it does not check is Lean: the goals, the messages and the
+  elaboration are canned.
 
 The contract (`capabilities/lean.lsp/contract.json`, 15 cases) is for a host with Lean. It works on
 a file without imports (`theorem seshat_contract (n : Nat) : n + 0 = n := by sorry`), so the project

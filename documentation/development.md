@@ -49,6 +49,7 @@ Some tests run only when their data is on disk:
 | The committed bench index is reproduced | the `bench-v1-lean4.27.0` checkout | `FC_BENCH_V1_DIR` (default `../google-deepmind/formal-conjectures-bench-v1`) |
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
 | The contract of `lean.lsp` against lean-lsp-mcp | a built Lean project and `uvx` (or `LEAN_LSP_MCP_COMMAND`) | `LEAN_PROJECT_DIR`; `LEAN_LSP_SITES=1` adds the four cases that ask network sites |
+| `lean.lsp` against the real lean-lsp-mcp, its language server and sites canned (no Lean, no network) | a Python with `lean-lsp-mcp==0.31.0` and `leanclient==0.13.2` | `LEAN_LSP_MCP_PYTHON` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`
 ([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`. For SageMath
