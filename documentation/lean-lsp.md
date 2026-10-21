@@ -67,8 +67,15 @@ break for both) is written as a line feed, and a problem whose own file holds on
 refused as a whole.
 
 The server's answers are read back in the prover's terms: a line of the file becomes `PROOF line 3`
-(or `AUX line 2`, or `line 9 of the fixed part` for the theorem's header and the rest of the file),
-the project's path in a message becomes `<project>`, and the scratch file's `the sketch file`.
+(or `AUX line 2`, or `line 9 of the fixed part` for the theorem's header and the rest of the file).
+
+What a path in a text becomes is the same everywhere a text of the server or of Lean reaches the
+prover: an error of the server or of a tool, the reason a site gave, the note about imports that did
+not build, and the text and the hint of each message of Lean in `diagnostics` and `multi_attempt`.
+The project directory, as the profile gave it and by its real path (a symbolic link followed),
+becomes `<project>`; the scratch directory becomes `<scratch>`; the scratch file itself, wherever a
+message names it, becomes `the sketch file`. Nothing else is replaced: a message that names the
+home directory, the toolchain or the package cache shows that path as it is.
 
 ### How a tactic is tried
 
