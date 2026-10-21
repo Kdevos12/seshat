@@ -139,16 +139,29 @@ Both regions are scanned with comments blanked. Refused anywhere in the regions:
   `addDeclCore`, `addDeclWithoutChecking`, `addAndCompile`.
 
 Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
-part of a longer name. After a syntax error Lean goes on from the next token (`parseCommand` skips one
-token, `consumeInput`, and tries a command again), so a command word that the lexer reads as a token
-runs, wherever it stands and whatever precedes it, and one inside a longer name does not.
+part of a longer name. After a syntax error Lean tries a command again from the position of the error,
+and when the failed command made no progress it skips one token first (`parseCommand`, `consumeInput`);
+so a command word that the lexer reads as a token runs, wherever it stands and whatever precedes it,
+and one inside a longer name does not.
 
-- A token that starts like a name (`sorry`, `run_cmd`, `IO`) matches unless it continues a name.
-  `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma`, `h.elab` and `sorry_free` are names and do not match.
+- A token that starts like a name (`sorry`, `run_cmd`, `IO`) matches unless it continues a name that the
+  lexer starts at a token start (below). `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma`, `h.elab` and
+  `sorry_free` are names after a space, `(` or `,`, and do not match.
   What stands before a name does not make the token part of it: `!sorry`, `?run_cmd`, `'a'macro`,
   `λelab` (λ, Π and Σ are no letters of names), `жsorry`, `(e).sorry` and `a..sorry` hold the token, and
   so do `1sorry`, `1e5sorry`, `1_000sorry` and `0xbeefsorry`: a number is a lexeme of its own, and
   whatever begins with a digit is refused, whichever way Lean reads it.
+- A run of letters is taken for a name only where the lexer starts a token for sure: at the start of the
+  text, after a space or a line break (a tab is an error in Lean), and after `(`, `,` and `)`. After any
+  other character it may be the tail of a symbol token. A token that starts with a character no name has
+  is the longest token of Lean's table at that point, whatever letters follow (`tokenFnAux`,
+  `identFnAux`), and the next token starts right after it: `#check`, `#synth` and `#reduce` are such
+  tokens in core Lean, and `[MOD`, `[ZMOD` and `⟫_` in Mathlib. So `#checkrun_cmd 1`,
+  `a ≡ b [MODrun_cmd 1]` and `⟪x, y⟫_run_cmd 1` hold the command `run_cmd`, and `⟪x, y⟫_ℝelab` is
+  refused for `elab` although `ℝelab` may be a name. The table depends on what is imported, so the
+  screen lists no such token: it trusts no symbol to end one. The price is that a name glued to a symbol
+  is refused when it holds a whole keyword (`simp [hprefix]`, `⟨hinfix, h⟩`, `¬xIO`); a space after the
+  symbol (`simp [ hprefix ]`) or another name avoids the refusal.
 - A token that starts with a character no name has (`#eval`, `#exit`, `#print`) matches wherever it
   stands, since Lean reads `x#eval` as `x` and the command `#eval`; and the longest token wins in the
   lexer, so what follows does not matter (`#eval!` is a command too). A token that ends with such a

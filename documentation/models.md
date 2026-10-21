@@ -159,8 +159,10 @@ declaration and adds commands; and statements come from the claims of a run and 
 argument of the provers' tool. The screen reads the text with its comments and strings blanked,
 which is the text that is written. It reads names as Lean's lexer does ([validator.md](validator.md)):
 it finds `#eval` also glued to what precedes it (`n = n x#eval 1`, which Lean reads as `x` and the
-command), and a keyword after a symbol or a number (`!run_cmd`, `1e5sorry`), but not one inside a name
-(`xsorry`). A statement that holds a `#` at all is refused with its own reason: `#` starts a command
+command), a keyword after a symbol or a number (`!run_cmd`, `1e5sorry`), and a keyword glued after a
+symbol token that ends in letters (`n ≡ n [MODrun_cmd 1]`, with Mathlib's token `[MOD`), but not one
+inside a name that starts after a space, `(` or `,` (`xsorry`). A statement that holds a `#` at all is
+refused with its own reason: `#` starts a command
 (`#check`, `#reduce`, `#print`...), and nothing the line reads needs it, since a statement is a
 signature.
 

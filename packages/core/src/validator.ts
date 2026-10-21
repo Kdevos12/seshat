@@ -75,14 +75,28 @@ const NAME_START_CHARACTER = new RegExp(`^[${NAME_START}]$`, "u");
 const NAME_PART_CHARACTER = new RegExp(`^[${NAME_PART}]$`, "u");
 
 /**
+ * Where Lean's lexer starts a token for sure: at the start of the text, after white space (a space or
+ * a line break; a tab is an error in Lean), and after `(`, `,` and `)`, none of which begins a longer
+ * token that goes on with letters. After any other character a run of letters may be the tail of a
+ * symbol token: Lean takes the longest token of its table when a token starts with a character that
+ * no name has, and whatever follows is a new token (`#check` in core Lean, `[MOD`, `[ZMOD` and `⟫_`
+ * with Mathlib). The table depends on what is imported, so no symbol is trusted to end a token.
+ */
+const TOKEN_START = "(?<=^|[ \\n(,)])";
+
+/**
  * A regular expression for a token, as Lean's lexer reads text. After a syntax error Lean goes on
- * from the next token and runs a command that starts there, so a forbidden word is a danger when
- * the lexer reads it as a token of its own, and no danger when it is part of a longer name:
- * - A token that starts like a name (`sorry`, `run_cmd`, `IO`) is found unless it continues a name:
- *   `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma` and `h.elab` are names, and `sorry_free` too.
+ * (from the position of the error, or from the next token when the failed command made no progress)
+ * and runs a command that starts there, so a forbidden word is a danger when the lexer reads it as a
+ * token of its own, and no danger when it is part of a longer name:
+ * - A token that starts like a name (`sorry`, `run_cmd`, `IO`) is found unless it continues a name
+ *   that the lexer starts at a token start (`TOKEN_START`): `xsorry`, `x1sorry`, `x!sorry`,
+ *   `Nat.sorry_lemma` and `h.elab` are names after white space, `(` or `,`, and `sorry_free` too.
  *   What stands before a name does not make the token part of it: `!sorry`, `λsorry`, `(e).sorry`
  *   and `a..sorry` hold `sorry`, and so do `1sorry`, `1e5sorry` and `0xbeefsorry`, since a number is a
  *   lexeme of its own (anything that begins with a digit is refused, whichever way Lean reads it).
+ *   A run of letters glued to a symbol is not trusted as a name: `#checkrun_cmd`, `[MODrun_cmd` and
+ *   `⟫_run_cmd` hold `run_cmd`, and `[hprefix]` is refused for `prefix` although it is a name.
  * - A token that starts with a character no name has, such as `#eval`, is found wherever it stands,
  *   since Lean reads `x#eval` as `x` and `#eval`; and the longest token wins in the lexer, so what
  *   follows it does not matter (`#eval!` is a command too).
@@ -95,9 +109,9 @@ function tokenPattern(token: string): RegExp {
   const startsLikeName = NAME_START_CHARACTER.test(characters[0] ?? "");
   const endsLikeName = NAME_PART_CHARACTER.test(characters.at(-1) ?? "");
   const name = `[${NAME_START}][${NAME_PART}]{0,255}`;
-  // The beginning of a name that ends right before the token: after no character of a name and no dot,
-  // and after any symbols (`!`, `?`, `.`) that Lean reads as tokens of their own.
-  const before = startsLikeName ? `(?<!(?<![${NAME_PART}.])[!?.]*${name}(?:\\.${name}){0,15}\\.?)` : "";
+  // A name that ends right before the token and that the lexer starts at a token start, after any
+  // symbols (`!`, `?`, `.`) that Lean reads as tokens of their own.
+  const before = startsLikeName ? `(?<!${TOKEN_START}[!?.]*${name}(?:\\.${name}){0,15}\\.?)` : "";
   const after = startsLikeName && endsLikeName ? `(?![${NAME_PART}])` : "";
   return new RegExp(`${before}${escaped}${after}`, "u");
 }

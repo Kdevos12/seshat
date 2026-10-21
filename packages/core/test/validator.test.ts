@@ -86,6 +86,29 @@ describe("forbiddenTokensIn", () => {
     for (const [text, token] of tokenAfter) assert.deepEqual(forbiddenTokensIn(text), [token], text);
   });
 
+  it("finds a keyword glued after a symbol token that ends in letters: Lean cuts the token off at the longest match of its table", () => {
+    // `#check`, `#synth` and `#reduce` are tokens of Lean, `[MOD`, `[ZMOD` and `⟫_` of Mathlib; whatever letters follow, they are a token of their own.
+    const glued: Array<[string, string]> = [
+      ["#checkrun_cmd 1", "run_cmd"], ["#synthrun_cmd 1", "run_cmd"], ["#reducemacro x", "macro"],
+      ["a ≡ b [MODrun_cmd 1]", "run_cmd"], ["a ≡ b [ZMODrun_cmd 1]", "run_cmd"], ["a ≡ b [MODmacro x]", "macro"], ["a ≡ b [MODIO]", "IO"],
+      ["⟪x, y⟫_run_cmd 1", "run_cmd"], ["⟪x, y⟫_ℝelab", "elab"],
+    ];
+    for (const [text, token] of glued) assert.deepEqual(forbiddenTokensIn(text), [token], text);
+    // With a space after the symbol token, the keyword was found before as well.
+    for (const text of ["#check run_cmd 1", "a ≡ b [MOD run_cmd 1]", "⟪x, y⟫_ run_cmd 1"]) assert.deepEqual(forbiddenTokensIn(text), ["run_cmd"], text);
+  });
+
+  it("does not trust a run of letters as a name unless the lexer starts a token right before it: after white space, ( , ) or the start", () => {
+    // The table of tokens depends on what is imported, so no symbol is trusted to end a token before a name: a name glued to one is refused, also where it is a name.
+    const afterSymbol: Array<[string, string]> = [
+      ["simp [hprefix]", "prefix"], ["⟨hinfix, h⟩", "infix"], ["¬xIO", "IO"], ["a=b.macro", "macro"], ["n+xsorry", "sorry"], ["f[x]xelab", "elab"], ["{xsorry}", "sorry"], ["x:xdebug", "debug"],
+    ];
+    for (const [text, token] of afterSymbol) assert.deepEqual(forbiddenTokensIn(text), [token], text);
+    // Where the lexer starts a token for sure, a name that holds a keyword is a name.
+    const names = ["(xsorry)", "f (x, ysorry)", "f x,ymacro", "(h.elab)", "(f x).y.elab", "\nxsorry", "xsorry", "a ≡ b [MOD n]", "n % 2 = 0"];
+    for (const name of names) assert.deepEqual(forbiddenTokensIn(name), [], JSON.stringify(name));
+  });
+
   it("does not find a keyword that continues a name, as Lean's lexer reads one", () => {
     const names = [
       "xsorry", "x1sorry", "x_12macro", "a'3import", "b!4elab", "_elab", "x!sorry", "x?sorry", "x'sorry", "x₁sorry", "αmacro", "sorry_free", "my_run_cmd", "sorrys",
@@ -130,6 +153,16 @@ describe("structuralCheck", () => {
     refused("", "  trivial\n  !run_tac pure ()", /proof: 'run_tac' is not allowed/);
     refused("theorem aux_a : True := by trivial λmacro_rules", "  simp", /aux: 'macro_rules' is not allowed/);
     refused("", "  trivial\n  exact foo 1e5run_cmd", /proof: 'run_cmd' is not allowed/);
+  });
+
+  it("refuses a keyword glued after a symbol token that ends in letters, in either region", () => {
+    refused("", "  simp\n  #checkrun_cmd 1", /proof: 'run_cmd' is not allowed/);
+    refused("", "  simp\n  exact foo [MODrun_cmd 1]", /proof: 'run_cmd' is not allowed/);
+    refused("", "  simp\n  exact foo [ZMODmacro x]", /proof: 'macro' is not allowed/);
+    refused("", "  simp\n  exact foo ⟪x, y⟫_run_cmd 1", /proof: 'run_cmd' is not allowed/);
+    refused("theorem aux_a : True := by trivial #synthrun_cmd 1", "  simp", /aux: 'run_cmd' is not allowed/);
+    // The same text with a hypothesis named like a keyword after white space is still a proof.
+    ok("theorem aux_a (hprefix : True) : True := hprefix", "  simp\n  exact aux_a hprefix");
   });
 
   it("lets holes through under the sketch policy, and nothing else", () => {
@@ -205,6 +238,9 @@ describe("ProofValidator", () => {
     const glued = await validator.validate(sketch, withProof("  simp\n  exact foo x#eval 1"), reference);
     assert.equal(glued.verdict, "invalid");
     assert.match(glued.reasons.join(), /proof: '#eval' is not allowed/);
+    const afterSymbol = await validator.validate(sketch, withProof("  simp\n  exact foo [MODrun_cmd 1]"), reference);
+    assert.equal(afterSymbol.verdict, "invalid");
+    assert.match(afterSymbol.reasons.join(), /proof: 'run_cmd' is not allowed/);
     const unmarked = await validator.validate(sketch, "theorem x : True := trivial", reference);
     assert.match(unmarked.reasons.join(), /restore the markers/);
     assert.equal(checker.calls.length, 0);
