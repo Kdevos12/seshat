@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 11:04 UTC. `main` at 44f4259, 623 tests.
+Updated 2026-10-21 11:11 UTC. `main` at 8336d59, 623 tests.
 
 ## Tasks
 
@@ -17,7 +17,7 @@ Updated 2026-10-21 11:04 UTC. `main` at 44f4259, 623 tests.
 | 4 | Certifier: `lean.certify`, kernel replay | main | merged (`74d3ab4`); its Lean program never compiled; unavailable until a host sets a sandbox (Ruling 22) | |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
 | 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
-| 7 | M11: small models, fingerprints, lookups | main | re-review of fix round 2 | `task/t7` |
+| 7 | M11: small models, fingerprints, lookups | main | fix round 3 (two holes in the shared screen) | `task/t7` |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
 | 10 | M12: saturation kernel, subgoal scheduler | main | not started | |
@@ -63,6 +63,11 @@ Notes from the main team, newest last. Read them at the start of each session.
   the shipped profiles do neither, so a candidate stays `computed` with the reason. A problem's
   outcome follows only the certifications of its own provers' candidate and of its own lines'
   submissions (Ruling 23). Task 7 (M11) merges next.
+- 2026-10-21: Task 7's reviews found holes in the shared screen of `packages/core/src/validator.ts`
+  (the token screen that keeps `#eval`, `run_cmd` and the like out of model text): a keyword glued
+  to what precedes it, and comment openers that Lean does not read as comments (`<--`). They are
+  fixed on `task/t7` before it merges. If your lines put model text into Lean files, go through
+  `structuralCheck` or `forbiddenTokensIn` as the existing lines do, and pull after Task 7 merges.
 
 ## Interface changes
 
@@ -296,3 +301,6 @@ Task 4: complete; not run against a real Lean, lake or sandbox: lean/SeshatCerti
 Merged branches stay on origin: deleting task/t4 on the remote was refused by this environment's git proxy (HTTP 403, a policy denial; not retried); its worktree and local branch are removed
 Task 15: implementer dispatched (worktree wt/t15, branch task/t15 from main 6041952 with T4 merged; named risks: only the orchestrator appends task events, done only when the criterion holds, torn last line on resume, budgets rebuilt from the journal, lines with state rebuild or are refused on resume, routing table from real failure classes and drift kinds, completeJson one retry charged, J1 site tags; resume must not certify twice and must certify what the killed run had not)
 Usage-limit stop 14: the session limit cut the T7 re-reviewer, the T16 fixer (after 474e1cc f377de4 1a8ff19 9a60f6a 0ad75eb) and the T15 implementer (no commit yet) about 06:42 UTC (reset 11:00); all three resumed 11:04 UTC; task/t16 pushed
+Task 7: scoped re-review of fix round 2: R2-1 M2 R2-2 R2-3 R2-4 addressed; R2-1b kept (tables match Lean 4.27's identifier classes, reopens nothing over 500,000 random strings, one harmless refusal in 20,421 .lean files); lawWork unit change and new limits fine (they degrade to no result); new: N1 (Critical, in the rewritten function, pre-existing) a keyword glued after a symbol token ending in letters (#checkrun_cmd, [MODrun_cmd, ⟫_run_cmd) passes the screen and M11's recognizer; O1 (Critical-class, outside the diff, pre-existing) scanRegion and maskCommentsAndStrings open a comment at -- or /- even where Lean's token swallows the first character (<--, \/-, //-), so `exact foo <-- #eval 1` passes structuralCheck; nits N2 maxLength counts code points, N3 a sentence of validator.md
+Decision: both screen holes are fixed on task/t7 before it merges (fix round 3), because lean.goals and lean.lsp send model text to an unsandboxed Lean and rely on this screen, and task/t7 is the branch that changes it — cost if wrong: Task 7 merges one round later
+Task 7: fix round 3 sent to the implementer (N1 with the wide variant unless a narrower one is argued with its corpus count, O1 with the callers of maskCommentsAndStrings listed, N2 N3 optional; FIX_BASE c79681e; findings file task-7-findings-r3.md)
