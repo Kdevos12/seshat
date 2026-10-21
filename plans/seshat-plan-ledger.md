@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 11:11 UTC. `main` at 8336d59, 623 tests.
+Updated 2026-10-21 11:43 UTC. `main` at 1fdb96a, 623 tests.
 
 ## Tasks
 
@@ -26,7 +26,7 @@ Updated 2026-10-21 11:11 UTC. `main` at 8336d59, 623 tests.
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate` | main | not started (last) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | implementing | `task/t15` |
-| 16 | `lean.lsp` | main | fix round 1 after review | `task/t16` |
+| 16 | `lean.lsp` | main | re-review of fix round 1 | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge` | main | not started (after 15) | |
@@ -304,3 +304,5 @@ Usage-limit stop 14: the session limit cut the T7 re-reviewer, the T16 fixer (af
 Task 7: scoped re-review of fix round 2: R2-1 M2 R2-2 R2-3 R2-4 addressed; R2-1b kept (tables match Lean 4.27's identifier classes, reopens nothing over 500,000 random strings, one harmless refusal in 20,421 .lean files); lawWork unit change and new limits fine (they degrade to no result); new: N1 (Critical, in the rewritten function, pre-existing) a keyword glued after a symbol token ending in letters (#checkrun_cmd, [MODrun_cmd, ⟫_run_cmd) passes the screen and M11's recognizer; O1 (Critical-class, outside the diff, pre-existing) scanRegion and maskCommentsAndStrings open a comment at -- or /- even where Lean's token swallows the first character (<--, \/-, //-), so `exact foo <-- #eval 1` passes structuralCheck; nits N2 maxLength counts code points, N3 a sentence of validator.md
 Decision: both screen holes are fixed on task/t7 before it merges (fix round 3), because lean.goals and lean.lsp send model text to an unsandboxed Lean and rely on this screen, and task/t7 is the branch that changes it — cost if wrong: Task 7 merges one round later
 Task 7: fix round 3 sent to the implementer (N1 with the wide variant unless a narrower one is argued with its corpus count, O1 with the callers of maskCommentsAndStrings listed, N2 N3 optional; FIX_BASE c79681e; findings file task-7-findings-r3.md)
+Task 16: fix round 1 implemented (17 commits 474e1cc..de49baf on task/t16, 677/677, 683 with the opt-in real-server tests; task/t16 pushed with --force-with-lease because the implementer amended its M9 commit, 0ad75eb became 1fe1395, after a commit made while a test failed); I1 screens the document multi_attempt has the server elaborate (matched the real build_attempt_text on 3000 random cases, 1500 in the committed test); I2 still_elaborating in both modes; M1-M12, M14, M15 done; M5 the probe of the real server is an opt-in test (LEAN_LSP_MCP_PYTHON, the real lean-lsp-mcp with canned lowest layers); M9 also counts socket timeouts and cut connections as network failures; the core x#eval hole stays for Task 7's merge
+Task 16: scoped re-review dispatched (FIX_BASE 447bc39, head de49baf; asked to attack the new splice screen with constructed inputs)
