@@ -38,6 +38,11 @@ owns the shape of its `data` (`DriftData`):
 | `strategy_loop`, `restated_target`, `statement_drift`, `length_growth` | the detectors | `stopped_session` |
 | `session_loop` | the detector across sessions | `restarted` |
 
+The orchestrator turns the findings that stopped a session or restarted a prover (`stopped_session`,
+`restarted`) into routing decisions about the attempt's task, `branch` for a loop and `reset_upstream`
+for a restated target or a drifted statement; it records them and acts on none
+([ledger.md](ledger.md#routing-decisions)). The findings a guard dealt with in place are not routed.
+
 ## Neutral framing
 
 A prover is never asked to demonstrate an open conjecture. BrokenMath measures 29% of false "proofs"

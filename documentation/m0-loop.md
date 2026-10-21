@@ -159,6 +159,11 @@ journal keeps what a session that never ended cost; and `attempt.finished` carri
 what the next session starts from: the prover's regions, the text of its last check, its notes
 (`carry`). A resumed run starts its budgets and its provers from these ([ledger.md](ledger.md#charges-and-carry)).
 
+After each attempt the orchestrator takes the routing decisions about the prover's task: one for the
+class of the attempt's failed check, one for each drift finding that stopped the session
+([ledger.md](ledger.md#routing-decisions)). They are `task.routed` events, they change no status,
+and the prover's next session starts as it always did.
+
 The model's final message in a session becomes the prover's notes, cut at `notesChars`
 characters, and is recorded as `lesson.recorded`. New notes replace the old ones; the system
 prompt asks the prover to rewrite them in full and keep what still helps.

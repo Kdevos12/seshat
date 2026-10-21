@@ -2,6 +2,7 @@ import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
+import type { FailureClass } from "@seshat/memory";
 import type { Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
@@ -41,6 +42,8 @@ export interface ProverOptions {
   lines?: ProblemLines;
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
   onEnd?: (result: ProverResult) => void;
+  /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
+  onAttemptEnd?: (attempt: { attemptId: string; outcome: AttemptOutcome; failureClass?: FailureClass }) => void;
 }
 
 /**
@@ -251,6 +254,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         actor,
       );
     }
+    o.onAttemptEnd?.({ attemptId, outcome, ...(failure !== undefined ? { failureClass: failure } : {}) });
     o.transcript?.(attemptId, result.messages);
 
     switch (outcome) {
