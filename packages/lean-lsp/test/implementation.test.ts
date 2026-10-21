@@ -497,6 +497,21 @@ describe("lean.lsp: the search sites", () => {
     await impl.close();
   });
 
+  it("fails the call, and leaves the site alone, when the premise tool fails on Lean's side", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    fake.failing.set("lean_hammer_premise", "textDocument/$/lean/plainGoal timed out after 30s");
+    await assert.rejects(
+      invoke(impl, onSketch({ op: "hammer_premise", line: 1 })),
+      (e: unknown) => e instanceof Error && !(e instanceof UnavailableError) && e.message === "textDocument/$/lean/plainGoal timed out after 30s",
+    );
+    fake.failing.clear();
+    const again = out(await invoke(impl, onSketch({ op: "hammer_premise", line: 1 })));
+    assert.equal(again.status, "ok", "the premise site was not put on its cooldown for a failure that was not its");
+    assert.equal(again.unavailable, undefined);
+    await impl.close();
+  });
+
   it("fails the call, and does not blame the site, when the site refuses the query", async () => {
     const fake = new FakeLeanLspMcp();
     const { impl } = build(fake);

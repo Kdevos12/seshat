@@ -226,11 +226,16 @@ site-backed capabilities:
 | `state_search` | Lean Finder | `https://lean-lsp-proxy.leanfinder.workers.dev` | 10 per 30 s | the goal's text |
 | `hammer_premise` | the premise server | `http://leanpremise.net` (plain HTTP) | 6 per 30 s | the goal |
 
-When a site cannot be reached, answers with an error, or the server's own limit refuses the call,
+When the network call to a site fails (a name that does not resolve, a refused or a cut
+connection, an HTTP status, a time limit of the socket) or the server's own limit refuses the call,
 the answer says `unavailable` with the reason, and the site is not asked again for
-`siteCooldownSec`. A refused query (a Loogle pattern Lean cannot read) is an error of the call, since
-it is the prover's to fix. A host with its own copy of Loogle or the premise server names it, and
-the server's client-side limit then does not apply to it.
+`siteCooldownSec`. Nothing else is taken for an outage. A refused query (a Loogle pattern Lean
+cannot read) is an error of the call, since it is the prover's to fix; so is any other failure of
+these four tools, such as an answer the server cannot read or a site that reports an error of its
+own, which are shown as they are and put nothing on a cooldown. `hammer_premise` reads the goal
+from the language server before it asks its site, so a failure there (a line out of range, a time
+limit of Lean) is Lean's and also an error of the call. A host with its own copy of Loogle or the
+premise server names it, and the server's client-side limit then does not apply to it.
 
 Things to know before using it:
 

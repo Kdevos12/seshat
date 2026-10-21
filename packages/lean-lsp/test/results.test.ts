@@ -103,4 +103,38 @@ describe("the answers of lean-lsp-mcp, as the harness reads them", () => {
     // The tools that ask no site: the refusal is the tool's.
     assert.deepEqual(classify("lean_goal", "Error executing tool lean_goal: HTTP Error 403: Forbidden"), { kind: "tool", message: "HTTP Error 403: Forbidden" });
   });
+
+  it("takes only the network's own failures for a site out of reach", () => {
+    // A time limit of the socket is the network call's, in the words urllib and ssl use.
+    for (const said of [
+      "timed out",
+      "The read operation timed out",
+      "_ssl.c:1112: The handshake operation timed out",
+      "<urlopen error timed out>",
+      "HTTP Error 429: Too Many Requests",
+      "Remote end closed connection without response",
+      "[Errno 104] Connection reset by peer",
+    ]) {
+      const failure = classify("lean_leansearch", `Error executing tool lean_leansearch: ${said}`);
+      assert.equal(failure.kind, "site", said);
+    }
+    // The premise tool reads the goal from the language server before it asks its site: what goes wrong
+    // there is Lean's, even when it is a time limit.
+    for (const said of [
+      "Line 9 out of range (file has 5 lines)",
+      "textDocument/$/lean/plainGoal timed out after 30s",
+      "File not found: /tmp/p/.seshat-lsp/att_1-0123abcd.lean",
+      "Language server is not running",
+    ]) {
+      assert.deepEqual(classify("lean_hammer_premise", `Error executing tool lean_hammer_premise: ${said}`), { kind: "tool", message: said }, said);
+    }
+    // And what the site's answer breaks in the server's own code, or what the site says about itself,
+    // is neither a refusal of the rate nor a network failure.
+    assert.deepEqual(classify("lean_leansearch", "Error executing tool lean_leansearch: KeyError: 'name'"), { kind: "tool", message: "KeyError: 'name'" });
+    assert.deepEqual(classify("lean_leanfinder", "Error executing tool lean_leanfinder: model is loading"), { kind: "tool", message: "model is loading" });
+    assert.deepEqual(classify("lean_loogle", "Error executing tool lean_loogle: loogle error:\nunexpected character: line 1 column 1 (char 0)"), {
+      kind: "tool",
+      message: "loogle error:\nunexpected character: line 1 column 1 (char 0)",
+    });
+  });
 });
