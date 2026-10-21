@@ -104,3 +104,8 @@ The prover's code runs inside Lean during both checks. The Lean server and the c
 in a sandbox: no network, read-only reference files, limits on time and memory. The reference type
 is computed by the harness from the pristine original file, never from a file a prover could
 touch.
+
+Two capabilities that a run gives the provers only when asked are the exceptions to that rule, and
+say so: `lean.goals` and `lean.lsp` run text from the model in a Lean process of the harness's
+user, with no sandbox ([lean-meta.md](lean-meta.md#leangoals), [lean-lsp.md](lean-lsp.md#it-is-not-sandboxed)).
+They are for a machine and a user whose files the model may read and change.

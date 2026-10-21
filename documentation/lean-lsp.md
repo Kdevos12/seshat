@@ -270,12 +270,32 @@ Things to know before using it:
 
 ## It is not sandboxed
 
-The model's tactics (`multi_attempt`) and regions are elaborated by Lean, a child process of the
-server, which is a child process of the harness: they run as the harness's user, with that user's
-files. The screening above refuses what `lean_check` refuses (commands that run code or read files,
-`import`), which is the same line `lean_check` holds, but neither is a sandbox. Like `lean.goals`
-([lean-meta.md](lean-meta.md#leangoals)), give it to provers only on a machine and user whose files
-the model may read and change, until an implementation in a container exists.
+The regions, the tactics and the queries come from the model, and Lean elaborates them in a child
+process of the server, which is a child process of the harness, as the harness's user. Lean code
+can do any IO (`#eval`, `run_cmd`, `elab`, `IO.Process`): read and write whatever that user can,
+including `.env` and the runs' journals and blobs, and reach the network. Only the environment is
+cleaned (the server's process gets the few variables that programs need to start and those of its
+settings). This breaks the rule that model-written code runs in a sandbox
+([trust.md](trust.md#what-runs-where); `compute.sage` runs in a container without network or a
+writable disk). The screening above refuses what `lean_check` refuses (commands that run code or
+read files, `import`), which is the same line `lean_check` holds, but a filter on text is not a
+sandbox, and neither check is one. Like `lean.goals` ([lean-meta.md](lean-meta.md#leangoals)), give
+`lean.lsp` to provers only on a machine and user whose files the model may read and change, until
+an implementation in a container or under a restricted user exists.
+
+Two more things follow from how it is built:
+
+- **One language server serves every prover.** The provers of a run share the server and the Lean
+  behind it: their files differ, the process does not. A tactic that does not terminate, or that
+  takes all the memory, slows or stops the calls of every attempt, not only of the prover that sent
+  it. `timeoutSec` stops the waiting, not Lean: a call that reaches it answers
+  `still_elaborating` (or a partial list of messages), and Lean may go on elaborating what it was
+  given.
+- **The answers of the four sites are third-party text.** What Loogle, LeanSearch, Lean Finder and
+  the premise server answer (names, types, descriptions) reaches the model as it comes, the types
+  and descriptions clipped, and can say anything, including words addressed to the model. The
+  harness treats it as text and nothing else: a prover acts only through its tools, and only
+  `lean_check` judges. But nothing checks what the sites say.
 
 ## Tests
 
