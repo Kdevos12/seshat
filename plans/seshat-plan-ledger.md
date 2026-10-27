@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-27 16:17 UTC. `main` at 5c32d33, 869 tests.
+Updated 2026-10-27 16:32 UTC. `main` at ec73456, 1021 tests.
 
 ## Tasks
 
@@ -25,8 +25,8 @@ Updated 2026-10-27 16:17 UTC. `main` at 5c32d33, 869 tests.
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
-| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | fix round 1 (resume with M2, M6 and the fleet; `completeJson` optional) | `task/t15` |
-| 16 | `lean.lsp` | main | re-review passed; merges after Task 7, with regression tests for the shared screen | `task/t16` |
+| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | approved after fix round 1; main merged in, M11 resume and minors in progress | `task/t15` |
+| 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
@@ -122,6 +122,11 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   lines, factories for the lookup sites in the shipped host profiles. Pages:
   [validator.md](../documentation/validator.md), [models.md](../documentation/models.md),
   [trust.md](../documentation/trust.md).
+- Task 16, merged in `ec73456`: `packages/orchestrator`: `ToolBinding` and `toolBinding()` in
+  `tools.ts` (a capability may bind part of a tool's input to the run, and the schema the model sees
+  hides it), the optional `CapabilityToolOptions.binding`, `Workbench.lastSubmission(attemptId)`,
+  the `lean-lsp` factory in `FACTORIES`; `config/hosts/*.json`: a `lean.lsp` entry each;
+  `pnpm-lock.yaml`: the new workspace package. Page: [lean-lsp.md](../documentation/lean-lsp.md).
 
 ## Log
 
@@ -377,3 +382,8 @@ Task 15: scoped re-review dispatched (resuming the first reviewer, 3f28e51..c740
 Task 7: scoped re-review of fix round 4 (resumed reviewer, real Lean 4.27.0 binary it already had): D1, D2, D3 closed (50-row matrix 0 misses, was 8; recorded fuzz 0 accepted of 59,624, was 148 and 671; fresh fuzz of 400,000 regions with two payloads 0 accepted of 58,769, was 280); the tail rule and the unclosed-opener rule open no hole (blank no position the old screen kept, lose no token); strict callers exactly model text, repository readers identical on 9,658 files; fixture honest and the test would fail on a revert; price 18 of 169,333 Mathlib declarations newly refused (6 strings, 11 plain English words in comments, 1 unclosed opener), none elsewhere; approved; minors N1 the unclosed-opener alignment misses 3,374 of 391,712 regions Lean calls unterminated (fails closed afterwards), N2 the recording covered a tactic block and a term-mode theorem only, N3 a doc-comment-only proof no longer counts as empty
 Task 7: merged: main brought into task/t7 (10b4b25, every conflict replayed by rerere), the wiring commit replayed (5c38160), N1 and N2 said in the docs (db6db10), pnpm check 867/867, links ok, task/t7 pushed; merged into main 5c32d33 (--no-ff; tree equal to task/t7; pnpm check 869/869 there), pushed a34a60d..5c32d33
 Task 7: complete; deferred to the final review: the aux region's indented commands, lean.meta's unscreened snippet (Task 3), the earlier rounds' minors; not run against a real Lean
+Task 16: main (with Tasks 4 and 7) merged into task/t16 left uncommitted with real conflicts in README, the two host profiles, architecture, capabilities, development, lean and trust docs, meta.test.ts and implementations.ts; the implementer (resumed) resolves them as unions, adds the screen regression tests (x#eval 1 as proof and tactic, the two joins at column 7, #checkrun_cmd 1, <-- #eval 1, and the strict-reading cases D1-D3), fixes the two minors and the two nits; report task-16-merge-report.md
+Task 15: scoped re-review of fix round 1 (resumed reviewer): approved, no Critical or Important; I1 sound and additive (fleet, M6 and M2 rebuild from journal events or memory nodes; the new nodes change no claim status; boundary tests compare outcome, cost, billed charges and what the model is shown against the uncut run, and fail when the rebuild is disabled; M2's every-event loops are strong; but the every-event tests of the fleet and M6 pass with resumeProblem a no-op); pending certifications exactly once and only from a recorded validation (both bugs real, no test for a recovered bench whose answer is invalid or for a claim shared by two interrupted problems); I2 done, the graph test double identical to its original; M3 and M4 done (a refused resume leaves journal.jsonl byte for byte unchanged, but ledger.md says the directory); minors: documentation/README.md:33 still says M2, M6 and the fleet cannot be resumed, the tool-run half of the duration test is vacuous, completeDerivations removal leaves every M2 test green, re-telling an M6 notice and the fleet's workedClaims untested, m2-1 and m6-1 not bumped, shared-claim edge cases (the twin node, M6's noted, the owner of a recovered bench) can differ from an uncut run, `watch` nodes copy the file text into the journal, the new ended() handler can reject unawaited, the new test file adds about 30 s; interface list incomplete (deferRepair and repair(), TornTail.sha256 now of the bytes, the completeJson function and optional member, resumeRefusals accepting "rebuild", ProverOptions.session, RecordedCertification.seq, recoverCandidate's problemId); M10 and the routing half of M8 recorded as left out (nothing reads routings until Task 17)
+Task 16: merged: main (Tasks 4 and 7) brought into task/t16 by the implementer (ded3f1e, ten conflicts as unions), regression tests that lean.lsp refuses `x#eval 1`, `#checkrun_cmd 1`, `<-- #eval 1`, the joins at column 7 and the strict-reading cases as proof, aux and tactic (10 of 65 fail on the old core), the two minors and two nits fixed (a lone CR before CRLF is now refused), pnpm check 1019/1019, links ok, task/t16 pushed; merged into main ec73456 (--no-ff, pnpm check 1021/1021 on main), pushed ef25c9c..ec73456
+Task 16: complete; not run against a real Lean; deferred to the final review: M13 (the registry records a lean.lsp call's whole bound input), the re-review nits
+Task 15: merge of main (Tasks 4, 7, 16) started in wt/t15 by the controller, conflicts in README, architecture, m0-loop, problem.ts and prover.ts; the implementer (resumed) finishes it, declares M11's resume (stateless or rebuild, with a cut test of a run with M11 and its certified refutation), and fixes the reviewer's minors; report task-15-merge-report.md
