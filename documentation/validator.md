@@ -145,7 +145,7 @@ below). Refused anywhere in the regions:
 
 A comment is blanked only where Lean is sure to read one, and a text is read in one of two ways. The
 strict reading is for text that a model wrote: `scanRegion` (so `structuralCheck`, `hasHoles` and the
-scans of the auxiliary region's commands) and the statements of M11 (`maskCommentsAndStrings` with
+scans of the auxiliary region's commands, which `lean.goals` and `lean.lsp` also go through) and the statements of M11 (`maskCommentsAndStrings` with
 `{ strict: true }`, [models.md](models.md#statements)). The default reading is for files of a repository:
 the benchmark reader, the sketch, the graph and memory signatures. It has the first rule below only,
 since the others would change what is read from every file (a `/-!` header is not a comment to the
