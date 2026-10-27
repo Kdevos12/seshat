@@ -1,7 +1,8 @@
 # Seshat: the collaborator's part of the plan
 
 Tasks 6 (line M10), 9 (lines M3 and M5) and 11 (line M4). Written on 2026-10-20 by the main team for
-the collaborator's agents (Ruling 25). The main team keeps this file in step with
+the collaborator's agents (Ruling 25); updated on 2026-10-27 for the plan change
+[plan-change-memory-evolution.md](plan-change-memory-evolution.md) (Rulings 27 and 28). The main team keeps this file in step with
 [the plan](seshat-plan.md); where the two differ, the plan wins, and you say so in your log.
 
 ## 1. What you build
@@ -40,7 +41,7 @@ Once, in this order:
    the main team), "Interfaces every task shares", Tasks 6, 9 and 11, and the plan-change sections
    those tasks name (listed below for each task).
 4. [The rulings](seshat-plan-rulings.md): all of them bind you. The ones you will meet most: 3, 5,
-   8, 13 (amended), 14, 16, 20, 22, 23, 25 and 26.
+   8, 13 (amended), 14, 16, 20, 22, 23, 25, 26, 27 and 28.
 5. This file. The research notes behind your tasks are in French and stay outside the repository;
    the digests below give you what they say, with their numbers and sources.
 
@@ -103,12 +104,20 @@ At the start of every later session: CLAUDE.md, "Every session".
   it (documentation/development.md, "Tests that use real data").
 - **Lines and hooks.** `LINE_ORDER` (`packages/lines/src/ids.ts`) is M1, M10, M2, M11, M12, M4, M6,
   fleet, M3, M7, M8, M13, M14, M5, M9: hooks run in that order, and the cumulative ablation configs
-  follow it (Ruling 8; M7 and M9 are suspended, Ruling 20). Register each line in
+  follow it (Ruling 8; M7 and M9 are suspended, Ruling 20); Tasks 18, 13 and 25 will insert `M15`
+  after M3, `M16` after M8 and `M18` after M12. Register each line in
   `packages/orchestrator/src/lines.ts`. The hooks and when they run: documentation/lines.md.
 - **The fleet runs before M3 and M5.** Do not skip or stop a session from their `beforeSession`:
   by then the fleet has allocated it, and a later skip leaves its allocation counted (an open
   finding of the Task 8 review, in the ledger's log; Task 14 composes the lines).
-- **One packet.** At most one enabled line gives `contextPacket`, and that is M4.
+- **One packet.** At most one enabled line gives `contextPacket`, and that is M4. With Task 24, its
+  answer is a prefix frozen for the session and a tail for each request.
+- **Learned memory** (Global Constraint 16). A lesson, a posterior or any other artifact learned
+  from outcomes rather than from Lean is unverified: it carries the provenance stamp of Task 23 and
+  never becomes a fact. Nothing writes skills from the agent's own experience; at most 3
+  human-written skills are loaded in full in a session (an option), the others listed by name and
+  description. Text from an external source (a paper, a web page, a database entry, a tool's output)
+  keeps its provenance and never becomes a lesson or part of a system prompt.
 - **Prompts** you write are in English and neutral ("determine whether", not "prove that", for an
   open statement; documentation/guards.md), and every id a model may cite must resolve.
 - **No concrete model id** in a repository file; examples say `PROVIDER/ID`.
@@ -120,7 +129,10 @@ At the start of every later session: CLAUDE.md, "Every session".
 premise cutoffs with a BM25 stream, keeping the union of successes; the `prove.search` capability,
 measured against whole-proof sessions at equal dollars and removed if it loses) and J3 item 3 of
 [plan-change-jev.md](plan-change-jev.md) (`prove.search` orders the candidates that come without a
-model call through an injectable orderer).
+model call through an injectable orderer). If the level-2 namespaces of the digest below come with
+human-written skills, Global Constraint 16 (PE6 of
+[plan-change-memory-evolution.md](plan-change-memory-evolution.md)) bounds them: at most 3 loaded in
+full in a session, the others listed by name and description.
 
 **What exists to build on.**
 
@@ -275,7 +287,11 @@ ranking of library candidates, kept only if it beats the best single channel) an
 [plan-change-lean-libraries.md](plan-change-lean-libraries.md) (the extra packages of the Lean
 environment indexed with the same selector, and the ranking order: problem-local, then the
 harness's library, then extra packages, then Mathlib). PC12 (tactic mining) is not built until M3's
-measurements show the library is used.
+measurements show the library is used. Amended by PE1, PE2 and PE6 item 4 of
+[plan-change-memory-evolution.md](plan-change-memory-evolution.md) (lessons and library lemmas carry
+their provenance; a lesson is drawn at random into sessions and judged by its causal effect, which
+replaces the presence counter for deactivation; with `--human`, a lesson's promotion to the global
+scope is staged for the team's approval), and bound by Global Constraint 16.
 
 **What exists to build on.** `@seshat/library` and `@seshat/lessons`, empty packages; the memory
 store's nodes and `ensureClaim` (statement identity, so the library dedups by statement id);
@@ -308,6 +324,16 @@ Task 6's battery for the non-triviality test (Ruling 25).
 - LC2: the declarations of the environment's extra packages come from an export through
   `lean.meta`, one per environment hash, which Task 21 (main team) provides with the environments.
   Build the index against that interface with a fixture until Task 21 merges.
+- PE1's stamp and epochs and PE2's draw and effect posteriors are calls of the memory store that
+  Task 23 (main team, next after Task 15) adds; the plan's Task 23 gives their interface. The draw
+  covers the lessons you put in a session's briefing (never a verified fact, never the goal) and is
+  recorded on `attempt.started`; a lesson is deactivated when P(effect < 0) > 0.9 after at least M
+  observations on each side (both options), and the presence counters of deliverable 2 stay in the
+  report for comparison. If Task 23 has not merged when you build M5, keep the presence counter as
+  the rule, record it, and the second of the two to merge switches to the effect.
+- PE6 item 4: with `--human` (Task 17, main team), promoting a lesson to the global scope waits for
+  the team's approval through `harness lessons pending|approve|reject`. If Task 17 has not merged,
+  the second of the two to merge adds the staging.
 
 **Research digest.** From plan §0, §3.4, §3.5, §4 and §6, and `critique-v2.md` Q2.
 
@@ -341,7 +367,19 @@ subtracting", with its supporting attempts and the same counters as any lesson),
 of why an approach cannot work (`counterexample`, `refuted_premise`, `nogood`,
 `statement_mismatch`), shown as one line in "already tried".
 
-**Tests, documentation, done.** The tests of the plan's Task 9 and of PC3, PC5 item 2 and LC2.
+*Why judge a lesson by its effect* (PE2; [plan-change-memory-evolution.md](plan-change-memory-evolution.md)
+"Why"). The presence counter credits a lesson shown in a successful attempt even when it did not
+cause the success, so a lesson shown often gains points by presence and never leaves. Elsewhere,
+agents copy retrieved experience (input and output similarity near 1), stored errors propagate,
+and adding every record does worse than a fixed memory on all four tasks of Xiong et al. (arXiv
+2505.16067; for example 67.5% down to 55.5%), while strict selective addition does better (70.9%).
+Withholding an item at random from some sessions measures what it causes. On skills, SkillsBench
+(arXiv 2602.12670, 84 tasks): self-generated skills lose 1.3 points on average, human-curated ones
+gain 16.2, and 2 or 3 skills per task gain 18.6 against 5.9 for 4 or more; hence Global Constraint
+16.
+
+**Tests, documentation, done.** The tests of the plan's Task 9 and of PC3, PC5 item 2, LC2, and
+PE2's deactivation rule.
 `documentation/library.md` and `documentation/lessons.md`, `memory.md` for the obstruction records,
 the README diagram, `lines.md`.
 
@@ -353,7 +391,10 @@ on the raw statement alone; the accessibility filter; pattern seeds with their d
 neighbours; widening after a failure; hybrid ranking; the `connect` mode of `graphQuery` and the
 path renderings; the `expand` table format) and LC2 of
 [plan-change-lean-libraries.md](plan-change-lean-libraries.md) (the premise selector covers the
-environment's extra packages, with the source shown).
+environment's extra packages, with the source shown) and PE2 and PE5 of
+[plan-change-memory-evolution.md](plan-change-memory-evolution.md) (the unverified items you select
+go through Task 23's draw; the packet is a prefix compiled once per session and a tail for each
+request, through Task 24's API).
 
 **What exists to build on.** The `contextPacket` hook (documentation/lines.md: its text replaces
 every message of the request after the system prompt and the tool declarations); in
@@ -361,7 +402,8 @@ every message of the request after the system prompt and the tool declarations);
 `personalizedPageRank` and `nearbyClaims` (`pagerank.ts`); M2's prover tool is named
 `graph_neighbors` so that M4's `graph_query` can run beside it; Task 5's ATMS labels; M1's
 `alreadyTried`; Task 9's library index and active lessons; Task 6's record of what the battery
-tried. `@seshat/context` is an empty package.
+tried. `@seshat/context` is an empty package. Task 24 (main team, next after Task 15) lets
+`contextPacket` answer `{ prefix, tail }`, and Task 23 adds the draw over unverified items.
 
 **Decisions made for you** (change one only with a recorded decision):
 
@@ -378,6 +420,13 @@ tried. `@seshat/context` is an empty package.
   team, PC6 item 1) can sample them per session: whichever of Tasks 11 and 19 merges second wires
   the sampling.
 - Count tokens with one documented approximation, the same for the budget and the report.
+- The prefix holds the goal, the useful facts, the candidate premises, already tried and the active
+  lessons as drawn; the tail holds the sketch's state, the last raw Lean feedback and the budget
+  left. What is learned during a session reaches the next session, or, as an option, the tail as a
+  short list of what is new since the session started. Each unverified item you select (a lesson, a
+  schema hint, a library hint section; never a verified fact the proof needs, never the goal) goes
+  through Task 23's draw. If Task 24 or Task 23 has not merged when you build M4, answer one string
+  or show every selected item, record it, and the second to merge switches.
 - The naive packet, the same content without selection, order or ids, is M4's comparison arm
   (plan §6: the complete compiler against a naive packet with the same content), selectable by an
   option.
@@ -435,7 +484,14 @@ folders guide relevance poorly, the dependency graph guides it well. So: rank by
 target, filter Mathlib premises by MePo or SInE (with the k-NN and LeanHammer's selector, each
 measured against MePo alone), then by tree similarity; everything deterministic and replayable.
 
-**Tests, documentation, done.** The tests of the plan's Task 11 and of PC5 items 1 to 4 and LC2.
+*Why freeze the prefix* (PE5). With a packet compiled again for every request, the provider's
+prompt cache covers only the system prompt and the tool declarations, and the packet is billed at
+the full input price on every turn. Hermes Agent freezes its memory into the prompt once per session
+for this reason. Task 14 measures dollars per solve with the frozen prefix against a packet compiled
+for each request; nothing has run against a real provider yet.
+
+**Tests, documentation, done.** The tests of the plan's Task 11 and of PC5 items 1 to 4, LC2, PE2's
+draw and PE5's prefix.
 `documentation/context.md`, `graph.md` for the `connect` mode, the README diagram (the context
 compiler and its tools), `lines.md`.
 
@@ -454,6 +510,9 @@ merges later does the connecting work, against the interface the first one docum
 | 9, 11 | the `lean.meta` declaration export per environment hash (LC2) | 21 (main) | a fixture behind the interface |
 | 9 | M3's library feeds schemas (PC13) and the `LibraryBuilder` (LC4) | 18, 22 (main) | they build on your merged Task 9 |
 | 11 | per-session premise count and rendering | 19 (main) | second wires |
+| 9, 11 | the provenance stamp, epochs, the draw and the effect posteriors (PE1, PE2) | 23 (main, next) | second wires; the presence counter and every item shown until then |
+| 11 | the `{ prefix, tail }` packet API (PE5) | 24 (main, next) | second wires; one string until then |
+| 9 | a lesson's promotion to the global scope staged under `--human` (PE6 item 4) | 17 (main) | second wires |
 | 11 | the `connect` mode in `@seshat/graph` | 5 (merged) | you add it |
 | 6, 9, 11 | all lines composed in one run, ablation table | 14 (main, last) | Task 14 waits for your three merges |
 
