@@ -11,6 +11,7 @@ import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@ses
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
 import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
+import { leanEnvCommand } from "./lean-env-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
 
@@ -20,6 +21,7 @@ const usage = `usage:
   harness health [CAPABILITY] [--host HOST]
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
   harness models [PROVIDER]
+  harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
@@ -30,6 +32,9 @@ const usage = `usage:
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
+lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
+environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
+Lean), show says where each one stands. harness lean-env --help has the details.
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
@@ -68,11 +73,13 @@ const { positionals, values } = parseArgs({
     "line-option": { type: "string", multiple: true },
     resume: { type: "string" },
     json: { type: "boolean" },
+    find: { type: "boolean" },
+    "env-dir": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
 
-const [command, target] = positionals;
+const [command, target, third] = positionals;
 
 /** A mistake the user can fix, such as a missing file: the message is printed, and the exit code is 2. */
 class InputError extends Error {}
@@ -87,6 +94,7 @@ async function main(): Promise<number> {
   }
   try {
     if (command === "models") return await listModels(target);
+    if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
   } catch (error) {
@@ -362,6 +370,17 @@ async function resume(directory: string): Promise<number> {
     ...(codeRev !== undefined ? { codeRev } : {}),
   });
   return finished(result, dir);
+}
+
+/** `harness lean-env resolve|build|show`: the Lean environments (documentation/lean-env.md). */
+async function leanEnv(): Promise<number> {
+  const controller = stoppable();
+  return await leanEnvCommand(target, third, { find: values.find === true }, {
+    ...(values["env-dir"] !== undefined ? { root: resolve(values["env-dir"]) } : {}),
+    signal: controller.signal,
+    out: (line) => console.log(line),
+    err: (line) => console.error(line),
+  });
 }
 
 /** The providers pi-ai knows and whether they have credentials, or the models of one provider. */

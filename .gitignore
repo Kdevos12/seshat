@@ -7,3 +7,4 @@ runs/
 .DS_Store
 lean/.lake/
 lean/*/.lake/
+lean/env/*/

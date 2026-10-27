@@ -1,0 +1,19 @@
+# The environment the bench is pinned to (documentation/lean-env.md): formal-conjectures at the
+# bench's tag, on Lean and Mathlib v4.27.0. The bench stays here: moving the pin is a new bench
+# version with results that cannot be compared with these, and the owner's call.
+description = "formal-conjectures at bench-v1-lean4.27.0, on Lean and Mathlib v4.27.0: the environment the bench was built for."
+toolchain = "leanprover/lean4:v4.27.0"
+
+[base]
+name = "formal_conjectures"
+git = "https://github.com/google-deepmind/formal-conjectures"
+rev = "bench-v1-lean4.27.0"
+lean_libs = ["FormalConjectures"]
+
+# The harness's own Lean libraries join an environment as local packages, for instance (this changes
+# the environment's hash, so it is another environment):
+#
+# [[package]]
+# name = "SeshatMeta"
+# path = "../SeshatMeta"
+# lean_libs = ["SeshatMeta"]

@@ -31,12 +31,13 @@
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
+| `@seshat/lean-env` | Lean environments as data: the environment files (`lean/env/`), a TOML reader for them, the resolver, the lock and the environment hash, the generated lakefile, the build ([lean-env.md](lean-env.md)) | core |
 | `@seshat/lean-lsp` | `lean.lsp` over lean-lsp-mcp for the provers: the allowlisted tools, one scratch file per attempt, regions and lines as `lean_check` has them, the screening, the answers written for a model, the binding of a run ([lean-lsp.md](lean-lsp.md)) | core, registry |
 | `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
 | `@seshat/models` | The line M11: small models of the discrete domain, fingerprints, certified refutations, identification (M11); the implementations of `oeis.search`, `lmfdb.query` and `findstat.identify` | core, lines, memory, registry |
 | `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12 will join it | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, fleet), the M1 line, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
+| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, fleet), the M1 line, the `harness` command (and `harness lean-env`) | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
 The packages of the planned mechanisms exist as skeletons (a `package.json` and an empty
 `src/index.ts`), with their dependencies in the lockfile, so that the task that writes one adds

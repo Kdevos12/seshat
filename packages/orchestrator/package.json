@@ -22,6 +22,7 @@
     "@seshat/graph": "workspace:*",
     "@seshat/guards": "workspace:*",
     "@seshat/induction": "workspace:*",
+    "@seshat/lean-env": "workspace:*",
     "@seshat/lean-kimina": "workspace:*",
     "@seshat/lean-local": "workspace:*",
     "@seshat/lean-lsp": "workspace:*",

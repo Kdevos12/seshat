@@ -82,8 +82,17 @@ The harness does not build a `KiminaChecker` itself: the registry does, through 
 ## Deployment for the bench
 
 The bench is pinned to formal-conjectures `bench-v1-lean4.27.0` ([bench.md](bench.md)), so the
-server needs Lean v4.27.0 and a built checkout of that tag as its project. This recipe follows the
-server's `setup.sh`; it has not been run yet:
+server needs Lean v4.27.0 and a built checkout of that tag as its project. The project can be the
+environment `base` ([lean-env.md](lean-env.md)), which the harness resolves and builds itself and
+which is the one place that says which Lean a run used:
+
+```sh
+pnpm harness lean-env resolve base     # checks the packages agree, writes lean/env/base/ and its lock
+pnpm harness lean-env build base       # lake exe cache get, lake build; needs Lean through elan
+export LEAN_SERVER_PROJECT_DIR=$PWD/lean/env/base
+```
+
+Or by hand. This recipe follows the server's `setup.sh`; neither has been run yet:
 
 ```sh
 git clone --depth 1 --branch bench-v1-lean4.27.0 https://github.com/google-deepmind/formal-conjectures.git
