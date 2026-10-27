@@ -22,8 +22,11 @@ export interface RunReport {
   codeRev?: string;
   /** The lines the run enabled, in `LINE_ORDER`; absent for an M0 run. */
   lines?: string[];
+  /** True when the run's last `run.finished` is more recent than its last resumption: a run that was resumed and cut again has not finished. */
   finished: boolean;
   stopped?: string;
+  /** The times the run continued after its process ended; absent for a run that never did. */
+  resumed?: ResumedLine;
   /** Problems the run was given; those without a line had no outcome. */
   planned: number;
   problems: ProblemLine[];
@@ -70,6 +73,16 @@ export interface SiteLine {
   outputTokens: number;
   /** Its part of the total cost, from 0 to 1. */
   share: number;
+}
+
+/** What the resumptions of a run found and did (documentation/ledger.md, "Resume"). */
+export interface ResumedLine {
+  /** How many times the run was resumed. */
+  times: number;
+  /** Sessions, tool runs and tasks the interruptions cut, added up. */
+  interrupted: { attempts: number; toolRuns: number; tasks: number };
+  /** Resumptions that found a last line of the journal cut by the crash. */
+  tornTails: number;
 }
 
 export interface ToolUse {
@@ -169,7 +182,11 @@ function percentile(sorted: readonly number[], q: number): number | undefined {
 export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const started = events.find((e) => e.type === "run.started")?.data as EventDataMap["run.started"] | undefined;
   if (started === undefined) throw new Error("the journal has no run.started event");
-  const finished = events.find((e) => e.type === "run.finished")?.data as EventDataMap["run.finished"] | undefined;
+  // A run that was resumed finishes again: its end is the last one, if no resumption came after it.
+  const resumptions = events.flatMap((e, seq) => (e.type === "run.resumed" ? [{ seq, data: e.data }] : []));
+  const lastFinished = events.findLastIndex((e) => e.type === "run.finished");
+  const finished =
+    lastFinished > (resumptions.at(-1)?.seq ?? -1) ? (events[lastFinished]?.data as EventDataMap["run.finished"] | undefined) : undefined;
   const targets = new Map<string, string>();
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
@@ -283,6 +300,19 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
+    ...(resumptions.length > 0
+      ? {
+          resumed: {
+            times: resumptions.length,
+            interrupted: {
+              attempts: resumptions.reduce((sum, r) => sum + r.data.interrupted.attempts, 0),
+              toolRuns: resumptions.reduce((sum, r) => sum + r.data.interrupted.toolRuns, 0),
+              tasks: resumptions.reduce((sum, r) => sum + r.data.interrupted.tasks, 0),
+            },
+            tornTails: resumptions.filter((r) => r.data.tornTail !== undefined).length,
+          },
+        }
+      : {}),
     planned: started.problems,
     problems,
     outcomes,
@@ -337,6 +367,13 @@ export function renderRunReport(report: RunReport): string {
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}`,
     report.finished ? (report.stopped !== undefined ? `The run stopped early: ${report.stopped}.` : "The run is complete.") : "The run has not finished.",
+    ...(report.resumed !== undefined
+      ? [
+          `The run was resumed ${report.resumed.times} time(s) after its process ended: ${report.resumed.interrupted.attempts} session(s), ` +
+            `${report.resumed.interrupted.toolRuns} tool run(s) and ${report.resumed.interrupted.tasks} task(s) were cut` +
+            `${report.resumed.tornTails > 0 ? `, and the journal's last line was cut ${report.resumed.tornTails} time(s)` : ""}.`,
+        ]
+      : []),
     "",
     "| Problems | |",
     "|---|---|",

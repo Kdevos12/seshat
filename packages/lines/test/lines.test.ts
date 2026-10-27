@@ -106,9 +106,8 @@ describe("resumeRefusals", () => {
   it("refuses a line that does not say, since the harness cannot tell what it keeps", () => {
     const [message, ...rest] = resumeRefusals(enabled(silent));
     assert.deepEqual(rest, []);
-    assert.match(message ?? "", /^line M6 does not say how it resumes/);
+    assert.match(message ?? "", /^line M6 cannot be resumed: it does not say how it resumes/);
     assert.match(message ?? "", /"stateless"/);
-    assert.match(message ?? "", /the run cannot be resumed with it/);
   });
 
   it("names every line that cannot, in the plan's order", () => {

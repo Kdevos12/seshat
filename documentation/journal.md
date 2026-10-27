@@ -91,7 +91,10 @@ A `model_call.finished` records a one-shot model call a mechanism made outside a
 The task events (`task.*`) are the ledger's ([ledger.md](ledger.md)): the work of a run, as tasks
 that point at claims and edges. Only the orchestrator writes them. `attempt.charged` is one model
 response of a session, so that the cost of a session that was cut is not lost; `run.resumed` marks
-the run's continuation after a crash ([ledger.md](ledger.md#resume)). A validation's `problemId` is
+the run's continuation after a crash, and is followed by the orchestrator's closing of what the
+process left open: the sessions with no end (`attempt.finished`, `aborted`, `stoppedBy: "interrupted"`),
+the tool runs with no end (`aborted`) and the tasks that were `running` (back to `ready`)
+([ledger.md](ledger.md#resume)). A validation's `problemId` is
 the problem whose workbench made the check, which is the problem that certifies what it made a
 candidate.
 

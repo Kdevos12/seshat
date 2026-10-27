@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,10 +15,10 @@ import {
 import { type BenchFilter, buildIndex, DISCRETE, type BenchIndex } from "@seshat/bench";
 import { type HarnessEvent, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, PROOF_BEGIN, PROOF_END, readEvents } from "@seshat/core";
 import type { LineRegistry } from "@seshat/lines";
-import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
+import { leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import type { FakeSage } from "./fixtures/fake-sage.ts";
-import { DEFAULT_CONFIG, REPO_ROOT, runBench, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
+import { DEFAULT_CONFIG, REPO_ROOT, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
 
 export const DEMO_FILE = `import FormalConjectures.Util.ProblemImports
 
@@ -113,6 +113,22 @@ export function demoRegistry(lean: LeanChecker): RunOptions["registry"] {
 }
 
 /**
+ * The repository's catalog on a host that also lists `lean.certify`, served by `certifier` through
+ * the registry as a deployment's would be: each certification is a tool run in the journal.
+ */
+export function certifyingRegistry(certifier: LeanCertifier): (lean: LeanChecker) => RunOptions["registry"] {
+  const withCertify: HostProfile = { host: "test", capabilities: { ...host.capabilities, "lean.certify": { use: ["lake"] } } };
+  return (lean) => (journal, blobs) =>
+    new Registry({
+      catalog,
+      host: withCertify,
+      factories: { kimina: () => leanCheckImplementation(lean), "lake-certify": () => leanCertifyImplementation(certifier) },
+      journal,
+      blobs,
+    });
+}
+
+/**
  * The repository's catalog on a host that also offers compute.sage through the implementations
  * `use`, each served by `sage` unless `servers` gives it another.
  */
@@ -195,8 +211,12 @@ export async function demoRun(options: {
   filter?: BenchFilter;
   /** Ids of other models of the faux provider, which a line may name as `faux/ID`. */
   extraModels?: readonly string[];
-}): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker }> {
-  const { checkout, index } = demoBench(options.file, options.filter);
+  /** A bench the run shares with another run (a resumption of it). Default: a new one from `file` and `filter`. */
+  bench?: { checkout: string; index: BenchIndex };
+  codeRev?: string;
+}): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
+  const bench = options.bench ?? demoBench(options.file, options.filter);
+  const { checkout, index } = bench;
   const { models, faux, name } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
@@ -213,8 +233,65 @@ export async function demoRun(options: {
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
     ...(options.log !== undefined ? { log: options.log } : {}),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
+    ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
   });
-  return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean };
+  return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
+}
+
+/**
+ * Resumes the run in `dir` with a new process's worth of simulation: a new faux model that answers
+ * with `responses`, and a new Lean. The bench is the one the run used, and the faux model has the same
+ * name, so that the configuration the journal recorded is met.
+ */
+export async function demoResume(options: {
+  dir: string;
+  bench: { checkout: string; index: BenchIndex };
+  responses: FauxResponseStep[];
+  lean?: LeanChecker;
+  registry?: (lean: LeanChecker) => RunOptions["registry"];
+  certifier?: LeanCertifier;
+  signal?: AbortSignal;
+  log?: (line: string) => void;
+  lines?: LineRegistry;
+  pricePerMillion?: number;
+  extraModels?: readonly string[];
+  codeRev?: string;
+}): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
+  const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
+  faux.setResponses(options.responses);
+  const lean = options.lean ?? new DemoLean();
+  const result = await resumeBench({
+    dir: options.dir,
+    index: options.bench.index,
+    checkout: options.bench.checkout,
+    models,
+    registry: (options.registry ?? demoRegistry)(lean),
+    ...(options.certifier !== undefined ? { certifier: options.certifier } : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options.log !== undefined ? { log: options.log } : {}),
+    ...(options.lines !== undefined ? { lines: options.lines } : {}),
+    ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
+  });
+  return { result, events: readEvents(join(options.dir, "journal.jsonl")), faux, lean };
+}
+
+/**
+ * A copy of a run directory as it was when its process died at event `at`: the journal holds the
+ * events before it (`at` is an index, or the first event the predicate accepts), and the files the
+ * run wrote are all there, as the blobs of a process that died are. `torn` leaves what a crash
+ * during the next append would leave: a fragment of that event's line, or the whole line without its
+ * newline.
+ */
+export function killedAt(dir: string, at: number | ((event: HarnessEvent, index: number) => boolean), torn?: "fragment" | "whole"): string {
+  const lines = readFileSync(join(dir, "journal.jsonl"), "utf8").split("\n").filter((line) => line !== "");
+  const n = typeof at === "number" ? at : lines.findIndex((line, index) => at(JSON.parse(line) as HarnessEvent, index));
+  if (n < 0 || n > lines.length) throw new Error(`no event to cut the journal at: ${String(at)}`);
+  const copy = join(tempDir(), "run");
+  cpSync(dir, copy, { recursive: true, filter: (source) => !/(journal\.jsonl|projection\.sqlite(-wal|-shm)?|report\.(md|json))(\.lock)?$/.test(source) });
+  const next = lines[n] ?? "";
+  const tail = torn === undefined ? "" : torn === "fragment" ? next.slice(0, Math.max(1, Math.floor(next.length / 2))) : next;
+  writeFileSync(join(copy, "journal.jsonl"), `${lines.slice(0, n).map((line) => `${line}\n`).join("")}${tail}`);
+  return copy;
 }
 
 export function ofType<K extends HarnessEvent["type"]>(events: readonly HarnessEvent[], type: K): Array<Extract<HarnessEvent, { type: K }>> {
