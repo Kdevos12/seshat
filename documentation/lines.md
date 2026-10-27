@@ -123,7 +123,8 @@ in `resume`:
 - Absent: the same as a refusal. The harness cannot tell what a line keeps, so a line that does not
   say is not resumed with.
 
-Today M1 is `stateless` (everything it knows it reads from the memory), and M2, M6 and the fleet
+Today M1 and M11 are `stateless` (everything they know they read from the memory; M11's `beforeProvers` skips what the
+memory shows done), and M2, M6 and the fleet
 rebuild: M2's work on a problem (the twin, its short names, the proofs tried, the refutation side
 that runs alongside the provers), M6's detector counts and pending notices, and the fleet's width
 gate and sticky strategies are read back from nodes the lines wrote as they went

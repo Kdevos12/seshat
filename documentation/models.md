@@ -596,6 +596,30 @@ with no counter-model, a statement whose numbers a stand-in OEIS (the factory `o
 that answers from a file, behind the registry) names, with its two `oeis.search` tool runs in the
 journal, and the options.
 
+### Resuming
+
+M11 declares `resume: "stateless"`. It keeps nothing in the process between its hooks: the fingerprint, the
+counter-model with what became of its refutation, the neighbors' fingerprints and edges, and the
+identification are nodes and edges of the memory, and `briefing`, `beforeSession` and `tools` read
+the memory (`describeFindings`) or the options. It needs no `resumeProblem`. What it must be is safe to run twice for one
+problem, because a process that ended before the provers started gets `beforeProvers` again
+([lines.md](lines.md#resuming-a-run-with-lines)); the hook is, and a call the process ended in the
+middle of is finished by the next:
+
+- a fingerprint, a battery and a planned edge already in the memory are not recorded again (they never were);
+- a statement about a number whose fingerprint by Lean is recorded is not sent to Lean again (its verdicts are read back);
+  the law evaluator is cheap and deterministic and runs again;
+- a counter-model is recorded once, with its `refuted_by` edge (the node, and the edge if the process ended between the two);
+  when its `refutation` is on record the negation is not submitted again, and the line goes on as the record says
+  (stop at a valid one, the next counter-model otherwise). A counter-model recorded without its `refutation` is submitted
+  again: that is at most one more fast check, and the problem's workbench keeps the first candidate;
+- a sequence already identified for the same set of numbers is not looked up again.
+
+A negation that passed the fast check and whose certification the process ended in is certified by the resumed run
+([ledger.md](ledger.md#a-problem-taken-up)). The line's `version` is `2` for these records. The tests
+(`packages/orchestrator/test/resume-m11.test.ts`) cut a certified refutation of a statement of magmas and a refuted,
+identified statement about a number at every event of their journals.
+
 ## To verify against Lean
 
 What depends on Lean's exact behaviour and has only run against simulations. The harness's own list
