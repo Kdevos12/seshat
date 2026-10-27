@@ -119,7 +119,8 @@ the character after `/-` belongs to the opener (`/-/-/` is a whole comment), a d
 space and a raw body of its own, and a `'` that may start a character literal takes the next two
 characters, a `--` among them (`' -- #eval 1`). The files of a repository are read more loosely. The
 prover's regions are screened the strict way
-([validator.md](validator.md#structural-checks)).
+([validator.md](validator.md#structural-checks)), which was checked against a recorded run of a real
+Lean 4.27.0 but is not run against one in the tests.
 
 M11 also runs JavaScript that a model wrote, outside Lean: the programs of its `small_models` tool
 ([models.md](models.md#the-sandbox)). Each run is a Node child process of the harness, started with

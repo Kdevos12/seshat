@@ -191,6 +191,14 @@ reads `|-` as two tokens; `/-- the macro -/`), and so is every comment after the
 the refusal. Over 169,333 theorem and lemma declarations of Mathlib the strict reading refuses 18
 more than the reading of the previous version, and none over the 6,470 of formal-conjectures.
 
+The screen was checked against a recorded run of a real Lean 4.27.0 (core only, no Mathlib): 560,000
+random regions, each with the payload `#eval 7777` somewhere in it, of which 59,624 ran the payload. The
+strict reading refuses all of them; the reading before it let 148 through. The tests do not run a
+Lean. They replay 666 regions that earlier versions accepted and 3,000 others from the run
+(`packages/core/test/fixtures/lean-oracle-regions.json`), and `structuralCheck` must refuse every one.
+Constructs that the random regions did not reach, and the tokens that Mathlib adds, are read from the
+sources of Lean 4.27 and of Mathlib, not from a run.
+
 Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
 part of a longer name. After a syntax error Lean tries a command again from the position of the error.
 When the failed command made no progress it first skips one token, read with an empty token table
@@ -235,8 +243,8 @@ comments and quotes looks back over a name at most 1 024 characters: `scanRegion
 `hasHoles` together take under 700 ms for a million characters of the shapes that were tried (a
 quote after every name, `/-` over and over, a keyword after every quote), and about 180 ms for a million
 characters of proof. These readings follow the sources of Lean 4.27 (`Parser/Basic.lean`,
-`Parser/Module.lean`, `Init/Notation.lean`, `Parser/Do.lean`); none of them has run against a real
-Lean.
+`Parser/Module.lean`, `Init/Notation.lean`, `Parser/Do.lean`) and the recorded run above; no test runs a
+real Lean.
 
 In the auxiliary region, each command must be a `theorem`, `lemma`, `def` or `abbrev` (optionally
 after `open ... in` or `set_option ... in`), named `aux_...` so that it cannot shadow a name of the
