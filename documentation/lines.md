@@ -123,6 +123,11 @@ in `resume`:
 - Absent: the same as a refusal. The harness cannot tell what a line keeps, so a line that does not
   say is not resumed with.
 
+A resume compares each line's `version` with the run's record and refuses another. Writing new kinds of
+nodes is a change of version: M2 is `m2-2` and M6 `m6-2` (they began to write the nodes they rebuild from), M11 is
+`2` (its `beforeProvers` became safe to run twice), the fleet stays `fleet-1`. A run begun before a bump cannot be
+resumed after it.
+
 Today M1 and M11 are `stateless` (everything they know they read from the memory; M11's `beforeProvers` skips what the
 memory shows done), and M2, M6 and the fleet
 rebuild: M2's work on a problem (the twin, its short names, the proofs tried, the refutation side
