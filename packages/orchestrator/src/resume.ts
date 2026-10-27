@@ -21,6 +21,7 @@ import {
 import type { JsonObject } from "@seshat/lines";
 import { messageOf } from "@seshat/registry";
 import type { TaskLedger } from "@seshat/scheduler";
+import { chargedTotals } from "./budget.ts";
 import type { Candidate, RecordedCertification, Workbench } from "./problem.ts";
 import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
@@ -242,10 +243,7 @@ export function beginResumption(journal: Journal, tasks: TaskLedger, o: { runId:
         outcome: "aborted",
         stoppedBy: "interrupted",
         durationMs: 0,
-        turns: attempt.charged_requests,
-        usd: attempt.charged_usd,
-        inputTokens: attempt.charged_input_tokens,
-        outputTokens: attempt.charged_output_tokens,
+        ...chargedTotals(attempt),
       },
       "orchestrator",
     );
