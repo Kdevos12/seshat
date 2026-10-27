@@ -12,7 +12,9 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
 counter-models; M6: guards and drift detectors; the fleet policy) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
-whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)).
+whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). The Lean the harness runs against is written
+as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve` checks for
+consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)).
 The provers can also be given SageMath, an external program installed with Docker or pip
 ([documentation/compute.md](documentation/compute.md)). Nothing has run against a real Lean or a
 real model yet.
@@ -33,6 +35,8 @@ flowchart TB
   orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
+  leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
+  envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
@@ -85,6 +89,8 @@ flowchart TB
   provers --> leangoals
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
+  leanenv -->|"lakefile, lock"| envbuild
+  envbuild -->|"the project<br/>Lean runs in"| leancheck
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
   fast -->|candidate| certifier
@@ -162,6 +168,7 @@ pnpm harness models
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
+pnpm harness lean-env resolve base
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```
 

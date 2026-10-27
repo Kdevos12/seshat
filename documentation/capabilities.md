@@ -393,6 +393,7 @@ speed with the old one's is not implemented yet.)
 | `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |
 | `harness run --resume RUN_DIR --checkout DIR` | Continues a run whose process ended without finishing it ([ledger.md](ledger.md#resume)). |
 | `harness report RUN_DIR [--json]` | Prints the report of a run, built from its journal. |
+| `harness lean-env resolve NAME [--find]`, `build NAME`, `show [NAME]` | Resolves, builds and shows the Lean environments of `lean/env/` ([lean-env.md](lean-env.md)). |
 
 Run it as `pnpm harness ...` from the repository.
 
