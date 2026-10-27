@@ -181,6 +181,20 @@ Lean meta tool), and the ids of the packet (the context compiler). Without them,
 `restates_target` is found, a reference resolves through the graph and the `source` nodes, and no
 packet id exists.
 
+## Resuming
+
+M6 declares `resume: "rebuild"`. After each attempt it records a `watch` node (kind `watch`, as
+`line:M6`) holding what its detectors watched in the session: the strategy label and the best Lean
+state it reached if it watched them, and the last check (its code, its signal, whether it was a
+retry). On resuming a problem, `resumeProblem` replays the detectors over the `watch` nodes of the
+problem's attempts that were not cut, in order, so that the counts of repeats and of stalls are the
+ones the process that ended had; reads back from the `drift` nodes the framings it has already
+noted (once for the problem, not once for each process); restores the last check of each prover,
+which the identical-file rule compares with; and delivers again the notice that was meant for the
+session that followed a stopped or restarted one, when that session was cut or never started.
+A cut session's own `watch` node is not read: what it watched is counted again when the session
+is.
+
 ## The hooks it uses
 
 The line API got four additions for this ([lines.md](lines.md)): `beforeCheck`, which rejects a call
@@ -197,6 +211,9 @@ and a faux model: the briefing of an open conjecture, a rejected call that Lean 
 session stopped by each detector and restarted with its notice, the notes cleaned, and that the
 only events the line writes are `drift` nodes.
 
+- `packages/orchestrator/test/resume-lines.test.ts` resumes runs of M6 at each boundary between
+  sessions (the same findings at the same checks, a notice told again after a cut session, a framing
+  noted once) and at every event of the journal.
 - Nothing ran against a real model or a real Lean. The thresholds (3 repeats, a growth of 2 and 800
   characters) are a first guess to set on the bench.
 - The bench holds solved problems only, so the framing guard has no effect there until a bench has

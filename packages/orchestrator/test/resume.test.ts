@@ -16,19 +16,34 @@ describe("the lines a run can be resumed with", () => {
     assert.deepEqual(refusals("M1"), []);
   });
 
-  it("refuses M2, M6 and the fleet, which do, and says what they keep", () => {
-    const [m2] = refusals("M1", "M2");
-    assert.match(m2 ?? "", /^line M2 cannot be resumed: .*truth-maintenance state/);
-    const [m6] = refusals("M1", "M6");
-    assert.match(m6 ?? "", /^line M6 cannot be resumed: .*detectors' counts/);
-    const [fleet] = refusals("M1", "fleet");
-    assert.match(fleet ?? "", /^line fleet cannot be resumed: .*width gate/);
-    assert.equal(refusals("M1", "M2", "M6", "fleet").length, 3, "each line that cannot is named");
+  it("accepts M2, M6 and the fleet, which rebuild what they keep from the journal", () => {
+    assert.deepEqual(refusals("M1", "M2"), []);
+    assert.deepEqual(refusals("M1", "M6"), []);
+    assert.deepEqual(refusals("M1", "fleet"), []);
+    assert.deepEqual(refusals("M1", "M2", "M6", "fleet"), []);
+    for (const id of ["M2", "M6", "fleet"] as const) {
+      assert.equal(LINES[id]?.resume, "rebuild", id);
+      assert.equal(typeof LINES[id]?.hooks.resumeProblem, "function", `${id} gives the hook that rebuilds`);
+    }
+  });
+
+  it("refuses a line that says it rebuilds and gives no hook, one that says nothing, and one that refuses, each by name", () => {
+    const hooks = {};
+    const lines = [
+      { line: { id: "M2", title: "t", requires: [], resume: "rebuild", hooks }, options: {} },
+      { line: { id: "M6", title: "t", requires: [], hooks }, options: {} },
+      { line: { id: "fleet", title: "t", requires: [], resume: { refuse: "it keeps a socket" }, hooks }, options: {} },
+    ] as unknown as Parameters<typeof resumeRefusals>[0];
+    assert.deepEqual(resumeRefusals(lines), [
+      "line M2 cannot be resumed: it says it rebuilds its state and gives no `resumeProblem` hook to do it",
+      'line M6 cannot be resumed: it does not say how it resumes (set `resume` on the line to "stateless", "rebuild" or {refuse: reason})',
+      "line fleet cannot be resumed: it keeps a socket",
+    ]);
   });
 
   it("gives every line the repository registers a position on resuming", () => {
     for (const line of Object.values(LINES)) {
-      assert.ok(line.resume === "stateless" || (typeof line.resume === "object" && line.resume.refuse.length > 0), `line ${line.id} says how it resumes`);
+      assert.ok(line.resume === "stateless" || line.resume === "rebuild" || (typeof line.resume === "object" && line.resume.refuse.length > 0), `line ${line.id} says how it resumes`);
     }
   });
 });

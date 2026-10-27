@@ -116,6 +116,22 @@ describe("graph queries", () => {
     assert.equal(shorts.shorten("abc"), "abc", "an id shorter than four characters is its own name");
   });
 
+  it("tell where each name was first given, and take back the names a resumed run read from there", () => {
+    const given: Array<[string, string]> = [];
+    const shorts = new ShortIds({ onAssign: (id, short) => given.push([id, short]) });
+    assert.equal(shorts.shorten("clm_AAAA1234"), "1234");
+    assert.equal(shorts.shorten("clm_AAAA1234"), "1234");
+    assert.deepEqual(given, [["clm_AAAA1234", "1234"]], "told once, when first given");
+
+    const again: Array<[string, string]> = [];
+    const resumed = new ShortIds({ onAssign: (id, short) => again.push([id, short]) });
+    for (const [id, short] of given) resumed.restore(id, short);
+    assert.equal(resumed.resolve("1234"), "clm_AAAA1234", "a name quoted in a prompt still stands for its claim");
+    assert.equal(resumed.shorten("clm_AAAA1234"), "1234");
+    assert.equal(resumed.shorten("clm_BBBB1234"), "B1234", "and a restored name is not given to another claim");
+    assert.deepEqual(again, [["clm_BBBB1234", "B1234"]], "only the new name is told");
+  });
+
   it("are written as text a model can read", async () => {
     const w = world();
     const g = await research(w);

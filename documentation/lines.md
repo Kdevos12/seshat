@@ -70,7 +70,7 @@ interface Line {
   version?: string;           // recorded in run.started: change it when the line's behavior changes
   identity?: (env: { registry: Registry }) => StatementIdentity;  // how the run's memory names statements
   strategies?: readonly string[];  // the labels the line classifies attempts with
-  resume?: LineResume;        // "stateless", or {refuse: reason}: how a run with the line is resumed
+  resume?: LineResume;        // "stateless", "rebuild" or {refuse: reason}: how a run with the line is resumed
   hooks: LineHooks;
 }
 ```
@@ -106,6 +106,16 @@ in `resume`:
   `afterProblem` again if it had not ended; those two hooks must be safe to call twice for one
   problem. The hooks a session calls (`beforeSession`, `briefing`, `afterAttempt`...) run for the
   sessions the resumed prover starts, as they would have.
+- `"rebuild"`: the line keeps state in the process, and has the hook `resumeProblem`, which rebuilds
+  it for a problem from the journal and the memory. The state is written down as the line goes
+  (typically as nodes of its own kind), and `resumeProblem(problem, held)` reads it back. In a
+  resumed process the harness calls it where it would have called `beforeProvers`, for every problem
+  the process works on: one that was begun, and one that was not, which the line then starts as
+  `beforeProvers` would. `held` (`ResumedProblem`) is what the journal holds of the problem: whether
+  it was `begun` (a prover had started), its `attempts` (id, prover, session, claim, and whether the
+  interruption cut it), the provers that had `endedProvers`, the model calls charged by site
+  (`modelCalls`), and the claims the problem `workedClaims`. A line with `rebuild` and no hook is
+  refused, as is one that says nothing. `beforeProvers` is not called for it in a resumed process.
 - `{refuse: reason}`: the line keeps state that the journal cannot give back. A run with the line is
   not resumed: `harness run --resume` stops before it writes anything, and names the line and the
   reason.
@@ -113,10 +123,12 @@ in `resume`:
   say is not resumed with.
 
 Today M1 is `stateless` (everything it knows it reads from the memory), and M2, M6 and the fleet
-refuse: M2's work on a problem (its truth-maintenance state, the twin and the refutation side that
-runs alongside the provers), M6's detector counts and pending notices, and the fleet's width gate and
-sticky strategies live in the process. A run with one of them has to be started again from the
-beginning until it rebuilds its state from the journal.
+rebuild: M2's work on a problem (the twin, its short names, the proofs tried, the refutation side
+that runs alongside the provers), M6's detector counts and pending notices, and the fleet's width
+gate and sticky strategies are read back from nodes the lines wrote as they went
+([graph.md](graph.md#resuming), [guards.md](guards.md#resuming), [fleet.md](fleet.md#resuming)).
+`LineResume`, `ResumedProblem` and the hook are additive to the line API: a line that declares
+`"stateless"` or a refusal is unchanged.
 
 ## The hooks
 
@@ -295,8 +307,9 @@ A task that implements a line:
 3. Records what it learns as events through the `MemoryStore`: claims, edges, and nodes of its own
    kinds, whose `data` shape its package owns ([memory.md](memory.md#nodes)).
 4. Says how a run with it is resumed (`resume`, [above](#resuming-a-run-with-lines)): `"stateless"`
-   when everything it knows it reads from the journal, the memory or the ledger, a refusal with the
-   reason when it keeps state in the process. A line that says nothing is refused.
+   when everything it knows it reads from the journal, the memory or the ledger, `"rebuild"` with a
+   `resumeProblem` hook when it keeps state in the process that it can write down as it goes, a
+   refusal with the reason otherwise. A line that says nothing is refused.
 5. Tests it with a run of the simulated model and Lean (`demoRun` in
    `packages/orchestrator/test/m0-helpers.ts` takes a line registry), and documents it on its own
    page, linked from [README.md](README.md).
@@ -329,7 +342,9 @@ also checks that only one line gives the statement identity, and
 `m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
 [fleet.md](fleet.md#tests-and-what-is-not-done)). `resumeRefusals` is tested in
 `packages/lines/test/lines.test.ts`, and `packages/orchestrator/test/resume.test.ts` checks the
-position each real line takes on resuming.
+position each real line takes on resuming, and `resume-lines.test.ts` resumes whole runs of the fleet,
+M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
+M1, M2, M6 and the fleet together at every event.
 
 M1, M2, M6 and the fleet are the lines built. M2 has its own tests
 ([graph.md](graph.md#tested-and-not-yet)). Nothing here has run against a real model or Lean.

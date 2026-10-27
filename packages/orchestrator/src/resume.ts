@@ -18,7 +18,7 @@ import {
   type ValidationReport,
   verifyChain,
 } from "@seshat/core";
-import type { JsonObject } from "@seshat/lines";
+import type { JsonObject, ResumedProblem } from "@seshat/lines";
 import { messageOf } from "@seshat/registry";
 import type { TaskLedger } from "@seshat/scheduler";
 import { chargedTotals } from "./budget.ts";
@@ -316,6 +316,31 @@ export function interruptedProblems(journal: Journal): InterruptedProblem[] {
     }));
 }
 
+/**
+ * What the journal holds of a problem, for the lines that rebuild their state (`ResumedProblem`).
+ * `begun` and `endedProvers` are the orchestrator's, from the problem's tasks; the rest is read
+ * from the journal. Call it after `beginResumption`, which ended the sessions the interruption cut.
+ */
+export function resumedProblemOf(journal: Journal, o: { problemId: string; begun: boolean; endedProvers: string[] }): ResumedProblem {
+  const p = journal.projection;
+  const attempts = p
+    .tasks({ problemId: o.problemId })
+    .flatMap((task) => p.attemptsOfTask(task.task_id))
+    .sort((a, b) => a.started_seq - b.started_seq)
+    .map((attempt) => ({
+      attemptId: attempt.attempt_id,
+      prover: attempt.prover,
+      session: attempt.iteration,
+      claimId: attempt.claim_id,
+      interrupted: attempt.stopped_by === "interrupted",
+    }));
+  const modelCalls: Record<string, number> = {};
+  for (const call of p.modelCallsOfProblem(o.problemId)) {
+    if (call.site !== null) modelCalls[call.site] = (modelCalls[call.site] ?? 0) + 1;
+  }
+  return { begun: o.begun, attempts, endedProvers: o.endedProvers, modelCalls, workedClaims: p.claimsWithAttempts() };
+}
+
 /** What an interrupted problem's workbench takes up: the candidate its checks found, and the certifier's answer if the journal has one. */
 export interface RecoveredCandidate {
   candidate: Candidate;
@@ -323,16 +348,17 @@ export interface RecoveredCandidate {
 }
 
 /**
- * The candidate a problem's workbench had found before the interruption: the first valid fast check
- * of the problem's own claim that the problem's workbench made (a prover's or a line's), read back
- * from the journal and the blob of the file that was checked, with the certifier's answer for that
- * file if the journal holds one. Without a valid check, there is no candidate and nothing is
- * returned. Throws when the journal names a blob the run directory lost.
+ * The candidate a workbench had found before the interruption: the first valid fast check of its
+ * claim (of the claim's negation, for a workbench of a refutation) that the problem's checks made (a
+ * prover's or a line's), read back from the journal and the blob of the file that was checked, with
+ * the certifier's answer for that file if the journal holds one. Without a valid check, there is no
+ * candidate and nothing is returned. `problemId` is the workbench's own, or the problem whose lines
+ * made a workbench that is not the problem's. Throws when the journal names a blob the run
+ * directory lost.
  */
-export function recoverCandidate(journal: Journal, blobs: BlobStore, workbench: Workbench): RecoveredCandidate | undefined {
-  const problemId = workbench.problemId;
+export function recoverCandidate(journal: Journal, blobs: BlobStore, workbench: Workbench, problemId: string | undefined = workbench.problemId): RecoveredCandidate | undefined {
   if (problemId === undefined) return undefined;
-  const own = journal.projection.validationsOfProblem(problemId).filter((v) => v.claim_id === workbench.claimId && !v.negation);
+  const own = journal.projection.validationsOfProblem(problemId).filter((v) => v.claim_id === workbench.claimId && v.negation === workbench.negation);
   const found = own.find((v) => v.method === "repl" && v.verdict === "valid");
   if (found === undefined) return undefined;
   const submitted = blobs.get(found.submission_hash);
@@ -362,7 +388,7 @@ export function recoverCandidate(journal: Journal, blobs: BlobStore, workbench: 
   return {
     candidate,
     ...(answered !== undefined
-      ? { answer: { validationId: answered.validation_id, verdict: answered.verdict, reasons: answered.reasons, axioms: answered.axioms } }
+      ? { answer: { validationId: answered.validation_id, seq: answered.seq, verdict: answered.verdict, reasons: answered.reasons, axioms: answered.axioms } }
       : {}),
   };
 }

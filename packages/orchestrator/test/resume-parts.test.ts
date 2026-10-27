@@ -237,6 +237,31 @@ describe("Workbench.adopt", () => {
     assert.deepEqual([change?.data.from, change?.data.to, change?.data.validationId, change?.actor], ["open", "computed", "val_fast", "orchestrator"]);
     run.journal.close();
   });
+
+  it("does not raise again a claim a line withdrew after the check, nor settle it from an answer older than the withdrawal", async () => {
+    const run = await inRun();
+    const first = run.make();
+    await first.check(PROOF, { actor: "test" });
+    const candidate = first.candidate as NonNullable<typeof first.candidate>;
+    assert.equal(run.status(), "computed");
+    // The answer was recorded, then a line withdrew the proof (the claim went back to open), then the process ended.
+    run.journal.emit(
+      "validation.finished",
+      { validationId: "val_cut", claimId: "clm_a", method: "kernel_replay", verdict: "valid", reasons: [], axioms: ["propext"], submissionHash: candidate.report.submissionHash },
+      "fake-certifier",
+    );
+    run.journal.emit("claim.status_changed", { claimId: "clm_a", from: "computed", to: "open", reason: "a line withdrew the proof" }, "line:test");
+    assert.equal(run.status(), "open");
+    const changes = ofType(run.events(), "claim.status_changed").length;
+
+    const { certifier: asked, requests } = certifier();
+    const resumed = run.make(asked);
+    resumed.adopt(candidate, { validationId: "val_cut", verdict: "valid", reasons: [], axioms: ["propext"], seq: run.journal.projection.validation("val_cut")?.seq ?? 0 });
+    assert.equal(run.status(), "open", "the claim stays as the line left it");
+    assert.equal(ofType(run.events(), "claim.status_changed").length, changes, "no status was written");
+    assert.equal(requests.length, 0);
+    run.journal.close();
+  });
 });
 
 type Message = TranscriptContext["messages"][number];

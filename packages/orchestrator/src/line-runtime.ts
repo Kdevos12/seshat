@@ -15,6 +15,7 @@ import type {
   ProblemEnd,
   Proposal,
   ProverEnd,
+  ResumedProblem,
   SessionCheck,
   SessionContext,
   Target,
@@ -250,6 +251,30 @@ export class ProblemLines {
       if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) return;
       await call(entry.line.id, "beforeProvers", () => hook(this.context(entry)));
       if (this.p.workbench.candidate !== undefined) this.log(`line ${entry.line.id} settled the problem before the provers`);
+    }
+  }
+
+  /**
+   * The lines' start of a problem in a resumed process. A line that rebuilds its state gets
+   * `resumeProblem` with what the journal holds, whether or not the problem is settled, since its
+   * later hooks need the state it sets up. Any other line gets `beforeProvers`, as a process that
+   * was not interrupted would give it, unless the provers had started (the hook ran then, and what
+   * it did is in the journal), and with the stop that `beforeProvers` has once the problem is
+   * settled.
+   */
+  async resumeProblem(held: ResumedProblem): Promise<void> {
+    for (const entry of this.run.o.lines) {
+      const id = entry.line.id;
+      const rebuild = entry.line.resume === "rebuild" ? entry.line.hooks.resumeProblem : undefined;
+      if (rebuild !== undefined) {
+        await call(id, "resumeProblem", () => rebuild(this.context(entry), held));
+        continue;
+      }
+      const hook = entry.line.hooks.beforeProvers;
+      if (hook === undefined || held.begun) continue;
+      if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) continue;
+      await call(id, "beforeProvers", () => hook(this.context(entry)));
+      if (this.p.workbench.candidate !== undefined) this.log(`line ${id} settled the problem before the provers`);
     }
   }
 

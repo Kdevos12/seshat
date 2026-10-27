@@ -15,66 +15,9 @@ import {
 import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
 import { buildReport, LINES, M1, readRecordedRun, REPO_ROOT, renderRunReport, type RunOptions } from "../src/index.ts";
+import { assertSound, certifier, nth, sessionPromptOf, spent, sum } from "./resume-helpers.ts";
 import { certifyingRegistry, check, DEMO_FILE, DemoLean, demoAnswer, demoBench, demoResume, demoRun, killedAt, ofType, sageRegistry, say } from "./m0-helpers.ts";
 import { fakeSage } from "./fixtures/fake-sage.ts";
-
-/** The text of the first user message of a request: the session prompt. */
-function sessionPromptOf(context: TranscriptContext): string {
-  const first = context.messages.find((m) => m.role === "user");
-  if (first?.role !== "user") return "";
-  return typeof first.content === "string" ? first.content : first.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-}
-
-/** The index of the `n`th event of a type (from 1). */
-function nth(events: readonly HarnessEvent[], type: HarnessEvent["type"], n: number): number {
-  const found = events.flatMap((event, index) => (event.type === type ? [index] : []))[n - 1];
-  assert.ok(found !== undefined, `the journal has no ${type} number ${n}`);
-  return found;
-}
-
-const sum = (numbers: readonly number[]): number => numbers.reduce((total, n) => total + n, 0);
-
-/** What the model calls of a journal cost: the sum of the charges, and the sum of the costs the attempts ended with. */
-function spent(events: readonly HarnessEvent[]): { charged: number; attempts: number } {
-  return {
-    charged: sum(ofType(events, "attempt.charged").map((e) => e.data.usd)),
-    attempts: sum(ofType(events, "attempt.finished").map((e) => e.data.usd)),
-  };
-}
-
-/** A fake certifier that certifies, and counts what it was asked. */
-function certifier(): { requests: CertificationRequest[]; certifier: LeanCertifier } {
-  const requests: CertificationRequest[] = [];
-  return {
-    requests,
-    certifier: {
-      implementation: "fake-certifier",
-      version: "0",
-      certify: async (request): Promise<CertificationResult> => {
-        requests.push(request);
-        return { verdict: "certified", reasons: [], axioms: ["propext"], timeMs: 1 };
-      },
-    },
-  };
-}
-
-/** A fact that holds of every journal a resumed run leaves, however it was cut. */
-function assertSound(events: readonly HarnessEvent[]): void {
-  assert.deepEqual(verifyChain(events), { ok: true });
-  const started = new Set(ofType(events, "attempt.started").map((e) => e.data.attemptId));
-  const ended = ofType(events, "attempt.finished").map((e) => e.data.attemptId);
-  assert.deepEqual([...started].sort(), [...ended].sort(), "every session that began has ended, once");
-  assert.equal(
-    ofType(events, "tool_run.started").length,
-    ofType(events, "tool_run.finished").length,
-    "every tool run that began has ended",
-  );
-  for (const event of events) {
-    if (event.type.startsWith("task.") || event.type === "run.resumed") assert.equal(event.actor, "orchestrator", `${event.type} is the orchestrator's`);
-  }
-  const { charged, attempts } = spent(events);
-  assert.ok(Math.abs(charged - attempts) < 1e-9, `the sessions are billed what the model calls cost: ${charged} against ${attempts}`);
-}
 
 describe("resuming a run whose process ended", () => {
   /** Session 1 fails and leaves notes; session 2 proves. */
@@ -663,21 +606,6 @@ describe("resuming a run with lines", () => {
     );
     assert.deepEqual(readFileSync(join(dir, "journal.jsonl")), journal, "the journal is as it was");
     assert.equal(existsSync(join(dir, "journal.jsonl.lock")), false);
-  });
-
-  it("refuses a run of M2, M6 or the fleet as the repository registers them, naming each line and what it keeps", async () => {
-    const cases: Array<[string[], Record<string, Record<string, number>>, RegExp]> = [
-      [["M1", "M2"], {}, /the run cannot be resumed: line M2 cannot be resumed: the variant graph's work on a problem/],
-      [["M1", "M6"], {}, /the run cannot be resumed: line M6 cannot be resumed: the detectors' counts across a prover's sessions/],
-      [["M1", "M6", "fleet"], { fleet: { seed: 1 } }, /line M6 cannot be resumed: .*; line fleet cannot be resumed: the width gate/],
-    ];
-    for (const [lines, lineOptions, message] of cases) {
-      const whole = await demoRun({ config: { sessions: 3, lines, lineOptions }, responses: script() });
-      const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
-      const journal = readFileSync(join(dir, "journal.jsonl"));
-      await assert.rejects(demoResume({ dir, bench: whole.bench, responses: [] }), message, lines.join(","));
-      assert.deepEqual(readFileSync(join(dir, "journal.jsonl")), journal, `${lines.join(",")}: nothing was written`);
-    }
   });
 
   it("refuses to resume a run with a line other than the one it began with", async () => {

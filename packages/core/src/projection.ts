@@ -730,6 +730,17 @@ export class Projection {
     return this.db.prepare("select * from tool_runs where finished_seq is null order by started_seq").all() as unknown as ToolRunRow[];
   }
 
+  /** The model calls the lines made for a problem, in order. */
+  modelCallsOfProblem(problemId: string): ModelCallRow[] {
+    return this.db.prepare("select * from model_calls where problem_id = ? order by seq").all(problemId) as unknown as ModelCallRow[];
+  }
+
+  /** The claims that any attempt of the run worked for, in the order the first one started. */
+  claimsWithAttempts(): string[] {
+    const rows = this.db.prepare("select claim_id from attempts group by claim_id order by min(started_seq)").all() as unknown as Array<{ claim_id: string }>;
+    return rows.map((row) => row.claim_id);
+  }
+
   /** The problem's checks that were made by its workbench, in order. */
   validationsOfProblem(problemId: string): ValidationRow[] {
     const rows = this.db.prepare("select * from validations where problem_id = ? order by seq").all(problemId) as unknown as StoredValidation[];

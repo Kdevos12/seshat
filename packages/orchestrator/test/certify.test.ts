@@ -269,8 +269,8 @@ describe("certification in a run with M1, M6 and the fleet", () => {
     assert.ok(requests[0]?.candidate.includes("exact trivial_proof"));
     assert.deepEqual(ofType(events, "validation.finished").map((v) => [v.data.method, v.data.verdict]), [["repl", "valid"], ["kernel_replay", "valid"]]);
     assert.deepEqual(ofType(events, "claim.status_changed").map((c) => c.data.to), ["computed", "proved"]);
-    // M6 flagged nothing: the fleet's allocations are the only nodes the lines recorded.
-    assert.deepEqual(ofType(events, "node.recorded").map((e) => e.data.kind).filter((kind) => kind !== "allocation"), []);
+    // M6 flagged nothing: the fleet's allocations and M6's checkpoints of the finished session are the only nodes the lines recorded.
+    assert.deepEqual(ofType(events, "node.recorded").map((e) => e.data.kind).filter((kind) => kind !== "allocation" && kind !== "watch"), []);
   });
 
   it("leaves the problem unsolved when the kernel rejects it, and afterProblem is told so", async () => {

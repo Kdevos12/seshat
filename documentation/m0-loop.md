@@ -114,6 +114,8 @@ A candidate is certified once in a run, whatever came of it, and a workbench kee
 candidate: the problem's own, and one for each other claim and each negation that lines submit
 proofs for. If the certifier rejects a line's proof of a claim, its later proofs of that claim are
 not certified in the run, so a line cannot make the run pay for one certification after another.
+In a run that was resumed, the journal records one certification per candidate: the answer of one
+that was recorded is used, and a call the interruption cut is made again ([ledger.md](ledger.md#certification)).
 The problem whose submission made a candidate is the one that certifies it, when its own lines are
 done: a problem's end does not certify what the lines of another problem, still working, have
 submitted, and the time it takes is charged to the problem that submitted it.
@@ -373,9 +375,9 @@ Options of `harness run`:
 process ended without finishing it ([ledger.md](ledger.md#resume)). The run keeps the configuration
 it began with, which is read from its journal, so no option that describes a run is given with it
 (`--model`, `--sessions`, `--lines`...); the bench, the host's capability registry, the tools, the
-certifier and the lines have to be the ones it began with. A run with a line that keeps state in the
-process (M2, M6, the fleet) cannot be resumed, and a run that is complete has nothing to resume: both
-are refused before anything is written, with the reason.
+certifier and the lines have to be the ones it began with. A run with a line that does not say how it
+is resumed, or refuses, cannot be resumed, and a run that is complete has nothing to resume: both
+are refused before anything is written, with the reason. M1, M2, M6 and the fleet can be resumed.
 
 Progress goes to the standard error, one line per problem, and the report goes to the standard
 output at the end. A first Ctrl-C stops the run: the problems in progress end as `aborted`, and the

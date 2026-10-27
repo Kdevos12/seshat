@@ -412,7 +412,8 @@ describe("M6 and the claim's status", () => {
     const byGuard = events.filter((e) => e.actor === "line:M6");
     assert.ok(byGuard.length >= 3);
     assert.deepEqual([...new Set(byGuard.map((e) => e.type))], ["node.recorded"]);
-    assert.deepEqual([...new Set(byGuard.map((e) => (e.data as { kind?: string }).kind))], ["drift"]);
+    // Its findings, and a checkpoint of each session that finished, which a resumed run reads back (documentation/guards.md).
+    assert.deepEqual([...new Set(byGuard.map((e) => (e.data as { kind?: string }).kind))].sort(), ["drift", "watch"]);
     // The claim became a candidate through a validation of the validator, not through a guard.
     const statuses = ofType(events, "claim.status_changed");
     assert.ok(statuses.length > 0);

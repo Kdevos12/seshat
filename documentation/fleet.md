@@ -157,6 +157,17 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `maxEscalations` | 2 | escalated sessions per claim, at most |
 | `partialCredit` | 0.5 | what the deepest failure is worth to a choice, against 1 for a proof |
 
+## Resuming
+
+The fleet declares `resume: "rebuild"`. Its decisions are already `allocation` nodes, so
+`resumeProblem` reads them: for each prover that is still alive, the strategy of its last
+allocation whose session was not cut becomes the one it sticks to (`last`); the claims the problem
+worked are added to the run's; and the gate learns of the provers that had ended (their task is
+finished), so that no place is held for them and a prover that was waiting does not wait for them.
+The Thompson draws come from the seeded source and the posterior of the journal, so a resumed run
+draws what the run that was not cut drew; the tests compare the allocations, draws included. An
+`allocation` node written for a session that never started stays, and is not counted as an attempt.
+
 ## The hooks it uses
 
 `beforeSession` (the decision above), `briefing` (the section "Strategy for this session", worded to
@@ -181,6 +192,9 @@ provers that work at once, its section next to M6's question on an open conjectu
 provers over two sessions, that the second opening of each has its own notes and file and none of the
 other's, beside the typed summaries of the memory.
 
+- `packages/orchestrator/test/resume-lines.test.ts` resumes runs of the fleet at each boundary between
+  sessions (the same allocations and draws, the same prompts) and at every event of the journal,
+  and checks that a prover does not wait for one that had ended.
 - Nothing ran against a real model or a real Lean. The simulated sessions take no time, so the gate is
   tested for its order and its caps, not for how much it speeds a real run up.
 - The numbers (the width thresholds, 2 attempts, 4 and 8 provers, the escalation after 3 attempts

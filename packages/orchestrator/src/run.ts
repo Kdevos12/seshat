@@ -38,6 +38,7 @@ import {
   proofPath,
   problemsOf,
   proverResumeOf,
+  resumedProblemOf,
   readRecordedRun,
   recoverCandidate,
   type RecordedRun,
@@ -663,8 +664,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         lines = problemLines;
         end = (outcome, reason, proof) => settle(problemLines, workbench, outcome, reason, proof);
         try {
-          // Not again when the provers had started: the hook ran then, and what it did is in the journal.
-          if (!begun) await problemLines.beforeProvers();
+          if (resume === undefined) {
+            await problemLines.beforeProvers();
+          } else {
+            // What the lines submitted for other claims, and the interruption left uncertified, is taken up
+            // again before the lines look at the graph, so that they see the claims as the journal has them.
+            if (again !== undefined && benches !== undefined) await benches.recover({ problemId: entry.id, claimId, workbench }, controller.signal);
+            const endedProvers = proverTasks.filter((task) => isFinalTaskStatus(tasks.get(task.taskId)?.status ?? "ready")).map((task) => task.name);
+            // A line that rebuilds its state does it now; the others get `beforeProvers` unless the provers had started.
+            await problemLines.resumeProblem(resumedProblemOf(journal, { problemId: entry.id, begun, endedProvers }));
+          }
         } catch (error) {
           lineFailure = messageOf(error);
         }

@@ -1,9 +1,10 @@
 import { LINE_TITLES } from "@seshat/lines";
 import type { AttemptAnnotation, Briefing, CheckDecision, CheckVeto, JsonObject, Line, ProblemContext, Proposal, SessionContext } from "@seshat/lines";
+import type { Json } from "@seshat/core";
 import { classifyFailure, classifyStrategy, type LeanState, leanState } from "@seshat/memory";
 import { type CitationEnv, knownSorries, unresolvedReferences } from "./citations.ts";
-import { DEFAULT_WATCH, type Finding, type Observation, ProverWatch, SessionWatch } from "./detectors.ts";
-import { type DriftData, recordDrift } from "./drift.ts";
+import { DEFAULT_WATCH, type DetectorKind, type Finding, noticeFor, type Observation, ProverWatch, SessionWatch } from "./detectors.ts";
+import { type DriftData, driftNodes, recordDrift } from "./drift.ts";
 import { categoryOf, framingProblems, isOpenConjecture, neutralQuestion } from "./framing.ts";
 import { scrubLeanOutput } from "./rawerrors.ts";
 import { type LastCheck, lastCheckOf, revisionProblem } from "./revisions.ts";
@@ -52,6 +53,31 @@ export const M6_OPTIONS = {
   /** ...and at least this many characters longer. */
   lengthMinChars: DEFAULT_WATCH.lengthMinChars,
 } satisfies JsonObject;
+
+/** The node kind in which M6 checkpoints what a prover's finished session adds to its watch (documentation/guards.md). */
+export const WATCH_KIND = "watch";
+
+/**
+ * The data of a `watch` node: what a finished session of a prover added to the state M6 keeps for
+ * the prover across sessions, which the journal holds nowhere else. A resumed run reads it back.
+ */
+export interface WatchCheckpoint {
+  attemptId: string;
+  prover: string;
+  /** The session's number for the prover, from 1. */
+  session: number;
+  /** What the prover's watch observed: the strategy label of the session's last check, and the best Lean state of its checks. */
+  watched?: { label: string; depth: number; errors: number; holes: number };
+  /** The prover's last check, as `revisions` remembers it. */
+  last?: { code: string; signal: boolean; retry: boolean };
+}
+
+function isCheckpoint(data: Json): data is WatchCheckpoint & Json {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return false;
+  return typeof data.attemptId === "string" && typeof data.prover === "string" && typeof data.session === "number";
+}
+
+const DETECTOR_KINDS: readonly string[] = ["statement_drift", "restated_target", "strategy_loop", "length_growth", "session_loop"];
 
 const OWN_TITLES = ["The question", "Course change"];
 
@@ -189,9 +215,55 @@ export function createM6(env: M6Env = {}): Line {
     options: M6_OPTIONS,
     // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording.
     version: "m6-1",
-    // The detectors' counts across a prover's sessions, the notices waiting for its next session and the framing findings already made live in the process.
-    resume: { refuse: "the detectors' counts across a prover's sessions, the notices waiting for its next session and the findings it has already recorded are kept in the process, and the journal cannot give them back" },
+    // What the line keeps across a prover's sessions (the detectors' counts, the last check, the notices waiting for the next session)
+    // and the framing findings it has made are made again from the journal when a problem is taken up: see `resumeProblem`.
+    resume: "rebuild",
     hooks: {
+      /**
+       * Makes the state of the problem again from the journal: the framing findings already made
+       * (the `non_neutral_framing` drift nodes), and for each prover that goes on its watch (the
+       * checkpoints of its finished sessions, observed again in order), its last check, and the
+       * notices its next session has not been told (those of the findings of its last session that
+       * finished and of any session cut after it: a notice that went to a session that was cut is
+       * told again, since that session's work is not carried on). The per-session watches start
+       * empty, as they do in any new session.
+       */
+      resumeProblem: async (problem, held) => {
+        const run = runState(problem.registry);
+        for (const node of driftNodes(problem.memory, problem.claimId, { kind: "non_neutral_framing" })) {
+          const section = node.data.evidence?.section;
+          if (typeof section === "string") run.noted.add(`${problem.problemId}/${section}`);
+        }
+        const checkpoints = new Map<string, WatchCheckpoint>();
+        for (const node of problem.memory.nodes(WATCH_KIND, { claimId: problem.claimId })) {
+          if (isCheckpoint(node.data)) checkpoints.set(node.data.attemptId, node.data);
+        }
+        const findings = driftNodes(problem.memory, problem.claimId).filter(
+          (node) => (node.data.action === "stopped_session" || node.data.action === "restarted") && DETECTOR_KINDS.includes(node.data.kind),
+        );
+        const ended = new Set(held.endedProvers);
+        for (const prover of new Set(held.attempts.map((attempt) => attempt.prover))) {
+          if (ended.has(prover)) continue;
+          const mine = held.attempts.filter((attempt) => attempt.prover === prover);
+          const state = proverState(run, problem.problemId, prover);
+          for (const attempt of mine) {
+            const checkpoint = attempt.interrupted ? undefined : checkpoints.get(attempt.attemptId);
+            if (checkpoint?.watched !== undefined) {
+              const { label, depth, errors, holes } = checkpoint.watched;
+              state.watch.observe(label, { depth, errors, holes }, count(problem.options, "sessionRepeats"));
+            }
+            if (checkpoint?.last !== undefined) state.last = checkpoint.last;
+          }
+          const lastFinished = mine.findLastIndex((attempt) => !attempt.interrupted);
+          const undelivered = new Set(mine.slice(Math.max(lastFinished, 0)).map((attempt) => attempt.attemptId));
+          for (const node of findings) {
+            if (node.data.prover !== prover || node.data.attemptId === undefined || !undelivered.has(node.data.attemptId)) continue;
+            const notice = noticeFor(node.data.kind as DetectorKind, node.data.evidence);
+            if (notice !== undefined) state.notices.push(notice);
+          }
+        }
+      },
+
       briefing: async (session): Promise<Briefing | undefined> => {
         const options = session.options;
         const paragraphs: string[] = [];
@@ -237,7 +309,7 @@ export function createM6(env: M6Env = {}): Line {
           }
           if (framed && !OWN_TITLES.includes(section.title)) {
             const problems = framingProblems(section.text);
-            const key = `${session.problemId}/${section.title}`;
+            const key = `${session.problemId}/${clip(section.title, 60)}`;
             if (problems.length > 0 && !run.noted.has(key)) {
               run.noted.add(key);
               recordDrift(session.memory, session.claimId, {
@@ -353,8 +425,21 @@ export function createM6(env: M6Env = {}): Line {
 
         // The same strategy, session after session, with Lean no further: the prover starts afresh.
         const best: LeanState | undefined = state?.watch.best;
-        if (flag(options, "detectors") && best !== undefined && state?.label !== undefined) {
-          const finding: Finding | undefined = prover.watch.observe(state.label, best, count(options, "sessionRepeats"));
+        const watched = flag(options, "detectors") && best !== undefined && state?.label !== undefined;
+        // What this session adds to the prover's state is checkpointed before the session is recorded as finished,
+        // so that a resumed run can make the state again (a checkpoint of a session that was then cut is not read).
+        if (watched || (attempt.submission !== undefined && attempt.report !== undefined)) {
+          const checkpoint: WatchCheckpoint = {
+            attemptId: attempt.attemptId,
+            prover: attempt.prover,
+            session: attempt.session,
+            ...(watched ? { watched: { label: state?.label as string, depth: (best as LeanState).depth, errors: (best as LeanState).errors, holes: (best as LeanState).holes } } : {}),
+            ...(attempt.submission !== undefined && attempt.report !== undefined ? { last: lastCheckOf(attempt.submission, attempt.report) } : {}),
+          };
+          problem.memory.recordNode({ kind: WATCH_KIND, claimId: problem.claimId, data: checkpoint as unknown as Json });
+        }
+        if (watched) {
+          const finding: Finding | undefined = prover.watch.observe(state?.label as string, best as LeanState, count(options, "sessionRepeats"));
           if (finding !== undefined) {
             recordDrift(problem.memory, problem.claimId, { kind: finding.kind, action: "restarted", detail: finding.detail, ...where, evidence: finding.evidence });
             prover.notices.push(finding.notice);

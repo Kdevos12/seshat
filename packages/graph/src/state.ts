@@ -26,7 +26,21 @@ export interface DerivationRecord {
   verdict: "valid" | "invalid" | "skipped";
   validationId?: string;
   reasons?: string[];
+  /** The problem whose line submitted it: its composition budget and the derivations it has tried are counted from these. */
+  problemId?: string;
+  /** What identifies the derivation (the fact and the shape of its tree): a resumed run does not submit the same one again. */
+  signature?: string;
 }
+
+/**
+ * The node kind in which the graph says it is about to submit a composed proof, before it does:
+ * `DerivationIntent`. The `derivation` node follows once `validate` answers; a run that ended in
+ * between is completed from this node and the validation (`completeDerivations`).
+ */
+export const DERIVATION_INTENT_KIND = "derivation_intent";
+
+/** The shape of the data of a `derivation_intent` node: a derivation record that has no verdict yet. */
+export type DerivationIntent = Omit<DerivationRecord, "verdict" | "validationId" | "reasons">;
 
 /** The validations of composed proofs the graph submitted, which are not independent proofs. */
 export function composedValidations(memory: MemoryStore): Set<string> {

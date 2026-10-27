@@ -371,6 +371,30 @@ What the line does not do:
   from the lines that propose them (the abductive engine, theory exploration, repairs); they use
   `createVariant`, `checkEdge` and the rules above, and the propagation then follows.
 
+### Resuming
+
+M2 declares `resume: "rebuild"` and the hook `resumeProblem` ([lines.md](lines.md#resuming-a-run-with-lines)).
+The state a run keeps in the process is written as it goes, as nodes of the problem's claim, and the
+hook reads it back:
+
+| Node | Written | Holds |
+|---|---|---|
+| `twin_work` | when the twin is made, and updated when the refutation side ends | the problem, the negation's claim, the edge, whether it was checked, how the side ended (`pending` until it does) and its tries |
+| `alias` | when a short name is first given to a claim or edge | the problem, the id and the name: a name quoted in a prompt stays valid, and is not given to another claim |
+| `derivation_intent` | before a composed proof is submitted | what the `derivation` node will say, without the verdict |
+
+A `derivation` node also carries the `problemId` and the `signature` of the proof. On resuming the
+line rebuilds, for the problem: the twin from `twin_work` (made again only if no node says it was;
+`createTwin` and `checkEdge` do nothing twice anyway); the names; the proofs tried and the composed
+budget spent, from the `derivation` nodes; and the derivations the process ended in the middle of,
+written from the validation that answered them (`completeDerivations`; an intent that Lean never
+answered is submitted again). The refutation side has `twinTries` minus the model calls the journal
+holds for the site `graph.attempt`; when none is left it ends as `exhausted`. The final `twin` node
+is written once, whether the first process or the resumed one ends the side.
+
+Not restored: an answer of the side that was lost between its model call and its validation (the
+try is spent), and the earlier failures the side's prompt quotes.
+
 ## Records
 
 | Record | By | What |
@@ -380,6 +404,7 @@ What the line does not do:
 | Validations | `validator` | Every proof the line submits: link lemmas, the negation, composed proofs. |
 | `derivation` nodes | `line:M2` | Each composed proof, as above. |
 | `twin` nodes | `line:M2` | The end of each twin, as above. |
+| `twin_work`, `alias`, `derivation_intent` nodes | `line:M2` | What a resumed run rebuilds the line's state from ([Resuming](#resuming)). |
 
 ## Measured
 
@@ -429,3 +454,8 @@ Not done:
   differently are two claims, until the Lean-backed identity (M1).
 - PageRank and the lemma ranking are not called by any line yet, and the briefing is the only
   reader of the labels. M12 and M4 will use them through the exports above.
+- `packages/orchestrator/test/resume-lines.test.ts` resumes runs of M2 at every event of the journal
+  (one twin, the refutation side's calls within its budget, the final `twin` node once), with the
+  certifier (each certification once, only what was missing asked for), at the boundaries between
+  sessions (the same short names and tool results, a composed proof Lean refused not sent again),
+  and `completeDerivations` and `ShortIds.restore` have unit tests in `packages/graph/test`.
