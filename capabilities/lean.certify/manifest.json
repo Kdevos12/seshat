@@ -1,0 +1,178 @@
+{
+  "id": "lean.certify",
+  "version": 1,
+  "title": "Certify a Lean proof through the kernel",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "deciding whether a proof that passed lean_check counts: the orchestrator calls it for every candidate before a claim becomes proved or refuted",
+    "re-certifying the proof of a claim against its reference after a change of Lean or of the project"
+  ],
+  "whenNot": [
+    "checking a proof while it is written: lean_check is faster and shows the errors at their lines",
+    "seeing the goals of a proof: lean_goals"
+  ],
+  "exposure": "auto",
+  "input": {
+    "type": "object",
+    "required": [
+      "original",
+      "candidate",
+      "target",
+      "allowedAxioms"
+    ],
+    "properties": {
+      "original": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The reference: a Lean file that states the target, with sorry as its proof"
+      },
+      "candidate": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The file to certify: the reference with the proof filled in"
+      },
+      "target": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "The fully qualified name of the theorem the candidate proves"
+      },
+      "allowedAxioms": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": "The axioms the target may depend on, such as propext"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600,
+        "description": "The time limit of the whole certification (both compiles and the replay), in seconds"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "verdict",
+      "reasons",
+      "axioms",
+      "timeMs"
+    ],
+    "properties": {
+      "verdict": {
+        "enum": [
+          "certified",
+          "rejected"
+        ]
+      },
+      "reasons": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Why the candidate was rejected; empty when it is certified"
+      },
+      "axioms": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "The axioms the target depends on, sorted"
+      },
+      "timeMs": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [
+    "proved",
+    "refuted"
+  ],
+  "certificate": "the candidate was compiled in a fresh process; every declaration of the compiled module was replayed through the kernel (Lean.Environment.replay); the target's axioms, collected from the replayed environment, are all allowed; and the target's type and the definitions it depends on are the reference's, compared as terms (documentation/certifier.md)",
+  "timeoutMs": 900000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "verdict",
+    "timeMs"
+  ],
+  "examples": [
+    {
+      "title": "a proof of a statement",
+      "input": {
+        "original": "theorem Harness.add_zero' (n : Nat) : n + 0 = n := by\n  sorry\n",
+        "candidate": "theorem Harness.add_zero' (n : Nat) : n + 0 = n := by\n  rfl\n",
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "timeoutSec": 600
+      },
+      "output": {
+        "verdict": "certified",
+        "reasons": [],
+        "axioms": [],
+        "timeMs": 2310
+      }
+    },
+    {
+      "title": "a proof that leaves a sorry",
+      "input": {
+        "original": "theorem Harness.add_zero' (n : Nat) : n + 0 = n := by\n  sorry\n",
+        "candidate": "theorem Harness.add_zero' (n : Nat) : n + 0 = n := by\n  sorry\n",
+        "target": "Harness.add_zero'",
+        "allowedAxioms": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ]
+      },
+      "output": {
+        "verdict": "rejected",
+        "reasons": [
+          "Harness.add_zero' depends on axioms that are not allowed: [sorryAx]"
+        ],
+        "axioms": [
+          "sorryAx"
+        ],
+        "timeMs": 2290
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "lake",
+      "version": "0.1.0+lean-v4.27.0+fc-bench-v1",
+      "kind": "inproc",
+      "factory": "lake-certify",
+      "description": "lake env lean in the bench's Lean project (Lean v4.27.0, formal-conjectures at the bench revision): the candidate and the reference are compiled in fresh processes, then lean/SeshatCertify replays them through the kernel. The compile runs the candidate's code, so the implementation is unavailable unless the host profile gives a sandbox command or opts in with unsandboxed: true, which runs that code as the harness's user (the host server never does). Never run against a real Lean yet, and lean/SeshatCertify has never been compiled (documentation/certifier.md).",
+      "environment": {
+        "lean": "v4.27.0",
+        "program": "lean/SeshatCertify 0.1.0",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7"
+      },
+      "settings": {
+        "command": "lake",
+        "args": [],
+        "projectDir": "",
+        "program": "",
+        "probe": "import FormalConjectures.Util.ProblemImports",
+        "sandbox": [],
+        "unsandboxed": false,
+        "workDir": "",
+        "env": {}
+      }
+    }
+  ]
+}

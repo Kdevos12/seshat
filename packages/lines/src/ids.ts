@@ -25,6 +25,14 @@ export const LINE_TITLES: Readonly<Record<LineId, string>> = {
   M9: "reranking from our own labels, without training",
 };
 
+/**
+ * The lines the project suspended: they stay in `LINE_ORDER` and in the plan's notes, but are not
+ * built, a run refuses them, and the cumulative configs leave them out. M7 and M9, the abductive
+ * engine and its reranking, were suspended on 2026-10-20: semantic jumps found by deriving an
+ * expression through the variant graph do the same structural work, more accurately in practice.
+ */
+export const SUSPENDED_LINES: ReadonlySet<LineId> = new Set<LineId>(["M7", "M9"]);
+
 export function isLineId(value: unknown): value is LineId {
   return typeof value === "string" && (LINE_ORDER as readonly string[]).includes(value);
 }
@@ -38,8 +46,10 @@ export function isAblationName(value: unknown): value is AblationName {
 
 /**
  * The lines a cumulative config enables (plan §6, in §7's order): none for `M0`, and for a line,
- * that line and every line before it in `LINE_ORDER`. `M2` is M0 + M1 + M10 + M2.
+ * that line and every line before it in `LINE_ORDER` but the suspended ones. `M2` is M0 + M1 + M10
+ * + M2. A suspended line is kept in its own config, so that a run of it stops and says why.
  */
 export function ablationLines(name: AblationName): LineId[] {
-  return name === "M0" ? [] : LINE_ORDER.slice(0, LINE_ORDER.indexOf(name) + 1);
+  if (name === "M0") return [];
+  return LINE_ORDER.slice(0, LINE_ORDER.indexOf(name) + 1).filter((id) => id === name || !SUSPENDED_LINES.has(id));
 }

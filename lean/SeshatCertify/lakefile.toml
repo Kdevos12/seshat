@@ -1,0 +1,10 @@
+# SeshatCertify: the Lean side of the capability lean.certify (documentation/certifier.md).
+# It needs nothing but Lean itself. Pinned to the bench's Lean (documentation/lean.md).
+# Never compiled yet: `lake build` here is the first thing to run on a machine with Lean.
+name = "SeshatCertify"
+version = "0.1.0"
+defaultTargets = ["seshat-certify"]
+
+[[lean_exe]]
+name = "seshat-certify"
+root = "Main"

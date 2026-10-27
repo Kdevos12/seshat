@@ -101,9 +101,31 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     parameters: checkParameters(o.strategies ?? []),
     executionMode: "sequential",
     execute: async (_id, params, signal) => {
+      const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
+      if (o.lines?.beforeCheck !== undefined) {
+        try {
+          const veto = await o.lines.beforeCheck({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
+          // A rejected call is no check: Lean is not run, nothing is counted or recorded.
+          if (veto !== undefined) {
+            return {
+              content: [{ type: "text", text: `Not checked (line ${veto.line}): ${veto.reason}` }],
+              details: { summary: `rejected by line ${veto.line}` },
+              isError: true,
+            };
+          }
+        } catch (error) {
+          // A line that fails here ends the session with an error, not the check.
+          failure = messageOf(error);
+          return {
+            content: [{ type: "text", text: "The harness failed while guarding this check. The session ends here." }],
+            details: { summary: "harness failure" },
+            isError: true,
+            terminate: true,
+          };
+        }
+      }
       submissions += 1;
       submission = { aux: params.aux, proof: params.proof };
-      const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
       if (strategy !== undefined) declared = strategy;
       try {
         const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}) });

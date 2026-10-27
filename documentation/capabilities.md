@@ -201,7 +201,10 @@ scope and releases it when the attempt ends ([m0-loop.md](m0-loop.md#other-tools
 into `run.started`, so a run's journal says which contracts and implementation versions it used.
 
 `registry.health()` reaches every implementation the host lists and asks for its health.
-`registry.describe(id)` writes a manifest out for a model: what it does, when to use it, its fields
+`registry.usable(id)` asks only whether the host can create an implementation of the capability,
+calling none: an in-process factory refuses a configuration it cannot work with (`lean.certify`
+without a project or a sandbox), and `usable` gives the reasons. A factory is told the name of the
+host profile (`FactoryContext.host`). `registry.describe(id)` writes a manifest out for a model: what it does, when to use it, its fields
 and its examples.
 
 ## `lean.check`
@@ -260,6 +263,21 @@ yet; [lean-meta.md](lean-meta.md#leangoals) covers the operations, the process a
 It is not sandboxed: the model's Lean code runs as the harness's user, with that user's files, so
 a run gives it to the provers only when asked (`--tool lean.goals`), on a machine where that is
 acceptable, until an implementation in a container exists.
+
+## `lean.certify`
+
+The certifier ([certifier.md](certifier.md)): a candidate file, the reference file, the target's
+name and the allowed axioms in; a verdict (`certified` or `rejected`, with reasons and the target's
+axioms) out. It is `auto` and the one capability that `produces` `proved` and `refuted`, with a
+`certificate` that says how. A call that reaches no verdict fails, as a call; it never answers
+`rejected` for a failure that is not the candidate's (a project in which not even the reference
+compiles is one). It fails closed: the implementation is unavailable until the host profile gives it
+a `sandbox` command or opts in with `unsandboxed: true`, and neither shipped profile does
+([certifier.md](certifier.md#where-untrusted-code-runs)). Its implementation `lake` (factory
+`lake-certify`, in `@seshat/lean-local`) runs `lake env lean` in the project `LEAN_PROJECT_DIR`;
+the orchestrator reaches it through `RegistryLeanCertifier.forHost(registry)`, a `LeanCertifier`
+whose certifications are tool runs, and `leanCertifyImplementation(certifier)` makes any
+`LeanCertifier` an implementation. Its contract has 9 cases, not run against Lean yet.
 
 ## `compute.sage`
 

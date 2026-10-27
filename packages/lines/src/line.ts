@@ -56,7 +56,7 @@ export interface IdentityEnv {
 /**
  * Every hook is optional and async. A hook that throws is a failure of the harness: outside a
  * session, it ends the problem (or the prover) with an error; inside one (`contextPacket`,
- * `afterCheck`), it ends the session with an error.
+ * `beforeCheck`, `afterCheck`), it ends the session with an error.
  */
 export interface LineHooks {
   /**
@@ -85,13 +85,32 @@ export interface LineHooks {
    * strategy or subgoal wins, and the first `stop` or `skip` is taken.
    */
   beforeSession?: (session: SessionContext) => Promise<SessionDecision | undefined>;
+  /**
+   * Before each `lean_check` runs: a guard. A `reject` goes back to the model as a tool error and
+   * the file is not checked: it is no check, no validation, and does not count. The first line in
+   * `LINE_ORDER` that rejects is taken.
+   */
+  beforeCheck?: (session: SessionContext, proposal: Proposal) => Promise<CheckVeto | undefined>;
   /** After each `lean_check` of a session: a `stop` ends the session (a drift detector). */
   afterCheck?: (session: SessionContext, check: SessionCheck) => Promise<CheckDecision | undefined>;
+  /**
+   * After the lines' briefing sections are made, before the session starts: the sections the
+   * session gets. Return the list to replace them: a line may drop a section or reword one (keep
+   * its title), not add, replace or reorder one: each title returned must be one it was given, in
+   * the same order, or the line has failed. Each line gets the list as the lines before it left it;
+   * undefined keeps it.
+   */
+  reviewBriefing?: (session: SessionContext, sections: readonly Briefing[]) => Promise<Briefing[] | undefined>;
   /**
    * After each session, before its attempt is recorded: what it returns goes into
    * `attempt.finished` (a later line's fields win). Not called for a session the harness failed.
    */
   afterAttempt?: (problem: ProblemContext, attempt: FinishedAttempt) => Promise<AttemptAnnotation | undefined>;
+  /**
+   * After a prover has ended, whatever the reason: it starts no more session. Not called when the
+   * harness failed in the prover, which ends the problem.
+   */
+  afterProver?: (problem: ProblemContext, end: ProverEnd) => Promise<void>;
   /**
    * After the provers, before `problem.finished`, for every problem whose `beforeProvers` point
    * was reached. Its signal is the run's, not the problem's, which is aborted when it is solved.
@@ -227,6 +246,19 @@ export interface SessionCheck {
   accepted: boolean;
 }
 
+/** What the model sent in a `lean_check` call, before it runs. */
+export interface Proposal {
+  aux: string;
+  proof: string;
+  /** The strategy the model declared in this call, when the run offers labels and it gave one. */
+  strategy?: string;
+}
+
+export interface CheckVeto {
+  /** Why the call is not run, in words the model can act on. It is sent back to the model. */
+  reject: string;
+}
+
 export interface CheckDecision {
   /** End the session, for this reason. Its attempt ends `stoppedBy: "line:<id>"`. */
   stop?: string;
@@ -267,6 +299,23 @@ export interface AttemptAnnotation {
   premises?: string[];
   /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
   failureDetail?: string;
+  /**
+   * The notes the prover's next session starts from, in place of the ones the model wrote (which
+   * the journal keeps as it got them). An empty string leaves the next session with no notes.
+   */
+  notes?: string;
+}
+
+/** Why a prover ended (the values of the orchestrator's `ProverStop`). */
+export type ProverStopReason = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line";
+
+/** A prover that has ended, for `afterProver`. */
+export interface ProverEnd {
+  /** `p1`, `p2`... */
+  prover: string;
+  stop: ProverStopReason;
+  /** The sessions it started. */
+  attempts: number;
 }
 
 /** How a problem ended, for `afterProblem`. */
@@ -319,7 +368,11 @@ export interface ValidateResult {
   verdict: "valid" | "invalid";
   /** The `validation.finished` event, when the check was recorded. */
   validationId?: string;
-  /** The claim's status after the check. */
+  /**
+   * The claim's status after the check. A check raises it to `computed` at most: the orchestrator
+   * certifies what lines submit when the problem ends, and only then can the claim be `proved`
+   * (or `refuted`).
+   */
   status: ClaimStatus;
   reasons: string[];
   /** What the validator said; absent when the claim's reference file could not be checked. */

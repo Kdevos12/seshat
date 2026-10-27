@@ -16,10 +16,12 @@ simulated model and a simulated Lean.
 |---|---|---|
 | Event journal, claim statuses, SQLite projection | `@seshat/core` | Done, tested |
 | Memory store: claims, edges, nodes, reference files | `@seshat/memory` | Done, tested; reference files not run against Lean |
-| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M1 |
+| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines, M1, M2, M6 and the fleet |
 | M1: shared claims by statement identity, strategy and failure classes, "already tried", redundant attempts | `@seshat/memory`, `@seshat/orchestrator` | Done with the text identity, tested with a simulated model and Lean; the Lean identity is not built |
 | Variant graph and logical propagation (line M2): variants, checked edges, propagation rules, composed proofs, the prove/refute twin, proved-modulo labels, PageRank, graph queries | `@seshat/graph` | Done, tested with a simulated Lean; not run against Lean |
 | Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M11 |
+| M6: neutral framing, resolved citations, no raw error text, anchored revisions, drift detectors | `@seshat/guards`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; the thresholds are untuned and the Lean meta tool's predicates are injected, not plugged in |
+| Fleet policy: Thompson sampling on strategy and model verdicts, adaptive width, escalation | `@seshat/fleet`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; the thresholds are untuned and subgoals are the claims for now |
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
@@ -30,6 +32,7 @@ simulated model and a simulated Lean.
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
 | Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
+| Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
 
 None of this has run against a real Lean or a real model yet, because the development environment
 blocks the Lean toolchain downloads and has no model credentials.
@@ -51,10 +54,16 @@ blocks the Lean toolchain downloads and has no model credentials.
   composed proofs, the prove/refute twin, labels and nogoods, PageRank and graph queries, the line M2.
 - [m1-identity-memory.md](m1-identity-memory.md): the M1 line: one claim per statement, strategy
   labels, failure classes, the "already tried" section, the redundant-attempts metric.
+- [guards.md](guards.md): the M6 line: neutral framing, resolved citations, no raw error text,
+  anchored revisions, the drift detectors, and the `drift` nodes they write.
+- [fleet.md](fleet.md): the fleet line: posteriors per strategy and model, Thompson sampling, adaptive
+  width, escalation, and the `allocation` nodes.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
-- [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, budgets, the run
-  directory, `harness run` and `harness report`.
-- [lean.md](lean.md): Lean checkers, the Kimina client, the certifier, deployment.
+- [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, certification and the
+  outcomes, budgets, the run directory, `harness run` and `harness report`.
+- [lean.md](lean.md): Lean checkers, the Kimina client, deployment.
+- [certifier.md](certifier.md): the certifier: what it answers, the process, the Lean program, where
+  untrusted code runs, its settings, deployment, what is still to verify against Lean.
 - [lean-meta.md](lean-meta.md): the Lean meta tool: SeshatMeta's commands, the canonical form and
   `st1_` ids, `lean.meta`, `LeanIdentity`, `lean.goals` over Pantograph, deployment.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,

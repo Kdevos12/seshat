@@ -1,8 +1,13 @@
 /**
- * @seshat/fleet, a skeleton. The fleet policy: posteriors per claim, strategy and model, and
- * Thompson sampling of the next session (line fleet).
- *
- * The package exists with its dependencies, so that the task that implements it adds code without
- * touching the lockfile (documentation/lines.md, "Adding a line").
+ * @seshat/fleet: the fleet policy (line `fleet`, plan §11), documented in documentation/fleet.md.
+ * Beta posteriors from the journal, Thompson sampling for the next session's strategy and model,
+ * adaptive width, escalation.
  */
-export {};
+export * from "./allocation.ts";
+export * from "./beta.ts";
+export * from "./choose.ts";
+export * from "./escalation.ts";
+export * from "./fleet.ts";
+export * from "./posterior.ts";
+export * from "./random.ts";
+export * from "./width.ts";

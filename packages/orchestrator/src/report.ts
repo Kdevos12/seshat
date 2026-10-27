@@ -31,7 +31,7 @@ export interface RunReport {
   usd: number;
   inputTokens: number;
   outputTokens: number;
-  /** Dollars per problem with a proof (candidate or certified); undefined when there is none. */
+  /** Dollars per problem with a proof: a candidate, or a certified proof or refutation; undefined when there is none. */
   usdPerProof?: number;
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
   leanChecks: { total: number; outcomes: Record<string, number>; medianMs?: number; p90Ms?: number };
@@ -154,7 +154,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         break;
     }
   }
-  const proofs = (outcomes.proved ?? 0) + (outcomes.candidate ?? 0);
+  const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
@@ -226,6 +226,7 @@ export function renderRunReport(report: RunReport): string {
     "| Problems | |",
     "|---|---|",
     `| Proved (certified) | ${o.proved ?? 0} |`,
+    `| Refuted (certified) | ${o.refuted ?? 0} |`,
     `| Candidates (fast check only) | ${o.candidate ?? 0} |`,
     `| Unsolved | ${o.unsolved ?? 0} |`,
     `| Skipped | ${o.skipped ?? 0} |`,
@@ -234,7 +235,7 @@ export function renderRunReport(report: RunReport): string {
     `| No outcome (not started, or the run was killed) | ${report.planned - report.problems.length} |`,
     "",
     `Cost: ${money(report.usd)} in total` +
-      `${report.usdPerProof !== undefined ? `, ${money(report.usdPerProof)} per problem with a proof` : ""}. ` +
+      `${report.usdPerProof !== undefined ? `, ${money(report.usdPerProof)} per problem with a proof or a refutation` : ""}. ` +
       `Tokens: ${report.inputTokens} in, ${report.outputTokens} out.`,
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
