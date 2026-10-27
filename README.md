@@ -100,7 +100,7 @@ goes through the capability registry, which writes it to the journal, with its i
 as blobs. The orchestrator records the work as tasks in a ledger (one `prove` task per prover, and
 a routing decision for each failed check), never copying a claim's status, and a run whose process
 ended is continued from the journal alone: `harness run --resume` takes up each problem where the
-journal left it, with the budgets that were left, and never runs or certifies a candidate twice
+journal left it, with the budgets that were left, and records one certification per candidate
 ([documentation/ledger.md](documentation/ledger.md#resume)).
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
 ([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the

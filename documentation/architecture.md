@@ -85,7 +85,7 @@ Data that is versioned with the code:
 
 If the process ends before the problem does, `harness run --resume` takes the problem up where the
 journal left it: the candidate, the certification and each prover's file and notes are read back,
-the budgets start from what was spent, and nothing is run or certified twice ([ledger.md](ledger.md#resume)).
+the budgets start from what was spent, and one certification is recorded per candidate ([ledger.md](ledger.md#resume)).
 
 [m0-loop.md](m0-loop.md) describes the loop in full. The plan's mechanisms come as lines that a run
 switches on: their hooks run at fixed points of this loop (before the provers, around each

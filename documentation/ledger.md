@@ -347,13 +347,23 @@ has; the reference file is checked again (a Lean call, no model). Then:
 - **The provers.** A prover whose task is `ready` goes on at the session after the last it started,
   with what the last session that finished carried: its regions, its last check and its notes. A
   session that was cut counts as used and says nothing about the prover's health.
-- **The lines.** `beforeProvers` is not called again once a prover of the problem had started; it
-  is when none had, since the process may not have finished it.
+- **The lines.** A `stateless` line's `beforeProvers` is not called again once a prover of the
+  problem had started; it is when none had, since the process may not have finished it. A `rebuild`
+  line gets `resumeProblem` instead, for every problem the process works on, including one it had
+  not begun, with what the journal holds of the problem ([Lines](#lines)).
+- **What the lines submitted.** A proof that passed the fast check for another claim of the
+  problem, or a refutation, is a candidate of a workbench the lines' `validate` made
+  (`ClaimBenches`). The resumed process makes those workbenches again (`ClaimBenches.recover`),
+  one per claim and negation the problem's valid fast checks name, with the candidate read back as
+  for the problem's own and the certifier's answer if the journal holds one; the problem's
+  certification of what its lines submitted then goes on as in a run that was not cut. A claim whose
+  status changed after the validation (a line withdrew the proof) is not raised again.
 - A journal that names a blob the run directory lost ends the problem as an `error`, with the blob.
 
 ### Certification
 
-A candidate is certified once. What the resumed run does depends on what the journal holds:
+One certification is recorded per candidate. What the resumed run does depends on what the journal
+holds, for the problem's own candidate and for the candidates its lines submitted alike:
 
 | The journal holds | The resumed run |
 |---|---|
@@ -366,16 +376,36 @@ when the answer arrives, before the claim's change of status, so a call that did
 nothing: the claim is still `computed`, and a certifier that is a registry capability left a tool run
 with no end, which the resumption closes as `aborted`. The kernel replay is made again from the
 start. The certifier may therefore have been asked twice for one candidate, once by each process,
-but the journal never holds two answers for it.
+but the journal never holds two answers for it. A certifier that is asked again after a cut call is
+the one case where a candidate is certified by two processes; the tests count the requests.
 
 ### Lines
 
 A line says in `resume` whether a run with it can be resumed ([lines.md](lines.md#resuming-a-run-with-lines)):
-`"stateless"` (what it keeps is in the journal and the memory, as M1's is), or `{refuse: reason}`,
-and a line that says nothing is refused. The repository's lines: M1 is stateless; M2 (the truth
-maintenance state of its graph), M6 (the detectors' counts) and the fleet (its width gate and
-rotation) refuse, until they rebuild their state from the journal and the memory. A run with one of
-them cannot be resumed, and the command says which line and why.
+`"stateless"` (what it keeps is in the journal and the memory, as M1's is), `"rebuild"` (it keeps
+state in the process and has a `resumeProblem` hook that rebuilds it from the journal and the memory
+when a problem is taken up), or `{refuse: reason}`. A line that says nothing is refused, and so is a
+`rebuild` line without the hook. The repository's lines: M1 is stateless; M2, M6 and the fleet
+rebuild. A run with a line that is refused cannot be resumed, and the command says which line and why.
+
+What each rebuilds, from what it journaled:
+
+- **M2** keeps a `twin_work` node (the twin, made once, with the edge and whether it was checked), an
+  `alias` node for each short name it gave (so that a name quoted in a prompt stays valid), and a
+  `derivation_intent` node before each composed proof it submits. The `derivation` nodes carry the
+  problem and the proof's signature: the proofs already tried, and the composition budget spent,
+  are read back from them, and a composed proof that Lean answered for and the process ended before
+  it was recorded is recorded from its validation. The refutation side has the model calls it has
+  left, those the journal holds for the site `graph.attempt` being spent; the final `twin` node is
+  written once, whoever ends the side.
+- **M6** records a `watch` node after each attempt (the label and best Lean state it watched, the
+  last check's code, signal and retry). The resumed process replays the watch over those nodes of
+  the problem's finished attempts, restores which framings it already noted, the last check of the
+  prover, and the notices it had not delivered: one that went to a session the interruption cut is
+  delivered again, to the session that follows.
+- **The fleet** reads the `allocation` nodes: the strategy a prover stuck to (`last`), the claims
+  worked, and which provers have ended, so that the gate does not hold a place for them. The draws
+  are the seeded source's, so the same strategies are drawn.
 
 ### What a resumed run does not restore
 
@@ -383,9 +413,14 @@ them cannot be resumed, and the command says which line and why.
   written: neither is made up.
 - The sessions a line skipped (its `beforeSession` stopped them) are not recorded, so a resumed
   prover may be offered them again.
-- A proof that a line submitted for another claim, or a refutation, and that waited for
-  certification, is not certified by the resumed run (its validation is in the journal; the claim
-  stays `computed`). Only the problem's own candidate is recovered.
+- A session that was cut in the middle: what it had done is in the journal, but a line's view of it
+  is not carried (M6 does not read a cut session's checkpoint; the next session is given the same
+  notice again). A routing decision lost between `attempt.finished` and `task.routed` is not made.
+- M2's refutation side: an answer that was lost between its `model_call.finished` and its validation
+  is not asked for again (the try is spent), and a resumed side's prompt lacks the feedback of the
+  earlier failures.
+- An `allocation` node can remain for a session that never started; the fleet counts the attempts
+  that did.
 - A claim an M0 run created and registered no problem for, when the process ended between the two
   events, stays in the journal as a claim no problem points at; the problem then gets a new one.
 - `durationMs` of a taken-up problem measures the resumed process only. Its cost, attempts and

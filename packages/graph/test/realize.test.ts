@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 import { extractSubmission, readEvents } from "@seshat/core";
 import {
   checkEdge,
+  completeDerivations,
   createTwin,
   createVariant,
+  DERIVATION_INTENT_KIND,
   DERIVATION_KIND,
   type DerivationRecord,
   type Fact,
@@ -80,6 +82,7 @@ describe("realizing what the graph derives", () => {
         level: "candidate",
         verdict: "valid",
         validationId: done?.validationId as string,
+        signature: `proved:${base}|strengthens/proved(proved${strong})@${edgeId}`,
       },
     ]);
 
@@ -272,6 +275,44 @@ describe("realizing what the graph derives", () => {
     assert.deepEqual(await realize({ memory: w.memory, state, validate: w.validate, headerOf }), []);
     assert.equal(state.candidate.isBase({ goal: "refuted", claim: base }), false);
     assert.equal(state.candidate.holds({ goal: "refuted", claim: base }), true);
+    w.close();
+  });
+});
+
+describe("a derivation a run ended in the middle of", () => {
+  /** A `validate` that Lean answers for and the process then dies in: the answer is journaled, the derivation node is not. */
+  const dyingAfter = (w: World) => async (request: Parameters<World["validate"]>[0]) => {
+    await w.validate(request);
+    throw new Error("the process ended");
+  };
+  const nodesOf = (w: World, kind: string) => w.memory.nodes(kind).map((n) => n.data as unknown as DerivationRecord);
+
+  it("is written from the validation that answered it, once, and not submitted again", async () => {
+    const w = world();
+    const { state, headerOf } = await strengthening(w);
+    await assert.rejects(realize({ memory: w.memory, state, validate: dyingAfter(w), headerOf, problemId: "prb_1" }), /the process ended/);
+    assert.equal(nodesOf(w, DERIVATION_KIND).length, 0, "the node the run would have written is missing");
+    assert.equal(w.memory.nodes(DERIVATION_INTENT_KIND).length, 1, "what it meant to do was said first");
+    const checked = composedChecks(w).length;
+
+    const written = completeDerivations(w.memory, "prb_1");
+    assert.equal(written.length, 1);
+    const [node] = nodesOf(w, DERIVATION_KIND);
+    assert.deepEqual([node?.problemId, node?.verdict, node?.rule], ["prb_1", "valid", "strengthens/proved"]);
+    assert.ok(node?.validationId !== undefined && node.signature !== undefined);
+    assert.equal(completeDerivations(w.memory, "prb_1").length, 0, "a second call writes nothing");
+    assert.equal(completeDerivations(w.memory, "prb_other").length, 0, "another problem's intents are not this problem's");
+    assert.equal(composedChecks(w).length, checked);
+    w.close();
+  });
+
+  it("is left to be submitted again when the process ended before Lean answered", async () => {
+    const w = world();
+    const { state, headerOf } = await strengthening(w);
+    const before = async (): Promise<never> => Promise.reject(new Error("the process ended"));
+    await assert.rejects(realize({ memory: w.memory, state, validate: before, headerOf, problemId: "prb_1" }), /the process ended/);
+    assert.equal(completeDerivations(w.memory, "prb_1").length, 0);
+    assert.equal(nodesOf(w, DERIVATION_KIND).length, 0);
     w.close();
   });
 });

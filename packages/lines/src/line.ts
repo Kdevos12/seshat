@@ -68,10 +68,51 @@ export interface Line {
  *   in the resumed process does what it would have done in the first. A problem that was cut gets
  *   its `beforeProvers` again if the cut came before the provers started, and its `afterProblem`
  *   again if the problem had not ended: those two hooks must be safe to call twice for a problem.
+ * - `"rebuild"`: the line keeps state in the process (a counter, a graph, a gate) that it can make
+ *   again from the journal and the memory. The line gives `hooks.resumeProblem`, which the resumed
+ *   process calls for each problem it works on, in place of `beforeProvers`, with what the journal
+ *   holds of the problem (`ResumedProblem`); the line sets its state up there, as `beforeProvers`
+ *   would have set it up at the start, and does again what the cut left undone.
  * - `{refuse}`: the line keeps state that the journal cannot give back; the reason is shown to the
  *   person who tried to resume, and the run is not resumed.
  */
-export type LineResume = "stateless" | { refuse: string };
+export type LineResume = "stateless" | "rebuild" | { refuse: string };
+
+/**
+ * What the journal holds of a problem, for `resumeProblem`: all of it read from the journal, none
+ * of it the line's own memory. For a problem the interrupted process had not begun, the lists are
+ * empty and `begun` is false.
+ */
+export interface ResumedProblem {
+  /** Whether the problem's provers had started a session before the process ended. */
+  begun: boolean;
+  /** The sessions the problem's provers started, in the order they started, finished or cut. */
+  attempts: ResumedAttempt[];
+  /**
+   * The provers that have ended and will not run again (their task is done, failed or cancelled);
+   * the others go on in this process.
+   */
+  endedProvers: string[];
+  /** The model calls the lines made for this problem, by site: how many the journal holds. */
+  modelCalls: Readonly<Record<string, number>>;
+  /** The claims that any session of the run worked for, in the order the first one started: the run's, not the problem's. */
+  workedClaims: string[];
+}
+
+/** A session the journal holds. */
+export interface ResumedAttempt {
+  attemptId: string;
+  prover: string;
+  /** The session's number for the prover, from 1. */
+  session: number;
+  claimId: string;
+  /**
+   * True for a session that the interruption cut: the resumption ended it, `stoppedBy:
+   * "interrupted"`, and nothing of it was carried on. Every session the journal holds has an end by
+   * the time a line sees it.
+   */
+  interrupted: boolean;
+}
 
 /** What a line's `identity` factory gets. */
 export interface IdentityEnv {
@@ -91,6 +132,15 @@ export interface LineHooks {
    * the provers do not run.
    */
   beforeProvers?: (problem: ProblemContext) => Promise<void>;
+  /**
+   * In a resumed process, in place of `beforeProvers`, for each problem the process works on (the
+   * one the interruption cut, and the ones it had not begun), by a line that says `resume:
+   * "rebuild"`. It sets up the state the line keeps for the problem from what the journal holds, and
+   * does again what `beforeProvers` would have done and the cut left undone, once and not twice. It
+   * is called whether or not the problem is settled, since the line's later hooks need the state;
+   * check `problem.signal` before starting any work.
+   */
+  resumeProblem?: (problem: ProblemContext, held: ResumedProblem) => Promise<void>;
   /**
    * Before each session, after `beforeSession`: a titled section for the session's opening
    * message, after the notes, the file and the last check.

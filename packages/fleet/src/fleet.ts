@@ -187,9 +187,29 @@ export function createFleet(env: FleetEnv = {}): Line {
     options: FLEET_OPTIONS,
     // Recorded in run.started: change it with a rule of the policy, a default or the wording of the assignment.
     version: "fleet-1",
-    // The width gate (which provers work on a subgoal now) and the strategy each prover sticks to live in the process.
-    resume: { refuse: "the width gate (which provers work on a subgoal now) and the strategy each prover sticks to are kept in the process, and the journal cannot give them back" },
+    // The width gate and the strategy each prover sticks to live in the process, and the journal gives them back: see `resumeProblem`.
+    resume: "rebuild",
     hooks: {
+      /**
+       * What the process that ended held, from the journal. The claims the run's sessions worked on
+       * are the claims with attempts. The strategy a prover that goes on sticks to is the one the
+       * allocation of its last session that was not cut chose (a cut session is as if it had not
+       * been). The provers that had ended are no longer ahead of anyone at the gate. What each
+       * prover works on now, and the strategy told to a session until its briefing is made, are
+       * empty, as they are whenever no session is running; the draws are seeded, so they repeat.
+       */
+      resumeProblem: async (problem, held) => {
+        const run = runState(problem.registry);
+        for (const claimId of held.workedClaims) run.claims.add(claimId);
+        const state = problemState(run, problem.problemId);
+        const ended = new Set(held.endedProvers);
+        for (const prover of ended) state.gate.ended(prover);
+        const counted = new Set(held.attempts.filter((attempt) => !attempt.interrupted).map((attempt) => attempt.attemptId));
+        for (const { data } of allocations(problem.memory, problem.claimId)) {
+          if (data.strategy !== undefined && !ended.has(data.prover) && counted.has(data.attemptId)) state.last.set(data.prover, data.strategy);
+        }
+      },
+
       beforeSession: async (session: SessionContext): Promise<SessionDecision | undefined> => {
         const config = configOf(session.options);
         const run = runState(session.registry);

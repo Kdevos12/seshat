@@ -1,13 +1,16 @@
 import { EDGE_KINDS, EDGE_STATUSES, CLAIM_STATUSES } from "@seshat/core";
-import type { Briefing, JsonObject, Line, LineTool, ProblemContext } from "@seshat/lines";
+import type { Briefing, JsonObject, Line, LineTool, ProblemContext, ResumedProblem } from "@seshat/lines";
 import { Atms } from "./atms.ts";
-import { realize, revokeUnsupported } from "./realize.ts";
+import { completeDerivations, realize, revokeUnsupported } from "./realize.ts";
 import { graphQuery, parseGraphQuery, renderSubgraph, ShortIds } from "./query.ts";
-import { GraphState } from "./state.ts";
+import { DERIVATION_KIND, type DerivationRecord, GraphState } from "./state.ts";
 import { createTwin, runTwin, type Twin, twinSettled } from "./twin.ts";
 
 /** The node kind in which the line records the twin of a problem's claim (documentation/graph.md). */
 export const TWIN_KIND = "twin";
+
+/** The site of the refutation side's model calls: how many the journal holds says how many it has left. */
+const SIDE_SITE = "graph.attempt";
 
 /** The shape of the data of a `twin` node. */
 export interface TwinRecord {
@@ -19,6 +22,34 @@ export interface TwinRecord {
   end: "proof" | "refutation" | "exhausted" | "stopped" | "error" | "idle";
   /** Model calls it made. */
   tries: number;
+}
+
+/** The node kind in which the line keeps a problem's twin while it works on it (documentation/graph.md). */
+export const TWIN_WORK_KIND = "twin_work";
+
+/**
+ * The shape of the data of a `twin_work` node, recorded when the twin is created and kept up to
+ * date: a resumed run finds the twin as it was, and the refutation side as far as it got.
+ */
+export interface TwinWork {
+  problemId: string;
+  negationId: string;
+  edgeId: string;
+  checked: boolean;
+  /** How the refutation side ended, or `pending` while it has not. */
+  end: TwinRecord["end"] | "pending";
+  /** Model calls the side has made. */
+  tries: number;
+}
+
+/** The node kind in which the line keeps the short names it gave a problem's claims (documentation/graph.md). */
+export const ALIAS_KIND = "alias";
+
+/** The shape of the data of an `alias` node: a short name given to a claim, which prompts and notes quote. */
+export interface AliasRecord {
+  problemId: string;
+  id: string;
+  short: string;
 }
 
 /** The options of the line and their defaults (a run's `--line-option M2.twinTries=3` replaces one). */
@@ -57,10 +88,21 @@ interface Work {
   /** The header the problem's claim and its variants are read under: the problem's prefix. */
   header: string;
   twin?: Twin;
+  /** The `twin_work` node, which the line keeps up to date. */
+  twinNodeId?: string;
+  /** Whether the problem's `twin` node is already written (the process ended after `afterProblem` wrote it). */
+  recorded?: boolean;
   /** The refutation side, running alongside the provers. */
   side?: Promise<{ end: TwinRecord["end"]; tries: number }>;
+  /** How the refutation side ended before the process ended, when it did. */
+  sideBefore?: { end: TwinRecord["end"]; tries: number };
   tried: Set<string>;
   composed: number;
+}
+
+function isTwinWork(data: unknown): data is TwinWork {
+  const d = data as Partial<TwinWork> | null;
+  return typeof d === "object" && d !== null && typeof d.problemId === "string" && typeof d.negationId === "string" && typeof d.edgeId === "string" && typeof d.checked === "boolean" && typeof d.end === "string";
 }
 
 /**
@@ -106,6 +148,7 @@ export function createM2Line(): Line {
       headerOf: (id) => (id === problem.claimId ? work.header : problem.memory.claim(id)?.header),
       limit: s.composed - work.composed,
       tried: work.tried,
+      problemId: problem.problemId,
       signal: problem.signal,
       log: problem.log,
     });
@@ -126,61 +169,111 @@ export function createM2Line(): Line {
     return `${work.shorts.shorten(id)} (${statement.length > 100 ? `${statement.slice(0, 99)}…` : statement})`;
   };
 
+  /**
+   * Sets up the work for a problem, in a fresh run and in a resumed one. With what the journal holds
+   * of the problem (`held`), the work is made again: the short names given before, the derivations
+   * tried and the composition budget spent, the twin as it was recorded when it was created, and the
+   * refutation side with the model calls it has left. Without it the problem is new and there is
+   * nothing to read. Either way what the cut left undone is done now: a twin not yet created, a
+   * propagation, a refutation side that had not ended.
+   */
+  async function begin(problem: ProblemContext, held?: ResumedProblem): Promise<void> {
+    const s = settings(problem.options);
+    const recorded = held !== undefined;
+    const twinNode = recorded
+      ? problem.memory.nodes(TWIN_WORK_KIND, { claimId: problem.claimId }).findLast((node) => isTwinWork(node.data) && node.data.problemId === problem.problemId)
+      : undefined;
+    // A problem that was settled before this line began, and whose provers never ran (an earlier line settled it), is
+    // as a run that was not cut leaves it: this line does nothing for it.
+    if (recorded && twinNode === undefined && problem.signal.aborted && !held.begun) return;
+    const state = new GraphState(problem.memory, [problem.claimId]);
+    const shorts = new ShortIds({
+      onAssign: (id, short) => {
+        const record: AliasRecord = { problemId: problem.problemId, id, short };
+        problem.memory.recordNode({ kind: ALIAS_KIND, claimId: problem.claimId, data: { ...record } });
+      },
+    });
+    const work: Work = { state, atms: new Atms(state), shorts, header: problem.target.sketch.prefix, tried: new Set(), composed: 0 };
+    if (recorded) {
+      // A composed proof that Lean answered for and the process ended before it was recorded as one is recorded now.
+      completeDerivations(problem.memory, problem.problemId);
+      for (const node of problem.memory.nodes(ALIAS_KIND, { claimId: problem.claimId })) {
+        const alias = node.data as unknown as Partial<AliasRecord>;
+        if (alias.problemId === problem.problemId && typeof alias.id === "string" && typeof alias.short === "string") shorts.restore(alias.id, alias.short);
+      }
+      for (const node of problem.memory.nodes(DERIVATION_KIND)) {
+        const derivation = node.data as unknown as DerivationRecord;
+        if (derivation.problemId !== problem.problemId) continue;
+        if (derivation.signature !== undefined) work.tried.add(derivation.signature);
+        if (derivation.verdict !== "skipped") work.composed += 1;
+      }
+    }
+    works.set(keyOf(problem), work);
+    const check = { memory: problem.memory, validate: problem.validate, header: work.header, log: problem.log };
+
+    if (twinNode !== undefined && isTwinWork(twinNode.data)) {
+      const known = twinNode.data;
+      work.twin = { claimId: problem.claimId, negationId: known.negationId, edgeId: known.edgeId, checked: known.checked };
+      work.twinNodeId = twinNode.nodeId;
+      work.recorded = problem.memory.nodes(TWIN_KIND, { claimId: problem.claimId }).some((node) => (node.data as Partial<TwinRecord>).negationId === known.negationId);
+      if (known.end !== "pending") work.sideBefore = { end: known.end, tries: known.tries };
+    } else if (s.twin) {
+      await soft(problem, "the twin", async () => {
+        work.twin = await createTwin(check, problem.claimId);
+        problem.log(`twin: the negation is claim ${work.shorts.shorten(work.twin.negationId)}, its edge is ${work.twin.checked ? "lean_checked" : "not checked"}`);
+        // At once, so that a resumed run finds the twin as it was and does not make or check it again.
+        const record: TwinWork = { problemId: problem.problemId, negationId: work.twin.negationId, edgeId: work.twin.edgeId, checked: work.twin.checked, end: "pending", tries: 0 };
+        work.twinNodeId = problem.memory.recordNode({ kind: TWIN_WORK_KIND, claimId: problem.claimId, data: { ...record } }).nodeId;
+      });
+    }
+    await soft(problem, "propagation", () => propagate(problem, work, s));
+    if (problem.memory.claim(problem.claimId)?.status !== "open") return;
+
+    const twin = work.twin;
+    // The refutation side has the calls it has left: those the journal holds for the problem are spent.
+    const spent = held?.modelCalls[SIDE_SITE] ?? 0;
+    const left = Math.max(0, s.twinTries - spent);
+    // Its calls are spent: a call whose answer was lost with the process is not made again, and the side is over.
+    if (twin?.checked === true && left === 0 && spent > 0 && work.sideBefore === undefined) work.sideBefore = { end: "exhausted", tries: spent };
+    if (twin?.checked === true && left > 0 && work.sideBefore === undefined && !problem.signal.aborted && twinSettled(state, twin) === undefined) {
+      // Not awaited: it runs alongside the provers, and `afterProblem` joins it.
+      const ended = (end: TwinRecord["end"], tries: number) => {
+        // Kept as it happens, so that a resumed run does not start a side that has ended.
+        if (work.twinNodeId !== undefined) problem.memory.updateNode(work.twinNodeId, { end, tries }, "the refutation side ended");
+        return { end, tries };
+      };
+      work.side = runTwin({
+        llm: problem.llm,
+        memory: problem.memory,
+        validate: problem.validate,
+        signal: problem.signal,
+        state,
+        twin,
+        attempts: left,
+      }).then(
+        (result) => {
+          problem.log(`twin: the refutation side ended: ${result.end} after ${result.attempts} model calls`);
+          return ended(result.end, spent + result.attempts);
+        },
+        (error: unknown) => {
+          problem.log(`twin: the refutation side failed: ${error instanceof Error ? error.message : String(error)}`);
+          return ended("error", spent);
+        },
+      );
+    }
+  }
+
   return {
     id: "M2",
     title: "variant graph and logical propagation",
     requires: [],
     options: M2_OPTIONS,
     version: "m2-1",
-    // The per-problem work (the graph's ATMS, the twin and the refutation side that runs alongside the provers) lives in the process.
-    resume: { refuse: "the variant graph's work on a problem (its truth-maintenance state, the twin and the refutation side running alongside the provers) is kept in the process, and the journal cannot give it back" },
+    // The per-problem work (the graph's ATMS, the twin and the refutation side that runs alongside the provers) is made again from the journal and the memory: see `begin`.
+    resume: "rebuild",
     hooks: {
-      beforeProvers: async (problem) => {
-        const s = settings(problem.options);
-        const state = new GraphState(problem.memory, [problem.claimId]);
-        const work: Work = {
-          state,
-          atms: new Atms(state),
-          shorts: new ShortIds(),
-          header: problem.target.sketch.prefix,
-          tried: new Set(),
-          composed: 0,
-        };
-        works.set(keyOf(problem), work);
-        const check = { memory: problem.memory, validate: problem.validate, header: work.header, log: problem.log };
-
-        if (s.twin) {
-          await soft(problem, "the twin", async () => {
-            work.twin = await createTwin(check, problem.claimId);
-            problem.log(`twin: the negation is claim ${work.shorts.shorten(work.twin.negationId)}, its edge is ${work.twin.checked ? "lean_checked" : "not checked"}`);
-          });
-        }
-        await soft(problem, "propagation", () => propagate(problem, work, s));
-        if (problem.memory.claim(problem.claimId)?.status !== "open") return;
-
-        const twin = work.twin;
-        if (twin?.checked === true && s.twinTries > 0 && twinSettled(state, twin) === undefined) {
-          // Not awaited: it runs alongside the provers, and `afterProblem` joins it.
-          work.side = runTwin({
-            llm: problem.llm,
-            memory: problem.memory,
-            validate: problem.validate,
-            signal: problem.signal,
-            state,
-            twin,
-            attempts: s.twinTries,
-          }).then(
-            (result) => {
-              problem.log(`twin: the refutation side ended: ${result.end} after ${result.attempts} model calls`);
-              return { end: result.end, tries: result.attempts };
-            },
-            (error: unknown) => {
-              problem.log(`twin: the refutation side failed: ${error instanceof Error ? error.message : String(error)}`);
-              return { end: "error" as const, tries: 0 };
-            },
-          );
-        }
-      },
+      beforeProvers: (problem) => begin(problem),
+      resumeProblem: (problem, held) => begin(problem, held),
 
       beforeSession: async (session) => {
         const work = works.get(keyOf(session));
@@ -256,12 +349,14 @@ export function createM2Line(): Line {
         if (work === undefined) return;
         works.delete(key);
         const s = settings(problem.options);
-        const side = work.side === undefined ? undefined : await work.side;
+        const side = work.side === undefined ? work.sideBefore : await work.side;
         await soft(problem, "propagation", () => propagate(problem, work, s));
         const twin = work.twin;
         if (twin === undefined) return;
         // What the graph says now wins over how the refutation side ended.
         const end: TwinRecord["end"] = twinSettled(work.state, twin) ?? side?.end ?? "idle";
+        // Not twice: the process may have ended after this was written and before the problem was.
+        if (work.recorded === true) return;
         const record: TwinRecord = { negationId: twin.negationId, edgeId: twin.edgeId, checked: twin.checked, end, tries: side?.tries ?? 0 };
         problem.memory.recordNode({ kind: TWIN_KIND, claimId: problem.claimId, data: { ...record } });
       },

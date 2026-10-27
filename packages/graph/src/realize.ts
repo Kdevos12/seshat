@@ -1,10 +1,10 @@
-import type { ClaimStatus } from "@seshat/core";
+import type { ClaimStatus, Json } from "@seshat/core";
 import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { composeProof, memorySource, type ProofSource } from "./compose.ts";
 import type { Explanation } from "./engine.ts";
 import type { Fact } from "./rules.ts";
-import { DERIVATION_KIND, type DerivationRecord, type GraphState, type Level } from "./state.ts";
+import { DERIVATION_INTENT_KIND, DERIVATION_KIND, type DerivationIntent, type DerivationRecord, type GraphState, type Level } from "./state.ts";
 
 /** The `validate` of a line's context: the one way to submit a Lean proof of a claim or of its negation. */
 export type ValidateFn = (request: ValidateRequest) => Promise<ValidateResult>;
@@ -24,6 +24,8 @@ export interface RealizeOptions {
   /** Derivations already submitted in this problem, so that a failed one is not sent again. */
   tried?: Set<string>;
   attemptId?: string;
+  /** The problem the derivations are submitted for: recorded in each `derivation` node. */
+  problemId?: string;
   /**
    * Aborted when the problem ends. Nothing is submitted after that, and a check cut off by it is
    * neither recorded nor counted as tried: it says nothing about the proof.
@@ -77,6 +79,8 @@ export async function realize(o: RealizeOptions): Promise<Realized[]> {
         premises: (why.tree.premises ?? []).map((p) => ({ goal: p.fact.goal, claimId: p.fact.claim })),
         level: why.level,
         verdict: "skipped",
+        ...(o.problemId !== undefined ? { problemId: o.problemId } : {}),
+        signature,
       };
       const composition = await composeProof(why.tree, source, o.headerOf);
       if (!composition.ok) {
@@ -86,6 +90,10 @@ export async function realize(o: RealizeOptions): Promise<Realized[]> {
         continue;
       }
       submitted += 1;
+      // Said before it is done: a validation of a composed proof must never be left without the derivation node that
+      // marks it as composed, however the run ends (documentation/graph.md).
+      const { verdict: _none, ...intent } = record;
+      o.memory.recordNode({ kind: DERIVATION_INTENT_KIND, claimId: fact.claim, data: intent satisfies DerivationIntent as unknown as Json });
       const result = await o.validate({
         claimId: fact.claim,
         proof: composition.submission.proof,
@@ -186,4 +194,39 @@ function edgesOf(tree: Explanation): string[] {
 
 function treeSignature(tree: Explanation): string {
   return tree.base ? tree.fact.goal + tree.fact.claim : `${tree.rule}(${(tree.premises ?? []).map(treeSignature).join(",")})@${tree.edge}`;
+}
+
+/**
+ * Completes the `derivation` nodes of a problem that a run ended before it wrote: for each
+ * `derivation_intent` of the problem with no `derivation` node of the same signature, the first
+ * validation of the claim (of its negation, for a refutation) that no attempt made and that came
+ * after the intent is the composed proof's, and the node is written from it. An intent with no such
+ * validation was cut before Lean answered, and is left: the derivation is submitted again. Returns
+ * the nodes written.
+ */
+export function completeDerivations(memory: MemoryStore, problemId: string): DerivationRecord[] {
+  const done = new Set<string>();
+  for (const node of memory.nodes(DERIVATION_KIND)) {
+    const data = node.data as unknown as DerivationRecord;
+    if (data.problemId === problemId && data.signature !== undefined) done.add(data.signature);
+  }
+  const written: DerivationRecord[] = [];
+  for (const node of memory.nodes(DERIVATION_INTENT_KIND)) {
+    const intent = node.data as unknown as DerivationIntent;
+    if (intent.problemId !== problemId || intent.signature === undefined || done.has(intent.signature)) continue;
+    const answered = memory
+      .validations(intent.claimId)
+      .find((v) => v.method === "repl" && v.attemptId === undefined && v.negation === (intent.goal === "refuted") && v.seq > node.createdSeq);
+    if (answered === undefined) continue;
+    const record: DerivationRecord = {
+      ...intent,
+      verdict: answered.verdict,
+      validationId: answered.validationId,
+      ...(answered.verdict === "invalid" ? { reasons: answered.reasons.slice(0, 5) } : {}),
+    };
+    memory.recordNode({ kind: DERIVATION_KIND, claimId: intent.claimId, data: record as unknown as Json });
+    done.add(intent.signature);
+    written.push(record);
+  }
+  return written;
 }

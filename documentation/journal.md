@@ -174,7 +174,7 @@ from the journal gives the same rows.
 Queries: `claim`, `claimsByStatement`, `problem(s)`, `attempt(s)`, `toolRun(s)`, `lessons`,
 `validation(s)`, `edge`, `edges({from?, to?, kinds?, statuses?})`, `node`, `nodes(kind, claimId?)`,
 `modelCall`, `task`, `tasks({problemId?, claimId?, owner?, statuses?, kinds?})`, `taskRoutes`,
-`resumptions`, `attemptsOfTask`, `openAttempts`, `openToolRuns`, `validationsOfProblem`, and the
+`resumptions`, `attemptsOfTask`, `openAttempts`, `openToolRuns`, `validationsOfProblem`, `modelCallsOfProblem`, `claimsWithAttempts`, and the
 spend: `taskSpend`, `problemSpend`, `totalSpend` and `spendBySite`. `edges({to})` looks the edges up in `edge_targets_by_to` and then by key, and never
 scans the edges (a test reads the query plan): `equivalents` and the graph queries call it.
 

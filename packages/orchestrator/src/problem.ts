@@ -67,6 +67,8 @@ export interface Certification {
 /** The certifier's answer for a candidate, as the journal recorded it (a `kernel_replay` validation). */
 export interface RecordedCertification {
   validationId: string;
+  /** Where the validation is in the journal: a status change after it is not undone by a resumption. Absent: no such status change is looked for. */
+  seq?: number;
   verdict: "valid" | "invalid";
   reasons: string[];
   axioms: string[];
@@ -332,7 +334,9 @@ export class Workbench {
     this.found = candidate;
     // The process may also have ended between the check's validation and the claim's change of
     // status: the validation says the proof passed, so the change is made now, as `check` would have.
-    if (!this.negation && this.claimStatus() === "open") {
+    // Not when the claim's status has changed since the validation: a claim that went back to `open`
+    // (a line withdrew a composed proof) stays open, and a resumption does not raise it again.
+    if (!this.negation && this.claimStatus() === "open" && !this.changedSince(this.journal.projection.validation(candidate.validationId)?.seq ?? -1)) {
       this.journal.emit(
         "claim.status_changed",
         {
@@ -349,10 +353,15 @@ export class Workbench {
     if (answer !== undefined) {
       const valid = answer.verdict === "valid";
       const result: CertificationResult = { verdict: valid ? "certified" : "rejected", reasons: answer.reasons, axioms: answer.axioms, timeMs: 0 };
-      const status = this.settle(valid, answer.validationId);
+      const status = answer.seq !== undefined && this.changedSince(answer.seq) ? this.claimStatus() : this.settle(valid, answer.validationId);
       this.certification = { candidate, done: Promise.resolve({ result, validationId: answer.validationId, status }) };
     }
     for (const listener of this.listeners.splice(0)) listener(candidate);
+  }
+
+  /** Whether the claim's status changed after the journal's event number `seq`. */
+  private changedSince(seq: number): boolean {
+    return (this.journal.projection.claim(this.claimId)?.updated_seq ?? 0) > seq;
   }
 
   private claimStatus(): ClaimStatus {
