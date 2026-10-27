@@ -201,7 +201,7 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
-// --- the canned answers, in the shapes the real server gives (checked against the real server by real-server.test.ts, which is opt-in: documentation/lean-lsp.md, "Tests") ---
+// --- the canned answers, written in the shapes the real server gives. Nothing compares this stand-in with the real server. real-server.test.ts (opt-in: documentation/lean-lsp.md, "Tests") runs the harness against the real one, with its language server and its network call canned: it shows that the harness reads the real shapes and the words of the real errors, and that the documents it screens are those the real server builds; a difference between this file and the real server is found only by reading that test's results ---
 
 const isMarkerOrBlank = (line: string) => line.trim() === "" || line.trim().startsWith("-- HARNESS");
 
