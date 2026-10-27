@@ -15,7 +15,7 @@ import {
 import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
 import { buildReport, LINES, M1, readRecordedRun, REPO_ROOT, renderRunReport, type RunOptions } from "../src/index.ts";
-import { certifyingRegistry, check, DEMO_FILE, demoBench, demoResume, demoRun, killedAt, ofType, sageRegistry, say } from "./m0-helpers.ts";
+import { certifyingRegistry, check, DEMO_FILE, DemoLean, demoAnswer, demoBench, demoResume, demoRun, killedAt, ofType, sageRegistry, say } from "./m0-helpers.ts";
 import { fakeSage } from "./fixtures/fake-sage.ts";
 
 /** The text of the first user message of a request: the session prompt. */
@@ -448,6 +448,30 @@ describe("resuming within the budget that is left", () => {
     assert.equal(ofType(resumed.events, "problem.registered").length, 1);
     assert.equal(resumed.events.at(-1)?.type, "run.finished");
     assertSound(resumed.events);
+  });
+});
+
+describe("the time a cut session and tool run had run", () => {
+  it("is the time from their start to the last event the killed process wrote, not zero", async () => {
+    // Every check takes 40 ms, so the session that is cut has been running for at least that long.
+    const whole = await demoRun({
+      config: { sessions: 3 },
+      lean: new DemoLean(demoAnswer, 40),
+      responses: [check("bad"), say("NOTES"), check("exact trivial_proof")],
+    });
+    const cut = nth(whole.events, "attempt.finished", 1);
+    const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, lean: new DemoLean(demoAnswer, 40), responses: [check("exact trivial_proof")] });
+    const at = (seq: number) => Date.parse(whole.events.find((e) => e.seq === seq)?.ts ?? "");
+    const lastWritten = Date.parse(whole.events[cut - 1]?.ts ?? "");
+    const aborted = ofType(resumed.events, "attempt.finished").find((e) => e.data.stoppedBy === "interrupted");
+    const started = ofType(whole.events, "attempt.started")[0];
+    assert.ok(aborted !== undefined && started !== undefined);
+    assert.equal(aborted.data.durationMs, lastWritten - at(started.seq));
+    assert.ok(aborted.data.durationMs >= 40, `ran for at least one check (${aborted.data.durationMs} ms)`);
+    for (const run of ofType(resumed.events, "tool_run.finished").filter((e) => e.data.outcome === "aborted")) {
+      const begin = ofType(whole.events, "tool_run.started").find((e) => e.data.toolRunId === run.data.toolRunId);
+      assert.equal(run.data.durationMs, lastWritten - at(begin?.seq ?? -1));
+    }
   });
 });
 

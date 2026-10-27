@@ -284,9 +284,12 @@ order, the orchestrator closes what the process left open:
 
 | Left open | Closed as |
 |---|---|
-| a tool run with no end | `tool_run.finished`, outcome `aborted` |
-| an attempt (a session) with no end | `attempt.finished`, outcome `aborted`, `stoppedBy: "interrupted"`, at the cost of its charges, with no carry: a session that was cut hands nothing on |
+| a tool run with no end | `tool_run.finished`, outcome `aborted`, `durationMs` the time from its start to the last event the killed process wrote |
+| an attempt (a session) with no end | `attempt.finished`, outcome `aborted`, `stoppedBy: "interrupted"`, at the cost of its charges, `durationMs` as for a tool run, with no carry: a session that was cut hands nothing on |
 | a task that was `running` | `ready`, with the reason "the process ended while the task ran; the run was resumed (resumption N)" |
+
+The durations are lower bounds: the work may have gone on after the last event it wrote, and the
+journal cannot say for how long. They are never made up as zero.
 
 The last row is the one way back from `running`, and the journal allows it only when a `run.resumed`
 is newer than the task's start (`TaskLedger.interrupt`). The task then starts again as any other:
@@ -306,6 +309,14 @@ the report counts the cut lines. What a dropped fragment described is lost with 
 most one event: a model response whose charge was the fragment is not billed in the journal, so the
 resumed run's budget does not count it. Reading a run (`readRecordedRun`, `harness report`) never
 writes: it reads the events before the cut.
+
+### What has been run
+
+The resume is tested with the faux model (pi-ai's faux provider), the simulated Lean (`DemoLean`),
+a fake certifier and fake servers: a run cut at every event of a small journal, with the last line
+whole or cut, resumes to the outcome and cost of the uncut run. It has not been run against a real
+Lean, a real model or a real certifier: what a real process kill, a real provider's partial
+response or a real `lake` leaves behind is as the tests simulate it, and nothing more.
 
 ### Budgets
 
