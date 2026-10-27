@@ -132,6 +132,8 @@ export function createM2Line(): Line {
     requires: [],
     options: M2_OPTIONS,
     version: "m2-1",
+    // The per-problem work (the graph's ATMS, the twin and the refutation side that runs alongside the provers) lives in the process.
+    resume: { refuse: "the variant graph's work on a problem (its truth-maintenance state, the twin and the refutation side running alongside the provers) is kept in the process, and the journal cannot give it back" },
     hooks: {
       beforeProvers: async (problem) => {
         const s = settings(problem.options);

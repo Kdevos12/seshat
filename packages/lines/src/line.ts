@@ -51,8 +51,27 @@ export interface Line {
    * it is trying, and the declaration is recorded beside the label the line classifies.
    */
   strategies?: readonly string[];
+  /**
+   * How a run with this line enabled may be resumed after its process ended (documentation/ledger.md,
+   * "Resume"). Absent: the run is not resumed, because the line has not said it can be.
+   */
+  resume?: LineResume;
   hooks: LineHooks;
 }
+
+/**
+ * What a line says of resuming a run it is enabled in. A resumed run is a new process: what a line
+ * kept in memory is gone.
+ *
+ * - `"stateless"`: whatever the line knows when a hook runs, it reads from the journal, the memory
+ *   or the ledger (`problem.memory`, `problem.tasks`), or it is its options, so that a hook called
+ *   in the resumed process does what it would have done in the first. A problem that was cut gets
+ *   its `beforeProvers` again if the cut came before the provers started, and its `afterProblem`
+ *   again if the problem had not ended: those two hooks must be safe to call twice for a problem.
+ * - `{refuse}`: the line keeps state that the journal cannot give back; the reason is shown to the
+ *   person who tried to resume, and the run is not resumed.
+ */
+export type LineResume = "stateless" | { refuse: string };
 
 /** What a line's `identity` factory gets. */
 export interface IdentityEnv {

@@ -70,6 +70,7 @@ interface Line {
   version?: string;           // recorded in run.started: change it when the line's behavior changes
   identity?: (env: { registry: Registry }) => StatementIdentity;  // how the run's memory names statements
   strategies?: readonly string[];  // the labels the line classifies attempts with
+  resume?: LineResume;        // "stateless", or {refuse: reason}: how a run with the line is resumed
   hooks: LineHooks;
 }
 ```
@@ -90,6 +91,32 @@ for a line that is not enabled, that the line does not have, or with another typ
 JSON value.
 `run.started` records the enabled lines in `LINE_ORDER`, each with its options and version; a run
 without lines records no `lines` key at all, as M0 always did.
+
+### Resuming a run with lines
+
+A run that its process did not finish can be resumed (`harness run --resume DIR`,
+[ledger.md](ledger.md#resume)). The resumed run is a new process: whatever a line kept in memory is
+gone, and the journal gives back only what was written to it. So a line says what it does about that,
+in `resume`:
+
+- `"stateless"`: whatever the line knows when a hook runs, it reads from the journal, the memory or
+  the ledger (`problem.memory`, `problem.tasks`), or it is its options, so that a hook called in the
+  resumed process does what it would have done in the first. A problem that the interruption cut
+  gets the line's `beforeProvers` again if the cut came before its provers started, and its
+  `afterProblem` again if it had not ended; those two hooks must be safe to call twice for one
+  problem. The hooks a session calls (`beforeSession`, `briefing`, `afterAttempt`...) run for the
+  sessions the resumed prover starts, as they would have.
+- `{refuse: reason}`: the line keeps state that the journal cannot give back. A run with the line is
+  not resumed: `harness run --resume` stops before it writes anything, and names the line and the
+  reason.
+- Absent: the same as a refusal. The harness cannot tell what a line keeps, so a line that does not
+  say is not resumed with.
+
+Today M1 is `stateless` (everything it knows it reads from the memory), and M2, M6 and the fleet
+refuse: M2's work on a problem (its truth-maintenance state, the twin and the refutation side that
+runs alongside the provers), M6's detector counts and pending notices, and the fleet's width gate and
+sticky strategies live in the process. A run with one of them has to be started again from the
+beginning until it rebuilds its state from the journal.
 
 ## The hooks
 
@@ -262,7 +289,10 @@ A task that implements a line:
 2. Registers it in `packages/orchestrator/src/lines.ts`.
 3. Records what it learns as events through the `MemoryStore`: claims, edges, and nodes of its own
    kinds, whose `data` shape its package owns ([memory.md](memory.md#nodes)).
-4. Tests it with a run of the simulated model and Lean (`demoRun` in
+4. Says how a run with it is resumed (`resume`, [above](#resuming-a-run-with-lines)): `"stateless"`
+   when everything it knows it reads from the journal, the memory or the ledger, a refusal with the
+   reason when it keeps state in the process. A line that says nothing is refused.
+5. Tests it with a run of the simulated model and Lean (`demoRun` in
    `packages/orchestrator/test/m0-helpers.ts` takes a line registry), and documents it on its own
    page, linked from [README.md](README.md).
 
@@ -292,7 +322,9 @@ line's model call charged to the problem; the context packet of each request, an
 also checks that only one line gives the statement identity, and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 `m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
-[fleet.md](fleet.md#tests-and-what-is-not-done)).
+[fleet.md](fleet.md#tests-and-what-is-not-done)). `resumeRefusals` is tested in
+`packages/lines/test/lines.test.ts`, and `packages/orchestrator/test/resume.test.ts` checks the
+position each real line takes on resuming.
 
 M1, M2, M6 and the fleet are the lines built. M2 has its own tests
 ([graph.md](graph.md#tested-and-not-yet)). Nothing here has run against a real model or Lean.
