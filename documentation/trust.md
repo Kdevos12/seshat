@@ -111,7 +111,10 @@ unless it is free of the tokens that the validator refuses in a prover's regions
 (`forbiddenTokensIn`) and of `#`, which starts a command; the rest of the file is the harness's.
 That screen reads text as Lean's lexer does and trusts a run of letters as a name only where the lexer
 starts a token for sure (after a space, `(`, `,` or `)`), because a keyword glued after a symbol token
-that ends in letters (`#check`, Mathlib's `[MOD`) is a token of its own
+that ends in letters (`#check`, Mathlib's `[MOD`) is a token of its own. It blanks a comment only where
+Lean is sure to read one (at the start, after a space, a line break or another comment), because a token
+can take the first character of an opener: Lean reads `<-` in `n = n <-- #eval 1` and then runs the
+command. The prover's regions are screened the same way
 ([validator.md](validator.md#structural-checks)).
 
 M11 also runs JavaScript that a model wrote, outside Lean: the programs of its `small_models` tool

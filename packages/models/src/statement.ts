@@ -113,6 +113,9 @@ function tidy(text: string): string {
  * statement about a number is written as it is), so it is refused when it holds a token that the
  * validator refuses in a proof: `#eval`, `macro_rules`, `IO`... A declaration can be ended by the
  * text and commands added after it, and the statements come from claims and from the provers' tool.
+ * The mask blanks a comment only where Lean is sure to read one, so a `--` or `/-` that is left is
+ * one Lean may read as a comment or as code (`x--note`, `<--`, `\/-`), and a statement that holds one
+ * is refused: a comment that Lean reads there would reach into the lines written after the statement.
  */
 function splitSignature(statement: string): { binders: Binder[]; conclusion: string } | { reason: string } {
   const text = maskCommentsAndStrings(statement);
@@ -123,6 +126,9 @@ function splitSignature(statement: string): { binders: Binder[]; conclusion: str
   // `#` starts a command (`#eval`, `#print`, `#check`...), and nothing the line reads has one: a statement is a signature.
   if (text.includes("#")) {
     return { reason: "the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it" };
+  }
+  if (text.includes("--") || text.includes("/-")) {
+    return { reason: "the statement holds '--' or '/-' where Lean may not read a comment, and no statement the line reads needs it" };
   }
   const binders: Binder[] = [];
   let i = 0;

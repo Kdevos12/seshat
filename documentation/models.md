@@ -157,7 +157,13 @@ the reason names the tokens. The body of a statement about a number is written a
 evaluator's Lean file (`abbrev m11_stmt ... := <body>`), where text such as `n = n #eval ...` ends the
 declaration and adds commands; and statements come from the claims of a run and from the `statement`
 argument of the provers' tool. The screen reads the text with its comments and strings blanked,
-which is the text that is written. It reads names as Lean's lexer does ([validator.md](validator.md)):
+which is the text that is written. A comment is blanked only where Lean is sure to read one (after a
+space, a line break, the start or another comment), and nothing is blanked after the first `--` or
+`/-` that is not sure: a token can take the first character of an opener, as `<-` does in
+`n = n <-- #eval 1`, where Lean runs the command. A statement in which such an opener is left
+(`n = n--note`, `n = n <-- note`) is refused with its own reason, since a comment that Lean reads
+there would reach into the lines written after the statement. It reads names as Lean's lexer does
+([validator.md](validator.md#structural-checks)):
 it finds `#eval` also glued to what precedes it (`n = n x#eval 1`, which Lean reads as `x` and the
 command), a keyword after a symbol or a number (`!run_cmd`, `1e5sorry`), and a keyword glued after a
 symbol token that ends in letters (`n ≡ n [MODrun_cmd 1]`, with Mathlib's token `[MOD`), but not one

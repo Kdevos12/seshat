@@ -5,6 +5,7 @@ import {
   AUX_END,
   type CertificationRequest,
   forbiddenTokensIn,
+  hasHoles,
   type LeanCertifier,
   PROOF_BEGIN,
   ProofValidator,
@@ -30,6 +31,38 @@ describe("scanRegion", () => {
     const scan = scanRegion("simp -- sorry\n/- native_decide /- nested -/ still -/ omega");
     assert.equal(scan.masked, "simp         \n                                       omega");
     assert.deepEqual(scan.problems, []);
+  });
+
+  it("opens a comment only where Lean reads white space: at the start, after a space or a line break, after another comment", () => {
+    const blanked = (comment: string) => comment.replace(/[^\n]/g, " ");
+    assert.equal(scanRegion("-- a\nsimp").masked, `${blanked("-- a")}\nsimp`);
+    assert.equal(scanRegion("simp\n-- sorry\n/- native_decide -/ omega").masked, `simp\n${blanked("-- sorry")}\n${blanked("/- native_decide -/")} omega`);
+    // A comment that follows a block comment directly.
+    assert.equal(scanRegion("simp /- a -/-- sorry\nomega").masked, `simp ${blanked("/- a -/-- sorry")}\nomega`);
+    assert.equal(scanRegion("simp /- a -//- run_cmd 1 -/ omega").masked, `simp ${blanked("/- a -//- run_cmd 1 -/")} omega`);
+  });
+
+  it("does not open a comment glued to a token: Lean reads <-, \\/ and // as tokens, and what follows them is code", () => {
+    const glued = ["exact foo <-- #eval 1", "exact foo //- #eval 1 -/ bar", "exact foo \\/- #eval 1 -/ bar", "exact foo x--note", "exact foo (/- note -/ x)", "exact foo ⟨-- note"];
+    for (const text of glued) assert.deepEqual(scanRegion(text), { masked: text, problems: [] }, text);
+    // The refusals of strings and «» names see what follows a glued opener, as they see any code.
+    assert.deepEqual(scanRegion('exact foo <-- "x"').problems, ["string literals are not allowed in the editable regions"]);
+    assert.deepEqual(scanRegion("exact foo \\/- «a» -/").problems, ["«» names are not allowed in the editable regions"]);
+  });
+
+  it("blanks nothing after the first opener it does not take for a comment: Lean may read that one as a comment, and the openers after it with it", () => {
+    const blanked = (comment: string) => comment.replace(/[^\n]/g, " ");
+    // Before that opener, the comments are blanked as usual.
+    assert.equal(scanRegion("simp -- a\nexact foo x--b\n-- sorry\n/- c -/ d").masked, `simp ${blanked("-- a")}\nexact foo x--b\n-- sorry\n/- c -/ d`);
+    assert.equal(scanRegion("exact foo x--b /- c -/ d").masked, "exact foo x--b /- c -/ d");
+    // Lean reads a comment in each of these (a doc comment for `/--` and `/-!`), up to a `-/` that lies inside what a scanner
+    // that went on blanking would take for a line comment of its own, and code after it: `elab`, `sorry` and `run_cmd` would hide
+    // behind a `--` that follows a space.
+    for (const [text, hidden] of [["x/- a --/run_cmd", "run_cmd"], ["///-! ---/elab/--", "elab"], ["#⟫-/-! --//sorry", "sorry"], ["#e/--=\n --/run_cmd", "run_cmd"]] as const) {
+      const scan = scanRegion(text);
+      assert.deepEqual(scan, { masked: text, problems: [] }, text);
+      assert.ok(forbiddenTokensIn(scan.masked).includes(hidden), text);
+    }
   });
 
   it("refuses string literals, «» names and open comments", () => {
@@ -165,6 +198,37 @@ describe("structuralCheck", () => {
     ok("theorem aux_a (hprefix : True) : True := hprefix", "  simp\n  exact aux_a hprefix");
   });
 
+  it("refuses what follows an opener that a token has swallowed, which Lean reads as code: <-- #eval 1", () => {
+    refused("", "  simp\n  exact foo <-- #eval 1", /proof: '#eval' is not allowed/);
+    refused("", "  simp\n  exact foo <-- #exit", /proof: '#exit' is not allowed/);
+    refused("", "  simp\n  exact foo //- #eval 1 -/ bar", /proof: '#eval' is not allowed/);
+    refused("", "  simp\n  exact foo \\/- #eval 1 -/ bar", /proof: '#eval' is not allowed/);
+    refused("theorem aux_a : True := by trivial <-- #eval 1", "  simp", /aux: '#eval' is not allowed/);
+    refused("", '  simp\n  exact foo <-- "x"', /proof: string literals are not allowed/);
+    // The safe side: a comment glued to a symbol or a name is code to the screen, and is refused if it holds a keyword.
+    refused("", "  simp\n  exact foo x--sorry", /proof: 'sorry' is not allowed/);
+    refused("", "  simp\n  exact foo |-- run_cmd 1", /proof: 'run_cmd' is not allowed/);
+    ok("", "  simp\n  exact foo x--note");
+    ok("", "  simp\n  exact foo |-- note");
+  });
+
+  it("refuses what a later comment would hide if the scanner went on blanking after an opener that Lean may read as a comment", () => {
+    refused("", "  simp\n  exact x/- a --/run_cmd", /proof: 'run_cmd' is not allowed/);
+    refused("", "  simp\n  ///-! ---/elab/--", /proof: 'elab' is not allowed/);
+    refused("", "  simp\n  #⟫-/-! --//sorry", /proof: 'sorry' is not allowed/);
+    refused("", "  simp\n  #e/--=\n --/run_cmd", /proof: 'run_cmd' is not allowed/);
+    refused("theorem aux_a : True := by trivial x--note\n-- sorry", "  simp", /aux: 'sorry' is not allowed/);
+    ok("", "  simp -- a\n  exact foo x--note\n  omega");
+  });
+
+  it("still blanks a comment where Lean reads one: after a space, a line break, the start or another comment", () => {
+    ok("", "  simp\n  exact foo -- run_cmd 1");
+    ok("", "  simp\n  -- #eval 1\n  exact foo /- run_cmd 1 -/");
+    ok("", "-- #eval 1\n  simp");
+    ok("", "  simp /- a -/-- run_cmd 1\n  exact foo /- b -//- #eval 1 -/");
+    ok("/-- doc -/\ntheorem aux_a : True := trivial -- sorry", "  exact aux_a");
+  });
+
   it("lets holes through under the sketch policy, and nothing else", () => {
     assert.deepEqual(structuralCheck({ aux: "theorem aux_a : 1 = 1 := by sorry", proof: "  admit" }, SKETCH_POLICY), []);
     assert.deepEqual(structuralCheck({ aux: "", proof: "  native_decide" }, SKETCH_POLICY), ["proof: 'native_decide' is not allowed"]);
@@ -176,6 +240,15 @@ describe("structuralCheck", () => {
     refused("@[instance] def aux_i : Inhabited ℕ := ⟨0⟩", "  simp", /attribute 'instance' is not allowed/);
     refused("@[command_elab x] def aux_e := 1", "  simp", /'command_elab' is not allowed/);
     refused("end Erdos125\nnamespace Other", "  simp", /found 'end'/);
+  });
+});
+
+describe("hasHoles", () => {
+  it("finds a hole behind an opener that a token has swallowed, which Lean reads as code, and not in a comment", () => {
+    assert.equal(hasHoles({ aux: "", proof: "  exact foo <-- sorry" }), true);
+    assert.equal(hasHoles({ aux: "theorem aux_a : True := by trivial //- admit -/", proof: "  simp" }), true);
+    assert.equal(hasHoles({ aux: "", proof: "  exact foo -- sorry" }), false);
+    assert.equal(hasHoles({ aux: "", proof: "  exact foo /- admit -/" }), false);
   });
 });
 
@@ -241,6 +314,9 @@ describe("ProofValidator", () => {
     const afterSymbol = await validator.validate(sketch, withProof("  simp\n  exact foo [MODrun_cmd 1]"), reference);
     assert.equal(afterSymbol.verdict, "invalid");
     assert.match(afterSymbol.reasons.join(), /proof: 'run_cmd' is not allowed/);
+    const swallowed = await validator.validate(sketch, withProof("  simp\n  exact foo <-- #eval 1"), reference);
+    assert.equal(swallowed.verdict, "invalid");
+    assert.match(swallowed.reasons.join(), /proof: '#eval' is not allowed/);
     const unmarked = await validator.validate(sketch, "theorem x : True := trivial", reference);
     assert.match(unmarked.reasons.join(), /restore the markers/);
     assert.equal(checker.calls.length, 0);

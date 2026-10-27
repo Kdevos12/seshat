@@ -9,7 +9,7 @@ import {
   parseAxiomsMessage,
   STANDARD_AXIOMS,
 } from "./lean.ts";
-import { readDeclarationHead, splitCommands } from "./lean-source.ts";
+import { type CommentReading, opensComment, readDeclarationHead, splitCommands } from "./lean-source.ts";
 import { assemble, editedOutsideRegions, extractSubmission, type Sketch, SketchError, type Submission } from "./sketch.ts";
 
 export interface ValidationPolicy {
@@ -135,10 +135,14 @@ export interface RegionScan {
 /**
  * Blanks the comments of an editable region. String literals and «» names are refused there: a
  * light scanner cannot follow interpolated strings or quoted names exactly, and a scanner that
- * disagrees with Lean about where a comment starts would let tokens hide from the checks.
+ * disagrees with Lean about where a comment starts would let tokens hide from the checks. For that
+ * reason a comment opens only where Lean is sure to read one (`opensComment`): in `<--`, `\/-` and
+ * `//-` Lean reads a token and then a minus or a slash, and what follows is code, which is screened
+ * as such. From the first `--` or `/-` that is not sure to open a comment on, nothing is blanked.
  */
 export function scanRegion(text: string): RegionScan {
   const out = text.split("");
+  const reading: CommentReading = { trusted: true };
   const problems = new Set<string>();
   const blank = (at: number) => {
     if (out[at] !== "\n") out[at] = " ";
@@ -161,13 +165,13 @@ export function scanRegion(text: string): RegionScan {
       }
       continue;
     }
-    if (c === "/" && next === "-") {
+    if (c === "/" && next === "-" && opensComment(out, i, reading)) {
       depth = 1;
       blank(i);
       blank(++i);
       continue;
     }
-    if (c === "-" && next === "-") {
+    if (c === "-" && next === "-" && opensComment(out, i, reading)) {
       while (i < text.length && text[i] !== "\n") blank(i++);
       i--;
       continue;
