@@ -135,8 +135,8 @@ hypothesis that is not a law, a binder that is not a hypothesis. A statement abo
 one that uses the proof of its own hypothesis, is not tried either.
 
 **The size of a statement is limited.** `recognizeStatement` reads at most 4 000 characters
-(`MAX_STATEMENT_LENGTH`; the `small_models` tool declares the same `maxLength` for its `statement`
-argument), a side of a law has at most 64 occurrences of variables (`MAX_LAW_OCCURRENCES`) and
+(`MAX_STATEMENT_LENGTH`, counted by code point; the `small_models` tool declares the same `maxLength`
+for its `statement` argument, which a JSON schema counts the same way), a side of a law has at most 64 occurrences of variables (`MAX_LAW_OCCURRENCES`) and
 parentheses nest at most 32 deep (`MAX_LAW_NESTING`). The laws that are studied have a few occurrences
 on a side, so no real statement meets these limits; they are there because the parser, the compiler of
 laws and the printer recurse over the term, and the evaluator does its work for every assignment on

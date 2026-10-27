@@ -207,16 +207,25 @@ function occurs(name: string, text: string): boolean {
 }
 
 /**
- * The longest statement that the line reads, in characters. The statements it reads are a few binders
- * and laws, the text is scanned several times, and the laws are bounded one by one
- * (`MAX_LAW_OCCURRENCES`), so this bounds what a statement from a claim, or from the tool's
- * `statement` argument, costs before any object is tried.
+ * The longest statement that the line reads, in characters: Unicode code points, which is how the
+ * `maxLength` of the tool's schema counts them (a character outside the Basic Multilingual Plane is
+ * one). The statements it reads are a few binders and laws, the text is scanned several times, and
+ * the laws are bounded one by one (`MAX_LAW_OCCURRENCES`), so this bounds what a statement from a
+ * claim, or from the tool's `statement` argument, costs before any object is tried.
  */
 export const MAX_STATEMENT_LENGTH = 4000;
 
+/** The length of a text in code points, counted without building an array of them. */
+function characterCount(text: string): number {
+  let count = 0;
+  for (const _ of text) count++;
+  return count;
+}
+
 /** Tells which statement a signature is: a magma statement, a natural-number statement, or neither (with the reason). */
 export function recognizeStatement(statement: string): Recognition {
-  if (statement.length > MAX_STATEMENT_LENGTH) return { reason: `the statement has ${statement.length} characters; at most ${MAX_STATEMENT_LENGTH} are read` };
+  const characters = characterCount(statement);
+  if (characters > MAX_STATEMENT_LENGTH) return { reason: `the statement has ${characters} characters; at most ${MAX_STATEMENT_LENGTH} are read` };
   const split = splitSignature(statement);
   if ("reason" in split) return { reason: split.reason };
   const { binders, conclusion } = split;
