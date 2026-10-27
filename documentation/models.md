@@ -158,12 +158,16 @@ the reason names the tokens. The body of a statement about a number is written a
 evaluator's Lean file (`abbrev m11_stmt ... := <body>`), where text such as `n = n #eval ...` ends the
 declaration and adds commands; and statements come from the claims of a run and from the `statement`
 argument of the provers' tool. The screen reads the text with its comments and strings blanked,
-which is the text that is written. A comment is blanked only where Lean is sure to read one (after a
-space, a line break, the start or another comment), and nothing is blanked after the first `--` or
-`/-` that is not sure: a token can take the first character of an opener, as `<-` does in
-`n = n <-- #eval 1`, where Lean runs the command. A statement in which such an opener is left
-(`n = n--note`, `n = n <-- note`) is refused with its own reason, since a comment that Lean reads
-there would reach into the lines written after the statement. It reads names as Lean's lexer does
+which is the text that is written, and reads it strictly (`maskCommentsAndStrings` with
+`{ strict: true }`). A comment is blanked only where Lean is sure to read one (after a space, a line
+break, the start or another comment; for `/-`, with a space or a line break after it; never a doc
+comment `/--` or `/-!`), and nothing is blanked after the first `--`, `/-` or `'` that is not sure: a
+token can take the first character of an opener, as `<-` does in `n = n <-- #eval 1`, where Lean runs
+the command, and a `'` that does not end a name may start a character literal that takes the next two
+characters (`n = n ' -- #eval 1`). A statement in which such an opener is left
+(`n = n--note`, `n = n <-- note`, `n = n /-- note -/`) is refused with its own reason, since a comment
+that Lean reads there would reach into the lines written after the statement. The repository readers
+of the same mask (the benchmark reader, signatures) read the looser way. It reads names as Lean's lexer does
 ([validator.md](validator.md#structural-checks)):
 it finds `#eval` also glued to what precedes it (`n = n x#eval 1`, which Lean reads as `x` and the
 command), a keyword after a symbol or a number (`!run_cmd`, `1e5sorry`), and a keyword glued after a
