@@ -480,3 +480,38 @@ describe("ProofValidator", () => {
     await assert.rejects(certifying.certify(sketch, fixture, refused), /only a valid candidate/);
   });
 });
+
+describe("regions on which a real Lean ran a command", () => {
+  // Recorded with Lean 4.27.0 (Init only) by the Task 7 re-review of 2026-10-27: random regions after a tactic block, a
+  // declaration or a definition, each with the payload `#eval 7777` somewhere in it; the payload ran in these (see the README of
+  // the fixtures). Lean is not run here. The screen must refuse every one of them, whatever the reason it gives.
+  const recorded = JSON.parse(readFileSync(new URL("./fixtures/lean-oracle-regions.json", import.meta.url), "utf8")) as {
+    lean: string;
+    payload: string;
+    missed: string[];
+    sample: string[];
+  };
+
+  it("is the recording its header says: a few hundred regions that earlier screens accepted, and a seeded sample of the others", () => {
+    assert.equal(recorded.lean, "4.27.0");
+    assert.equal(recorded.payload, "#eval 7777");
+    assert.ok(recorded.missed.length >= 600 && recorded.sample.length >= 3000);
+    for (const region of [...recorded.missed, ...recorded.sample]) assert.ok(region.includes("#eval 7777"), JSON.stringify(region));
+    assert.equal(new Set([...recorded.missed, ...recorded.sample]).size, recorded.missed.length + recorded.sample.length);
+  });
+
+  it("is refused by the token screen in every case: the payload is seen as code, or the region holds a string, a «» name or an open comment", () => {
+    const accepted = [...recorded.missed, ...recorded.sample].filter((region) => {
+      const scan = scanRegion(region);
+      return scan.problems.length === 0 && !forbiddenTokensIn(scan.masked).includes("#eval");
+    });
+    assert.deepEqual(accepted.slice(0, 20), []);
+    assert.equal(accepted.length, 0);
+  });
+
+  it("is refused by structuralCheck as the proof region, and as an auxiliary region after a theorem", () => {
+    const accepted = [...recorded.missed, ...recorded.sample].filter((region) => structuralCheck({ aux: "", proof: region }).length === 0 || structuralCheck({ aux: `theorem aux_a : True := trivial\n${region}`, proof: "  simp" }).length === 0);
+    assert.deepEqual(accepted.slice(0, 20), []);
+    assert.equal(accepted.length, 0);
+  });
+});
