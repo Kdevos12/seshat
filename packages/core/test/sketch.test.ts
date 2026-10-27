@@ -12,6 +12,7 @@ import {
   PROOF_BEGIN,
   PROOF_END,
   importsOf,
+  maskCommentsAndStrings,
   nameParts,
   prepareSketch,
   readDeclarationHead,
@@ -59,6 +60,66 @@ describe("lean-source", () => {
     assert.equal(head?.keyword, "def");
     assert.equal(head?.name, "aux_f");
     assert.equal(readDeclarationHead("theorem erdos_1.variants.b : True := trivial")?.name, "erdos_1.variants.b");
+  });
+
+  it("masks comments and strings with spaces, a comment opening only where Lean reads white space", () => {
+    const blanked = (text: string) => text.replace(/[^\n]/g, " ");
+    assert.equal(maskCommentsAndStrings("theorem t : x := by -- note\n  simp /- c -/ done"), `theorem t : x := by ${blanked("-- note")}\n  simp ${blanked("/- c -/")} done`);
+    assert.equal(maskCommentsAndStrings('a "x -- y" b'), `a ${blanked('"x -- y"')} b`);
+    // After a string, a comment, or the start: where the lexer reads white space.
+    assert.equal(maskCommentsAndStrings('a "x"--y\nb'), `a ${blanked('"x"--y')}\nb`);
+    assert.equal(maskCommentsAndStrings("/- a -/-- b\nc"), `${blanked("/- a -/-- b")}\nc`);
+    assert.equal(maskCommentsAndStrings("-- a\nc"), `${blanked("-- a")}\nc`);
+    // Glued to a token it is code: Lean reads <-, \\/ and // as tokens, and what follows is not a comment.
+    for (const text of ["exact foo <-- #eval 1", "exact foo //- #eval 1 -/ bar", "exact foo \\/- #eval 1 -/ bar", "exact foo x--note", "x/- a --/run_cmd"]) assert.equal(maskCommentsAndStrings(text), text, text);
+    // From the first opener that is not read as a comment, nothing is blanked: not a comment, not a string. Lean may
+    // read the line after `x--note "` as code, and a string that opens in a comment of Lean's would hide it.
+    assert.equal(maskCommentsAndStrings('exact foo <-- "x -- y"'), 'exact foo <-- "x -- y"');
+    assert.equal(maskCommentsAndStrings('x--note "\n#eval 1 "\n-- c'), 'x--note "\n#eval 1 "\n-- c');
+    assert.equal(maskCommentsAndStrings("a -- b\nc x--d\n-- e"), `a ${blanked("-- b")}\nc x--d\n-- e`);
+  });
+
+  it("masks a source without a comment glued to a token as it always did", () => {
+    // The scanner of c79681e, which opened a comment wherever `--` or `/-` stood.
+    const before = (source: string): string => {
+      const out = source.split("");
+      const blank = (at: number, count: number) => {
+        for (let k = at; k < at + count && k < out.length; k++) if (out[k] !== "\n") out[k] = " ";
+      };
+      let depth = 0;
+      for (let i = 0; i < source.length; i++) {
+        const c = source[i];
+        const next = source[i + 1];
+        if (depth > 0) {
+          if (c === "/" && next === "-") {
+            depth++;
+            blank(i++, 2);
+          } else if (c === "-" && next === "/") {
+            depth--;
+            blank(i++, 2);
+          } else blank(i, 1);
+          continue;
+        }
+        if (c === "/" && next === "-") {
+          depth = 1;
+          blank(i++, 2);
+        } else if (c === "-" && next === "-") {
+          while (i < source.length && source[i] !== "\n") blank(i++, 1);
+          i--;
+        } else if (c === '"') {
+          blank(i++, 1);
+          while (i < source.length && source[i] !== '"') {
+            if (source[i] === "\\") blank(i++, 1);
+            blank(i++, 1);
+          }
+          blank(i, 1);
+        }
+      }
+      return out.join("");
+    };
+    assert.equal(maskCommentsAndStrings(fixture), before(fixture));
+    const source = "/-! # Title -/\nnamespace A\n/-- doc -/\n@[simp, category test, -- a\n  AMS 11]\ntheorem t (x : ℕ) : -- why\n    x = x := by /- one -/\n  rfl -- done\n\"s\" /-\nend A\n";
+    assert.equal(maskCommentsAndStrings(source), before(source));
   });
 
   it("keeps «» parts of names whole", () => {

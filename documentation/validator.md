@@ -119,7 +119,8 @@ whether a submission's regions hold `sorry` or `admit`.
 
 ## Structural checks
 
-Both regions are scanned with comments blanked. Refused anywhere in the regions:
+Both regions are scanned with comments blanked, where Lean is sure to read one (below). Refused
+anywhere in the regions:
 
 - string literals and `«»` names, because a light scanner cannot follow interpolated strings
   exactly, and a scanner that disagrees with Lean about where a comment starts would let tokens
@@ -137,6 +138,25 @@ Both regions are scanned with comments blanked. Refused anywhere in the regions:
   `_root_.Lean`), `Meta`, `Elab`, `MetaM`, `TacticM`, `CoreM`, `TermElabM`, `CommandElabM`, `IO`,
   `unsafeIO`, `unsafeBaseIO`, `unsafeEIO`, `Environment`, `setEnv`, `modifyEnv`, `addDecl`,
   `addDeclCore`, `addDeclWithoutChecking`, `addAndCompile`.
+
+A comment is blanked only where Lean is sure to read one. Lean skips white space and comments after
+each token, and a token can take the first character of what looks like an opener: `<-` in `<--`,
+`\/` in `\/-`, `//` in `//-`, and more of them in what is imported. In `exact foo <-- #eval 1` Lean
+reads `<-`, then `-`, then the command `#eval`. So `--` and `/-` open a comment at the start of the
+text, after a space or a line break (a tab is an error in Lean), and after another comment. Glued to
+any other character they are code: what follows is screened as code, and the refusals of strings and
+`«»` names see it too.
+
+The first opener that is not sure ends the trust in the reading of the rest. Lean may read it as a
+comment (`x--note` is one), and then it reads the text after it differently from a scanner that took
+it for code: a line comment that the scanner opens later may end after the comment Lean reads, and
+hide code. In `x/- a --/run_cmd` Lean reads `x`, a block comment that ends in the `-/` of `--/`, and
+the token `run_cmd`; a scanner that left the `/-` glued to `x` as code and went on to blank the `--`
+as a line comment would miss `run_cmd`. So from the first opener that is not sure, nothing is blanked. The price is that a comment glued
+to a symbol or a name is refused when it holds a keyword (`x--sorry`, `|-- run_cmd 1`, though Lean
+reads `|-` as two tokens), and so is every comment after it; a space before the `--`, or no keyword in
+the comment, avoids the refusal. `scanRegion` reads the regions so, and `maskCommentsAndStrings` reads
+the text of a statement so ([models.md](models.md#statements)).
 
 Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
 part of a longer name. After a syntax error Lean tries a command again from the position of the error,
@@ -175,7 +195,8 @@ takes are left out on purpose: where a version and the table disagree, a keyword
 refused, and is not trusted as part of a name. The same goes for a name of more than 256 characters or
 16 parts. The check is a regular expression with bounded look-behind: a text of a million
 characters costs about a second at worst (a name glued to the tokens over and over), and a
-million characters of proof 16 ms.
+million characters of proof 16 ms. These readings follow the sources of Lean 4.27 (`Parser/Basic.lean`,
+`Init/Notation.lean`, `Parser/Do.lean`); none of them has run against a real Lean.
 
 In the auxiliary region, each command must be a `theorem`, `lemma`, `def` or `abbrev` (optionally
 after `open ... in` or `set_option ... in`), named `aux_...` so that it cannot shadow a name of the

@@ -206,6 +206,28 @@ describe("a statement that holds a token the validator forbids", () => {
     assert.equal(recognized("(n : ℕ) : n ≡ 1 [MOD 7]").kind, "nat");
   });
 
+  it("is not recognized when the token follows an opener that a token has swallowed, which Lean reads as code: <-- #eval 1", () => {
+    assert.match(reason("(n : ℕ) : n = n <-- #eval 1"), /the statement holds the token '#eval'/);
+    assert.match(reason("(n : ℕ) : n = n //- #eval 1 -/ ∧ True"), /the statement holds the token '#eval'/);
+    assert.match(reason("(n : ℕ) : n = n \\/- run_cmd 1 -/ ∧ True"), /the statement holds the token 'run_cmd'/);
+    // Where Lean reads a comment, the comment is blanked.
+    assert.deepEqual(recognized("(n : ℕ) : n = n -- #eval 1\n  ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
+  });
+
+  it("is not recognized when a comment opener is left that Lean may read as a comment: it could reach into the lines written after the statement", () => {
+    const why = /^the statement holds '--' or '\/-' where Lean may not read a comment, and no statement the line reads needs it$/;
+    assert.match(reason("(n : ℕ) : n = n--note"), why);
+    assert.match(reason("(n : ℕ) : n = n/- note -/ ∧ True"), why);
+    assert.match(reason("(n : ℕ) : n = n <-- note"), why);
+    assert.match(reason("(n : ℕ) : n = n \\/- note -/ ∧ True"), why);
+    // Nothing is blanked after the first opener that is left, so a comment after it does not hide it.
+    assert.match(reason("(n : ℕ) : n = n--note\n  ∧ 1 = 1 -- a comment"), why);
+    // An opener that Lean surely reads as a comment is blanked, as before.
+    assert.deepEqual(recognized("(n : ℕ) : n = n -- note\n  ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
+    assert.deepEqual(recognized("(n : ℕ) : n = n /- note -/ ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
+    assert.deepEqual(recognized("(n : ℕ) : n = n /- a -/-- b\n  ∧ True"), { kind: "nat", variable: "n", body: "n = n ∧ True" });
+  });
+
   it("is not recognized when it holds a #, which starts a command and which nothing the line reads needs", () => {
     assert.match(reason("(n : ℕ) : n = n\n#check n"), /^the statement holds '#', which starts a Lean command such as #check, and no statement the line reads needs it$/);
     assert.match(reason("(n : ℕ) : #(Nat.divisors n) = 2"), /the statement holds '#'/);

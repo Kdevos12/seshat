@@ -137,11 +137,43 @@ function isPrefixOnly(text: string): boolean {
 }
 
 /**
+ * How far a scanner can trust its reading of comments. See `opensComment`.
+ */
+export interface CommentReading {
+  trusted: boolean;
+}
+
+/**
+ * Whether a `--` or a `/-` at `at` opens a comment, in a text whose comments (and strings) read so far
+ * are blanked in `chars`. Lean's lexer skips white space and comments after each token, and a token
+ * can take the first character of what looks like an opener: `<-` in `<--`, `\/` in `\/-`, `//` in
+ * `//-` (and more of them in what is imported). So a comment opens where the lexer is sure to read
+ * white space: at the start of the text, after a space or a line break (a tab is an error in Lean), and
+ * after a comment, which `chars` shows as blanks. An opener glued to any other character is code.
+ *
+ * Such an opener ends the trust in the reading of the text. Lean may read it as a comment (after a
+ * name, `x--note` is one), and then it reads what follows differently from a scanner that took the
+ * opener for code: a comment that the scanner opens later may end past the end of the one Lean reads,
+ * and hide code (`x/- a --/run_cmd`: Lean reads `run_cmd`, a scanner that blanks the `--` does not).
+ * So `reading.trusted` is false from the first such opener on, and nothing after it is blanked: the
+ * text is read as code, which finds more tokens than Lean does and never fewer.
+ */
+export function opensComment(chars: readonly string[], at: number, reading: CommentReading): boolean {
+  if (reading.trusted && (at === 0 || chars[at - 1] === " " || chars[at - 1] === "\n")) return true;
+  reading.trusted = false;
+  return false;
+}
+
+/**
  * Masks comments and string literals with spaces (newlines kept), so that searches for keywords or
- * tokens do not match inside them and offsets stay valid.
+ * tokens do not match inside them and offsets stay valid. A comment opens only where Lean is sure to
+ * read one (`opensComment`); from the first opener that is not read as a comment, the text is left as
+ * it is, strings included. The text that remains is for a caller that writes it, as M11 does, or reads
+ * it; the screen of a text that is sent as it is, is `scanRegion`.
  */
 export function maskCommentsAndStrings(source: string): string {
   const out = source.split("");
+  const reading: CommentReading = { trusted: true };
   let depth = 0;
   for (let i = 0; i < source.length; i++) {
     const c = source[i];
@@ -160,18 +192,18 @@ export function maskCommentsAndStrings(source: string): string {
       }
       continue;
     }
-    if (c === "/" && next === "-") {
+    if (c === "/" && next === "-" && opensComment(out, i, reading)) {
       depth = 1;
       blank(out, i, 2);
       i++;
       continue;
     }
-    if (c === "-" && next === "-") {
+    if (c === "-" && next === "-" && opensComment(out, i, reading)) {
       while (i < source.length && source[i] !== "\n") blank(out, i++, 1);
       i--;
       continue;
     }
-    if (c === '"') {
+    if (c === '"' && reading.trusted) {
       blank(out, i, 1);
       i++;
       while (i < source.length && source[i] !== '"') {
