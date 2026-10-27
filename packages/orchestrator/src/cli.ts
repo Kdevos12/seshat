@@ -24,7 +24,7 @@ const usage = `usage:
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--out DIR]
+              [--draw-seed S] [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness report RUN_DIR [--json]
 
@@ -33,7 +33,8 @@ models: the providers pi-ai knows and whether their credentials are set; with PR
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
---line-option sets an option of an enabled line, its VALUE read as JSON when it parses.
+--line-option sets an option of an enabled line, its VALUE read as JSON when it parses. --draw-seed seeds the draws of
+unverified memory items (documentation/memory.md, "Randomized inclusion"): the same seed draws the same.
 run --resume: continues a run whose process ended without finishing it (documentation/ledger.md, "Resume"),
 from the journal in RUN_DIR. The run's configuration is the one it began with, so no flag that describes a run
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
@@ -66,6 +67,7 @@ const { positionals, values } = parseArgs({
     lines: { type: "string", multiple: true },
     ablation: { type: "string" },
     "line-option": { type: "string", multiple: true },
+    "draw-seed": { type: "string" },
     resume: { type: "string" },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" },
@@ -279,6 +281,7 @@ async function run(): Promise<number> {
     tools: [...new Set(values.tool ?? [])],
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
+    ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
   const host = hostName(values.host);
   const runId = newId("run");
@@ -329,7 +332,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "sample", "seed", "problem", "all", "out",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "sample", "seed", "problem", "all", "out",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */

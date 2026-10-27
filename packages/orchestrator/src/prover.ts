@@ -128,6 +128,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         ...(plan.model !== undefined ? { model: plan.model.name } : {}),
         ...(plan.strategy !== undefined ? { strategy: plan.strategy } : {}),
         ...(plan.subgoal !== undefined ? { subgoal: plan.subgoal } : {}),
+        ...(plan.included !== undefined ? { included: plan.included } : {}),
+        ...(plan.withheld !== undefined ? { withheld: plan.withheld } : {}),
       };
       // The problem may have ended while the lines decided.
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
@@ -147,6 +149,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
         ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
         ...(o.stamp !== undefined ? { provenance: o.stamp(info.model) } : {}),
+        ...(info.included !== undefined ? { included: info.included } : {}),
+        ...(info.withheld !== undefined ? { withheld: info.withheld } : {}),
       },
       actor,
     );
