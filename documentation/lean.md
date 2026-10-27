@@ -109,7 +109,8 @@ dedicated server; only `LEAN_SERVER_API_URL` changes in the harness.
 
 The Lean meta tool (`lean.meta`) runs on the same server, and needs the library `lean/SeshatMeta`
 built in the project ([lean-meta.md](lean-meta.md#deployment)). That library has never been
-compiled. `lean.goals` runs Pantograph's REPL on the harness's machine, in the same project.
+compiled. `lean.goals` runs Pantograph's REPL on the harness's machine, in the same project, and so
+does `lean.lsp`, which runs lean-lsp-mcp on it ([lean-lsp.md](lean-lsp.md#installing-it)).
 
 ## The certifier
 
@@ -155,4 +156,6 @@ of `lean.check` checks each of them against a server
    ([m1-identity-memory.md](m1-identity-memory.md#failure-classes)); a message not matched is
    `other`.
 8. The Lean meta tool, from building SeshatMeta on: [lean-meta.md](lean-meta.md#to-verify-against-lean).
-9. The certifier, from building SeshatCertify on: [certifier.md](certifier.md#to-verify-against-lean).
+9. For `lean.lsp`: what depends on the language server and on the search sites, listed in
+   [lean-lsp.md](lean-lsp.md#to-verify-against-lean).
+10. The certifier, from building SeshatCertify on: [certifier.md](certifier.md#to-verify-against-lean).

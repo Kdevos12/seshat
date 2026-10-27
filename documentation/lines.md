@@ -8,8 +8,9 @@ exactly M0 ([m0-loop.md](m0-loop.md)).
 
 The API is in `@seshat/lines`; the orchestrator runs it (`packages/orchestrator/src/line-runtime.ts`).
 `packages/orchestrator/src/lines.ts` is the registry of the lines a run can enable. M1
-([m1-identity-memory.md](m1-identity-memory.md)) and M2 ([graph.md](graph.md)) are built; a run that
-enables a line that is only planned stops before it starts and says so.
+([m1-identity-memory.md](m1-identity-memory.md)), M2 ([graph.md](graph.md)) and M11
+([models.md](models.md#the-line)) are built; a run that enables a line that is only planned stops
+before it starts and says so.
 
 ## The lines
 
@@ -21,7 +22,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M1` | canonical identity and shared negative memory | `@seshat/memory` (the line is `packages/orchestrator/src/m1.ts`); the Lean identity will come from `@seshat/lean-meta` | built, with the text identity |
 | `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` | planned |
 | `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
-| `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` | planned |
+| `M11` | small models and fingerprints: certified refutations, candidate equivalences ([models.md](models.md#the-line)) | `@seshat/models` | built, not run against Lean |
 | `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` | planned |
 | `M4` | context compiler | `@seshat/context` | planned |
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
@@ -346,5 +347,8 @@ position each real line takes on resuming, and `resume-lines.test.ts` resumes wh
 M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
 M1, M2, M6 and the fleet together at every event.
 
-M1, M2, M6 and the fleet are the lines built. M2 has its own tests
-([graph.md](graph.md#tested-and-not-yet)). Nothing here has run against a real model or Lean.
+M1, M2, M11, M6 and the fleet are the lines built. M2 has its own tests
+([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m11.test.ts` runs M11 in
+`runBench` with the simulated model and Lean, a refutation through `validate` and a node and edge of
+each kind it writes included ([models.md](models.md#the-line)). Nothing here has run against a real
+model or Lean.

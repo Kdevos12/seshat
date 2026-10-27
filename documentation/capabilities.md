@@ -44,7 +44,8 @@ code and long descriptions live in their own files.
 the orchestrator, by rule (level 0); `direct` is one of the ten or so tools always declared to the
 model (level 1); `deferred` is found on demand through tool search or code (level 2). `lean.check`
 is `auto`, called by the validator; `compute.sage` is `direct`, given to the provers by
-`harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)). No capability is `deferred` yet.
+`harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)), as are the lookups on the OEIS, the
+LMFDB and FindStat. No capability is `deferred` yet.
 
 Loading checks more than the shape: schemas use only the supported keywords, implementation ids
 are unique, every example and every contract input is valid for the schemas, summary and
@@ -70,7 +71,8 @@ project it imports from.
 **In-process** (`"kind": "inproc"`): code in the harness, built by a factory. The manifest names
 the factory and may give default `settings`. Factories are registered by the composition root
 (`FACTORIES` in `@seshat/orchestrator`); a package that provides one exports it, as
-`@seshat/lean-kimina` exports `kiminaFactory`.
+`@seshat/lean-kimina` exports `kiminaFactory` and `@seshat/models` the factories of the three
+sites it looks things up on.
 
 **MCP** (`"kind": "mcp"`): one tool of an MCP server, reached with
 [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi). Any external program goes this
@@ -137,6 +139,12 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation unavailable and names the variable. Secrets are never written in profiles; they
   come from the environment.
 - `timeoutMs` replaces the manifest's time limit on this host.
+- `optional: true` says the host offers the capability but the harness can do without it, such as a
+  public site that a host without outbound access cannot reach. `harness health` prints an
+  implementation of it that does not answer as `warn` and does not fail on it, also when the
+  capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
+  implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -256,6 +264,23 @@ It is not sandboxed: the model's Lean code runs as the harness's user, with that
 a run gives it to the provers only when asked (`--tool lean.goals`), on a machine where that is
 acceptable, until an implementation in a container exists.
 
+## `lean.lsp`
+
+Lean's language server for the provers, through the MCP server lean-lsp-mcp, pinned at 0.31.0: the
+goals before and after a line, the type expected at a position, Lean's messages on the file,
+several tactics tried at one line, and the searches Loogle, LeanSearch, Lean Finder and premises
+for a goal. It is `direct` and stateful (a scratch file per scope, which is the attempt) and gives
+information only: it `produces` nothing, and nothing in an answer is a verdict, so only
+`lean_check` can make a claim `computed`. Its implementation `lean-lsp-mcp` (factory `lean-lsp`,
+package `@seshat/lean-lsp`) runs the server as a child process on stdio, calls 8 of its 22 tools
+behind an allowlist and switches the other 14 off in the server. No input names a file: the files
+are the problem's own sketch, written by the harness. The four searches ask network sites, declared
+in the manifest's `environment` (`site.loogle`, `site.leansearch`, `site.leanfinder`,
+`site.hammer`) like the other site-backed capabilities; a site that cannot be reached is an answer
+(`status: unavailable`), not a failure. Its contract has 15 cases, for a host with a Lean project;
+they have not run against Lean. [lean-lsp.md](lean-lsp.md) covers the operations, what it never
+does, the installation and the settings. It is not sandboxed, and a run gives it to the provers
+only when asked (`--tool lean.lsp`).
 ## `lean.certify`
 
 The certifier ([certifier.md](certifier.md)): a candidate file, the reference file, the target's
@@ -278,6 +303,47 @@ printed out. It is stateful, one Sage session per scope, and `direct`. Its imple
 `docker` (the server's container image, without network) and `local` (an installed server). Its
 contract has 16 cases. [compute.md](compute.md) covers the installation, the settings, the
 resources it takes, and what it offers and refuses.
+
+## `oeis.search`
+
+Integer sequences in the On-Line Encyclopedia of Integer Sequences. From consecutive terms, or from a
+sequence's number, it returns how many sequences the site says match and the first page of them,
+each with its number, name, offset, terms (as decimal text, so that none is rounded), keywords and
+address. It is `direct` and justifies no status: a match is a lookup, and gives a form to conjecture.
+Its implementation `site` (factory `oeis`, version `json-search+client-1`) asks the site's JSON
+search through a client of `@seshat/models`, one request at a time with a pause between two; the
+address is the host's `baseUrl` setting (`OEIS_URL` in the repository's profiles). Line M11 reaches it
+through `RegistryOeis`, so its lookups are tool runs from `line:M11`. Its contract has 5 cases: a
+search by terms, one by number, one without an answer (`count` 0, not an error), and a call with
+neither or both of `terms` and `id` (refused before any request). It has not run against the site.
+
+## `lmfdb.query`
+
+Records of the L-functions and modular forms database: a collection of its API, such as `nf_fields`
+(number fields), and the columns to match, give at most `limit` records (10 by default) with the
+collection's own column names. It is `direct` and justifies no status. Its implementation `site`
+(factory `lmfdb`, version `api+client-1`) writes the query string of the API
+(`/api/<collection>/?<column>=<value>&_format=json`) and takes the address from `baseUrl`
+(`LMFDB_URL`). Its contract has 3 cases: number fields by degree and discriminant, no record, and a
+limit. The request is written from the site's documentation as remembered and has never been made.
+
+## `findstat.identify`
+
+Combinatorial statistics in FindStat: objects of a collection (permutations, Dyck paths, graphs),
+each with the value computed on it, give the statistics, by their St number, name and address, whose
+values agree. It is `direct` and justifies no status. Its implementation `site` (factory `findstat`,
+version `statistic-finder+client-1`) posts the collection and the data to the statistic finder and
+takes the address from `baseUrl` (`FINDSTAT_URL`). Its contract has 2 cases: the number of
+inversions on the permutations of 1, 2 and 3, and values that no statistic has. The request and the
+answer are guesses from the site's documentation as remembered and have never been made.
+
+For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,
+the time limit, a status 5xx, 408 or 429), and `harness health` asks each site for its front page.
+The three are `optional` in the host profiles, so on a host without outbound access `harness health`
+shows them as `warn` and still exits with 0. The contracts need a host that reaches the sites;
+`pnpm test` runs the same cases against a local server that answers from files written by hand.
+[models.md](models.md#the-services-as-capabilities) covers the requests, the settings, the failures
+and the tests.
 
 ## Contract tests
 
@@ -321,7 +387,7 @@ speed with the old one's is not implemented yet.)
 |---|---|
 | `harness capabilities [--host H]` | Lists the capabilities and the implementations the host uses. |
 | `harness describe ID` | Prints the manifest as a model sees it. |
-| `harness health [ID] [--host H]` | Reaches every implementation the host lists; exits with 1 if one is down. |
+| `harness health [ID] [--host H]` | Reaches every implementation the host lists, printing `ok`, `warn` (down, in a capability the profile marks `optional`) or `FAIL`; exits with 1 if one that is not optional is down. |
 | `harness contract ID [--host H] [--implementation I] [--case NAME]... [--out FILE]` | Runs the contract cases. |
 | `harness models [PROVIDER]` | Lists the model providers and whether their credentials are set, or the models of one provider. |
 | `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |

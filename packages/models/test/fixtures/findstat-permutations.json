@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "id": "St000001",
+      "name": "The number of ways to write a permutation as a minimal length product of simple transpositions."
+    },
+    {
+      "id": "St000018",
+      "name": "The number of inversions of a permutation."
+    },
+    {
+      "note": "an entry without an id is skipped"
+    }
+  ]
+}

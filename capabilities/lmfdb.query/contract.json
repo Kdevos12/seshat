@@ -1,0 +1,87 @@
+{
+  "capability": "lmfdb.query",
+  "cases": [
+    {
+      "name": "number fields by degree and discriminant",
+      "purpose": "A query on columns gives the records whose columns have those values, with the collection's own column names.",
+      "input": {
+        "collection": "nf_fields",
+        "fields": {
+          "degree": 2,
+          "disc_abs": 5
+        }
+      },
+      "expect": [
+        {
+          "path": "records",
+          "some": [
+            {
+              "path": "label",
+              "equals": "2.2.5.1"
+            }
+          ]
+        },
+        {
+          "path": "records",
+          "every": [
+            {
+              "path": "degree",
+              "equals": 2
+            },
+            {
+              "path": "disc_abs",
+              "equals": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no record matches",
+      "purpose": "A query without an answer is a result with no records, not an error. No quadratic field has discriminant of absolute value 6.",
+      "input": {
+        "collection": "nf_fields",
+        "fields": {
+          "degree": 2,
+          "disc_abs": 6
+        }
+      },
+      "expect": [
+        {
+          "path": "records",
+          "length": 0
+        }
+      ]
+    },
+    {
+      "name": "a limit",
+      "purpose": "A call gives at most `limit` records, and says so in the request it made.",
+      "input": {
+        "collection": "nf_fields",
+        "fields": {
+          "degree": 2
+        },
+        "limit": 3
+      },
+      "expect": [
+        {
+          "path": "records",
+          "length": 3
+        },
+        {
+          "path": "records",
+          "every": [
+            {
+              "path": "degree",
+              "equals": 2
+            }
+          ]
+        },
+        {
+          "path": "url",
+          "matches": "_limit=3"
+        }
+      ]
+    }
+  ]
+}
