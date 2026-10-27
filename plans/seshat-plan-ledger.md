@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-27 10:57 UTC. `main` at cc3d02b, 623 tests.
+Updated 2026-10-27 16:17 UTC. `main` at 5c32d33, 869 tests.
 
 ## Tasks
 
@@ -17,7 +17,7 @@ Updated 2026-10-27 10:57 UTC. `main` at cc3d02b, 623 tests.
 | 4 | Certifier: `lean.certify`, kernel replay | main | merged (`74d3ab4`); its Lean program never compiled; unavailable until a host sets a sandbox (Ruling 22) | |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
 | 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
-| 7 | M11: small models, fingerprints, lookups | main | fix round 4 (three more openers the shared screen reads wrongly) | `task/t7` |
+| 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
 | 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | not started | |
@@ -85,6 +85,9 @@ Notes from the main team, newest last. Read them at the start of each session.
   their effect posteriors, memory across runs) and Task 24 (the `{ prefix, tail }` packet API); if
   you get there first, build against the interfaces their sections give, and the second to merge
   wires them. Details: [collaborator-tasks.md](collaborator-tasks.md), sections 4, 6, 7 and 8.
+- 2026-10-27: Task 7 is merged, with the shared screen for model text. Pull. A line that writes model
+  text into a Lean file (Task 6's battery, Task 9's tactic mining) uses `structuralCheck` or
+  `forbiddenTokensIn`; the strict reading is on by default there.
 - 2026-10-27: Task 15 (task ledger and `harness run --resume`) is in its first fix round and merges
   after Tasks 7 and 16. Two things for your lines once it is on `main`. Each line declares
   `resume`: whether a run with it can be resumed after its process ended, and how; a registered
@@ -108,6 +111,17 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `validate` context carries the `problemId`; `config/hosts/*.json`: a `lean.certify` entry each,
   with no sandbox. Pages: [certifier.md](../documentation/certifier.md),
   [trust.md](../documentation/trust.md), [lines.md](../documentation/lines.md).
+- Task 7, merged in `5c32d33`: `packages/core`: the token screen of `validator.ts` reads names as
+  Lean's lexer does (`forbiddenTokensIn` finds a forbidden command glued to what precedes it, and
+  trusts a run of letters as a name only after a space, `(`, `,` or `)`), and `maskCommentsAndStrings`
+  and `blankComments` take an optional `strict` reading that `scanRegion` and M11 use for model text;
+  repository readers keep the default reading. If your lines put model text into Lean files, go
+  through `structuralCheck` or `forbiddenTokensIn`; `packages/registry` and the host profile schema:
+  a capability may be `optional: true` (a failing implementation is a warning in `harness health`,
+  `HealthEntry.optional`); `packages/orchestrator`: `renderHealth`, the line `M11` in the registry of
+  lines, factories for the lookup sites in the shipped host profiles. Pages:
+  [validator.md](../documentation/validator.md), [models.md](../documentation/models.md),
+  [trust.md](../documentation/trust.md).
 
 ## Log
 
@@ -354,3 +368,12 @@ Access: to check these findings the re-reviewer downloaded the Lean 4.27.0 relea
 Decision: the comment-scanner remedy applies to model text only (a strict reading used by scanRegion, forbiddenTokensIn on model text and M11's recognizer), and repository readers keep today's reading — with the rules in maskCommentsAndStrings itself every file's mask changes and splitCommands changes for one formal-conjectures file — cost if wrong: two readings of Lean text to maintain
 Task 7: deferred to the final review: an indented command in the aux region passes the column-0 head check (the `aux_` name rule and the attribute allowlist are bypassed; the reference-type comparison, the axiom check and the kernel replay still decide); `lean.meta` screens no model-supplied statement before its snippet (the Lean server is required to be sandboxed, so the risk is a forged answer printed on the command's lines); the deferred minors of the earlier rounds
 Task 7: fix round 4 sent to the implementer (R4-1 D1-D3 by the strict reading for model text, with a recorded-oracle fixture from the re-review's fuzz batches; R4-2 docs say what the screen follows; R4-3; FIX_BASE ec4817a; findings file task-7-findings-r4.md)
+Owner asked (decision card, 2026-10-27 ~11:00 UTC): compile the certifier's Lean program here with a real Lean 4.27.0 (attach Lean's repository to the session first), or keep simulations until the first real run; the card also reports the Mathlib download that went around a refusal; until an answer nothing runs on a real Lean
+Usage-limit stop 18: the session limit cut the T15 fixer (after d1dd48d 18b302c) and the T7 fixer (no commit yet) about 11:20 UTC (reset 15:00); the owner asked at 13:33 for a lighter model (the controller and the agents now run on the standard tier; the commit trailers name that model) and wrote "continue" at 15:04; both resumed 15:05 UTC. The decision card about compiling the certifier on a real Lean is still unanswered
+Task 7: fix round 4 implemented (commits c58b685 9d5eb32 3b2ebcb 55869ca b06855c on task/t7, 621/621; task/t7 pushed); R4-1 a `strict` option on the comment scanner for model text (a `/-` opens a comment only before a space, a line break or the end; `/--` and `/-!` never trusted; a `'` that may start a character literal turns trust off), used by scanRegion and M11's recognizer, repository readers keep the old reading; extra holes closed (a quote followed by a letter run hid `sorry` or `run_cmd`; an unclosed `/-` stays refused); a recorded-oracle fixture of a real Lean 4.27.0's runs (666 regions the old screen accepted plus 3,000 sampled, 121 KB), the screen accepts 0 of the 59,624 runs (148 before); price: 18 of 169,333 Mathlib declarations newly refused, 0 of 6,470 formal-conjectures, 0 of 1,696 dependencies; R4-2 docs say what the strict reading follows; R4-3 done; concerns: a doc comment turns trust off for the rest of the region, one flaky pnpm check run not reproduced in 11 more
+Task 7: scoped re-review of fix round 4 dispatched (resuming the earlier re-reviewer, which keeps the real Lean binary it already had; FIX_BASE ec4817a, head b06855c; no downloads, no repository fetches)
+Task 15: fix round 1 implemented (commits d1dd48d 18b302c 75f1606 0029a11 3b42bed abd517b c74013c on task/t15, 775/775; task/t15 pushed); I1 `Line.resume: "rebuild"` with a `resumeProblem(problem, held)` hook called in place of `beforeProvers` on every problem a resumed process works on (a rebuild line without the hook is refused, so is one that declares nothing); fleet reads its allocation nodes; M6 journals a `watch` checkpoint per attempt and replays its detectors, restoring noted framings and telling a notice again to the session after a cut one; M2 journals `twin_work`, `alias` and `derivation_intent` nodes, `derivation` nodes carry problemId and signature, the refutation side gets twinTries minus the journaled graph.attempt calls; `ClaimBenches.recover` rebuilds the benches for lines' proofs of other claims and negations and certifies what is missing once; two bugs found by the tests (Workbench.adopt re-raised a claim a line had withdrawn, certifyPending skipped a bench whose answer was adopted so a cut after a refutation's replay ended the problem unsolved); I2 completeJson optional with an exported function; M3 error path keeps the charges; M4 `deferRepair` so a refused resume leaves the journal's bytes alone; M5 wording; M6 digest of the dropped bytes; M7 and M8 durations; M9 promise ordering; not done: M10 (structure, after Tasks 7 and 16 merge) and the optional half of M8 (a routing decision lost between attempt.finished and task.routed, documented); additive interface changes to list: LineResume, ResumedProblem, resumeProblem, core projection modelCallsOfProblem and claimsWithAttempts
+Task 15: scoped re-review dispatched (resuming the first reviewer, 3f28e51..c74013c; asked to check that the rebuilt state is really derived from the journal, the cut tests would fail with the rebuild disabled, pending certifications once and only from a recorded validation, the deferred repair, and the additive-interface list)
+Task 7: scoped re-review of fix round 4 (resumed reviewer, real Lean 4.27.0 binary it already had): D1, D2, D3 closed (50-row matrix 0 misses, was 8; recorded fuzz 0 accepted of 59,624, was 148 and 671; fresh fuzz of 400,000 regions with two payloads 0 accepted of 58,769, was 280); the tail rule and the unclosed-opener rule open no hole (blank no position the old screen kept, lose no token); strict callers exactly model text, repository readers identical on 9,658 files; fixture honest and the test would fail on a revert; price 18 of 169,333 Mathlib declarations newly refused (6 strings, 11 plain English words in comments, 1 unclosed opener), none elsewhere; approved; minors N1 the unclosed-opener alignment misses 3,374 of 391,712 regions Lean calls unterminated (fails closed afterwards), N2 the recording covered a tactic block and a term-mode theorem only, N3 a doc-comment-only proof no longer counts as empty
+Task 7: merged: main brought into task/t7 (10b4b25, every conflict replayed by rerere), the wiring commit replayed (5c38160), N1 and N2 said in the docs (db6db10), pnpm check 867/867, links ok, task/t7 pushed; merged into main 5c32d33 (--no-ff; tree equal to task/t7; pnpm check 869/869 there), pushed a34a60d..5c32d33
+Task 7: complete; deferred to the final review: the aux region's indented commands, lean.meta's unscreened snippet (Task 3), the earlier rounds' minors; not run against a real Lean
