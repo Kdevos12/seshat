@@ -13,6 +13,8 @@ import type {
   LineTool,
   ProblemContext,
   ProblemEnd,
+  Proposal,
+  ProverEnd,
   SessionCheck,
   SessionContext,
   Target,
@@ -146,6 +148,8 @@ export interface OpenedSession {
 export interface SessionHooks {
   /** The text that replaces the request's messages after the system prompt, or undefined. */
   packet?: (request: number, messages: readonly AgentMessage[]) => Promise<string | undefined>;
+  /** Before each check: the line that rejects the call, and why. */
+  beforeCheck?: (proposal: Proposal) => Promise<{ line: LineId; reason: string } | undefined>;
   /** After each check: the line that stops the session, and why. */
   afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason: string } | undefined>;
 }
@@ -203,7 +207,11 @@ export class ProblemLines {
         signal: own,
       }),
       validate: (request) =>
-        o.benches.validate(request, { actor, signal: own, problem: { claimId: this.p.claimId, workbench: this.p.workbench } }),
+        o.benches.validate(request, {
+          actor,
+          signal: own,
+          problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench },
+        }),
       budget: budgetOf(this.p.ledger),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
@@ -275,10 +283,18 @@ export class ProblemLines {
    * session calls. `taken` are the names of the session's other tools.
    */
   async openSession(info: SessionInfo, taken: readonly string[]): Promise<OpenedSession> {
-    const sections: Briefing[] = [];
+    let sections: Briefing[] = [];
     for (const { entry, hook } of this.with("briefing")) {
       const briefing = await call(entry.line.id, "briefing", () => hook(this.sessionContext(entry, info)));
       if (briefing !== undefined) sections.push(briefing);
+    }
+    // Each line reviews the sections as the lines before it left them: it may drop or reword, not add.
+    for (const { entry, hook } of this.with("reviewBriefing")) {
+      const id = entry.line.id;
+      const reviewed = await call(id, "reviewBriefing", () => hook(this.sessionContext(entry, info), sections));
+      if (reviewed === undefined) continue;
+      if (!isReview(reviewed, sections)) throw new LineError(id, "reviewBriefing", "a review may drop or reword sections, not add, replace or reorder them");
+      sections = reviewed;
     }
     const tools: AgentTool<never, unknown>[] = [];
     const names = new Set(taken);
@@ -293,6 +309,7 @@ export class ProblemLines {
       }
     }
     const packetLine = this.with("contextPacket")[0];
+    const guards = this.with("beforeCheck");
     const checkers = this.with("afterCheck");
     const hooks: SessionHooks = {
       ...(packetLine !== undefined
@@ -301,6 +318,21 @@ export class ProblemLines {
               call(packetLine.entry.line.id, "contextPacket", () =>
                 packetLine.hook(this.sessionContext(packetLine.entry, info), { request, transcript: transcriptOf(messages) }),
               ),
+          }
+        : {}),
+      ...(guards.length > 0
+        ? {
+            beforeCheck: async (proposal: Proposal) => {
+              for (const { entry, hook } of guards) {
+                const id = entry.line.id;
+                const veto = await call(id, "beforeCheck", () => hook(this.sessionContext(entry, info), proposal));
+                if (veto !== undefined) {
+                  this.log(`${info.prover} session ${info.session}: line ${id} rejects a check: ${veto.reject}`);
+                  return { line: id, reason: veto.reject };
+                }
+              }
+              return undefined;
+            },
           }
         : {}),
       ...(checkers.length > 0
@@ -319,7 +351,8 @@ export class ProblemLines {
           }
         : {}),
     };
-    return { sections, tools, ...(hooks.packet !== undefined || hooks.afterCheck !== undefined ? { hooks } : {}) };
+    const inSession = hooks.packet !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
+    return { sections, tools, ...(inSession ? { hooks } : {}) };
   }
 
   /** The lines' annotations of an attempt, merged in order: a later line's fields win. */
@@ -330,8 +363,16 @@ export class ProblemLines {
       if (annotation?.strategy !== undefined) merged.strategy = annotation.strategy;
       if (annotation?.premises !== undefined) merged.premises = annotation.premises;
       if (annotation?.failureDetail !== undefined) merged.failureDetail = annotation.failureDetail;
+      if (annotation?.notes !== undefined) merged.notes = annotation.notes;
     }
     return merged;
+  }
+
+  /** The lines' `afterProver`, when a prover has ended. */
+  async afterProver(end: ProverEnd): Promise<void> {
+    for (const { entry, hook } of this.with("afterProver")) {
+      await call(entry.line.id, "afterProver", () => hook(this.context(entry), end));
+    }
   }
 
   /** The lines' `afterProblem`, with the run's signal: the problem's own may be aborted by now. */
@@ -345,6 +386,21 @@ export class ProblemLines {
   private log(text: string): void {
     this.run.o.log(`${this.p.problemId}: ${text}`);
   }
+}
+
+/**
+ * Whether `reviewed` is `sections` with some dropped and some reworded: each section it keeps has
+ * the title of one of the sections it was given, in the same order. A title that was not given is
+ * an added or replaced section, and a title out of order is a moved one.
+ */
+function isReview(reviewed: readonly Briefing[], sections: readonly Briefing[]): boolean {
+  let from = 0;
+  for (const section of reviewed) {
+    const at = sections.findIndex((candidate, k) => k >= from && candidate.title === section.title);
+    if (at < 0) return false;
+    from = at + 1;
+  }
+  return true;
 }
 
 function budgetOf(ledger: Ledger): Budget {

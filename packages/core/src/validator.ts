@@ -2,6 +2,7 @@ import { sha256Hex } from "./canonical-json.ts";
 import {
   type LeanCertifier,
   type CertificationResult,
+  type LeanCertifyOptions,
   type LeanChecker,
   type LeanCheckResult,
   type LeanMessage,
@@ -473,7 +474,7 @@ export class ProofValidator {
     sketch: Sketch,
     originalSource: string,
     report: ValidationReport,
-    options: { signal?: AbortSignal } = {},
+    options: LeanCertifyOptions = {},
   ): Promise<CertificationResult | undefined> {
     if (this.certifier === undefined) return undefined;
     if (report.verdict !== "valid") throw new Error("only a valid candidate can be certified");

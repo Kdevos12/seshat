@@ -63,3 +63,11 @@ FC_BENCH_V1_DIR=../google-deepmind/formal-conjectures-bench-v1 pnpm test
 ## Commits
 
 One logical change per commit, with the code, its tests and its documentation together.
+
+## Working together
+
+Several agents, driven by different people, build Seshat at the same time. [CLAUDE.md](../CLAUDE.md)
+at the root is the protocol every one of them follows: sync at the start of each session, one
+branch per task, who writes which file, how a task is merged into `main`, and when it is done. The
+plan and its state are in [plans/](../plans/seshat-plan-ledger.md): the plan, its rulings, one ledger
+per team, and the approved plan changes.

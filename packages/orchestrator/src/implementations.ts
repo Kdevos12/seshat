@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
+import { lakeCertifyFactory } from "@seshat/lean-local";
 import { leanMetaFactory, pantographFactory } from "@seshat/lean-meta";
 import { findstatFactory, lmfdbFactory, oeisFactory } from "@seshat/models";
 import { Registry, type ImplementationFactory, type RegistryOptions } from "@seshat/registry";
@@ -12,6 +13,7 @@ export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   kimina: kiminaFactory(),
   "kimina-meta": leanMetaFactory((context) => kiminaChecker(context)),
   pantograph: pantographFactory(),
+  "lake-certify": lakeCertifyFactory(),
   oeis: oeisFactory(),
   lmfdb: lmfdbFactory(),
   findstat: findstatFactory(),

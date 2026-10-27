@@ -102,17 +102,23 @@ export async function link(w: World, kind: EdgeKind, from: string, ...to: string
   return edge.edgeId;
 }
 
+/** The last valid proof (or, for `negation`, refutation) the memory holds for a claim. */
+function lastValid(w: World, claimId: string, negation: boolean, verb: string) {
+  const last = w.memory
+    .validations(claimId)
+    .filter((v) => v.verdict === "valid" && v.negation === negation)
+    .at(-1);
+  if (last === undefined) throw new Error(`${verb}: claim ${claimId} has no valid ${negation ? "refutation" : "proof"}`);
+  return last;
+}
+
 /**
  * Certifies the last valid proof (or, for `negation`, refutation) of a claim, as the certifier on the
  * host would: a `kernel_replay` validation, and the claim `proved` (`refuted`). A test writes these
  * events itself because certification is not wired for the claims a line validates.
  */
 export function certify(w: World, claimId: string, negation = false): void {
-  const last = w.memory
-    .validations(claimId)
-    .filter((v) => v.verdict === "valid" && v.negation === negation)
-    .at(-1);
-  if (last === undefined) throw new Error(`certify: claim ${claimId} has no valid ${negation ? "refutation" : "proof"}`);
+  const last = lastValid(w, claimId, negation, "certify");
   const validationId = `val_kernel_${last.validationId}`;
   w.journal.emit(
     "validation.finished",
@@ -122,6 +128,29 @@ export function certify(w: World, claimId: string, negation = false): void {
   const from = w.memory.claim(claimId)?.status;
   if (from === undefined) throw new Error(`certify: unknown claim ${claimId}`);
   w.journal.emit("claim.status_changed", { claimId, from, to: negation ? "refuted" : "proved", reason: "certified", validationId }, "orchestrator");
+}
+
+/**
+ * Records that the certifier rejected the last valid proof (or, for `negation`, refutation) of a
+ * claim: an invalid `kernel_replay` validation of the same file. The claim keeps its status, as it
+ * does in a run.
+ */
+export function reject(w: World, claimId: string, negation = false): void {
+  const last = lastValid(w, claimId, negation, "reject");
+  w.journal.emit(
+    "validation.finished",
+    {
+      validationId: `val_kernel_${last.validationId}`,
+      claimId,
+      method: "kernel_replay",
+      verdict: "invalid",
+      reasons: ["kernel: declaration has metavariables"],
+      axioms: [],
+      submissionHash: last.submissionHash,
+      ...(negation ? { negation: true } : {}),
+    },
+    "certifier",
+  );
 }
 
 /** A model that answers from a script: `answer(prompt, call number)`. Records every prompt. */

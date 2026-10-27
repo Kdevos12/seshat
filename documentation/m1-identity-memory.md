@@ -12,8 +12,8 @@ or `--ablation M1`; without it the run is M0 and none of this exists. It does fo
   provers tried and how it failed, never the text of an attempt ([already tried](#already-tried));
 - the run report gives the share of redundant attempts ([below](#redundant-attempts)).
 
-The code is in `@seshat/memory` (`strategies.ts`, `failures.ts`, `tried.ts`, `redundancy.ts`,
-`MemoryStore.alreadyTried`) and the line itself is `packages/orchestrator/src/m1.ts`. Everything is
+The code is in `@seshat/memory` (`strategies.ts`, `failures.ts`, `progress.ts`, `tried.ts`,
+`redundancy.ts`, `MemoryStore.alreadyTried`) and the line itself is `packages/orchestrator/src/m1.ts`. Everything is
 computed from the journal and the proof text, never by a model.
 
 ## One claim per statement
@@ -38,14 +38,20 @@ them: the second problem's `problem.registered` carries the first one's `claimId
 - **Attempts are shared.** The second problem's provers are told what failed on the first, and the
   report's redundancy counts the repeats between them.
 - **Per problem, still:** the attempts a problem reports (`problem.finished.attempts` counts the
-  problem's own provers' attempts, not the claim's), its budget, and its candidate. Each problem
-  goes on until a proof of its own passes the check.
+  problem's own provers' attempts, not the claim's), its budget, its candidate, and its outcome.
+  Each problem goes on until a proof of its own passes the check, and it is `proved` or `refuted`
+  only by a certification of its own candidate or of its own lines' submissions: a claim that the
+  other problem settled does not make it so. A problem that found nothing stays `unsolved` while
+  its claim is `proved`, and the one that certified a contradiction of the claim's status ends as
+  `error` ([m0-loop.md](m0-loop.md#certification)).
 - **The claim is settled once.** The first valid check makes it `computed`, and a certified
   candidate makes it `proved` if it is still `computed` (or `open`); a later problem's valid check
   or certification of an already settled claim is recorded as a validation and leaves the status
   alone.
-- `run.finished.solved` and `candidates` count the problems whose claim has that status, so both
-  problems of a shared claim count; the report's outcomes are per problem.
+- `run.finished.solved`, `refuted` and `candidates` count the problems whose claim has that status,
+  so both problems of a shared claim count, whichever of them settled it; the report's outcomes are
+  per problem. A claim whose proof the kernel refused stays `computed`: it counts as a candidate
+  while its problem is `unsolved`.
 - **Sharing needs the same prefix.** `TextIdentity` reads the header, so the same signature under
   another prefix (other imports, `open`s or definitions) is another claim, and no two distinct
   statements share one. The prefix is everything in the file before the problem's docstring,
@@ -122,6 +128,29 @@ a tactic), never of a piece of the proof. Lean's wording is matched by its first
 ([lean.md](lean.md#to-verify-against-lean) lists this among what is unverified); a message not
 matched is `other`.
 
+### How far a check got
+
+`leanState(report, context)` reads a check as `{depth, errors, holes}`, with the same `context` as
+`classifyFailure`, and `improves(now, best)` says whether a state is progress over the best one so
+far: deeper, or at the same depth with fewer errors, or with as many errors and fewer holes (a
+closed subgoal). The depth follows the class of the failure:
+
+| Depth | Failure class |
+|---|---|
+| 0 | `refused`, `lean_unavailable`, `timeout`, `other`, `restates_target`, `statement_changed`: the check says nothing about the proof |
+| 1 | `syntax` |
+| 2 | `unknown_identifier` |
+| 3 | `type_mismatch` |
+| 4 | `tactic_failed` |
+| 5 | `unsolved_goals` |
+| 6 | `holes` |
+| 7 | `axioms` |
+| 8 | a valid check |
+
+`attemptDepth(attempt)` gives the same number for a finished attempt (undefined when it checked
+nothing). Like the classes, the measure is as good as the match of Lean's wording: a message worded
+differently is `other`, depth 0.
+
 ## Already tried
 
 `MemoryStore.alreadyTried(claimId)` gives the finished attempts on the claim and on its
@@ -164,7 +193,8 @@ as a line of `report.md`. A run with no labeled attempt, which is every run with
 ## Tested, and not yet
 
 Tested with the simulated model and Lean (`packages/orchestrator/test/m1.test.ts`) and on the
-memory alone (`packages/memory/test`): the strategy table and the failure-class table; two problems
+memory alone (`packages/memory/test`): the strategy table and the failure-class table, the
+depth of each class and what counts as progress; two problems
 with one statement and one prefix sharing one claim, each counting its own attempts, a shared claim
 settled once, the same statement under two prefixes kept as two claims, and a statement the
 identity cannot name ending its own problem as an error; the "already tried" lines, and the briefing reaching the first message of the next problem's
