@@ -159,6 +159,7 @@ describe("harness run", () => {
       [["--checkout", checkout, "--model", "a/b", "--problem", "nope"], /^not in fc-bench-v1-discrete: nope/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--turns", "many"], /^--turns must be a number, got "many"/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--thinking", "deep"], /^--thinking must be one of off, minimal, low/],
+      [["--checkout", checkout, "--model", "a/b", "--all", "--cache-retention", "forever"], /^--cache-retention must be one of none, short, long/],
       [["somewhere", "--checkout", checkout, "--model", "a/b", "--all"], /^run takes no positional argument, got somewhere/],
     ];
     const results = await Promise.all(options.map(([args]) => harness(["run", ...args])));
