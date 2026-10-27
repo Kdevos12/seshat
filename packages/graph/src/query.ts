@@ -10,6 +10,18 @@ import type { Edge, MemoryStore } from "@seshat/memory";
 export class ShortIds {
   private readonly names = new Map<string, string>();
   private readonly owners = new Map<string, string>();
+  private readonly onAssign: ((id: string, short: string) => void) | undefined;
+
+  /** `onAssign` is told each name as it is first given, so that it can be kept: a name quoted in a prompt must stay valid. */
+  constructor(options: { onAssign?: (id: string, short: string) => void } = {}) {
+    this.onAssign = options.onAssign;
+  }
+
+  /** Takes a name that was given before (read back from where `onAssign` kept it), without telling `onAssign`. */
+  restore(id: string, short: string): void {
+    this.names.set(id, short);
+    this.owners.set(short, id);
+  }
 
   shorten(id: string): string {
     const known = this.names.get(id);
@@ -25,6 +37,7 @@ export class ShortIds {
     }
     this.names.set(id, short);
     this.owners.set(short, id);
+    this.onAssign?.(id, short);
     return short;
   }
 

@@ -178,6 +178,17 @@ function recordTried(memory: MemoryStore, claimId: string, battery: Battery, tri
   return fingerprint.nodeId;
 }
 
+/**
+ * What a fingerprint of the claim on this battery by Lean already says, when an earlier call of the hook (a process the run
+ * lost) recorded it: the evaluation is not sent to Lean again. The law evaluator is cheap and deterministic, and is run again.
+ */
+function storedTried(memory: MemoryStore, claimId: string, battery: Battery): Tried | undefined {
+  const known = fingerprintsOf(memory, claimId).find((f) => f.data.digest === battery.digest && f.data.battery === battery.id && f.data.evaluator === "lean");
+  if (known === undefined) return undefined;
+  const verdicts = [...known.data.verdicts].map((c): boolean | null => (c === "1" ? true : c === "0" ? false : null));
+  return { verdicts, witnesses: verdicts.map(() => undefined), evaluator: "lean" };
+}
+
 /** The verdicts a claim already has on this battery, if a fingerprint of it was recorded. */
 function storedVerdicts(memory: MemoryStore, claimId: string, battery: Battery): string | undefined {
   return fingerprintsOf(memory, claimId).find((f) => f.data.digest === battery.digest && f.data.battery === battery.id)?.data.verdicts;
@@ -241,7 +252,7 @@ async function beforeProvers(problem: ProblemContext, services: M11Services): Pr
   const env: Environment = { registry: problem.registry, signal: problem.signal, leanTimeoutSec: options.leanTimeoutSec, caps: allowanceOf(options), left: allowanceOf(options) };
   const header = problem.target.sketch.prefix;
 
-  const tried = await tryStatement(env, statement, battery, header);
+  const tried = storedTried(problem.memory, problem.claimId, battery) ?? (await tryStatement(env, statement, battery, header));
   if (tried.unusable !== undefined) {
     problem.log(`M11: the statement could not be tried: ${tried.unusable}`);
     return;
@@ -270,6 +281,13 @@ async function refute(problem: ProblemContext, options: M11Options, battery: Bat
     const object = battery.objects[index];
     if (object === undefined || (object.kind !== "magma" && object.kind !== "integer")) continue;
     const witness = tried.witnesses[index];
+    // A counter-model an earlier call of the hook recorded is not recorded again, nor its refutation submitted again when its outcome is on record.
+    const known = problem.memory.nodes("counter_model", { claimId: problem.claimId }).find((n) => (n.data as CounterModelData).digest === battery.digest && (n.data as CounterModelData).index === index);
+    const earlier = (known?.data as CounterModelData | undefined)?.refutation;
+    if (earlier !== undefined) {
+      if (!options.refute || earlier.some((a) => a.verdict === "valid") || problem.signal.aborted) return;
+      continue;
+    }
     const { node } = recordCounterModel(problem.memory, {
       claimId: problem.claimId,
       battery,
@@ -278,7 +296,7 @@ async function refute(problem: ProblemContext, options: M11Options, battery: Bat
       evaluator: tried.evaluator,
       ...(witness !== undefined ? { witness } : {}),
     });
-    problem.log(`M11: the statement fails on ${describeCounterModel(object)}`);
+    if (known === undefined) problem.log(`M11: the statement fails on ${describeCounterModel(object)}`);
     if (!options.refute) return;
     const attempts = await submitRefutation(problem.validate, { claimId: problem.claimId, statement, object });
     problem.memory.updateNode(node.nodeId, { refutation: attempts }, "the negation was submitted through validate");
@@ -343,11 +361,13 @@ async function identify(problem: ProblemContext, options: M11Options, battery: B
     // The first numbers in a row (1, 2, 3, ...) say only that the statement holds, or fails, from there on.
     const terms = values.slice(0, options.identifyTerms);
     if (terms.every((v, i) => i === 0 || v === (terms[i - 1] as number) + 1)) continue;
+    const subject = `the numbers from ${first.value} to ${last.value} where the statement ${what}`;
+    if (problem.memory.nodes("identification", { claimId: problem.claimId }).some((n) => (n.data as IdentificationData).subject === subject)) continue;
     const oeis = services.oeis ?? new RegistryOeis(problem.registry, { actor: ACTOR });
     const identification = await lookupSequence(terms, { oeis }, { signal: problem.signal });
     if (identification.note !== undefined) problem.log(`M11: the numbers where the statement ${what}: ${identification.note}`);
     if (identification.matches.length === 0) continue;
-    recordIdentification(problem.memory, { claimId: problem.claimId, subject: `the numbers from ${first.value} to ${last.value} where the statement ${what}`, identification });
+    recordIdentification(problem.memory, { claimId: problem.claimId, subject, identification });
     const best = identification.matches[0];
     problem.log(`M11: the numbers where the statement ${what} match ${best?.id ?? "no sequence"} (${identification.strength})`);
   }
@@ -542,7 +562,8 @@ export function createM11(services: M11Services = {}): Line {
     id: "M11",
     title: LINE_TITLES.M11,
     requires: [],
-    version: "1",
+    version: "2",
+    resume: "stateless",
     options: M11_DEFAULTS,
     hooks: {
       beforeProvers: (problem) => beforeProvers(problem, services),

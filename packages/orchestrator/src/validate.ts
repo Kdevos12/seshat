@@ -3,6 +3,7 @@ import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { conflictNote, Workbench } from "./problem.ts";
+import { recoverCandidate } from "./resume.ts";
 
 export interface ClaimBenchesOptions {
   journal: Journal;
@@ -61,6 +62,8 @@ export class ClaimBenches {
   private readonly benches = new Map<string, Workbench | { failed: string }>();
   /** The problem whose submission made the candidate of a workbench made here: it certifies it. */
   private readonly owners = new Map<Workbench, string>();
+  /** The workbenches `recover` gave a candidate: `certifyPending` reports what became of them, though the certifier's answer was already in the journal. */
+  private readonly recovered = new Set<Workbench>();
 
   constructor(options: ClaimBenchesOptions) {
     this.o = options;
@@ -85,7 +88,12 @@ export class ClaimBenches {
     }
     const result = await bench.check(
       { aux: request.aux ?? "", proof: request.proof },
-      { actor: context.actor, signal: context.signal, ...(request.attemptId !== undefined ? { attemptId: request.attemptId } : {}) },
+      {
+        actor: context.actor,
+        signal: context.signal,
+        ...(request.attemptId !== undefined ? { attemptId: request.attemptId } : {}),
+        ...(context.problem !== undefined ? { problemId: context.problem.problemId } : {}),
+      },
     );
     if (result.accepted && context.problem !== undefined && bench !== context.problem.workbench) {
       this.owners.set(bench, context.problem.problemId);
@@ -115,8 +123,9 @@ export class ClaimBenches {
       (bench): bench is Workbench => bench instanceof Workbench && this.owners.get(bench) === problem.problemId,
     );
     for (const bench of [problem.workbench, ...made]) {
-      if (!bench.awaitsCertification) continue;
+      if (!bench.awaitsCertification && !this.recovered.has(bench)) continue;
       if (signal?.aborted) break;
+      this.recovered.delete(bench);
       const what = `${bench.negation ? "refutation" : "proof"} of claim ${bench.claimId}`;
       try {
         const certified = await bench.certify(signal);
@@ -139,6 +148,40 @@ export class ClaimBenches {
       }
     }
     return result;
+  }
+
+  /**
+   * After an interruption: gives the problem back the workbenches its lines had made, one for each
+   * claim other than its own, and each negation, that a line submitted a proof of which passed the
+   * fast check. The workbench takes up that candidate, and the certifier's answer for it if the
+   * journal holds one (`recoverCandidate`, `Workbench.adopt`), so that `certifyPending` certifies
+   * what the interruption left uncertified, once, by the rule that holds for the problem's own
+   * candidate: a recorded `kernel_replay` settles it, none means the certifier is asked. A claim
+   * whose status changed after the validation (a line withdrew the proof) is not raised again.
+   * Never throws: a workbench that cannot be taken up (its reference does not check, its blob is
+   * gone) is logged and left as a claim that stays `computed`.
+   */
+  async recover(problem: BenchProblem, signal: AbortSignal): Promise<void> {
+    const log = this.o.log ?? (() => {});
+    const done = new Set<string>();
+    for (const found of this.o.journal.projection.validationsOfProblem(problem.problemId)) {
+      if (found.method !== "repl" || found.verdict !== "valid") continue;
+      if (found.claim_id === problem.claimId && !found.negation) continue;
+      const key = `${found.claim_id}${found.negation ? " negation" : ""}`;
+      if (done.has(key)) continue;
+      done.add(key);
+      try {
+        const bench = await this.bench(found.claim_id, found.negation, signal);
+        if (bench.candidate !== undefined) continue;
+        const recovered = recoverCandidate(this.o.journal, this.o.blobs, bench, problem.problemId);
+        if (recovered === undefined) continue;
+        bench.adopt(recovered.candidate, recovered.answer);
+        this.owners.set(bench, problem.problemId);
+        this.recovered.add(bench);
+      } catch (error) {
+        log(`the ${found.negation ? "refutation" : "proof"} of claim ${found.claim_id} that passed the fast check could not be taken up again: ${messageOf(error)}`);
+      }
+    }
   }
 
   /**

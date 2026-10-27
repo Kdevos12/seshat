@@ -391,6 +391,7 @@ speed with the old one's is not implemented yet.)
 | `harness contract ID [--host H] [--implementation I] [--case NAME]... [--out FILE]` | Runs the contract cases. |
 | `harness models [PROVIDER]` | Lists the model providers and whether their credentials are set, or the models of one provider. |
 | `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |
+| `harness run --resume RUN_DIR --checkout DIR` | Continues a run whose process ended without finishing it ([ledger.md](ledger.md#resume)). |
 | `harness report RUN_DIR [--json]` | Prints the report of a run, built from its journal. |
 
 Run it as `pnpm harness ...` from the repository.

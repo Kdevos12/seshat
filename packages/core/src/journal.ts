@@ -4,8 +4,21 @@ import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
 import { Projection, StaleProjectionError } from "./projection.ts";
-import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND } from "./records.ts";
+import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
+import {
+  acceptanceHolds,
+  acceptanceProblems,
+  assertTaskTransition,
+  budgetProblems,
+  describeAcceptance,
+  EXTERNAL_BLOCKER,
+  isRouteAction,
+  isRouteSignalType,
+  isTaskKind,
+  isTaskStatus,
+  TASK_WRITER,
+} from "./tasks.ts";
 
 /**
  * The single writer of a run: every fact goes through `emit`, which checks the invariants against
@@ -38,7 +51,7 @@ export class Journal {
    * Opens `<dir>/journal.jsonl` and its projection `<dir>/projection.sqlite`. A projection that
    * lags is caught up; one that does not match is deleted and rebuilt from the journal.
    */
-  static open(dir: string, run: string, options: { durable?: boolean } = {}): Journal {
+  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean } = {}): Journal {
     mkdirSync(dir, { recursive: true });
     const log = EventLog.open(join(dir, "journal.jsonl"), { run, ...options });
     const path = join(dir, "projection.sqlite");
@@ -67,11 +80,11 @@ export class Journal {
   }
 
   emit<K extends EventType>(type: K, data: EventDataMap[K], actor: string): Extract<HarnessEvent, { type: K }> {
-    this.check({ type, data } as EventBody);
+    this.check({ type, data } as EventBody, actor);
     return this.log.append(type, data, actor);
   }
 
-  private check(event: EventBody): void {
+  private check(event: EventBody, actor: string): void {
     const p = this.projection;
     switch (event.type) {
       case "claim.created": {
@@ -142,11 +155,34 @@ export class Journal {
       case "validation.finished":
         if (!p.claim(event.data.claimId)) throw new Error(`unknown claim ${event.data.claimId}`);
         if (p.validation(event.data.validationId)) throw new Error(`validation ${event.data.validationId} already exists`);
+        if (event.data.problemId !== undefined && !p.problem(event.data.problemId)) throw new Error(`unknown problem ${event.data.problemId}`);
         return;
-      case "attempt.started":
-        if (!p.claim(event.data.claimId)) throw new Error(`unknown claim ${event.data.claimId}`);
-        if (p.attempt(event.data.attemptId)) throw new Error(`attempt ${event.data.attemptId} already exists`);
+      case "attempt.started": {
+        const d = event.data;
+        if (!p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
+        if (p.attempt(d.attemptId)) throw new Error(`attempt ${d.attemptId} already exists`);
+        if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`attempt ${d.attemptId}: bad site ${JSON.stringify(d.site)}`);
+        if (d.taskId !== undefined) {
+          // Work is done inside a running task, for the task's own claim.
+          const task = p.task(d.taskId);
+          if (!task) throw new Error(`unknown task ${d.taskId}`);
+          if (task.status !== "running") throw new Error(`attempt ${d.attemptId} works for task ${d.taskId}, which is ${task.status}, not running`);
+          if (task.claim_id !== null && task.claim_id !== d.claimId) {
+            throw new Error(`attempt ${d.attemptId} is about claim ${d.claimId}, but task ${d.taskId} is about claim ${task.claim_id}`);
+          }
+        }
         return;
+      }
+      case "attempt.charged": {
+        const d = event.data;
+        const attempt = p.attempt(d.attemptId);
+        if (!attempt) throw new Error(`unknown attempt ${d.attemptId}`);
+        if (attempt.finished_seq !== null) throw new Error(`attempt ${d.attemptId} already finished`);
+        for (const [name, value] of [["usd", d.usd], ["inputTokens", d.inputTokens], ["outputTokens", d.outputTokens]] as const) {
+          if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error(`attempt ${d.attemptId}: ${name} must be a non-negative number`);
+        }
+        return;
+      }
       case "attempt.finished": {
         const attempt = p.attempt(event.data.attemptId);
         if (!attempt) throw new Error(`unknown attempt ${event.data.attemptId}`);
@@ -218,11 +254,128 @@ export class Journal {
         if (p.modelCall(d.modelCallId)) throw new Error(`model call ${d.modelCallId} already exists`);
         if (d.problemId !== undefined && !p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
         if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
+        if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`model call ${d.modelCallId}: bad site ${JSON.stringify(d.site)}`);
         return;
       }
       case "run.started":
       case "run.finished":
         return;
+      case "run.resumed": {
+        this.onlyOrchestrator(event.type, actor);
+        const expected = p.resumptions().length + 1;
+        if (event.data.resumption !== expected) throw new Error(`this is resumption ${expected} of the run, not ${event.data.resumption}`);
+        return;
+      }
+      case "task.created":
+        this.onlyOrchestrator(event.type, actor);
+        this.checkTaskCreated(event.data);
+        return;
+      case "task.assigned": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        const task = p.task(d.taskId);
+        if (!task) throw new Error(`unknown task ${d.taskId}`);
+        if (task.status !== "pending" && task.status !== "ready" && task.status !== "blocked") {
+          throw new Error(`task ${d.taskId} is ${task.status}: only a task that has not started can change owner`);
+        }
+        if (typeof d.owner !== "string" || d.owner === "") throw new Error(`task ${d.taskId}: the owner must name who works on it`);
+        if (typeof d.reason !== "string" || d.reason === "") throw new Error(`task ${d.taskId}: a new owner needs a reason`);
+        return;
+      }
+      case "task.status_changed":
+        this.onlyOrchestrator(event.type, actor);
+        this.checkTaskMove(event.data);
+        return;
+      case "task.routed": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!p.task(d.taskId)) throw new Error(`unknown task ${d.taskId}`);
+        if (!isRouteAction(d.action)) throw new Error(`task ${d.taskId}: unknown routing action ${String(d.action)}`);
+        if (typeof d.signal !== "object" || d.signal === null || !isRouteSignalType(d.signal.type)) {
+          throw new Error(`task ${d.taskId}: unknown routing signal ${JSON.stringify(d.signal)}`);
+        }
+        if (typeof d.signal.value !== "string" || d.signal.value === "") throw new Error(`task ${d.taskId}: a routing signal needs a value`);
+        if (typeof d.reason !== "string" || d.reason === "") throw new Error(`task ${d.taskId}: a routing decision needs a reason`);
+        if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
+        if (d.nodeId !== undefined && !p.node(d.nodeId)) throw new Error(`unknown node ${d.nodeId}`);
+        return;
+      }
+    }
+  }
+
+  /** Task events are the orchestrator's: a line proposes a task through its context and the orchestrator commits it. */
+  private onlyOrchestrator(type: EventType, actor: string): void {
+    if (actor !== TASK_WRITER) throw new Error(`${type} is written by the ${TASK_WRITER} only, not by ${actor}`);
+  }
+
+  private checkTaskCreated(d: EventDataMap["task.created"]): void {
+    const p = this.projection;
+    if (p.task(d.taskId)) throw new Error(`task ${d.taskId} already exists`);
+    if (!isTaskKind(d.kind)) throw new Error(`task ${d.taskId} has unknown kind ${String(d.kind)}`);
+    if (d.problemId !== undefined && !p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
+    if (d.claimId !== undefined && !p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
+    if (d.edgeId !== undefined && !p.edge(d.edgeId)) throw new Error(`unknown edge ${d.edgeId}`);
+    if (!Array.isArray(d.dependsOn)) throw new Error(`task ${d.taskId}: dependsOn must be a list of task ids`);
+    if (new Set(d.dependsOn).size !== d.dependsOn.length) throw new Error(`task ${d.taskId} depends on a task twice`);
+    // A task depends only on tasks that already exist, so the dependencies cannot make a cycle.
+    for (const id of d.dependsOn) {
+      if (!p.task(id)) throw new Error(`task ${d.taskId} depends on unknown task ${id}`);
+    }
+    if (d.parentTaskId !== undefined && !p.task(d.parentTaskId)) throw new Error(`unknown parent task ${d.parentTaskId}`);
+    const shape = [...acceptanceProblems(d.acceptance), ...budgetProblems(d.budget)];
+    if (shape.length > 0) throw new Error(`task ${d.taskId}: ${shape.join("; ")}`);
+    if (d.acceptance.type === "claim" && !p.claim(d.acceptance.claimId)) throw new Error(`task ${d.taskId}: its criterion names unknown claim ${d.acceptance.claimId}`);
+    if (d.acceptance.type === "edge" && !p.edge(d.acceptance.edgeId)) throw new Error(`task ${d.taskId}: its criterion names unknown edge ${d.acceptance.edgeId}`);
+    if (d.owner !== undefined && (typeof d.owner !== "string" || d.owner === "")) throw new Error(`task ${d.taskId}: the owner must name who works on it`);
+    if (d.proposedBy !== undefined && (typeof d.proposedBy !== "string" || d.proposedBy === "")) {
+      throw new Error(`task ${d.taskId}: proposedBy must name the line that proposed it`);
+    }
+  }
+
+  /**
+   * The deterministic rules of the ledger. A task is `ready` when its dependencies are `done`; it
+   * `runs` with an owner; it is `blocked` by something named; it is `done` only when its acceptance
+   * criterion holds in the projection; a `running` task goes back to `ready` only after the run was
+   * resumed since it started. Nothing here reads or writes a claim: a task event never changes a
+   * claim's status.
+   */
+  private checkTaskMove(d: EventDataMap["task.status_changed"]): void {
+    const p = this.projection;
+    const task = p.task(d.taskId);
+    if (!task) throw new Error(`unknown task ${d.taskId}`);
+    if (!isTaskStatus(d.from) || !isTaskStatus(d.to)) throw new Error(`task ${d.taskId}: unknown status ${String(d.from)} -> ${String(d.to)}`);
+    if (task.status !== d.from) throw new Error(`task ${d.taskId} is ${task.status}, not ${d.from}`);
+    assertTaskTransition(d.from, d.to);
+    if (typeof d.reason !== "string" || d.reason === "") throw new Error(`task ${d.taskId}: a status change needs a reason`);
+    if (d.to !== "blocked" && d.blockedBy !== undefined) throw new Error(`task ${d.taskId}: only a blocked task has blockedBy`);
+
+    if (d.to === "ready" || d.to === "running") {
+      const open = task.depends_on.filter((id) => p.task(id)?.status !== "done");
+      if (open.length > 0) throw new Error(`task ${d.taskId} cannot be ${d.to}: ${open.join(", ")} not done`);
+    }
+    if (d.from === "blocked" && d.to === "ready") {
+      const open = (task.blocked_by ?? []).filter((id) => !EXTERNAL_BLOCKER.test(id) && p.task(id)?.status !== "done");
+      if (open.length > 0) throw new Error(`task ${d.taskId} is still blocked by ${open.join(", ")}`);
+    }
+    if (d.from === "running" && d.to === "ready" && !(task.running_seq !== null && p.lastResumedSeq() > task.running_seq)) {
+      throw new Error(`task ${d.taskId} can go back to ready only after the run was resumed since it started`);
+    }
+    if (d.to === "running" && task.owner === null) throw new Error(`task ${d.taskId} has no owner, so it cannot run`);
+    if (d.to === "blocked") {
+      const by = d.blockedBy;
+      if (!Array.isArray(by) || by.length === 0) throw new Error(`task ${d.taskId} is blocked by nothing: blockedBy names what it waits for`);
+      if (new Set(by).size !== by.length) throw new Error(`task ${d.taskId}: blockedBy names the same thing twice`);
+      for (const id of by) {
+        if (typeof id !== "string") throw new Error(`task ${d.taskId}: blockedBy holds task ids and ext:<name> keys`);
+        if (EXTERNAL_BLOCKER.test(id)) continue;
+        if (id === d.taskId) throw new Error(`task ${d.taskId} cannot be blocked by itself`);
+        const blocker = p.task(id);
+        if (!blocker) throw new Error(`task ${d.taskId} is blocked by unknown task ${id}`);
+        if (blocker.status === "done") throw new Error(`task ${d.taskId} is blocked by task ${id}, which is done`);
+      }
+    }
+    if (d.to === "done" && !acceptanceHolds(task.acceptance, { claimStatus: (id) => p.claim(id)?.status, edgeStatus: (id) => p.edge(id)?.status })) {
+      throw new Error(`task ${d.taskId} cannot be done: its criterion does not hold (${describeAcceptance(task.acceptance)})`);
     }
   }
 

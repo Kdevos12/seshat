@@ -40,21 +40,27 @@ Event types:
 |---|---|
 | `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `codeRev?` |
 | `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
+| `run.resumed` | `runId`, `resumption` (1, 2...), `tornTail?` (`action`, `bytes`, `sha256`), `spent` (`usd`, `inputTokens`, `outputTokens`), `interrupted` (`attempts`, `toolRuns`, `tasks`), `codeRev?` |
 | `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
-| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?` |
-| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?` |
+| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?` |
+| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`: one model response of a session |
+| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text` |
-| `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash`, `negation?` |
+| `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash`, `negation?`, `problemId?` |
 | `edge.added` | `edgeId`, `kind`, `from`, `to` (a list), `status`, `attemptId?`, `toolRunId?`, `validationId?`, `note?`, `link?` (`name`, `statement`) |
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON) |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
-| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens` |
+| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens` |
+| `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
+| `task.assigned` | `taskId`, `owner`, `reason` |
+| `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
+| `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a
 theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`). Its `header` holds the imports, `open`s and
@@ -79,7 +85,18 @@ lesson, a fingerprint...): its `kind` is a short lowercase word, its `data` belo
 that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it.
 
 A `model_call.finished` records a one-shot model call a mechanism made outside a prover session
-(a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs.
+(a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs. Its
+`site` says where the call was made ([ledger.md](ledger.md#sites)).
+
+The task events (`task.*`) are the ledger's ([ledger.md](ledger.md)): the work of a run, as tasks
+that point at claims and edges. Only the orchestrator writes them. `attempt.charged` is one model
+response of a session, so that the cost of a session that was cut is not lost; `run.resumed` marks
+the run's continuation after a crash, and is followed by the orchestrator's closing of what the
+process left open: the sessions with no end (`attempt.finished`, `aborted`, `stoppedBy: "interrupted"`),
+the tool runs with no end (`aborted`) and the tasks that were `running` (back to `ready`)
+([ledger.md](ledger.md#resume)). A validation's `problemId` is
+the problem whose workbench made the check, which is the problem that certifies what it made a
+candidate.
 
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
@@ -103,9 +120,15 @@ order is the program's order. With `durable: true`, each append is followed by a
 One process writes a journal at a time. The lock file holds the writer's pid; a lock left by a
 process that no longer exists is taken over.
 
-A crash during an append can leave a partial last line. Reading tolerates it, and opening for
-writing cuts it, so the next append starts on a fresh line. A malformed line anywhere else is
-corruption, and the journal refuses to open.
+A crash during an append can leave a last line that is not a whole event. Reading tolerates it,
+and opening for writing deals with it, so the next append starts on a fresh line: a fragment is cut
+off, and the events before it, a prefix of the journal, still verify; a line that is a whole event
+whose hash and place in the chain verify, and lacks only its newline, is kept. `EventLog.recovered`
+says which, with the number of bytes and the sha256 of those bytes as they were on disk, and a resumed run writes it into
+`run.resumed`. A caller that may still refuse to go on opens with `deferRepair: true`: the open reads
+the journal and reports in `recovered` what the repair will do, writes nothing, and `append` refuses
+until `repair()` has made the repair (a resume does that as its first write). A malformed line
+anywhere else is corruption, and the journal refuses to open.
 
 ## Invariants
 
@@ -129,32 +152,42 @@ corruption, and the journal refuses to open.
 - an edge status change's `from` is not the edge's current status, or `to` is the same;
 - an edge becomes `lean_checked` (when it is added or later) without a link lemma and a valid
   validation of a claim whose statement is the link's ([trust.md](trust.md#edges));
-- a node kind is not a lowercase word (`[a-z][a-z0-9_]*`, at most 32 characters).
+- a node kind is not a lowercase word (`[a-z][a-z0-9_]*`, at most 32 characters);
+- a site is not made of dot-separated lowercase words (`graph.attempt`);
+- an attempt is charged after it finished, or for an amount that is not a non-negative number;
+- a task event comes from another actor than the orchestrator, or breaks a rule of the ledger
+  ([ledger.md](ledger.md#what-the-journal-enforces)): transitions, dependencies, owner, blockers, the
+  acceptance criterion of a `done` task, the way back from `running`, an attempt for a task that is
+  not running;
+- a resumption is not the next number.
 
 ## Projection
 
 Tables: `problems` (with their outcome once finished), `claims` (indexed by statement id and by
 parent), `attempts` (with `stopped_by` and `error`, the strategies, premises and failure detail),
 `tool_runs`, `lessons`, `validations`, `edges` with `edge_targets` (one row per target, in order,
-indexed by target), `nodes` (their data with every patch applied), `model_calls`, and `meta`, which
-records the seq and hash of the last applied event. JSON columns hold canonical JSON, so rebuilding
+indexed by target), `nodes` (their data with every patch applied), `model_calls`, `tasks`,
+`task_routes`, `resumptions`, and `meta`, which records the seq and hash of the last applied event.
+An attempt row also holds its task, its site, the sum of its charges and its carry. JSON columns hold canonical JSON, so rebuilding
 from the journal gives the same rows.
 
 Queries: `claim`, `claimsByStatement`, `problem(s)`, `attempt(s)`, `toolRun(s)`, `lessons`,
 `validation(s)`, `edge`, `edges({from?, to?, kinds?, statuses?})`, `node`, `nodes(kind, claimId?)`,
-`modelCall`. `edges({to})` looks the edges up in `edge_targets_by_to` and then by key, and never
+`modelCall`, `task`, `tasks({problemId?, claimId?, owner?, statuses?, kinds?})`, `taskRoutes`,
+`resumptions`, `attemptsOfTask`, `openAttempts`, `openToolRuns`, `validationsOfProblem`, `modelCallsOfProblem`, `claimsWithAttempts`, and the
+spend: `taskSpend`, `problemSpend`, `totalSpend` and `spendBySite`. `edges({to})` looks the edges up in `edge_targets_by_to` and then by key, and never
 scans the edges (a test reads the query plan): `equivalents` and the graph queries call it.
 
 Applying an event is idempotent: an event at or below the last applied seq is skipped, and each
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 3) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 4) is kept in SQLite's
 `user_version`.
 
 `runSummary()` gives the number of problems, `solved` (claim `proved`), `refuted` (claim
 `refuted`), `candidates` (claim `computed`), attempts, cost in dollars and tokens: the attempts'
-and the model calls'. The three counts are the claims': a problem is counted when its claim has the
+and the model calls'. An attempt that never finished counts at the sum of its charges. The three counts are the claims': a problem is counted when its claim has the
 status, whoever settled it, so two problems that share a claim count twice, and a claim whose proof
 the kernel rejected is a candidate while its problem is `unsolved`. They are not the problems'
 outcomes (`problem.finished`, and the report, which counts those).

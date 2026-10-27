@@ -54,6 +54,65 @@ export interface WatchOptions {
 
 export const DEFAULT_WATCH: Readonly<WatchOptions> = { repeats: 3, lengthFactor: 2, lengthMinChars: 800 };
 
+/**
+ * What the prover's next session is told about a finding: made of this page's words and of the
+ * labels and counts in the finding's evidence, so that a notice can be made again from a `drift`
+ * node (a resumed run does that for the ones that were not delivered). Undefined for a node that
+ * lacks what the notice says.
+ */
+export function noticeFor(kind: DetectorKind, evidence: { readonly [key: string]: Json } | undefined): string | undefined {
+  const e = evidence ?? {};
+  const text = (key: string): string | undefined => (typeof e[key] === "string" ? (e[key] as string) : undefined);
+  const num = (key: string): number | undefined => (typeof e[key] === "number" ? (e[key] as number) : undefined);
+  switch (kind) {
+    case "statement_drift":
+      return (
+        "The harness stopped your last session: the statement your file proves is not the theorem. " +
+        "The statement is fixed. Do not change the definitions, notations or instances that it reads."
+      );
+    case "restated_target": {
+      const name = text("lemma");
+      const named = name === undefined ? "" : ` ${name}`;
+      return (
+        `The harness stopped your last session: an auxiliary lemma${named} states the theorem again. ` +
+        "A lemma as hard as the theorem is not a step. State smaller steps, each easier than the theorem."
+      );
+    }
+    case "strategy_loop": {
+      const label = text("strategy");
+      const checks = num("checks");
+      if (label === undefined || checks === undefined) return undefined;
+      return (
+        `The harness stopped your last session: ${checks} checks in a row used the strategy ${label} and Lean got no further. ` +
+        "Do not go on with that line of attack; try another strategy."
+      );
+    }
+    case "length_growth": {
+      const from = num("from");
+      const to = num("to");
+      if (from === undefined || to === undefined) return undefined;
+      return (
+        `The harness stopped your last session: the file grew from ${from} to ${to} characters and no subgoal was closed. ` +
+        "Cut it back to the part that works and close one hole before you add more."
+      );
+    }
+    case "session_loop": {
+      const label = text("strategy");
+      const sessions = num("sessions");
+      if (label === undefined || sessions === undefined) return undefined;
+      return (
+        `Your last ${sessions} sessions all used the strategy ${label} and Lean got no further, so your notes were cleared. ` +
+        "Start from the file as it is and choose another strategy."
+      );
+    }
+  }
+}
+
+/** A finding, with the notice its evidence gives. */
+function found(kind: DetectorKind, detail: string, evidence: { [key: string]: Json }): Finding {
+  return { kind, detail, notice: noticeFor(kind, evidence) as string, evidence };
+}
+
 /** One `lean_check` of a session, as the detectors read it. */
 export interface Observation {
   /** The check's number in the session, from 1. */
@@ -107,46 +166,34 @@ export class SessionWatch {
     if (o.accepted) return undefined;
 
     if (o.failureClass === "statement_changed") {
-      return {
-        kind: "statement_drift",
-        detail: "the file proves a statement that is not the target",
-        notice:
-          "The harness stopped your last session: the statement your file proves is not the theorem. " +
-          "The statement is fixed. Do not change the definitions, notations or instances that it reads.",
-        evidence: { check: o.index, failureClass: o.failureClass },
-      };
+      return found("statement_drift", "the file proves a statement that is not the target", { check: o.index, failureClass: o.failureClass });
     }
     if (o.restating !== undefined) {
-      return {
-        kind: "restated_target",
-        detail: `auxiliary lemma${lemma(o.restating.name)} restates the target`,
-        notice:
-          `The harness stopped your last session: an auxiliary lemma${lemma(o.restating.name)} states the theorem again. ` +
-          "A lemma as hard as the theorem is not a step. State smaller steps, each easier than the theorem.",
-        evidence: { check: o.index, via: o.restating.via, ...(safeName(o.restating.name) !== undefined ? { lemma: safeName(o.restating.name) as string } : {}) },
-      };
+      return found("restated_target", `auxiliary lemma${lemma(o.restating.name)} restates the target`, {
+        check: o.index,
+        via: o.restating.via,
+        ...(safeName(o.restating.name) !== undefined ? { lemma: safeName(o.restating.name) as string } : {}),
+      });
     }
     if (count >= this.#options.repeats) {
       const best = this.#best as LeanState;
-      return {
-        kind: "strategy_loop",
-        detail: `${count} checks in a row with the strategy ${o.label}, and Lean got no further`,
-        notice:
-          `The harness stopped your last session: ${count} checks in a row used the strategy ${o.label} and Lean got no further. ` +
-          "Do not go on with that line of attack; try another strategy.",
-        evidence: { check: o.index, strategy: o.label, checks: count, bestDepth: best.depth, bestErrors: best.errors, bestHoles: best.holes },
-      };
+      return found("strategy_loop", `${count} checks in a row with the strategy ${o.label}, and Lean got no further`, {
+        check: o.index,
+        strategy: o.label,
+        checks: count,
+        bestDepth: best.depth,
+        bestErrors: best.errors,
+        bestHoles: best.holes,
+      });
     }
     const base = this.#baseline;
     if (base !== undefined && o.size >= base * this.#options.lengthFactor && o.size - base >= this.#options.lengthMinChars) {
-      return {
-        kind: "length_growth",
-        detail: `the file grew from ${base} to ${o.size} characters and no subgoal was closed`,
-        notice:
-          `The harness stopped your last session: the file grew from ${base} to ${o.size} characters and no subgoal was closed. ` +
-          "Cut it back to the part that works and close one hole before you add more.",
-        evidence: { check: o.index, from: base, to: o.size, factor: this.#options.lengthFactor },
-      };
+      return found("length_growth", `the file grew from ${base} to ${o.size} characters and no subgoal was closed`, {
+        check: o.index,
+        from: base,
+        to: o.size,
+        factor: this.#options.lengthFactor,
+      });
     }
     return undefined;
   }
@@ -173,13 +220,12 @@ export class ProverWatch {
     // The finding restarts the count: the next session is a fresh start.
     this.#streak.label = undefined;
     this.#streak.count = 0;
-    return {
-      kind: "session_loop",
-      detail: `${count} sessions in a row with the strategy ${label}, and Lean got no further`,
-      notice:
-        `Your last ${count} sessions all used the strategy ${label} and Lean got no further, so your notes were cleared. ` +
-        "Start from the file as it is and choose another strategy.",
-      evidence: { strategy: label, sessions: count, bestDepth: this.#best?.depth ?? 0, bestErrors: this.#best?.errors ?? 0, bestHoles: this.#best?.holes ?? 0 },
-    };
+    return found("session_loop", `${count} sessions in a row with the strategy ${label}, and Lean got no further`, {
+      strategy: label,
+      sessions: count,
+      bestDepth: this.#best?.depth ?? 0,
+      bestErrors: this.#best?.errors ?? 0,
+      bestHoles: this.#best?.holes ?? 0,
+    });
   }
 }

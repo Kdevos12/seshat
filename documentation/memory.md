@@ -21,6 +21,11 @@ store that writes as another actor. The orchestrator gives each line such a view
 says which line wrote what. `blobs` is the run's blob store, for contents too large for an event:
 a node's data can name a blob by its hash.
 
+The memory is the graph of the mathematics. The work of a run (which prover does what, with what
+budget, and whether it is done) is another graph, the task ledger ([ledger.md](ledger.md)): a task
+points at claims and edges, and states what it must achieve in terms of their statuses, but never
+holds a status of its own for a claim, and the store has no method that writes a task.
+
 Lines never touch the journal. The store keeps it in a private field, in every view, so a line has
 no way to emit an event the store has no method for, and the trust rules ([trust.md](trust.md))
 hold by construction: a line raises a claim's status only through `validate`
@@ -213,6 +218,8 @@ the generated file, and the orchestrator creates that claim without a header, so
 imports or definitions and does not check. Rebuilding the bench file needs the bench checkout:
 `problem.registered` names the repository, revision and path, and `setReference` gives the file
 back.
+A run that is resumed ([ledger.md](ledger.md#resume)) gives the claim of each problem it takes up
+its bench file again, for the same reason.
 
 ## Not done yet
 

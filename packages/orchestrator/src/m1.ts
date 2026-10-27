@@ -19,6 +19,9 @@ export const M1: Line = {
   options: { maxLines: MAX_LINES },
   // Recorded in run.started: change it with the vocabulary, a classifier's rule or the section's format.
   version: "m1-1",
+  // Everything M1 knows it reads from the memory (the claims and the attempts' typed summaries), so a
+  // resumed process gives the same briefing: nothing is kept in the process.
+  resume: "stateless",
   identity: () => new TextIdentity(),
   strategies: STRATEGIES,
   hooks: {

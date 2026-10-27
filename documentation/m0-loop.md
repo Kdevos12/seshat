@@ -11,16 +11,18 @@ The code is in `packages/orchestrator/src`:
 
 | Module | Role |
 |---|---|
-| `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
+| `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes; `resumeBench`: the continuation of a run whose process ended. |
+| `resume.ts` | What a resumed run reads from its journal and takes up: the recorded run and its compatibility checks, the problems that were cut, the candidate and the provers' carry ([ledger.md](ledger.md#resume)). |
 | `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks, the candidate and its certification, for one claim or its negation. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
+| `prover-tasks.ts` | The ledger's tasks of M0: one `prove` task per prover, and how each ends ([ledger.md](ledger.md#what-m0-records)). |
 | `session.ts` | `runSession`: one pi agent with the `lean_check` tool and the run's other tools, and its limits. |
 | `tools.ts` | The other tools: `direct` capabilities as tools of a session, and their bindings (`lean.lsp`). |
 | `prompt.ts` | The prompts, versioned. |
 | `feedback.ts` | What a check says to the prover, and the failure class of a check. |
 | `budget.ts` | Ledgers of dollars and tokens. |
 | `report.ts` | The report of a run, built from its journal alone. |
-| `cli.ts` | `harness models`, `harness run`, `harness report`, with the other commands. |
+| `cli.ts` | `harness models`, `harness run` (and `harness run --resume`), `harness report`, with the other commands. |
 | `lines.ts` | The lines a run can enable, by id; none is implemented yet ([lines.md](lines.md)). |
 | `line-runtime.ts` | The enabled lines of a run: their contexts, and their hooks at each point of a problem, a prover and a session. |
 | `llm.ts` | The lines' one-shot model calls, charged and recorded. |
@@ -53,18 +55,27 @@ The run stops before its last problem when it is aborted (`aborted`), when its b
 (`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), or after three problems in
 a row ended with a harness error (`errors`). The reason is in `run.finished`.
 
+A run whose process ended without a `run.finished` (a kill, a crash, a usage limit) is continued by
+`resumeBench`, from its journal and the run directory alone: it checks that what resumes is what
+began the run, writes `run.resumed`, closes the sessions, tool runs and tasks that the process left
+open, starts its budgets from what the journal says was spent, takes up the problems that were cut
+where they stood (the candidate they had found, a certification that was recorded, each prover's
+file, last check and notes), and then runs the problems that had not begun. What it refuses, what
+it does with a certification that was cut, and what it does not restore are in
+[ledger.md](ledger.md#resume).
+
 ## A problem
 
 1. Records `claim.created` (status `open`) and `problem.registered`.
 2. Reads the file from the checkout in plain-header form, checks it against the bench index, and
    cuts it into a sketch ([validator.md](validator.md#sketches)).
 3. Checks the original file once, for the reference type of the statement.
-4. Starts the provers in parallel. They share the problem's `Workbench` and its budget.
+4. Makes one `prove` task per prover in the task ledger ([ledger.md](ledger.md#what-m0-records)), then starts the provers in parallel, each starting its task. They share the problem's `Workbench` and its budget. A prover's task ends with the prover.
 5. When a prover finds a candidate, writes its file to `proofs/` and, if there is a certifier,
    certifies it ([below](#certification)).
 6. With lines, runs their `afterProblem`, then certifies what they submitted for other claims or
    for negations ([below](#certification)).
-7. Records `problem.finished`: outcome, reason, attempts, cost and time.
+7. Cancels the tasks of the problem that have not ended, and records `problem.finished`: outcome, reason, attempts, cost and time.
 
 | Outcome | When |
 |---|---|
@@ -103,6 +114,8 @@ A candidate is certified once in a run, whatever came of it, and a workbench kee
 candidate: the problem's own, and one for each other claim and each negation that lines submit
 proofs for. If the certifier rejects a line's proof of a claim, its later proofs of that claim are
 not certified in the run, so a line cannot make the run pay for one certification after another.
+In a run that was resumed, the journal records one certification per candidate: the answer of one
+that was recorded is used, and a call the interruption cut is made again ([ledger.md](ledger.md#certification)).
 The problem whose submission made a candidate is the one that certifies it, when its own lines are
 done: a problem's end does not certify what the lines of another problem, still working, have
 submitted, and the time it takes is charged to the problem that submitted it.
@@ -153,6 +166,16 @@ A prover runs at most `sessions` sessions. Each session is an attempt in the jou
   original proof, usually `sorry`);
 - what Lean said in that check.
 
+Every model response of a session is also written as it is charged (`attempt.charged`), so that the
+journal keeps what a session that never ended cost; and `attempt.finished` carries, as blob hashes,
+what the next session starts from: the prover's regions, the text of its last check, its notes
+(`carry`). A resumed run starts its budgets and its provers from these ([ledger.md](ledger.md#charges-and-carry)).
+
+After each attempt the orchestrator takes the routing decisions about the prover's task: one for the
+class of the attempt's failed check, one for each drift finding that stopped the session
+([ledger.md](ledger.md#routing-decisions)). They are `task.routed` events, they change no status,
+and the prover's next session starts as it always did.
+
 The model's final message in a session becomes the prover's notes, cut at `notesChars`
 characters, and is recorded as `lesson.recorded`. New notes replace the old ones; the system
 prompt asks the prover to rewrite them in full and keep what still helps.
@@ -189,6 +212,7 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
 | `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
 | `line:<id>` | An enabled line's `afterCheck` stopped it ([lines.md](lines.md#the-hooks)); no notes are asked for. | `invalid` |
+| `interrupted` | The process ended in the middle of the session. Written by the orchestrator when the run is resumed, at the cost of the session's charges, with no carry ([ledger.md](ledger.md#resume)). | `aborted` |
 
 When `turns` or `context` ends a session that is not the prover's last, one more request asks the
 model for its notes (`WRAP_UP`). The tools stay declared, because providers need the definitions
@@ -325,6 +349,7 @@ pnpm harness models PROVIDER           # the models of a provider, with their pr
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --ablation M2
+pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1   # continue a run whose process ended
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
 
@@ -355,6 +380,14 @@ Options of `harness run`:
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
+`harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]` continues a run whose
+process ended without finishing it ([ledger.md](ledger.md#resume)). The run keeps the configuration
+it began with, which is read from its journal, so no option that describes a run is given with it
+(`--model`, `--sessions`, `--lines`...); the bench, the host's capability registry, the tools, the
+certifier and the lines have to be the ones it began with. A run with a line that does not say how it
+is resumed, or refuses, cannot be resumed, and a run that is complete has nothing to resume: both
+are refused before anything is written, with the reason. M1, M2, M6 and the fleet can be resumed.
+
 Progress goes to the standard error, one line per problem, and the report goes to the standard
 output at the end. A first Ctrl-C stops the run: the problems in progress end as `aborted`, and the
 journal and the report are still written. A second Ctrl-C quits at once.
@@ -375,8 +408,13 @@ problem with a proof or a refutation, tokens, attempts
 by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
 checks with their median and 90th percentile times (the count includes one reference check per
 problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
-and how many of those attempts found a proof. It also says what it does not measure: the fidelity of the formal statements, taken as
+and how many of those attempts found a proof. It gives the spend by site (`prover.session` for the
+provers' sessions, the sites of the lines' one-shot calls), each with its share of the total
+([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
+
+A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
+interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`).
 
 ## Tested, and not yet
 
@@ -401,8 +439,13 @@ refusals of tools it cannot give; and the pinning to the first implementation th
 `lean-lsp.test.ts` gives them a simulated lean-lsp-mcp (the stand-in of `packages/lean-lsp`): the
 file each call reads, the sketch the model cannot set, the journal, no change of status, a search
 site down, the server dying, and the budget.
-`cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options too), and
-`harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
+`resume-run.test.ts` and `resume-kill.test.ts` resume runs: a copy of a run's journal cut at an
+event stands for the process that ended there (`killedAt`, in `m0-helpers.ts`), at every event of a
+short run, with and without a cut last line, with a fake certifier and with the registry's; the
+budgets of the problem and of the run are compared with a run that was not cut; and a child process
+that is killed with SIGKILL in the middle of a check, with one and two provers, is resumed. The rest
+of `cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options and
+`--resume` too), and `harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
 ([lines.md](lines.md#tested-and-not-yet)); with no line enabled, the loop is the one the tests above
 cover, unchanged.
 
@@ -419,4 +462,8 @@ Not done yet:
   certifiers; the Lean program `lean/SeshatCertify` has never been compiled
   ([certifier.md](certifier.md#to-verify-against-lean)). Until it has run, a real run's best
   outcome is `candidate` in practice, though the code paths to `proved` and `refuted` are there.
+- No run has been resumed against a real model or a real Lean: the tests stand a faux model and a
+  simulated Lean in for them, and the process that ends is a copy of a journal cut at an event or a
+  child process killed with SIGKILL. `harness run --resume` has not been run from the command line
+  on a run that a real process left behind.
 - The prompts have not been tuned on real attempts.

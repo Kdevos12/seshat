@@ -12,7 +12,7 @@ import { CapabilityError, CatalogError, messageOf, runContract, type Registry } 
 import { renderHealth } from "./health.ts";
 import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { DEFAULT_CONFIG, runBench, type RunConfig, RunSetupError } from "./run.ts";
+import { DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
@@ -25,6 +25,7 @@ const usage = `usage:
               [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--out DIR]
+  harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
@@ -32,7 +33,11 @@ models: the providers pi-ai knows and whether their credentials are set; with PR
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
---line-option sets an option of an enabled line, its VALUE read as JSON when it parses.`;
+--line-option sets an option of an enabled line, its VALUE read as JSON when it parses.
+run --resume: continues a run whose process ended without finishing it (documentation/ledger.md, "Resume"),
+from the journal in RUN_DIR. The run's configuration is the one it began with, so no flag that describes a run
+is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
+with a line that keeps state in the process (M2, M6, the fleet) cannot be resumed.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -61,6 +66,7 @@ const { positionals, values } = parseArgs({
     lines: { type: "string", multiple: true },
     ablation: { type: "string" },
     "line-option": { type: "string", multiple: true },
+    resume: { type: "string" },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
@@ -241,6 +247,7 @@ function readInput<T>(read: () => T): T {
 
 async function run(): Promise<number> {
   if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
+  if (values.resume !== undefined) return await resume(values.resume);
   if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
   if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID (harness models lists them)");
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
@@ -276,18 +283,7 @@ async function run(): Promise<number> {
   const host = hostName(values.host);
   const runId = newId("run");
   const dir = resolve(values.out ?? join("runs", runId));
-  const controller = new AbortController();
-  let interruptedAt: number | undefined;
-  process.on("SIGINT", () => {
-    if (interruptedAt !== undefined) {
-      // pnpm passes the terminal's Ctrl-C on to its child, so one keypress can arrive twice.
-      if (Date.now() - interruptedAt > 1000) process.exit(130);
-      return;
-    }
-    interruptedAt = Date.now();
-    console.error("stopping: the problems in progress end as aborted (Ctrl-C again quits at once)");
-    controller.abort();
-  });
+  const controller = stoppable();
   const codeRev = codeRevision();
   const result = await runBench({
     config,
@@ -302,10 +298,70 @@ async function run(): Promise<number> {
     runId,
     ...(codeRev !== undefined ? { codeRev } : {}),
   });
+  return finished(result, dir);
+}
+
+/** Ctrl-C stops the run: the problems in progress end as aborted; a second one quits at once. */
+function stoppable(): AbortController {
+  const controller = new AbortController();
+  let interruptedAt: number | undefined;
+  process.on("SIGINT", () => {
+    if (interruptedAt !== undefined) {
+      // pnpm passes the terminal's Ctrl-C on to its child, so one keypress can arrive twice.
+      if (Date.now() - interruptedAt > 1000) process.exit(130);
+      return;
+    }
+    interruptedAt = Date.now();
+    console.error("stopping: the problems in progress end as aborted (Ctrl-C again quits at once)");
+    controller.abort();
+  });
+  return controller;
+}
+
+/** Prints a run's report and says how it ended in the exit code. */
+function finished(result: RunResult, dir: string): number {
   process.stdout.write(renderRunReport(result.report));
   console.log(`Run directory: ${dir}`);
   if (result.stopped === undefined || result.stopped === "budget_exhausted") return 0;
   return result.stopped === "aborted" ? 130 : 1;
+}
+
+/** The flags that describe a new run; a resumed run keeps the configuration it began with. */
+const RUN_FLAGS = [
+  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "budget-usd", "run-budget-usd", "concurrency",
+  "tool", "lines", "ablation", "line-option", "sample", "seed", "problem", "all", "out",
+] as const;
+
+/** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
+async function resume(directory: string): Promise<number> {
+  const given = RUN_FLAGS.filter((flag) => values[flag] !== undefined);
+  if (given.length > 0) {
+    throw new UsageError(`--resume continues the run as it began, from its journal: ${given.map((flag) => `--${flag}`).join(", ")} cannot be given with it`);
+  }
+  if (values.checkout === undefined) throw new UsageError("--resume needs --checkout: a checkout of the bench's repository");
+  const checkout = values.checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
+  const dir = resolve(directory);
+  if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const source = describeCheckout(checkout);
+  if (source.rev !== index.source.rev) {
+    console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
+  }
+  const host = hostName(values.host);
+  const controller = stoppable();
+  const codeRev = codeRevision();
+  const result = await resumeBench({
+    dir,
+    index,
+    checkout,
+    models: builtinModels(),
+    registry: (journal, blobs) => openRegistry({ host, journal, blobs }),
+    signal: controller.signal,
+    log: (line) => console.error(line),
+    ...(codeRev !== undefined ? { codeRev } : {}),
+  });
+  return finished(result, dir);
 }
 
 /** The providers pi-ai knows and whether they have credentials, or the models of one provider. */

@@ -9,6 +9,7 @@ export * from "./problem.ts";
 export * from "./prompt.ts";
 export * from "./prover.ts";
 export * from "./report.ts";
+export * from "./resume.ts";
 export * from "./run.ts";
 export * from "./session.ts";
 export * from "./tools.ts";

@@ -10,4 +10,5 @@ export * from "./projection.ts";
 export * from "./records.ts";
 export * from "./sketch.ts";
 export * from "./status.ts";
+export * from "./tasks.ts";
 export * from "./validator.ts";
