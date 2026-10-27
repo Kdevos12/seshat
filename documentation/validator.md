@@ -181,8 +181,10 @@ and one inside a longer name does not.
   `a ≡ b [MODrun_cmd 1]` and `⟪x, y⟫_run_cmd 1` hold the command `run_cmd`, and `⟪x, y⟫_ℝelab` is
   refused for `elab` although `ℝelab` may be a name. The table depends on what is imported, so the
   screen lists no such token: it trusts no symbol to end one. The price is that a name glued to a symbol
-  is refused when it holds a whole keyword (`simp [hprefix]`, `⟨hinfix, h⟩`, `¬xIO`); a space after the
-  symbol (`simp [ hprefix ]`) or another name avoids the refusal.
+  is refused when it holds a whole keyword (`simp [hprefix]`, `⟨hinfix, h⟩`, `¬xIO`, `h;n_elab`); a space
+  after the symbol (`simp [ hprefix ]`) or another name avoids the refusal. Every symbol is treated alike,
+  `;` too: `n_elab` and `_elab` are names after a space, `(`, `,` or `)`, and `;_elab)` is not trusted to
+  be one.
 - A token that starts with a character no name has (`#eval`, `#exit`, `#print`) matches wherever it
   stands, since Lean reads `x#eval` as `x` and the command `#eval`; and the longest token wins in the
   lexer, so what follows does not matter (`#eval!` is a command too). A token that ends with such a

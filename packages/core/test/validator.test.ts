@@ -135,10 +135,16 @@ describe("forbiddenTokensIn", () => {
     // The table of tokens depends on what is imported, so no symbol is trusted to end a token before a name: a name glued to one is refused, also where it is a name.
     const afterSymbol: Array<[string, string]> = [
       ["simp [hprefix]", "prefix"], ["⟨hinfix, h⟩", "infix"], ["¬xIO", "IO"], ["a=b.macro", "macro"], ["n+xsorry", "sorry"], ["f[x]xelab", "elab"], ["{xsorry}", "sorry"], ["x:xdebug", "debug"],
+      // `_` starts a name and goes on one, but a symbol before it is a symbol like another: `;` is no more trusted to end a token than `[` is.
+      [";_elab)", "elab"], ["[n_elab", "elab"], ["h;n_elab", "elab"],
     ];
     for (const [text, token] of afterSymbol) assert.deepEqual(forbiddenTokensIn(text), [token], text);
     // Where the lexer starts a token for sure, a name that holds a keyword is a name.
-    const names = ["(xsorry)", "f (x, ysorry)", "f x,ymacro", "(h.elab)", "(f x).y.elab", "\nxsorry", "xsorry", "a ≡ b [MOD n]", "n % 2 = 0"];
+    const names = [
+      "(xsorry)", "f (x, ysorry)", "f x,ymacro", "(h.elab)", "(f x).y.elab", "\nxsorry", "xsorry", "a ≡ b [MOD n]", "n % 2 = 0",
+      // Names with an underscore in them.
+      "n_elab", "x_elab", "_elab", "__elab", "f (n_elab) x", "f x,_elab)", "h _elab;", "\n_macro",
+    ];
     for (const name of names) assert.deepEqual(forbiddenTokensIn(name), [], JSON.stringify(name));
   });
 
