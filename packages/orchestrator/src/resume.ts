@@ -222,6 +222,14 @@ export function beginResumption(journal: Journal, tasks: TaskLedger, o: { runId:
   const resumption = p.resumptions().length + 1;
   // The cut last line the journal was opened with, if there is one, is dealt with now: the first write of the resumption.
   const tornTail = journal.log.repair();
+  // How long the cut work ran is known only as far as the last event its process wrote: a lower bound.
+  const written = readEvents(journal.log.path);
+  const lastWritten = Date.parse(written[written.length - 1]?.ts ?? "");
+  const startedAt = new Map(written.map((e) => [e.seq, Date.parse(e.ts)]));
+  const ranFor = (startedSeq: number): number => {
+    const started = startedAt.get(startedSeq);
+    return started === undefined || Number.isNaN(started) || Number.isNaN(lastWritten) ? 0 : Math.max(0, lastWritten - started);
+  };
   const interrupted = { attempts: attempts.length, toolRuns: toolRuns.length, tasks: running.length };
   journal.emit(
     "run.resumed",
@@ -235,7 +243,7 @@ export function beginResumption(journal: Journal, tasks: TaskLedger, o: { runId:
     },
     "orchestrator",
   );
-  for (const run of toolRuns) journal.emit("tool_run.finished", { toolRunId: run.tool_run_id, outcome: "aborted", durationMs: 0 }, "orchestrator");
+  for (const run of toolRuns) journal.emit("tool_run.finished", { toolRunId: run.tool_run_id, outcome: "aborted", durationMs: ranFor(run.started_seq) }, "orchestrator");
   for (const attempt of attempts) {
     journal.emit(
       "attempt.finished",
@@ -243,7 +251,7 @@ export function beginResumption(journal: Journal, tasks: TaskLedger, o: { runId:
         attemptId: attempt.attempt_id,
         outcome: "aborted",
         stoppedBy: "interrupted",
-        durationMs: 0,
+        durationMs: ranFor(attempt.started_seq),
         ...chargedTotals(attempt),
       },
       "orchestrator",
