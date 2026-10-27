@@ -185,8 +185,9 @@ reads, and hide code. In `x/- a --/run_cmd` Lean reads `x`, a block comment that
 the `--` as a line comment would miss `run_cmd`. So from the first opener or quote that is not sure,
 nothing is blanked. The price is that a comment glued to a symbol or a name, a doc comment, and every
 comment after a quote that may start a literal (`simp [h']`, `⟨x', h⟩`, `s ⁻¹' t`) are code to the
-screen: they are refused when they hold a keyword or a `"` (`x--sorry`, `|-- run_cmd 1`, though Lean
-reads `|-` as two tokens; `/-- the macro -/`), and so is every comment after them. A space before the
+screen: they are refused when they hold a keyword, a `"` or a `/-` that nothing closes (`x--sorry`,
+`|-- run_cmd 1`, though Lean reads `|-` as two tokens; `/-- the macro -/`; `-- r = +/- j` after a
+`[h']`), and so is every comment after them. A space before the
 `--`, a space before a name that ends in a quote (`simp [ h' ]`), or no keyword in the comment avoids
 the refusal. Over 169,333 theorem and lemma declarations of Mathlib the strict reading refuses 18
 more than the reading of the previous version, and none over the 6,470 of formal-conjectures.
