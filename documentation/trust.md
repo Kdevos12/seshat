@@ -87,6 +87,13 @@ bypass the journal either: the memory store keeps it private ([memory.md](memory
 raises a status only through `validate` ([lines.md](lines.md#validate)). The one other change of
 status a line makes only lowers one: `retractClaim`, the revocation described above.
 
+The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
+to set, a task is `done` only when its claim already has the status its criterion asks for, and
+only the orchestrator writes them. A resumed run ([ledger.md](ledger.md#resume)) does not trust
+what the interrupted process was about to write: it writes a status change that was cut only when
+a validation already in the journal justifies it, and a candidate is certified by the same
+certifier as any other, unless the journal holds the certifier's answer for it.
+
 ## Edges
 
 Edges between claims have their own statuses:
