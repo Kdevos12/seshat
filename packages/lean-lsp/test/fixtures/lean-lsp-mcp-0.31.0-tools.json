@@ -1,0 +1,628 @@
+{
+ "server": "lean-lsp-mcp",
+ "version": "0.31.0",
+ "note": "The arguments of the 22 tools of lean-lsp-mcp 0.31.0, read from tools/list of the real server (pip install lean-lsp-mcp==0.31.0). The fake server of the tests checks calls against them, as the real one does with pydantic.",
+ "tools": [
+  {
+   "name": "lean_build",
+   "required": [],
+   "properties": {
+    "lean_project_path": {
+     "types": [
+      "string",
+      "null"
+     ]
+    },
+    "clean": {
+     "types": [
+      "boolean"
+     ]
+    },
+    "fetch_cache": {
+     "types": [
+      "boolean"
+     ]
+    },
+    "output_lines": {
+     "types": [
+      "integer"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_file_outline",
+   "required": [
+    "file_path"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "max_declarations": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_diagnostic_messages",
+   "required": [
+    "file_path"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "start_line": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "end_line": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "declaration_name": {
+     "types": [
+      "string",
+      "null"
+     ]
+    },
+    "interactive": {
+     "types": [
+      "boolean"
+     ]
+    },
+    "timeout_s": {
+     "types": [
+      "number",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "severity": {
+     "types": [
+      "string"
+     ],
+     "enum": [
+      "error",
+      "warning",
+      "info",
+      "hint"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_code_actions",
+   "required": [
+    "file_path",
+    "line"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_goal",
+   "required": [
+    "file_path",
+    "line"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "format": {
+     "types": [
+      "string"
+     ],
+     "enum": [
+      "text",
+      "structured"
+     ]
+    },
+    "timeout_s": {
+     "types": [
+      "number",
+      "null"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_term_goal",
+   "required": [
+    "file_path",
+    "line"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_hover_info",
+   "required": [
+    "file_path",
+    "line",
+    "column"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_completions",
+   "required": [
+    "file_path",
+    "line",
+    "column"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "max_completions": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "resolve_details": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 0
+    }
+   }
+  },
+  {
+   "name": "lean_declaration_file",
+   "required": [
+    "file_path",
+    "symbol"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "symbol": {
+     "types": [
+      "string"
+     ]
+    },
+    "context_lines": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 0
+    },
+    "full_file": {
+     "types": [
+      "boolean"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_references",
+   "required": [
+    "file_path",
+    "line",
+    "column"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "max_results": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_local_search",
+   "required": [
+    "query"
+   ],
+   "properties": {
+    "query": {
+     "types": [
+      "string"
+     ]
+    },
+    "limit": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "project_root": {
+     "types": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_leansearch",
+   "required": [
+    "query"
+   ],
+   "properties": {
+    "query": {
+     "types": [
+      "string"
+     ]
+    },
+    "num_results": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_loogle",
+   "required": [
+    "query"
+   ],
+   "properties": {
+    "query": {
+     "types": [
+      "string"
+     ]
+    },
+    "num_results": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_leanfinder",
+   "required": [
+    "query"
+   ],
+   "properties": {
+    "query": {
+     "types": [
+      "string"
+     ]
+    },
+    "num_results": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "version": {
+     "types": [
+      "string"
+     ],
+     "enum": [
+      "v4.19.0",
+      "v4.24.0",
+      "v4.28.0"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_hammer_premise",
+   "required": [
+    "file_path",
+    "line",
+    "column"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "num_results": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_multi_attempt",
+   "required": [
+    "file_path",
+    "line",
+    "snippets"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "snippets": {
+     "types": [
+      "array"
+     ]
+    },
+    "column": {
+     "types": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_run_code",
+   "required": [
+    "code"
+   ],
+   "properties": {
+    "code": {
+     "types": [
+      "string"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_verify",
+   "required": [
+    "file_path",
+    "theorem_name"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "theorem_name": {
+     "types": [
+      "string"
+     ]
+    },
+    "scan_source": {
+     "types": [
+      "boolean"
+     ]
+    }
+   }
+  },
+  {
+   "name": "lean_minimal_hypotheses",
+   "required": [
+    "file_path",
+    "theorem_name"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "theorem_name": {
+     "types": [
+      "string"
+     ]
+    },
+    "inactivity_timeout": {
+     "types": [
+      "number"
+     ],
+     "minimum": 5
+    }
+   }
+  },
+  {
+   "name": "lean_profile_proof",
+   "required": [
+    "file_path",
+    "line"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "top_n": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "timeout": {
+     "types": [
+      "number"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_get_widgets",
+   "required": [
+    "file_path",
+    "line",
+    "column"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "line": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    },
+    "column": {
+     "types": [
+      "integer"
+     ],
+     "minimum": 1
+    }
+   }
+  },
+  {
+   "name": "lean_get_widget_source",
+   "required": [
+    "file_path",
+    "javascript_hash"
+   ],
+   "properties": {
+    "file_path": {
+     "types": [
+      "string"
+     ]
+    },
+    "javascript_hash": {
+     "types": [
+      "string"
+     ]
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@seshat/lean-lsp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The registry factory `lean-lsp` for lean.lsp: lean-lsp-mcp behind an allowlist, on the attempt's own sketch file; the binding that gives a prover the tool.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-mcp": "1.2.0",
+    "@seshat/core": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

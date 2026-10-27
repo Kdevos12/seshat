@@ -135,6 +135,15 @@ describe("host profiles", () => {
     ]);
   });
 
+  it("lets a capability be optional, and refuses anything but a boolean for it", () => {
+    const profile = parseHostProfile({ host: "local", capabilities: { "math.add": { use: ["js"], optional: true } } });
+    assert.equal(profile.capabilities["math.add"]?.optional, true);
+    assert.deepEqual(checkHostProfile(profile, catalog), []);
+    const problems = problemsOf(() => parseHostProfile({ host: "local", capabilities: { "math.add": { use: ["js"], optional: "yes" } } }));
+    assert.equal(problems.length, 1);
+    assert.match(problems[0] ?? "", /^host profile \$\.capabilities\.math\.add\.optional: /);
+  });
+
   it("refuses a malformed profile", () => {
     assert.deepEqual(problemsOf(() => parseHostProfile({ host: "Local", capabilities: { x: { use: [] } } })), [
       "host profile $.host: does not match /^[a-z][a-z0-9-]*$/",

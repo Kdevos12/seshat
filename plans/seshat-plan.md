@@ -38,6 +38,14 @@ detection, so Task 12 (M7, M9) is not built (Ruling 20); see "Later" at the end 
 (Ruling 24), and a collaborator joined: Tasks 6, 9 and 11 are the collaborator's (Ruling 25), with
 their brief in [collaborator-tasks.md](collaborator-tasks.md). The order of the remaining tasks is
 Ruling 24 for the main team and Ruling 25 for the collaborator.
+(7) 2026-10-21: the plan change [plan-change-memory-evolution.md](plan-change-memory-evolution.md)
+(PE1 to PE9: provenance stamps, epochs and probation for learned artifacts; randomized inclusion of
+unverified memory with causal counters; a soft failure memory; an escalation ladder by budget
+spent; a session-frozen packet prefix; rules on skills and external text; line `M18`, a curriculum
+of variants; offline prompt optimization; an entrenchment probe; decision note
+`research/evolution-memoire-continue.md`), approved by the user: Tasks 23 to 26 are new, Tasks 9,
+10, 11, 14, 18 and 19 name it, its rules are Global Constraint 16, and the memory that outlives a
+run, which it assumes, is Ruling 28. The main team's order is Ruling 27's.
 
 ## Global Constraints
 
@@ -101,6 +109,16 @@ These bind every task. Copy them to reviewers verbatim.
     lines.
 15. Workers never dispatch subagents and never push. Each team's controller pushes, pulls and
     merges, as `CLAUDE.md` says.
+16. Learned memory (plan change PE1 and PE6). An artifact a mechanism learns from outcomes rather
+    than from Lean (a lesson, an attempt record that "already tried" reads, a posterior, a schema,
+    a channel statistic, a prompt) is unverified: it carries the provenance stamp of Task 23 and
+    never becomes a fact. No mechanism writes free-form procedural skills from the agent's own
+    experience: procedure enters only through verified channels (library lemmas, Lean macros,
+    schemas) or counted lessons. Human-written skills are allowed; at most 3 are loaded in full in a
+    session (an option), and the others are listed by name and description. Text from an external
+    source (a paper, a web page, a database entry, a tool's output) keeps its provenance and never
+    becomes a lesson or part of a system prompt: a lesson's text comes only from our own journaled
+    outcomes.
 
 ## Interfaces every task shares
 
@@ -114,6 +132,12 @@ A mechanism of the plan is a *line* (an ablation line, plan §6): an object with
 enables lines with `--lines` (or a config file); with no line it is exactly M0. The orchestrator
 calls the hooks of the enabled lines in the order of plan §7. Each later task implements its
 line(s) in its own package and registers them in `packages/orchestrator/src/lines.ts`.
+
+Learned memory (Task 23, documented in `documentation/memory.md`): the provenance stamp, the epoch
+with its probation, and the randomized inclusion of unverified items with their effect posteriors
+are calls of the memory store. A task that builds a learned artifact (Tasks 9, 11, 18, 19 and 26)
+uses them; until Task 23 merges, it builds against the interface Task 23's section gives, and the
+second of the two to merge wires them (Ruling 25).
 
 ---
 
@@ -476,6 +500,16 @@ the ranking order is problem-local, then the harness library, then extra package
 with the source shown so the prover knows what to import; the report counts proofs that use a
 declaration from each package.
 
+Amended by PE1, PE2 and PE6 item 4 of `plans/plan-change-memory-evolution.md`: lessons carry Task
+23's provenance stamp, and library lemmas carry the Mathlib revision and are compiled again when it
+changes (PE1). A lesson's standing is its causal effect, not its presence: Task 23's randomized
+inclusion decides whether a session sees it, its effect is the difference between the success rates
+of attempts with it and without it in one claim group and strategy label (two Beta posteriors), and
+it is deactivated when P(effect < 0) > 0.9 after at least M observations on each side (both
+options); the presence counters of deliverable 2 stay in the report for comparison (PE2). With
+`--human` (Task 17), promoting a lesson to the global scope is staged for the team's approval:
+`harness lessons pending|approve|reject` (PE6 item 4). Global Constraint 16 holds for lessons.
+
 Deliverables in `@seshat/library` and `@seshat/lessons`:
 
 1. Library (line `M3`): promotion of proved auxiliary lemmas that are non-trivial (not closed by
@@ -503,6 +537,16 @@ Amended by PC1 item 6 of `plans/plan-change-thinking-modes.md` (the scheduler
 selects among the ledger's `ready` tasks, Task 15, instead of keeping its own queue) and PC4 item 1
 (each unproved `aux_` lemma also becomes a `prove` task with a small inner budget, and a lemma
 proved inside reaches the outer prover's next briefing).
+
+Amended by PE4 of `plans/plan-change-memory-evolution.md`: a per-problem escalation ladder in the
+scheduler. Rung 0 is the provers with the cheap lines that are on (M10's battery, M2's
+propagation); rung 1 is line `M18` (Task 25); rung 2 is lines `M15` and `M16` (Tasks 18 and 13). A
+rung counts only if its line is on, and a line built after this task registers its rung when it
+merges. A problem moves up a rung when a fraction f_k of its budget is spent without Lean progress
+(a new proved subclaim, or fewer open holes in the best healthy sketch, one that checks with only
+its named holes open); f = 0.3, then 0.6, by default (options, tuned on real runs from Task 14's
+cost-to-first-success curves). Each move is a `ladder.escalated` event with its reason, and the
+report gives per problem the rung that solved it and the dollars spent on each rung.
 
 Deliverables in `@seshat/scheduler` and the orchestrator:
 
@@ -538,6 +582,17 @@ kinds for hub nodes.
 
 Amended by LC2 of `plans/plan-change-lean-libraries.md`: the premise selector covers the environment's
 extra packages (Task 21) in the ranking order of LC2, the source shown in the briefing.
+
+Amended by PE2 and PE5 of `plans/plan-change-memory-evolution.md`. Each unverified item the
+compiler selects (a lesson, a schema hint, a library hint section; never a verified fact the proof
+needs, never the goal) goes through Task 23's randomized inclusion, which records the draw on
+`attempt.started` (PE2). The packet comes in two parts through Task 24's API: a prefix (goal,
+useful facts, candidate premises, already tried, active lessons as drawn) compiled once when the
+session starts and sent unchanged on every request of the session, then a tail (the sketch's
+state, the last raw Lean feedback, the budget left) compiled for each request, so that a provider's
+prompt cache covers the prefix (PE5). Facts learned during a session reach the next session or, as
+an option, the tail, as a short list of what is new since the session started. Deliverable 1's
+"rebuilt for each model request" now holds for the tail only.
 
 Deliverables in `@seshat/context`:
 
@@ -656,6 +711,21 @@ proofs per library package, LC2). Lines `M7` and `M9` are suspended (Ruling 20):
 cumulative configs, and the plan §6 measurements that need them (inspirations in causal chains)
 are dropped; the share of proofs through an inductive hypothesis (M8) stays.
 
+Amended by `plans/plan-change-memory-evolution.md`. PE4: the ladder against all rungs from the
+start and against rung 0 only, at equal budget and split by difficulty, and cost-to-first-success
+curves by Nexus's chunking protocol (100 attempts of one prover grouped into chunks of 100/K
+attempts, K in {1, 3, 6, 10}, a chunk succeeding when one of its attempts does, the cost summed up to
+the first success), from which the ladder's fractions are tuned on real runs. PE2: the lesson set's
+size and the solve rate against the presence counter. PE5: dollars per solve with the frozen prefix
+against a prefix compiled for each request. PE9 in full: a fixed probe set (20 bench problems by
+default, never used to build the library) rerun every K runs (an option) twice, with memory on and
+with every learned unverified artifact withheld (verified facts kept), and an alarm in the report
+when memory on solves fewer or costs more beyond noise; the library and the schemas built on one
+part of the bench and measured on another; and, over time, the number of distinct strategy labels
+and sources among proofs, the share of budget spent on strategies never tried on that claim group,
+and the share of proofs that reuse a library lemma or a schema. Line `M18` (Task 25) joins the
+cumulative configs after `M12`; Task 26 stays outside ablation runs.
+
 Deliverables:
 
 1. Every line composed in one run in plan order, with plan §15's order of operations per subgoal
@@ -768,6 +838,11 @@ schema extraction from closed sub-DAGs into the library, instantiation through `
 `M15`, inserted after `M3` in `LINE_ORDER`; measured on solves at equal budget, diversity of proof
 mechanisms and schema reuse against random retrieval.
 
+Amended by PE1 and PE2 of `plans/plan-change-memory-evolution.md`: schemas and the archive's cell
+posteriors carry Task 23's provenance stamp, with its probation on a new epoch; a schema hint shown
+to a session goes through Task 23's randomized inclusion, and its effect posteriors, not its
+presence, decide whether it stays in use.
+
 ### Task 19: Task 8 follow-up: sampled session settings, judgments, anti-sycophancy, informal-first sessions
 
 Where it fits: the parts of `plans/plan-change-thinking-modes.md` that amend Task 8, built after Task 8 merges
@@ -780,6 +855,18 @@ ones; premise count and rendering join once Task 11 exists); §PC9 (the `judge` 
 `@seshat/lines`); §PC10 (one fixed anti-sycophancy instruction in M6's framing, no prompt that
 shows another agent's verdict, prompt version bump); §PC11 item 1 (the `nl_first` session mode with
 its checked step DAG, sampled by the fleet as an arm).
+
+Amended by PE3 of `plans/plan-change-memory-evolution.md`, the soft failure memory, which needs Task
+23's config classes (so this task follows Task 23). M1's "already tried" groups attempts by strategy
+and by config class (model family, budget class) and says so when a line comes from another class
+("2 failures with a smaller model"). The fleet's strategy posteriors are discounted by γ (0.8 by
+default, an option) on each new run on a problem (Ruling 28) and shrunk on a new epoch (Task 23).
+An exploration floor: a share ε of sessions (0.1 by default) chooses its strategy uniformly among
+the allowed labels, ignoring negative memory for that choice only (the session still sees "already
+tried"), recorded as `exploration: true` on the attempt. A routing action `retry_stronger` joins
+Task 15's table, taken before `branch` when every failure of a claim comes from a config class
+weaker than the strongest one configured. Tests: grouping by config class, the discount
+arithmetic, the floor's share over a seeded run, the routing case.
 
 ### Task 20: The `decide` capability, with an optional Jev backend
 
@@ -826,6 +913,103 @@ theorem, the spec's test lemmas proved, provenance journaled; a passing build gi
 environment version for the next run, never during one; tests with a fake agent script); LC5 (new
 definitions are `unreviewed` and may appear in proofs but not in claim statements until
 `reviewed`; a wrong definition is deprecated in a new environment version, never edited in place).
+
+### Task 23: Memory across runs, provenance and epochs, randomized inclusion
+
+Where it fits: PE1 and the mechanism of PE2 of `plans/plan-change-memory-evolution.md`, with the
+memory that outlives a run which they assume (Ruling 28). Main team; after Task 15, whose resume it
+builds on; infrastructure that Tasks 9, 11, 18, 19 and 26 use. Not an ablation line: with no line
+enabled and no earlier memory, a run behaves as before. Read first: the plan change in full,
+`documentation/memory.md`, `journal.md`, `lines.md`, `fleet.md` and `m0-loop.md`.
+
+Deliverables:
+
+1. Memory across runs (Ruling 28): `harness run --memory-from <runDir>` starts a run on the memory
+   of an earlier run, and a chain of runs works the same way. The new run's `run.started` names the
+   earlier journal and its last hash; the projection replays the earlier journal, checked against
+   that hash, before the new one; nothing writes the earlier journal, and its tool runs and blobs
+   stay readable. Verified facts carry over only under the same Lean environment (the bench's
+   revision and the Lean toolchain, then Task 21's environment hash); under another, a claim's
+   earlier status counts for nothing until a stored proof passes `validate` again in the new run. A
+   problem's outcome still comes only from its own certifications in the run (Ruling 23), and the
+   report counts what came from the earlier memory.
+2. Provenance (PE1 item 1): a `Provenance` record (`modelId` as configured, `promptVersion`,
+   `mathlibRev`, `harnessVersion`, `budgetClass`, `createdAt`) on every learned, unverified
+   artifact that exists when this task is built (the attempt records that M1's "already tried"
+   reads, and the fleet's posteriors through their attempts), the helper that later artifacts use
+   (lessons in Task 9, schemas and cells in Task 18, prompts in Task 26), and the config class
+   (model family, budget class) that Task 19 groups by. `mathlibRev` is the bench's Mathlib
+   revision until Task 21's environment hash stands in for it.
+3. Epochs and probation (PE1 items 2 and 3): the projection's current epoch; a new epoch, the event
+   `memory.epoch_opened` with its reason, when the prover model family, the prompts' major version
+   or the Mathlib revision differs from the memory's previous run; the counters of older epochs
+   shrunk toward the prior (Beta(a, b) becomes Beta(1 + (a − 1)k, 1 + (b − 1)k), k = 0.25 by
+   default, an option) and earned again under item 4; nothing deleted.
+4. Randomized inclusion and effect posteriors (PE2 items 1 and 2, the mechanism): a memory-store
+   call that takes the unverified items a line selected for a session and draws each with
+   probability `p_new` (0.5) for its first N uses (20), then `p` (0.9), from the run's seeded random
+   source, recording `included` and `withheld` on `attempt.started`; and a query that gives an
+   item's effect as two Beta posteriors (successes of attempts with it and without it, within one
+   claim group and strategy label) and P(effect < 0). A verified fact and the goal are never drawn.
+   Tasks 9, 11 and 18 call these.
+5. Docs: `documentation/memory.md` (sections "Memory across runs", "Provenance and epochs" and
+   "Randomized inclusion"), `journal.md` (the new event and fields), `m0-loop.md` (`--memory-from`)
+   and the README diagram (memory carried over from an earlier run).
+
+Tests: a run started from an earlier one sees its claims, nodes, attempts and posteriors, refuses an
+earlier journal whose last hash differs, and leaves it unchanged; under another environment, a claim
+proved earlier is open until a stored proof validates; a problem's outcome is not credited from the
+earlier run; the stamp on each artifact kind; an epoch on each trigger; the shrinkage arithmetic; an
+item in probation regains weight only through outcomes; draws reproducible from the seed; posteriors
+on scripted outcomes; verified facts never withheld.
+
+### Task 24: The session-frozen packet prefix
+
+Where it fits: PE5 of `plans/plan-change-memory-evolution.md`. Main team; small; before Task 11
+(M4, the collaborator's), which compiles its packet through it. Read first: §PE5,
+`documentation/lines.md` (`contextPacket`) and `m0-loop.md` (spend and the report).
+
+Deliverables and tests: those of §PE5. `contextPacket` may answer `{ prefix, tail }` (a string keeps
+today's behaviour); the prefix of a session's first request is sent unchanged, byte for byte, on
+every later request of the session, followed by that request's tail; an option adds to the tail a
+short list of what is new since the session started; cache hints go through pi-ai (`cacheRetention`)
+where the provider supports them; the report gives cached input tokens (`cacheRead`, already counted
+in `budget.ts`) and dollars per solve. Tests, with a test line that gives a packet and pi-ai's faux
+provider: the prefix identical across a session's requests, the tail changing, the "new since" list,
+the cached tokens in the report. Docs: `lines.md` and `m0-loop.md`. Measured in Task 14 once M4
+exists; not run against a real provider here.
+
+### Task 25: Line M18: a curriculum of variants
+
+Where it fits: PE7 of `plans/plan-change-memory-evolution.md`, rung 1 of Task 10's ladder (PE4):
+AlphaProof's test-time curriculum without its training. Main team; after Task 10. Read first: §PE7
+and §PE4, `documentation/graph.md` (M2's variants, Task 5) and the scheduler's page (Task 10).
+
+Deliverables and tests: those of §PE7. When a problem reaches rung 1, special cases and weakenings of
+its target from M2's variant generator (small n, a prime case, an extra hypothesis) become tasks with
+a capped share of the problem's budget (20% by default, an option); their proofs, validated and
+certified like any other, reach later sessions as proved facts with `special_case_of` edges and as
+one or two proof examples in the briefing. Line `M18`, inserted after `M12` in `LINE_ORDER` (Ruling
+27). Docs: `documentation/curriculum.md`, `lines.md` and the README diagram. No published evidence
+says this pays without updating weights: the line is removed if it does not beat the ladder without
+it at equal budget (Task 14). Tests: variant tasks created on escalation, the budget cap, proofs
+reaching the next briefing.
+
+### Task 26: Offline prompt optimization (`harness optimize-prompts`)
+
+Where it fits: PE8 of `plans/plan-change-memory-evolution.md`; low priority; after Task 14 and
+before the final review; off by default and outside ablation runs. Main team. Read first: §PE8,
+`documentation/bench.md` and `trust.md`.
+
+Deliverables and tests: those of §PE8. `harness optimize-prompts --split dev` runs GEPA-style
+reflective mutation over the prover's and the lines' prompts on a dev split of the bench, keeping a
+Pareto set per problem; a candidate is accepted only if it beats the current prompt at equal budget
+on a held-out split and on a temporal holdout (problems newer than a cutoff date). It writes a
+branch and a report, and a human merges. It has no write access to the validator, the guards, the
+journal's code, the tests or the bench's indexes, and its prompts carry the provenance stamp (Task
+23). The splits are part of this task if Task 14 has not made them. Tests with the faux model on a
+small simulated bench: the Pareto set, the acceptance rule, the refusal to write anything but prompt
+files. Docs: `documentation/prompts.md`. Not run against a real model here.
 
 ## Later (not scheduled)
 

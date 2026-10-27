@@ -78,6 +78,8 @@ export interface HealthEntry {
   ok: boolean;
   detail: string;
   durationMs: number;
+  /** Set when the host's profile marks the capability `optional`: a failure of it is a warning. */
+  optional?: true;
 }
 
 export class CapabilityError extends Error {
@@ -356,6 +358,7 @@ export class Registry {
     const entries: HealthEntry[] = [];
     for (const capabilityId of ids) {
       const capability = this.capability(capabilityId);
+      const optional = this.host.capabilities[capabilityId]?.optional === true;
       for (const implId of this.host.capabilities[capabilityId]?.use ?? []) {
         const spec = capability.manifest.implementations.find((i) => i.id === implId) as ImplementationSpec;
         const started = performance.now();
@@ -374,6 +377,7 @@ export class Registry {
           ok: check.ok,
           detail: check.detail ?? "",
           durationMs: Math.round(performance.now() - started),
+          ...(optional ? { optional: true as const } : {}),
         });
       }
     }

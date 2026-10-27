@@ -1,0 +1,481 @@
+{
+  "id": "lean.lsp",
+  "version": 1,
+  "title": "Lean language server: goals, tactics and Mathlib search",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "seeing the goals before and after a line of the proof, or the type expected at a position, without a whole lean_check",
+    "trying several tactics at one line and seeing which of them close the goal",
+    "finding Mathlib lemmas by name, by type pattern or by what they say, or premises for a goal"
+  ],
+  "whenNot": [
+    "deciding whether a proof is right: only lean_check accepts a proof",
+    "reading or changing any other file of the project",
+    "running code, building the project, or anything else than the eight operations"
+  ],
+  "exposure": "direct",
+  "stateful": true,
+  "input": {
+    "type": "object",
+    "required": [
+      "op"
+    ],
+    "properties": {
+      "op": {
+        "enum": [
+          "goal",
+          "term_goal",
+          "diagnostics",
+          "multi_attempt",
+          "loogle",
+          "leansearch",
+          "state_search",
+          "hammer_premise"
+        ],
+        "description": "goal: the goals at a line or a position; term_goal: the expected type at a position; diagnostics: Lean's messages on the file; multi_attempt: several tactics tried at one line; loogle: Mathlib by name or type pattern; leansearch: Mathlib by meaning; state_search: lemmas for the goal at a position; hammer_premise: premises for the goal at a position"
+      },
+      "sketch": {
+        "type": "object",
+        "required": [
+          "fullName",
+          "declaredName",
+          "statement",
+          "prefix",
+          "header",
+          "originalProof",
+          "suffix",
+          "indent"
+        ],
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "description": "Fully qualified name of the target theorem"
+          },
+          "declaredName": {
+            "type": "string",
+            "description": "Its name as written in the source"
+          },
+          "statement": {
+            "type": "string",
+            "description": "Binders and type, as written"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "The file before the first marker line"
+          },
+          "header": {
+            "type": "string",
+            "description": "The docstring, attributes and the declaration up to its `by`"
+          },
+          "originalProof": {
+            "type": "string",
+            "description": "The proof the regions start with"
+          },
+          "suffix": {
+            "type": "string",
+            "description": "The file after the last marker line"
+          },
+          "indent": {
+            "type": "string",
+            "description": "Indentation of the tactic block"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Harness use. The problem's sketch (the Sketch of @seshat/core), which the file operations build the file from. The harness fills it in for a prover's calls, and a prover cannot set it."
+      },
+      "aux": {
+        "type": "string",
+        "maxLength": 100000,
+        "description": "The whole AUX region, as for lean_check. Default: the AUX of your last lean_check."
+      },
+      "proof": {
+        "type": "string",
+        "maxLength": 100000,
+        "description": "The whole PROOF region, without `by`, as for lean_check. Default: the PROOF of your last lean_check."
+      },
+      "region": {
+        "enum": [
+          "aux",
+          "proof"
+        ],
+        "description": "The region that line counts in (default proof); for diagnostics, the only region to report on"
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "goal, term_goal, multi_attempt, state_search, hammer_premise: a line of the region, from 1, as lean_check numbers them"
+      },
+      "column": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "A character position in the line as it stands in the file (proof lines start with the harness's indentation), from 1. Optional: goal then gives the goals before and after the line"
+      },
+      "tactics": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 8,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "description": "multi_attempt: tactics to try in place of the line, each one or several lines. A tactic replaces as many lines as it has, from `line`, and must end inside the region"
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "loogle: a name, a type pattern or a conclusion; leansearch: what the lemma says"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 30,
+        "description": "loogle, leansearch, state_search, hammer_premise: how many results at most (defaults 8, 5, 5, 16)"
+      },
+      "severity": {
+        "enum": [
+          "error",
+          "warning",
+          "info",
+          "hint"
+        ],
+        "description": "diagnostics: only messages of this level"
+      },
+      "timeoutSec": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "goal, state_search, diagnostics: how long Lean may take to elaborate the file, in seconds, before the answer says it is still elaborating"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "op",
+      "status"
+    ],
+    "properties": {
+      "op": {
+        "enum": [
+          "goal",
+          "term_goal",
+          "diagnostics",
+          "multi_attempt",
+          "loogle",
+          "leansearch",
+          "state_search",
+          "hammer_premise"
+        ]
+      },
+      "status": {
+        "type": "string",
+        "description": "ok; goal with a column: goals, complete, no_goal_here; goal and state_search: still_elaborating when Lean did not finish within timeoutSec; term_goal: no_term_goal; diagnostics: partial; state_search and hammer_premise: complete or no_goal_here; any search: unavailable"
+      },
+      "region": {
+        "enum": [
+          "aux",
+          "proof"
+        ]
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "column": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "lineText": {
+        "type": "string",
+        "description": "The line asked about, as it stands in the file"
+      },
+      "goals": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "goal at a position: the goals there"
+      },
+      "goalsBefore": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "goal on a line: the goals before it"
+      },
+      "goalsAfter": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "goal on a line: the goals after it"
+      },
+      "expectedType": {
+        "type": "string"
+      },
+      "messages": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "severity",
+            "region",
+            "line",
+            "column",
+            "message"
+          ],
+          "properties": {
+            "severity": {
+              "type": "string",
+              "description": "error, warning, info or hint"
+            },
+            "region": {
+              "enum": [
+                "aux",
+                "proof",
+                "fixed"
+              ],
+              "description": "fixed: outside both regions, and then line is the file's"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "from 1, in the region"
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "from 1, in the line as it stands in the file"
+            },
+            "code": {
+              "type": "string",
+              "description": "the source line, trimmed"
+            },
+            "message": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string",
+              "description": "linter, sorry or suggestion; absent for an ordinary message"
+            },
+            "hint": {
+              "type": "string",
+              "description": "the server's advice for a failure it recognizes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": "diagnostics: errors first"
+      },
+      "errors": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "warnings": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "attempts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "tactic",
+            "result",
+            "goals",
+            "messages"
+          ],
+          "properties": {
+            "tactic": {
+              "type": "string"
+            },
+            "result": {
+              "enum": [
+                "closed",
+                "open",
+                "error"
+              ],
+              "description": "closed: no goal left and no error"
+            },
+            "goals": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "messages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "severity",
+                  "region",
+                  "line",
+                  "column",
+                  "message"
+                ],
+                "properties": {
+                  "severity": {
+                    "type": "string",
+                    "description": "error, warning, info or hint"
+                  },
+                  "region": {
+                    "enum": [
+                      "aux",
+                      "proof",
+                      "fixed"
+                    ],
+                    "description": "fixed: outside both regions, and then line is the file's"
+                  },
+                  "line": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "from 1, in the region"
+                  },
+                  "column": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "from 1, in the line as it stands in the file"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "the source line, trimmed"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string",
+                    "description": "linter, sorry or suggestion; absent for an ordinary message"
+                  },
+                  "hint": {
+                    "type": "string",
+                    "description": "the server's advice for a failure it recognizes"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "goal": {
+        "type": "string",
+        "description": "state_search: the goal that was searched for"
+      },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "module": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "premises": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "more": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Items the answer does not show"
+      },
+      "unavailable": {
+        "type": "string",
+        "description": "A site that could not be asked, and why; the rest of the answer is empty"
+      },
+      "note": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 180000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "op",
+    "status",
+    "errors",
+    "unavailable"
+  ],
+  "examples": [
+    {
+      "title": "the goals before and after a line",
+      "input": {
+        "op": "goal",
+        "line": 3
+      }
+    },
+    {
+      "title": "which tactic closes the goal",
+      "input": {
+        "op": "multi_attempt",
+        "line": 5,
+        "tactics": [
+          "omega",
+          "simp",
+          "exact?"
+        ]
+      }
+    },
+    {
+      "title": "a lemma by its shape",
+      "input": {
+        "op": "loogle",
+        "query": "|- _ + _ = _ + _"
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "lean-lsp-mcp",
+      "version": "0.31.0",
+      "kind": "inproc",
+      "factory": "lean-lsp",
+      "description": "lean-lsp-mcp 0.31.0 (PyPI) with leanclient 0.13.2 as a child process over stdio, by default started with uvx, on a Lean project: 8 of its 22 tools behind an allowlist, the other 14 switched off in the server (LEAN_MCP_DISABLED_TOOLS) and never called. The harness writes one scratch file per attempt in the project and names no other file. Not sandboxed: the server and Lean run as the harness's user (documentation/lean-lsp.md). The searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. Not run against a real Lean yet.",
+      "environment": {
+        "server": "lean-lsp-mcp 0.31.0",
+        "leanclient": "leanclient 0.13.2",
+        "lean": "v4.27.0",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7",
+        "site.loogle": "https://loogle.lean-lang.org",
+        "site.leansearch": "https://leansearch.net",
+        "site.leanfinder": "https://lean-lsp-proxy.leanfinder.workers.dev",
+        "site.hammer": "http://leanpremise.net"
+      },
+      "settings": {
+        "command": "uvx",
+        "scratchDir": ".seshat-lsp",
+        "siteCooldownSec": 60
+      }
+    }
+  ]
+}
