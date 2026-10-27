@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-27 16:32 UTC. `main` at ec73456, 1021 tests.
+Updated 2026-10-27 20:24 UTC. `main` at ab4bda3, 1181 tests.
 
 ## Tasks
 
@@ -25,7 +25,7 @@ Updated 2026-10-27 16:32 UTC. `main` at ec73456, 1021 tests.
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
-| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | approved after fix round 1; main merged in, M11 resume and minors in progress | `task/t15` |
+| 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
@@ -33,8 +33,8 @@ Updated 2026-10-27 16:32 UTC. `main` at ec73456, 1021 tests.
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
 | 21 | Lean environment and resolver, M17 | main | not started (after 15) | |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
-| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | not started (after 15) | |
-| 24 | Session-frozen packet prefix | main | not started (after 15) | |
+| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | implementing | `task/t23` |
+| 24 | Session-frozen packet prefix | main | implementing | `task/t24` |
 | 25 | M18: curriculum of variants | main | not started (after 10) | |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
 | Final | review of the whole build | main | after 26 | |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T7, T16 and T15 in flight (T4 merged); then T23 and T24, T17, T21, T19,
+- Main team (Ruling 27): T4, T7, T15 and T16 merged; T23 and T24 in flight; then T17, T21, T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -88,14 +88,10 @@ Notes from the main team, newest last. Read them at the start of each session.
 - 2026-10-27: Task 7 is merged, with the shared screen for model text. Pull. A line that writes model
   text into a Lean file (Task 6's battery, Task 9's tactic mining) uses `structuralCheck` or
   `forbiddenTokensIn`; the strict reading is on by default there.
-- 2026-10-27: Task 15 (task ledger and `harness run --resume`) is in its first fix round and merges
-  after Tasks 7 and 16. Two things for your lines once it is on `main`. Each line declares
-  `resume`: whether a run with it can be resumed after its process ended, and how; a registered
-  line that declares nothing makes a resumed run refuse. So keep a line's per-problem state either
-  in the journal and memory store or derivable from them (Global Constraint 9), and a resume
-  rebuilds it; M2, M6 and the fleet will show how. Schema-checked JSON answers come from
-  `completeJson(llm, request)` in `@seshat/lines`, one retry on a bad answer, both calls charged.
-  The exact API will be under "Interface changes" when it merges.
+- 2026-10-27: Tasks 7, 15 and 16 are merged (`main` at `ab4bda3`). Pull. Every line now declares how a
+  run with it is resumed (`Line.resume`), and a registered line that declares nothing makes `harness run
+  --resume` refuse: Tasks 6, 9 and 11 must declare theirs. Use `completeJson(llm, request)` from
+  `@seshat/lines` for schema-checked JSON. Details under "Interface changes".
 
 ## Interface changes
 
@@ -127,6 +123,21 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   hides it), the optional `CapabilityToolOptions.binding`, `Workbench.lastSubmission(attemptId)`,
   the `lean-lsp` factory in `FACTORIES`; `config/hosts/*.json`: a `lean.lsp` entry each;
   `pnpm-lock.yaml`: the new workspace package. Page: [lean-lsp.md](../documentation/lean-lsp.md).
+- Task 15, merged in `ab4bda3`: `packages/core`: the events `task.created`, `task.assigned`,
+  `task.status_changed`, `task.routed`, `attempt.charged` and `run.resumed` (orchestrator-only for
+  the task events and `run.resumed`), the optional `taskId` and `site` on `attempt.started`, `carry`
+  on `attempt.finished`, `site` on `model_call.finished`, `problemId` on `validation.finished`,
+  the projection tables `tasks` and `task_routes` and their queries (`PROJECTION_VERSION` 4), the
+  option `deferRepair` and the method `repair()` of `EventLog` and `Journal.open`, and
+  `TornTail.sha256` as the digest of the dropped bytes; `packages/lines`: `TaskApi` (`propose`),
+  `LlmRequest.site`, the optional `Llm.completeJson` and the exported function
+  `completeJson(llm, request)` (use the function: it falls back to `withJson(llm.complete)`),
+  `Line.resume` (`"stateless"`, `"rebuild"` with the hook `resumeProblem(problem, held)`, or
+  `{ refuse }`; a registered line that declares nothing makes a resumed run refuse), `ResumedProblem`;
+  `packages/scheduler`: `TaskLedger`; `packages/orchestrator`: `resumeBench`, `harness run
+  --resume`, `Ledger.seed`, `Workbench.adopt`, the report keys `sites` and `resumed`; the core
+  projection queries `modelCallsOfProblem` and `claimsWithAttempts`. Every line now declares
+  `resume`; yours (Tasks 6, 9, 11) must too. Page: [ledger.md](../documentation/ledger.md).
 
 ## Log
 
@@ -387,3 +398,11 @@ Task 15: scoped re-review of fix round 1 (resumed reviewer): approved, no Critic
 Task 16: merged: main (Tasks 4 and 7) brought into task/t16 by the implementer (ded3f1e, ten conflicts as unions), regression tests that lean.lsp refuses `x#eval 1`, `#checkrun_cmd 1`, `<-- #eval 1`, the joins at column 7 and the strict-reading cases as proof, aux and tactic (10 of 65 fail on the old core), the two minors and two nits fixed (a lone CR before CRLF is now refused), pnpm check 1019/1019, links ok, task/t16 pushed; merged into main ec73456 (--no-ff, pnpm check 1021/1021 on main), pushed ef25c9c..ec73456
 Task 16: complete; not run against a real Lean; deferred to the final review: M13 (the registry records a lean.lsp call's whole bound input), the re-review nits
 Task 15: merge of main (Tasks 4, 7, 16) started in wt/t15 by the controller, conflicts in README, architecture, m0-loop, problem.ts and prover.ts; the implementer (resumed) finishes it, declares M11's resume (stateless or rebuild, with a cut test of a run with M11 and its certified refutation), and fixes the reviewer's minors; report task-15-merge-report.md
+Usage-limit stop 19: the session limit cut the T15 implementer (merge cb8db89 and M11 declared stateless in 5520daf committed, minors uncommitted) about 16:45 UTC (reset 20:00); resumed 20:06 UTC
+Task 15: merge of main and minors done by the implementer (commits cb8db89 merge, 5520daf 7ebe1ec 423ecd1 236e5bb on task/t15, 1179/1179, 93 s; task/t15 pushed); M11 declared stateless (its beforeProvers made safe to run twice: reads back a Lean fingerprint, skips a refutation or identification already on record, version 2; recordCounterModel idempotent; resume-m11.test.ts cuts the certified-refutation path and a refuted statement about a number at every event); the every-event tests of the fleet and M6 now compare outcome, cost, allocations and findings with the uncut run at the cuts between sessions and fail if resumeProblem is a no-op; real M2 bug found by the new tests (a composed proof Lean had answered just before a cut got no derivation node when the resumed problem was already settled), M2 is m2-2; M6 watch nodes keep a digest, m6-2; new tests for completeDerivations, a delivered notice, the fleet's workedClaims and interrupted-attempt filter; not done: M10, the routing half of M8, resume tests for the statement_drift, restated_target and length_growth notices
+Task 15: scoped review of the post-merge commits dispatched (resuming the reviewer; cb8db89..236e5bb plus the five conflict resolutions; asked to judge M11 stateless, the M2 fix, M6's digest, the version bumps and the merged problem.ts and prover.ts)
+Task 15: scoped review of the post-merge commits (cb8db89..236e5bb): approved, no Critical or Important; M11 stateless is true where it matters (everything it keeps is a memory node; no model or dollar spend; a resumed process cannot certify a refutation twice; the tests fail when the read-back or the node/edge idempotence is removed; not covered: "do not resubmit once the outcome is on record", at most one extra fast check); the M2 fix is a journal node only; M6's digest rebuild works (best state by replaying observe over the checkpoint); a resume under another line version is still refused; Task 16's tool binding intact; minors: tighten the number-statement test, models.md allowances and unmatched identification, name the version bumps, architecture.md tables (done by the controller in 8be0807 except the test)
+Task 15: merged: task/t15 pushed (8be0807, 1179/1179), merged into main ab4bda3 (--no-ff; 1181/1181 there; main's ledger commit the only difference), pushed ad858ad..ab4bda3
+Task 15: complete; resume tested with the faux model and a simulated Lean, and a real child process killed with SIGKILL; not run against a real Lean or model; deferred to the final review: M10 structure, routing decisions lost between attempt.finished and task.routed, the M11 "do not resubmit" test, resume tests for statement_drift, restated_target and length_growth notices
+Task 23: implementer dispatched (worktree wt/t23, branch task/t23 from main ab4bda3; brief task-23-brief.md)
+Task 24: implementer dispatched (worktree wt/t24, branch task/t24 from main ab4bda3; brief task-24-brief.md; told not to touch the memory store, Task 23 runs in parallel)
