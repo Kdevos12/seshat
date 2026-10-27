@@ -180,6 +180,10 @@ on these points and trusts nothing else:
 - A `/-` that is left in the text and that Lean would read as a comment that the text does not close
   (the character after the opener and the white space of a doc comment read as Lean reads them) is
   refused with the unclosed comments: such a comment would reach into the next region and the checks.
+  The alignment is the screen's own, so in a narrow class (a character literal or a glued token that
+  shifts Lean's reading of the opener, as in `' /-/-/`) Lean's unterminated comment is not seen. It
+  fails closed afterwards: the comment swallows the checks that follow, the axioms line is missing and
+  the file is not valid.
 
 The first opener or quote that is not sure ends the trust in the reading of the rest. Lean may read an
 opener as a comment (`x--note` is one), and then it reads the text after it differently from a scanner
