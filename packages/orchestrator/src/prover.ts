@@ -1,5 +1,5 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
 import type { FailureClass } from "@seshat/memory";
@@ -30,6 +30,8 @@ export interface ProverOptions {
   limits: SessionLimits;
   /** Length limit of the notes passed from one session to the next. */
   notesChars: number;
+  /** The prompt cache retention asked of the provider (`SessionOptions.cacheRetention`); absent: its default. */
+  cacheRetention?: CacheRetention;
   /** The problem's ledger. */
   ledger: Ledger;
   /** The problem's signal. */
@@ -184,6 +186,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         wrapUp: session < o.sessions,
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
         ...(strategies.length > 0 ? { strategies } : {}),
+        ...(o.cacheRetention !== undefined ? { cacheRetention: o.cacheRetention } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
@@ -237,6 +240,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
+      ...(result.cost.cachedInputTokens !== undefined ? { cachedInputTokens: result.cost.cachedInputTokens } : {}),
       carry: carry(),
     });
     if (o.lines === undefined) {

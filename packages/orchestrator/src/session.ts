@@ -1,10 +1,11 @@
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
+import { type CacheRetention, StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
 import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
 import type { SessionHooks } from "./line-runtime.ts";
+import { composePacket, type FrozenState } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { WRAP_UP } from "./prompt.ts";
 
@@ -55,6 +56,12 @@ export interface SessionOptions {
    * trying. Set only when an enabled line classifies strategies; absent, the tool is M0's.
    */
   strategies?: readonly string[];
+  /**
+   * The prompt cache retention asked of the provider with every request (pi-ai's `cacheRetention`:
+   * `none`, `short` or `long`). Absent: the provider's own default. The option is on pi-ai's
+   * request options for every provider, and one that does not use it ignores it.
+   */
+  cacheRetention?: CacheRetention;
 }
 
 export interface SessionResult {
@@ -92,6 +99,8 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let lineStop: `line:${string}` | undefined;
   let requests = 0;
   let declared: string | undefined;
+  // The prefix of the context packet, frozen at the session's first request that answers one.
+  let frozen: FrozenState | undefined;
 
   const leanCheck: AgentTool<ReturnType<typeof checkParameters>, { summary: string }> = {
     name: "lean_check",
@@ -170,22 +179,35 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   };
 
   const packet = o.lines?.packet;
+  const cacheRetention = o.cacheRetention;
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
-    streamFn: o.models.streamSimple.bind(o.models),
+    streamFn:
+      cacheRetention === undefined
+        ? o.models.streamSimple.bind(o.models)
+        : (model, context, options) => o.models.streamSimple(model, context, { ...options, cacheRetention }),
     toolExecution: "sequential",
     sessionId: o.attemptId,
     // The context packet of a line (M4) replaces every message after the system messages, which
-    // hold the system prompt and the tools. pi wants this hook never to throw: a failure ends the
-    // session with an error, and the request is aborted.
+    // hold the system prompt and the tools: one message when the line answers a string, else the
+    // prefix frozen at the first request and that request's tail, in one user message of two
+    // texts, so that every request of the session starts with the same bytes. pi wants this hook
+    // never to throw: a failure ends the session with an error, and the request is aborted.
     ...(packet !== undefined
       ? {
           transformContext: async (messages: AgentMessage[]) => {
             requests += 1;
             try {
-              const text = await packet(requests, messages);
-              if (text === undefined) return messages;
-              return [...messages.filter((m) => m.role === "system"), { role: "user", content: text, timestamp: Date.now() }];
+              const answer = await packet(requests, messages, frozen?.prefix);
+              if (answer === undefined) return messages;
+              const system = messages.filter((m) => m.role === "system");
+              if (typeof answer === "string") return [...system, { role: "user", content: answer, timestamp: Date.now() }];
+              const composed = composePacket(answer, frozen);
+              frozen = composed.state;
+              const { prefix, tail } = composed.texts;
+              // Providers refuse an empty text block: an empty prefix or tail is left out.
+              const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
+              return [...system, { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() }];
             } catch (error) {
               failure = messageOf(error);
               agent.abort();
@@ -212,6 +234,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     cost.usd += charge.usd;
     cost.inputTokens += charge.inputTokens;
     cost.outputTokens += charge.outputTokens;
+    if (charge.cachedInputTokens !== undefined) cost.cachedInputTokens = (cost.cachedInputTokens ?? 0) + charge.cachedInputTokens;
     o.ledger.charge(charge);
     o.onCharge?.(charge);
   });

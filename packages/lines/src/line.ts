@@ -147,11 +147,13 @@ export interface LineHooks {
    */
   briefing?: (session: SessionContext) => Promise<Briefing | undefined>;
   /**
-   * The whole context of each model request of a session (M4), the first one included: the text
-   * that replaces every message after the system prompt. Undefined leaves the request as it is.
-   * At most one enabled line may give it.
+   * The whole context of each model request of a session (M4), the first one included: what
+   * replaces every message after the system prompt. A string is the request's one message,
+   * recompiled for every request. A `FrozenPacket` is a prefix that the session freezes at its first
+   * request and sends unchanged on every later one, then that request's tail. Undefined leaves the
+   * request as it is. At most one enabled line may give it.
    */
-  contextPacket?: (session: SessionContext, request: PacketRequest) => Promise<string | undefined>;
+  contextPacket?: (session: SessionContext, request: PacketRequest) => Promise<string | FrozenPacket | undefined>;
   /** Before each session: extra tools for the prover, besides lean_check and the run's capabilities. */
   tools?: (session: SessionContext) => Promise<LineTool[]>;
   /**
@@ -276,6 +278,40 @@ export interface PacketRequest {
   request: number;
   /** The session so far: the opening message, the model's messages and the tools' results. */
   transcript: readonly TranscriptEntry[];
+  /**
+   * The prefix the session froze, from its second request on, once the line has answered a
+   * `FrozenPacket`; absent before that. The harness sends it whatever the line answers, so a line
+   * may return it as it is and skip compiling the prefix again.
+   */
+  prefix?: string;
+}
+
+/**
+ * The answer of `contextPacket` that keeps the provider's prompt cache valid (plan change PE5). The
+ * request is the system prompt and the tools, then the user message `prefix` followed by `tail`.
+ * The session freezes the `prefix` of its first request and sends it byte for byte on every later
+ * one: the `prefix` a later answer carries is not read. The `tail` is read on every request.
+ */
+export interface FrozenPacket {
+  /**
+   * What the session starts from and keeps: the objective, the useful facts, the candidate
+   * premises, what was already tried, the active lessons and the draws of Task 23.
+   */
+  prefix: string;
+  /** What changes from request to request: the sketch's state, the last raw Lean feedback, the budget left. */
+  tail: string;
+  /**
+   * Optional: one short text for each fact known now. The facts of the first answer are those the
+   * prefix holds. With `newSince`, the facts of a later answer that the first did not have are
+   * listed at the end of the tail.
+   */
+  facts?: readonly string[];
+  /**
+   * Optional: the most facts to list as new since the session started (a whole number from 1).
+   * Absent, or 0: the tail carries no such list, and what is learned during a session reaches the
+   * next one.
+   */
+  newSince?: number;
 }
 
 export interface TranscriptEntry {
