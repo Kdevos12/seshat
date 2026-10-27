@@ -90,3 +90,22 @@ function kind(value: Json): string {
   if (typeof value === "object") return "an object";
   return `a ${typeof value}`;
 }
+
+/**
+ * Why a run with these lines cannot be resumed, one message per line that cannot: a line says so
+ * (`resume: {refuse}`), or says nothing, since the harness cannot tell whether it keeps state in
+ * the process that a resumed run would lack, or says `"rebuild"` and gives no `resumeProblem` to do
+ * it. Empty when every line is `stateless` or rebuilds.
+ */
+export function resumeRefusals(lines: readonly EnabledLine[]): string[] {
+  return lines.flatMap(({ line }) => {
+    if (line.resume === "stateless") return [];
+    if (line.resume === "rebuild") {
+      return line.hooks.resumeProblem === undefined ? [`line ${line.id} cannot be resumed: it says it rebuilds its state and gives no \`resumeProblem\` hook to do it`] : [];
+    }
+    if (line.resume === undefined) {
+      return [`line ${line.id} cannot be resumed: it does not say how it resumes (set \`resume\` on the line to "stateless", "rebuild" or {refuse: reason})`];
+    }
+    return [`line ${line.id} cannot be resumed: ${line.resume.refuse}`];
+  });
+}

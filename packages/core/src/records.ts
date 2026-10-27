@@ -53,3 +53,13 @@ export const NODE_KIND = /^[a-z][a-z0-9_]{0,31}$/;
 export function isEdgeKind(value: unknown): value is EdgeKind {
   return typeof value === "string" && (EDGE_KINDS as readonly string[]).includes(value);
 }
+
+/**
+ * A site: where in the harness a model call is made, dot-separated lowercase words such as
+ * `prover.session`, `graph.attempt` or `conjecture.relevance`. Every model call carries one, so
+ * that the report can say what share of the spend each place takes (documentation/ledger.md).
+ */
+export const SITE = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
+
+/** The site of a prover's session: an attempt that names no other. */
+export const SITE_PROVER_SESSION = "prover.session";

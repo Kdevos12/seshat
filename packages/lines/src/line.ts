@@ -3,13 +3,19 @@ import type {
   ClaimStatus,
   Json,
   ProblemOutcome,
+  RouteAction,
+  RouteSignalType,
   Sketch,
   Submission,
+  TaskAcceptance,
+  TaskBudget,
+  TaskKind,
+  TaskStatus,
   TokenCost,
   ValidationReport,
 } from "@seshat/core";
 import type { MemoryStore, StatementIdentity } from "@seshat/memory";
-import type { Registry } from "@seshat/registry";
+import type { JsonSchema, Registry } from "@seshat/registry";
 import type { LineId } from "./ids.ts";
 
 /** A JSON object: a line's options, a tool's argument schema. */
@@ -45,7 +51,67 @@ export interface Line {
    * it is trying, and the declaration is recorded beside the label the line classifies.
    */
   strategies?: readonly string[];
+  /**
+   * How a run with this line enabled may be resumed after its process ended (documentation/ledger.md,
+   * "Resume"). Absent: the run is not resumed, because the line has not said it can be.
+   */
+  resume?: LineResume;
   hooks: LineHooks;
+}
+
+/**
+ * What a line says of resuming a run it is enabled in. A resumed run is a new process: what a line
+ * kept in memory is gone.
+ *
+ * - `"stateless"`: whatever the line knows when a hook runs, it reads from the journal, the memory
+ *   or the ledger (`problem.memory`, `problem.tasks`), or it is its options, so that a hook called
+ *   in the resumed process does what it would have done in the first. A problem that was cut gets
+ *   its `beforeProvers` again if the cut came before the provers started, and its `afterProblem`
+ *   again if the problem had not ended: those two hooks must be safe to call twice for a problem.
+ * - `"rebuild"`: the line keeps state in the process (a counter, a graph, a gate) that it can make
+ *   again from the journal and the memory. The line gives `hooks.resumeProblem`, which the resumed
+ *   process calls for each problem it works on, in place of `beforeProvers`, with what the journal
+ *   holds of the problem (`ResumedProblem`); the line sets its state up there, as `beforeProvers`
+ *   would have set it up at the start, and does again what the cut left undone.
+ * - `{refuse}`: the line keeps state that the journal cannot give back; the reason is shown to the
+ *   person who tried to resume, and the run is not resumed.
+ */
+export type LineResume = "stateless" | "rebuild" | { refuse: string };
+
+/**
+ * What the journal holds of a problem, for `resumeProblem`: all of it read from the journal, none
+ * of it the line's own memory. For a problem the interrupted process had not begun, the lists are
+ * empty and `begun` is false.
+ */
+export interface ResumedProblem {
+  /** Whether the problem's provers had started a session before the process ended. */
+  begun: boolean;
+  /** The sessions the problem's provers started, in the order they started, finished or cut. */
+  attempts: ResumedAttempt[];
+  /**
+   * The provers that have ended and will not run again (their task is done, failed or cancelled);
+   * the others go on in this process.
+   */
+  endedProvers: string[];
+  /** The model calls the lines made for this problem, by site: how many the journal holds. */
+  modelCalls: Readonly<Record<string, number>>;
+  /** The claims that any session of the run worked for, in the order the first one started: the run's, not the problem's. */
+  workedClaims: string[];
+}
+
+/** A session the journal holds. */
+export interface ResumedAttempt {
+  attemptId: string;
+  prover: string;
+  /** The session's number for the prover, from 1. */
+  session: number;
+  claimId: string;
+  /**
+   * True for a session that the interruption cut: the resumption ended it, `stoppedBy:
+   * "interrupted"`, and nothing of it was carried on. Every session the journal holds has an end by
+   * the time a line sees it.
+   */
+  interrupted: boolean;
 }
 
 /** What a line's `identity` factory gets. */
@@ -66,6 +132,15 @@ export interface LineHooks {
    * the provers do not run.
    */
   beforeProvers?: (problem: ProblemContext) => Promise<void>;
+  /**
+   * In a resumed process, in place of `beforeProvers`, for each problem the process works on (the
+   * one the interruption cut, and the ones it had not begun), by a line that says `resume:
+   * "rebuild"`. It sets up the state the line keeps for the problem from what the journal holds, and
+   * does again what `beforeProvers` would have done and the cut left undone, once and not twice. It
+   * is called whether or not the problem is settled, since the line's later hooks need the state;
+   * check `problem.signal` before starting any work.
+   */
+  resumeProblem?: (problem: ProblemContext, held: ResumedProblem) => Promise<void>;
   /**
    * Before each session, after `beforeSession`: a titled section for the session's opening
    * message, after the notes, the file and the last check.
@@ -147,6 +222,11 @@ export interface ProblemContext {
    */
   validate: (request: ValidateRequest) => Promise<ValidateResult>;
   budget: Budget;
+  /**
+   * The problem's task ledger (documentation/ledger.md): its tasks, read-only, and a way to
+   * propose more. The orchestrator alone writes the ledger.
+   */
+  tasks: TaskApi;
   /** A line of the run's progress log. */
   log: (text: string) => void;
   /** Aborted when the problem ends: solved, out of budget, or the run stopped. */
@@ -332,6 +412,37 @@ export interface LlmRequest {
   maxTokens?: number;
   /** `provider/id`. Default: the run's model. */
   model?: string;
+  /**
+   * Where in the harness the call is made, in dotted lowercase words such as `graph.attempt`,
+   * `abduction.rerank` or `conjecture.relevance`. It is recorded on the call's `model_call.finished`,
+   * and the report adds up the spend by site (documentation/ledger.md, "Sites"). Give every call one:
+   * a call without is recorded as `<line>.unlabeled`.
+   */
+  site?: string;
+}
+
+/** A call whose answer must be JSON of a given shape. */
+export interface JsonRequest extends LlmRequest {
+  /**
+   * The shape of the answer, in the subset of JSON Schema that manifests use (`JsonSchema` of
+   * `@seshat/registry`). The schema is added to the prompt: describe the content, not the format.
+   */
+  schema: JsonSchema;
+}
+
+export interface JsonResult<T = Json> {
+  /** The answer, checked against the schema. The type is the caller's claim: the schema is what was checked. */
+  value: T;
+  /** The text the model wrote. */
+  text: string;
+  /** The cost of every call made: both, after a retry. */
+  cost: TokenCost;
+  /** `provider/id` of the model that answered. */
+  model: string;
+  /** The `model_call.finished` event of the call whose answer was taken. */
+  modelCallId: string;
+  /** The events of every call made, in order: one, or two after a retry. */
+  modelCallIds: readonly string[];
 }
 
 export interface LlmResult {
@@ -345,11 +456,20 @@ export interface LlmResult {
 
 /**
  * One-shot model calls, without tools. Each call is charged to the problem's budget and recorded
- * as a `model_call.finished` event, with its request and response as blobs. A call fails (rejects)
- * when the budget is exhausted, the problem ends, or the model answers with an error.
+ * as a `model_call.finished` event, with its site and its request and response as blobs. A call
+ * fails (rejects) when the budget is exhausted, the problem ends, or the model answers with an error.
  */
 export interface Llm {
   complete: (request: LlmRequest) => Promise<LlmResult>;
+  /**
+   * A call whose answer is JSON that matches `request.schema`. An answer that is not JSON, or does
+   * not match, is sent back to the model once with what was wrong; a second failure rejects with a
+   * `JsonAnswerError` that says what was wrong with each answer. Both calls are charged and
+   * recorded like any call, with the same site. Optional, so that an `Llm` written before it
+   * existed still is one: a line calls it through `completeJson(llm, request)`, which uses this
+   * member when there is one and `withJson` over `complete` when there is not. `withJson` builds one.
+   */
+  completeJson?: <T = Json>(request: JsonRequest) => Promise<JsonResult<T>>;
 }
 
 export interface ValidateRequest {
@@ -386,4 +506,82 @@ export interface Budget {
   /** Spent so far, by the sessions and the lines' model calls. */
   readonly usd: number;
   readonly exhausted: boolean;
+}
+
+/** A task of the ledger as a line sees it (documentation/ledger.md). */
+export interface TaskInfo {
+  taskId: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  /** Why it has its status: the reason of its last move. */
+  reason?: string;
+  /** Who works on it, once someone does. */
+  owner?: string;
+  claimId?: string;
+  edgeId?: string;
+  dependsOn: readonly string[];
+  /** What must hold for the task to be `done`, in terms of claim and edge statuses. */
+  acceptance: TaskAcceptance;
+  budget: TaskBudget;
+  parentTaskId?: string;
+  /** The line that proposed it; absent for a task the orchestrator made. */
+  proposedBy?: string;
+  title?: string;
+  /** While `blocked`: what it waits for. */
+  blockedBy?: readonly string[];
+}
+
+/** A routing decision about a task (documentation/ledger.md, "Routing"). */
+export interface RoutingInfo {
+  taskId: string;
+  action: RouteAction;
+  signal: { type: RouteSignalType; value: string };
+  reason: string;
+  attemptId?: string;
+  nodeId?: string;
+}
+
+/**
+ * A task a line asks for. The orchestrator commits it, or refuses it with a reason: it makes the
+ * task for the problem the line is working on, with the line as its proposer and, unless the
+ * ledger says otherwise, its owner. A line does not choose a task's status or its owner.
+ */
+export interface TaskProposal {
+  kind: TaskKind;
+  /** Default: the problem's claim, for the kinds that are about a claim. */
+  claimId?: string;
+  edgeId?: string;
+  /** Tasks of the problem that must be done first. */
+  dependsOn?: readonly string[];
+  acceptance: TaskAcceptance;
+  budget?: TaskBudget;
+  /** The task this one continues or replaces, for example the one a routing decision was about. */
+  parentTaskId?: string;
+  title?: string;
+}
+
+export type TaskProposalResult = { accepted: true; taskId: string } | { accepted: false; reason: string };
+
+/** Which tasks `TaskApi.list` returns; every given criterion must hold. */
+export interface TaskQuery {
+  statuses?: readonly TaskStatus[];
+  kinds?: readonly TaskKind[];
+  claimId?: string;
+  owner?: string;
+}
+
+/**
+ * The ledger as a line sees it: the problem's tasks, read-only, and a way to propose more. The
+ * orchestrator alone writes the ledger; a line that wants work done asks, and reads the answer.
+ */
+export interface TaskApi {
+  /** The problem's tasks, in the order they were made. */
+  list: (query?: TaskQuery) => TaskInfo[];
+  get: (taskId: string) => TaskInfo | undefined;
+  /** The problem's tasks that may start now: `ready`, owned or not. */
+  ready: () => TaskInfo[];
+  /** The routing decisions about one task, or about every task of the problem. */
+  routings: (taskId?: string) => RoutingInfo[];
+  /** Proposes a task. Nothing is written when the orchestrator refuses it. */
+  propose: (proposal: TaskProposal) => TaskProposalResult;
 }

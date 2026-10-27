@@ -51,6 +51,8 @@ export interface CheckResult {
 export interface Candidate {
   /** The attempt that found it; absent for a proof a line submitted outside a session. */
   attemptId?: string;
+  /** The problem whose workbench's check made it a candidate: the problem that certifies it. */
+  problemId?: string;
   validationId: string;
   report: ValidationReport;
 }
@@ -60,6 +62,16 @@ export interface Certification {
   result: CertificationResult;
   validationId: string;
   status: ClaimStatus;
+}
+
+/** The certifier's answer for a candidate, as the journal recorded it (a `kernel_replay` validation). */
+export interface RecordedCertification {
+  validationId: string;
+  /** Where the validation is in the journal: a status change after it is not undone by a resumption. Absent: no such status change is looked for. */
+  seq?: number;
+  verdict: "valid" | "invalid";
+  reasons: string[];
+  axioms: string[];
 }
 
 /**
@@ -83,6 +95,8 @@ export interface WorkbenchOptions {
   registry: Registry;
   problem: WorkbenchFile;
   claimId: string;
+  /** The problem the workbench is the claim's reference file of; its checks are recorded as that problem's. */
+  problemId?: string;
   reference: Reference;
   /** Default: `SKETCH_POLICY`. */
   policy?: ValidationPolicy;
@@ -113,6 +127,7 @@ export class Workbench {
   readonly registry: Registry;
   readonly problem: WorkbenchFile;
   readonly claimId: string;
+  readonly problemId: string | undefined;
   readonly reference: Reference;
   readonly policy: ValidationPolicy;
   readonly certifier: LeanCertifier | undefined;
@@ -130,6 +145,7 @@ export class Workbench {
     this.registry = options.registry;
     this.problem = options.problem;
     this.claimId = options.claimId;
+    this.problemId = options.problemId;
     this.reference = options.reference;
     this.policy = options.policy ?? SKETCH_POLICY;
     this.certifier = options.certifier;
@@ -174,12 +190,17 @@ export class Workbench {
     return this.checked.get(attemptId);
   }
 
-  async check(submission: Submission, context: { attemptId?: string; actor: string; signal?: AbortSignal }): Promise<CheckResult> {
+  async check(
+    submission: Submission,
+    context: { attemptId?: string; actor: string; signal?: AbortSignal; problemId?: string },
+  ): Promise<CheckResult> {
     if (context.attemptId !== undefined) this.checked.set(context.attemptId, submission);
     const submitted = this.render(submission);
     this.blobs?.put(submitted);
     const markers = markerProblems(submission);
     const attempt = context.attemptId !== undefined ? { attemptId: context.attemptId } : {};
+    const problemId = context.problemId ?? this.problemId;
+    const owner = problemId !== undefined ? { problemId } : {};
     const checker = new RegistryLeanChecker(this.registry, { ...attempt, actor: context.actor });
     const report =
       markers.length > 0
@@ -207,6 +228,7 @@ export class Workbench {
         axioms: report.axioms,
         submissionHash: report.submissionHash,
         ...(this.negation ? { negation: true } : {}),
+        ...owner,
       },
       "validator",
     );
@@ -226,7 +248,7 @@ export class Workbench {
       );
     }
     if (this.found !== undefined) return { report, validationId, accepted: false };
-    this.found = { ...attempt, validationId, report };
+    this.found = { ...attempt, ...owner, validationId, report };
     for (const listener of this.listeners.splice(0)) listener(this.found);
     return { report, validationId, accepted: true };
   }
@@ -275,11 +297,21 @@ export class Workbench {
         axioms: result.axioms,
         submissionHash: candidate.report.submissionHash,
         ...(this.negation ? { negation: true } : {}),
+        ...(candidate.problemId !== undefined ? { problemId: candidate.problemId } : {}),
       },
       certifier.implementation,
     );
+    return { result, validationId, status: this.settle(valid, validationId) };
+  }
+
+  /**
+   * After a certification's answer is in the journal: a certified proof makes the claim `proved`, a
+   * certified refutation `refuted`, if the claim can still be settled; a rejection changes nothing.
+   * Returns the claim's status.
+   */
+  private settle(valid: boolean, validationId: string): ClaimStatus {
     const from = this.claimStatus();
-    if (!valid || !SETTLEABLE.includes(from)) return { result, validationId, status: from };
+    if (!valid || !SETTLEABLE.includes(from)) return from;
     const to = this.negation ? "refuted" : "proved";
     this.journal.emit(
       "claim.status_changed",
@@ -292,7 +324,51 @@ export class Workbench {
       },
       "orchestrator",
     );
-    return { result, validationId, status: to };
+    return to;
+  }
+
+  /**
+   * Gives a workbench what a run that was interrupted knew: the candidate that its checks had found
+   * and, if the journal holds the certifier's answer for it, that answer, so that the candidate is
+   * not certified a second time (`certify` returns the recorded answer). The process may have ended
+   * between a validation and the claim's new status, the candidate's (`computed`) or the answer's
+   * (`proved`, `refuted`); the status is written now, as `check` or `certify` would have written it.
+   * A candidate without an answer is certified by the next call of `certify`, which is also what
+   * happens to one whose certification the interruption cut, since a cut call recorded nothing.
+   */
+  adopt(candidate: Candidate, answer?: RecordedCertification): void {
+    if (this.found !== undefined) throw new Error(`the workbench of claim ${this.claimId} already has a candidate`);
+    this.found = candidate;
+    // The process may also have ended between the check's validation and the claim's change of
+    // status: the validation says the proof passed, so the change is made now, as `check` would have.
+    // Not when the claim's status has changed since the validation: a claim that went back to `open`
+    // (a line withdrew a composed proof) stays open, and a resumption does not raise it again.
+    if (!this.negation && this.claimStatus() === "open" && !this.changedSince(this.journal.projection.validation(candidate.validationId)?.seq ?? -1)) {
+      this.journal.emit(
+        "claim.status_changed",
+        {
+          claimId: this.claimId,
+          from: "open",
+          to: "computed",
+          reason: "a proof passed the fast check; the interruption cut the change of status",
+          ...(candidate.attemptId !== undefined ? { attemptId: candidate.attemptId } : {}),
+          validationId: candidate.validationId,
+        },
+        "orchestrator",
+      );
+    }
+    if (answer !== undefined) {
+      const valid = answer.verdict === "valid";
+      const result: CertificationResult = { verdict: valid ? "certified" : "rejected", reasons: answer.reasons, axioms: answer.axioms, timeMs: 0 };
+      const status = answer.seq !== undefined && this.changedSince(answer.seq) ? this.claimStatus() : this.settle(valid, answer.validationId);
+      this.certification = { candidate, done: Promise.resolve({ result, validationId: answer.validationId, status }) };
+    }
+    for (const listener of this.listeners.splice(0)) listener(candidate);
+  }
+
+  /** Whether the claim's status changed after the journal's event number `seq`. */
+  private changedSince(seq: number): boolean {
+    return (this.journal.projection.claim(this.claimId)?.updated_seq ?? 0) > seq;
   }
 
   private claimStatus(): ClaimStatus {

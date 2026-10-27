@@ -71,6 +71,7 @@ interface Line {
   version?: string;           // recorded in run.started: change it when the line's behavior changes
   identity?: (env: { registry: Registry }) => StatementIdentity;  // how the run's memory names statements
   strategies?: readonly string[];  // the labels the line classifies attempts with
+  resume?: LineResume;        // "stateless", "rebuild" or {refuse: reason}: how a run with the line is resumed
   hooks: LineHooks;
 }
 ```
@@ -91,6 +92,50 @@ for a line that is not enabled, that the line does not have, or with another typ
 JSON value.
 `run.started` records the enabled lines in `LINE_ORDER`, each with its options and version; a run
 without lines records no `lines` key at all, as M0 always did.
+
+### Resuming a run with lines
+
+A run that its process did not finish can be resumed (`harness run --resume DIR`,
+[ledger.md](ledger.md#resume)). The resumed run is a new process: whatever a line kept in memory is
+gone, and the journal gives back only what was written to it. So a line says what it does about that,
+in `resume`:
+
+- `"stateless"`: whatever the line knows when a hook runs, it reads from the journal, the memory or
+  the ledger (`problem.memory`, `problem.tasks`), or it is its options, so that a hook called in the
+  resumed process does what it would have done in the first. A problem that the interruption cut
+  gets the line's `beforeProvers` again if the cut came before its provers started, and its
+  `afterProblem` again if it had not ended; those two hooks must be safe to call twice for one
+  problem. The hooks a session calls (`beforeSession`, `briefing`, `afterAttempt`...) run for the
+  sessions the resumed prover starts, as they would have.
+- `"rebuild"`: the line keeps state in the process, and has the hook `resumeProblem`, which rebuilds
+  it for a problem from the journal and the memory. The state is written down as the line goes
+  (typically as nodes of its own kind), and `resumeProblem(problem, held)` reads it back. In a
+  resumed process the harness calls it where it would have called `beforeProvers`, for every problem
+  the process works on: one that was begun, and one that was not, which the line then starts as
+  `beforeProvers` would. `held` (`ResumedProblem`) is what the journal holds of the problem: whether
+  it was `begun` (a prover had started), its `attempts` (id, prover, session, claim, and whether the
+  interruption cut it), the provers that had `endedProvers`, the model calls charged by site
+  (`modelCalls`), and the claims the problem `workedClaims`. A line with `rebuild` and no hook is
+  refused, as is one that says nothing. `beforeProvers` is not called for it in a resumed process.
+- `{refuse: reason}`: the line keeps state that the journal cannot give back. A run with the line is
+  not resumed: `harness run --resume` stops before it writes anything, and names the line and the
+  reason.
+- Absent: the same as a refusal. The harness cannot tell what a line keeps, so a line that does not
+  say is not resumed with.
+
+A resume compares each line's `version` with the run's record and refuses another. Writing new kinds of
+nodes is a change of version: M2 is `m2-2` and M6 `m6-2` (they began to write the nodes they rebuild from), M11 is
+`2` (its `beforeProvers` became safe to run twice), the fleet stays `fleet-1`. A run begun before a bump cannot be
+resumed after it.
+
+Today M1 and M11 are `stateless` (everything they know they read from the memory; M11's `beforeProvers` skips what the
+memory shows done), and M2, M6 and the fleet
+rebuild: M2's work on a problem (the twin, its short names, the proofs tried, the refutation side
+that runs alongside the provers), M6's detector counts and pending notices, and the fleet's width
+gate and sticky strategies are read back from nodes the lines wrote as they went
+([graph.md](graph.md#resuming), [guards.md](guards.md#resuming), [fleet.md](fleet.md#resuming)).
+`LineResume`, `ResumedProblem` and the hook are additive to the line API: a line that declares
+`"stateless"` or a refusal is unchanged.
 
 ## The hooks
 
@@ -131,9 +176,10 @@ The problem's context (`ProblemContext`):
 | `domain` | The problem's domains, such as `msc:11`. |
 | `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. A line never touches the journal: its store has no access to it. |
 | `registry` | The run's capability registry. Calls through it are tool runs in the journal; pass `actor: "line:<id>"`, and the attempt inside a session. |
-| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?})` returns the text, its cost, the model and the call's id. |
+| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?, site?})` returns the text, its cost, the model and the call's id; `completeJson(problem.llm, {..., schema})` returns an answer checked against a schema ([below](#llm)). |
 | `validate` | Submits a Lean proof of a claim, or of its negation, through the validator. |
 | `budget` | The problem's budget as it stands: its limit, what was spent, whether it is exhausted. |
+| `tasks` | The problem's task ledger ([ledger.md](ledger.md)): its tasks, read-only, and a way to propose more ([below](#tasks)). |
 | `log` | A line of the run's progress log, prefixed with the problem and the line. |
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
@@ -163,6 +209,55 @@ and is recorded as `model_call.finished` from `line:<id>`, with the request and 
 as blobs (`requestHash`, `responseHash`) and the call's cost and tokens. A call fails when the
 problem has ended, when its budget is spent, or when the model answers with an error (the failed
 call is recorded too). The model defaults to the run's, with the run's thinking level.
+
+**Site.** Give every call a `site`, a short dotted name for where in the harness it is made:
+`graph.attempt`, `abduction.rerank`, `conjecture.relevance`, `fidelity.review`. It is recorded on
+the call's `model_call.finished`, and the report adds the spend up by site, so that one can see
+what share of the budget each place takes ([ledger.md](ledger.md#sites)). A call without a site is
+recorded as `<line>.unlabeled` (`m2.unlabeled`); a site that is not made of dotted lowercase words
+is refused before the call is paid for. The provers' sessions are the site `prover.session`.
+
+**`completeJson`.** `completeJson<T>(problem.llm, {system?, prompt, schema, site?, ...})` is for every
+one-shot call whose answer a program reads. `schema` is a `JsonSchema` of `@seshat/registry`, the subset
+manifests use; the call adds it to the prompt, so the prompt describes the content and not the
+format. The answer is read as JSON (bare, in a code fence, or the outermost object or array of a
+text), and checked. When it is not JSON or does not match, the model is asked once more with its
+refused answer and what was wrong. A second failure rejects with a `JsonAnswerError`: the problems
+of each answer, the two calls' ids and the last text. The retry is a call like the first: it is
+charged to the problem's budget and recorded as its own `model_call.finished`, with the same site.
+A call that fails (the budget is spent, the model errs) is not retried. The result has the
+checked `value`, the text, the cost of every call made, and the ids of the calls (`modelCallIds`).
+`completeJson` is a function exported by `@seshat/lines`, not a method a line has to find on its
+`Llm`: the member `Llm.completeJson` is optional, so that an `Llm` written before it existed (a test
+double, a wrapper) is still an `Llm`. The function uses the member when the `Llm` has one and
+`withJson(llm.complete)` when it has not, so the same single retry applies either way. The `Llm` of a
+line's context has the member. `withJson(complete)` builds an `Llm` from a plain `complete`, for the
+orchestrator and for tests.
+
+### `tasks`
+
+The ledger holds the work of a problem as tasks ([ledger.md](ledger.md)): the provers' own, and
+the ones lines ask for. A line reads it and proposes; it never writes it. Only the orchestrator
+appends task events, and the journal refuses them from anyone else.
+
+| Method | What it gives |
+|---|---|
+| `list({statuses?, kinds?, claimId?, owner?})` | The problem's tasks, in the order they were made, as `TaskInfo`: id, kind, status, the reason of its last move, owner, claim or edge, dependencies, acceptance criterion, budget, parent, proposer, title, what it waits for. |
+| `get(taskId)` | One task of the problem, or `undefined`. A task of another problem is not shown. |
+| `ready()` | The tasks that may start now: `ready`, owned or not. |
+| `routings(taskId?)` | The routing decisions about a task, or about the problem's tasks ([ledger.md](ledger.md#routing-decisions)). |
+| `propose(task)` | Asks for a task. Returns `{accepted: true, taskId}` or `{accepted: false, reason}`. |
+
+A proposal is `{kind, claimId?, edgeId?, dependsOn?, acceptance, budget?, parentTaskId?, title?}`.
+It names neither a status nor an owner; if a line sends them, they are not read. The orchestrator
+makes the task the problem's, `pending`, proposed by `line:<id>` and owned by it, and moves it to
+`ready` when what it depends on is `done`. It refuses, with a reason and without writing
+anything, a dependency or a parent that is not a task of the problem, a claim or an edge that does
+not exist, a criterion of the wrong shape, a budget that is not made of non-negative numbers, and
+the two hundred and first task a problem is proposed. A proposal that names no claim and no edge is
+about the problem's claim. Running a proposed task, and choosing among the `ready` ones, belong to
+the lines that schedule work (M12) and to the fleet; a task that nobody runs is `cancelled` when the
+problem ends.
 
 ### `validate`
 
@@ -218,7 +313,11 @@ A task that implements a line:
 2. Registers it in `packages/orchestrator/src/lines.ts`.
 3. Records what it learns as events through the `MemoryStore`: claims, edges, and nodes of its own
    kinds, whose `data` shape its package owns ([memory.md](memory.md#nodes)).
-4. Tests it with a run of the simulated model and Lean (`demoRun` in
+4. Says how a run with it is resumed (`resume`, [above](#resuming-a-run-with-lines)): `"stateless"`
+   when everything it knows it reads from the journal, the memory or the ledger, `"rebuild"` with a
+   `resumeProblem` hook when it keeps state in the process that it can write down as it goes, a
+   refusal with the reason otherwise. A line that says nothing is refused.
+5. Tests it with a run of the simulated model and Lean (`demoRun` in
    `packages/orchestrator/test/m0-helpers.ts` takes a line registry), and documents it on its own
    page, linked from [README.md](README.md).
 
@@ -248,7 +347,11 @@ line's model call charged to the problem; the context packet of each request, an
 also checks that only one line gives the statement identity, and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 `m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
-[fleet.md](fleet.md#tests-and-what-is-not-done)).
+[fleet.md](fleet.md#tests-and-what-is-not-done)). `resumeRefusals` is tested in
+`packages/lines/test/lines.test.ts`, and `packages/orchestrator/test/resume.test.ts` checks the
+position each real line takes on resuming, and `resume-lines.test.ts` resumes whole runs of the fleet,
+M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
+M1, M2, M6 and the fleet together at every event.
 
 M1, M2, M11, M6 and the fleet are the lines built. M2 has its own tests
 ([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m11.test.ts` runs M11 in

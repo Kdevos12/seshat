@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Submission, ValidationReport } from "@seshat/core";
 import { classifyFailure } from "@seshat/memory";
 import { normalizeSubmission } from "./text.ts";
@@ -7,8 +8,8 @@ import { normalizeSubmission } from "./text.ts";
  * as Lean read it, and whether the answer gave the prover anything to revise from.
  */
 export interface LastCheck {
-  /** The file's code in both regions, comments and spacing out (`normalizeSubmission`). */
-  code: string;
+  /** The sha256 of the file's code in both regions, comments and spacing out (`normalizeSubmission`): the file is compared, never read, and a copy of it is not kept. */
+  digest: string;
   /** Whether Lean (or the harness's refusal) said something about the file. False when Lean was not reached. */
   signal: boolean;
   /** Whether sending the same file again can give another answer: Lean was not reached, or timed out. */
@@ -23,10 +24,12 @@ export function hasSignal(report: ValidationReport): boolean {
   return classifyFailure(report)?.class !== "lean_unavailable";
 }
 
+const digestOf = (submission: Submission): string => createHash("sha256").update(normalizeSubmission(submission)).digest("hex");
+
 /** What to remember of a check. */
 export function lastCheckOf(submission: Submission, report: ValidationReport): LastCheck {
   const cls = classifyFailure(report)?.class;
-  return { code: normalizeSubmission(submission), signal: cls !== "lean_unavailable", retry: cls === "lean_unavailable" || cls === "timeout" };
+  return { digest: digestOf(submission), signal: cls !== "lean_unavailable", retry: cls === "lean_unavailable" || cls === "timeout" };
 }
 
 export type RevisionProblemKind = "identical" | "unanchored";
@@ -45,7 +48,7 @@ export interface RevisionProblem {
  */
 export function revisionProblem(last: LastCheck | undefined, proposal: Submission): RevisionProblem | undefined {
   if (last === undefined) return undefined;
-  const same = normalizeSubmission(proposal) === last.code;
+  const same = digestOf(proposal) === last.digest;
   if (same && !last.retry) {
     return {
       kind: "identical",

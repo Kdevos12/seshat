@@ -11,9 +11,11 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 (independent provers on pi, in sessions that pass on their notes) and five lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
 counter-models; M6: guards and drift detectors; the fleet policy) are written and tested with a
-simulated model and a simulated Lean. The provers can also be given SageMath, an external program
-installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
-run against a real Lean or a real model yet.
+simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
+whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)).
+The provers can also be given SageMath, an external program installed with Docker or pip
+([documentation/compute.md](documentation/compute.md)). Nothing has run against a real Lean or a
+real model yet.
 
 ## How research flows
 
@@ -28,6 +30,8 @@ flowchart TB
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
+  orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
+  ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
 
   subgraph TOOLS["Capability registry"]
@@ -58,7 +62,11 @@ flowchart TB
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
   end
 
-  bench -->|problems| provers
+  bench -->|problems| orchestrator
+  orchestrator -->|"tasks, budgets"| ledger
+  ledger -->|"one task per prover"| provers
+  ledger -->|"task events,<br/>routing decisions"| journal
+  journal -->|"resume after<br/>a crash"| orchestrator
   bench -->|statements| identity
   identity -->|claims| journal
   fleet -->|"who works on what"| provers
@@ -106,7 +114,11 @@ The provers can also be given Lean's language server, `lean_lsp` (the goals at a
 tactics tried at one line, Mathlib search): information that never changes a status, written and
 waiting for a Lean like the fast check ([documentation/lean-lsp.md](documentation/lean-lsp.md)).
 Every tool call goes through the capability registry, which writes it to the journal, with its inputs
-and outputs as blobs.
+and outputs as blobs. The orchestrator records the work as tasks in a ledger (one `prove` task per
+prover, and a routing decision for each failed check), never copying a claim's status, and a run
+whose process ended is continued from the journal alone: `harness run --resume` takes up each
+problem where the journal left it, with the budgets that were left, and records one certification
+per candidate ([documentation/ledger.md](documentation/ledger.md#resume)).
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
 ([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the
 host has a certifier, and the lines' proofs of other claims and of negations too: a certified proof
@@ -149,6 +161,7 @@ pnpm harness capabilities
 pnpm harness models
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
+pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```
 

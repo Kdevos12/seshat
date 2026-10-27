@@ -1,10 +1,18 @@
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, truncateSync, unlinkSync, writeSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, truncateSync, unlinkSync, writeSync } from "node:fs";
 import { canonicalJson, sha256Hex } from "./canonical-json.ts";
-import { type EventDataMap, type EventType, type HarnessEvent, isEventType } from "./events.ts";
+import { type EventDataMap, type EventType, type HarnessEvent, isEventType, type TornTail } from "./events.ts";
 import { newId } from "./ids.ts";
 
 export interface EventLogOptions {
   run: string;
+  /**
+   * Open a journal whose last line a crash cut without cutting it off yet: `recovered` says what
+   * `repair()` will do, nothing is written, and `append` refuses until `repair()` has run. A caller
+   * that may still refuse to go on (a resume that finds the host is not the run's) opens this way, so
+   * that a refusal leaves the journal's bytes as they were. Default false: the repair is made on open.
+   */
+  deferRepair?: boolean;
   /** fsync after every append. Slower; use when a crash must not lose the last events. */
   durable?: boolean;
   now?: () => Date;
@@ -26,9 +34,15 @@ export class EventLog {
   private readonly durable: boolean;
   private readonly now: () => Date;
   private listeners: EventListener[] = [];
+  /** What a crash left at the end and was dealt with, or, while the repair is deferred, what is waiting to be. */
+  recovered: TornTail | undefined;
+  /** True while a cut last line has been found and not yet dealt with (`deferRepair`). */
+  private repairPending: boolean;
 
-  private constructor(path: string, fd: number, lockPath: string, options: EventLogOptions, existing: HarnessEvent[]) {
+  private constructor(path: string, fd: number, lockPath: string, options: EventLogOptions, existing: HarnessEvent[], recovered: TornTail | undefined, pending: boolean) {
     this.path = path;
+    this.recovered = recovered;
+    this.repairPending = pending;
     this.fd = fd;
     this.lockPath = lockPath;
     this.run = options.run;
@@ -39,17 +53,21 @@ export class EventLog {
     this.lastHash = last?.hash ?? "";
   }
 
-  /** Opens (or creates) a journal for appending. Refuses a journal whose chain does not verify. */
+  /**
+   * Opens (or creates) a journal for appending. A last line that a crash cut is dealt with first
+   * (`recovered` says how). Refuses a journal whose chain does not verify.
+   */
   static open(path: string, options: EventLogOptions): EventLog {
     const lockPath = `${path}.lock`;
     acquireLock(lockPath);
     try {
-      if (existsSync(path)) dropTornTail(path);
+      const defer = options.deferRepair === true;
+      const recovered = existsSync(path) ? recoverTornTail(path, defer) : undefined;
       const existing = existsSync(path) ? readEvents(path) : [];
       const check = verifyChain(existing);
       if (!check.ok) throw new Error(`journal ${path} is corrupt at seq ${check.seq}: ${check.reason}`);
       const fd = openSync(path, "a");
-      return new EventLog(path, fd, lockPath, options, existing);
+      return new EventLog(path, fd, lockPath, options, existing, recovered, defer && recovered !== undefined);
     } catch (error) {
       releaseLock(lockPath);
       throw error;
@@ -58,6 +76,20 @@ export class EventLog {
 
   get length(): number {
     return this.nextSeq;
+  }
+
+  /**
+   * Deals with the cut last line a deferred open found: cuts the fragment off, or ends the whole
+   * event with its newline, exactly as an open that repairs would have. Returns what it did, and
+   * nothing when there was nothing to do. Not needed, and harmless, after an open that repaired.
+   */
+  repair(): TornTail | undefined {
+    if (this.repairPending) {
+      const done = recoverTornTail(this.path, false);
+      this.repairPending = false;
+      this.recovered = done;
+    }
+    return this.recovered;
   }
 
   onAppend(listener: EventListener): () => void {
@@ -69,6 +101,7 @@ export class EventLog {
 
   append<K extends EventType>(type: K, data: EventDataMap[K], actor: string): Extract<HarnessEvent, { type: K }> {
     if (this.fd < 0) throw new Error("journal is closed");
+    if (this.repairPending) throw new Error(`journal ${this.path} ends in a line a crash cut: repair() it before appending`);
     const body = {
       v: 1 as const,
       seq: this.nextSeq,
@@ -100,7 +133,10 @@ export class EventLog {
 }
 
 export function readEvents(path: string): HarnessEvent[] {
-  const text = readFileSync(path, "utf8");
+  return parseEvents(readFileSync(path, "utf8"), path);
+}
+
+function parseEvents(text: string, path: string): HarnessEvent[] {
   const events: HarnessEvent[] = [];
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -135,11 +171,40 @@ export function verifyChain(events: readonly HarnessEvent[]): ChainCheck {
   return { ok: true };
 }
 
-/** Cuts a partial last line left by a crash, so the next append starts on a fresh line. */
-function dropTornTail(path: string): void {
-  const text = readFileSync(path, "utf8");
-  if (text === "" || text.endsWith("\n")) return;
-  truncateSync(path, Buffer.byteLength(text.slice(0, text.lastIndexOf("\n") + 1), "utf8"));
+/**
+ * Deals with a last line that has no newline, which only a crash during an append leaves, so that
+ * the next append starts on a fresh line. A fragment is cut off (`dropped`): the events before it
+ * are a prefix of the journal, and the hash chain still verifies. A line that is a whole event
+ * whose hash and place in the chain verify, and lacks only its newline, is kept (`completed`):
+ * dropping it would lose a fact the chain vouches for. What was found is returned, so that the run
+ * that resumes can journal it (`run.resumed`). With `dryRun` it only reports what it would do.
+ */
+function recoverTornTail(path: string, dryRun: boolean): TornTail | undefined {
+  const bytes = readFileSync(path);
+  if (bytes.length === 0 || bytes[bytes.length - 1] === 0x0a) return undefined;
+  const cut = bytes.lastIndexOf(0x0a) + 1;
+  const rest = bytes.subarray(cut);
+  const tail = rest.toString("utf8");
+  // The digest is of the bytes on disk, not of their decoding: a fragment cut inside a multi-byte
+  // character does not decode to the bytes that were there.
+  const found = { bytes: rest.length, sha256: createHash("sha256").update(rest).digest("hex") };
+  if (isWholeEvent(bytes.subarray(0, cut).toString("utf8"), tail, path)) {
+    if (!dryRun) appendFileSync(path, "\n");
+    return { action: "completed", ...found };
+  }
+  if (!dryRun) truncateSync(path, cut);
+  return { action: "dropped", ...found };
+}
+
+/** Whether `tail` is an event that follows the events of `head` in the chain. */
+function isWholeEvent(head: string, tail: string, path: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(tail);
+    if (!isEnvelope(parsed)) return false;
+    return verifyChain([...parseEvents(head, path), parsed]).ok;
+  } catch {
+    return false;
+  }
 }
 
 function isEnvelope(value: unknown): value is HarnessEvent {

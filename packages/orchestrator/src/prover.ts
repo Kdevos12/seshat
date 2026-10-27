@@ -1,13 +1,14 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptOutcome, type Journal, newId, type Submission } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
-import type { Ledger } from "./budget.ts";
+import type { FailureClass } from "@seshat/memory";
+import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
-import { ABORT_BUDGET, runSession, type SessionLimits, type SessionResult } from "./session.ts";
+import { ABORT_BUDGET, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
 
 export interface ProverOptions {
@@ -15,6 +16,10 @@ export interface ProverOptions {
   name: string;
   workbench: Workbench;
   journal: Journal;
+  /** Keeps what the prover carries from one session to the next. */
+  blobs: BlobStore;
+  /** The prover's task in the ledger, which the orchestrator started: its attempts work for it. */
+  taskId?: string;
   models: Models;
   model: Model<Api>;
   /** `provider/id`, as recorded in attempts. */
@@ -35,6 +40,30 @@ export interface ProverOptions {
   tools?: readonly PinnedTool[];
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
+  /** The prover picks up where an interrupted run left it, instead of starting. */
+  resume?: ProverResume;
+  /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
+  onEnd?: (result: ProverResult) => void;
+  /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
+  onAttemptEnd?: (attempt: { attemptId: string; outcome: AttemptOutcome; failureClass?: FailureClass }) => void;
+  /** Runs a session. Default: `runSession`; a test replaces it to make the harness fail in the middle of one. */
+  session?: (options: SessionOptions) => Promise<SessionResult>;
+}
+
+/**
+ * Where a prover stood when its run was interrupted, rebuilt from the journal (documentation/ledger.md,
+ * "Resume"). A session that the interruption cut counts as a session the prover used: it was started
+ * and paid for.
+ */
+export interface ProverResume {
+  /** The number of the last session the prover started; its next one is this plus one. */
+  session: number;
+  /** The attempts the prover made. */
+  attempts: number;
+  /** Sessions in a row that ended with an error, at the end of those. */
+  failed: number;
+  /** What the last session that ended handed on: the file's regions, the text of its last check, the notes. */
+  carry?: { regions: Submission; lastCheck?: string; notes?: string };
 }
 
 /**
@@ -59,6 +88,7 @@ const MAX_FAILED_SESSIONS = 2;
  */
 export async function runProver(o: ProverOptions): Promise<ProverResult> {
   const result = await proveLoop(o);
+  o.onEnd?.(result);
   await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
   return result;
 }
@@ -69,14 +99,15 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)));
-  let regions: Submission = { aux: "", proof: workbench.sketch.originalProof };
-  let notes: string | undefined;
-  let lastCheck: string | undefined;
-  let failed = 0;
-  let attempts = 0;
+  const resumed = o.resume;
+  let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
+  let notes: string | undefined = resumed?.carry?.notes;
+  let lastCheck: string | undefined = resumed?.carry?.lastCheck;
+  let failed = resumed?.failed ?? 0;
+  let attempts = resumed?.attempts ?? 0;
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
-  for (let session = 1; session <= o.sessions; session++) {
+  for (let session = (resumed?.session ?? 0) + 1; session <= o.sessions; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done("budget");
     const attemptId = newId("att");
@@ -106,6 +137,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         prover: o.name,
         iteration: session,
         model: info.model,
+        site: SITE_PROVER_SESSION,
+        ...(o.taskId !== undefined ? { taskId: o.taskId } : {}),
         ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
         ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
       },
@@ -118,7 +151,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
       const opened: OpenedSession | undefined =
         o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
       const start = regions;
-      result = await runSession({
+      result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {
             const binding = toolBinding(t.capability, { sketch: workbench.sketch, current: () => workbench.lastSubmission(attemptId) ?? start });
@@ -146,17 +179,20 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         actor,
         limits: o.limits,
         ledger: o.ledger,
+        onCharge: (cost) => journal.emit("attempt.charged", { attemptId, ...cost }, actor),
         signal: o.signal,
         wrapUp: session < o.sessions,
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
         ...(strategies.length > 0 ? { strategies } : {}),
       });
     } catch (error) {
+      // The harness failed in the session. What the session was charged before it failed is spent, and the
+      // attempt ends at that cost: a finished attempt is counted at its own totals, not at its charges.
       journal.emit(
         "attempt.finished",
         {
           attemptId, outcome: "error", stoppedBy: "error", error: String(error), durationMs: Math.round(performance.now() - started),
-          turns: 0, usd: 0, inputTokens: 0, outputTokens: 0,
+          ...chargedTotals(journal.projection.attempt(attemptId)),
         },
         actor,
       );
@@ -183,6 +219,12 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
             ...(result.submission !== undefined ? { aux: result.submission.aux } : {}),
           })
         : undefined;
+    // What the next session starts from, kept in the journal so that a resumed run can start from it too.
+    const carry = (): AttemptCarry => ({
+      regions: o.blobs.putJson({ aux: regions.aux, proof: regions.proof }),
+      ...(lastCheck !== undefined ? { lastCheck: o.blobs.put(lastCheck) } : {}),
+      ...(notes !== undefined ? { notes: o.blobs.put(notes) } : {}),
+    });
     const finished = () => ({
       attemptId,
       outcome,
@@ -195,6 +237,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
+      carry: carry(),
     });
     if (o.lines === undefined) {
       journal.emit("attempt.finished", finished(), actor);
@@ -226,6 +269,9 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         o.transcript?.(attemptId, result.messages);
         throw error;
       }
+      // The notes a line gives replace the model's for the next session; the journal kept the model's own
+      // in `lesson.recorded`, and the carry holds the ones the next session starts from.
+      if (annotation.notes !== undefined) notes = annotation.notes === "" ? undefined : clipNotes(annotation.notes, o.notesChars);
       journal.emit(
         "attempt.finished",
         {
@@ -236,9 +282,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         },
         actor,
       );
-      // The notes a line gives replace the model's for the next session; the journal kept the model's own.
-      if (annotation.notes !== undefined) notes = annotation.notes === "" ? undefined : clipNotes(annotation.notes, o.notesChars);
     }
+    o.onAttemptEnd?.({ attemptId, outcome, ...(failure !== undefined ? { failureClass: failure } : {}) });
     o.transcript?.(attemptId, result.messages);
 
     switch (outcome) {

@@ -2,7 +2,7 @@
   "name": "@seshat/scheduler",
   "version": "0.0.0",
   "private": true,
-  "description": "The saturation kernel: given-clause loop, subsumption, proof numbers, the subgoal scheduler (line M12).",
+  "description": "The task ledger of a run (the orchestrator's writer of task events), and the saturation kernel: given-clause loop, subsumption, proof numbers, the subgoal scheduler (line M12).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

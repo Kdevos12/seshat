@@ -15,13 +15,17 @@ import type {
   ProblemEnd,
   Proposal,
   ProverEnd,
+  ResumedProblem,
   SessionCheck,
   SessionContext,
   Target,
+  TaskApi,
+  TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
+import { routingInfo, type TaskLedger, taskInfo } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
 import { lineLlm } from "./llm.ts";
 import type { Workbench } from "./problem.ts";
@@ -55,6 +59,8 @@ export interface RunLinesOptions {
   registry: Registry;
   memory: MemoryStore;
   benches: ClaimBenches;
+  /** The orchestrator's handle on the task ledger: the lines read it through `TaskApi` and propose through it. */
+  tasks: TaskLedger;
   models: Models;
   /** `provider/id` of the run's model. */
   model: string;
@@ -213,6 +219,7 @@ export class ProblemLines {
           problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench },
         }),
       budget: budgetOf(this.p.ledger),
+      tasks: taskApi(o.tasks, o.journal, { problemId: this.p.problemId, claimId: this.p.claimId, line: id }),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
       options: entry.options,
@@ -244,6 +251,30 @@ export class ProblemLines {
       if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) return;
       await call(entry.line.id, "beforeProvers", () => hook(this.context(entry)));
       if (this.p.workbench.candidate !== undefined) this.log(`line ${entry.line.id} settled the problem before the provers`);
+    }
+  }
+
+  /**
+   * The lines' start of a problem in a resumed process. A line that rebuilds its state gets
+   * `resumeProblem` with what the journal holds, whether or not the problem is settled, since its
+   * later hooks need the state it sets up. Any other line gets `beforeProvers`, as a process that
+   * was not interrupted would give it, unless the provers had started (the hook ran then, and what
+   * it did is in the journal), and with the stop that `beforeProvers` has once the problem is
+   * settled.
+   */
+  async resumeProblem(held: ResumedProblem): Promise<void> {
+    for (const entry of this.run.o.lines) {
+      const id = entry.line.id;
+      const rebuild = entry.line.resume === "rebuild" ? entry.line.hooks.resumeProblem : undefined;
+      if (rebuild !== undefined) {
+        await call(id, "resumeProblem", () => rebuild(this.context(entry), held));
+        continue;
+      }
+      const hook = entry.line.hooks.beforeProvers;
+      if (hook === undefined || held.begun) continue;
+      if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) continue;
+      await call(id, "beforeProvers", () => hook(this.context(entry)));
+      if (this.p.workbench.candidate !== undefined) this.log(`line ${id} settled the problem before the provers`);
     }
   }
 
@@ -401,6 +432,47 @@ function isReview(reviewed: readonly Briefing[], sections: readonly Briefing[]):
     from = at + 1;
   }
   return true;
+}
+
+/**
+ * The ledger as one line sees it for one problem: the problem's tasks, read from the projection,
+ * and `propose`, which the orchestrator commits or refuses (`TaskLedger.propose`). A task that was
+ * accepted is moved to `ready` when its dependencies are done, so that a line reading `ready`
+ * sees what may start.
+ */
+function taskApi(tasks: TaskLedger, journal: Journal, who: { problemId: string; claimId: string; line: LineId }): TaskApi {
+  const { problemId } = who;
+  const projection = () => journal.projection;
+  return {
+    list: (query: TaskQuery = {}) =>
+      projection()
+        .tasks({
+          problemId,
+          ...(query.statuses !== undefined ? { statuses: query.statuses } : {}),
+          ...(query.kinds !== undefined ? { kinds: query.kinds } : {}),
+          ...(query.claimId !== undefined ? { claimId: query.claimId } : {}),
+          ...(query.owner !== undefined ? { owner: query.owner } : {}),
+        })
+        .map(taskInfo),
+    get: (taskId) => {
+      const row = projection().task(taskId);
+      return row !== undefined && row.problem_id === problemId ? taskInfo(row) : undefined;
+    },
+    ready: () => projection().tasks({ problemId, statuses: ["ready"] }).map(taskInfo),
+    routings: (taskId) => {
+      const own = new Set(projection().tasks({ problemId }).map((task) => task.task_id));
+      if (taskId !== undefined && !own.has(taskId)) return [];
+      return projection()
+        .taskRoutes(taskId)
+        .filter((route) => own.has(route.task_id))
+        .map(routingInfo);
+    },
+    propose: (proposal) => {
+      const result = tasks.propose(who, proposal);
+      if (result.accepted) tasks.promote(problemId);
+      return result;
+    },
+  };
 }
 
 function budgetOf(ledger: Ledger): Budget {
