@@ -1,3 +1,5 @@
+export * from "./beta.ts";
+export * from "./epochs.ts";
 export * from "./failures.ts";
 export * from "./identity.ts";
 export * from "./progress.ts";

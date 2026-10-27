@@ -12,12 +12,20 @@ import {
   type EdgeRow,
   type EdgeStatus,
   edgeStatusRank,
+  epochChanges,
+  type EpochChange,
+  type EpochRow,
   type Journal,
   type Json,
+  type LessonRow,
   newId,
   type NodeRow,
+  type Provenance,
+  type ProvenanceContext,
+  stampProvenance,
   type ValidationRow,
 } from "@seshat/core";
+import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epochs.ts";
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
 import { signatureMessage } from "./signature.ts";
@@ -31,6 +39,16 @@ export interface MemoryStoreOptions {
   identity?: StatementIdentity;
   /** Who the events are from. Default: `memory`. */
   actor?: string;
+  /**
+   * What the run knows of its provenance (documentation/memory.md, "Provenance and epochs"): the
+   * stamp of every learned artifact the store writes, and the epoch it opens. Without it `stamp`,
+   * `openEpoch` and a learned node refuse.
+   */
+  provenance?: ProvenanceContext;
+  /** The share of an older epoch's counters that probation keeps. Default 0.25. */
+  probation?: number;
+  /** The clock of the stamps. Default: the system's. */
+  now?: () => Date;
 }
 
 export interface ClaimInput {
@@ -114,6 +132,11 @@ export interface NodeInput {
   kind: string;
   claimId?: string;
   data: Json;
+  /**
+   * True for a node a mechanism learned from outcomes rather than from Lean (a lesson, a schema, a
+   * channel statistic, a posterior): it is stamped with the run's provenance (Global Constraint 16).
+   */
+  learned?: boolean;
 }
 
 export interface MemoryNode {
@@ -124,6 +147,29 @@ export interface MemoryNode {
   data: Json;
   createdSeq: number;
   updatedSeq: number;
+  /** Set on a node that was recorded `learned`. */
+  provenance?: Provenance;
+  /** The memory's epoch when it was recorded. */
+  epoch: number;
+}
+
+/** A model's own notes of a session, kept as a lesson record (`lesson.recorded`). */
+export interface Lesson {
+  attemptId: string;
+  claimId: string;
+  text: string;
+  provenance?: Provenance;
+  epoch: number;
+  seq: number;
+}
+
+/** An epoch the memory entered. */
+export interface Epoch {
+  epoch: number;
+  reason: string;
+  changes: EpochChange[];
+  provenance: Provenance;
+  seq: number;
 }
 
 export interface Attempt {
@@ -150,6 +196,13 @@ export interface Attempt {
   durationMs?: number;
   startedSeq: number;
   finishedSeq?: number;
+  /** The stamp of the record. Absent in a journal older than the stamps. */
+  provenance?: Provenance;
+  /** The memory's epoch when the attempt started; absent counts as 0. */
+  epoch?: number;
+  /** The unverified items a draw showed the session, and the ones it withheld (absent: no draw). */
+  included?: string[];
+  withheld?: string[];
 }
 
 export interface Validation {
@@ -181,7 +234,11 @@ export class MemoryStore {
   readonly blobs: BlobStore;
   readonly identity: StatementIdentity;
   readonly actor: string;
+  /** The share of an older epoch's counters that probation keeps. */
+  readonly probation: number;
   readonly #journal: Journal;
+  readonly #provenance: ProvenanceContext | undefined;
+  readonly #now: (() => Date) | undefined;
   /** Shared by the views `withActor` makes. Only the root store writes to it. */
   #references: Map<string, ClaimReference>;
   /** True for a store made by `withActor`: what a line is given. */
@@ -192,6 +249,10 @@ export class MemoryStore {
     this.blobs = options.blobs;
     this.identity = options.identity ?? new TextIdentity();
     this.actor = options.actor ?? "memory";
+    this.probation = options.probation ?? DEFAULT_PROBATION;
+    if (!(this.probation >= 0 && this.probation <= 1)) throw new RangeError(`the probation k must be between 0 and 1, got ${this.probation}`);
+    this.#provenance = options.provenance;
+    this.#now = options.now;
     this.#references = new Map();
   }
 
@@ -200,7 +261,15 @@ export class MemoryStore {
    * root store but cannot set one (`setReference`).
    */
   withActor(actor: string): MemoryStore {
-    const view = new MemoryStore({ journal: this.#journal, blobs: this.blobs, identity: this.identity, actor });
+    const view = new MemoryStore({
+      journal: this.#journal,
+      blobs: this.blobs,
+      identity: this.identity,
+      actor,
+      probation: this.probation,
+      ...(this.#provenance !== undefined ? { provenance: this.#provenance } : {}),
+      ...(this.#now !== undefined ? { now: this.#now } : {}),
+    });
     view.#references = this.#references;
     view.#view = true;
     return view;
@@ -289,10 +358,82 @@ export class MemoryStore {
     const nodeId = newId("nod");
     this.#journal.emit(
       "node.recorded",
-      { nodeId, kind: input.kind, ...(input.claimId !== undefined ? { claimId: input.claimId } : {}), data: input.data },
+      {
+        nodeId,
+        kind: input.kind,
+        ...(input.claimId !== undefined ? { claimId: input.claimId } : {}),
+        data: input.data,
+        ...(input.learned === true ? { provenance: this.stamp() } : {}),
+      },
       this.actor,
     );
     return this.node(nodeId) as MemoryNode;
+  }
+
+  /**
+   * The provenance stamp of an artifact made now (documentation/memory.md, "Provenance and epochs"):
+   * the run's model, prompt version, Mathlib revision, harness version and budget class, and the
+   * time. `modelId` names another model when the session that made the artifact ran one. A mechanism
+   * that learns something from outcomes stamps it with this, whatever it stores it as.
+   */
+  stamp(options: { modelId?: string } = {}): Provenance {
+    if (this.#provenance === undefined) throw new Error("this store has no provenance context: the run gives it one (MemoryStoreOptions.provenance)");
+    return stampProvenance(this.#provenance, { ...(options.modelId !== undefined ? { modelId: options.modelId } : {}), ...(this.#now !== undefined ? { now: this.#now() } : {}) });
+  }
+
+  /** The run's provenance context, if the store was given one. */
+  get provenanceContext(): ProvenanceContext | undefined {
+    return this.#provenance;
+  }
+
+  /** The memory's current epoch: 0 until the first `memory.epoch_opened`. */
+  epoch(): number {
+    return this.#journal.projection.currentEpoch();
+  }
+
+  /** The epochs the memory entered, in order; epoch 0 is not among them. */
+  epochs(): Epoch[] {
+    return this.#journal.projection.epochs().map(toEpoch);
+  }
+
+  /**
+   * Opens a new epoch: the unverified artifacts recorded in older epochs are in probation from now on
+   * (their outcomes weigh `probation` per epoch since, `weightOf`), and nothing is deleted. The
+   * journal lets only the orchestrator write the event, so a store of another actor is refused there.
+   */
+  openEpoch(input: { changes: readonly EpochChange[]; reason?: string }): Epoch {
+    const epoch = this.epoch() + 1;
+    this.#journal.emit(
+      "memory.epoch_opened",
+      { epoch, reason: input.reason ?? describeEpochChanges(input.changes), changes: [...input.changes], provenance: this.stamp() },
+      this.actor,
+    );
+    return this.epochs().at(-1) as Epoch;
+  }
+
+  /**
+   * Opens a new epoch when the run's provenance context differs from `previous`, the context of the
+   * memory's previous run, in the prover model family, the prompts' major version or the Mathlib
+   * revision (plan change PE1 item 2). Returns the epoch it opened, or undefined when none changed.
+   */
+  openEpochIfChanged(previous: ProvenanceContext): Epoch | undefined {
+    if (this.#provenance === undefined) throw new Error("this store has no provenance context: the run gives it one (MemoryStoreOptions.provenance)");
+    const changes = epochChanges(previous, this.#provenance);
+    return changes.length === 0 ? undefined : this.openEpoch({ changes });
+  }
+
+  /**
+   * How much an outcome recorded in epoch `epoch` weighs now: 1 in the current epoch, `probation` for
+   * each epoch opened since. The counters of an unverified item are sums of these weights, so an item
+   * of an older epoch is in probation and earns its standing again only through new outcomes.
+   */
+  weightOf(epoch: number): number {
+    return probationWeight(this.epoch(), epoch, this.probation);
+  }
+
+  /** The lessons recorded about a claim (the models' own notes, `lesson.recorded`), in order. */
+  lessons(claimId: string): Lesson[] {
+    return this.#journal.projection.lessons(claimId).map(toLesson);
   }
 
   /** Applies a JSON merge patch (RFC 7386) to a node's data. */
@@ -489,9 +630,26 @@ function toNode(row: NodeRow): MemoryNode {
       claimId: row.claim_id,
       createdSeq: row.created_seq,
       updatedSeq: row.updated_seq,
+      provenance: row.provenance,
+      epoch: row.epoch,
     }),
     data: row.data,
   };
+}
+
+function toLesson(row: LessonRow): Lesson {
+  return present<Lesson>({
+    attemptId: row.attempt_id,
+    claimId: row.claim_id,
+    text: row.text,
+    provenance: row.provenance,
+    epoch: row.epoch,
+    seq: row.seq,
+  });
+}
+
+function toEpoch(row: EpochRow): Epoch {
+  return { epoch: row.epoch, reason: row.reason, changes: row.changes, provenance: row.provenance, seq: row.seq };
 }
 
 function toAttempt(row: AttemptRow): Attempt {
@@ -516,6 +674,10 @@ function toAttempt(row: AttemptRow): Attempt {
     durationMs: row.duration_ms,
     startedSeq: row.started_seq,
     finishedSeq: row.finished_seq,
+    provenance: row.provenance,
+    epoch: row.epoch,
+    included: row.included,
+    withheld: row.withheld,
   });
 }
 

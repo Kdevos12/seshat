@@ -45,22 +45,23 @@ Event types:
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
-| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?` |
+| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?` |
 | `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`: one model response of a session |
 | `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
-| `lesson.recorded` | `attemptId`, `claimId`, `text` |
+| `lesson.recorded` | `attemptId`, `claimId`, `text`, `provenance?` |
 | `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash`, `negation?`, `problemId?` |
 | `edge.added` | `edgeId`, `kind`, `from`, `to` (a list), `status`, `attemptId?`, `toolRunId?`, `validationId?`, `note?`, `link?` (`name`, `statement`) |
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
-| `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON) |
+| `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
 | `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens` |
 | `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
 | `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
+| `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a
 theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`). Its `header` holds the imports, `open`s and
@@ -97,6 +98,13 @@ the tool runs with no end (`aborted`) and the tasks that were `running` (back to
 ([ledger.md](ledger.md#resume)). A validation's `problemId` is
 the problem whose workbench made the check, which is the problem that certifies what it made a
 candidate.
+
+The learned, unverified records carry a `provenance` stamp (`modelId`, `promptVersion`, `mathlibRev`,
+`harnessVersion`, `budgetClass`, `createdAt`): an attempt, a lesson and a node a mechanism learned
+from outcomes. `included` and `withheld` on an attempt are the unverified memory items a line drew into
+the session and the ones the draw left out (`memory.md`, "Randomized inclusion").
+`memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
+([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
 
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
@@ -159,11 +167,15 @@ anywhere else is corruption, and the journal refuses to open.
   ([ledger.md](ledger.md#what-the-journal-enforces)): transitions, dependencies, owner, blockers, the
   acceptance criterion of a `done` task, the way back from `running`, an attempt for a task that is
   not running;
-- a resumption is not the next number.
+- a resumption is not the next number;
+- a provenance is not a stamp of six non-empty fields; an attempt's `included` and `withheld` are not lists
+  of item ids, or name an id twice;
+- `memory.epoch_opened` comes from another actor than the orchestrator, is not the epoch after the
+  current one, or has no reason, no change that opens an epoch, or no provenance.
 
 ## Projection
 
-Tables: `problems` (with their outcome once finished), `claims` (indexed by statement id and by
+Tables: `epochs` and `attempt_items` (which memory items each attempt was shown or denied), `problems` (with their outcome once finished), `claims` (indexed by statement id and by
 parent), `attempts` (with `stopped_by` and `error`, the strategies, premises and failure detail),
 `tool_runs`, `lessons`, `validations`, `edges` with `edge_targets` (one row per target, in order,
 indexed by target), `nodes` (their data with every patch applied), `model_calls`, `tasks`,
@@ -182,7 +194,7 @@ Applying an event is idempotent: an event at or below the last applied seq is sk
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 4) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 5) is kept in SQLite's
 `user_version`.
 
 `runSummary()` gives the number of problems, `solved` (claim `proved`), `refuted` (claim

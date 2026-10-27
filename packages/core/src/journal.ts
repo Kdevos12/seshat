@@ -4,6 +4,7 @@ import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
 import { Projection, StaleProjectionError } from "./projection.ts";
+import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
 import {
@@ -162,6 +163,8 @@ export class Journal {
         if (!p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
         if (p.attempt(d.attemptId)) throw new Error(`attempt ${d.attemptId} already exists`);
         if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`attempt ${d.attemptId}: bad site ${JSON.stringify(d.site)}`);
+        this.checkProvenance(`attempt ${d.attemptId}`, d.provenance);
+        this.checkDraw(d.attemptId, d.included, d.withheld);
         if (d.taskId !== undefined) {
           // Work is done inside a running task, for the task's own claim.
           const task = p.task(d.taskId);
@@ -191,6 +194,7 @@ export class Journal {
       }
       case "lesson.recorded":
         if (!p.attempt(event.data.attemptId)) throw new Error(`unknown attempt ${event.data.attemptId}`);
+        this.checkProvenance(`a lesson of attempt ${event.data.attemptId}`, event.data.provenance);
         return;
       case "tool_run.started":
         if (p.toolRun(event.data.toolRunId)) throw new Error(`tool run ${event.data.toolRunId} already exists`);
@@ -244,6 +248,7 @@ export class Journal {
         if (p.claim(d.nodeId)) throw new Error(`${d.nodeId} is already a claim`);
         if (!NODE_KIND.test(d.kind)) throw new Error(`node ${d.nodeId}: bad kind ${JSON.stringify(d.kind)}`);
         if (d.claimId !== undefined && !p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
+        this.checkProvenance(`node ${d.nodeId}`, d.provenance);
         return;
       }
       case "node.updated":
@@ -264,6 +269,22 @@ export class Journal {
         this.onlyOrchestrator(event.type, actor);
         const expected = p.resumptions().length + 1;
         if (event.data.resumption !== expected) throw new Error(`this is resumption ${expected} of the run, not ${event.data.resumption}`);
+        return;
+      }
+      case "memory.epoch_opened": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        const expected = p.currentEpoch() + 1;
+        if (d.epoch !== expected) throw new Error(`this is epoch ${expected} of the memory, not ${String(d.epoch)}`);
+        if (typeof d.reason !== "string" || d.reason === "") throw new Error(`epoch ${d.epoch}: an epoch needs a reason`);
+        if (!Array.isArray(d.changes) || d.changes.length === 0) throw new Error(`epoch ${d.epoch}: it opens because something changed, and changes says what`);
+        for (const change of d.changes) {
+          if (!EPOCH_FIELDS.includes(change?.field)) throw new Error(`epoch ${d.epoch}: ${JSON.stringify(change)} is not a change that opens an epoch (${EPOCH_FIELDS.join(", ")})`);
+          if (typeof change.from !== "string" || typeof change.to !== "string" || change.from === change.to) {
+            throw new Error(`epoch ${d.epoch}: the change of ${change.field} goes from one value to another`);
+          }
+        }
+        this.checkProvenance(`epoch ${d.epoch}`, d.provenance, true);
         return;
       }
       case "task.created":
@@ -299,6 +320,30 @@ export class Journal {
         if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
         if (d.nodeId !== undefined && !p.node(d.nodeId)) throw new Error(`unknown node ${d.nodeId}`);
         return;
+      }
+    }
+  }
+
+  /** A provenance, when there is one (or has to be), has the six fields of the stamp. */
+  private checkProvenance(what: string, provenance: unknown, required = false): void {
+    if (provenance === undefined) {
+      if (required) throw new Error(`${what} needs a provenance`);
+      return;
+    }
+    const problems = provenanceProblems(provenance);
+    if (problems.length > 0) throw new Error(`${what}: ${problems.join("; ")}`);
+  }
+
+  /** The items a draw included and withheld are two lists of ids, with no id twice and none in both. */
+  private checkDraw(attemptId: string, included: unknown, withheld: unknown): void {
+    const seen = new Set<string>();
+    for (const [name, list] of [["included", included], ["withheld", withheld]] as const) {
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) throw new Error(`attempt ${attemptId}: ${name} is a list of item ids`);
+      for (const id of list) {
+        if (typeof id !== "string" || id === "") throw new Error(`attempt ${attemptId}: ${name} holds item ids`);
+        if (seen.has(id)) throw new Error(`attempt ${attemptId}: item ${id} is drawn twice (included and withheld together, or listed twice)`);
+        seen.add(id);
       }
     }
   }
