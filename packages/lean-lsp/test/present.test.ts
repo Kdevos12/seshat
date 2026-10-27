@@ -142,7 +142,7 @@ describe("what a prover reads of an answer of lean.lsp", () => {
     );
     assert.equal(
       present({ op: "state_search", status: "complete", ...at, note: "There is no goal here to search for." }),
-      "PROOF line 1, column 3, `sorry`: no goals left.\nThere is no goal here to search for.",
+      "PROOF line 1, column 3, `sorry`: Lean's language server reports no goal left here. That is not a verdict: only lean_check judges a proof.\nThere is no goal here to search for.",
     );
     assert.equal(
       present({ op: "hammer_premise", status: "ok", ...at, premises: ["Nat.add_zero", "Nat.zero_add"] }),
