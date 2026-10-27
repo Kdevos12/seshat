@@ -385,8 +385,9 @@ A line says in `resume` whether a run with it can be resumed ([lines.md](lines.m
 `"stateless"` (what it keeps is in the journal and the memory, as M1's is), `"rebuild"` (it keeps
 state in the process and has a `resumeProblem` hook that rebuilds it from the journal and the memory
 when a problem is taken up), or `{refuse: reason}`. A line that says nothing is refused, and so is a
-`rebuild` line without the hook. The repository's lines: M1 is stateless; M2, M6 and the fleet
-rebuild. A run with a line that is refused cannot be resumed, and the command says which line and why.
+`rebuild` line without the hook. The repository's lines: M1 and M11 are stateless (M11 keeps its findings in the memory
+and skips, on a second call of `beforeProvers`, what the memory shows done: [models.md](models.md#resuming)); M2, M6 and
+the fleet rebuild. A run with a line that is refused cannot be resumed, and the command says which line and why.
 
 What each rebuilds, from what it journaled:
 

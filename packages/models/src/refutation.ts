@@ -145,13 +145,17 @@ export function recordCounterModel(
     evaluator: input.evaluator,
     ...(input.witness !== undefined ? { witness: input.witness } : {}),
   };
-  const node = memory.recordNode({ kind: "counter_model", claimId: input.claimId, data: data as Json });
-  const edge = memory.addEdge({
-    kind: "refuted_by",
-    from: input.claimId,
-    to: node.nodeId,
-    status: "computed",
-    note: `the statement fails on ${description}; a refutation needs a Lean proof of the negation`,
-  });
+  // The same counter-model of the same claim is recorded once, with its edge: a call the process ended in the middle of is finished by the next.
+  const known = memory.nodes("counter_model", { claimId: input.claimId }).find((n) => (n.data as CounterModelData).digest === data.digest && (n.data as CounterModelData).index === data.index);
+  const node = known ?? memory.recordNode({ kind: "counter_model", claimId: input.claimId, data: data as Json });
+  const edge =
+    memory.edges({ from: input.claimId, kinds: ["refuted_by"] }).find((e) => e.to.includes(node.nodeId)) ??
+    memory.addEdge({
+      kind: "refuted_by",
+      from: input.claimId,
+      to: node.nodeId,
+      status: "computed",
+      note: `the statement fails on ${description}; a refutation needs a Lean proof of the negation`,
+    });
   return { node, edge };
 }
