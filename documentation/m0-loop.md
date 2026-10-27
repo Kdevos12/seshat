@@ -319,8 +319,23 @@ covered by the registry's hash.
 
 Spending is tracked by ledgers: one for the run, and one per problem below it. Every model response
 is charged to its problem and to the run, at the cost the provider reports, or at the cost computed
-from the model's prices when it reports none. Input tokens include cache reads and writes. An
-aborted response is charged for the usage that pi kept.
+from the model's prices when it reports none. Input tokens include cache reads and writes, and the
+cache reads are also given apart (`cachedInputTokens` in `attempt.charged` and `attempt.finished`,
+and in `model_call.finished`; absent when there were none), priced at the model's cache-read rate.
+An aborted response is charged for the usage that pi kept.
+
+`--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
+`run.started` only when given) is passed to pi-ai with every request of a session. pi-ai puts the
+option on the request options of every provider and a provider that does not use it ignores it, so
+the harness does not filter by provider; the providers that read it (Anthropic, the OpenAI
+completions and responses APIs, Bedrock, Mistral among them) turn it into their own cache control.
+Absent, the provider's own default holds, which for pi-ai is `short`. A session's id is passed as
+the cache session as well. With a line packet that answers a prefix and a tail ([lines.md](lines.md#the-context-packet)),
+every request of a session starts with the same bytes after the system prompt, which is what
+automatic prefix caches need. Anthropic's API caches up to a marked block, and pi-ai marks the last
+block of the last message, the system prompt and the tools: the tail. The prefix is then cached
+only as far as an earlier request marked its end, so the saving there rests on pi-ai marking the
+end of the prefix too, which it does not do at present and which has not been measured.
 
 When a problem's budget runs out, its sessions end at once (`budget`) and the problem is
 `unsolved`. When the run's budget runs out, the problems in progress end in the same way and no new
@@ -370,6 +385,7 @@ Options of `harness run`:
 | `--turns N` | 40 | Model responses per session. |
 | `--context-tokens N` | 120000 | Prompt size that ends a session. |
 | `--notes-chars N` | 4000 | Length limit of the notes. |
+| `--cache-retention R` | the provider's | `none`, `short` or `long`: the prompt cache retention asked of the provider with every request ([budgets](#budgets)). |
 | `--thinking LEVEL` | `medium` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. |
 | `--budget-usd X` | 5 | Dollars per problem. |
 | `--run-budget-usd X` | none | Dollars for the whole run. |
@@ -404,7 +420,8 @@ interrupted or killed.
 The report counts the problems by outcome, with those that have none (not started, or cut off
 when the run was killed). It gives the Q5 metrics that a run can measure: validity (problems
 proved or refuted, and candidates that passed the fast check only), the cost in total and per
-problem with a proof or a refutation, tokens, attempts
+problem with a proof or a refutation (the dollars per solve), tokens with the share that was read
+from the provider's prompt cache (`cachedInputTokens`, shown when there is any), attempts
 by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
 checks with their median and 90th percentile times (the count includes one reference check per
 problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
@@ -424,6 +441,9 @@ recorded; the file and the notes carried from one session to the next; forbidden
 before Lean; the turn limit, with the wrap-up; the problem's budget; the other provers stopped when
 one succeeds; a problem whose original file does not compile; a run stopped when Lean cannot be
 reached; certification, accepted and rejected; and a run aborted between problems.
+`packet.test.ts` covers the cache in the cost: the cached input tokens in the journal and the report, the retention asked of
+the provider (and kept when a run is resumed), and the dollars per solve of a frozen packet prefix against a packet compiled again,
+as pi-ai's faux provider simulates the cache ([lines.md](lines.md#the-context-packet)). What a real provider's cache does with it has not run.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line

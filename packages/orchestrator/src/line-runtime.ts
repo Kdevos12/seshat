@@ -7,6 +7,7 @@ import type {
   Budget,
   EnabledLine,
   FinishedAttempt,
+  FrozenPacket,
   JsonObject,
   LineHooks,
   LineId,
@@ -28,6 +29,7 @@ import { messageOf, type Registry } from "@seshat/registry";
 import { routingInfo, type TaskLedger, taskInfo } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
 import { lineLlm } from "./llm.ts";
+import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import type { ClaimBenches } from "./validate.ts";
 
@@ -152,8 +154,11 @@ export interface OpenedSession {
 
 /** The hooks a session calls itself. */
 export interface SessionHooks {
-  /** The text that replaces the request's messages after the system prompt, or undefined. */
-  packet?: (request: number, messages: readonly AgentMessage[]) => Promise<string | undefined>;
+  /**
+   * What replaces the request's messages after the system prompt, or undefined: a string, or a
+   * prefix and a tail. `prefix` is the one the session froze, once it has (absent before).
+   */
+  packet?: (request: number, messages: readonly AgentMessage[], prefix: string | undefined) => Promise<string | FrozenPacket | undefined>;
   /** Before each check: the line that rejects the call, and why. */
   beforeCheck?: (proposal: Proposal) => Promise<{ line: LineId; reason: string } | undefined>;
   /** After each check: the line that stops the session, and why. */
@@ -345,10 +350,17 @@ export class ProblemLines {
     const hooks: SessionHooks = {
       ...(packetLine !== undefined
         ? {
-            packet: (request: number, messages: readonly AgentMessage[]) =>
-              call(packetLine.entry.line.id, "contextPacket", () =>
-                packetLine.hook(this.sessionContext(packetLine.entry, info), { request, transcript: transcriptOf(messages) }),
-              ),
+            packet: (request: number, messages: readonly AgentMessage[], prefix: string | undefined) =>
+              call(packetLine.entry.line.id, "contextPacket", async () => {
+                const answer = await packetLine.hook(this.sessionContext(packetLine.entry, info), {
+                  request,
+                  transcript: transcriptOf(messages),
+                  ...(prefix !== undefined ? { prefix } : {}),
+                });
+                const fault = packetFault(answer);
+                if (fault !== undefined) throw new Error(fault);
+                return answer;
+              }),
           }
         : {}),
       ...(guards.length > 0
