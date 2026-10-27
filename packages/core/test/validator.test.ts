@@ -146,7 +146,7 @@ describe("forbiddenTokensIn", () => {
     const names = [
       "xsorry", "x1sorry", "x_12macro", "a'3import", "b!4elab", "_elab", "x!sorry", "x?sorry", "x'sorry", "x₁sorry", "αmacro", "sorry_free", "my_run_cmd", "sorrys",
       // Dotted names, also after the symbols that precede a name.
-      "Nat.sorry_lemma", "a.b.elab", "h.elab", "!x.sorry", "?x.elab", "!!x.macro", "(f x).y.elab",
+      "Nat.sorry_lemma", "a.b.elab", "h.elab", "!x.sorry", "?x.elab", "!!x.macro", "(f x).y.elab", "foo.IO.bar", "n.IOx",
     ];
     for (const name of names) assert.deepEqual(forbiddenTokensIn(`exact ${name}`), [], name);
   });
@@ -190,6 +190,7 @@ describe("structuralCheck", () => {
 
   it("refuses a keyword glued after a symbol token that ends in letters, in either region", () => {
     refused("", "  simp\n  #checkrun_cmd 1", /proof: 'run_cmd' is not allowed/);
+    refused("", "  simp\n  #reducemacro x", /proof: 'macro' is not allowed/);
     refused("", "  simp\n  exact foo [MODrun_cmd 1]", /proof: 'run_cmd' is not allowed/);
     refused("", "  simp\n  exact foo [ZMODmacro x]", /proof: 'macro' is not allowed/);
     refused("", "  simp\n  exact foo ⟪x, y⟫_run_cmd 1", /proof: 'run_cmd' is not allowed/);
