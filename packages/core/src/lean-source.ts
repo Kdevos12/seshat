@@ -168,8 +168,10 @@ export function opensComment(chars: readonly string[], at: number, reading: Comm
  * Masks comments and string literals with spaces (newlines kept), so that searches for keywords or
  * tokens do not match inside them and offsets stay valid. A comment opens only where Lean is sure to
  * read one (`opensComment`); from the first opener that is not read as a comment, the text is left as
- * it is, strings included. The text that remains is for a caller that writes it, as M11 does, or reads
- * it; the screen of a text that is sent as it is, is `scanRegion`.
+ * it is, strings included. The text that remains is for a caller that reads it, or writes it as M11
+ * does; a caller that writes it must refuse a `--` or `/-` that remains in it, which Lean may read as
+ * a comment that reaches into what is written after it. The screen of a text that is sent as it is is
+ * `scanRegion`.
  */
 export function maskCommentsAndStrings(source: string): string {
   const out = source.split("");
