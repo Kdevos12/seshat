@@ -3,11 +3,26 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal, type TaskRow } from "@seshat/core";
 import type { Line, LineHooks, TaskInfo, TaskProposalResult } from "@seshat/lines";
-import { check, DemoLean, demoAnswer, demoRun, ofType, say } from "./m0-helpers.ts";
+import { check, DemoLean, demoAnswer, demoRun, ofType, proofOf, say } from "./m0-helpers.ts";
 
 /** A line whose only act is `beforeProvers`. */
 function asking(beforeProvers: NonNullable<LineHooks["beforeProvers"]>): Line {
   return { id: "M4", title: "asks", requires: [], hooks: { beforeProvers } };
+}
+
+/** A simulated Lean whose "slow" check, which waits to be aborted, must have begun before any other check answers. */
+class SlowStartsFirst extends DemoLean {
+  private begun!: () => void;
+  private readonly slowBegan = new Promise<void>((resolve) => {
+    this.begun = resolve;
+  });
+
+  override async check(snippets: Parameters<DemoLean["check"]>[0], options?: Parameters<DemoLean["check"]>[1]): ReturnType<DemoLean["check"]> {
+    const proofs = snippets.map((s) => proofOf(s.code) ?? "");
+    if (proofs.some((p) => p.includes("slow"))) this.begun();
+    else if (proofs.some((p) => p.includes("trivial_proof"))) await this.slowBegan;
+    return super.check(snippets, options);
+  }
 }
 
 /** The tasks of a finished run, as the journal's projection holds them. */
@@ -63,10 +78,10 @@ describe("the task ledger in an M0 run", () => {
   });
 
   it("records a task for each of several provers, and cancels the ones another prover made pointless", async () => {
-    // Checks take 30 ms, so the second prover's check is under way when the first one's succeeds.
+    // The first prover's check waits until the second prover's is under way, so the order is not a matter of timing.
     const { events, result, dir } = await demoRun({
       config: { provers: 2 },
-      lean: new DemoLean(demoAnswer, 30),
+      lean: new SlowStartsFirst(),
       responses: [check("exact trivial_proof"), check("slow")],
     });
     assert.equal(result.problems[0]?.outcome, "candidate");
