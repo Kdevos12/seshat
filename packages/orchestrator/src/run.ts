@@ -294,7 +294,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const created = resume === undefined && !existsSync(o.dir);
   let journal: Journal;
   try {
-    journal = Journal.open(o.dir, runId);
+    // A resume may still refuse (the host, registry, tools or certifier are not the run's): it leaves the
+    // journal's cut last line for `beginResumption` to deal with, so that a refusal writes nothing to it.
+    journal = Journal.open(o.dir, runId, resume !== undefined ? { deferRepair: true } : {});
   } catch (error) {
     if (resume === undefined) throw error;
     throw new RunSetupError(`the journal of ${o.dir} cannot be opened: ${messageOf(error)}`, { cause: error });

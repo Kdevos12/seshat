@@ -51,7 +51,7 @@ export class Journal {
    * Opens `<dir>/journal.jsonl` and its projection `<dir>/projection.sqlite`. A projection that
    * lags is caught up; one that does not match is deleted and rebuilt from the journal.
    */
-  static open(dir: string, run: string, options: { durable?: boolean } = {}): Journal {
+  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean } = {}): Journal {
     mkdirSync(dir, { recursive: true });
     const log = EventLog.open(join(dir, "journal.jsonl"), { run, ...options });
     const path = join(dir, "projection.sqlite");

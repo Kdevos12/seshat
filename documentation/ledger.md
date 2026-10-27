@@ -268,11 +268,12 @@ Everything the resumed process writes is written by the orchestrator, after `run
 | the run's model, when this process cannot reach it (an unknown provider, no credentials) | the same refusal as `harness run` |
 | another host, capability registry (catalog and host profile), tools or certifier than the run began with | it would be another run |
 
-All but the last row are checked before the journal is opened, so the directory is left as it was.
-The last needs the registry, which is built on a journal that is open: opening deals with a cut last
-line ([the torn tail](#the-torn-tail)), so a refusal there leaves the journal repaired and
-otherwise as it was, and the repair is not reported by a later `run.resumed`, which finds nothing
-to repair. No flag that describes a run is accepted with `--resume`: its configuration, the model
+All but the last row are checked before the journal is opened. The last needs the registry, which
+is built on a journal that is open, so the resume opens it with the repair of a cut last line
+deferred (`deferRepair`, [the torn tail](#the-torn-tail)): the journal is read, nothing is written,
+and a refusal at any of these checks leaves the directory's bytes exactly as the crash left them.
+The repair is the first write of the resumption, made by `beginResumption` just before `run.resumed`
+records it. No flag that describes a run is accepted with `--resume`: its configuration, the model
 included, is read from `run.started`.
 
 ### What it writes first
@@ -300,7 +301,7 @@ A crash during an append can leave a last line that is not a whole event, and no
 - a line that is a whole event whose hash and place in the chain verify, and lacks only its newline,
   is kept (`completed`): dropping it would lose a fact the chain vouches for.
 
-`EventLog.recovered` says which, and `run.resumed.tornTail` keeps the bytes' number and their sha256;
+`EventLog.recovered` says which (before the repair is made, when a resume defers it), and `run.resumed.tornTail` keeps the bytes' number and their sha256;
 the report counts the cut lines. What a dropped fragment described is lost with it. The cost is at
 most one event: a model response whose charge was the fragment is not billed in the journal, so the
 resumed run's budget does not count it. Reading a run (`readRecordedRun`, `harness report`) never
