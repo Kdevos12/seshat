@@ -482,8 +482,8 @@ describe("ProofValidator", () => {
 });
 
 describe("regions on which a real Lean ran a command", () => {
-  // Recorded with Lean 4.27.0 (Init only) by the Task 7 re-review of 2026-10-27: random regions after a tactic block, a
-  // declaration or a definition, each with the payload `#eval 7777` somewhere in it; the payload ran in these (see the README of
+  // Recorded with Lean 4.27.0 (Init only) by the Task 7 re-review of 2026-10-27: random regions after a tactic block and in a
+  // term-mode theorem, each with the payload `#eval 7777` somewhere in it; the payload ran in these (see the README of
   // the fixtures). Lean is not run here. The screen must refuse every one of them, whatever the reason it gives.
   const recorded = JSON.parse(readFileSync(new URL("./fixtures/lean-oracle-regions.json", import.meta.url), "utf8")) as {
     lean: string;
