@@ -224,7 +224,10 @@ changes a status.
 An attempt's cost is in its `attempt.finished`. A session that is cut never writes it, so each model
 response of a session also writes `attempt.charged` (`attemptId`, `usd`, `inputTokens`,
 `outputTokens`), and the projection counts an unfinished attempt at the sum of its charges. A
-resumed run starts its budgets from this.
+resumed run starts its budgets from this. A session that does not finish is written at that sum
+too, never at zero: the resumption closes a cut session as `aborted`, and a session that the
+harness fails in (an error thrown out of it) ends `error`, at the cost it had been charged
+(`chargedTotals`), because a finished attempt is counted at its own totals and not at its charges.
 
 `attempt.finished` may carry `carry`: the blobs of what the prover hands to its next session (its
 regions, the text of its last check, its notes). A resumed prover starts from the carry of its last

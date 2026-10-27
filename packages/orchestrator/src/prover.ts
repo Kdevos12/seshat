@@ -3,12 +3,12 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
 import type { FailureClass } from "@seshat/memory";
-import type { Ledger } from "./budget.ts";
+import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
-import { ABORT_BUDGET, runSession, type SessionLimits, type SessionResult } from "./session.ts";
+import { ABORT_BUDGET, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { capabilityTool, type PinnedTool, toolName } from "./tools.ts";
 
 export interface ProverOptions {
@@ -46,6 +46,8 @@ export interface ProverOptions {
   onEnd?: (result: ProverResult) => void;
   /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
   onAttemptEnd?: (attempt: { attemptId: string; outcome: AttemptOutcome; failureClass?: FailureClass }) => void;
+  /** Runs a session. Default: `runSession`; a test replaces it to make the harness fail in the middle of one. */
+  session?: (options: SessionOptions) => Promise<SessionResult>;
 }
 
 /**
@@ -148,7 +150,7 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
     try {
       const opened: OpenedSession | undefined =
         o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
-      result = await runSession({
+      result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => capabilityTool(t.capability, { registry: workbench.registry, attemptId, actor, implementation: t.implementation })),
           ...(opened?.tools ?? []),
@@ -178,11 +180,13 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         ...(strategies.length > 0 ? { strategies } : {}),
       });
     } catch (error) {
+      // The harness failed in the session. What the session was charged before it failed is spent, and the
+      // attempt ends at that cost: a finished attempt is counted at its own totals, not at its charges.
       journal.emit(
         "attempt.finished",
         {
           attemptId, outcome: "error", stoppedBy: "error", error: String(error), durationMs: Math.round(performance.now() - started),
-          turns: 0, usd: 0, inputTokens: 0, outputTokens: 0,
+          ...chargedTotals(journal.projection.attempt(attemptId)),
         },
         actor,
       );

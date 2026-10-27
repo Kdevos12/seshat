@@ -316,3 +316,54 @@ describe("a prover that resumes", () => {
     run.journal.close();
   });
 });
+
+describe("a session that the harness fails in", () => {
+  it("ends at the cost it was charged before it failed, so that what it spent stays counted", async () => {
+    const run = await inRun();
+    const { options } = await (async () => {
+      const { models, name } = fauxModels();
+      return {
+        options: {
+          name: "p1",
+          workbench: run.make(),
+          journal: run.journal,
+          blobs: run.blobs,
+          models,
+          model: await resolveModel(models, name),
+          modelName: name,
+          thinkingLevel: "off" as const,
+          sessions: 2,
+          limits: { turns: 5, contextTokens: 100_000 },
+          notesChars: 1000,
+          ledger: new Ledger(5),
+          signal: new AbortController().signal,
+          // A session that is charged for two responses and then fails, as a harness bug in the middle of one would.
+          session: async (session: Parameters<NonNullable<Parameters<typeof runProver>[0]["session"]>>[0]): Promise<never> => {
+            for (const usd of [0.5, 0.25]) {
+              const cost = { usd, inputTokens: 100, outputTokens: 10 };
+              session.ledger.charge(cost);
+              session.onCharge?.(cost);
+            }
+            throw new Error("the harness broke");
+          },
+        },
+      };
+    })();
+    assert.equal(run.journal.projection.totalSpend().usd, 0);
+    await assert.rejects(runProver(options), /the harness broke/);
+    const [started] = ofType(run.events(), "attempt.started");
+    const finished = ofType(run.events(), "attempt.finished");
+    assert.equal(finished.length, 1);
+    assert.deepEqual(
+      [finished[0]?.data.attemptId, finished[0]?.data.outcome, finished[0]?.data.stoppedBy, finished[0]?.data.turns, finished[0]?.data.usd, finished[0]?.data.inputTokens, finished[0]?.data.outputTokens],
+      [started?.data.attemptId, "error", "error", 2, 0.75, 200, 20],
+      "the attempt ends at the sum of its charges",
+    );
+    // The journal's account is what a resumed run seeds its budgets from, and what the report adds up.
+    const total = run.journal.projection.totalSpend();
+    assert.deepEqual([total.usd, total.requests, total.inputTokens, total.outputTokens], [0.75, 2, 200, 20]);
+    assert.equal(options.ledger.usd, 0.75, "the run's ledger and the journal agree");
+    assert.equal(run.journal.projection.spendBySite().find((s) => s.site === "prover.session")?.usd, 0.75);
+    run.journal.close();
+  });
+});
