@@ -58,6 +58,8 @@ export function resolveLines(
   }
   const packets = enabled.filter((line) => line.hooks.contextPacket !== undefined).map((line) => line.id);
   if (packets.length > 1) problems.push(`lines ${packets.join(" and ")} all give the context packet; enable one of them`);
+  const environments = enabled.filter((line) => line.leanEnv !== undefined).map((line) => line.id);
+  if (environments.length > 1) problems.push(`lines ${environments.join(" and ")} all give the Lean environment; enable one of them`);
   const identities = enabled.filter((line) => line.identity !== undefined).map((line) => line.id);
   if (identities.length > 1) problems.push(`lines ${identities.join(" and ")} all give the statement identity; enable one of them`);
 
@@ -82,6 +84,15 @@ export function resolveLines(
     return { line, options: { ...defaults, ...given } };
   });
   return { lines: [...lines].sort((a, b) => LINE_ORDER.indexOf(a.line.id) - LINE_ORDER.indexOf(b.line.id)), problems };
+}
+
+/**
+ * The Lean environment an enabled line puts the run in, with the line that does; undefined when no
+ * enabled line gives one (the host's decides).
+ */
+export function lineLeanEnv(lines: readonly EnabledLine[]): { line: LineId; name: string } | undefined {
+  const giver = lines.find(({ line }) => line.leanEnv !== undefined);
+  return giver === undefined ? undefined : { line: giver.line.id, name: (giver.line.leanEnv as NonNullable<Line["leanEnv"]>)(giver.options) };
 }
 
 function kind(value: Json): string {

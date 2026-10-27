@@ -46,6 +46,13 @@ export interface Line {
    */
   identity?: (env: IdentityEnv) => StatementIdentity;
   /**
+   * The Lean environment the line puts the run in (`lean/env/<name>.toml`, documentation/lean-env.md),
+   * from the line's options: the host's `LEAN_ENV` does not apply to a run with such a line. At most
+   * one enabled line gives it. The run builds its registry for that environment, refuses to start
+   * unless it is resolved, and records its name and hash.
+   */
+  leanEnv?: (options: Readonly<JsonObject>) => string;
+  /**
    * The strategy labels the line classifies attempts with. When an enabled line gives some,
    * `lean_check` takes an optional `strategy` argument, one of the labels: the model declares what
    * it is trying, and the declaration is recorded beside the label the line classifies.

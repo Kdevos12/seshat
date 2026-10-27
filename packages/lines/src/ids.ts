@@ -2,7 +2,7 @@
  * The ablation lines of the plan (§6), in the order they are built and measured (§7). The
  * orchestrator calls the hooks of the enabled lines in this order.
  */
-export const LINE_ORDER = ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9"] as const;
+export const LINE_ORDER = ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9", "M17"] as const;
 
 export type LineId = (typeof LINE_ORDER)[number];
 
@@ -23,6 +23,7 @@ export const LINE_TITLES: Readonly<Record<LineId, string>> = {
   M14: "typed repairs and Lakatos-style repair",
   M5: "lessons with counters",
   M9: "reranking from our own labels, without training",
+  M17: "extended Lean environment: the run's Lean has more packages than the bench's",
 };
 
 /**

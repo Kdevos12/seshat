@@ -160,6 +160,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
 
   packages/lean-kimina:
     dependencies:

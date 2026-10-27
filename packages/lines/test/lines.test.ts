@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TextIdentity } from "@seshat/memory";
-import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines, resumeRefusals, SUSPENDED_LINES } from "../src/index.ts";
+import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, lineLeanEnv, type LineRegistry, resolveLines, resumeRefusals, SUSPENDED_LINES } from "../src/index.ts";
 
 function line(id: Line["id"], extra: Partial<Line> = {}): Line {
   return { id, title: `the line ${id}`, requires: [], hooks: {}, ...extra };
@@ -9,7 +9,7 @@ function line(id: Line["id"], extra: Partial<Line> = {}): Line {
 
 describe("line ids and cumulative configs", () => {
   it("orders the lines as the plan builds them, and knows them", () => {
-    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9"]);
+    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9", "M17"]);
     assert.ok(isLineId("fleet") && isLineId("M14"));
     assert.ok(!isLineId("M0") && !isLineId("M15") && !isLineId("m1"));
     assert.ok(isAblationName("M0") && isAblationName("M9") && !isAblationName("M15"));
@@ -22,7 +22,14 @@ describe("line ids and cumulative configs", () => {
     assert.deepEqual(ablationLines("fleet"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet"]);
     assert.deepEqual(ablationLines("M8"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M8"], "a suspended line is left out");
     assert.deepEqual(ablationLines("M7"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7"], "but kept in its own config, which a run refuses");
-    assert.deepEqual(ablationLines("M9"), LINE_ORDER.filter((id) => id !== "M7"));
+    assert.deepEqual(ablationLines("M9"), LINE_ORDER.filter((id) => id !== "M7" && id !== "M17"));
+  });
+
+  it("puts M17, the environment switch, last, so that its config is every built line on the extended environment", () => {
+    assert.equal(LINE_ORDER.at(-1), "M17");
+    assert.ok(isLineId("M17") && isAblationName("M17"));
+    assert.deepEqual(ablationLines("M17"), LINE_ORDER.filter((id) => id !== "M7" && id !== "M9"));
+    assert.deepEqual(ablationLines("M17").slice(-2), ["M5", "M17"]);
   });
 
   it("knows the suspended lines", () => {
@@ -85,6 +92,19 @@ describe("resolveLines", () => {
     const named: LineRegistry = { M1: line("M1", { identity }), M10: line("M10", { identity }), M2: line("M2", { requires: ["M1"] }) };
     assert.deepEqual(resolveLines(["M1", "M2"], named).problems, []);
     assert.deepEqual(resolveLines(["M1", "M10"], named).problems, ["lines M1 and M10 all give the statement identity; enable one of them"]);
+  });
+
+  it("lets one enabled line give the Lean environment, from its options, not two", () => {
+    const leanEnv = (options: Readonly<Record<string, unknown>>) => String(options.env);
+    const named: LineRegistry = {
+      M1: line("M1", { options: { env: "a" }, leanEnv }),
+      M10: line("M10", { options: { env: "b" }, leanEnv }),
+      M2: line("M2"),
+    };
+    assert.equal(lineLeanEnv(resolveLines(["M2"], named).lines), undefined, "no enabled line names one: the host's decides");
+    assert.deepEqual(lineLeanEnv(resolveLines(["M1", "M2"], named, { M1: { env: "other" } }).lines), { line: "M1", name: "other" });
+    assert.deepEqual(lineLeanEnv(resolveLines(["M1"], named).lines), { line: "M1", name: "a" }, "the default of the option");
+    assert.deepEqual(resolveLines(["M1", "M10"], named).problems, ["lines M1 and M10 all give the Lean environment; enable one of them"]);
   });
 });
 

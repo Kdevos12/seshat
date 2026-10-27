@@ -8,13 +8,14 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and five lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and six lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; the fleet policy) are written and tested with a
+counter-models; M6: guards and drift detectors; M17: a run in an extended Lean environment; the fleet policy) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). The Lean the harness runs against is written
 as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve` checks for
-consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)).
+consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)); line M17 puts a run in
+one with more packages than the bench's.
 The provers can also be given SageMath, an external program installed with Docker or pip
 ([documentation/compute.md](documentation/compute.md)). Nothing has run against a real Lean or a
 real model yet.
@@ -37,6 +38,7 @@ flowchart TB
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
+  m17["Line M17: extended environment<br/>the run's Lean has more<br/>packages than the bench's"]:::wait
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
@@ -92,6 +94,8 @@ flowchart TB
   leanenv -->|"lakefile, lock"| envbuild
   leanenv -->|"hash in the version<br/>of every Lean tool run"| journal
   envbuild -->|"the project<br/>Lean runs in"| leancheck
+  m17 -->|"names the run's<br/>environment"| leanenv
+  m17 -->|"extra imports in every file,<br/>a probe before the problems"| leancheck
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
   fast -->|candidate| certifier
