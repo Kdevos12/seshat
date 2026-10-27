@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type EventDataMap, type HarnessEvent, readEvents, SITE_PROVER_SESSION } from "@seshat/core";
+import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
 import { type Redundancy, redundancy } from "@seshat/memory";
 
 export interface ProblemLine {
@@ -22,6 +23,8 @@ export interface RunReport {
   codeRev?: string;
   /** The lines the run enabled, in `LINE_ORDER`; absent for an M0 run. */
   lines?: string[];
+  /** The Lean environment the run was pinned to (documentation/lean-env.md); absent for a run on a host that names none. */
+  leanEnv?: LeanEnvRecord;
   /** True when the run's last `run.finished` is more recent than its last resumption: a run that was resumed and cut again has not finished. */
   finished: boolean;
   stopped?: string;
@@ -291,6 +294,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const p90Ms = percentile(durations, 0.9);
   const lines = (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : []));
   const redundant = redundancy(events);
+  const leanEnv = leanEnvOfConfig(started.config);
   return {
     runId: started.runId,
     benchId: started.benchId,
@@ -298,6 +302,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     config: started.config,
     ...(started.codeRev !== undefined ? { codeRev: started.codeRev } : {}),
     ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
+    ...(leanEnv !== undefined ? { leanEnv } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
     ...(resumptions.length > 0
@@ -365,7 +370,8 @@ export function renderRunReport(report: RunReport): string {
     `Bench ${report.benchId}, host ${report.host}${report.codeRev !== undefined ? `, code ${report.codeRev}` : ""}. ` +
       `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
-      `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}`,
+      `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
+      `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}`,
     report.finished ? (report.stopped !== undefined ? `The run stopped early: ${report.stopped}.` : "The run is complete.") : "The run has not finished.",
     ...(report.resumed !== undefined
       ? [

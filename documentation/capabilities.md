@@ -139,6 +139,11 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation unavailable and names the variable. Secrets are never written in profiles; they
   come from the environment.
 - `timeoutMs` replaces the manifest's time limit on this host.
+- `leanEnv`, at the top of the profile, names the Lean environment the host runs against, usually
+  `"${env:LEAN_ENV:-base}"` ([lean-env.md](lean-env.md#in-a-run)). The registry pins it when it is
+  built (`registry.leanEnv`: name, hash when the environment is resolved, project directory), and
+  the version a tool run records for an implementation whose manifest `environment` has `lean`
+  ends with `+env:NAME@` and the first 12 digits of the environment hash (`registry.versionOf`).
 - `optional: true` says the host offers the capability but the harness can do without it, such as a
   public site that a host without outbound access cannot reach. `harness health` prints an
   implementation of it that does not answer as `warn` and does not fail on it, also when the

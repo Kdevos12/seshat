@@ -17,6 +17,7 @@ import {
   type Reference,
   SKETCH_POLICY,
 } from "@seshat/core";
+import { leanEnvRecord } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, resolveLines, resumeRefusals } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -315,6 +316,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The run is pinned to the Lean environment its registry was built for, for its whole life (documentation/lean-env.md).
+  const leanEnv = registry.leanEnv;
+  if (leanEnv !== undefined && (leanEnv.status === "stale" || leanEnv.status === "unknown")) {
+    return await abandon(`the Lean environment ${leanEnv.name} cannot be used: ${leanEnv.detail ?? leanEnv.status}`, undefined, registry);
+  }
   const certifier = o.certifier ?? RegistryLeanCertifier.forHost(registry);
   // A certifier of the host that its factory refuses to make (no project, no sandbox) would fail every
   // certification of the run: the run says so now, and the journal records why.
@@ -341,6 +347,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
   const toolsRecord = pinned.tools.map((t) => ({ ...t }));
   const certifierRecord = certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`;
+  const leanEnvRecorded = leanEnv === undefined ? undefined : leanEnvRecord(leanEnv);
+  const leanEnvNote =
+    leanEnv === undefined
+      ? undefined
+      : leanEnv.hash !== null
+        ? `Lean environment ${leanEnv.name}, hash ${leanEnv.hash.slice(0, 12)}${leanEnv.built === true ? "" : " (resolved, not built here)"}`
+        : `Lean environment ${leanEnv.name} is not resolved (${leanEnv.detail ?? leanEnv.status}): the run records the name without a hash, and its results cannot be matched to an environment`;
   const certifierNote =
     certifier === undefined
       ? `no certifier on host ${registry.host.host}: a proof that passes the fast check stays a candidate`
@@ -365,6 +378,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       prompt: promptRecord,
       policy: policyRecord,
       certifier: certifierRecord,
+      ...(leanEnvRecorded !== undefined ? { leanEnv: leanEnvRecorded } : {}),
       ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
       // Only with lines, so that an M0 run records what it always did.
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
@@ -388,12 +402,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
+    if (leanEnvNote !== undefined) log(leanEnvNote);
   } else {
     // What needs the registry is checked now that it is built: a host, registry, tool or certifier
     // that is not the run's would make it another run.
     const changed = [
       ...(resume.started.host !== registry.host.host ? [`the host: the run recorded ${resume.started.host}, now ${registry.host.host}`] : []),
-      ...configMismatches(resume.started.config, { registry: registry.hash, tools: toolsRecord, certifier: certifierRecord }),
+      ...configMismatches(resume.started.config, {
+        registry: registry.hash,
+        tools: toolsRecord,
+        certifier: certifierRecord,
+        // A run of before the environments recorded none, and has none to keep.
+        ...(typeof resume.started.config === "object" && resume.started.config !== null && "leanEnv" in resume.started.config
+          ? { leanEnv: leanEnvRecorded ?? null }
+          : {}),
+      }),
     ];
     if (changed.length > 0) return await abandon(`the run cannot be resumed here: ${changed.join("; ")}`, undefined, registry);
     const resumption = beginResumption(journal, tasks, { runId, ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}) });
@@ -404,6 +427,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     );
     for (const note of pinned.notes) log(note);
     log(certifierNote);
+    if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
   // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
