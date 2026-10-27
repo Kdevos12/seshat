@@ -86,9 +86,10 @@ const TOKEN_START = "(?<=^|[ \\n(,)])";
 
 /**
  * A regular expression for a token, as Lean's lexer reads text. After a syntax error Lean goes on
- * (from the position of the error, or from the next token when the failed command made no progress)
- * and runs a command that starts there, so a forbidden word is a danger when the lexer reads it as a
- * token of its own, and no danger when it is part of a longer name:
+ * (from the position of the error; when the failed command made no progress it first skips one token
+ * that an empty token table reads, or one character) and runs a command that starts there, so a
+ * forbidden word is a danger when the lexer reads it as a token of its own, and no danger when it is
+ * part of a longer name:
  * - A token that starts like a name (`sorry`, `run_cmd`, `IO`) is found unless it continues a name
  *   that the lexer starts at a token start (`TOKEN_START`): `xsorry`, `x1sorry`, `x!sorry`,
  *   `Nat.sorry_lemma` and `h.elab` are names after white space, `(` or `,`, and `sorry_free` too.

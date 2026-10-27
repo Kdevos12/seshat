@@ -160,10 +160,11 @@ regions so, and `maskCommentsAndStrings` reads the text of a statement so
 ([models.md](models.md#statements)).
 
 Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
-part of a longer name. After a syntax error Lean tries a command again from the position of the error,
-and when the failed command made no progress it skips one token first (`parseCommand`, `consumeInput`);
-so a command word that the lexer reads as a token runs, wherever it stands and whatever precedes it,
-and one inside a longer name does not.
+part of a longer name. After a syntax error Lean tries a command again from the position of the error.
+When the failed command made no progress it first skips one token, read with an empty token table
+(so only a name, a number, a string or a character literal is one), and on a lexer error one character
+(`parseCommand`, `consumeInput`: `pos + ' '`). So a command word that the lexer reads as a token runs,
+wherever it stands and whatever precedes it, and one inside a longer name does not.
 
 - A token that starts like a name (`sorry`, `run_cmd`, `IO`) matches unless it continues a name that the
   lexer starts at a token start (below). `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma`, `h.elab` and
