@@ -68,8 +68,8 @@ export interface WatchCheckpoint {
   session: number;
   /** What the prover's watch observed: the strategy label of the session's last check, and the best Lean state of its checks. */
   watched?: { label: string; depth: number; errors: number; holes: number };
-  /** The prover's last check, as `revisions` remembers it. */
-  last?: { code: string; signal: boolean; retry: boolean };
+  /** The prover's last check, as `revisions` remembers it: the digest of the file, not the file (the submission's blob holds it). */
+  last?: { digest: string; signal: boolean; retry: boolean };
 }
 
 function isCheckpoint(data: Json): data is WatchCheckpoint & Json {
@@ -214,7 +214,7 @@ export function createM6(env: M6Env = {}): Line {
     requires: [],
     options: M6_OPTIONS,
     // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording.
-    version: "m6-1",
+    version: "m6-2",
     // What the line keeps across a prover's sessions (the detectors' counts, the last check, the notices waiting for the next session)
     // and the framing findings it has made are made again from the journal when a problem is taken up: see `resumeProblem`.
     resume: "rebuild",
