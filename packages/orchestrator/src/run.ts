@@ -19,17 +19,17 @@ import {
 } from "@seshat/core";
 import { type JsonObject, type LineRegistry, resolveLines } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
-import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { Ledger } from "./budget.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
-import { type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
+import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { type ProverResult, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
-import { ClaimBenches } from "./validate.ts";
+import { ClaimBenches, type PendingResult } from "./validate.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
 export interface RunConfig {
@@ -80,6 +80,7 @@ export interface RunOptions {
   models: Models;
   /** Builds the registry of the run's host, writing tool runs to this journal and blobs. */
   registry: (journal: Journal, blobs: BlobStore) => Registry;
+  /** Certifies the candidates. Default: the host's `lean.certify`, if its profile lists one; without a certifier no claim becomes `proved` or `refuted`. */
   certifier?: LeanCertifier;
   /** Stops the run: the problems in progress end as `aborted`. */
   signal?: AbortSignal;
@@ -199,6 +200,11 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  const certifier = o.certifier ?? RegistryLeanCertifier.forHost(registry);
+  // A certifier of the host that its factory refuses to make (no project, no sandbox) would fail every
+  // certification of the run: the run says so now, and the journal records why.
+  const unusable = o.certifier === undefined && certifier !== undefined ? await registry.usable(LEAN_CERTIFY) : undefined;
+  const certifierDown = unusable !== undefined && !unusable.ok ? unusable.detail : undefined;
   const toolProblems = checkTools(registry, config.tools);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
   // A tool that cannot be reached now would answer every prover's call with an error.
@@ -230,7 +236,8 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
     registry: registry.hash,
     prompt: { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) },
     policy: { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] },
-    certifier: o.certifier === undefined ? null : `${o.certifier.implementation} ${o.certifier.version}`,
+    certifier: certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`,
+    ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
     // Only with lines, so that an M0 run records what it always did.
     ...(enabled.lines.length > 0
       ? {
@@ -260,12 +267,21 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
   );
   log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
   for (const note of pinned.notes) log(note);
+  log(
+    certifier === undefined
+      ? `no certifier on host ${registry.host.host}: a proof that passes the fast check stays a candidate`
+      : certifierDown !== undefined
+        ? `certifier ${certifier.implementation} ${certifier.version} is unavailable on host ${registry.host.host} (${certifierDown}): a proof that passes the fast check stays a candidate`
+        : `certifier: ${certifier.implementation} ${certifier.version}`,
+  );
 
   // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
   let runLines: RunLines | undefined;
+  let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
   if (enabled.lines.length > 0) {
     memory = new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) });
+    benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
       lines: enabled.lines,
       runId,
@@ -273,7 +289,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       blobs,
       registry,
       memory,
-      benches: new ClaimBenches({ journal, registry, memory, blobs }),
+      benches,
       models: o.models,
       model: config.model,
       resolveModel: (name) => resolveModel(o.models, name),
@@ -377,19 +393,25 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       };
     };
     /**
-     * The end of a problem whose lines reached `beforeProvers`: their `afterProblem`, then
-     * `finish`. A line that fails there makes the problem a harness error, except that a proof
-     * found stays found, as when certification fails.
+     * The end of a problem whose lines reached `beforeProvers`: their `afterProblem`, the
+     * certification of what they submitted, then `finish`. `afterProblem` is told the outcome as it
+     * stands: the problem's own candidate has been certified, what the lines submitted has not. The
+     * lines have nothing more to submit once `afterProblem` is over, so their candidates for other
+     * claims, for negations, and a late one for this claim are certified after it, and only this
+     * problem's (`ClaimBenches.certifyPending`). A line that fails in `afterProblem` makes the problem
+     * a harness error, except that a proof or a refutation found stays found, as when certification
+     * fails.
      */
-    const settle = async (lines: ProblemLines, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult> => {
+    const settle = async (lines: ProblemLines, workbench: Workbench, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult> => {
+      let failure: string | undefined;
       try {
         await lines.afterProblem({ outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd });
       } catch (error) {
-        const failure = messageOf(error);
-        if (outcome !== "proved" && outcome !== "candidate") return finish("error", failure);
-        return finish(outcome, reason !== undefined ? `${reason}; ${failure}` : failure, proof);
+        failure = messageOf(error);
       }
-      return finish(outcome, reason, proof);
+      const pending = await benches?.certifyPending({ problemId: entry.id, claimId, workbench }, o.signal);
+      const ended = endOf({ outcome, ...(reason !== undefined ? { reason } : {}) }, claimId, pending, failure);
+      return finish(ended.outcome, ended.reason, proof);
     };
 
     if (namingFailure !== undefined) return finish("error", `the memory could not name the statement: ${namingFailure}`);
@@ -418,7 +440,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
 
       ledger.onExhausted(() => controller.abort(ABORT_BUDGET));
       const workbench = new Workbench({
-        journal, registry, problem, claimId, reference, blobs, ...(o.certifier !== undefined ? { certifier: o.certifier } : {}),
+        journal, registry, problem, claimId, reference, blobs, ...(certifier !== undefined ? { certifier } : {}),
       });
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
       const transcript = (attemptId: string, messages: AgentMessage[]) =>
@@ -440,7 +462,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
           workbench,
         });
         lines = problemLines;
-        end = (outcome, reason, proof) => settle(problemLines, outcome, reason, proof);
+        end = (outcome, reason, proof) => settle(problemLines, workbench, outcome, reason, proof);
         try {
           await problemLines.beforeProvers();
         } catch (error) {
@@ -484,15 +506,21 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
       if (candidate !== undefined) {
         const proof = join("proofs", `${slug(entry.fullName)}-${sha256Hex(entry.id).slice(0, 8)}.lean`);
         writeFileSync(join(o.dir, proof), candidate.report.checked);
-        if (o.certifier === undefined) return await end("candidate", undefined, proof);
+        // Certified: proved. Rejected: unsolved, since the kernel refused the proof; the claim stays
+        // `computed` and the validation says why. No answer (or no certifier): still a candidate.
+        let outcome: ProblemOutcome = "candidate";
+        let note: string | undefined;
         try {
           const certified = await workbench.certify(o.signal);
-          return certified?.verdict === "certified"
-            ? await end("proved", undefined, proof)
-            : await end("unsolved", `certification rejected the candidate: ${certified?.reasons.join("; ") ?? ""}`, proof);
+          if (certified !== undefined) {
+            const answer = certifiedOutcome(certified);
+            outcome = answer.outcome;
+            note = answer.reason;
+          }
         } catch (error) {
-          return await end("candidate", `certification failed: ${messageOf(error)}`, proof);
+          note = `certification failed: ${messageOf(error)}`;
         }
+        return await end(outcome, note, proof);
       }
       if (lineFailure !== undefined) return await end("error", lineFailure);
       if (crash !== undefined) return await end("error", `the harness failed: ${messageOf(crash.reason)}`);
@@ -521,6 +549,7 @@ export async function runBench(o: RunOptions): Promise<RunResult> {
         runId,
         attempted: results.filter((r) => r.attempts > 0).length,
         solved: summary.solved,
+        refuted: summary.refuted,
         candidates: summary.candidates,
         usd: runLedger.usd,
         ...(stopped !== undefined ? { stopped } : {}),
@@ -550,6 +579,52 @@ async function pool<T>(
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+}
+
+/** How a problem ends whose candidate the certifier answered for. */
+function certifiedOutcome(certified: Certification): { outcome: ProblemOutcome; reason?: string } {
+  if (certified.result.verdict !== "certified") {
+    return { outcome: "unsolved", reason: `certification rejected the candidate: ${certified.result.reasons.join("; ")}` };
+  }
+  // A claim that is not `proved` after its proof was certified was settled the other way, or withdrawn.
+  return certified.status === "proved"
+    ? { outcome: "proved" }
+    : { outcome: "error", reason: conflictNote("the candidate", certified.status) };
+}
+
+/**
+ * How a problem ends after its lines' `afterProblem` and the certification of what they submitted.
+ * Only the problem's own results count for its outcome (documentation/m0-loop.md, "Certification"):
+ * a certified proof or refutation of its claim that its lines submitted makes an `unsolved` or
+ * `candidate` problem `proved` or `refuted`; a claim that another problem settled does not, whether
+ * the other problem shares the claim or not. A certified proof or refutation that contradicts the
+ * problem's own claim makes it an `error`, whichever way the contradiction goes; one about another
+ * claim is noted in the reason and changes nothing else. A failure of a line in `afterProblem` ends
+ * the problem as an error, unless a proof or a refutation was found (or a candidate).
+ */
+function endOf(
+  planned: { outcome: ProblemOutcome; reason?: string },
+  claimId: string,
+  pending: PendingResult | undefined,
+  failure: string | undefined,
+): { outcome: ProblemOutcome; reason?: string } {
+  const conflicts = pending?.conflicts ?? [];
+  let outcome = planned.outcome;
+  // The reason of an outcome that was not an error says why the problem was not solved, not why it failed.
+  let reason = planned.reason;
+  if (conflicts.some((c) => c.claimId === claimId)) {
+    if (outcome !== "error") reason = undefined;
+    outcome = "error";
+  } else if (pending?.settled !== undefined && (outcome === "unsolved" || outcome === "candidate")) {
+    outcome = pending.settled;
+  }
+  const notes = conflicts.map((c) => c.message);
+  if (failure !== undefined && outcome !== "proved" && outcome !== "refuted" && outcome !== "candidate") {
+    return { outcome: "error", reason: [...notes, failure].join("; ") };
+  }
+  if (reason !== undefined) notes.unshift(reason);
+  if (failure !== undefined) notes.push(failure);
+  return notes.length > 0 ? { outcome, reason: notes.join("; ") } : { outcome };
 }
 
 function slug(name: string): string {

@@ -1,0 +1,49 @@
+{
+  "capability": "findstat.identify",
+  "cases": [
+    {
+      "name": "the number of inversions of a permutation",
+      "purpose": "The values of a known statistic on the permutations of 1, 2 and 3 give that statistic back, by its St number.",
+      "input": {
+        "collection": "Permutations",
+        "data": [
+          { "object": [1], "value": 0 },
+          { "object": [1, 2], "value": 0 },
+          { "object": [2, 1], "value": 1 },
+          { "object": [1, 2, 3], "value": 0 },
+          { "object": [1, 3, 2], "value": 1 },
+          { "object": [2, 1, 3], "value": 1 },
+          { "object": [2, 3, 1], "value": 2 },
+          { "object": [3, 1, 2], "value": 2 },
+          { "object": [3, 2, 1], "value": 3 }
+        ]
+      },
+      "expect": [
+        {
+          "path": "matches",
+          "some": [
+            { "path": "id", "equals": "St000018" },
+            { "path": "name", "matches": "inversions" },
+            { "path": "url", "matches": "St000018$" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "values that no statistic has",
+      "purpose": "A search without an answer is a result with no matches, not an error.",
+      "input": {
+        "collection": "Permutations",
+        "data": [
+          { "object": [1, 2, 3], "value": 7 },
+          { "object": [3, 2, 1], "value": 2 },
+          { "object": [2, 1, 3], "value": 9 },
+          { "object": [1, 3, 2], "value": 4 }
+        ]
+      },
+      "expect": [
+        { "path": "matches", "length": 0 }
+      ]
+    }
+  ]
+}

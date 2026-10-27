@@ -340,13 +340,14 @@ describe("the capability lean.meta", () => {
 
   it("is offered with lean.goals by the repository's host profiles", () => {
     const anyFactory: ImplementationFactory = () => ({ invoke: async () => ({}) });
-    // A stand-in for every in-process factory the catalog names, so that a new factory needs no edit here.
-    const standIns = Object.fromEntries(
-      [...catalog.capabilities.values()].flatMap((c) => c.manifest.implementations.flatMap((i) => (i.kind === "inproc" ? [[i.factory, anyFactory] as const] : []))),
-    );
+    // Every factory a manifest names, so that a capability added to the profiles later does not break this test.
+    const factories: Record<string, ImplementationFactory> = {};
+    for (const { manifest } of catalog.capabilities.values()) {
+      for (const spec of manifest.implementations) if (spec.kind === "inproc") factories[spec.factory] = anyFactory;
+    }
     for (const host of ["local", "server"]) {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
-      const registry = new Registry({ catalog, host: profile, factories: { ...standIns, "kimina-meta": new SimulatedLeanMeta().factory() } });
+      const registry = new Registry({ catalog, host: profile, factories: { ...factories, "kimina-meta": new SimulatedLeanMeta().factory() } });
       assert.deepEqual([registry.offers("lean.meta"), registry.offers("lean.goals")], [true, true], host);
     }
   });

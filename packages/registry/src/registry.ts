@@ -78,6 +78,8 @@ export interface HealthEntry {
   ok: boolean;
   detail: string;
   durationMs: number;
+  /** Set when the host's profile marks the capability `optional`: a failure of it is a warning. */
+  optional?: true;
 }
 
 export class CapabilityError extends Error {
@@ -318,7 +320,7 @@ export class Registry {
       const factory = Object.hasOwn(this.factories, spec.factory) ? this.factories[spec.factory] : undefined;
       if (factory === undefined) throw new UnavailableError(`the factory ${spec.factory} is not registered`);
       const settings = interpolate({ ...(spec.settings ?? {}), ...overrides }, variables);
-      return await factory({ capability: capability.manifest, spec, settings });
+      return await factory({ capability: capability.manifest, spec, settings, host: this.host.host });
     }
     // A host that changes the transport replaces the server; otherwise its fields replace the manifest's.
     const base = spec.server as unknown as Record<string, Json>;
@@ -329,12 +331,34 @@ export class Registry {
     return new McpImplementation(spec, server as unknown as McpServerSpec, this.mcpTransport);
   }
 
+  /**
+   * Whether the host can create an implementation of the capability at all, without calling any: an
+   * in-process factory refuses a configuration it cannot work with (a missing project, no sandbox).
+   * `ok` with the first implementation that was created; otherwise `detail` has every reason, in the
+   * host's order. That an implementation exists says nothing of its health (`health`).
+   */
+  async usable(id: string): Promise<{ ok: boolean; detail: string }> {
+    const capability = this.capability(id);
+    const reasons: string[] = [];
+    for (const implId of this.host.capabilities[id]?.use ?? []) {
+      const spec = capability.manifest.implementations.find((i) => i.id === implId) as ImplementationSpec;
+      try {
+        await this.instance(capability, spec);
+        return { ok: true, detail: implId };
+      } catch (error) {
+        reasons.push(`${implId}: ${messageOf(error)}`);
+      }
+    }
+    return { ok: false, detail: reasons.length > 0 ? reasons.join("; ") : `${id} is not offered on host ${this.host.host}` };
+  }
+
   /** Reaches every implementation the host lists (or those of one capability) and asks for its health. */
   async health(id?: string): Promise<HealthEntry[]> {
     const ids = id !== undefined ? [id] : Object.keys(this.host.capabilities).sort();
     const entries: HealthEntry[] = [];
     for (const capabilityId of ids) {
       const capability = this.capability(capabilityId);
+      const optional = this.host.capabilities[capabilityId]?.optional === true;
       for (const implId of this.host.capabilities[capabilityId]?.use ?? []) {
         const spec = capability.manifest.implementations.find((i) => i.id === implId) as ImplementationSpec;
         const started = performance.now();
@@ -353,6 +377,7 @@ export class Registry {
           ok: check.ok,
           detail: check.detail ?? "",
           durationMs: Math.round(performance.now() - started),
+          ...(optional ? { optional: true as const } : {}),
         });
       }
     }
