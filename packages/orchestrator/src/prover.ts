@@ -40,10 +40,28 @@ export interface ProverOptions {
   tools?: readonly PinnedTool[];
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
+  /** The prover picks up where an interrupted run left it, instead of starting. */
+  resume?: ProverResume;
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
   onEnd?: (result: ProverResult) => void;
   /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
   onAttemptEnd?: (attempt: { attemptId: string; outcome: AttemptOutcome; failureClass?: FailureClass }) => void;
+}
+
+/**
+ * Where a prover stood when its run was interrupted, rebuilt from the journal (documentation/ledger.md,
+ * "Resume"). A session that the interruption cut counts as a session the prover used: it was started
+ * and paid for.
+ */
+export interface ProverResume {
+  /** The number of the last session the prover started; its next one is this plus one. */
+  session: number;
+  /** The attempts the prover made. */
+  attempts: number;
+  /** Sessions in a row that ended with an error, at the end of those. */
+  failed: number;
+  /** What the last session that ended handed on: the file's regions, the text of its last check, the notes. */
+  carry?: { regions: Submission; lastCheck?: string; notes?: string };
 }
 
 /**
@@ -79,14 +97,15 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)));
-  let regions: Submission = { aux: "", proof: workbench.sketch.originalProof };
-  let notes: string | undefined;
-  let lastCheck: string | undefined;
-  let failed = 0;
-  let attempts = 0;
+  const resumed = o.resume;
+  let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
+  let notes: string | undefined = resumed?.carry?.notes;
+  let lastCheck: string | undefined = resumed?.carry?.lastCheck;
+  let failed = resumed?.failed ?? 0;
+  let attempts = resumed?.attempts ?? 0;
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
-  for (let session = 1; session <= o.sessions; session++) {
+  for (let session = (resumed?.session ?? 0) + 1; session <= o.sessions; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done("budget");
     const attemptId = newId("att");

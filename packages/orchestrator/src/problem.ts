@@ -64,6 +64,14 @@ export interface Certification {
   status: ClaimStatus;
 }
 
+/** The certifier's answer for a candidate, as the journal recorded it (a `kernel_replay` validation). */
+export interface RecordedCertification {
+  validationId: string;
+  verdict: "valid" | "invalid";
+  reasons: string[];
+  axioms: string[];
+}
+
 /**
  * What to say of a certified proof or refutation whose claim is not left as it says. The claim is
  * `proved` or `refuted` the other way, which is a contradiction (the kernel has certified both a
@@ -284,8 +292,17 @@ export class Workbench {
       },
       certifier.implementation,
     );
+    return { result, validationId, status: this.settle(valid, validationId) };
+  }
+
+  /**
+   * After a certification's answer is in the journal: a certified proof makes the claim `proved`, a
+   * certified refutation `refuted`, if the claim can still be settled; a rejection changes nothing.
+   * Returns the claim's status.
+   */
+  private settle(valid: boolean, validationId: string): ClaimStatus {
     const from = this.claimStatus();
-    if (!valid || !SETTLEABLE.includes(from)) return { result, validationId, status: from };
+    if (!valid || !SETTLEABLE.includes(from)) return from;
     const to = this.negation ? "refuted" : "proved";
     this.journal.emit(
       "claim.status_changed",
@@ -298,7 +315,44 @@ export class Workbench {
       },
       "orchestrator",
     );
-    return { result, validationId, status: to };
+    return to;
+  }
+
+  /**
+   * Gives a workbench what a run that was interrupted knew: the candidate that its checks had found
+   * and, if the journal holds the certifier's answer for it, that answer, so that the candidate is
+   * not certified a second time (`certify` returns the recorded answer). The process may have ended
+   * between a validation and the claim's new status, the candidate's (`computed`) or the answer's
+   * (`proved`, `refuted`); the status is written now, as `check` or `certify` would have written it.
+   * A candidate without an answer is certified by the next call of `certify`, which is also what
+   * happens to one whose certification the interruption cut, since a cut call recorded nothing.
+   */
+  adopt(candidate: Candidate, answer?: RecordedCertification): void {
+    if (this.found !== undefined) throw new Error(`the workbench of claim ${this.claimId} already has a candidate`);
+    this.found = candidate;
+    // The process may also have ended between the check's validation and the claim's change of
+    // status: the validation says the proof passed, so the change is made now, as `check` would have.
+    if (!this.negation && this.claimStatus() === "open") {
+      this.journal.emit(
+        "claim.status_changed",
+        {
+          claimId: this.claimId,
+          from: "open",
+          to: "computed",
+          reason: "a proof passed the fast check; the interruption cut the change of status",
+          ...(candidate.attemptId !== undefined ? { attemptId: candidate.attemptId } : {}),
+          validationId: candidate.validationId,
+        },
+        "orchestrator",
+      );
+    }
+    if (answer !== undefined) {
+      const valid = answer.verdict === "valid";
+      const result: CertificationResult = { verdict: valid ? "certified" : "rejected", reasons: answer.reasons, axioms: answer.axioms, timeMs: 0 };
+      const status = this.settle(valid, answer.validationId);
+      this.certification = { candidate, done: Promise.resolve({ result, validationId: answer.validationId, status }) };
+    }
+    for (const listener of this.listeners.splice(0)) listener(candidate);
   }
 
   private claimStatus(): ClaimStatus {

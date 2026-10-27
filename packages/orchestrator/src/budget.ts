@@ -26,6 +26,20 @@ export class Ledger {
     return new Ledger(limitUsd, this);
   }
 
+  /**
+   * Sets what this ledger has already spent, from the journal's account of it, when a run is
+   * resumed (documentation/ledger.md, "Resume"). It sets this ledger's own counters and does not
+   * charge its ancestors, whose accounts are the journal's too. A ledger that this spend exhausts
+   * is exhausted at once.
+   */
+  seed(spent: { usd: number; inputTokens: number; outputTokens: number; requests: number }): void {
+    this.usd = spent.usd;
+    this.inputTokens = spent.inputTokens;
+    this.outputTokens = spent.outputTokens;
+    this.requests = spent.requests;
+    if (this.exhausted) this.announce();
+  }
+
   charge(cost: TokenCost): void {
     this.usd += cost.usd;
     this.inputTokens += cost.inputTokens;
