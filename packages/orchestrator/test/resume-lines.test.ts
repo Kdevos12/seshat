@@ -110,12 +110,19 @@ async function resumedAtEveryEvent(o: {
   script: () => FauxResponseStep[];
   outcomes: string[];
   check?: (resumed: HarnessEvent[], where: string) => void;
+  /**
+   * What a cut between two sessions must leave equal to the run that was not cut (no session was cut, so
+   * the resumed run is the same run): the outcome, the cost, and what this compares. A cut in the middle of a
+   * session pays for it twice, so only `check` holds there.
+   */
+  sameBetweenSessions?: (whole: HarnessEvent[], resumed: HarnessEvent[], where: string) => void;
   options?: Partial<Parameters<typeof demoRun>[0]>;
   every?: number;
 }): Promise<number> {
   const whole = await demoRun({ config: o.config, responses: o.script(), ...o.options });
   const tail: FauxResponseStep[] = Array.from({ length: 8 }, () => say("done"));
   let resumedRuns = 0;
+  let between = 0;
   for (let cut = 1; cut < whole.events.length; cut += o.every ?? 1) {
     const where = `cut after ${cut} of ${whole.events.length} events (${whole.events[cut - 1]?.type})`;
     const resumed = await demoResume({
@@ -130,8 +137,16 @@ async function resumedAtEveryEvent(o: {
     assert.equal(ofType(resumed.events, "problem.finished").length, 1, where);
     assert.equal(resumed.events.at(-1)?.type, "run.finished", where);
     o.check?.(resumed.events, where);
+    const prefix = whole.events.slice(0, cut);
+    if (ofType(prefix, "attempt.started").length === ofType(prefix, "attempt.finished").length) {
+      between += 1;
+      assert.deepEqual(resumed.result.problems.map((p) => [p.outcome, p.attempts]), whole.result.problems.map((p) => [p.outcome, p.attempts]), where);
+      assert.ok(Math.abs(costOf(resumed.result) - costOf(whole.result)) < 1e-9, `${where}: the same cost`);
+      o.sameBetweenSessions?.(whole.events, resumed.events, where);
+    }
     assertSound(resumed.events);
   }
+  assert.ok(o.sameBetweenSessions === undefined || between > 0, "some cut fell between two sessions");
   return resumedRuns;
 }
 
@@ -157,6 +172,14 @@ describe("the fleet in a resumed run", () => {
       config: seeded,
       script,
       outcomes: ["unsolved"],
+      sameBetweenSessions: (whole, resumed, where) => {
+        // An allocation written for a session the cut kept from starting is written again; the sessions that started are compared.
+        const bare = (events: HarnessEvent[]) => {
+          const started = new Set(ofType(events, "attempt.started").map((e) => e.data.attemptId));
+          return nodesOf(events, "allocation").filter((a) => started.has(a.attemptId as string)).map(({ attemptId: _attempt, ...rest }) => rest);
+        };
+        assert.deepEqual(bare(resumed), bare(whole), `${where}: the same strategies are drawn for the sessions that follow`);
+      },
       check: (resumed, where) => {
         const started = new Set(ofType(resumed, "attempt.started").map((e) => e.data.attemptId));
         // Every session that started was allocated; one that never did was, and left nothing behind but its node.
@@ -196,6 +219,19 @@ describe("M6 in a resumed run", () => {
       script: () => [check("omega"), check("linarith"), check("simp"), check("simp\nomega"), check("exact trivial_proof")],
       boundaries: 2,
       same: equalFindings,
+    });
+  });
+
+  it("does not tell a notice again to a session after the one that already got it", async () => {
+    // Session 1 is stopped for repeating a strategy; session 2 is told; session 3 must not be told again, wherever the run was cut before it.
+    await resumedAtEachBoundary({
+      config: { ...M6_ONLY, sessions: 3 },
+      script: () => [check("omega"), check("linarith"), check("simp"), check("simp\nomega"), say("nothing more"), check("linarith"), say("done")],
+      boundaries: 3,
+      same: (whole, resumed, where) => {
+        equalFindings(whole, resumed, where);
+        assert.equal(findings(whole).filter((f) => f.action === "stopped_session").length, 1, where);
+      },
     });
   });
 
@@ -258,11 +294,13 @@ describe("M6 in a resumed run", () => {
       config: { ...M6_ONLY, sessions: 2 },
       script: () => [check("omega"), check("linarith"), check("simp"), check("simp\nomega"), check("exact trivial_proof")],
       outcomes: ["candidate", "unsolved"],
+      sameBetweenSessions: equalFindings,
     });
     const more = await resumedAtEveryEvent({
       config: { ...M6_ONLY, sessions: 4, lineOptions: { M6: { sessionRepeats: 2 } } },
       script: () => [check("omega"), say("notes one"), check("linarith"), say("notes two"), check("simp"), say("notes three"), say("done")],
       outcomes: ["unsolved"],
+      sameBetweenSessions: equalFindings,
     });
     assert.ok(runs + more > 60);
   });
@@ -301,6 +339,24 @@ async function until(condition: () => boolean, what: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error(`timed out waiting for ${what}`);
+}
+
+/** A line before M2 that leaves a proved strengthening of the problem's claim with its edge checked, from which M2 composes a proof of the claim. */
+function preparing(): Line {
+  return {
+    id: "M1",
+    title: "prepares a strengthening",
+    requires: [],
+    resume: "stateless",
+    hooks: {
+      beforeProvers: async (problem) => {
+        const header = problem.target.sketch.prefix;
+        const variant = await createVariant(problem.memory, { from: problem.claimId, relation: "strengthening", statement: "(n : ℕ) : n + 0 = n ∧ 0 + n = n", header });
+        await problem.validate({ claimId: variant.claimId, proof: "exact trivial_proof" });
+        await checkEdge({ memory: problem.memory, validate: problem.validate, header, closers: ["exact trivial_proof"] }, variant.edge.edgeId);
+      },
+    },
+  };
 }
 
 describe("M2 in a resumed run", () => {
@@ -429,22 +485,40 @@ describe("M2 in a resumed run", () => {
     });
   });
 
+  for (const accepted of [true, false]) {
+    it(`records the derivation of a composed proof Lean ${accepted ? "accepted" : "refused"} before the process ended, once, and does not submit the proof again`, async () => {
+      const composedProof = (code: string) => (proofOf(code) ?? "").includes("aux_m2_l1 aux_m2_p1");
+      const answer = (code: string): FakeLeanAnswer => (!accepted && composedProof(code) ? { messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "type mismatch" }] } : toyAnswer(code));
+      const composed = (lean: DemoLean) => lean.calls.filter((c) => composedProof(c.code)).length;
+      const options = { lines: { M1: preparing(), M2: m2Line } };
+      const config = { lines: ["M1", "M2"], sessions: 1, lineOptions: { M2: { twin: false } } };
+      const lean = new DemoLean(answer);
+      const whole = await demoRun({ config, ...options, lean, responses: [check(accepted ? "exact trivial_proof" : "bad")] });
+      assert.equal(whole.result.problems[0]?.outcome, accepted ? "candidate" : "unsolved");
+      assert.equal(composed(lean), 1);
+      const derivations = (events: readonly HarnessEvent[]) => nodesOf(events, "derivation").filter((n) => n.rule === "strengthens/proved");
+      assert.equal(derivations(whole.events).length, 1);
+      // After Lean's answer to the composed proof, and until its derivation node is written, no cut may submit it again or leave it unrecorded.
+      const claimId = ofType(whole.events, "problem.registered")[0]?.data.claimId;
+      const answered = whole.events.findIndex((e) => e.type === "validation.finished" && e.data.attemptId === undefined && e.data.method === "repl" && e.data.claimId === claimId);
+      assert.ok(answered > 0);
+      const written = whole.events.findIndex((e, i) => i > answered && e.type === "node.recorded" && e.data.kind === "derivation");
+      assert.ok(written > answered, "the derivation node is written after Lean's answer");
+      for (let cut = answered + 1; cut <= written; cut++) {
+        const where = `cut after ${cut} of ${whole.events.length} events (${whole.events[cut - 1]?.type})`;
+        const again = new DemoLean(answer);
+        const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, ...options, lean: again, responses: [check(accepted ? "exact trivial_proof" : "bad")] });
+        assert.equal(resumed.result.problems[0]?.outcome, accepted ? "candidate" : "unsolved", `${where}: ${resumed.result.problems[0]?.reason}`);
+        assert.equal(derivations(resumed.events).length, 1, `${where}: the derivation is recorded once`);
+        assert.equal(composed(again), 0, `${where}: the composed proof is not submitted again`);
+        assertSound(resumed.events);
+      }
+    });
+  }
+
   it("does not submit again a composed proof Lean refused, in the next process", async () => {
     // A line before M2 leaves a proved strengthening, from which M2 composes a proof of the claim that this Lean refuses.
-    const prepare: Line = {
-      id: "M1",
-      title: "prepares a strengthening",
-      requires: [],
-      resume: "stateless",
-      hooks: {
-        beforeProvers: async (problem) => {
-          const header = problem.target.sketch.prefix;
-          const variant = await createVariant(problem.memory, { from: problem.claimId, relation: "strengthening", statement: "(n : ℕ) : n + 0 = n ∧ 0 + n = n", header });
-          await problem.validate({ claimId: variant.claimId, proof: "exact trivial_proof" });
-          await checkEdge({ memory: problem.memory, validate: problem.validate, header, closers: ["exact trivial_proof"] }, variant.edge.edgeId);
-        },
-      },
-    };
+    const prepare = preparing();
     const refused = (code: string): FakeLeanAnswer =>
       (proofOf(code) ?? "").includes("aux_m2_l1 aux_m2_p1") ? { messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "type mismatch" }] } : toyAnswer(code);
     const leans: DemoLean[] = [];
@@ -479,12 +553,14 @@ describe("M1, M2, M6 and the fleet together in a resumed run", () => {
       script: () => Array.from({ length: 12 }, () => router),
       outcomes: ["unsolved"],
       options: { lean: new DemoLean(toyAnswer) },
+      // Every second cut: each line's every cut is made by its own tests above, and the four together are checked at half of them.
+      every: 2,
       check: (resumed, where) => {
         assert.equal(nodesOf(resumed, "twin_work").length, 1, `${where}: one twin kept`);
         assert.ok(nodesOf(resumed, "twin").length <= 1, `${where}: the twin is written at most once`);
         assert.ok(ofType(resumed, "model_call.finished").filter((m) => m.data.site === "graph.attempt").length <= 2, `${where}: the refutation side's calls stay within its budget`);
       },
     });
-    assert.ok(runs > 50, `the whole journal was cut (${runs} cuts)`);
+    assert.ok(runs > 25, `half of the journal was cut (${runs} cuts)`);
   });
 });

@@ -411,9 +411,26 @@ describe("the time a cut session and tool run had run", () => {
     assert.ok(aborted !== undefined && started !== undefined);
     assert.equal(aborted.data.durationMs, lastWritten - at(started.seq));
     assert.ok(aborted.data.durationMs >= 40, `ran for at least one check (${aborted.data.durationMs} ms)`);
-    for (const run of ofType(resumed.events, "tool_run.finished").filter((e) => e.data.outcome === "aborted")) {
+  });
+
+  it("is, for a tool run, the time from its start to the last event the killed process wrote", async () => {
+    // Two provers: the first one's check never ends until the second one's proof passes; every check takes 40 ms.
+    const config = { provers: 2, sessions: 1 };
+    const whole = await demoRun({ config, lean: new DemoLean(demoAnswer, 40), responses: [check("slow"), check("exact trivial_proof")] });
+    const passed = whole.events.findIndex((e) => e.type === "validation.finished" && e.data.verdict === "valid");
+    const stopped = whole.events.findIndex((e) => e.type === "tool_run.finished" && e.data.outcome === "aborted");
+    assert.ok(passed >= 0 && stopped > passed, "the slow check is still running when the other prover's proof passes");
+    const cut = passed + 1;
+    const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, lean: new DemoLean(demoAnswer, 40), responses: [] });
+    const at = (seq: number) => Date.parse(whole.events.find((e) => e.seq === seq)?.ts ?? "");
+    const lastWritten = Date.parse(whole.events[cut - 1]?.ts ?? "");
+    const closed = ofType(resumed.events, "tool_run.finished").filter((e) => e.data.outcome === "aborted" && e.seq > cut);
+    assert.ok(closed.length > 0, "the resumption closed a tool run");
+    for (const run of closed) {
       const begin = ofType(whole.events, "tool_run.started").find((e) => e.data.toolRunId === run.data.toolRunId);
-      assert.equal(run.data.durationMs, lastWritten - at(begin?.seq ?? -1));
+      assert.ok(begin !== undefined);
+      assert.equal(run.data.durationMs, lastWritten - at(begin.seq));
+      assert.ok(run.data.durationMs >= 40, `it had been running for the other check's 40 ms (${run.data.durationMs})`);
     }
   });
 });

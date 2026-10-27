@@ -185,7 +185,11 @@ export function createM2Line(): Line {
       : undefined;
     // A problem that was settled before this line began, and whose provers never ran (an earlier line settled it), is
     // as a run that was not cut leaves it: this line does nothing for it.
-    if (recorded && twinNode === undefined && problem.signal.aborted && !held.begun) return;
+    // (A composed proof that Lean answered for just before the process ended is still recorded as one.)
+    if (recorded && twinNode === undefined && problem.signal.aborted && !held.begun) {
+      completeDerivations(problem.memory, problem.problemId);
+      return;
+    }
     const state = new GraphState(problem.memory, [problem.claimId]);
     const shorts = new ShortIds({
       onAssign: (id, short) => {
@@ -239,7 +243,12 @@ export function createM2Line(): Line {
       // Not awaited: it runs alongside the provers, and `afterProblem` joins it.
       const ended = (end: TwinRecord["end"], tries: number) => {
         // Kept as it happens, so that a resumed run does not start a side that has ended.
-        if (work.twinNodeId !== undefined) problem.memory.updateNode(work.twinNodeId, { end, tries }, "the refutation side ended");
+        // The side runs alongside the provers and nothing awaits it until `afterProblem`: a failure to write is logged, and is no rejection.
+        try {
+          if (work.twinNodeId !== undefined) problem.memory.updateNode(work.twinNodeId, { end, tries }, "the refutation side ended");
+        } catch (error) {
+          problem.log(`twin: the end of the refutation side could not be recorded: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return { end, tries };
       };
       work.side = runTwin({
@@ -268,7 +277,7 @@ export function createM2Line(): Line {
     title: "variant graph and logical propagation",
     requires: [],
     options: M2_OPTIONS,
-    version: "m2-1",
+    version: "m2-2",
     // The per-problem work (the graph's ATMS, the twin and the refutation side that runs alongside the provers) is made again from the journal and the memory: see `begin`.
     resume: "rebuild",
     hooks: {
