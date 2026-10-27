@@ -9,11 +9,12 @@ import {
   type HarnessEvent,
   type LeanCertifier,
   type LeanChecker,
+  readEvents,
   verifyChain,
 } from "@seshat/core";
 import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
-import { LINES, M1, readRecordedRun, REPO_ROOT, renderRunReport, type RunOptions } from "../src/index.ts";
+import { buildReport, LINES, M1, readRecordedRun, REPO_ROOT, renderRunReport, type RunOptions } from "../src/index.ts";
 import { certifyingRegistry, check, DEMO_FILE, demoBench, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 
 /** The text of the first user message of a request: the session prompt. */
@@ -226,6 +227,29 @@ describe("resuming a run whose process ended", () => {
   });
 });
 
+describe("resuming a larger run", () => {
+  it("resumes a run of two problems, two provers each, with M1 and a certifier, cut at every event", async () => {
+    // Every session proves, so that whichever prover has a session left is the one that proves.
+    const proving = () => Array.from({ length: 12 }, () => check("exact trivial_proof"));
+    const config = { provers: 2, sessions: 2, lines: ["M1"] };
+    const whole = await demoRun({ problems: 2, config, responses: proving(), certifier: certifier().certifier });
+    assert.deepEqual(whole.result.problems.map((p) => p.outcome), ["proved", "proved"]);
+    for (let cut = 1; cut < whole.events.length; cut++) {
+      const where = `cut after ${cut} of ${whole.events.length} events (${whole.events[cut - 1]?.type})`;
+      const again = certifier();
+      const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, responses: proving(), certifier: again.certifier });
+      assert.deepEqual(resumed.result.problems.map((p) => p.outcome), ["proved", "proved"], where);
+      assert.equal(ofType(resumed.events, "problem.finished").length, 2, where);
+      assert.equal(ofType(resumed.events, "task.created").length, 4, where);
+      // One kernel replay for each claim, whichever process made it.
+      const replays = ofType(resumed.events, "validation.finished").filter((v) => v.data.method === "kernel_replay");
+      assert.equal(new Set(replays.map((v) => v.data.claimId)).size, replays.length, `${where}: a claim was certified twice`);
+      assert.equal(replays.length, 2, where);
+      assertSound(resumed.events);
+    }
+  });
+});
+
 describe("resuming a run that was resumed", () => {
   const proving = () => Array.from({ length: 6 }, () => check("exact trivial_proof"));
   const script = (): FauxResponseStep[] => [check("bad"), say("NOTES: bad is not a lemma."), check("bad again"), say("NOTES: still not."), ...proving()];
@@ -248,6 +272,22 @@ describe("resuming a run that was resumed", () => {
       assert.equal(again.result.report.resumed?.times, 2, where);
       assertSound(again.events);
     }
+  });
+});
+
+describe("the report of a run that was resumed", () => {
+  it("says that a run which was resumed and cut again has not finished, and counts what each resumption found", async () => {
+    const script = (): FauxResponseStep[] => [check("bad"), say("NOTES: bad is not a lemma."), check("exact trivial_proof")];
+    const whole = await demoRun({ config: { sessions: 3 }, responses: script() });
+    const firstDir = killedAt(whole.dir, nth(whole.events, "tool_run.started", 3) + 1, "fragment");
+    const first = await demoResume({ dir: firstDir, bench: whole.bench, responses: script().slice(2) });
+    assert.equal(buildReport(first.events).finished, true);
+    // The second process ended right after it began: the run has not finished since.
+    const cut = readEvents(join(killedAt(firstDir, first.events.findIndex((e) => e.type === "run.resumed") + 1), "journal.jsonl"));
+    const report = buildReport(cut);
+    assert.equal(report.finished, false);
+    assert.deepEqual(report.resumed, { times: 1, interrupted: { attempts: 1, toolRuns: 1, tasks: 1 }, tornTails: 1 });
+    assert.match(renderRunReport(report), /^The run has not finished\.$/m);
   });
 });
 
