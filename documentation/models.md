@@ -613,7 +613,12 @@ middle of is finished by the next:
   when its `refutation` is on record the negation is not submitted again, and the line goes on as the record says
   (stop at a valid one, the next counter-model otherwise). A counter-model recorded without its `refutation` is submitted
   again: that is at most one more fast check, and the problem's workbench keeps the first candidate;
-- a sequence already identified for the same set of numbers is not looked up again.
+- a sequence already identified for the same set of numbers is not looked up again; one that was looked up and had no
+  match left no node, so it is looked up again.
+
+What stays in the process is the allowances of one call (the files a call may send, the law work) and the clients'
+caches and pacing; they start again in a resumed process, so the spend of M11 is bounded per call and not across a
+cut. M11 spends no model tokens and no dollars.
 
 A negation that passed the fast check and whose certification the process ended in is certified by the resumed run
 ([ledger.md](ledger.md#a-problem-taken-up)). The line's `version` is `2` for these records. The tests
