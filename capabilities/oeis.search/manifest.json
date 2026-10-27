@@ -1,0 +1,207 @@
+{
+  "id": "oeis.search",
+  "version": 1,
+  "title": "Look up integer sequences in the OEIS",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "recognizing the numbers that a computation or a statement produced: the numbers where a statement holds, the first values of a count",
+    "finding the name, the offset and the next terms of a sequence you have the terms or the number of"
+  ],
+  "whenNot": [
+    "proving anything: a match is a lookup and gives a form to conjecture, which only a Lean proof settles",
+    "fewer than six terms, or terms that are mostly equal: too many sequences match, and a match says little",
+    "a table of numbers: read it by rows, by columns or by antidiagonals, and look up each reading"
+  ],
+  "exposure": "direct",
+  "input": {
+    "type": "object",
+    "properties": {
+      "terms": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 100,
+        "items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string",
+              "pattern": "^-?[0-9]+$"
+            }
+          ]
+        },
+        "description": "Consecutive terms of the sequence, in order. A number past 2^53 is given as decimal text"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^A[0-9]{6}$",
+        "description": "The number of a sequence, such as A000045, instead of terms"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "count",
+      "results",
+      "url"
+    ],
+    "properties": {
+      "count": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "How many sequences the site says match; results holds the first page of them"
+      },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "offset",
+            "terms",
+            "keywords",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^A[0-9]{6}$"
+            },
+            "name": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer",
+              "description": "The index of the first term"
+            },
+            "terms": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^-?[0-9]+$"
+              },
+              "description": "The terms the site shows, as decimal text"
+            },
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "url": {
+        "type": "string",
+        "description": "The request that was made"
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 30000,
+  "summary": [
+    "count"
+  ],
+  "examples": [
+    {
+      "title": "a sequence recognized from its first terms",
+      "input": {
+        "terms": [
+          1,
+          1,
+          2,
+          3,
+          5,
+          8,
+          13,
+          21
+        ]
+      },
+      "output": {
+        "count": 1,
+        "results": [
+          {
+            "id": "A000045",
+            "name": "Fibonacci numbers: F(n) = F(n-1) + F(n-2) with F(0) = 0 and F(1) = 1.",
+            "offset": 0,
+            "terms": [
+              "0",
+              "1",
+              "1",
+              "2",
+              "3",
+              "5",
+              "8",
+              "13",
+              "21",
+              "34"
+            ],
+            "keywords": [
+              "nonn",
+              "core",
+              "nice",
+              "easy"
+            ],
+            "url": "https://oeis.org/A000045"
+          }
+        ],
+        "url": "https://oeis.org/search?q=1%2C1%2C2%2C3%2C5%2C8%2C13%2C21&fmt=json"
+      },
+      "note": "The count and the page are the site's; this one is shortened."
+    },
+    {
+      "title": "a sequence by its number",
+      "input": {
+        "id": "A000045"
+      },
+      "output": {
+        "count": 1,
+        "results": [
+          {
+            "id": "A000045",
+            "name": "Fibonacci numbers: F(n) = F(n-1) + F(n-2) with F(0) = 0 and F(1) = 1.",
+            "offset": 0,
+            "terms": [
+              "0",
+              "1",
+              "1",
+              "2",
+              "3",
+              "5",
+              "8"
+            ],
+            "keywords": [
+              "nonn",
+              "core"
+            ],
+            "url": "https://oeis.org/A000045"
+          }
+        ],
+        "url": "https://oeis.org/search?q=id%3AA000045&fmt=json"
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "site",
+      "version": "json-search+client-1",
+      "kind": "inproc",
+      "factory": "oeis",
+      "description": "The OEIS's JSON search (/search?q=...&fmt=json) through the client of @seshat/models, one request at a time with a pause between two. The address and the pauses are settings of the host profile. Not run against the site: it is not reachable from the development environment.",
+      "environment": {
+        "site": "oeis.org, or the address OEIS_URL gives (a mirror)"
+      }
+    }
+  ]
+}

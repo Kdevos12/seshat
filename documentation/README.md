@@ -19,6 +19,7 @@ simulated model and a simulated Lean.
 | Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines, M1, M2, M6 and the fleet |
 | M1: shared claims by statement identity, strategy and failure classes, "already tried", redundant attempts | `@seshat/memory`, `@seshat/orchestrator` | Done with the text identity, tested with a simulated model and Lean; the Lean identity is not built |
 | Variant graph and logical propagation (line M2): variants, checked edges, propagation rules, composed proofs, the prove/refute twin, proved-modulo labels, PageRank, graph queries | `@seshat/graph` | Done, tested with a simulated Lean; not run against Lean |
+| Line API: hooks, contexts, cumulative configs, `harness run --lines` | `@seshat/lines`, `@seshat/orchestrator` | Done, tested with fake lines and with M11 |
 | M6: neutral framing, resolved citations, no raw error text, anchored revisions, drift detectors | `@seshat/guards`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; the thresholds are untuned and the Lean meta tool's predicates are injected, not plugged in |
 | Fleet policy: Thompson sampling on strategy and model verdicts, adaptive width, escalation | `@seshat/fleet`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; the thresholds are untuned and subgoals are the claims for now |
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
@@ -29,6 +30,8 @@ simulated model and a simulated Lean.
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
+| Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
+| Certifier (kernel replay) | Lean code | Needs a Lean environment |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
 
 None of this has run against a real Lean or a real model yet, because the development environment
@@ -68,4 +71,7 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
   what it offers and refuses.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
+- [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
+  graphs and integers, evaluators, fingerprints, certified refutations, identification of
+  sequences, the OEIS, LMFDB and FindStat as capabilities (line M11).
 - [development.md](development.md): conventions, tests, commits.

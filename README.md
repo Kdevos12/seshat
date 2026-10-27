@@ -8,12 +8,12 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and four lines (M1: shared claims
-and negative memory; M2: the variant graph and its logical propagation; M6: guards and drift
-detectors; the fleet policy) are written and tested with a simulated model and a simulated Lean. The
-provers can also be given SageMath, an external program installed with Docker or pip
-([documentation/compute.md](documentation/compute.md)). Nothing has run against a real Lean or a
-real model yet.
+(independent provers on pi, in sessions that pass on their notes) and five lines (M1: shared claims
+and negative memory; M2: the variant graph and its logical propagation; M11: small models and
+counter-models; M6: guards and drift detectors; the fleet policy) are written and tested with a
+simulated model and a simulated Lean. The provers can also be given SageMath, an external program
+installed with Docker or pip ([documentation/compute.md](documentation/compute.md)). Nothing has
+run against a real Lean or a real model yet.
 
 ## How research flows
 
@@ -28,13 +28,17 @@ flowchart TB
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
+  m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
     sage["compute_sage<br/>SageMath"]:::built
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
-    moretools["ATPs, SAT/SMT, OEIS,<br/>Mathlib search,<br/>counterexample search"]:::planned
+    oeis["oeis_search<br/>OEIS"]:::wait
+    lmfdb["lmfdb_query<br/>LMFDB"]:::wait
+    findstat["findstat_identify<br/>FindStat"]:::wait
+    moretools["ATPs, SAT/SMT,<br/>Mathlib search,<br/>counterexample search"]:::planned
   end
 
   subgraph JUDGE["Judge: Lean"]
@@ -59,11 +63,18 @@ flowchart TB
   fleet -->|"who works on what"| provers
   guards -->|"reject a call,<br/>stop a session"| provers
   guards -->|"drift nodes"| journal
+  bench -->|"problems, when<br/>M11 is on"| m11
+  m11 -->|"briefing, or stops<br/>the provers"| provers
+  m11 -->|"decide files"| leancheck
+  m11 -->|"sequences"| oeis
+  m11 -->|"negation proofs"| fast
+  m11 -->|"nodes, computed edges"| journal
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.-> moretools
   leanmeta -.->|"statement ids"| kg
   provers --> leangoals
+  provers --> oeis & lmfdb & findstat
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
   fast -->|candidate| certifier
@@ -87,9 +98,10 @@ written.
 
 Today one loop runs, tested with a simulated model and a simulated Lean: each prover edits a Lean
 sketch and checks it with `lean_check`, and the first file that passes the fast check makes the
-statement `computed`, a candidate. SageMath is the only classical tool plugged in. Every tool call
-goes through the capability registry, which writes it to the journal, with its inputs and outputs
-as blobs.
+statement `computed`, a candidate. SageMath is the only classical tool for computing that is plugged
+in; the OEIS, the LMFDB and FindStat can be asked too ([documentation/models.md](documentation/models.md#the-services-as-capabilities)).
+Every tool call goes through the capability registry, which writes it to the journal, with its inputs
+and outputs as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
 ([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the
 host has a certifier, and the lines' proofs of other claims and of negations too: a certified proof
@@ -107,11 +119,15 @@ of a claim, joined by edges that become `lean_checked` only when Lean accepts th
 rules follow those edges and turn what they derive into composed proofs that go through the same
 fast check; and a proof of the negation of a claim is tried alongside the provers, whichever side
 loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits for a Lean server
-like the fast check. M6 adds the guards against hallucination and the drift detectors: neutral
-framing, citations that must resolve, no raw error text, anchored revisions, and sessions stopped
-when they loop ([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what
-each session works on by Thompson sampling on the verdicts the memory holds, puts more provers on a
-subgoal only where one does badly, and sends hard decisions to a stronger model
+like the fast check. M11: a statement of magmas or of a number is tried on batteries of small
+objects, a counter-model becomes a proof of the negation that Lean must check, and the verdicts
+give candidate edges between claims and a lookup of the numbers where it holds as a sequence
+([documentation/models.md](documentation/models.md)); it waits for a Lean server too. M6 adds the
+guards against hallucination and the drift detectors: neutral framing, citations that must
+resolve, no raw error text, anchored revisions, and sessions stopped when they loop
+([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what each session
+works on by Thompson sampling on the verdicts the memory holds, puts more provers on a subgoal only
+where one does badly, and sends hard decisions to a stronger model
 ([documentation/fleet.md](documentation/fleet.md)). The other mechanisms will come as lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
 the run without it ([documentation/lines.md](documentation/lines.md)).
