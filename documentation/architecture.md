@@ -28,6 +28,7 @@
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
 | `@seshat/lean-lsp` | `lean.lsp` over lean-lsp-mcp for the provers: the allowlisted tools, one scratch file per attempt, regions and lines as `lean_check` has them, the screening, the answers written for a model, the binding of a run ([lean-lsp.md](lean-lsp.md)) | core, registry |
+| `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, fleet), the M1 line, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
@@ -38,15 +39,14 @@ code without touching the lockfile:
 | Package | Will hold | Depends on |
 |---|---|---|
 | `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, lines, memory, registry |
-| `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11) | core, lines, memory, registry |
+| `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11); the implementations of `oeis.search`, `lmfdb.query` and `findstat.identify` | core, lines, memory, registry |
 | `@seshat/scheduler` | The saturation kernel and the subgoal scheduler (M12) | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, graph, lessons, library, lines, memory, registry |
 | `@seshat/library` | The growing lemma library (M3) | core, lines, memory, registry |
 | `@seshat/lessons` | Lessons with counters (M5) | core, lines, memory, registry |
-| `@seshat/abduction` | The abductive engine and its reranking (M7, M9) | core, graph, lean-meta, lines, memory, models, registry |
+| `@seshat/abduction` | The abductive engine and its reranking (M7, M9), suspended and not built ([lines.md](lines.md#suspended-lines)) | core, graph, lean-meta, lines, memory, models, registry |
 | `@seshat/induction` | The inductive engine and theory exploration (M8, M13) | classical, core, library, lines, memory, models, registry |
 | `@seshat/repair` | Typed repairs, Lakatos-style repair (M14) | core, induction, lines, memory, registry |
-| `@seshat/lean-local` | Lean on the host: the certifier (kernel replay) | core, lines, memory, registry |
 
 Data that is versioned with the code:
 
@@ -55,6 +55,7 @@ Data that is versioned with the code:
 | `capabilities/` | One manifest and one contract per capability ([capabilities.md](capabilities.md)). |
 | `config/hosts/` | Host profiles: what each machine uses, and where. |
 | `bench/` | Bench indexes ([bench.md](bench.md)). |
+| `lean/` | Lean libraries that run in the bench's project: SeshatMeta ([lean-meta.md](lean-meta.md)) and SeshatCertify ([certifier.md](certifier.md)). |
 
 ## A problem, end to end (M0)
 

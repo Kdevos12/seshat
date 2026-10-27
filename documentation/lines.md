@@ -8,8 +8,9 @@ exactly M0 ([m0-loop.md](m0-loop.md)).
 
 The API is in `@seshat/lines`; the orchestrator runs it (`packages/orchestrator/src/line-runtime.ts`).
 `packages/orchestrator/src/lines.ts` is the registry of the lines a run can enable. M1
-([m1-identity-memory.md](m1-identity-memory.md)) and M2 ([graph.md](graph.md)) are built; a run that
-enables a line that is only planned stops before it starts and says so.
+([m1-identity-memory.md](m1-identity-memory.md)), M2 ([graph.md](graph.md)) and M11
+([models.md](models.md#the-line)) are built; a run that enables a line that is only planned stops
+before it starts and says so.
 
 ## The lines
 
@@ -21,29 +22,43 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M1` | canonical identity and shared negative memory | `@seshat/memory` (the line is `packages/orchestrator/src/m1.ts`); the Lean identity will come from `@seshat/lean-meta` | built, with the text identity |
 | `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` | planned |
 | `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
-| `M11` | small models and fingerprints: certified refutations, candidate equivalences | `@seshat/models` | planned |
+| `M11` | small models and fingerprints: certified refutations, candidate equivalences ([models.md](models.md#the-line)) | `@seshat/models` | built, not run against Lean |
 | `M12` | saturation kernel: given-clause loop, subsumption, proved-modulo labels | `@seshat/scheduler` | planned |
 | `M4` | context compiler | `@seshat/context` | planned |
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
 | `M3` | growing lemma library | `@seshat/library` | planned |
-| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | planned |
+| `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M8` | inductive engine | `@seshat/induction` | planned |
 | `M13` | theory exploration and classical conjecturing | `@seshat/induction` | planned |
 | `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
-| `M9` | reranking from our own labels, without training | `@seshat/abduction` | planned |
+| `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 
-The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile,
-and so does `@seshat/lean-local` (the certifier on the host).
+The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile.
+`@seshat/lean-local` (the certifier on the host) is no line, and it is written
+([certifier.md](certifier.md)).
+
+### Suspended lines
+
+`SUSPENDED_LINES` holds M7 and M9, the abductive engine (homology detection) and the reranking of
+its candidates. They were suspended on 2026-10-20: semantic jumps found by deriving an expression
+through the variant graph ([graph.md](graph.md)) do the same structural work, and more accurately in
+practice. Their design stays in the plan, but they are not built: a run that enables one stops
+before it starts and says the line is suspended, and the cumulative configs leave them out. The
+direction noted instead, for when the core is ready, is problem reformulation (a sub-problem or
+sub-expression, a more general or analogous problem, a problem in a higher dimension), toward one
+native tool per major method of Pólya's *How to Solve It*.
 
 ### Cumulative configs
 
 The plan's ablations are cumulative: each config adds one line to the one before, in §7's order.
 `ablationLines(name)` gives the lines of a config: none for `M0`, and for a line, that line and
-every line before it in `LINE_ORDER`. `M1` is M0 + M1; `M2` is M0 + M1 + M10 + M2; `M9` enables
-every line. `harness run --ablation M2` runs that config, once all its lines are written: today it
-stops and names M10 as planned, and `--lines M1,M2` runs the two that are built.
+every line before it in `LINE_ORDER` but the [suspended](#suspended-lines) ones. `M1` is M0 + M1;
+`M2` is M0 + M1 + M10 + M2; `M8` is every line up to M8 but M7. A suspended line stays in its own
+config, so `--ablation M7` and `--ablation M9` stop and say why. `harness run --ablation M2` runs
+that config, once all its lines are written: today it stops and names M10 as planned, and
+`--lines M1,M2` runs the two that are built.
 
 ## A line
 
@@ -88,20 +103,22 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `briefing(session)` | Before each session, after `beforeSession`. | Give a titled section for the session's opening message, after the notes, the file and the last check. |
 | `tools(session)` | Before each session. | Give the prover extra tools, as neutral specs (name, description, JSON schema of the arguments, `run(args, signal)` returning text) that the orchestrator adapts to pi tools. A failing call goes back to the model as a tool error. Names are lowercase letters, digits and `_`, and may not clash. |
 | `contextPacket(session, request)` | Before each model request of a session, the first one and the wrap-up included. | Return the whole context of the request (M4): it replaces every message after the system prompt and the tool declarations. Undefined leaves the request as it is. At most one enabled line may give this hook. |
-| `beforeCheck(session, proposal)` | Before each `lean_check` runs. | Reject the call, with a reason the model reads as a tool error. The file is not sent to Lean, and the call is no check: no validation, not counted, its declared strategy not recorded. The first line in this order that rejects is taken. |
+| `beforeCheck(session, proposal)` | Before each `lean_check` runs. | Reject the call, with a reason the model reads as a tool error. The file is not sent to Lean, and the call is no check: no validation, not counted, its declared strategy not recorded. The first line in this order that rejects is taken. It guards the prover's calls only: certification is no `lean_check`, and no hook sees it ([m0-loop.md](m0-loop.md#certification)). |
 | `afterCheck(session, check)` | After each `lean_check` of a session. | Stop the session with a reason (a drift detector). The attempt ends with `stoppedBy: "line:<id>"`, and the model is not asked for notes. A check that makes the candidate still ends the session as `solved`. |
 | `reviewBriefing(session, sections)` | After the lines' `briefing`, before the session starts. | Drop or reword the sections the session gets (keep the title), never add, replace or reorder one: every title returned must be one it was given, in the same order, or the line has failed. Each line gets the list as the lines before it left it; undefined keeps it. |
 | `afterAttempt(problem, attempt)` | After each session, before `attempt.finished`. | Return the attempt's classified strategy, the premises its proof uses, a typed summary of its failure, and the notes the prover's next session starts from: they go into `attempt.finished` (the notes into the prover), a later line's fields winning. The journal keeps the notes the model wrote; an empty string leaves the next session with none. Not called for a session the harness failed. |
 | `afterProver(problem, end)` | After a prover has ended: its sessions are used, it solved the problem, it ran out of budget, was stopped, kept failing, or a line stopped it. | Learn how it ended (`end.stop`). Not called when the harness failed in the prover, which ends the problem. |
-| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. |
+| `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what this problem's lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is the problem's own so far: `proved` when its own candidate was certified, never `refuted` (a line's refutation is certified after the hook), and never `proved` because another problem proved a claim they share. |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
 a proof already found stays found (`candidate` or `proved`, with the failure in the reason, as when
-certification fails). In `beforeSession`, `briefing`, `reviewBriefing`, `tools`, `afterAttempt` or
-`afterProver`, the prover stops, the problem's other provers with it, and the problem ends as `error`
-unless a proof was found. In `contextPacket`, `beforeCheck` or `afterCheck`, the session ends with an
-error, and the prover goes on as after any failed session.
+certification fails). For `afterProblem` that includes a refutation of the problem's claim that its
+lines submitted and that was certified after the hook failed: the problem ends `refuted`. In
+`beforeSession`, `briefing`, `reviewBriefing`, `tools`, `afterAttempt` or `afterProver`, the prover
+stops, the problem's other provers with it, and the problem ends as `error` unless a proof was
+found. In `contextPacket`, `beforeCheck` or `afterCheck`, the session ends with an error, and the
+prover goes on as after any failed session.
 
 ## What a hook gets
 
@@ -152,7 +169,10 @@ call is recorded too). The model defaults to the run's, with the run's thinking 
 `validate({claimId, proof, aux?, negation?, attemptId?})` is the only way a line raises a claim's
 status, and it goes through the same validator as the provers' checks. The rule holds by
 construction: a line's store has no method that raises a status, and the journal makes a claim
-`computed` only with a valid validation of that claim ([trust.md](trust.md#the-journal-enforces-it)).
+`computed` only with a valid validation of that claim, and `proved` or `refuted` only with a
+certified one ([trust.md](trust.md#the-journal-enforces-it)). `validate` itself reaches the fast
+check at most: the certification of what it recorded comes when the problem ends
+([m0-loop.md](m0-loop.md#certification)), so a result says `computed` and never `proved`.
 
 A line has one other way to change a status, and it only lowers it: `memory.retractClaim(claimId,
 {reason})` takes back a claim whose status rested on something that was withdrawn. It is the single
@@ -168,11 +188,19 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
   makes the claim `computed`, becomes the problem's candidate, and ends the problem's search.
 - Any other claim, and any negation, gets a workbench of its own, built on first use from the
   claim's reference file (`MemoryStore.referenceFor`) and kept for the run. A valid proof makes
-  that claim `computed`. A reference file that does not compile makes every submission for it
-  invalid, with the reason; one Lean did not answer for is tried again next time.
+  that claim `computed`, and the certifier makes it `proved` when the problem's lines are done.
+  The first valid proof of the claim is its candidate, whichever problem's line sent it, and that
+  problem certifies it; a later valid proof from another problem is recorded as a validation and is
+  nobody's candidate. A reference file that does not compile makes every submission for it invalid,
+  with the reason; one Lean did not answer for is tried again next time. A line cannot change that file: the claim's reference
+  is the problem's own file or the one rebuilt from its journaled statement and header
+  ([memory.md](memory.md#reference-files)).
 - A valid proof of the negation is recorded as a validation with `negation: true` and changes no
-  status: only certification makes a claim `refuted` ([trust.md](trust.md)), and it is not wired
-  for refutations yet.
+  status when it is submitted. When the problem's lines are done it is certified, and a certified
+  one makes the claim `refuted` ([trust.md](trust.md)); for the problem's own claim that is also
+  what ends the problem as `refuted`. The first valid proof of each claim, and of each negation,
+  is the one certified in a run (the problem's own claim has the problem's workbench, and its first
+  valid proof is the problem's candidate).
 - A file with holes is not a validation, as for the provers. An informal claim cannot be
   validated.
 
@@ -222,5 +250,8 @@ also checks that only one line gives the statement identity, and
 `m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
 [fleet.md](fleet.md#tests-and-what-is-not-done)).
 
-M1, M2, M6 and the fleet are the lines built. M2 has its own tests
-([graph.md](graph.md#tested-and-not-yet)). Nothing here has run against a real model or Lean.
+M1, M2, M11, M6 and the fleet are the lines built. M2 has its own tests
+([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m11.test.ts` runs M11 in
+`runBench` with the simulated model and Lean, a refutation through `validate` and a node and edge of
+each kind it writes included ([models.md](models.md#the-line)). Nothing here has run against a real
+model or Lean.

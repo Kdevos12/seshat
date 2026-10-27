@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { promisify } from "node:util";
@@ -82,10 +83,47 @@ describe("harness CLI", () => {
     const down = await harness(["health", "lean.check"], { LEAN_SERVER_API_URL: "http://127.0.0.1:9" });
     assert.equal(down.code, 1);
     assert.match(down.stdout, /^FAIL lean\.check\/kimina/m);
-    // Every implementation the host lists, in order: here SageMath's, which nothing serves.
-    const all = await harness(["health"], { LEAN_SERVER_API_URL: url, PATH: "/nowhere", SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp" });
+    // Every implementation the host lists, in order: SageMath's, which is required and which nothing
+    // serves; the sites', which are optional and which nothing serves; and the certifier's, which has no
+    // Lean project to run in and no sandbox to run it in.
+    const nowhere = "http://127.0.0.1:9";
+    const all = await harness(["health"], {
+      LEAN_SERVER_API_URL: url,
+      LEAN_PROJECT_DIR: undefined,
+      PATH: "/nowhere",
+      SAGEMATH_MCP_COMMAND: "/nowhere/sagemath-mcp",
+      OEIS_URL: nowhere,
+      LMFDB_URL: nowhere,
+      FINDSTAT_URL: nowhere,
+    });
+    // The command fails because of SageMath and the certifier; the sites only warn.
     assert.equal(all.code, 1);
-    assert.match(all.stdout, /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nok {3}lean\.check\/kimina/m);
+    assert.match(
+      all.stdout,
+      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn findstat\.identify\/site \S+ .*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
+    );
+    assert.match(all.stdout, /^warn lmfdb\.query\/site \S+ /m);
+    assert.match(all.stdout, /^warn oeis\.search\/site \S+ /m);
+    assert.doesNotMatch(all.stdout, /^FAIL (findstat|lmfdb|oeis)/m);
+    // With the project set, the default profile's certifier is still down: it has no sandbox, and does not opt in to running without.
+    const set = await harness(["health", "lean.certify"], { LEAN_PROJECT_DIR: tmpdir() });
+    assert.equal(set.code, 1);
+    assert.match(set.stdout, /^FAIL lean\.certify\/lake .*refuses to run the candidate's code without a sandbox/m);
+    assert.doesNotMatch(set.stdout, /LEAN_PROJECT_DIR/);
+  });
+
+  it("does not fail the health of a host whose public sites cannot be reached", async () => {
+    // The three sites are optional in the repository's profiles: a host without outbound access still passes.
+    const nowhere = { OEIS_URL: "http://127.0.0.1:9", LMFDB_URL: "http://127.0.0.1:9", FINDSTAT_URL: "http://127.0.0.1:9" };
+    for (const id of ["oeis.search", "lmfdb.query", "findstat.identify"]) {
+      const { code, stdout, stderr } = await harness(["health", id], nowhere);
+      assert.equal(code, 0, stdout + stderr);
+      assert.match(stdout, new RegExp(`^warn ${id.replace(".", "\\.")}/site \\S+ \\(\\d+ ms\\): `, "m"));
+    }
+    // The server profile too.
+    const server = await harness(["health", "oeis.search", "--host", "server"], nowhere);
+    assert.equal(server.code, 0, server.stdout + server.stderr);
+    assert.match(server.stdout, /^warn oeis\.search\/site /m);
   });
 
   it("runs contract cases and fails when one does not hold", async () => {
@@ -180,6 +218,7 @@ describe("harness run --lines", () => {
     const options: Array<[string[], RegExp]> = [
       [["--lines", "M10,M99"], /^the lines of the run: line M10 \(classical battery per subgoal before any model, domain router, ATP and SMT\) is planned, not implemented yet; unknown line "M99"/m],
       [["--ablation", "M2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
+      [["--ablation", "M9"], /^the lines of the run: line M10 .* is planned, not implemented yet; .*line M9 \(reranking from our own labels, without training\) is suspended: it is not built, and no run enables it \(documentation\/lines.md\)$/m],
       [["--lines", "M10", "--line-option", "M10.k=2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
       // M1 is implemented, with one option.
       [["--lines", "M1", "--line-option", "M1.k=2"], /^the lines of the run: line M1 has no option k; its options are maxLines$/m],

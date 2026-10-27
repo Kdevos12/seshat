@@ -5,14 +5,14 @@ AlphaProof Nexus, rebuilt on pi. For each problem, independent provers work on a
 the theorem, each in a Ralph loop: a session is a fresh model context, and only the file as the
 prover left it and its notes go from one session to the next. Provers share nothing else. The
 first proof that passes the fast check makes the claim a candidate and stops the problem's other
-provers.
+provers; the certifier then decides whether the claim is `proved` ([certifier.md](certifier.md)).
 
 The code is in `packages/orchestrator/src`:
 
 | Module | Role |
 |---|---|
 | `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
-| `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks and the candidate of one problem. |
+| `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks, the candidate and its certification, for one claim or its negation. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
 | `session.ts` | `runSession`: one pi agent with the `lean_check` tool and the run's other tools, and its limits. |
 | `tools.ts` | The other tools: `direct` capabilities as tools of a session, and their bindings (`lean.lsp`). |
@@ -24,7 +24,7 @@ The code is in `packages/orchestrator/src`:
 | `lines.ts` | The lines a run can enable, by id; none is implemented yet ([lines.md](lines.md)). |
 | `line-runtime.ts` | The enabled lines of a run: their contexts, and their hooks at each point of a problem, a prover and a session. |
 | `llm.ts` | The lines' one-shot model calls, charged and recorded. |
-| `validate.ts` | The lines' `validate`: proofs of any claim, or of its negation, through the validator. |
+| `validate.ts` | The lines' `validate`: proofs of any claim, or of its negation, through the validator; and the certification of what they submitted. |
 
 ## A run
 
@@ -40,7 +40,11 @@ The code is in `packages/orchestrator/src`:
    of their list, the model and its thinking level, the provers, sessions, limits, notes length,
    budgets and concurrency, the other tools with their implementations and versions, the bench's
    hash and source, the registry's hash (manifests and host profile), the prompts' version and
-   hash, the validation policy, the certifier, the code revision, and the enabled lines with their
+   hash, the validation policy, the certifier (`RunOptions.certifier`, or else the host's
+   `lean.certify`, if its profile lists one; the run logs which, or that there is none, and when the
+   host's cannot be made at all, such as without a sandbox command, logs that it is unavailable and
+   records the reason as `certifierUnavailable`), the code
+   revision, and the enabled lines with their
    options (only when there are some, so that an M0 run records what it always did).
 3. Works on the problems in order, `concurrency` at a time.
 4. Records `run.finished`, then writes `report.md` and `report.json`.
@@ -57,17 +61,81 @@ a row ended with a harness error (`errors`). The reason is in `run.finished`.
 3. Checks the original file once, for the reference type of the statement.
 4. Starts the provers in parallel. They share the problem's `Workbench` and its budget.
 5. When a prover finds a candidate, writes its file to `proofs/` and, if there is a certifier,
-   certifies it.
-6. Records `problem.finished`: outcome, reason, attempts, cost and time.
+   certifies it ([below](#certification)).
+6. With lines, runs their `afterProblem`, then certifies what they submitted for other claims or
+   for negations ([below](#certification)).
+7. Records `problem.finished`: outcome, reason, attempts, cost and time.
 
 | Outcome | When |
 |---|---|
-| `proved` | The certifier certified the candidate. The claim is `proved`. |
-| `candidate` | A proof passed the fast check, and there is no certifier, or it could not run. The claim is `computed`. |
-| `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate (the claim goes back to `open`). |
+| `proved` | A certified proof settled the claim, which is `proved`: the problem's own candidate (a prover's, or a line's proof of the problem's claim). A claim that another problem proved does not make a problem `proved`, even when the two share the claim: the problem needs a certification of its own. |
+| `refuted` | A certified proof of the negation, submitted by the problem's own lines, settled the claim, which is `refuted`. A prover never does this, since it works on the statement; a line that proves negations can (M2's twin, [graph.md](graph.md#the-twin)). A claim that another problem refuted does not make a problem `refuted`. |
+| `candidate` | A proof passed the fast check, and the claim is not settled: there is no certifier, or it gave no answer (the time limit, a stop, no Lean project to run in, a Lean environment in which not even the reference compiles, a host profile with no sandbox for the certifier). The claim is `computed`, and the reason says why the certifier gave none. |
+| `unsolved` | The budget ran out, every prover used its sessions, or the certifier rejected the candidate: the kernel refused a proof that the fast check accepted, so the problem has none. The claim stays `computed` and the reasons are in the `kernel_replay` validation. |
 | `skipped` | The problem could not be set up: its file differs from the index, it cannot be cut into a sketch, or the original does not compile. |
 | `aborted` | The run was stopped. |
-| `error` | Lean could not be reached for the reference check, every prover kept failing, or the harness failed. |
+| `error` | Lean could not be reached for the reference check, every prover kept failing, the harness failed, or a certified proof or refutation of the problem's claim contradicted the claim's status (a proof of a refuted claim, a refutation of a proved one). |
+
+### Certification
+
+A certifier answers a call with `certified` or `rejected`, or with no answer at all
+([certifier.md](certifier.md#what-it-answers)). The run records the answer as a `kernel_replay`
+validation of the claim, with `negation: true` for a refutation, and acts on it:
+
+- `certified`: the claim becomes `proved` (a proof) or `refuted` (a proof of the negation), if it
+  is still `open`, `computed` or `proved_informal`. A claim that another problem with the same
+  statement has settled the same way keeps its status: the validation is recorded and nothing
+  changes. A claim that was settled the other way is a contradiction (a proof of a refuted claim, or
+  a refutation of a proved one): the validation stays as evidence and the status does not move. The
+  problem that submitted it ends as `error` when the claim is its own, whether it was its provers'
+  candidate or a refutation of its claim that its lines submitted, and the reason says so. When the
+  claim is another one that its lines submitted a proof or a refutation for, the problem's outcome
+  stands, the run's log says so and the reason notes it.
+- `rejected`: nothing changes. The claim stays `computed` and the validation, which is `invalid`,
+  holds the reasons. Nothing in the harness lowers a claim's status but `retractClaim`
+  ([memory.md](memory.md#claims)), so a rejection does not send it back to `open`.
+- no answer: no validation is recorded (it would say nothing about the proof) and the claim stays
+  `computed`. The failure is the problem's reason when it was the problem's own candidate, and a
+  line of the run's log otherwise. The registry's tool run of `lean.certify` records the call and
+  how it ended.
+
+A candidate is certified once in a run, whatever came of it, and a workbench keeps its first
+candidate: the problem's own, and one for each other claim and each negation that lines submit
+proofs for. If the certifier rejects a line's proof of a claim, its later proofs of that claim are
+not certified in the run, so a line cannot make the run pay for one certification after another.
+The problem whose submission made a candidate is the one that certifies it, when its own lines are
+done: a problem's end does not certify what the lines of another problem, still working, have
+submitted, and the time it takes is charged to the problem that submitted it.
+
+What is certified, and when, for a problem:
+
+1. The problem's own candidate, as soon as the provers are done, so that the lines'
+   `afterProblem` see the claim `proved`.
+2. After `afterProblem`, the candidates this problem's lines submitted through `validate` ([lines.md](lines.md#validate)):
+   proofs of other claims, which become `proved`; proofs of negations, which make their claim
+   `refuted`; and a proof of the problem's own claim found late. M2's composed proofs and its
+   twin's proof and refutations are among them: they reach the certifier by the same path as a
+   prover's candidate. One after the other, in the order their claims were first submitted for,
+   and not once the run is stopped. Each is compared with the claim's reference file
+   (`MemoryStore.referenceFor`): the problem's file for a problem's claim, and the file rebuilt
+   from the claim's journaled statement and header for any other; a line cannot give a claim a
+   file of its own ([memory.md](memory.md#reference-files)).
+
+A problem's outcome comes from its own results only. It is `proved` when its own candidate was
+certified. It is `refuted` when a refutation of its claim that its own lines submitted was
+certified, after `afterProblem`, and the same holds for a proof of its claim that a line found late:
+a problem that ended `unsolved` or `candidate` ends as `proved` or `refuted` then. The certification
+of another problem's proof or refutation, even of a problem that shares its claim, does not move a
+problem's outcome: it stays `unsolved` (or `candidate`) until its own provers or lines find
+something, and the claim's status is the other problem's doing. `run.finished` counts the claims
+instead ([journal.md](journal.md#projection)): a problem counts as solved, refuted or a
+candidate when its claim has that status, so two problems that share a claim count twice, and a
+claim whose proof the kernel refused stays `computed` and counts as a candidate while its problem
+is `unsolved`. The report counts the outcomes.
+
+A line that fails in `afterProblem` makes the problem an `error`, except that a proof, a refutation
+or a candidate found stays found: the outcome is decided after the lines' submissions are certified,
+and the failure goes into the reason.
 
 Each problem has its own abort signal, aborted with a reason: `solved` (a prover found the
 candidate), `budget` (the problem's or the run's budget ran out) or `stopped` (the run was stopped,
@@ -302,8 +370,8 @@ interrupted or killed.
 
 The report counts the problems by outcome, with those that have none (not started, or cut off
 when the run was killed). It gives the Q5 metrics that a run can measure: validity (problems
-proved, and candidates that passed the fast check only), the cost in total and per problem with a
-proof, tokens, attempts
+proved or refuted, and candidates that passed the fast check only), the cost in total and per
+problem with a proof or a refutation, tokens, attempts
 by outcome, how the sessions ended, the failure classes of the invalid attempts, and the Lean
 checks with their median and 90th percentile times (the count includes one reference check per
 problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
@@ -318,6 +386,14 @@ recorded; the file and the notes carried from one session to the next; forbidden
 before Lean; the turn limit, with the wrap-up; the problem's budget; the other provers stopped when
 one succeeds; a problem whose original file does not compile; a run stopped when Lean cannot be
 reached; certification, accepted and rejected; and a run aborted between problems.
+`certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
+`lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
+refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line
+submits for other claims (certified after `afterProblem`, rejected, not started once the run is
+stopped), the reference file the certifier is given, a host whose certifier cannot be made (said at
+the start, recorded in `run.started`), and runs with M1, M6 and the fleet on (the
+hooks of the sessions and provers all run before the certifier is asked and `afterProblem` after
+it, a veto of M6 leaves nothing to certify, and the call belongs to no attempt).
 `tools.test.ts` gives the provers a simulated SageMath server (`test/fixtures/fake-sage.ts`, over
 an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
 errors as the model reads them; the tool's description and the prompt's section; the run's
@@ -339,6 +415,8 @@ Not done yet:
 - No run against a real model or a real Lean server. The development environment cannot download
   the Lean toolchain, so the first real run will be on the workstation or the dedicated server,
   once `pnpm harness contract lean.check` passes there.
-- The certifier (kernel replay) is not written, so the best outcome of a run is `candidate`
-  ([lean.md](lean.md#the-certifier-to-write)).
+- No run has gone through a real certifier. The harness side is tested with a fake `lake` and fake
+  certifiers; the Lean program `lean/SeshatCertify` has never been compiled
+  ([certifier.md](certifier.md#to-verify-against-lean)). Until it has run, a real run's best
+  outcome is `candidate` in practice, though the code paths to `proved` and `refuted` are there.
 - The prompts have not been tuned on real attempts.

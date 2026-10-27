@@ -271,6 +271,67 @@ describe("Registry.invoke", () => {
     ]);
   });
 
+  it("tells whether the host can create an implementation of a capability, without calling any", async () => {
+    let asked = 0;
+    const down: ImplementationFactory = () => ({
+      invoke: async () => ({ sum: 0 }),
+      health: async () => {
+        asked++;
+        return { ok: false, detail: "down" };
+      },
+    });
+    const refusing: ImplementationFactory = () => {
+      throw new UnavailableError("needs a project");
+    };
+    // Created is not healthy: this is about what the host's configuration allows.
+    const created = new Registry({ catalog, host: host(["js"]), factories: { "js-add": down } });
+    assert.deepEqual(await created.usable("math.add"), { ok: true, detail: "js" });
+    assert.equal(asked, 0);
+    const second = new Registry({ catalog, host: host(["js", "backup"]), factories: { "js-add": refusing, "js-add-backup": down } });
+    assert.deepEqual(await second.usable("math.add"), { ok: true, detail: "backup" });
+    const neither = new Registry({
+      catalog,
+      host: host(["js", "backup"]),
+      factories: {
+        "js-add": refusing,
+        "js-add-backup": () => {
+          throw new Error("no such host");
+        },
+      },
+    });
+    assert.deepEqual(await neither.usable("math.add"), { ok: false, detail: "js: needs a project; backup: no such host" });
+    const bare = new Registry({ catalog, host: { host: "bare", capabilities: {} } });
+    assert.deepEqual(await bare.usable("math.add"), { ok: false, detail: "math.add is not offered on host bare" });
+  });
+
+  it("tells a factory the host it runs on", async () => {
+    let seen: string | undefined;
+    const spy: ImplementationFactory = ({ host: name }) => {
+      seen = name;
+      return { invoke: async () => ({ sum: 0 }) };
+    };
+    await new Registry({ catalog, host: host(["js"]), factories: { "js-add": spy } }).invoke("math.add", { a: 0, b: 0 });
+    assert.equal(seen, "test");
+  });
+
+  it("marks the entries of a capability that the host calls optional, and only those", async () => {
+    const healthy: ImplementationFactory = () => ({ invoke: async () => ({ sum: 0 }), health: async () => ({ ok: true, detail: "fine" }) });
+    const factories = {
+      "js-add": healthy,
+      "js-add-backup": () => {
+        throw new Error("no such host");
+      },
+    };
+    const optional = new Registry({ catalog, host: host(["js", "backup"], { optional: true }), factories });
+    assert.deepEqual((await optional.health()).map(({ durationMs: _, ...rest }) => rest), [
+      { capability: "math.add", implementation: "js", version: "1", ok: true, detail: "fine", optional: true },
+      { capability: "math.add", implementation: "backup", version: "2", ok: false, detail: "no such host", optional: true },
+    ]);
+    // `optional: false` is the same as leaving it out: the entries carry no mark.
+    const required = new Registry({ catalog, host: host(["js"], { optional: false }), factories });
+    assert.deepEqual((await required.health()).map(({ durationMs: _, ...rest }) => rest), [{ capability: "math.add", implementation: "js", version: "1", ok: true, detail: "fine" }]);
+  });
+
   it("closes what it opened", async () => {
     let closed = 0;
     const closable: ImplementationFactory = () => ({ invoke: async () => ({ sum: 0 }), close: async () => void closed++ });

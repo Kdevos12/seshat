@@ -1,0 +1,118 @@
+{
+  "id": "lmfdb.query",
+  "version": 1,
+  "title": "Query the LMFDB",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "finding number fields, elliptic curves, modular forms or other objects of the LMFDB with given invariants",
+    "checking a conjectured example, or the invariants of a small object, against the database"
+  ],
+  "whenNot": [
+    "proving anything: a record is data from a database, and only a Lean proof settles a statement",
+    "a collection or a column you are not sure of: the site refuses a name it does not have, and the answer is an error",
+    "a computation SageMath can do: compute_sage gives exact values without a network"
+  ],
+  "exposure": "direct",
+  "input": {
+    "type": "object",
+    "required": [
+      "collection",
+      "fields"
+    ],
+    "properties": {
+      "collection": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+        "description": "The collection of the LMFDB's API, such as nf_fields (number fields)"
+      },
+      "fields": {
+        "type": "object",
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "description": "The columns to match and their values, such as {\"degree\": 2, \"disc_abs\": 5}; empty for the first records of the collection"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "description": "At most this many records. 10 when not given"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "url",
+      "records"
+    ],
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The request that was made"
+      },
+      "records": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "The records as the site gives them: the columns of the collection and their values"
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 30000,
+  "summary": [
+    "url"
+  ],
+  "examples": [
+    {
+      "title": "the quadratic fields of discriminant 5",
+      "input": {
+        "collection": "nf_fields",
+        "fields": {
+          "degree": 2,
+          "disc_abs": 5
+        }
+      },
+      "output": {
+        "url": "https://www.lmfdb.org/api/nf_fields/?degree=2&disc_abs=5&_format=json&_limit=10",
+        "records": [
+          {
+            "label": "2.2.5.1",
+            "degree": 2,
+            "disc_abs": 5,
+            "class_number": 1
+          }
+        ]
+      },
+      "note": "The columns of a record are the collection's; this one is shortened."
+    }
+  ],
+  "implementations": [
+    {
+      "id": "site",
+      "version": "api+client-1",
+      "kind": "inproc",
+      "factory": "lmfdb",
+      "description": "The LMFDB's API (/api/<collection>/?<column>=<value>&_format=json) through the client of @seshat/models, one request at a time with a pause between two. The address and the pauses are settings of the host profile. Not run against the site: it is not reachable from the development environment, and the request is written from its documentation as remembered.",
+      "environment": {
+        "site": "www.lmfdb.org, or the address LMFDB_URL gives (a mirror)"
+      }
+    }
+  ]
+}

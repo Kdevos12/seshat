@@ -38,14 +38,20 @@ them: the second problem's `problem.registered` carries the first one's `claimId
 - **Attempts are shared.** The second problem's provers are told what failed on the first, and the
   report's redundancy counts the repeats between them.
 - **Per problem, still:** the attempts a problem reports (`problem.finished.attempts` counts the
-  problem's own provers' attempts, not the claim's), its budget, and its candidate. Each problem
-  goes on until a proof of its own passes the check.
+  problem's own provers' attempts, not the claim's), its budget, its candidate, and its outcome.
+  Each problem goes on until a proof of its own passes the check, and it is `proved` or `refuted`
+  only by a certification of its own candidate or of its own lines' submissions: a claim that the
+  other problem settled does not make it so. A problem that found nothing stays `unsolved` while
+  its claim is `proved`, and the one that certified a contradiction of the claim's status ends as
+  `error` ([m0-loop.md](m0-loop.md#certification)).
 - **The claim is settled once.** The first valid check makes it `computed`, and a certified
   candidate makes it `proved` if it is still `computed` (or `open`); a later problem's valid check
   or certification of an already settled claim is recorded as a validation and leaves the status
   alone.
-- `run.finished.solved` and `candidates` count the problems whose claim has that status, so both
-  problems of a shared claim count; the report's outcomes are per problem.
+- `run.finished.solved`, `refuted` and `candidates` count the problems whose claim has that status,
+  so both problems of a shared claim count, whichever of them settled it; the report's outcomes are
+  per problem. A claim whose proof the kernel refused stays `computed`: it counts as a candidate
+  while its problem is `unsolved`.
 - **Sharing needs the same prefix.** `TextIdentity` reads the header, so the same signature under
   another prefix (other imports, `open`s or definitions) is another claim, and no two distinct
   statements share one. The prefix is everything in the file before the problem's docstring,

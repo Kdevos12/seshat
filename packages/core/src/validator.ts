@@ -2,6 +2,7 @@ import { sha256Hex } from "./canonical-json.ts";
 import {
   type LeanCertifier,
   type CertificationResult,
+  type LeanCertifyOptions,
   type LeanChecker,
   type LeanCheckResult,
   type LeanMessage,
@@ -9,7 +10,7 @@ import {
   parseAxiomsMessage,
   STANDARD_AXIOMS,
 } from "./lean.ts";
-import { readDeclarationHead, splitCommands } from "./lean-source.ts";
+import { blankComments, firstCharacterLiteral, NAME_PART, NAME_PART_CHARACTER, NAME_START, NAME_START_CHARACTER, readDeclarationHead, splitCommands, TOKEN_START } from "./lean-source.ts";
 import { assemble, editedOutsideRegions, extractSubmission, type Sketch, SketchError, type Submission } from "./sketch.ts";
 
 export interface ValidationPolicy {
@@ -61,10 +62,63 @@ const FORBIDDEN_TOKENS = [
 
 const AUX_KEYWORDS = new Set(["theorem", "lemma", "def", "abbrev"]);
 
-function tokenPattern(token: string): RegExp {
+/**
+ * A regular expression for a token, as Lean's lexer reads text. After a syntax error Lean goes on
+ * (from the position of the error; when the failed command made no progress it first skips one token
+ * that an empty token table reads, or one character) and runs a command that starts there, so a
+ * forbidden word is a danger when the lexer reads it as a token of its own, and no danger when it is
+ * part of a longer name:
+ * - A token that starts like a name (`sorry`, `run_cmd`, `IO`) is found unless it continues a name
+ *   that the lexer starts at a token start (`TOKEN_START`): `xsorry`, `x1sorry`, `x!sorry`,
+ *   `Nat.sorry_lemma` and `h.elab` are names after white space, `(` or `,`, and `sorry_free` too.
+ *   What stands before a name does not make the token part of it: `!sorry`, `λsorry`, `(e).sorry`
+ *   and `a..sorry` hold `sorry`, and so do `1sorry`, `1e5sorry` and `0xbeefsorry`, since a number is a
+ *   lexeme of its own (anything that begins with a digit is refused, whichever way Lean reads it).
+ *   A run of letters glued to a symbol is not trusted as a name: `#checkrun_cmd`, `[MODrun_cmd` and
+ *   `⟫_run_cmd` hold `run_cmd`, and `[hprefix]` is refused for `prefix` although it is a name.
+ * - A token that starts with a character no name has, such as `#eval`, is found wherever it stands,
+ *   since Lean reads `x#eval` as `x` and `#eval`; and the longest token wins in the lexer, so what
+ *   follows it does not matter (`#eval!` is a command too).
+ * - A token that ends with such a character (`eval%`) needs no boundary after it.
+ * A name of more than 256 characters, or of more than 16 parts, is not taken for one. After a `'` that
+ * may start a character literal the first reading does not hold (`holdsToken`).
+ */
+function tokenPattern(token: string): TokenPatterns {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}_'.!?])${escaped}(?![\\p{L}\\p{N}_'!?])`, "u");
+  const characters = [...token];
+  const startsLikeName = NAME_START_CHARACTER.test(characters[0] ?? "");
+  const endsLikeName = NAME_PART_CHARACTER.test(characters.at(-1) ?? "");
+  const name = `[${NAME_START}][${NAME_PART}]{0,255}`;
+  // A name that ends right before the token and that the lexer starts at a token start, after any
+  // symbols (`!`, `?`, `.`) that Lean reads as tokens of their own.
+  const before = startsLikeName ? `(?<!${TOKEN_START}[!?.]*${name}(?:\\.${name}){0,15}\\.?)` : "";
+  const after = startsLikeName && endsLikeName ? `(?![${NAME_PART}])` : "";
+  return { bounded: new RegExp(`${before}${escaped}${after}`, "u"), loose: new RegExp(`${escaped}${after}`, "gu") };
 }
+
+/**
+ * The two readings of a token's pattern: `bounded` takes a name to begin where the text seems to start
+ * a token, and `loose` takes none to, for the text after a `'` that may start a character literal.
+ */
+interface TokenPatterns {
+  bounded: RegExp;
+  loose: RegExp;
+}
+
+/**
+ * Whether a text holds a token. Up to the first `'` that may start a character literal (`literal`, an
+ * offset or -1) a run of letters is a name where the lexer starts one (`TOKEN_START`). From there on the
+ * lexer may have lost its place: the literal takes the next two characters, and a boundary among them is
+ * no boundary (`' xsorry`: Lean reads `' x`, then `sorry`), so a token is a token wherever it stands.
+ */
+function holdsToken(text: string, patterns: TokenPatterns, literal: number): boolean {
+  if (literal < 0) return patterns.bounded.test(text);
+  const first = patterns.bounded.exec(text);
+  if (first !== null && first.index < literal) return true;
+  patterns.loose.lastIndex = literal;
+  return patterns.loose.test(text);
+}
+
 const FORBIDDEN_PATTERNS = FORBIDDEN_TOKENS.map((t) => [t, tokenPattern(t)] as const);
 const HOLE_PATTERNS = HOLE_TOKENS.map(tokenPattern);
 
@@ -72,7 +126,8 @@ const HOLE_PATTERNS = HOLE_TOKENS.map(tokenPattern);
 export function hasHoles(submission: Submission): boolean {
   return [submission.aux, submission.proof].some((region) => {
     const text = scanRegion(region).masked.replace(/_root_\./g, " ");
-    return HOLE_PATTERNS.some((pattern) => pattern.test(text));
+    const literal = firstCharacterLiteral(text);
+    return HOLE_PATTERNS.some((patterns) => holdsToken(text, patterns, literal));
   });
 }
 
@@ -85,48 +140,87 @@ export interface RegionScan {
 /**
  * Blanks the comments of an editable region. String literals and «» names are refused there: a
  * light scanner cannot follow interpolated strings or quoted names exactly, and a scanner that
- * disagrees with Lean about where a comment starts would let tokens hide from the checks.
+ * disagrees with Lean about where a comment starts would let tokens hide from the checks. For that
+ * reason the region is read strictly (`blankComments`, `strict`), and a comment opens only where
+ * Lean is sure to read one: in `<--`, `\/-` and `//-` Lean reads a token and then a minus or a
+ * slash, in `/-/-/` a comment that is complete, after `' ` a character literal that takes the `--`,
+ * and `/--` and `/-!` are doc comment tokens read on other terms. What follows is code, which is
+ * screened as such. From the first `--`, `/-` or `'` that is not sure on, nothing is blanked.
  */
 export function scanRegion(text: string): RegionScan {
-  const out = text.split("");
-  const problems = new Set<string>();
-  const blank = (at: number) => {
-    if (out[at] !== "\n") out[at] = " ";
-  };
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    const next = text[i + 1];
-    if (depth > 0) {
-      if (c === "/" && next === "-") {
-        depth++;
-        blank(i);
-        blank(++i);
-      } else if (c === "-" && next === "/") {
-        depth--;
-        blank(i);
-        blank(++i);
-      } else {
-        blank(i);
-      }
-      continue;
-    }
-    if (c === "/" && next === "-") {
-      depth = 1;
-      blank(i);
-      blank(++i);
-      continue;
-    }
-    if (c === "-" && next === "-") {
-      while (i < text.length && text[i] !== "\n") blank(i++);
-      i--;
-      continue;
-    }
-    if (c === '"') problems.add("string literals are not allowed in the editable regions");
-    if (c === "«" || c === "»") problems.add("«» names are not allowed in the editable regions");
+  const { masked, unclosed } = blankComments(text, { strict: true });
+  const found: Array<[number, string]> = [];
+  const quote = masked.indexOf('"');
+  if (quote >= 0) found.push([quote, "string literals are not allowed in the editable regions"]);
+  const name = masked.search(/[«»]/);
+  if (name >= 0) found.push([name, "«» names are not allowed in the editable regions"]);
+  const problems = found.sort((x, y) => x[0] - y[0]).map(([, problem]) => problem);
+  if (unclosed || leavesCommentOpen(masked)) problems.push("a block comment is not closed");
+  return { masked, problems };
+}
+
+/**
+ * Whether Lean, reading a comment from each `/-` that the scan left in the text, would find one that the
+ * text does not close. Such a comment would reach into what follows the region: the next region, the
+ * check commands. It is read as Lean's `whitespace` reads it (the character after `/-` belongs to the
+ * opener; a doc comment, `/--` or `/-!`, has white space and then a raw body), from the first opener on
+ * and again from the first one after the end of each comment.
+ */
+function leavesCommentOpen(masked: string): boolean {
+  for (let at = masked.indexOf("/-"); at >= 0; at = masked.indexOf("/-", at)) {
+    const end = commentEnd(masked, at);
+    if (end < 0) return true;
+    at = end;
   }
-  if (depth > 0) problems.add("a block comment is not closed");
-  return { masked: out.join(""), problems: [...problems] };
+  return false;
+}
+
+/** The offset after the comment that opens at `at` (a `/-`), or -1 when the text ends first. */
+function commentEnd(text: string, at: number): number {
+  const third = text[at + 2];
+  if (third !== "-" && third !== "!") return finishComment(text, at + 2 + (third === undefined ? 0 : String.fromCodePoint(text.codePointAt(at + 2) as number).length));
+  // A doc comment: white space follows its token, line comments and block comments in it, and then the raw body.
+  let from = at + 3;
+  for (;;) {
+    const c = text[from];
+    if (c === " " || c === "\n") from++;
+    else if (c === "-" && text[from + 1] === "-") while (from < text.length && text[from] !== "\n") from++;
+    else if (c === "/" && text[from + 1] === "-" && text[from + 2] !== "-" && text[from + 2] !== "!") {
+      from = commentEnd(text, from);
+      if (from < 0) return -1;
+    } else return finishComment(text, from);
+  }
+}
+
+/** The offset after the `-/` that closes a comment of one level that is open at `from`, or -1. Nested `/-` open levels. */
+function finishComment(text: string, from: number): number {
+  let level = 1;
+  for (let i = from; i < text.length; ) {
+    if (text[i] === "-" && text[i + 1] === "/") {
+      i += 2;
+      if (--level === 0) return i;
+    } else if (text[i] === "/" && text[i + 1] === "-") {
+      i += 2;
+      level++;
+    } else i++;
+  }
+  return -1;
+}
+
+/**
+ * The forbidden tokens that a piece of Lean text holds, in the order of the list, `sorry` and
+ * `admit` included. The text has its comments blanked already, and for a text that a model wrote
+ * that is the strict reading: `scanRegion(text).masked`, or `maskCommentsAndStrings` with the option
+ * `strict`. `structuralCheck` applies this to the editable regions; code that writes text from a model
+ * into a Lean file of its own applies it to that text, and refuses a `--` or `/-` that the mask leaves
+ * in it. After a `'` that may start a character literal no run of letters is taken for a name
+ * (`holdsToken`).
+ */
+export function forbiddenTokensIn(masked: string): string[] {
+  // `_root_.Lean.Meta` must not slip past the token boundary.
+  const text = masked.replace(/_root_\./g, " ");
+  const literal = firstCharacterLiteral(text);
+  return FORBIDDEN_PATTERNS.filter(([, patterns]) => holdsToken(text, patterns, literal)).map(([token]) => token);
 }
 
 /** Checks the two regions without Lean. Returns the reasons the submission is refused. */
@@ -135,11 +229,9 @@ export function structuralCheck(submission: Submission, policy: ValidationPolicy
   const scans = { aux: scanRegion(submission.aux), proof: scanRegion(submission.proof) };
   for (const [region, scan] of Object.entries(scans)) {
     for (const problem of scan.problems) reasons.push(`${region}: ${problem}`);
-    // `_root_.Lean.Meta` must not slip past the token boundary.
-    const text = scan.masked.replace(/_root_\./g, " ");
-    for (const [token, pattern] of FORBIDDEN_PATTERNS) {
+    for (const token of forbiddenTokensIn(scan.masked)) {
       if (policy.holes && HOLE_TOKENS.includes(token)) continue;
-      if (pattern.test(text)) reasons.push(`${region}: '${token}' is not allowed`);
+      reasons.push(`${region}: '${token}' is not allowed`);
     }
   }
   if (scans.proof.masked.trim() === "") reasons.push("proof: the proof is empty");
@@ -382,7 +474,7 @@ export class ProofValidator {
     sketch: Sketch,
     originalSource: string,
     report: ValidationReport,
-    options: { signal?: AbortSignal } = {},
+    options: LeanCertifyOptions = {},
   ): Promise<CertificationResult | undefined> {
     if (this.certifier === undefined) return undefined;
     if (report.verdict !== "valid") throw new Error("only a valid candidate can be certified");

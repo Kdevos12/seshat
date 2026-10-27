@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TextIdentity } from "@seshat/memory";
-import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines } from "../src/index.ts";
+import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines, SUSPENDED_LINES } from "../src/index.ts";
 
 function line(id: Line["id"], extra: Partial<Line> = {}): Line {
   return { id, title: `the line ${id}`, requires: [], hooks: {}, ...extra };
@@ -20,7 +20,13 @@ describe("line ids and cumulative configs", () => {
     assert.deepEqual(ablationLines("M1"), ["M1"]);
     assert.deepEqual(ablationLines("M2"), ["M1", "M10", "M2"]);
     assert.deepEqual(ablationLines("fleet"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet"]);
-    assert.deepEqual(ablationLines("M9"), [...LINE_ORDER]);
+    assert.deepEqual(ablationLines("M8"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M8"], "a suspended line is left out");
+    assert.deepEqual(ablationLines("M7"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7"], "but kept in its own config, which a run refuses");
+    assert.deepEqual(ablationLines("M9"), LINE_ORDER.filter((id) => id !== "M7"));
+  });
+
+  it("knows the suspended lines", () => {
+    assert.deepEqual([...SUSPENDED_LINES], ["M7", "M9"]);
   });
 });
 
@@ -59,6 +65,11 @@ describe("resolveLines", () => {
       "line M1 is listed twice",
     ]);
     assert.deepEqual(resolveLines(["M3"], registry).problems, ["line M3 (growing lemma library) is planned, not implemented yet"]);
+    assert.deepEqual(
+      resolveLines(["M7"], { M7: line("M7") }).problems,
+      ["line M7 (abductive engine, with direct reranking by a model) is suspended: it is not built, and no run enables it (documentation/lines.md)"],
+      "even when a line is registered under its id",
+    );
     assert.deepEqual(resolveLines(["M2"], registry).problems, ["line M2 requires line M1, which is not enabled"]);
     assert.deepEqual(resolveLines(["M4", "M6"], registry).problems, ["lines M4 and M6 all give the context packet; enable one of them"]);
     assert.deepEqual(resolveLines(["M10"], { M10: line("M1") }).problems, ["the line registered as M10 says it is M1"]);

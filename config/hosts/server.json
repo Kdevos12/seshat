@@ -1,6 +1,6 @@
 {
   "host": "server",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. SageMath runs in its container only. Lean's language server (lean-lsp-mcp, pinned) runs on the project in LEAN_PROJECT_DIR; its searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The certifier runs lake in the Lean project LEAN_PROJECT_DIR and is unavailable until this profile gives it a sandbox command: this host never runs it unsandboxed (documentation/certifier.md#where-untrusted-code-runs). SageMath runs in its container only. Lean's language server (lean-lsp-mcp, pinned) runs on the project in LEAN_PROJECT_DIR; its searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL. They are optional: `harness health` shows a site that does not answer as a warning and does not fail on it.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -45,8 +45,46 @@
         }
       }
     },
+    "lean.certify": {
+      "use": ["lake"],
+      "settings": {
+        "lake": {
+          "projectDir": "${env:LEAN_PROJECT_DIR:-}",
+          "env": {
+            "ELAN_HOME": "${env:ELAN_HOME:-}"
+          }
+        }
+      }
+    },
     "compute.sage": {
       "use": ["docker"]
+    },
+    "oeis.search": {
+      "use": ["site"],
+      "optional": true,
+      "settings": {
+        "site": {
+          "baseUrl": "${env:OEIS_URL:-https://oeis.org}"
+        }
+      }
+    },
+    "lmfdb.query": {
+      "use": ["site"],
+      "optional": true,
+      "settings": {
+        "site": {
+          "baseUrl": "${env:LMFDB_URL:-https://www.lmfdb.org}"
+        }
+      }
+    },
+    "findstat.identify": {
+      "use": ["site"],
+      "optional": true,
+      "settings": {
+        "site": {
+          "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"
+        }
+      }
     }
   }
 }
