@@ -254,7 +254,7 @@ site-backed capabilities:
 | `hammer_premise` | the premise server | `http://leanpremise.net` (plain HTTP) | 6 per 30 s | the goal |
 
 When the network call to a site fails (a name that does not resolve, a refused or a cut
-connection, an HTTP status, a time limit of the socket) or the server's own limit refuses the call,
+connection, an answer that stopped short, an HTTP status, a time limit of the socket) or the server's own limit refuses the call,
 the answer says `unavailable` with the reason, and the site is not asked again for
 `siteCooldownSec`. Nothing else is taken for an outage. A refused query (a Loogle pattern Lean
 cannot read) is an error of the call, since it is the prover's to fix; so is any other failure of
@@ -339,7 +339,7 @@ Except for `real-server.test.ts`, which is opt-in, none needs Python, Lean or a 
   own code does the rest. It checks the handshake (the release and the eight tools, none of the 14
   others); the eight operations in the shapes the harness reads, with the document that the real
   `build_attempt_text` made of a `multi_attempt` call equal to the one the screen examined; the
-  language server's timeout as `still_elaborating`, in line mode as at a position; the seven kinds of
+  language server's timeout as `still_elaborating`, in line mode as at a position; the eight kinds of
   network failure as urllib raises them, each an outage with the reason in the server's words; an
   answer that is not JSON, which fails the call; and the server's own limits (Loogle 3 requests and
   Lean Finder 10 in 30 s). What it does not check is Lean: the goals, the messages and the

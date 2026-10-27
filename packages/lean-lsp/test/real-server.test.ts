@@ -183,6 +183,7 @@ describe("lean.lsp against the real lean-lsp-mcp", { skip }, () => {
       ["timeout", /\(timed out\)/],
       ["reset", /\(\[Errno 104\] Connection reset by peer\)/],
       ["closed", /\(Remote end closed connection without response\)/],
+      ["incomplete", /\(IncompleteRead\(3 bytes read, 10 more expected\)\)/],
     ];
     try {
       for (const [mode, reason] of outages) {
