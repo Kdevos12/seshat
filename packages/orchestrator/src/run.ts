@@ -76,6 +76,11 @@ export interface RunConfig {
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
   lineOptions?: Record<string, JsonObject>;
+  /**
+   * Seeds the draws of unverified memory items (documentation/memory.md, "Randomized inclusion"). A
+   * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
+   */
+  seed?: string | number;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -379,6 +384,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
       // Only with lines, so that an M0 run records what it always did.
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
+      ...(config.seed !== undefined ? { seed: config.seed } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -438,6 +444,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       resolveModel: (name) => resolveModel(o.models, name),
       thinkingLevel: config.thinkingLevel,
       log,
+      seed: config.seed ?? runId,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);

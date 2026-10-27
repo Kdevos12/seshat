@@ -22,9 +22,12 @@ import {
   type NodeRow,
   type Provenance,
   type ProvenanceContext,
+  type RandomSource,
   stampProvenance,
   type ValidationRow,
 } from "@seshat/core";
+import { type Draw, type DrawItem, type DrawOptions, drawItems } from "./draw.ts";
+import { armOf, effectOf, type ItemEffect } from "./effect.ts";
 import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epochs.ts";
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
@@ -429,6 +432,77 @@ export class MemoryStore {
    */
   weightOf(epoch: number): number {
     return probationWeight(this.epoch(), epoch, this.probation);
+  }
+
+  /**
+   * Randomized inclusion (plan change PE2; documentation/memory.md, "Randomized inclusion"). Takes the
+   * unverified items a line selected for a session and draws each with probability `pNew` (0.5) while it
+   * has been included fewer than `nNew` (20) times in the current epoch, then `p` (0.9), from `random`,
+   * the run's seeded source. Returns what to show and what to withhold; the orchestrator records the two
+   * lists on `attempt.started` (`SessionContext.draw` does both). Writes nothing itself.
+   *
+   * A claim, whether the goal or a verified fact, and an item flagged `verified` are never drawn: they
+   * come back in `fixed`, to be shown, and are in neither list.
+   */
+  draw(items: readonly (string | DrawItem)[], random: RandomSource, options: Partial<DrawOptions> = {}): Draw {
+    const projection = this.#journal.projection;
+    const epoch = projection.currentEpoch();
+    return drawItems(items, random, { isFact: (id) => projection.claim(id) !== undefined, uses: (id) => projection.itemUses(id, epoch) }, options);
+  }
+
+  /** How many sessions were shown the item (it was included) since the current epoch began. */
+  itemUses(itemId: string): number {
+    const projection = this.#journal.projection;
+    return projection.itemUses(itemId, projection.currentEpoch());
+  }
+
+  /**
+   * An item's effect on the success of an attempt, as two Beta posteriors (plan change PE2 item 2):
+   * the attempts whose draw included it against those whose draw withheld it, among the attempts on the
+   * claims of `claimIds` (the claim group: for one claim, `equivalents(claimId)`; absent: any claim) with
+   * the strategy label `strategy` (the label classified when the attempt finished, else the one declared;
+   * absent: any). A proof the fast check accepted is a success and a failed check a failure; a session
+   * that was cut says nothing. Each outcome counts with the probation weight of its epoch
+   * (`weightOf`), so an item of an older epoch is in probation and earns its standing again only through
+   * new outcomes. `P(effect < 0)` is `pNegative`; `shouldDeactivate` applies M5's rule to it.
+   */
+  itemEffect(itemId: string, scope: { claimIds?: readonly string[]; strategy?: string } = {}): ItemEffect {
+    return this.#effects(itemId, scope).get(scope.strategy) ?? effectOf(itemId, scope, armOf(0, 0, 0), armOf(0, 0, 0));
+  }
+
+  /**
+   * The same effect for each strategy label the item's attempts carry in the group, in the order of the
+   * labels; attempts with no label come last under no `strategy`. Only labels with an attempt appear.
+   */
+  itemEffects(itemId: string, scope: { claimIds?: readonly string[] } = {}): ItemEffect[] {
+    const by = this.#effects(itemId, scope, true);
+    return [...by.entries()].sort(([a], [b]) => (a === undefined ? 1 : b === undefined ? -1 : a < b ? -1 : a > b ? 1 : 0)).map(([, effect]) => effect);
+  }
+
+  #effects(itemId: string, scope: { claimIds?: readonly string[]; strategy?: string }, split = false): Map<string | undefined, ItemEffect> {
+    const group = scope.claimIds === undefined ? undefined : new Set(scope.claimIds);
+    type Tally = { with: [number, number, number]; without: [number, number, number] };
+    const tallies = new Map<string | undefined, Tally>();
+    for (const { attempt, included } of this.#journal.projection.itemAttempts(itemId)) {
+      if (group !== undefined && !group.has(attempt.claim_id)) continue;
+      const label = attempt.strategy ?? attempt.declared_strategy ?? undefined;
+      if (scope.strategy !== undefined && label !== scope.strategy) continue;
+      if (attempt.outcome !== "valid" && attempt.outcome !== "invalid") continue;
+      const key = split ? label : scope.strategy;
+      const tally = tallies.get(key) ?? { with: [0, 0, 0], without: [0, 0, 0] };
+      tallies.set(key, tally);
+      const arm = included ? tally.with : tally.without;
+      const weight = this.weightOf(attempt.epoch);
+      if (attempt.outcome === "valid") arm[0] += weight;
+      else arm[1] += weight;
+      arm[2] += 1;
+    }
+    return new Map(
+      [...tallies].map(([label, t]) => [
+        label,
+        effectOf(itemId, { ...(scope.claimIds !== undefined ? { claimIds: scope.claimIds } : {}), ...(label !== undefined ? { strategy: label } : {}) }, armOf(...t.with), armOf(...t.without)),
+      ]),
+    );
   }
 
   /** The lessons recorded about a claim (the models' own notes, `lesson.recorded`), in order. */

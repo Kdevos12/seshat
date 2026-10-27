@@ -378,6 +378,7 @@ Options of `harness run`:
 | `--lines ID,...` | none | The lines to enable, such as `M1,M6,fleet`; repeatable. None: M0 ([lines.md](lines.md)). M1, M2, M6 and `fleet` are the lines built ([m1-identity-memory.md](m1-identity-memory.md), [graph.md](graph.md), [guards.md](guards.md), [fleet.md](fleet.md)); a run that enables a line not built yet refuses to start. |
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
+| `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
 `harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]` continues a run whose

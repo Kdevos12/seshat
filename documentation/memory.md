@@ -260,8 +260,66 @@ toward the prior: Beta(a, b) becomes Beta(1 + (a - 1) k, 1 + (b - 1) k), with k 
 each outcome: `store.weightOf(epoch)` is 1 for an outcome of the current epoch and k for each epoch
 opened since, and `shrinkBeta(beta, k)` is the same arithmetic on a posterior that already exists.
 An item regains weight only through outcomes: the weight of an old outcome does not come back with time
-or with the item being shown, and a new outcome counts in full. The randomized inclusion of unverified items treats an
+or with the item being shown, and a new outcome counts in full. The [randomized inclusion](#randomized-inclusion) of unverified items treats an
 item of an older epoch as new again, so it is shown at random until it has earned its place again.
+
+## Randomized inclusion
+
+A lesson present in a successful attempt is credited with the success even when it did not cause it,
+so a lesson that is shown often gains points by being there and never leaves (plan change PE2). The
+memory store draws the unverified items a session is shown at random, and judges each by its effect.
+Tasks 9, 11 and 18 call it for lessons, schema hints, inspiration examples and library hint sections.
+
+**The draw.** `store.draw(items, random, options?)` takes the ids of the unverified items a line
+selected for a session and includes each with probability `pNew` (0.5) while it has been included
+fewer than `nNew` (20) times in the current epoch, then `p` (0.9). It returns `{included, withheld,
+fixed, chances, uses}` and writes nothing. The draw is made one item at a time in the order of the ids,
+from a seeded random source, so the same seed and history give the same draw whatever order a line lists
+the items in. A *use* is a session that included the item (`attempt.started`'s `included`); a withheld
+item was not used. A new epoch counts uses from zero, so an item in probation is drawn at `pNew` again
+([above](#probation)).
+
+What is never drawn: a claim, whether the goal or a verified fact, and any item the caller flags
+`{id, verified: true}`. They come back in `fixed`, to be shown, and appear in neither list. A line passes
+only what it chose to show; the facts a proof needs and the goal are not subject to withholding.
+
+**In a run.** A line draws in `beforeSession` with `session.draw(items, options?)`: the orchestrator
+draws from the run's seeded source (`--draw-seed`, default the run's id; the stream is seeded by the
+seed, the problem, the prover, the session and the line), and records both lists on `attempt.started`
+(`included`, `withheld`). The briefing and the other hooks of the session read `session.drawn`, so what
+the line shows is what the journal says it showed; they cannot draw, since the attempt has started. An
+item drawn twice in one session keeps its first outcome. A session with no draw records neither list.
+
+```ts
+beforeSession: async (session) => {
+  const { included } = session.draw(lessons.map((l) => l.id)); // recorded on attempt.started
+  ...
+},
+briefing: async (session) => ({ title: "Lessons", text: show(session.drawn.included) }),
+```
+
+**The effect.** An item's effect is the difference between the success rates of the attempts that were
+shown it and of those that were denied it, in one group of claims and one strategy label, as two Beta
+posteriors. `store.itemEffect(itemId, {claimIds?, strategy?})` gives `{with, without, difference,
+pNegative}`; each side is `{attempts, successes, failures, posterior}` with the posterior Beta(1 +
+successes, 1 + failures). Only the attempts whose draw named the item count, the included ones on one
+side and the withheld ones on the other, which is what makes the comparison causal: an attempt that
+was never offered the item was selected by something else. A proof the fast check accepted is a
+success, a failed check a failure, and a session that was cut says nothing. The claim group is the set of
+claims the caller names (for one claim, `store.equivalents(claimId)`, the group "already tried" reads);
+the strategy label is the one classified when the attempt finished, else the one declared.
+`store.itemEffects(itemId, {claimIds?})` gives the effect for each label.
+
+Each outcome counts with the probation weight of its epoch ([above](#probation)), so an item of an
+older epoch regains weight only through new outcomes. `pNegative` is P(effect < 0), the chance that the
+rate with the item is below the rate without it: the integral of one posterior against the other, exact
+up to the integration and deterministic. `shouldDeactivate(effect, {minObservations, threshold?})` is
+M5's rule: deactivate when P(effect < 0) is above the threshold (0.9) after at least `minObservations`
+attempts on each side. `pNew`, `nNew`, `p`, the threshold and the minimum are options of the caller.
+
+The presence counter that this replaces stays where it is, for comparison. The causal rule is measured
+against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
+real model.
 
 ## Reference files
 

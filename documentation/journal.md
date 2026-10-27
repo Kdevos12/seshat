@@ -102,7 +102,7 @@ candidate.
 The learned, unverified records carry a `provenance` stamp (`modelId`, `promptVersion`, `mathlibRev`,
 `harnessVersion`, `budgetClass`, `createdAt`): an attempt, a lesson and a node a mechanism learned
 from outcomes. `included` and `withheld` on an attempt are the unverified memory items a line drew into
-the session and the ones the draw left out (`memory.md`, "Randomized inclusion").
+the session and the ones the draw left out ([memory.md](memory.md#randomized-inclusion)).
 `memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
 ([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
 
