@@ -9,6 +9,7 @@ import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample
 import { type Json, newId, readEvents } from "@seshat/core";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
+import { renderHealth } from "./health.ts";
 import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { DEFAULT_CONFIG, runBench, type RunConfig, RunSetupError } from "./run.ts";
@@ -137,12 +138,9 @@ function capabilities(registry: Registry): number {
 }
 
 async function health(registry: Registry, id: string | undefined): Promise<number> {
-  const entries = await registry.health(id);
-  for (const e of entries) {
-    console.log(`${e.ok ? "ok  " : "FAIL"} ${e.capability}/${e.implementation} ${e.version} (${e.durationMs} ms): ${e.detail}`);
-  }
-  if (entries.length === 0) console.log(`host ${registry.host.host} offers no capability`);
-  return entries.every((e) => e.ok) ? 0 : 1;
+  const { lines, code } = renderHealth(await registry.health(id), registry.host.host);
+  for (const line of lines) console.log(line);
+  return code;
 }
 
 async function contract(registry: Registry, id: string): Promise<number> {

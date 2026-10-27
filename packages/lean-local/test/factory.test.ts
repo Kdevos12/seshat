@@ -147,6 +147,11 @@ describe("lean.certify fails closed", () => {
 
   it("is unavailable on both profiles that ship, which do not opt in, whether or not the project is set", async () => {
     const anyFactory: ImplementationFactory = () => ({ invoke: async () => ({}) });
+    // Every factory a manifest names, so that a capability added to the profiles later does not break this test.
+    const factories: Record<string, ImplementationFactory> = {};
+    for (const { manifest } of catalog.capabilities.values()) {
+      for (const spec of manifest.implementations) if (spec.kind === "inproc") factories[spec.factory] = anyFactory;
+    }
     const project = mkdtempSync(join(tmpdir(), "seshat-shipped-"));
     for (const host of ["local", "server"]) {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
@@ -155,7 +160,7 @@ describe("lean.certify fails closed", () => {
         new Registry({
           catalog,
           host: profile,
-          factories: { kimina: anyFactory, "kimina-meta": anyFactory, pantograph: anyFactory, "lake-certify": lakeCertifyFactory() },
+          factories: { ...factories, "lake-certify": lakeCertifyFactory() },
           env,
         });
       const [withProject] = await registryFor({ LEAN_PROJECT_DIR: project }).health("lean.certify");

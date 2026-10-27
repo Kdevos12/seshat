@@ -15,6 +15,12 @@ export interface CapabilityBinding {
   settings?: Record<string, Record<string, Json>>;
   /** Replaces the manifest's time limit on this host. */
   timeoutMs?: number;
+  /**
+   * The host offers the capability but the harness can do without it, such as a public site that a
+   * host without outbound access cannot reach. `harness health` shows an implementation of it that
+   * does not answer as a warning and does not fail on it. Default: false.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -43,6 +49,7 @@ const PROFILE_SCHEMA: JsonSchema = {
           use: { type: "array", minItems: 1, items: { type: "string" } },
           settings: { type: "object", additionalProperties: { type: "object" } },
           timeoutMs: { type: "integer", minimum: 1 },
+          optional: { type: "boolean" },
         },
         additionalProperties: false,
       },

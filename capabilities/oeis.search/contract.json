@@ -1,0 +1,128 @@
+{
+  "capability": "oeis.search",
+  "cases": [
+    {
+      "name": "a sequence by its terms",
+      "purpose": "A search by consecutive terms finds the sequence that has them, and says how many the site knows.",
+      "input": {
+        "terms": [
+          1,
+          1,
+          2,
+          3,
+          5,
+          8,
+          13,
+          21
+        ]
+      },
+      "expect": [
+        {
+          "path": "count",
+          "atLeast": 1
+        },
+        {
+          "path": "results",
+          "some": [
+            {
+              "path": "id",
+              "equals": "A000045"
+            },
+            {
+              "path": "name",
+              "matches": "^Fibonacci numbers"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a sequence by its number",
+      "purpose": "A search by number gives that sequence, with its offset and its first terms as decimal text, which the line's identification reads.",
+      "input": {
+        "id": "A000045"
+      },
+      "expect": [
+        {
+          "path": "count",
+          "equals": 1
+        },
+        {
+          "path": "results.0.id",
+          "equals": "A000045"
+        },
+        {
+          "path": "results.0.offset",
+          "equals": 0
+        },
+        {
+          "path": "results.0.terms.0",
+          "equals": "0"
+        },
+        {
+          "path": "results.0.terms.1",
+          "equals": "1"
+        },
+        {
+          "path": "results.0.terms.2",
+          "equals": "1"
+        },
+        {
+          "path": "results.0.terms.3",
+          "equals": "2"
+        }
+      ]
+    },
+    {
+      "name": "terms that no sequence has",
+      "purpose": "A search without an answer is a result with count 0 and no results, not an error.",
+      "input": {
+        "terms": [
+          7,
+          7,
+          7,
+          8,
+          13,
+          100,
+          1
+        ]
+      },
+      "expect": [
+        {
+          "path": "count",
+          "equals": 0
+        },
+        {
+          "path": "results",
+          "length": 0
+        }
+      ]
+    },
+    {
+      "name": "neither terms nor a number",
+      "purpose": "A call that says nothing to look up is refused by the implementation, before any request.",
+      "input": {},
+      "fails": {
+        "code": "failed",
+        "matches": "terms of a sequence or its number"
+      }
+    },
+    {
+      "name": "both terms and a number",
+      "purpose": "A call that gives both is ambiguous and refused, before any request.",
+      "input": {
+        "terms": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "id": "A000027"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "one of the two"
+      }
+    }
+  ]
+}

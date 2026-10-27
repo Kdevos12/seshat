@@ -9,7 +9,7 @@ container or with pip, and the harness talks to it over stdio.
 
 What Wolfram Alpha adds to the computing, questions in plain language and curated data, is not
 part of it. The model writes Sage code itself, and data sources such as the OEIS or the LMFDB are
-to be capabilities of their own.
+capabilities of their own (`oeis.search`, `lmfdb.query`, [models.md](models.md#the-services-as-capabilities)).
 
 ## What a prover gets
 
@@ -159,5 +159,6 @@ case fails, run the contract again with `--out FILE` to keep every output.
   not given to the provers, although Sage's timeout message names them.
 - Whether the tool helps is not measured. That is an ablation: runs with and without
   `--tool compute.sage`, at equal budget.
-- The data sources (OEIS, LMFDB) and the other classical tools of the plan are capabilities still
-  to write.
+- The data sources are capabilities of their own now (`oeis.search`, `lmfdb.query`,
+  `findstat.identify`, [models.md](models.md#the-services-as-capabilities)); the other classical tools
+  of the plan are still to write.

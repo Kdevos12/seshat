@@ -123,11 +123,12 @@ whether a submission's regions hold `sorry` or `admit`.
 
 ## Structural checks
 
-Both regions are scanned with comments blanked. Refused anywhere in the regions:
+Both regions are scanned with comments blanked, where Lean is sure to read one (the strict reading,
+below). Refused anywhere in the regions:
 
 - string literals and `«»` names, because a light scanner cannot follow interpolated strings
   exactly, and a scanner that disagrees with Lean about where a comment starts would let tokens
-  hide from the checks; an unclosed block comment;
+  hide from the checks; a block comment that the text does not close;
 - ways to skip or weaken a proof: `sorry` and `admit` (unless the policy allows holes), `axiom`,
   `native_decide`, `ofReduceBool`, `ofReduceNat`, `trustCompiler`, `implemented_by`, `extern`,
   `unsafe`, `debug`, `skipKernelTC`;
@@ -142,7 +143,117 @@ Both regions are scanned with comments blanked. Refused anywhere in the regions:
   `unsafeIO`, `unsafeBaseIO`, `unsafeEIO`, `Environment`, `setEnv`, `modifyEnv`, `addDecl`,
   `addDeclCore`, `addDeclWithoutChecking`, `addAndCompile`.
 
-Tokens match whole identifiers only: `Nat.sorry_lemma` would not match `sorry`.
+A comment is blanked only where Lean is sure to read one, and a text is read in one of two ways. The
+strict reading is for text that a model wrote: `scanRegion` (so `structuralCheck`, `hasHoles` and the
+scans of the auxiliary region's commands) and the statements of M11 (`maskCommentsAndStrings` with
+`{ strict: true }`, [models.md](models.md#statements)). The default reading is for files of a repository:
+the benchmark reader, the sketch, the graph and memory signatures. It has the first rule below only,
+since the others would change what is read from every file (a `/-!` header is not a comment to the
+strict reading) and the commands of one file of the corpus. The strict reading follows Lean's lexer
+on these points and trusts nothing else:
+
+- Line and block comments. Lean skips white space and comments after each token, and a token can take
+  the first character of what looks like an opener: `<-` in `<--`, `\/` in `\/-`, `//` in `//-`, and
+  more of them in what is imported. In `exact foo <-- #eval 1` Lean reads `<-`, then `-`, then the
+  command `#eval`. So `--` and `/-` open a comment at the start of the text, after a space or a line
+  break (a tab is an error in Lean), and after another comment. Glued to any other character they are
+  code: what follows is screened as code, and the refusals of strings and `«»` names see it too. Block
+  comments nest as Lean's `finishCommentBlock` nests them.
+- The character after `/-`. Lean's `whitespace` takes it as part of the opener unless it is `-` or `!`,
+  so `/-/` opens a comment and `/-/-/` is a whole one. A scanner that nests would not close it and would
+  hide `#eval` in `/-/-/ -/ #eval 1 -- -/`. A `/-` opens a comment only when a space, a line break or
+  the end of the text follows it.
+- Doc comments. `/--` and `/-!` are tokens and not white space: `docComment` reads the white space after
+  the token first, line comments included, and then a raw body that ends at the `-/` that closes it. In
+  `/-- -- /-` followed by a line that holds `-/`, the comment ends at that `-/`, and a scanner that
+  nests would take the `/-` of the line comment for an opener. They open no comment at all here.
+- Character literals. A `'` that starts a token starts a character literal, which takes the next two
+  characters whatever they are (`tokenFnAux`, `charLitFnAux`): in `' -- #eval 1` the literal is `' -`,
+  and the second `-` is no comment. A `'` that ends a name that the lexer starts at a token start
+  (`x'`, `h1'`, `Nat.succ'`, `(h'`) is part of it. After anything else (`[h'`, `⟨x'`, `1'`, `s ⁻¹'`, a
+  symbol token that ends like a name: `⟫_'`) it may start a literal. Since the literal takes a space,
+  a bracket or a letter from the text after it, the places where that text seems to start a token (below)
+  may be inside it: in `' xsorry` Lean reads `' x` and then `sorry`. So after such a quote a keyword is
+  a token wherever it stands.
+- Strings and `«»` names are refused in the regions. M11's mask blanks a string while the reading is
+  trusted.
+- A `/-` that is left in the text and that Lean would read as a comment that the text does not close
+  (the character after the opener and the white space of a doc comment read as Lean reads them) is
+  refused with the unclosed comments: such a comment would reach into the next region and the checks.
+  The alignment is the screen's own, so in a narrow class (a character literal or a glued token that
+  shifts Lean's reading of the opener, as in `' /-/-/`) Lean's unterminated comment is not seen. It
+  fails closed afterwards: the comment swallows the checks that follow, the axioms line is missing and
+  the file is not valid.
+
+The first opener or quote that is not sure ends the trust in the reading of the rest. Lean may read an
+opener as a comment (`x--note` is one), and then it reads the text after it differently from a scanner
+that took it for code: a line comment that the scanner opens later may end after the comment Lean
+reads, and hide code. In `x/- a --/run_cmd` Lean reads `x`, a block comment that ends in the `-/` of
+`--/`, and the token `run_cmd`; a scanner that left the `/-` glued to `x` as code and went on to blank
+the `--` as a line comment would miss `run_cmd`. So from the first opener or quote that is not sure,
+nothing is blanked. The price is that a comment glued to a symbol or a name, a doc comment, and every
+comment after a quote that may start a literal (`simp [h']`, `⟨x', h⟩`, `s ⁻¹' t`) are code to the
+screen: they are refused when they hold a keyword, a `"` or a `/-` that nothing closes (`x--sorry`,
+`|-- run_cmd 1`, though Lean reads `|-` as two tokens; `/-- the macro -/`; `-- r = +/- j` after a
+`[h']`), and so is every comment after them. A space before the
+`--`, a space before a name that ends in a quote (`simp [ h' ]`), or no keyword in the comment avoids
+the refusal. Over 169,333 theorem and lemma declarations of Mathlib the strict reading refuses 18
+more than the reading of the previous version, and none over the 6,470 of formal-conjectures.
+
+The screen was checked against a recorded run of a real Lean 4.27.0 (core only, no Mathlib): 560,000
+random regions, each with the payload `#eval 7777` somewhere in it, of which 59,624 ran the payload. The
+strict reading refuses all of them; the reading before it let 148 through. The tests do not run a
+Lean. They replay 666 regions that earlier versions accepted and 3,000 others from the run
+(`packages/core/test/fixtures/lean-oracle-regions.json`), and `structuralCheck` must refuse every one.
+Constructs that the random regions did not reach, and the tokens that Mathlib adds, are read from the
+sources of Lean 4.27 and of Mathlib, not from a run.
+
+Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
+part of a longer name. After a syntax error Lean tries a command again from the position of the error.
+When the failed command made no progress it first skips one token, read with an empty token table
+(so only a name, a number, a string or a character literal is one), and on a lexer error one character
+(`parseCommand`, `consumeInput`: `pos + ' '`). So a command word that the lexer reads as a token runs,
+wherever it stands and whatever precedes it, and one inside a longer name does not.
+
+- A token that starts like a name (`sorry`, `run_cmd`, `IO`) matches unless it continues a name that the
+  lexer starts at a token start (below). `xsorry`, `x1sorry`, `x!sorry`, `Nat.sorry_lemma`, `h.elab` and
+  `sorry_free` are names after a space, `(` or `,`, and do not match.
+  What stands before a name does not make the token part of it: `!sorry`, `?run_cmd`, `'a'macro`,
+  `λelab` (λ, Π and Σ are no letters of names), `жsorry`, `(e).sorry` and `a..sorry` hold the token, and
+  so do `1sorry`, `1e5sorry`, `1_000sorry` and `0xbeefsorry`: a number is a lexeme of its own, and
+  whatever begins with a digit is refused, whichever way Lean reads it.
+- A run of letters is taken for a name only where the lexer starts a token for sure: at the start of the
+  text, after a space or a line break (a tab is an error in Lean), and after `(`, `,` and `)`. After any
+  other character it may be the tail of a symbol token. A token that starts with a character no name has
+  is the longest token of Lean's table at that point, whatever letters follow (`tokenFnAux`,
+  `identFnAux`), and the next token starts right after it: `#check`, `#synth` and `#reduce` are such
+  tokens in core Lean, and `[MOD`, `[ZMOD` and `⟫_` in Mathlib. So `#checkrun_cmd 1`,
+  `a ≡ b [MODrun_cmd 1]` and `⟪x, y⟫_run_cmd 1` hold the command `run_cmd`, and `⟪x, y⟫_ℝelab` is
+  refused for `elab` although `ℝelab` may be a name. The table depends on what is imported, so the
+  screen lists no such token: it trusts no symbol to end one. The price is that a name glued to a symbol
+  is refused when it holds a whole keyword (`simp [hprefix]`, `⟨hinfix, h⟩`, `¬xIO`, `h;n_elab`); a space
+  after the symbol (`simp [ hprefix ]`) or another name avoids the refusal. Every symbol is treated alike,
+  `;` too: `n_elab` and `_elab` are names after a space, `(`, `,` or `)`, and `;_elab)` is not trusted to
+  be one. Nor is a run of letters a name after a `'` that may start a character literal (`' xsorry`,
+  above): from that quote on, a keyword matches wherever it stands.
+- A token that starts with a character no name has (`#eval`, `#exit`, `#print`) matches wherever it
+  stands, since Lean reads `x#eval` as `x` and the command `#eval`; and the longest token wins in the
+  lexer, so what follows does not matter (`#eval!` is a command too). A token that ends with such a
+  character (`eval%`) needs no boundary after it.
+
+A name is read with Lean's own tables (`isIdFirst` and `isIdRest` of `Init/Meta/Defs.lean`): it begins
+with an ASCII letter, `_`, or a Greek, Coptic or letter-like character (not λ, Π and Σ), and goes on with
+these, ASCII digits, `'`, `!`, `?` and subscripts; parts are divided by a dot that a name follows. The
+tables hold what every version of Lean takes for a name. The accented Latin letters that Lean 4.27 also
+takes are left out on purpose: where a version and the table disagree, a keyword after such a letter is
+refused, and is not trusted as part of a name. The same goes for a name of more than 256 characters or
+16 parts. The token check is a regular expression with bounded look-behind, and the reading of
+comments and quotes looks back over a name at most 1 024 characters: `scanRegion`, `forbiddenTokensIn` and
+`hasHoles` together take under 700 ms for a million characters of the shapes that were tried (a
+quote after every name, `/-` over and over, a keyword after every quote), and about 180 ms for a million
+characters of proof. These readings follow the sources of Lean 4.27 (`Parser/Basic.lean`,
+`Parser/Module.lean`, `Init/Notation.lean`, `Parser/Do.lean`) and the recorded run above; no test runs a
+real Lean.
 
 In the auxiliary region, each command must be a `theorem`, `lemma`, `def` or `abbrev` (optionally
 after `open ... in` or `set_option ... in`), named `aux_...` so that it cannot shadow a name of the
