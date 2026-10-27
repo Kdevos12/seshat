@@ -6,8 +6,10 @@ import {
   AUX_BEGIN,
   AUX_END,
   assemble,
+  continuesName,
   editedOutsideRegions,
   extractSubmission,
+  firstCharacterLiteral,
   namespacesAt,
   PROOF_BEGIN,
   PROOF_END,
@@ -77,6 +79,39 @@ describe("lean-source", () => {
     assert.equal(maskCommentsAndStrings('exact foo <-- "x -- y"'), 'exact foo <-- "x -- y"');
     assert.equal(maskCommentsAndStrings('x--note "\n#eval 1 "\n-- c'), 'x--note "\n#eval 1 "\n-- c');
     assert.equal(maskCommentsAndStrings("a -- b\nc x--d\n-- e"), `a ${blanked("-- b")}\nc x--d\n-- e`);
+  });
+
+  it("reads a repository file as it always did, and the text of a model strictly, which only trusts a comment in fewer places", () => {
+    const blanked = (text: string) => text.replace(/[^\n]/g, " ");
+    // The default reading: doc comments, `/-/` and the comments after a quote are comments, as in the files of a repository.
+    assert.equal(maskCommentsAndStrings("/-- doc -/ x"), `${blanked("/-- doc -/")} x`);
+    assert.equal(maskCommentsAndStrings("/-! module -/\nx"), `${blanked("/-! module -/")}\nx`);
+    assert.equal(maskCommentsAndStrings("/-/ a -/ x"), `${blanked("/-/ a -/")} x`);
+    assert.equal(maskCommentsAndStrings("s ⁻¹' t -- c\ny"), `s ⁻¹' t ${blanked("-- c")}\ny`);
+    assert.equal(maskCommentsAndStrings("' -- x"), `' ${blanked("-- x")}`);
+    // The strict one opens a comment only where Lean is sure to read one: not `/--`, `/-!`, `/-X`, nor after a `'` that may start a literal.
+    for (const text of ["/-- doc -/ x", "/-! module -/\nx", "/-/ a -/ x", "/-/-/ -/ #eval 1 -- -/", "s ⁻¹' t -- c\ny", "' -- x #eval 1", "[h'] -- c", "⟫_' -- c"]) {
+      assert.equal(maskCommentsAndStrings(text, { strict: true }), text, text);
+    }
+    // Where Lean surely reads one, the two readings agree: after a space, a line break or the start, with a name that ends in a quote.
+    for (const text of ["x' -- c\ny", "-- c\nx", "/- c -/ x", "/-\n c\n-/ x", "(h1' h'') /- c -/ f x'", "Nat.succ' -- c"]) {
+      assert.equal(maskCommentsAndStrings(text, { strict: true }), maskCommentsAndStrings(text), text);
+      assert.notEqual(maskCommentsAndStrings(text), text, text);
+    }
+    // A string is blanked while the reading is trusted, and not after the first quote that is not.
+    assert.equal(maskCommentsAndStrings('a "s" \' b "t"', { strict: true }), `a ${blanked('"s"')} ' b "t"`);
+    assert.equal(maskCommentsAndStrings('a "s" \' b "t"'), `a ${blanked('"s"')} ' b ${blanked('"t"')}`);
+  });
+
+  it("tells a quote that ends a name from one that may start a character literal, and finds the first of those", () => {
+    const ends = (text: string) => continuesName(text.split(""), text.length - 1);
+    for (const text of ["x'", "h1'", "Nat.succ'", "f (h'", "a, h'", "!x'", "α'", "x''", "𝔽'", "x₁'", "a.b.c'", "x\ny'"]) assert.equal(ends(text), true, text);
+    // After a symbol that may end a token of its own (`[`, `⟨`, `⟫_`), after a number, a bracket or nothing: a literal may start.
+    for (const text of ["'", "[h'", "⟨x'", "1'", "0x1F'", "⟫_'", "[MOD'", "f.1'", "(f x)'", "x.'", "s ⁻¹'", "∑'", ".'", "x +y'"]) assert.equal(ends(text), false, text);
+    assert.equal(firstCharacterLiteral("x' (y' z"), -1);
+    assert.equal(firstCharacterLiteral("x' [y' z"), 5);
+    assert.equal(firstCharacterLiteral("no quote"), -1);
+    assert.equal(firstCharacterLiteral("' x"), 0);
   });
 
   it("masks a source without a comment glued to a token as it always did", () => {

@@ -60,9 +60,24 @@ describe("scanRegion", () => {
     // behind a `--` that follows a space.
     for (const [text, hidden] of [["x/- a --/run_cmd", "run_cmd"], ["///-! ---/elab/--", "elab"], ["#⟫-/-! --//sorry", "sorry"], ["#e/--=\n --/run_cmd", "run_cmd"]] as const) {
       const scan = scanRegion(text);
-      assert.deepEqual(scan, { masked: text, problems: [] }, text);
+      assert.equal(scan.masked, text, text);
       assert.ok(forbiddenTokensIn(scan.masked).includes(hidden), text);
     }
+  });
+
+  it("refuses a comment that Lean may read and that the text does not close, also behind an opener that is not taken for one", () => {
+    const open = "a block comment is not closed";
+    assert.deepEqual(scanRegion("exact foo x/- note").problems, [open]);
+    assert.deepEqual(scanRegion("exact foo /-/ note").problems, [open]);
+    assert.deepEqual(scanRegion("exact foo /-- note").problems, [open]);
+    assert.deepEqual(scanRegion("exact foo x/- note -/ y").problems, []);
+    assert.deepEqual(scanRegion("exact foo /-- note -/ y").problems, []);
+    // Lean's reading of the opener decides: the character after `/-` belongs to it, and a doc comment has white space before its body.
+    assert.deepEqual(scanRegion("exact foo /--/ y").problems, [open]);
+    assert.deepEqual(scanRegion("exact foo /-! -- note -/\n y").problems, [open]);
+    assert.deepEqual(scanRegion("exact foo /-/-/ y").problems, []);
+    assert.deepEqual(scanRegion("exact foo /-- -- /-\n-/ y").problems, []);
+    assert.deepEqual(scanRegion("exact foo /-- note -- /-\n-/ y").problems, [open]);
   });
 
   it("refuses string literals, «» names and open comments", () => {
@@ -158,6 +173,19 @@ describe("forbiddenTokensIn", () => {
   });
 });
 
+describe("forbiddenTokensIn after a quote that may start a character literal", () => {
+  it("takes no run of letters for a name after it: the literal takes two characters, a boundary among them, and what follows is a token", () => {
+    // `' x` is the literal (a broken one), `sorry` a token of its own: Lean lexes what follows as it would at a token start.
+    const hidden: Array<[string, string]> = [
+      ["' xsorry", "sorry"], ["'(xrun_cmd 1", "run_cmd"], ["',xelab", "elab"], ["1'\n_run_cmd", "run_cmd"], ["x ' _macro", "macro"], ["⟫_x 1'\n_run_cmd", "run_cmd"],
+      ["(f x)' ab IO", "IO"], ["[h'] xsorry", "sorry"], ["'a' xsorry", "sorry"],
+    ];
+    for (const [text, token] of hidden) assert.deepEqual(forbiddenTokensIn(text), [token], text);
+    // Before the first such quote the lexer is in step, and a name that holds a keyword is a name; so is every `'` that ends a name.
+    for (const text of ["xsorry ' a", "(xsorry) ' a b", "x' xsorry", "h1' (ysorry, x'", "f x' (zsorry) h'"]) assert.deepEqual(forbiddenTokensIn(text), [], text);
+  });
+});
+
 describe("structuralCheck", () => {
   const ok = (aux: string, proof: string) => assert.deepEqual(structuralCheck({ aux, proof }), []);
   const refused = (aux: string, proof: string, reason: RegExp) => {
@@ -234,7 +262,62 @@ describe("structuralCheck", () => {
     ok("", "  simp\n  -- #eval 1\n  exact foo /- run_cmd 1 -/");
     ok("", "-- #eval 1\n  simp");
     ok("", "  simp /- a -/-- run_cmd 1\n  exact foo /- b -//- #eval 1 -/");
-    ok("/-- doc -/\ntheorem aux_a : True := trivial -- sorry", "  exact aux_a");
+    ok("theorem aux_a : True := trivial -- sorry", "  exact aux_a");
+    // A name that ends in `'`, after a token start, does not shake the reading: `x'`, `h1'`, `Nat.succ'`, `(h'`.
+    ok("", "  simp\n  exact foo x' h1' -- run_cmd 1\n  exact (Nat.succ' h'') /- #eval 1 -/ y'");
+  });
+
+  it("does not take for a comment what Lean reads as a character literal, which takes the next two characters: ' -- #eval", () => {
+    // `'`, a space and the first `-` are a literal (a broken one), so the second `-` is no comment and `#eval` is a command.
+    const literal = ["  trivial\n  ' -- x #eval 7777", "  exact foo ' --'  x #eval 7777", "  trivial\n  '\n  -- x #eval 7777", "  trivial\n  ''' -- x #eval 7777", "  trivial\n  (f x)' -- #eval 7777", "  trivial\n  1' -- #eval 7777"];
+    for (const proof of literal) refused("", proof, /proof: '#eval' is not allowed/);
+    refused("theorem aux_a : True := by trivial ' -- #eval 1", "  simp", /aux: '#eval' is not allowed/);
+    // A symbol token of Mathlib that ends like a name is followed by a literal where a name would have ended; the table is not known.
+    refused("", "  trivial\n  exact ⟪x, y⟫_' -- #eval 7777", /proof: '#eval' is not allowed/);
+    refused("", "  trivial\n  exact a ≡ b [MOD' -- #eval 7777", /proof: '#eval' is not allowed/);
+    // A literal that Lean reads whole does not hide a `--` it holds, but the screen cannot tell: it refuses the keyword in what follows.
+    refused("", "  trivial\n  exact f 'a' -- #eval 7777", /proof: '#eval' is not allowed/);
+    // Comments before the quote are blanked, a `'` that ends a name does not turn the reading off, and neither does one in a comment.
+    ok("", "  trivial -- #eval 1\n  exact f x' -- #eval 1\n  -- it's fine\n  /- don't -/ simp");
+  });
+
+  it("does not take for a comment what Lean reads as the opener of a longer comment: the character after /- is part of it", () => {
+    // `/-/` opens a comment and `/-/-/` is one whole comment, so `-/ #eval 7777` is code.
+    refused("", "  trivial\n  /-/-/ -/ #eval 7777 -- -/", /proof: '#eval' is not allowed/);
+    refused("", "  trivial\n  /-/--/ #eval 7777 -- -/", /proof: '#eval' is not allowed/);
+    refused("", "  trivial\n  /-\t-/ #eval 7777", /proof: '#eval' is not allowed/);
+    refused("theorem aux_a : True := trivial\n/-/-/ -/ #eval 1 -- -/", "  simp", /aux: '#eval' is not allowed/);
+    // After a space, a line break or the end of the text, nothing changes.
+    ok("", "  simp\n  /- #eval 1 /- nested -/ run_cmd 1 -/ omega\n  /-\n #eval 1\n -/");
+    refused("", "  simp /-", /a block comment is not closed/);
+  });
+
+  it("does not take for a comment what Lean reads as a doc comment, whose white space and body it reads on other terms", () => {
+    // `/--` and `/-!` are tokens: after them a `--` is a line comment (the `/-` in it opens nothing), and the body starts after it.
+    refused("", "  trivial\n  /-- -- /-\n-/ #eval 7777 -- -/", /proof: '#eval' is not allowed/);
+    refused("theorem aux_a : True := trivial\n/-! -- /-\n-/ #eval 1 -- -/", "  simp", /aux: '#eval' is not allowed/);
+    refused("", "  trivial\n  /--/ #eval 7777 -/", /proof: '#eval' is not allowed/);
+    // A hole hides the same way, and `hasHoles` reads the same text.
+    refused("", "  trivial\n  /-- -- /-\n-/ sorry -- -/", /proof: 'sorry' is not allowed/);
+    assert.equal(hasHoles({ aux: "", proof: "  trivial\n  /-- -- /-\n-/ sorry -- -/" }), true);
+    // The price: a doc comment is code to the screen, so are the comments after it.
+    ok("/-- helper for the bound -/\ntheorem aux_a : True := trivial", "  exact aux_a");
+    refused("/-- helper -/\ntheorem aux_a : True := trivial -- sorry", "  exact aux_a", /aux: 'sorry' is not allowed/);
+    refused("", "  trivial\n  /-- the macro -/", /proof: 'macro' is not allowed/);
+  });
+
+  it("does not take a run of letters after a character literal for a name: ' xrun_cmd is a literal and a command", () => {
+    refused("", "  trivial\n  ' xrun_cmd IO.println 1", /proof: 'run_cmd' is not allowed/);
+    refused("", "  trivial\n  '(xelab foo", /proof: 'elab' is not allowed/);
+    refused("theorem aux_a : True := by trivial ' xmacro", "  simp", /aux: 'macro' is not allowed/);
+    ok("", "  trivial\n  exact (hsorry x') -- fine, the name comes before the quote");
+  });
+
+  it("pins the price of the strict reading: after a quote that may start a literal, the comments that follow are screened as code", () => {
+    refused("", "  simp [h']\n  -- not the macro", /proof: 'macro' is not allowed/);
+    refused("", "  exact ⟨x', h⟩ -- the Lean way", /proof: 'Lean' is not allowed/);
+    refused("", '  exact s ⁻¹\' t -- "quoted"', /string literals are not allowed/);
+    ok("", "  exact (f x') -- not the way\n  simp [ h' ] -- a space avoids it");
   });
 
   it("lets holes through under the sketch policy, and nothing else", () => {
@@ -257,6 +340,14 @@ describe("hasHoles", () => {
     assert.equal(hasHoles({ aux: "theorem aux_a : True := by trivial //- admit -/", proof: "  simp" }), true);
     assert.equal(hasHoles({ aux: "", proof: "  exact foo -- sorry" }), false);
     assert.equal(hasHoles({ aux: "", proof: "  exact foo /- admit -/" }), false);
+  });
+
+  it("finds a hole that a character literal, the character after /- or a doc comment would hide", () => {
+    for (const proof of ["  ' -- sorry", "  /-/-/ -/ sorry -- -/", "  /-- -- /-\n-/ admit -- -/", "  /-! -- /-\n-/ sorry -- -/"]) assert.equal(hasHoles({ aux: "", proof }), true, proof);
+    assert.equal(hasHoles({ aux: "", proof: "  exact f x' -- sorry\n  /- admit -/" }), false);
+    assert.equal(hasHoles({ aux: "", proof: "  ' xsorry" }), true);
+    assert.equal(hasHoles({ aux: "theorem aux_a : True := by ' xadmit", proof: "  simp" }), true);
+    assert.equal(hasHoles({ aux: "", proof: "  exact (xsorry) ' a" }), false);
   });
 });
 

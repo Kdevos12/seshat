@@ -113,12 +113,14 @@ function tidy(text: string): string {
  * statement about a number is written as it is), so it is refused when it holds a token that the
  * validator refuses in a proof: `#eval`, `macro_rules`, `IO`... A declaration can be ended by the
  * text and commands added after it, and the statements come from claims and from the provers' tool.
- * The mask blanks a comment only where Lean is sure to read one, so a `--` or `/-` that is left is
- * one Lean may read as a comment or as code (`x--note`, `<--`, `\/-`), and a statement that holds one
- * is refused: a comment that Lean reads there would reach into the lines written after the statement.
+ * The mask is the strict one, for text that a model wrote: it blanks a comment only where Lean is sure
+ * to read one (`maskCommentsAndStrings`, `strict`), so a `--` or `/-` that is left is one Lean may read
+ * as a comment or as code (`x--note`, `<--`, `\/-`, `/-/-/`, `/-- d -/`, `' --`), and a statement that
+ * holds one is refused: a comment that Lean reads there would reach into the lines written after the
+ * statement.
  */
 function splitSignature(statement: string): { binders: Binder[]; conclusion: string } | { reason: string } {
-  const text = maskCommentsAndStrings(statement);
+  const text = maskCommentsAndStrings(statement, { strict: true });
   const forbidden = forbiddenTokensIn(text);
   if (forbidden.length > 0) {
     return { reason: `the statement holds the token${forbidden.length > 1 ? "s" : ""} ${forbidden.map((t) => `'${t}'`).join(", ")}, and a statement with a token that the validator refuses in a proof is not written into a Lean file` };
