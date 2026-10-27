@@ -185,8 +185,8 @@ packet id exists.
 
 M6 declares `resume: "rebuild"`. After each attempt it records a `watch` node (kind `watch`, as
 `line:M6`) holding what its detectors watched in the session: the strategy label and the best Lean
-state it reached if it watched them, and the last check (its code, its signal, whether it was a
-retry). On resuming a problem, `resumeProblem` replays the detectors over the `watch` nodes of the
+state it reached if it watched them, and the last check (the sha256 of its normalized code, its signal, whether it was a
+retry: the file itself is in the submission's blob, and the node keeps no copy of it). On resuming a problem, `resumeProblem` replays the detectors over the `watch` nodes of the
 problem's attempts that were not cut, in order, so that the counts of repeats and of stalls are the
 ones the process that ended had; reads back from the `drift` nodes the framings it has already
 noted (once for the problem, not once for each process); restores the last check of each prover,
