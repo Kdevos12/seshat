@@ -15,7 +15,8 @@ import {
 import type { LineRegistry } from "@seshat/lines";
 import { leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
 import { buildReport, LINES, M1, readRecordedRun, REPO_ROOT, renderRunReport, type RunOptions } from "../src/index.ts";
-import { certifyingRegistry, check, DEMO_FILE, demoBench, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { certifyingRegistry, check, DEMO_FILE, demoBench, demoResume, demoRun, killedAt, ofType, sageRegistry, say } from "./m0-helpers.ts";
+import { fakeSage } from "./fixtures/fake-sage.ts";
 
 /** The text of the first user message of a request: the session prompt. */
 function sessionPromptOf(context: TranscriptContext): string {
@@ -714,6 +715,46 @@ describe("refusing to resume a run that is not the one the process would run", (
     const { whole, dir, journal } = await cutRun({ certifier: certifier().certifier });
     await assert.rejects(demoResume({ dir, bench: whole.bench, responses: [] }), /the certifier: the run recorded "fake-certifier 0", now null/);
     untouched(dir, journal);
+  });
+
+  it("leaves the journal's bytes as they were when it refuses, even if a crash cut its last line; a resume that goes on repairs it and says so", async () => {
+    const sage = fakeSage();
+    for (const kind of ["fragment", "whole"] as const) {
+      const cutAt = async (config: Partial<RunOptions["config"]>, options: Partial<Parameters<typeof demoRun>[0]>) => {
+        const whole = await demoRun({ config: { sessions: 3, ...config }, responses: [check("bad"), say("NOTES"), check("exact trivial_proof")], ...options });
+        const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2), kind);
+        const journal = readFileSync(join(dir, "journal.jsonl"));
+        assert.notEqual(journal[journal.length - 1], 0x0a, `${kind}: the last line is cut`);
+        return { whole, dir, journal };
+      };
+      const plain = await cutAt({}, { certifier: certifier().certifier });
+      const refusals: [string, RegExp, Partial<Parameters<typeof demoResume>[0]>][] = [
+        ["host and registry", /the host: the run recorded test, now elsewhere/, { registry: elsewhere, certifier: certifier().certifier }],
+        ["certifier", /the certifier: the run recorded "fake-certifier 0", now null/, {}],
+      ];
+      for (const [what, message, options] of refusals) {
+        await assert.rejects(demoResume({ dir: plain.dir, bench: plain.whole.bench, responses: [], ...options }), message, `${kind}: ${what}`);
+        untouched(plain.dir, plain.journal);
+      }
+      const withSage = await cutAt({ tools: ["compute.sage"] }, { registry: sageRegistry(sage) });
+      await assert.rejects(
+        demoResume({ dir: withSage.dir, bench: withSage.whole.bench, responses: [] }),
+        /the tools of the run: host test does not offer compute\.sage/,
+        `${kind}: tools`,
+      );
+      untouched(withSage.dir, withSage.journal);
+
+      // A resume that goes on repairs the tail as its first write and records what it did.
+      const resumed = await demoResume({
+        dir: plain.dir,
+        bench: plain.whole.bench,
+        certifier: certifier().certifier,
+        responses: [check("exact trivial_proof")],
+      });
+      const resumption = ofType(resumed.events, "run.resumed")[0];
+      assert.equal(resumption?.data.tornTail?.action, kind === "fragment" ? "dropped" : "completed", kind);
+      assert.equal(verifyChain(readEvents(join(plain.dir, "journal.jsonl"))).ok, true, kind);
+    }
   });
 
   it("refuses a directory that holds no run, a journal that is corrupt, and one that never began", async () => {

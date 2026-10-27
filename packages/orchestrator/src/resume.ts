@@ -220,7 +220,8 @@ export function beginResumption(journal: Journal, tasks: TaskLedger, o: { runId:
   const running = p.tasks({ statuses: ["running"] });
   const total = p.totalSpend();
   const resumption = p.resumptions().length + 1;
-  const tornTail = journal.log.recovered;
+  // The cut last line the journal was opened with, if there is one, is dealt with now: the first write of the resumption.
+  const tornTail = journal.log.repair();
   const interrupted = { attempts: attempts.length, toolRuns: toolRuns.length, tasks: running.length };
   journal.emit(
     "run.resumed",
