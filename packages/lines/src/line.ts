@@ -415,9 +415,11 @@ export interface Llm {
    * A call whose answer is JSON that matches `request.schema`. An answer that is not JSON, or does
    * not match, is sent back to the model once with what was wrong; a second failure rejects with a
    * `JsonAnswerError` that says what was wrong with each answer. Both calls are charged and
-   * recorded like any call, with the same site. Build one from a `complete` with `withJson`.
+   * recorded like any call, with the same site. Optional, so that an `Llm` written before it
+   * existed still is one: a line calls it through `completeJson(llm, request)`, which uses this
+   * member when there is one and `withJson` over `complete` when there is not. `withJson` builds one.
    */
-  completeJson: <T = Json>(request: JsonRequest) => Promise<JsonResult<T>>;
+  completeJson?: <T = Json>(request: JsonRequest) => Promise<JsonResult<T>>;
 }
 
 export interface ValidateRequest {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Journal, type Json } from "@seshat/core";
-import type { Line, LineHooks } from "@seshat/lines";
+import { completeJson, type Line, type LineHooks } from "@seshat/lines";
 import type { JsonSchema } from "@seshat/registry";
 import { mergeSiteSpend, siteSpend } from "../src/index.ts";
 import { check, demoRun, ofType, say } from "./m0-helpers.ts";
@@ -18,7 +18,7 @@ describe("sites", () => {
     const seen: Json[] = [];
     const line = asking(async (problem) => {
       seen.push((await problem.llm.complete({ prompt: "Say hi.", site: "test.greet" })).text);
-      seen.push((await problem.llm.completeJson<{ score: number }>({ prompt: "Rate it.", schema: score, site: "test.rate" })).value as Json);
+      seen.push((await completeJson<{ score: number }>(problem.llm, { prompt: "Rate it.", schema: score, site: "test.rate" })).value as Json);
       seen.push((await problem.llm.complete({ prompt: "No site." })).text);
     });
     const { result, events, dir } = await demoRun({
@@ -85,7 +85,7 @@ describe("completeJson in a run", () => {
   it("retries once, and charges and journals the second call like the first", async () => {
     let answer: { value: { score: number }; modelCallIds: readonly string[]; cost: { usd: number } } | undefined;
     const line = asking(async (problem) => {
-      answer = await problem.llm.completeJson<{ score: number }>({ prompt: "Rate it.", schema: score, site: "test.rate" });
+      answer = await completeJson<{ score: number }>(problem.llm, { prompt: "Rate it.", schema: score, site: "test.rate" });
     });
     const { result, events } = await demoRun({
       lines: { M4: line },
@@ -106,7 +106,7 @@ describe("completeJson in a run", () => {
   });
 
   it("fails clearly after the second wrong answer, both calls journaled and charged", async () => {
-    const line = asking(async (problem) => void (await problem.llm.completeJson({ prompt: "Rate it.", schema: score, site: "test.rate" })));
+    const line = asking(async (problem) => void (await completeJson(problem.llm, { prompt: "Rate it.", schema: score, site: "test.rate" })));
     const { result, events } = await demoRun({
       lines: { M4: line },
       config: { lines: ["M4"] },
