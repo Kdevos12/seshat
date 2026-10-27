@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-27 05:10 UTC. `main` at 2ba2990, 623 tests.
+Updated 2026-10-27 05:21 UTC. `main` at 08f690a, 623 tests.
 
 ## Tasks
 
@@ -26,7 +26,7 @@ Updated 2026-10-27 05:10 UTC. `main` at 2ba2990, 623 tests.
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | implementing | `task/t15` |
-| 16 | `lean.lsp` | main | re-review of fix round 1 | `task/t16` |
+| 16 | `lean.lsp` | main | re-review passed; merges after Task 7, with regression tests for the shared screen | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
@@ -329,3 +329,5 @@ Usage-limit stop 16: the account's weekly limit cut the T15 implementer (uncommi
 - Ruling 27 (replaces the order of Ruling 24): plan-change-memory-evolution.md joins the plan: PE1 with PE2's mechanism is Task 23 (memory store, one implementation for M5, M4 and M15), PE5 is Task 24 (the packet API before Task 11), PE7 is Task 25 (line M18 after M12 in LINE_ORDER), PE8 is Task 26; PE2's uses, PE3, PE4, PE6 item 4 and PE9 amend Tasks 9, 10, 11, 14, 18 and 19; PE6's rules are Global Constraint 16; retry_stronger goes into Task 19, not Task 15 in flight; main team's order: T7, T16, T15 in flight, then T23 and T24, T17, T21, T19, T20, T10, T25, T13, T18, T22, T14, T26 and the final review — cost if wrong: Task 17 lands two tasks later.
 - Ruling 28: memory outlives a run through a chain of journals (`harness run --memory-from <runDir>`, the earlier journal pinned by its last hash and never written; verified facts carry over only under the same Lean environment; a problem's outcome only from its own certifications) — PE1, PE3 and PE9 assume memory beyond one run, which the plan did not have — cost if wrong: the chain becomes appends to one long-lived journal.
 2026-10-27: plan change integrated into the repository: plans/plan-change-memory-evolution.md (copied, quotes translated, task numbers reconciled), seshat-plan.md (amendment 7, Global Constraint 16, the learned-memory paragraph of the shared interfaces, Tasks 23 to 26, amendments to Tasks 9, 10, 11, 14, 18 and 19), Rulings 27 and 28, this ledger's rows and order, and collaborator-tasks.md (rules, Tasks 6, 9 and 11, "Between the teams"); a note for the collaborator
+Task 16: scoped re-review of fix round 1 : I1 I2 M1-M12 M14 M15 all addressed, no new Critical or Important; I1's joined-document screen matched the real build_attempt_text on 10,090 fresh seeded cases and flagged nothing over about 58,000 random splices; with task/t7's core, `x#eval 1` as proof, tactic and joins (`x#ev` + `al 1`, `𝕜#ev` + `al 1`) is refused; the opt-in real-server test passes 6 of 6 against lean-lsp-mcp 0.31.0 and leanclient 0.13.2; two minors for the merge: the stand-in's comment overstates what real-server.test.ts compares, and tactics are CRLF-normalized before screening while regions are screened as given (no security effect; screen first, then normalize); nits: state_search's "no goals left" without the "not a verdict" sentence; M9's closed list of network failures (an IncompleteRead is a call failure); out of scope: task/t7's core over-refuses `n_elab` and `;_elab)` (relayed to the T7 fixer)
+Task 16: ready to merge after Task 7; the controller adds at the merge the regression tests for the core screen (`x#eval 1` as a proof and as a tactic, the joins `x#ev` + `al 1` and `𝕜#ev` + `al 1` at column 7, and the round-3 cases `#checkrun_cmd 1` and `<-- #eval 1`) and the two minors
