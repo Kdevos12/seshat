@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, truncateSync, unlinkSync, writeSync } from "node:fs";
 import { canonicalJson, sha256Hex } from "./canonical-json.ts";
 import { type EventDataMap, type EventType, type HarnessEvent, isEventType, type TornTail } from "./events.ts";
@@ -156,8 +157,11 @@ function recoverTornTail(path: string): TornTail | undefined {
   const bytes = readFileSync(path);
   if (bytes.length === 0 || bytes[bytes.length - 1] === 0x0a) return undefined;
   const cut = bytes.lastIndexOf(0x0a) + 1;
-  const tail = bytes.subarray(cut).toString("utf8");
-  const found = { bytes: bytes.length - cut, sha256: sha256Hex(tail) };
+  const rest = bytes.subarray(cut);
+  const tail = rest.toString("utf8");
+  // The digest is of the bytes on disk, not of their decoding: a fragment cut inside a multi-byte
+  // character does not decode to the bytes that were there.
+  const found = { bytes: rest.length, sha256: createHash("sha256").update(rest).digest("hex") };
   if (isWholeEvent(bytes.subarray(0, cut).toString("utf8"), tail, path)) {
     appendFileSync(path, "\n");
     return { action: "completed", ...found };

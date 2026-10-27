@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -494,6 +495,23 @@ describe("a journal a crash cut", () => {
     assert.deepEqual(verifyChain(events), { ok: true });
     assert.equal(events[2]?.type, "run.resumed");
     assert.match(readFileSync(path, "utf8"), /\n$/);
+  });
+
+  it("takes the digest of the bytes it drops, also when the cut is inside a multi-byte character or the bytes are not UTF-8", () => {
+    for (const bytes of [
+      // A fragment cut in the middle of the three bytes of "∀".
+      Buffer.concat([Buffer.from('{"v":1,"seq":2,"id":"evt_X","note":"', "utf8"), Buffer.from("∀", "utf8").subarray(0, 2)]),
+      // Bytes that are not UTF-8 at all.
+      Buffer.from([0x7b, 0x22, 0xff, 0xfe, 0xc3]),
+    ]) {
+      const path = twoEvents(tempDir());
+      appendFileSync(path, bytes);
+      const reopened = EventLog.open(path, { run: "run_1" });
+      assert.deepEqual(reopened.recovered, { action: "dropped", bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+      assert.notEqual(reopened.recovered?.sha256, sha256Hex(bytes.toString("utf8")), "the decoded string is not the dropped bytes");
+      reopened.close();
+      assert.deepEqual(verifyChain(readEvents(path)), { ok: true });
+    }
   });
 
   it("keeps a whole event that lacks only its newline", () => {
