@@ -84,6 +84,14 @@ describe("the size of a statement", () => {
     assert.match(reason(law + " ".repeat(4001 - law.length)), /^the statement has 4001 characters; at most 4000 are read/);
   });
 
+  it("counts characters by code point, as the maxLength of the tool's schema does: one outside the Basic Multilingual Plane is one", () => {
+    // 𝔽 takes two UTF-16 units, so a statement of 4000 characters that holds many of them is longer than 4000 units.
+    const astral = (characters: number) => `${law} -- ${"𝔽".repeat(characters - law.length - 4)}`;
+    assert.ok(astral(4000).length > 6000);
+    assert.equal(recognized(astral(4000)).kind, "magma");
+    assert.match(reason(astral(4001)), /^the statement has 4001 characters; at most 4000 are read/);
+  });
+
   it("is refused with a reason when it is huge or nested too deep, and does not run out of stack", () => {
     assert.match(reason(`(M : Type) [Mul M] : ∀ x : M, ${nested(20_000)} * x = x`), /^the statement has \d+ characters; at most 4000 are read/);
     assert.equal(recognized(`(M : Type) [Mul M] : ∀ x : M, ${nested(32)} * x = x`).kind, "magma");
