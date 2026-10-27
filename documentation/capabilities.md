@@ -264,6 +264,23 @@ It is not sandboxed: the model's Lean code runs as the harness's user, with that
 a run gives it to the provers only when asked (`--tool lean.goals`), on a machine where that is
 acceptable, until an implementation in a container exists.
 
+## `lean.lsp`
+
+Lean's language server for the provers, through the MCP server lean-lsp-mcp, pinned at 0.31.0: the
+goals before and after a line, the type expected at a position, Lean's messages on the file,
+several tactics tried at one line, and the searches Loogle, LeanSearch, Lean Finder and premises
+for a goal. It is `direct` and stateful (a scratch file per scope, which is the attempt) and gives
+information only: it `produces` nothing, and nothing in an answer is a verdict, so only
+`lean_check` can make a claim `computed`. Its implementation `lean-lsp-mcp` (factory `lean-lsp`,
+package `@seshat/lean-lsp`) runs the server as a child process on stdio, calls 8 of its 22 tools
+behind an allowlist and switches the other 14 off in the server. No input names a file: the files
+are the problem's own sketch, written by the harness. The four searches ask network sites, declared
+in the manifest's `environment` (`site.loogle`, `site.leansearch`, `site.leanfinder`,
+`site.hammer`) like the other site-backed capabilities; a site that cannot be reached is an answer
+(`status: unavailable`), not a failure. Its contract has 15 cases, for a host with a Lean project;
+they have not run against Lean. [lean-lsp.md](lean-lsp.md) covers the operations, what it never
+does, the installation and the settings. It is not sandboxed, and a run gives it to the provers
+only when asked (`--tool lean.lsp`).
 ## `lean.certify`
 
 The certifier ([certifier.md](certifier.md)): a candidate file, the reference file, the target's

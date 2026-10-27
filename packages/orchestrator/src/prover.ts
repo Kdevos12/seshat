@@ -8,7 +8,7 @@ import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { ABORT_BUDGET, runSession, type SessionLimits, type SessionResult } from "./session.ts";
-import { capabilityTool, type PinnedTool, toolName } from "./tools.ts";
+import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
 
 export interface ProverOptions {
   /** `p1`, `p2`...: the prover's name in attempts and actors. */
@@ -117,9 +117,15 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
     try {
       const opened: OpenedSession | undefined =
         o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
+      const start = regions;
       result = await runSession({
         tools: [
-          ...tools.map((t) => capabilityTool(t.capability, { registry: workbench.registry, attemptId, actor, implementation: t.implementation })),
+          ...tools.map((t) => {
+            const binding = toolBinding(t.capability, { sketch: workbench.sketch, current: () => workbench.lastSubmission(attemptId) ?? start });
+            return capabilityTool(t.capability, {
+              registry: workbench.registry, attemptId, actor, implementation: t.implementation, ...(binding !== undefined ? { binding } : {}),
+            });
+          }),
           ...(opened?.tools ?? []),
         ],
         models: o.models,

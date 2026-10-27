@@ -30,6 +30,7 @@ simulated model and a simulated Lean.
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
+| Lean's language server for the provers: goals at a line, tactics tried at a line, Mathlib search (`lean.lsp`, lean-lsp-mcp 0.31.0), `harness run --tool lean.lsp` | `@seshat/lean-lsp`, `capabilities/lean.lsp`, `@seshat/orchestrator` | TypeScript done, tested with a stand-in server whose shapes were taken from the real release, and (opt-in, `LEAN_LSP_MCP_PYTHON`) against the real server with canned back-ends; not run against a real Lean |
 | Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
@@ -66,6 +67,9 @@ blocks the Lean toolchain downloads and has no model credentials.
   untrusted code runs, its settings, deployment, what is still to verify against Lean.
 - [lean-meta.md](lean-meta.md): the Lean meta tool: SeshatMeta's commands, the canonical form and
   `st1_` ids, `lean.meta`, `LeanIdentity`, `lean.goals` over Pantograph, deployment.
+- [lean-lsp.md](lean-lsp.md): Lean's language server for the provers: `lean.lsp` over lean-lsp-mcp,
+  its eight operations, what it never does, the pinned version, installing it, the network sites,
+  the settings, the tests.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
   scopes, contract tests, the `harness` command.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,

@@ -179,6 +179,18 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lean-lsp:
+    dependencies:
+      '@earendil-works/pi-mcp':
+        specifier: 1.2.0
+        version: 1.2.0
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/lean-meta:
     dependencies:
       '@seshat/core':
@@ -298,6 +310,9 @@ importers:
       '@seshat/lean-local':
         specifier: workspace:*
         version: link:../lean-local
+      '@seshat/lean-lsp':
+        specifier: workspace:*
+        version: link:../lean-lsp
       '@seshat/lean-meta':
         specifier: workspace:*
         version: link:../lean-meta

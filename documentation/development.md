@@ -27,8 +27,10 @@ pnpm test
   (`packages/registry/test/fixtures/fake-mcp-server.ts`) as a child process, over stdio. The M0
   loop runs with pi-ai's faux provider, whose answers each test writes, and a simulated Lean
   (`packages/orchestrator/test/m0-helpers.ts`), and with a simulated SageMath server over an
-  in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`); the command tests run
-  `harness` as a child process.
+  in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`), and a simulated
+  lean-lsp-mcp (`packages/lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts`, which checks every call
+  against the arguments recorded from the real release); the command tests run `harness` as a
+  child process.
 - A change updates the documentation page that describes it, in the same commit.
 - The diagram in the README, "How research flows", shows the steps a statement goes through and the
   tools a prover can call, each marked built, written but waiting for a Lean server, or planned. A
@@ -46,6 +48,8 @@ Some tests run only when their data is on disk:
 | Sketches of every research-solved theorem | a formal-conjectures checkout | `FORMAL_CONJECTURES_DIR` (default `../google-deepmind/formal-conjectures`) |
 | The committed bench index is reproduced | the `bench-v1-lean4.27.0` checkout | `FC_BENCH_V1_DIR` (default `../google-deepmind/formal-conjectures-bench-v1`) |
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
+| The contract of `lean.lsp` against lean-lsp-mcp | a built Lean project and `uvx` (or `LEAN_LSP_MCP_COMMAND`) | `LEAN_PROJECT_DIR`; `LEAN_LSP_SITES=1` adds the four cases that ask network sites |
+| `lean.lsp` against the real lean-lsp-mcp, its language server and sites canned (no Lean, no network) | a Python with `lean-lsp-mcp==0.31.0` and `leanclient==0.13.2` | `LEAN_LSP_MCP_PYTHON` |
 | Graph and group batteries read from SageMath (`@seshat/models`) | the `sagemath-mcp` executable | `SAGEMATH_MCP_COMMAND` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`

@@ -35,10 +35,11 @@ flowchart TB
     sage["compute_sage<br/>SageMath"]:::built
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
+    leanlsp["lean_lsp<br/>Lean language server"]:::wait
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
-    moretools["ATPs, SAT/SMT,<br/>Mathlib search,<br/>counterexample search"]:::planned
+    moretools["ATPs, SAT/SMT,<br/>counterexample search"]:::planned
   end
 
   subgraph JUDGE["Judge: Lean"]
@@ -74,6 +75,7 @@ flowchart TB
   provers -.-> moretools
   leanmeta -.->|"statement ids"| kg
   provers --> leangoals
+  provers --> leanlsp
   provers --> oeis & lmfdb & findstat
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
@@ -100,6 +102,9 @@ Today one loop runs, tested with a simulated model and a simulated Lean: each pr
 sketch and checks it with `lean_check`, and the first file that passes the fast check makes the
 statement `computed`, a candidate. SageMath is the only classical tool for computing that is plugged
 in; the OEIS, the LMFDB and FindStat can be asked too ([documentation/models.md](documentation/models.md#the-services-as-capabilities)).
+The provers can also be given Lean's language server, `lean_lsp` (the goals at a line, several
+tactics tried at one line, Mathlib search): information that never changes a status, written and
+waiting for a Lean like the fast check ([documentation/lean-lsp.md](documentation/lean-lsp.md)).
 Every tool call goes through the capability registry, which writes it to the journal, with its inputs
 and outputs as blobs.
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
@@ -144,6 +149,7 @@ pnpm harness capabilities
 pnpm harness models
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```
 
 The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0`

@@ -132,7 +132,12 @@ the model's code as the harness's user or in the server's own container
 is computed by the harness from the pristine original file, never from a file a prover could
 touch.
 
-Line M11 ([models.md](models.md)) sends Lean files of its own to the same server, for `decide` on a
+Two capabilities that a run gives the provers only when asked are the exceptions to that rule, and
+say so: `lean.goals` and `lean.lsp` run text from the model in a Lean process of the harness's
+user, with no sandbox ([lean-meta.md](lean-meta.md#leangoals), [lean-lsp.md](lean-lsp.md#it-is-not-sandboxed)).
+They are for a machine and a user whose files the model may read and change.
+
+Line M11 ([models.md](models.md)) sends Lean files of its own to the Lean server of the fast check, for `decide` on a
 statement about a number. The text of a statement reaches such a file as it is, so it is refused
 unless it is free of the tokens that the validator refuses in a prover's regions
 (`forbiddenTokensIn`) and of `#`, which starts a command; the rest of the file is the harness's.
