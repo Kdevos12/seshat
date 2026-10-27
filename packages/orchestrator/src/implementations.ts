@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
+import { leanLspFactory } from "@seshat/lean-lsp";
 import { lakeCertifyFactory } from "@seshat/lean-local";
 import { leanMetaFactory, pantographFactory } from "@seshat/lean-meta";
 import { findstatFactory, lmfdbFactory, oeisFactory } from "@seshat/models";
@@ -12,6 +13,7 @@ export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   kimina: kiminaFactory(),
   "kimina-meta": leanMetaFactory((context) => kiminaChecker(context)),
+  "lean-lsp": leanLspFactory(),
   pantograph: pantographFactory(),
   "lake-certify": lakeCertifyFactory(),
   oeis: oeisFactory(),
