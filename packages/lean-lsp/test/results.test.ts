@@ -113,6 +113,7 @@ describe("the answers of lean-lsp-mcp, as the harness reads them", () => {
       "<urlopen error timed out>",
       "HTTP Error 429: Too Many Requests",
       "Remote end closed connection without response",
+      "IncompleteRead(3 bytes read, 10 more expected)",
       "[Errno 104] Connection reset by peer",
     ]) {
       const failure = classify("lean_leansearch", `Error executing tool lean_leansearch: ${said}`);

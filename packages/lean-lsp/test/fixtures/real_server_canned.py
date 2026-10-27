@@ -67,6 +67,7 @@ FAILURES = {
     "timeout": lambda url: TimeoutError("timed out"),
     "reset": lambda url: ConnectionResetError(104, "Connection reset by peer"),
     "closed": lambda url: http.client.RemoteDisconnected("Remote end closed connection without response"),
+    "incomplete": lambda url: http.client.IncompleteRead(b"abc", 10),
 }
 
 

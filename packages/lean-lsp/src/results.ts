@@ -139,7 +139,7 @@ export type Failure =
 /**
  * What the network call of a site tool raises when the site is out of reach, in the words of the
  * exceptions that urllib, http.client and ssl raise (a failed lookup or a refused connection, an HTTP
- * status, a connection that was cut, a time limit of the socket), and what the server says when its
+ * status, a connection that was cut or an answer that stopped short, a time limit of the socket), and what the server says when its
  * own client-side limit refuses the call. A time limit of the language server names its method and
  * says "after N s": it is not here.
  */
@@ -148,6 +148,7 @@ const NETWORK_FAILURE = [
   /^HTTP Error \d{3}\b/i,
   /^(?:Rate|Tool) limit exceeded\b/i,
   /^Remote end closed connection\b/i,
+  /^IncompleteRead\(\d+ bytes? read\b/i,
   /^(?:\[Errno \d+\] )?Connection (?:reset by peer|aborted)\b/i,
   /^(?:_ssl\.c:\d+: )?(?:The (?:read|write|handshake) operation )?timed out\.?$/i,
 ];
