@@ -189,6 +189,8 @@ export function createM6(env: M6Env = {}): Line {
     options: M6_OPTIONS,
     // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording.
     version: "m6-1",
+    // The detectors' counts across a prover's sessions, the notices waiting for its next session and the framing findings already made live in the process.
+    resume: { refuse: "the detectors' counts across a prover's sessions, the notices waiting for its next session and the findings it has already recorded are kept in the process, and the journal cannot give them back" },
     hooks: {
       briefing: async (session): Promise<Briefing | undefined> => {
         const options = session.options;

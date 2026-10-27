@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TextIdentity } from "@seshat/memory";
-import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines, SUSPENDED_LINES } from "../src/index.ts";
+import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, type LineRegistry, resolveLines, resumeRefusals, SUSPENDED_LINES } from "../src/index.ts";
 
 function line(id: Line["id"], extra: Partial<Line> = {}): Line {
   return { id, title: `the line ${id}`, requires: [], hooks: {}, ...extra };
@@ -85,5 +85,33 @@ describe("resolveLines", () => {
     const named: LineRegistry = { M1: line("M1", { identity }), M10: line("M10", { identity }), M2: line("M2", { requires: ["M1"] }) };
     assert.deepEqual(resolveLines(["M1", "M2"], named).problems, []);
     assert.deepEqual(resolveLines(["M1", "M10"], named).problems, ["lines M1 and M10 all give the statement identity; enable one of them"]);
+  });
+});
+
+describe("resumeRefusals", () => {
+  const stateless = line("M1", { resume: "stateless" });
+  const keeps = line("M2", { resume: { refuse: "its graph lives in the process" } });
+  const silent = line("M6");
+  const enabled = (...lines: Line[]) => lines.map((l) => ({ line: l, options: {} }));
+
+  it("lets a run with stateless lines, or none, be resumed", () => {
+    assert.deepEqual(resumeRefusals([]), []);
+    assert.deepEqual(resumeRefusals(enabled(stateless)), []);
+  });
+
+  it("refuses a line that says it keeps state, with its reason", () => {
+    assert.deepEqual(resumeRefusals(enabled(stateless, keeps)), ["line M2 cannot be resumed: its graph lives in the process"]);
+  });
+
+  it("refuses a line that does not say, since the harness cannot tell what it keeps", () => {
+    const [message, ...rest] = resumeRefusals(enabled(silent));
+    assert.deepEqual(rest, []);
+    assert.match(message ?? "", /^line M6 does not say how it resumes/);
+    assert.match(message ?? "", /"stateless"/);
+    assert.match(message ?? "", /the run cannot be resumed with it/);
+  });
+
+  it("names every line that cannot, in the plan's order", () => {
+    assert.equal(resumeRefusals(enabled(stateless, keeps, silent)).length, 2);
   });
 });

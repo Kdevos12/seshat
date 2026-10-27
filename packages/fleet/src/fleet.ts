@@ -187,6 +187,8 @@ export function createFleet(env: FleetEnv = {}): Line {
     options: FLEET_OPTIONS,
     // Recorded in run.started: change it with a rule of the policy, a default or the wording of the assignment.
     version: "fleet-1",
+    // The width gate (which provers work on a subgoal now) and the strategy each prover sticks to live in the process.
+    resume: { refuse: "the width gate (which provers work on a subgoal now) and the strategy each prover sticks to are kept in the process, and the journal cannot give them back" },
     hooks: {
       beforeSession: async (session: SessionContext): Promise<SessionDecision | undefined> => {
         const config = configOf(session.options);
