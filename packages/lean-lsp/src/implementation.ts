@@ -208,10 +208,12 @@ export class LeanLspImplementation implements ImplementationInstance {
   private async multiAttempt(call: LeanLspInput, scope: string, context: InvokeContext): Promise<LeanLspOutput> {
     const given = call.tactics;
     if (given === undefined || given.length === 0) throw new Error("multi_attempt needs tactics, the list of tactics to try");
-    // The file has line feeds only, and so do the tactics that the server joins to it.
-    const tactics = given.map((tactic) => tactic.replace(/\r\n/g, "\n"));
-    const reasons = screenTactics(tactics);
+    // Screened as given: a lone carriage return is a foreign line break that the screen refuses, and a
+    // CRLF is one line break for the server and for Lean. Then the file's own form, line feeds only,
+    // which is also the form that is joined to the file and sent.
+    const reasons = screenTactics(given);
     if (reasons.length > 0) throw new RefusedError(reasons);
+    const tactics = given.map((tactic) => tactic.replace(/\r\n/g, "\n"));
     // The server joins a tactic to the start of the line, up to a column (by default the first
     // non-blank character). The harness names the column, so that the text it screens is the text
     // the server joins, whatever the server counts as blank.

@@ -101,7 +101,7 @@ non-blank character, is what it sends), builds each document as the server does 
 its two regions back, and runs the screen of regions on them: a refusal says the tactic, where it is
 joined and what the server would elaborate. A tactic that has more lines than the region has from the
 line asked is refused, because the server would replace the marker that ends the region and the
-lines after it. A tactic with a CRLF is sent with line feeds. `attemptLines` is compared with the
+lines after it. A tactic is screened as given, and then a CRLF in it is written as a line feed, which is how it is joined and sent (a lone carriage return, even one before a CRLF, is refused). `attemptLines` is compared with the
 server's own `build_attempt_text` on 1500 seeded random cases (astral characters, tabs, no-break
 spaces, several lines, trailing line feeds), and gave the same document in each (and in 3000 when it
 was first written). The comparison is the opt-in test `real-server.test.ts` ([Tests](#tests)); it
