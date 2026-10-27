@@ -1,4 +1,5 @@
 import type { Json } from "./canonical-json.ts";
+import type { EpochChange, Provenance } from "./provenance.ts";
 import type { AttemptRole, ClaimKind, EdgeKind, EdgeLink } from "./records.ts";
 import type { ClaimStatus, EdgeStatus } from "./status.ts";
 import type { RouteAction, RouteSignalType, TaskAcceptance, TaskBudget, TaskKind, TaskStatus } from "./tasks.ts";
@@ -192,6 +193,14 @@ export interface EventDataMap {
     taskId?: string;
     /** Where the model calls of the attempt are made. Absent: `prover.session`. */
     site?: string;
+    /** Where this learned record comes from (documentation/memory.md, "Provenance and epochs"). */
+    provenance?: Provenance;
+    /**
+     * The unverified memory items a line drew into the session, and the ones the draw withheld
+     * (documentation/memory.md, "Randomized inclusion"). Absent: no draw was made for the session.
+     */
+    included?: string[];
+    withheld?: string[];
   };
   /**
    * A model response of a session was paid for. The attempt's totals are in `attempt.finished`;
@@ -247,6 +256,7 @@ export interface EventDataMap {
     attemptId: string;
     claimId: string;
     text: string;
+    provenance?: Provenance;
   };
   "validation.finished": {
     validationId: string;
@@ -292,6 +302,8 @@ export interface EventDataMap {
     kind: string;
     claimId?: string;
     data: Json;
+    /** Set on a node a mechanism learned from outcomes rather than from Lean (Global Constraint 16). */
+    provenance?: Provenance;
   };
   "node.updated": {
     nodeId: string;
@@ -367,6 +379,20 @@ export interface EventDataMap {
     /** The `drift` node it answers. */
     nodeId?: string;
   };
+  /**
+   * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
+   * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
+   * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
+   * orchestrator only; nothing is deleted.
+   */
+  "memory.epoch_opened": {
+    /** The new epoch's number: the epoch before it plus one. Epoch 0 is the first, and has no event. */
+    epoch: number;
+    reason: string;
+    changes: EpochChange[];
+    /** The run that opened it. */
+    provenance: Provenance;
+  };
 }
 
 export type EventType = keyof EventDataMap;
@@ -400,6 +426,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "task.assigned",
   "task.status_changed",
   "task.routed",
+  "memory.epoch_opened",
 ];
 
 export function isEventType(value: unknown): value is EventType {

@@ -186,6 +186,83 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 Records use the events' names (`claimId`, `parentId`, `declaredStrategy`...), and a field that is
 not set is absent.
 
+## Provenance and epochs
+
+An artifact a mechanism learns from outcomes rather than from Lean is unverified (Global
+Constraint 16): an attempt record that "already tried" reads, a lesson, a posterior, a schema, a
+channel statistic, a prompt. It carries a provenance stamp, and it never becomes a fact. A claim
+proved by the certifier, an edge checked by a Lean lemma, a library lemma are model independent and
+carry none.
+
+```ts
+interface Provenance {
+  modelId: string;        // the prover model as configured, PROVIDER/ID
+  promptVersion: string;  // the provers' PROMPT_VERSION
+  mathlibRev: string;     // the bench's revision, until the Lean environment's hash stands in for it
+  harnessVersion: string; // the code revision of the run
+  budgetClass: string;    // tiny, small, medium, large, huge or unbounded, from the dollars per problem
+  createdAt: string;      // ISO 8601
+}
+```
+
+What is stamped, today:
+
+| Artifact | Where the stamp is |
+|---|---|
+| An attempt record | `provenance` of `attempt.started`, with the model of the session. M1's "already tried" and the fleet's posteriors read these records. |
+| A model's notes | `provenance` of `lesson.recorded`. |
+| A node a mechanism learned | `provenance` of `node.recorded`, set by `recordNode({..., learned: true})`. |
+| An epoch | `provenance` of `memory.epoch_opened`, the run that opened it. |
+
+`store.stamp({modelId?})` is the helper that later artifacts use (lessons, schemas and cells, prompts):
+it gives the stamp of an artifact made now, from the context the run gave the store
+(`MemoryStoreOptions.provenance`). A mechanism that learns something stamps it, whatever record it
+stores it in; a node says `learned: true` and the store stamps it. `store.attempts(...)` gives each
+attempt's `provenance`, `epoch`, `included` and `withheld`, and `store.lessons(claimId)` the lessons.
+
+The orchestrator builds the context from the run: the configured model, `PROMPT_VERSION`, the bench's
+revision as `mathlibRev`, the code revision as `harnessVersion` (`unknown` without one) and the budget
+class of `budget.problemUsd`. A run that is resumed stamps with its resumed process's code revision.
+
+### Config classes
+
+PE3 groups attempts by the configuration they ran under. `configClassOf(provenance)` gives
+`{family, budgetClass}`, and `configClassKey` the same as one string. The family of a model is its
+`PROVIDER/ID` without a snapshot suffix (`-20250929`, `-2025-09-29`, `@20250929`, `-latest`), so a
+new snapshot is the same family and a new version number is another one: a model upgrade is what
+starves a posterior (PE3). The rule reads the text of the id; an id it does not recognize is its own
+family. The budget classes are `tiny` (under $0.5 per problem), `small` (under $2), `medium` (under
+$10), `large` (under $50), `huge`, and `unbounded`.
+
+### Epochs
+
+The memory has a current epoch, 0 at first. A new epoch opens, with the event `memory.epoch_opened`
+(its number, the reason in words, the changes, the stamp of the run), when the prover model family, the
+prompts' major version or the Mathlib revision is not the one of the memory's previous run:
+
+| Trigger | Compared |
+|---|---|
+| The prover model family | `modelFamily` of the configured model |
+| The prompts' major version | `promptMajor(PROMPT_VERSION)`: the version up to its last integer, so `m0-3` is another major than `m0-2` and `m0-2.1` is the same one (a minor part is a rewording) |
+| The Mathlib revision | the bench's revision |
+
+A change of the harness version or of the budget class opens none. The orchestrator opens the epoch
+when a run starts on the memory of an earlier run ([below](#memory-across-runs)); only the orchestrator
+may write the event, and a store of another actor is refused by the journal. `store.epoch()` is the
+current epoch, `store.epochs()` the epochs entered, and every attempt, lesson and learned node keeps the
+epoch it was recorded in. Nothing is deleted: the journal keeps all.
+
+### Probation
+
+On a new epoch the unverified artifacts of older epochs enter probation. Their counters are shrunk
+toward the prior: Beta(a, b) becomes Beta(1 + (a - 1) k, 1 + (b - 1) k), with k = 0.25 by default
+(`MemoryStoreOptions.probation`). Counters here are sums of outcomes, so the shrinkage is a weight on
+each outcome: `store.weightOf(epoch)` is 1 for an outcome of the current epoch and k for each epoch
+opened since, and `shrinkBeta(beta, k)` is the same arithmetic on a posterior that already exists.
+An item regains weight only through outcomes: the weight of an old outcome does not come back with time
+or with the item being shown, and a new outcome counts in full. The randomized inclusion of unverified items treats an
+item of an older epoch as new again, so it is shown at random until it has earned its place again.
+
 ## Reference files
 
 A proof is checked against a reference: a Lean file, and the theorem in it that states the claim

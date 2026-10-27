@@ -7,6 +7,8 @@ export * from "./lean.ts";
 export * from "./lean-source.ts";
 export * from "./log.ts";
 export * from "./projection.ts";
+export * from "./provenance.ts";
+export * from "./random.ts";
 export * from "./records.ts";
 export * from "./sketch.ts";
 export * from "./status.ts";

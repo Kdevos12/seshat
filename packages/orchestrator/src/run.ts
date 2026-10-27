@@ -5,6 +5,7 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { BenchIndex, ProblemEntry } from "@seshat/bench";
 import {
   BlobStore,
+  budgetClassOf,
   CheckFailedError,
   hashJson,
   isFinalTaskStatus,
@@ -14,8 +15,10 @@ import {
   newId,
   type ProblemOutcome,
   ProofValidator,
+  type ProvenanceContext,
   type Reference,
   SKETCH_POLICY,
+  stampProvenance,
 } from "@seshat/core";
 import { type JsonObject, type LineRegistry, resolveLines, resumeRefusals } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
@@ -261,6 +264,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const promptRecord = { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) };
+  // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
+  const provenance: ProvenanceContext = {
+    modelId: config.model,
+    promptVersion: PROMPT_VERSION,
+    mathlibRev: o.index.source.rev,
+    harnessVersion: o.codeRev ?? "unknown",
+    budgetClass: budgetClassOf(config.budget.problemUsd),
+  };
   const policyRecord = { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] };
   const linesRecord = enabled.lines.map(({ line, options }) => ({
     id: line.id,
@@ -411,7 +422,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
   if (enabled.lines.length > 0) {
-    memory = new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) });
+    memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
       lines: enabled.lines,
@@ -728,6 +739,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 signal: controller.signal,
                 transcript,
                 tools: pinned.tools,
+                stamp: (modelId) => stampProvenance(provenance, { modelId }),
                 onAttemptEnd: (attempt) => void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId }),
                 onEnd: (result) =>
                   end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" }),

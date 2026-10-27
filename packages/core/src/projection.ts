@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { canonicalJson, type Json, mergePatch } from "./canonical-json.ts";
 import type { AttemptCarry, EventDataMap, HarnessEvent, ProblemOutcome, SourceRef } from "./events.ts";
+import type { EpochChange, Provenance } from "./provenance.ts";
 import { type AttemptRole, type ClaimKind, type EdgeKind, SITE_PROVER_SESSION } from "./records.ts";
 import type { ClaimStatus, EdgeStatus } from "./status.ts";
 import type { RouteAction, RouteSignalType, TaskAcceptance, TaskBudget, TaskKind, TaskStatus } from "./tasks.ts";
@@ -56,6 +57,13 @@ export interface AttemptRow {
   charged_requests: number;
   /** What the prover carried to its next session. */
   carry: AttemptCarry | null;
+  /** The stamp of the record (documentation/memory.md, "Provenance and epochs"); null before the stamps. */
+  provenance: Provenance | null;
+  /** The unverified items the session was shown, and the ones the draw withheld; null when no draw was made. */
+  included: string[] | null;
+  withheld: string[] | null;
+  /** The memory's epoch when the attempt started. */
+  epoch: number;
 }
 
 export interface ToolRunRow {
@@ -76,6 +84,9 @@ export interface LessonRow {
   attempt_id: string;
   claim_id: string;
   text: string;
+  provenance: Provenance | null;
+  /** The memory's epoch when the lesson was recorded. */
+  epoch: number;
 }
 
 export interface ValidationRow {
@@ -120,6 +131,25 @@ export interface NodeRow {
   data: Json;
   created_seq: number;
   updated_seq: number;
+  /** The stamp of a node a mechanism learned from outcomes; null for any other. */
+  provenance: Provenance | null;
+  /** The memory's epoch when the node was recorded. */
+  epoch: number;
+}
+
+/** An epoch the memory entered (`memory.epoch_opened`); epoch 0 is the first and has no row. */
+export interface EpochRow {
+  epoch: number;
+  seq: number;
+  reason: string;
+  changes: EpochChange[];
+  provenance: Provenance;
+}
+
+/** An attempt that a memory item was offered to in a draw, and whether the draw included it. */
+export interface ItemAttemptRow {
+  attempt: AttemptRow;
+  included: boolean;
 }
 
 export interface ModelCallRow {
@@ -246,7 +276,7 @@ export interface RunSummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 4;
+export const PROJECTION_VERSION = 5;
 
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
@@ -266,7 +296,8 @@ create table if not exists attempts (
   output_tokens integer, duration_ms integer, turns integer, started_seq integer not null, finished_seq integer,
   role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text,
   task_id text, site text, charged_usd real not null default 0, charged_input_tokens integer not null default 0,
-  charged_output_tokens integer not null default 0, charged_requests integer not null default 0, carry_json text);
+  charged_output_tokens integer not null default 0, charged_requests integer not null default 0, carry_json text,
+  provenance_json text, included_json text, withheld_json text, epoch integer not null default 0);
 create index if not exists attempts_by_claim on attempts (claim_id);
 create index if not exists attempts_by_task on attempts (task_id);
 create table if not exists tool_runs (
@@ -275,7 +306,8 @@ create table if not exists tool_runs (
   started_seq integer not null, finished_seq integer);
 create index if not exists tool_runs_by_attempt on tool_runs (attempt_id);
 create table if not exists lessons (
-  seq integer primary key, attempt_id text not null, claim_id text not null, text text not null);
+  seq integer primary key, attempt_id text not null, claim_id text not null, text text not null,
+  provenance_json text, epoch integer not null default 0);
 create index if not exists lessons_by_claim on lessons (claim_id);
 create table if not exists validations (
   validation_id text primary key, claim_id text not null, attempt_id text, method text not null, verdict text not null,
@@ -291,7 +323,7 @@ create table if not exists edge_targets (
 create index if not exists edge_targets_by_to on edge_targets (to_id);
 create table if not exists nodes (
   node_id text primary key, kind text not null, claim_id text, data_json text not null,
-  created_seq integer not null, updated_seq integer not null);
+  created_seq integer not null, updated_seq integer not null, provenance_json text, epoch integer not null default 0);
 create index if not exists nodes_by_kind on nodes (kind, claim_id);
 create table if not exists model_calls (
   model_call_id text primary key, line text not null, problem_id text, attempt_id text, model text not null,
@@ -309,6 +341,11 @@ create table if not exists task_routes (
   signal_value text not null, reason text not null, attempt_id text, node_id text);
 create index if not exists task_routes_by_task on task_routes (task_id);
 create table if not exists resumptions (seq integer primary key, resumption integer not null, data_json text not null);
+create table if not exists epochs (
+  epoch integer primary key, seq integer not null, reason text not null, changes_json text not null, provenance_json text not null);
+create table if not exists attempt_items (
+  attempt_id text not null, item_id text not null, included integer not null, epoch integer not null, primary key (attempt_id, item_id));
+create index if not exists attempt_items_by_item on attempt_items (item_id);
 `;
 
 /**
@@ -443,12 +480,17 @@ export class Projection {
       }
       case "attempt.started": {
         const d = event.data;
+        const epoch = this.currentEpoch();
         db.prepare(
           `insert into attempts (attempt_id, claim_id, prover, iteration, model, started_seq, role, declared_strategy, subgoal,
-           task_id, site) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           task_id, site, provenance_json, included_json, withheld_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.attemptId, d.claimId, d.prover, d.iteration, d.model, event.seq, d.role ?? null, d.strategy ?? null, d.subgoal ?? null,
-          d.taskId ?? null, d.site ?? null);
+          d.taskId ?? null, d.site ?? null, d.provenance === undefined ? null : canonicalJson(d.provenance),
+          d.included === undefined ? null : canonicalJson(d.included), d.withheld === undefined ? null : canonicalJson(d.withheld), epoch);
+        const item = db.prepare("insert into attempt_items (attempt_id, item_id, included, epoch) values (?, ?, ?, ?)");
+        for (const id of d.included ?? []) item.run(d.attemptId, id, 1, epoch);
+        for (const id of d.withheld ?? []) item.run(d.attemptId, id, 0, epoch);
         return;
       }
       case "attempt.charged": {
@@ -488,7 +530,8 @@ export class Projection {
       }
       case "lesson.recorded": {
         const d = event.data;
-        db.prepare("insert into lessons values (?, ?, ?, ?)").run(event.seq, d.attemptId, d.claimId, d.text);
+        db.prepare("insert into lessons (seq, attempt_id, claim_id, text, provenance_json, epoch) values (?, ?, ?, ?, ?, ?)").run(
+          event.seq, d.attemptId, d.claimId, d.text, d.provenance === undefined ? null : canonicalJson(d.provenance), this.currentEpoch());
         return;
       }
       case "validation.finished": {
@@ -521,8 +564,11 @@ export class Projection {
       }
       case "node.recorded": {
         const d = event.data;
-        db.prepare("insert into nodes (node_id, kind, claim_id, data_json, created_seq, updated_seq) values (?, ?, ?, ?, ?, ?)").run(
-          d.nodeId, d.kind, d.claimId ?? null, canonicalJson(d.data), event.seq, event.seq);
+        db.prepare(
+          "insert into nodes (node_id, kind, claim_id, data_json, created_seq, updated_seq, provenance_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).run(
+          d.nodeId, d.kind, d.claimId ?? null, canonicalJson(d.data), event.seq, event.seq,
+          d.provenance === undefined ? null : canonicalJson(d.provenance), this.currentEpoch());
         return;
       }
       case "node.updated": {
@@ -566,6 +612,12 @@ export class Projection {
         ).run(
           d.to, d.reason, d.to === "blocked" && d.blockedBy !== undefined ? canonicalJson(d.blockedBy) : null, event.seq, d.to,
           event.seq, d.taskId);
+        return;
+      }
+      case "memory.epoch_opened": {
+        const d = event.data;
+        db.prepare("insert into epochs (epoch, seq, reason, changes_json, provenance_json) values (?, ?, ?, ?, ?)").run(
+          d.epoch, event.seq, d.reason, canonicalJson(d.changes), canonicalJson(d.provenance));
         return;
       }
       case "task.routed": {
@@ -618,7 +670,43 @@ export class Projection {
   }
 
   lessons(claimId: string): LessonRow[] {
-    return this.db.prepare("select * from lessons where claim_id = ? order by seq").all(claimId) as unknown as LessonRow[];
+    const rows = this.db.prepare("select * from lessons where claim_id = ? order by seq").all(claimId) as unknown as StoredLesson[];
+    return rows.map(lessonRow);
+  }
+
+  /** The memory's current epoch: 0 until a `memory.epoch_opened`, then the last one's number. */
+  currentEpoch(): number {
+    const row = this.db.prepare("select max(epoch) as epoch from epochs").get() as { epoch: number | null };
+    return row.epoch ?? 0;
+  }
+
+  /** The epochs the memory entered, in order (epoch 0 is not among them). */
+  epochs(): EpochRow[] {
+    const rows = this.db.prepare("select * from epochs order by epoch").all() as unknown as Array<{
+      epoch: number; seq: number; reason: string; changes_json: string; provenance_json: string;
+    }>;
+    return rows.map((r) => ({
+      epoch: r.epoch, seq: r.seq, reason: r.reason,
+      changes: JSON.parse(r.changes_json) as EpochChange[], provenance: JSON.parse(r.provenance_json) as Provenance,
+    }));
+  }
+
+  /**
+   * The attempts a memory item was offered to by a draw, with whether the draw included it, in the
+   * order they started.
+   */
+  itemAttempts(itemId: string): ItemAttemptRow[] {
+    const rows = this.db.prepare(
+      `select attempts.*, attempt_items.included as item_included from attempt_items join attempts using (attempt_id)
+       where attempt_items.item_id = ? order by attempts.started_seq`,
+    ).all(itemId) as unknown as Array<StoredAttempt & { item_included: number }>;
+    return rows.map(({ item_included, ...row }) => ({ attempt: attemptRow(row), included: item_included === 1 }));
+  }
+
+  /** The attempts that included a memory item since the epoch `since` (default: all of them): its uses. */
+  itemUses(itemId: string, since = 0): number {
+    const row = this.db.prepare("select count(*) as n from attempt_items where item_id = ? and included = 1 and epoch >= ?").get(itemId, since) as { n: number };
+    return row.n;
   }
 
   validation(validationId: string): ValidationRow | undefined {
@@ -859,14 +947,29 @@ function claimRow({ domain_json, ...rest }: StoredClaim): ClaimRow {
   return { ...rest, domain: domain_json === null ? [] : (JSON.parse(domain_json) as string[]) };
 }
 
-type StoredAttempt = Omit<AttemptRow, "premises" | "carry"> & { premises_json: string | null; carry_json: string | null };
+type StoredAttempt = Omit<AttemptRow, "premises" | "carry" | "provenance" | "included" | "withheld"> & {
+  premises_json: string | null;
+  carry_json: string | null;
+  provenance_json: string | null;
+  included_json: string | null;
+  withheld_json: string | null;
+};
 
-function attemptRow({ premises_json, carry_json, ...rest }: StoredAttempt): AttemptRow {
+function attemptRow({ premises_json, carry_json, provenance_json, included_json, withheld_json, ...rest }: StoredAttempt): AttemptRow {
   return {
     ...rest,
     premises: premises_json === null ? null : (JSON.parse(premises_json) as string[]),
     carry: carry_json === null ? null : (JSON.parse(carry_json) as AttemptCarry),
+    provenance: provenance_json === null ? null : (JSON.parse(provenance_json) as Provenance),
+    included: included_json === null ? null : (JSON.parse(included_json) as string[]),
+    withheld: withheld_json === null ? null : (JSON.parse(withheld_json) as string[]),
   };
+}
+
+type StoredLesson = Omit<LessonRow, "provenance"> & { provenance_json: string | null };
+
+function lessonRow({ provenance_json, ...rest }: StoredLesson): LessonRow {
+  return { ...rest, provenance: provenance_json === null ? null : (JSON.parse(provenance_json) as Provenance) };
 }
 
 type StoredTask = Omit<TaskRow, "acceptance" | "budget" | "depends_on" | "blocked_by"> & {
@@ -898,8 +1001,8 @@ function validationRow({ reasons_json, axioms_json, negation, ...rest }: StoredV
 
 type StoredEdge = Omit<EdgeRow, "to">;
 
-type StoredNode = Omit<NodeRow, "data"> & { data_json: string };
+type StoredNode = Omit<NodeRow, "data" | "provenance"> & { data_json: string; provenance_json: string | null };
 
-function nodeRow({ data_json, ...rest }: StoredNode): NodeRow {
-  return { ...rest, data: JSON.parse(data_json) as Json };
+function nodeRow({ data_json, provenance_json, ...rest }: StoredNode): NodeRow {
+  return { ...rest, data: JSON.parse(data_json) as Json, provenance: provenance_json === null ? null : (JSON.parse(provenance_json) as Provenance) };
 }
