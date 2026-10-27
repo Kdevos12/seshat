@@ -152,11 +152,12 @@ comment (`x--note` is one), and then it reads the text after it differently from
 it for code: a line comment that the scanner opens later may end after the comment Lean reads, and
 hide code. In `x/- a --/run_cmd` Lean reads `x`, a block comment that ends in the `-/` of `--/`, and
 the token `run_cmd`; a scanner that left the `/-` glued to `x` as code and went on to blank the `--`
-as a line comment would miss `run_cmd`. So from the first opener that is not sure, nothing is blanked. The price is that a comment glued
-to a symbol or a name is refused when it holds a keyword (`x--sorry`, `|-- run_cmd 1`, though Lean
-reads `|-` as two tokens), and so is every comment after it; a space before the `--`, or no keyword in
-the comment, avoids the refusal. `scanRegion` reads the regions so, and `maskCommentsAndStrings` reads
-the text of a statement so ([models.md](models.md#statements)).
+as a line comment would miss `run_cmd`. So from the first opener that is not sure, nothing is blanked.
+The price is that a comment glued to a symbol or a name is refused when it holds a keyword
+(`x--sorry`, `|-- run_cmd 1`, though Lean reads `|-` as two tokens), and so is every comment after it;
+a space before the `--`, or no keyword in the comment, avoids the refusal. `scanRegion` reads the
+regions so, and `maskCommentsAndStrings` reads the text of a statement so
+([models.md](models.md#statements)).
 
 Tokens match as Lean's lexer reads text, because that decides whether a word is a token of its own or
 part of a longer name. After a syntax error Lean tries a command again from the position of the error,
