@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { JsonSchema } from "@seshat/registry";
-import { JsonAnswerError, type LlmRequest, type LlmResult, parseJsonAnswer, withJson } from "../src/index.ts";
+import { completeJson, JsonAnswerError, type Llm, type LlmRequest, type LlmResult, parseJsonAnswer, withJson } from "../src/index.ts";
 
 const schema: JsonSchema = {
   type: "object",
@@ -115,5 +115,59 @@ describe("completeJson", () => {
     const answer = await llm.complete({ prompt: "Say something.", site: "test.say" });
     assert.equal(answer.text, "plain text");
     assert.equal(requests[0]?.prompt, "Say something.");
+  });
+});
+
+describe("completeJson(llm, request), the function a line calls", () => {
+  it("works on an Llm that only has complete, with the same single retry and the same site", async () => {
+    // An Llm written before completeJson existed: a plain object with a complete, and no more.
+    const requests: LlmRequest[] = [];
+    const old: Llm = {
+      complete: async (request) => {
+        requests.push(request);
+        return { text: requests.length === 1 ? "no idea" : '{"score": 2}', cost: { usd: 0.25, inputTokens: 10, outputTokens: 2 }, model: "test/model", modelCallId: `mc_${requests.length}` };
+      },
+    };
+    assert.equal(old.completeJson, undefined);
+    const answer = await completeJson<{ score: number }>(old, { prompt: "Rate it.", schema, site: "test.rate" });
+    assert.deepEqual(answer.value, { score: 2 });
+    assert.deepEqual(answer.modelCallIds, ["mc_1", "mc_2"], "the retry is a call like the first");
+    assert.deepEqual(requests.map((r) => r.site), ["test.rate", "test.rate"]);
+    assert.deepEqual(answer.cost, { usd: 0.5, inputTokens: 20, outputTokens: 4 });
+    // A second failure rejects, as it does through withJson, after exactly two calls.
+    requests.length = 0;
+    const never: Llm = { complete: async (request) => (requests.push(request), { text: "still no", cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "test/model", modelCallId: `mc_${requests.length}` }) };
+    await assert.rejects(completeJson(never, { prompt: "Rate it.", schema }), JsonAnswerError);
+    assert.equal(requests.length, 2);
+  });
+
+  it("keeps the this of a complete that is a method", async () => {
+    class Counting implements Llm {
+      calls = 0;
+      async complete(request: LlmRequest): Promise<LlmResult> {
+        this.calls += 1;
+        return { text: '{"score": 1}', cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "test/model", modelCallId: `mc_${this.calls}${request.site ?? ""}` };
+      }
+    }
+    const llm = new Counting();
+    const answer = await completeJson(llm, { prompt: "x", schema, site: "test.rate" });
+    assert.deepEqual(answer.value, { score: 1 });
+    assert.equal(llm.calls, 1);
+  });
+
+  it("uses the Llm's own completeJson when it has one, and leaves its complete alone", async () => {
+    let asked: unknown;
+    const own: Llm = {
+      complete: async () => {
+        throw new Error("complete must not be called");
+      },
+      completeJson: async <T,>(request: Parameters<NonNullable<Llm["completeJson"]>>[0]) => {
+        asked = request;
+        return { value: { score: 9 } as T, text: "own", cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "test/own", modelCallId: "mc_own", modelCallIds: ["mc_own"] };
+      },
+    };
+    const answer = await completeJson<{ score: number }>(own, { prompt: "Rate it.", schema, site: "test.rate" });
+    assert.deepEqual(answer.value, { score: 9 });
+    assert.equal((asked as { site: string }).site, "test.rate");
   });
 });

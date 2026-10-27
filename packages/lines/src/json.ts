@@ -80,7 +80,7 @@ function sum(a: LlmResult["cost"], b: LlmResult["cost"]): LlmResult["cost"] {
  * budget and recorded like any other call, with the same site. A call that fails (the budget is
  * spent, the model errs) is not retried here; the error goes up as it is.
  */
-export function withJson(complete: Llm["complete"]): Llm {
+export function withJson(complete: Llm["complete"]): Llm & Required<Pick<Llm, "completeJson">> {
   return {
     complete,
     completeJson: async <T = Json>(request: JsonRequest): Promise<JsonResult<T>> => {
@@ -119,4 +119,15 @@ export function withJson(complete: Llm["complete"]): Llm {
       );
     },
   };
+}
+
+/**
+ * A call whose answer is JSON of a given shape, on any `Llm`: the one a line calls. It uses the
+ * `Llm`'s own `completeJson` when it has one, and otherwise asks through `withJson` over its
+ * `complete`, with the same single retry, so that each call is charged and recorded like any other.
+ * An `Llm` written before `completeJson` existed (a test double, a wrapper) needs nothing added.
+ */
+export function completeJson<T = Json>(llm: Llm, request: JsonRequest): Promise<JsonResult<T>> {
+  if (llm.completeJson !== undefined) return llm.completeJson<T>(request);
+  return withJson((r) => llm.complete(r)).completeJson<T>(request);
 }

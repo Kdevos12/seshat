@@ -157,7 +157,7 @@ The problem's context (`ProblemContext`):
 | `domain` | The problem's domains, such as `msc:11`. |
 | `memory` | The run's `MemoryStore` ([memory.md](memory.md)), writing as `line:<id>`. A line never touches the journal: its store has no access to it. |
 | `registry` | The run's capability registry. Calls through it are tool runs in the journal; pass `actor: "line:<id>"`, and the attempt inside a session. |
-| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?, site?})` returns the text, its cost, the model and the call's id; `completeJson({..., schema})` returns an answer checked against a schema ([below](#llm)). |
+| `llm` | One-shot model calls, without tools: `complete({system?, prompt, maxTokens?, model?, site?})` returns the text, its cost, the model and the call's id; `completeJson(problem.llm, {..., schema})` returns an answer checked against a schema ([below](#llm)). |
 | `validate` | Submits a Lean proof of a claim, or of its negation, through the validator. |
 | `budget` | The problem's budget as it stands: its limit, what was spent, whether it is exhausted. |
 | `tasks` | The problem's task ledger ([ledger.md](ledger.md)): its tasks, read-only, and a way to propose more ([below](#tasks)). |
@@ -198,8 +198,8 @@ what share of the budget each place takes ([ledger.md](ledger.md#sites)). A call
 recorded as `<line>.unlabeled` (`m2.unlabeled`); a site that is not made of dotted lowercase words
 is refused before the call is paid for. The provers' sessions are the site `prover.session`.
 
-**`completeJson`.** `completeJson<T>({system?, prompt, schema, site?, ...})` is for every one-shot
-call whose answer a program reads. `schema` is a `JsonSchema` of `@seshat/registry`, the subset
+**`completeJson`.** `completeJson<T>(problem.llm, {system?, prompt, schema, site?, ...})` is for every
+one-shot call whose answer a program reads. `schema` is a `JsonSchema` of `@seshat/registry`, the subset
 manifests use; the call adds it to the prompt, so the prompt describes the content and not the
 format. The answer is read as JSON (bare, in a code fence, or the outermost object or array of a
 text), and checked. When it is not JSON or does not match, the model is asked once more with its
@@ -208,7 +208,12 @@ of each answer, the two calls' ids and the last text. The retry is a call like t
 charged to the problem's budget and recorded as its own `model_call.finished`, with the same site.
 A call that fails (the budget is spent, the model errs) is not retried. The result has the
 checked `value`, the text, the cost of every call made, and the ids of the calls (`modelCallIds`).
-`withJson(complete)` builds an `Llm` from a plain `complete`, for the orchestrator and for tests.
+`completeJson` is a function exported by `@seshat/lines`, not a method a line has to find on its
+`Llm`: the member `Llm.completeJson` is optional, so that an `Llm` written before it existed (a test
+double, a wrapper) is still an `Llm`. The function uses the member when the `Llm` has one and
+`withJson(llm.complete)` when it has not, so the same single retry applies either way. The `Llm` of a
+line's context has the member. `withJson(complete)` builds an `Llm` from a plain `complete`, for the
+orchestrator and for tests.
 
 ### `tasks`
 
