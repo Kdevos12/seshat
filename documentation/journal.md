@@ -124,7 +124,7 @@ A crash during an append can leave a last line that is not a whole event. Readin
 and opening for writing deals with it, so the next append starts on a fresh line: a fragment is cut
 off, and the events before it, a prefix of the journal, still verify; a line that is a whole event
 whose hash and place in the chain verify, and lacks only its newline, is kept. `EventLog.recovered`
-says which, with the number of bytes and their sha256, and a resumed run writes it into
+says which, with the number of bytes and the sha256 of those bytes as they were on disk, and a resumed run writes it into
 `run.resumed`. A malformed line anywhere else is corruption, and the journal refuses to open.
 
 ## Invariants
