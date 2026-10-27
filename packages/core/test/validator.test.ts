@@ -269,7 +269,7 @@ describe("structuralCheck", () => {
 
   it("does not take for a comment what Lean reads as a character literal, which takes the next two characters: ' -- #eval", () => {
     // `'`, a space and the first `-` are a literal (a broken one), so the second `-` is no comment and `#eval` is a command.
-    const literal = ["  trivial\n  ' -- x #eval 7777", "  exact foo ' --'  x #eval 7777", "  trivial\n  '\n  -- x #eval 7777", "  trivial\n  ''' -- x #eval 7777", "  trivial\n  (f x)' -- #eval 7777", "  trivial\n  1' -- #eval 7777"];
+    const literal = ["  trivial\n  ' -- x #eval 7777", "  exact foo ' --'  x #eval 7777", "  trivial\n  '\n  -- x #eval 7777", "  trivial\n  ''' -- x #eval 7777", "  trivial\n  (f x)' -- #eval 7777", "  trivial\n  1' -- #eval 7777", "  trivial\n  0x1F' -- #eval 7777"];
     for (const proof of literal) refused("", proof, /proof: '#eval' is not allowed/);
     refused("theorem aux_a : True := by trivial ' -- #eval 1", "  simp", /aux: '#eval' is not allowed/);
     // A symbol token of Mathlib that ends like a name is followed by a literal where a name would have ended; the table is not known.
