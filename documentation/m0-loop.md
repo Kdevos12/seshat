@@ -11,7 +11,8 @@ The code is in `packages/orchestrator/src`:
 
 | Module | Role |
 |---|---|
-| `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes. |
+| `run.ts` | `runBench`: a run over a list of bench problems, its configuration and the problems' outcomes; `resumeBench`: the continuation of a run whose process ended. |
+| `resume.ts` | What a resumed run reads from its journal and takes up: the recorded run and its compatibility checks, the problems that were cut, the candidate and the provers' carry ([ledger.md](ledger.md#resume)). |
 | `problem.ts` | `loadProblem`, and the `Workbench`: the sketch, the checks, the candidate and its certification, for one claim or its negation. |
 | `prover.ts` | `runProver`: one prover's loop of sessions. |
 | `prover-tasks.ts` | The ledger's tasks of M0: one `prove` task per prover, and how each ends ([ledger.md](ledger.md#what-m0-records)). |
@@ -21,7 +22,7 @@ The code is in `packages/orchestrator/src`:
 | `feedback.ts` | What a check says to the prover, and the failure class of a check. |
 | `budget.ts` | Ledgers of dollars and tokens. |
 | `report.ts` | The report of a run, built from its journal alone. |
-| `cli.ts` | `harness models`, `harness run`, `harness report`, with the other commands. |
+| `cli.ts` | `harness models`, `harness run` (and `harness run --resume`), `harness report`, with the other commands. |
 | `lines.ts` | The lines a run can enable, by id; none is implemented yet ([lines.md](lines.md)). |
 | `line-runtime.ts` | The enabled lines of a run: their contexts, and their hooks at each point of a problem, a prover and a session. |
 | `llm.ts` | The lines' one-shot model calls, charged and recorded. |
@@ -53,6 +54,15 @@ The code is in `packages/orchestrator/src`:
 The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
 (`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), or after three problems in
 a row ended with a harness error (`errors`). The reason is in `run.finished`.
+
+A run whose process ended without a `run.finished` (a kill, a crash, a usage limit) is continued by
+`resumeBench`, from its journal and the run directory alone: it checks that what resumes is what
+began the run, writes `run.resumed`, closes the sessions, tool runs and tasks that the process left
+open, starts its budgets from what the journal says was spent, takes up the problems that were cut
+where they stood (the candidate they had found, a certification that was recorded, each prover's
+file, last check and notes), and then runs the problems that had not begun. What it refuses, what
+it does with a certification that was cut, and what it does not restore are in
+[ledger.md](ledger.md#resume).
 
 ## A problem
 
@@ -200,6 +210,7 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
 | `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
 | `line:<id>` | An enabled line's `afterCheck` stopped it ([lines.md](lines.md#the-hooks)); no notes are asked for. | `invalid` |
+| `interrupted` | The process ended in the middle of the session. Written by the orchestrator when the run is resumed, at the cost of the session's charges, with no carry ([ledger.md](ledger.md#resume)). | `aborted` |
 
 When `turns` or `context` ends a session that is not the prover's last, one more request asks the
 model for its notes (`WRAP_UP`). The tools stay declared, because providers need the definitions
@@ -327,6 +338,7 @@ pnpm harness models PROVIDER           # the models of a provider, with their pr
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --ablation M2
+pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1   # continue a run whose process ended
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
 
@@ -357,6 +369,14 @@ Options of `harness run`:
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
+`harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]` continues a run whose
+process ended without finishing it ([ledger.md](ledger.md#resume)). The run keeps the configuration
+it began with, which is read from its journal, so no option that describes a run is given with it
+(`--model`, `--sessions`, `--lines`...); the bench, the host's capability registry, the tools, the
+certifier and the lines have to be the ones it began with. A run with a line that keeps state in the
+process (M2, M6, the fleet) cannot be resumed, and a run that is complete has nothing to resume: both
+are refused before anything is written, with the reason.
+
 Progress goes to the standard error, one line per problem, and the report goes to the standard
 output at the end. A first Ctrl-C stops the run: the problems in progress end as `aborted`, and the
 journal and the report are still written. A second Ctrl-C quits at once.
@@ -382,6 +402,9 @@ provers' sessions, the sites of the lines' one-shot calls), each with its share 
 ([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
 
+A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
+interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`).
+
 ## Tested, and not yet
 
 The tests in `packages/orchestrator/test/m0.test.ts` run the loop with pi-ai's faux provider as the
@@ -402,8 +425,13 @@ it, a veto of M6 leaves nothing to certify, and the call belongs to no attempt).
 an in-memory transport): one Sage session per attempt, ended with the attempt; the outputs and
 errors as the model reads them; the tool's description and the prompt's section; the run's
 refusals of tools it cannot give; and the pinning to the first implementation that answers.
-`cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options too), and
-`harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
+`resume-run.test.ts` and `resume-kill.test.ts` resume runs: a copy of a run's journal cut at an
+event stands for the process that ended there (`killedAt`, in `m0-helpers.ts`), at every event of a
+short run, with and without a cut last line, with a fake certifier and with the registry's; the
+budgets of the problem and of the run are compared with a run that was not cut; and a child process
+that is killed with SIGKILL in the middle of a check, with one and two provers, is resumed. The rest
+of `cli.test.ts` covers the argument and setup errors of `harness run` (its lines' options and
+`--resume` too), and `harness report` and `harness models`. `lines.test.ts` runs fake lines through the loop
 ([lines.md](lines.md#tested-and-not-yet)); with no line enabled, the loop is the one the tests above
 cover, unchanged.
 
@@ -420,4 +448,8 @@ Not done yet:
   certifiers; the Lean program `lean/SeshatCertify` has never been compiled
   ([certifier.md](certifier.md#to-verify-against-lean)). Until it has run, a real run's best
   outcome is `candidate` in practice, though the code paths to `proved` and `refuted` are there.
+- No run has been resumed against a real model or a real Lean: the tests stand a faux model and a
+  simulated Lean in for them, and the process that ends is a copy of a journal cut at an event or a
+  child process killed with SIGKILL. `harness run --resume` has not been run from the command line
+  on a run that a real process left behind.
 - The prompts have not been tuned on real attempts.

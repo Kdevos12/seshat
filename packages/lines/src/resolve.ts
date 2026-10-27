@@ -100,7 +100,7 @@ export function resumeRefusals(lines: readonly EnabledLine[]): string[] {
   return lines.flatMap(({ line }) => {
     if (line.resume === "stateless") return [];
     if (line.resume === undefined) {
-      return [`line ${line.id} does not say how it resumes (set \`resume\` on the line: "stateless", or {refuse: reason}); the run cannot be resumed with it`];
+      return [`line ${line.id} cannot be resumed: it does not say how it resumes (set \`resume\` on the line to "stateless", or to {refuse: reason})`];
     }
     return [`line ${line.id} cannot be resumed: ${line.resume.refuse}`];
   });

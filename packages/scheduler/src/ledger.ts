@@ -9,6 +9,7 @@ import {
   TASK_WRITER,
   type TaskAcceptance,
   type TaskBudget,
+  type TaskFilter,
   type TaskKind,
   type TaskRow,
 } from "@seshat/core";
@@ -71,6 +72,11 @@ export class TaskLedger {
 
   get(taskId: string): TaskRow | undefined {
     return this.journal.projection.task(taskId);
+  }
+
+  /** The tasks that meet every criterion of the filter, in the order they were made. */
+  list(filter: TaskFilter = {}): TaskRow[] {
+    return this.journal.projection.tasks(filter);
   }
 
   /** Makes a task, `pending`. Returns its id. */

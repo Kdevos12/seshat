@@ -110,6 +110,7 @@ allowed throws, and nothing is written.
 
 | Method | What it does |
 |---|---|
+| `get(taskId)`, `list(filter?)` | Read tasks: one by id, or those that meet a filter (problem, statuses, owner...), in the order they were made. |
 | `create(task)` | Makes a `pending` task and returns its id. |
 | `assign(taskId, owner, reason)` | Gives a task that has not started an owner. |
 | `markReady`, `start`, `complete`, `fail`, `cancel`, `block` | The moves of the table above. `complete` is refused while the criterion does not hold. |
@@ -246,16 +247,132 @@ when it exists, reads it from there for the table that compares the configs.
 
 ## Resume
 
-`run.resumed` (`runId`, `resumption`, `tornTail?`, `spent`, `interrupted`, `codeRev?`) is written by
-the orchestrator when a run continues after the process that ran it ended without finishing. The
-resumptions are numbered 1, 2... and the journal refuses a number out of order.
+A run whose process ended without finishing it (a kill, a crash, a usage limit, a power cut) is
+continued by `harness run --resume RUN_DIR` (`resumeBench`, `packages/orchestrator/src/run.ts`).
+The journal is the only source: the run is the one `run.started` recorded, and nothing a model or a
+line held in memory is needed, because what a resumed run uses is in the journal and the blobs.
+Everything the resumed process writes is written by the orchestrator, after `run.resumed`.
 
-A crash during an append can leave a last line that is not a whole event. Opening the journal
-deals with it, and `EventLog.recovered` says how: a fragment is cut off (`dropped`) and the events
-before it, which are a prefix of the journal, still verify; a line that is a whole event whose hash
-and place in the chain verify, and lacks only its newline, is kept (`completed`) rather than lose a
-fact the chain vouches for. `run.resumed.tornTail` keeps the number of bytes and their sha256.
+### What it refuses, before it writes anything
 
-A task that was `running` when the process ended goes back to `ready` after `run.resumed`, and
-only then: that is the one way back from `running`, and the journal allows it only when a
-resumption is more recent than the task's start.
+| Refused | Because |
+|---|---|
+| a directory without a journal, a journal that is corrupt (the hash chain is checked) or that never began | there is no run to continue |
+| a run that is complete: every problem has an outcome and its last `run.finished` came after its last resumption | there is nothing to continue. A run killed after its last problem and before `run.finished` is not complete: resuming it writes `run.finished`. |
+| another bench (its hash), or problems that are not the ones the journal hashed | it would be another run |
+| other prompts (version and hash), validation policy or lines (ids, versions, options) than `run.started` recorded | the code that resumes is not the code that began the run |
+| an enabled line that cannot be resumed ([lines](#lines)) | its state would be lost |
+| the run's model, when this process cannot reach it (an unknown provider, no credentials) | the same refusal as `harness run` |
+| another host, capability registry (catalog and host profile), tools or certifier than the run began with | it would be another run |
+
+All but the last row are checked before the journal is opened, so the directory is left as it was.
+The last needs the registry, which is built on a journal that is open: opening deals with a cut last
+line ([the torn tail](#the-torn-tail)), so a refusal there leaves the journal repaired and
+otherwise as it was, and the repair is not reported by a later `run.resumed`, which finds nothing
+to repair. No flag that describes a run is accepted with `--resume`: its configuration, the model
+included, is read from `run.started`.
+
+### What it writes first
+
+`run.resumed` (`runId`, `resumption`, `tornTail?`, `spent`, `interrupted`, `codeRev?`) comes first.
+The resumptions are numbered 1, 2... and the journal refuses a number out of order. Then, in this
+order, the orchestrator closes what the process left open:
+
+| Left open | Closed as |
+|---|---|
+| a tool run with no end | `tool_run.finished`, outcome `aborted` |
+| an attempt (a session) with no end | `attempt.finished`, outcome `aborted`, `stoppedBy: "interrupted"`, at the cost of its charges, with no carry: a session that was cut hands nothing on |
+| a task that was `running` | `ready`, with the reason "the process ended while the task ran; the run was resumed (resumption N)" |
+
+The last row is the one way back from `running`, and the journal allows it only when a `run.resumed`
+is newer than the task's start (`TaskLedger.interrupt`). The task then starts again as any other:
+"prover p1 resumes after the interruption, at session 3". Tasks that had ended stay ended.
+
+### The torn tail
+
+A crash during an append can leave a last line that is not a whole event, and nothing else. Decided:
+
+- a fragment is cut off (`dropped`): the events before it are a prefix of the journal, and the chain
+  still verifies;
+- a line that is a whole event whose hash and place in the chain verify, and lacks only its newline,
+  is kept (`completed`): dropping it would lose a fact the chain vouches for.
+
+`EventLog.recovered` says which, and `run.resumed.tornTail` keeps the bytes' number and their sha256;
+the report counts the cut lines. What a dropped fragment described is lost with it. The cost is at
+most one event: a model response whose charge was the fragment is not billed in the journal, so the
+resumed run's budget does not count it. Reading a run (`readRecordedRun`, `harness report`) never
+writes: it reads the events before the cut.
+
+### Budgets
+
+The run's ledger and each problem's start from what the journal says was spent
+(`Projection.totalSpend()` and `problemSpend()`: the charges of every session, finished or cut, and
+the lines' one-shot calls). A ledger that starts over its limit says so at once, so a budget that
+ran out stays out and a resumed run spends no more than what is left. The tests compare a resumed
+run with one that was not cut: the same calls, the same cost. One response that was in flight when
+the process ended was never billed to the journal, and the resumed run cannot count it.
+
+Problems are taken in this order: first the ones the journal registered and did not end, whatever
+is left of the run's budget (they end at once if none is), then the ones it had not begun, which a
+spent run budget leaves unbegun, as it would have in a run that was not cut. A problem that has an
+outcome keeps it, `aborted` too: it was stopped on purpose.
+
+### A problem taken up
+
+The problem keeps its claim, its registration and its prover tasks, which are the ones the journal
+has; the reference file is checked again (a Lean call, no model). Then:
+
+- **The candidate.** The first valid fast check that the problem's workbench made of its own claim
+  is the candidate, read back from the journal and the blob of the file that was checked
+  (`recoverCandidate`, `Workbench.adopt`). It is not found again, no prover runs, and the claim is
+  made `computed` if the process ended between the validation and the change of status. The prover
+  that found it is `done`, the others `cancelled`, as in a run that was not cut.
+- **The provers.** A prover whose task is `ready` goes on at the session after the last it started,
+  with what the last session that finished carried: its regions, its last check and its notes. A
+  session that was cut counts as used and says nothing about the prover's health.
+- **The lines.** `beforeProvers` is not called again once a prover of the problem had started; it
+  is when none had, since the process may not have finished it.
+- A journal that names a blob the run directory lost ends the problem as an `error`, with the blob.
+
+### Certification
+
+A candidate is certified once. What the resumed run does depends on what the journal holds:
+
+| The journal holds | The resumed run |
+|---|---|
+| no candidate | the provers go on |
+| a candidate, and a `kernel_replay` validation of its file (valid or invalid) | uses that answer, certifies nothing again, and makes the claim `proved` or `refuted` if the answer is valid and the change of status was cut |
+| a candidate, and no `kernel_replay` validation | asks the certifier, once |
+
+A certification cut in the middle of its call falls under the last row. The validation is written
+when the answer arrives, before the claim's change of status, so a call that did not answer recorded
+nothing: the claim is still `computed`, and a certifier that is a registry capability left a tool run
+with no end, which the resumption closes as `aborted`. The kernel replay is made again from the
+start. The certifier may therefore have been asked twice for one candidate, once by each process,
+but the journal never holds two answers for it.
+
+### Lines
+
+A line says in `resume` whether a run with it can be resumed ([lines.md](lines.md#resuming-a-run-with-lines)):
+`"stateless"` (what it keeps is in the journal and the memory, as M1's is), or `{refuse: reason}`,
+and a line that says nothing is refused. The repository's lines: M1 is stateless; M2 (the truth
+maintenance state of its graph), M6 (the detectors' counts) and the fleet (its width gate and
+rotation) refuse, until they rebuild their state from the journal and the memory. A run with one of
+them cannot be resumed, and the command says which line and why.
+
+### What a resumed run does not restore
+
+- A model response in flight at the interruption, and the routing decisions the process had not yet
+  written: neither is made up.
+- The sessions a line skipped (its `beforeSession` stopped them) are not recorded, so a resumed
+  prover may be offered them again.
+- A proof that a line submitted for another claim, or a refutation, and that waited for
+  certification, is not certified by the resumed run (its validation is in the journal; the claim
+  stays `computed`). Only the problem's own candidate is recovered.
+- A claim an M0 run created and registered no problem for, when the process ended between the two
+  events, stays in the journal as a claim no problem points at; the problem then gets a new one.
+- `durationMs` of a taken-up problem measures the resumed process only. Its cost, attempts and
+  outcome are the problem's whole.
+
+The report says that the run was resumed, how many sessions, tool runs and tasks the interruptions
+cut, and how many cut last lines it found.

@@ -54,6 +54,17 @@ describe("TaskLedger", () => {
     journal.close();
   });
 
+  it("lists the tasks that meet a filter, in the order they were made", () => {
+    const { journal, ledger } = setup();
+    const first = ledger.create({ kind: "prove", problemId: "prb_1", claimId: "clm_1", owner: "prover:p1", acceptance: prove });
+    const second = ledger.create({ kind: "prove", problemId: "prb_1", claimId: "clm_1", owner: "prover:p2", acceptance: prove });
+    ledger.markReady(second, "no dependencies");
+    assert.deepEqual(ledger.list().map((task) => task.task_id), [first, second]);
+    assert.deepEqual(ledger.list({ problemId: "prb_1", statuses: ["ready"] }).map((task) => task.task_id), [second]);
+    assert.deepEqual(ledger.list({ problemId: "prb_other" }), []);
+    journal.close();
+  });
+
   it("promotes the tasks whose dependencies are done", () => {
     const { journal, ledger } = setup();
     const first = ledger.create({ kind: "prove", problemId: "prb_1", claimId: "clm_1", owner: "prover:p1", acceptance: prove });

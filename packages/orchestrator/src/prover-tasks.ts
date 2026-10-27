@@ -25,11 +25,19 @@ export interface ProverTasksOptions {
  * The tasks of a problem that M0 does: one `prove` task per prover, each owned by its prover, each
  * done when the problem's claim is a candidate (`computed`) or better. They are `ready` when this
  * returns; the orchestrator starts each as its prover starts (documentation/ledger.md, "What M0
- * records").
+ * records"). A problem that an interrupted run had begun already has its tasks: they are returned
+ * as they stand, and only the ones that were not made yet are made.
  */
 export function createProverTasks(tasks: TaskLedger, o: ProverTasksOptions): ProverTask[] {
+  const owned = new Map(
+    tasks
+      .list({ problemId: o.problemId, kinds: ["prove"] })
+      .flatMap((task) => (task.proposed_by === null && task.owner !== null ? [[task.owner, task.task_id] as const] : [])),
+  );
   const made = Array.from({ length: o.provers }, (_, i): ProverTask => {
     const name = `p${i + 1}`;
+    const existing = owned.get(`prover:${name}`);
+    if (existing !== undefined) return { name, taskId: existing, problemId: o.problemId };
     const taskId = tasks.create({
       kind: "prove",
       problemId: o.problemId,

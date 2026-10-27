@@ -7,7 +7,11 @@
 - **A thin orchestrator** decides what to attempt and with what budget, and records every fact in
   the journal.
 - **The journal** (JSONL with a hash chain) is the only source of truth. The SQLite projection, the
-  indexes and the future knowledge graph are derived from it and can be rebuilt from it.
+  indexes and the future knowledge graph are derived from it and can be rebuilt from it. A run whose
+  process ended is continued from it alone ([ledger.md](ledger.md#resume)).
+- **The task ledger** is the record of the work: what has to be done, who does it, what it may
+  spend and when it is done, as tasks that point at claims and edges but never hold a claim's
+  status. Only the orchestrator writes it ([ledger.md](ledger.md)).
 - **Lean decides** what is proved. A model's output is a candidate until Lean checks it, and a
   claim is `proved` only after certification ([trust.md](trust.md)).
 - **Capabilities** (Lean checking, automated provers, SAT/SMT, computer algebra, search) sit behind
@@ -28,6 +32,7 @@
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
 | `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
+| `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12 will join it | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, fleet), the M1 line, the `harness` command | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 
@@ -39,7 +44,6 @@ code without touching the lockfile:
 |---|---|---|
 | `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, lines, memory, registry |
 | `@seshat/models` | Small models of the discrete domain, fingerprints, certified refutations, identification (M11) | core, lines, memory, registry |
-| `@seshat/scheduler` | The saturation kernel and the subgoal scheduler (M12) | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, graph, lessons, library, lines, memory, registry |
 | `@seshat/library` | The growing lemma library (M3) | core, lines, memory, registry |
 | `@seshat/lessons` | Lessons with counters (M5) | core, lines, memory, registry |
@@ -63,7 +67,8 @@ Data that is versioned with the code:
 2. The file is put in plain-header form, checked against the index, and cut into a sketch: fixed
    parts and two editable regions ([validator.md](validator.md)).
 3. The orchestrator records `claim.created` (status `open`) and `problem.registered`, checks the
-   original file once for the statement's reference type, then starts the provers in parallel.
+   original file once for the statement's reference type, makes one `prove` task per prover in the
+   task ledger ([ledger.md](ledger.md)), then starts the provers in parallel.
 4. Each prover works in sessions, each a fresh pi agent and an attempt in the journal. The agent
    edits the two regions and calls its `lean_check` tool, which runs the fast check and answers
    with Lean's messages and the goals of the `sorry`s at the prover's own line numbers. Lean is
@@ -77,6 +82,10 @@ Data that is versioned with the code:
    the other provers. Certification makes it `proved`.
 7. The problem ends with `problem.finished` (outcome, attempts, cost), and the run with a report
    built from the journal.
+
+If the process ends before the problem does, `harness run --resume` takes the problem up where the
+journal left it: the candidate, the certification and each prover's file and notes are read back,
+the budgets start from what was spent, and nothing is run or certified twice ([ledger.md](ledger.md#resume)).
 
 [m0-loop.md](m0-loop.md) describes the loop in full. The plan's mechanisms come as lines that a run
 switches on: their hooks run at fixed points of this loop (before the provers, around each

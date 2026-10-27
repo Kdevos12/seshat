@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { promisify } from "node:util";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { check, demoBench, demoRun, tempDir } from "./m0-helpers.ts";
+import { check, demoBench, demoRun, killedAt, tempDir } from "./m0-helpers.ts";
 
 const run = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -211,6 +211,43 @@ describe("harness run --lines", () => {
       assert.equal(stdout, "");
     });
     assert.equal(existsSync(out), false);
+  });
+});
+
+describe("harness run --resume", () => {
+  it("refuses what makes no sense before writing anything: a run that is complete, a flag that describes a new run, a missing checkout or directory, a model this process does not know", async () => {
+    const whole = await demoRun({ config: { sessions: 3 }, responses: [check("bad"), check("exact trivial_proof")] });
+    const index = join(tempDir(), "bench.json");
+    writeFileSync(index, JSON.stringify(whole.bench.index));
+    const cut = killedAt(whole.dir, (event) => event.type === "attempt.finished");
+    const journal = readFileSync(join(cut, "journal.jsonl"));
+    const given = ["--checkout", whole.bench.checkout, "--bench", index];
+
+    const options: Array<[string[], RegExp, boolean]> = [
+      // [arguments, what stderr says, whether the usage follows]
+      [["--resume", whole.dir, ...given], /^the run is complete: every problem has an outcome and the run finished, so there is nothing to resume in /m, false],
+      [["--resume", cut, ...given, "--model", "a/b", "--sessions", "2"], /^--resume continues the run as it began, from its journal: --model, --sessions cannot be given with it$/m, true],
+      [["--resume", cut, "--bench", index], /^--resume needs --checkout: a checkout of the bench's repository$/m, true],
+      [["--resume", join(cut, "nowhere"), ...given], /^no directory .*nowhere$/m, false],
+      [["--resume", cut, "--checkout", join(cut, "missing"), "--bench", index], /^no directory .*missing$/m, false],
+      // The model of the run is the faux provider's, which the command line does not have.
+      [["--resume", cut, ...given], /^unknown provider faux$/m, false],
+    ];
+    for (const [args, message, usage] of options) {
+      const { code, stdout, stderr } = await harness(["run", ...args]);
+      assert.equal(code, 2, `${args.join(" ")}: ${stderr}`);
+      assert.match(stderr, message);
+      assert.equal(/\n\nusage:\n/.test(stderr), usage, args.join(" "));
+      assert.equal(stdout, "");
+    }
+    assert.deepEqual(readFileSync(join(cut, "journal.jsonl")), journal, "the journal of the run that was cut is as it was");
+  });
+
+  it("is in the usage text", async () => {
+    const { code, stdout } = await harness(["--help"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /^ {2}harness run --resume RUN_DIR --checkout DIR \[--bench FILE\] \[--host HOST\]$/m);
+    assert.match(stdout, /^run --resume: continues a run whose process ended without finishing it/m);
   });
 });
 

@@ -30,6 +30,7 @@ simulated model and a simulated Lean.
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
+| Task ledger: tasks and their transitions, typed routing of failures and drift, model-call sites, `harness run --resume` | `@seshat/core`, `@seshat/scheduler`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean and with a process killed by SIGKILL; a run with M2, M6 or the fleet cannot be resumed yet; never run with a real model or Lean |
 
 None of this has run against a real Lean or a real model yet, because the development environment
 blocks the Lean toolchain downloads and has no model credentials.
@@ -59,7 +60,7 @@ blocks the Lean toolchain downloads and has no model credentials.
   width, escalation, and the `allocation` nodes.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, certification and the
-  outcomes, budgets, the run directory, `harness run` and `harness report`.
+  outcomes, budgets, the run directory, `harness run` (and `--resume`) and `harness report`.
 - [lean.md](lean.md): Lean checkers, the Kimina client, deployment.
 - [certifier.md](certifier.md): the certifier: what it answers, the process, the Lean program, where
   untrusted code runs, its settings, deployment, what is still to verify against Lean.
