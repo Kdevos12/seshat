@@ -347,6 +347,7 @@ export class ProblemLines {
     const packetLine = this.with("contextPacket")[0];
     const guards = this.with("beforeCheck");
     const checkers = this.with("afterCheck");
+    let differed = false;
     const hooks: SessionHooks = {
       ...(packetLine !== undefined
         ? {
@@ -359,6 +360,11 @@ export class ProblemLines {
                 });
                 const fault = packetFault(answer);
                 if (fault !== undefined) throw new Error(fault);
+                // The session sends the frozen prefix whatever the line answers; say so once, in the progress log.
+                if (prefix !== undefined && typeof answer === "object" && answer.prefix !== prefix && !differed) {
+                  differed = true;
+                  this.log(`${info.prover} session ${info.session}: line ${packetLine.entry.line.id} answered a prefix that differs from the frozen one; the session keeps the first (said once per session)`);
+                }
                 return answer;
               }),
           }
