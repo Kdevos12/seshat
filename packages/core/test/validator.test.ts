@@ -206,6 +206,7 @@ describe("structuralCheck", () => {
     refused("", "  simp\n  exact foo \\/- #eval 1 -/ bar", /proof: '#eval' is not allowed/);
     refused("theorem aux_a : True := by trivial <-- #eval 1", "  simp", /aux: '#eval' is not allowed/);
     refused("", '  simp\n  exact foo <-- "x"', /proof: string literals are not allowed/);
+    refused("", "  simp\n  exact foo \\/- «a» -/", /proof: «» names are not allowed/);
     // The safe side: a comment glued to a symbol or a name is code to the screen, and is refused if it holds a keyword.
     refused("", "  simp\n  exact foo x--sorry", /proof: 'sorry' is not allowed/);
     refused("", "  simp\n  exact foo |-- run_cmd 1", /proof: 'run_cmd' is not allowed/);

@@ -187,7 +187,8 @@ export function scanRegion(text: string): RegionScan {
  * The forbidden tokens that a piece of Lean text holds, in the order of the list, `sorry` and
  * `admit` included. The text has its comments blanked already (`scanRegion(text).masked`, or
  * `maskCommentsAndStrings`). `structuralCheck` applies this to the editable regions; code that writes
- * text from a model into a Lean file of its own applies it to that text.
+ * text from a model into a Lean file of its own applies it to that text, and refuses a `--` or `/-`
+ * that the mask leaves in it (`maskCommentsAndStrings`).
  */
 export function forbiddenTokensIn(masked: string): string[] {
   // `_root_.Lean.Meta` must not slip past the token boundary.
