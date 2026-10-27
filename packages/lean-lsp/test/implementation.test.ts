@@ -420,6 +420,19 @@ describe("lean.lsp: multi_attempt joins a tactic to the start of its line, and s
     await impl.close();
   });
 
+  it("screens the tactics as given, before the line ends are made line feeds: a lone carriage return before a CRLF is refused", async () => {
+    // Made line feeds first, "\r\r\n" would read as one CRLF, and the lone carriage return would be gone from what the screen sees.
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp\nring\nring", tactics: ["simp\r\r\nring"] })), (e: unknown) => {
+      assert.ok(e instanceof RefusedError, String(e));
+      assert.match(e.message, /- tactic 1: remove a carriage return/);
+      return true;
+    });
+    assert.equal(fake.calls.length, 0);
+    await impl.close();
+  });
+
   it("never lets through a splice whose document, as the server builds it, the policy would refuse", async () => {
     // The oracle is the fake's own port of the server's build_attempt_text and the core policy, not the screen under test.
     const proofs = ["Le", "run_", "#ev", "simp", "intro n\nsimp", "/- note\n#eval 1\n-/\nsimp", "-- c", "sim"];
