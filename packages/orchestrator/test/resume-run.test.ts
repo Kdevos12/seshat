@@ -640,6 +640,21 @@ describe("resuming a run with lines", () => {
     assert.equal(existsSync(join(dir, "journal.jsonl.lock")), false);
   });
 
+  it("refuses a run of M2, M6 or the fleet as the repository registers them, naming each line and what it keeps", async () => {
+    const cases: Array<[string[], Record<string, Record<string, number>>, RegExp]> = [
+      [["M1", "M2"], {}, /the run cannot be resumed: line M2 cannot be resumed: the variant graph's work on a problem/],
+      [["M1", "M6"], {}, /the run cannot be resumed: line M6 cannot be resumed: the detectors' counts across a prover's sessions/],
+      [["M1", "M6", "fleet"], { fleet: { seed: 1 } }, /line M6 cannot be resumed: .*; line fleet cannot be resumed: the width gate/],
+    ];
+    for (const [lines, lineOptions, message] of cases) {
+      const whole = await demoRun({ config: { sessions: 3, lines, lineOptions }, responses: script() });
+      const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+      const journal = readFileSync(join(dir, "journal.jsonl"));
+      await assert.rejects(demoResume({ dir, bench: whole.bench, responses: [] }), message, lines.join(","));
+      assert.deepEqual(readFileSync(join(dir, "journal.jsonl")), journal, `${lines.join(",")}: nothing was written`);
+    }
+  });
+
   it("refuses to resume a run with a line other than the one it began with", async () => {
     const whole = await demoRun({ config: { sessions: 3, lines: ["M1"] }, responses: script() });
     const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
