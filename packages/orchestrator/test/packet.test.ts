@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { FrozenPacket, Line, PacketRequest } from "@seshat/lines";
-import { checkConfig, DEFAULT_CONFIG } from "../src/index.ts";
+import { readEvents, type HarnessEvent } from "@seshat/core";
+import { buildReport, checkConfig, DEFAULT_CONFIG } from "../src/index.ts";
 import { composePacket, NEW_SINCE_HEADING, packetFault } from "../src/packet.ts";
 import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { nth } from "./resume-helpers.ts";
@@ -144,6 +145,37 @@ describe("the frozen packet prefix in a session", () => {
     for (const context of without.requests) assert.doesNotMatch(userTexts(context).join("\n"), /New since/);
   });
 
+  it("ignores a later prefix that differs, and says so once per session in the progress log", async () => {
+    const logs: string[] = [];
+    const { requests } = await (async () => {
+      const requests: TranscriptContext[] = [];
+      const steps = [0, 1, 2].map((k) => (context: TranscriptContext) => {
+        requests.push(context);
+        return check(k === 2 ? "exact trivial_proof" : "bad");
+      });
+      await demoRun({ lines: { M4: frozenLine() }, config: { lines: ["M4"] }, responses: steps, log: (line) => logs.push(line) });
+      return { requests };
+    })();
+    // The line's prefix names the request it was compiled for; the model only ever sees the first one.
+    for (const context of requests) {
+      assert.match(userTexts(context)[0] ?? "", /compiled for request 1:/);
+      assert.doesNotMatch(userTexts(context)[0] ?? "", /compiled for request [23]:/);
+    }
+    assert.equal(logs.filter((l) => /differs from the frozen one/.test(l)).length, 1);
+    assert.match(logs.find((l) => /differs from the frozen one/.test(l)) ?? "", /line M4 answered a prefix that differs from the frozen one; the session keeps the first/);
+
+    // A line that returns request.prefix is not told off.
+    const quiet: string[] = [];
+    const careful: Line = {
+      id: "M4",
+      title: "careful",
+      requires: [],
+      hooks: { contextPacket: async (_s, r) => ({ prefix: r.prefix ?? "the prefix", tail: `Request ${r.request}.` }) },
+    };
+    await demoRun({ lines: { M4: careful }, config: { lines: ["M4"] }, responses: [check("bad"), check("exact trivial_proof")], log: (line) => quiet.push(line) });
+    assert.equal(quiet.filter((l) => /differs from the frozen one/.test(l)).length, 0);
+  });
+
   it("still takes a string, as before", async () => {
     const { requests } = await run({ id: "M4", title: "string", requires: [], hooks: { contextPacket: async (_s, r) => `PACKET ${r.request}` } });
     assert.deepEqual(requests.map(userTexts), [["PACKET 1"], ["PACKET 2"], ["PACKET 3"]]);
@@ -210,6 +242,60 @@ describe("the cache in the cost and the report", () => {
     const unset = await solve(frozen);
     assert.equal("cacheRetention" in (ofType(unset.events, "run.started")[0]?.data.config as object), false);
     assert.equal(unset.result.report.cachedInputTokens, short.result.report.cachedInputTokens, "the default is the provider's, which caches");
+  });
+
+  it("keeps the cache reads of a session that the harness ended at its charges, in the report", () => {
+    let seq = 0;
+    const event = <K extends HarnessEvent["type"]>(type: K, data: Extract<HarnessEvent, { type: K }>["data"]): HarnessEvent =>
+      ({ v: 1, seq: seq++, id: `e${seq}`, ts: "2026-01-01T00:00:00Z", run: "r", actor: "t", type, data, prev: "", hash: "" }) as unknown as HarnessEvent;
+    const charged = (attemptId: string, cached?: number) =>
+      event("attempt.charged", { attemptId, usd: 1, inputTokens: 100, outputTokens: 10, ...(cached !== undefined ? { cachedInputTokens: cached } : {}) });
+    const events = [
+      event("run.started", { runId: "r", benchId: "b", problems: 1, host: "h", config: {} }),
+      // A session the harness failed in: two charges, and an attempt.finished written from them (chargedTotals), with no cached field.
+      event("attempt.started", { attemptId: "a1", claimId: "c", prover: "p1", iteration: 1, model: "m" }),
+      charged("a1", 60),
+      charged("a1", 40),
+      event("attempt.finished", { attemptId: "a1", outcome: "error", stoppedBy: "error", durationMs: 1, turns: 2, usd: 2, inputTokens: 200, outputTokens: 20 }),
+      // A session that finished with its own total, which is the sum of its charges.
+      event("attempt.started", { attemptId: "a2", claimId: "c", prover: "p1", iteration: 2, model: "m" }),
+      charged("a2", 30),
+      charged("a2", 20),
+      event("attempt.finished", { attemptId: "a2", outcome: "invalid", stoppedBy: "model", durationMs: 1, turns: 2, usd: 2, inputTokens: 200, outputTokens: 20, cachedInputTokens: 50 }),
+      // A session that has not finished: counted at its charges.
+      event("attempt.started", { attemptId: "a3", claimId: "c", prover: "p1", iteration: 3, model: "m" }),
+      charged("a3", 7),
+      // A session with nothing cached.
+      event("attempt.started", { attemptId: "a4", claimId: "c", prover: "p1", iteration: 4, model: "m" }),
+      charged("a4"),
+      event("attempt.finished", { attemptId: "a4", outcome: "invalid", stoppedBy: "model", durationMs: 1, turns: 1, usd: 1, inputTokens: 100, outputTokens: 10 }),
+    ];
+    const report = buildReport(events);
+    assert.equal(report.cachedInputTokens, 100 + 50 + 7);
+    assert.equal(report.inputTokens, 200 + 200 + 100 + 100);
+  });
+
+  it("keeps the cache reads of a session that a resumption cut, in the report", async () => {
+    const stateless: Line = { ...frozenOf, resume: "stateless" };
+    const script = () => [check("bad"), check("bad"), check("bad"), check("exact trivial_proof")];
+    const whole = await demoRun({ lines: { M4: stateless }, config: { lines: ["M4"], sessions: 2 }, responses: script() });
+    // The process ends after the session's third charge: the session is cut, with cache reads charged and no attempt.finished.
+    const cut = nth(whole.events, "attempt.charged", 3) + 1;
+    const dir = killedAt(whole.dir, cut);
+    const before = buildReport(readEvents(join(dir, "journal.jsonl")));
+    const cutEvents = readEvents(join(dir, "journal.jsonl"));
+    const cutCached = ofType(cutEvents, "attempt.charged").reduce((sum, e) => sum + (e.data.cachedInputTokens ?? 0), 0);
+    assert.ok(cutCached > 0 && before.cachedInputTokens === cutCached, "the report of the cut journal counts the charges of the unfinished session");
+
+    const resumed = await demoResume({ dir, bench: whole.bench, lines: { M4: stateless }, responses: script().slice(3) });
+    const [interrupted] = ofType(resumed.events, "attempt.finished");
+    assert.equal(interrupted?.data.stoppedBy, "interrupted");
+    assert.equal(interrupted?.data.cachedInputTokens, undefined, "the resumption writes the attempt's end from the projection, which has no cached sum");
+    assert.equal(interrupted?.data.inputTokens, ofType(cutEvents, "attempt.charged").reduce((sum, e) => sum + e.data.inputTokens, 0));
+    const after = resumed.result.report;
+    assert.ok(after.cachedInputTokens >= before.cachedInputTokens, `${after.cachedInputTokens} after, ${before.cachedInputTokens} before`);
+    const everyCharge = ofType(resumed.events, "attempt.charged").reduce((sum, e) => sum + (e.data.cachedInputTokens ?? 0), 0);
+    assert.equal(after.cachedInputTokens, everyCharge, "every cache read ever charged is in the report, the cut session's included");
   });
 
   it("checks the configured retention", () => {

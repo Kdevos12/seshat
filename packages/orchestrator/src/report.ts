@@ -204,6 +204,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   let inputTokens = 0;
   let outputTokens = 0;
   let cachedInputTokens = 0;
+  // The cache reads each attempt was charged, kept after the attempt ends. An `attempt.finished` that
+  // the harness wrote from the charges (a session the harness failed in, or one a resumption cut)
+  // carries no `cachedInputTokens`: the charges are the only record of them. A finished total, when
+  // it has one, is the sum of the same charges, so the larger of the two is the attempt's figure.
+  const cachedCharged = new Map<string, number>();
 
   for (const event of events) {
     switch (event.type) {
@@ -232,6 +237,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         sum.outputTokens += d.outputTokens;
         sum.cachedInputTokens += d.cachedInputTokens ?? 0;
         charges.set(d.attemptId, sum);
+        cachedCharged.set(d.attemptId, (cachedCharged.get(d.attemptId) ?? 0) + (d.cachedInputTokens ?? 0));
         break;
       }
       case "attempt.finished": {
@@ -245,7 +251,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
-        cachedInputTokens += d.cachedInputTokens ?? 0;
+        cachedInputTokens += Math.max(d.cachedInputTokens ?? 0, cachedCharged.get(d.attemptId) ?? 0);
         break;
       }
       case "model_call.finished": {

@@ -321,7 +321,11 @@ Spending is tracked by ledgers: one for the run, and one per problem below it. E
 is charged to its problem and to the run, at the cost the provider reports, or at the cost computed
 from the model's prices when it reports none. Input tokens include cache reads and writes, and the
 cache reads are also given apart (`cachedInputTokens` in `attempt.charged` and `attempt.finished`,
-and in `model_call.finished`; absent when there were none), priced at the model's cache-read rate.
+and in `model_call.finished`; absent when there were none), priced at the model's cache-read rate. The report reads an attempt's cached tokens as the larger of its
+`attempt.finished` value and the sum of its `attempt.charged` values: a session the harness failed in
+and a session a resumption cut have an `attempt.finished` written from the charges, which carries no
+cached sum (the projection keeps none), and a finished total, when there is one, is the sum of the same
+charges, so the larger of the two is never too small or counted twice.
 An aborted response is charged for the usage that pi kept.
 
 `--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
@@ -443,7 +447,7 @@ one succeeds; a problem whose original file does not compile; a run stopped when
 reached; certification, accepted and rejected; and a run aborted between problems.
 `packet.test.ts` covers the cache in the cost: the cached input tokens in the journal and the report, the retention asked of
 the provider (and kept when a run is resumed), and the dollars per solve of a frozen packet prefix against a packet compiled again,
-as pi-ai's faux provider simulates the cache ([lines.md](lines.md#the-context-packet)). What a real provider's cache does with it has not run.
+as pi-ai's faux provider simulates the cache, and the cache reads of a session the harness failed in or a resumption cut ([lines.md](lines.md#the-context-packet)). What a real provider's cache does with it has not run.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line
