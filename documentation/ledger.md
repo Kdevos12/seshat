@@ -315,7 +315,9 @@ the process ended was never billed to the journal, and the resumed run cannot co
 Problems are taken in this order: first the ones the journal registered and did not end, whatever
 is left of the run's budget (they end at once if none is), then the ones it had not begun, which a
 spent run budget leaves unbegun, as it would have in a run that was not cut. A problem that has an
-outcome keeps it, `aborted` too: it was stopped on purpose.
+outcome keeps it, `aborted` too: it was stopped on purpose. A resumed process that is stopped before
+it reaches a problem leaves it as it was, with no outcome, so that a later resumption takes it up;
+one that is stopped in the middle of a problem ends it as `aborted`, as a run that was not cut would.
 
 ### A problem taken up
 

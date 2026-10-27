@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
@@ -222,6 +222,31 @@ describe("resuming a run whose process ended", () => {
       const proved = ofType(whole.events.slice(0, cut), "validation.finished").some((v) => v.data.verdict === "valid");
       if (proved) assert.equal(resumed.faux.state.callCount, 0, where);
       assertSound(resumed.events);
+    }
+  });
+});
+
+describe("resuming a run that was resumed", () => {
+  const proving = () => Array.from({ length: 6 }, () => check("exact trivial_proof"));
+  const script = (): FauxResponseStep[] => [check("bad"), say("NOTES: bad is not a lemma."), check("bad again"), say("NOTES: still not."), ...proving()];
+
+  it("numbers the resumptions, and resumes a run again whatever event the second process ended at", async () => {
+    const whole = await demoRun({ config: { sessions: 5 }, responses: script() });
+    // The first process ended in the middle of session 2; the second one is resumed at every event of what it wrote.
+    const firstDir = killedAt(whole.dir, nth(whole.events, "tool_run.started", 3) + 1);
+    const first = await demoResume({ dir: firstDir, bench: whole.bench, responses: script().slice(2) });
+    assert.equal(first.result.problems[0]?.outcome, "candidate");
+    const start = first.events.findIndex((e) => e.type === "run.resumed");
+    assert.ok(start > 0);
+    for (let cut = start + 1; cut < first.events.length; cut++) {
+      const where = `second cut after ${cut} of ${first.events.length} events (${first.events[cut - 1]?.type})`;
+      const again = await demoResume({ dir: killedAt(firstDir, cut), bench: whole.bench, responses: proving() });
+      assert.deepEqual(ofType(again.events, "run.resumed").map((e) => e.data.resumption), [1, 2], where);
+      assert.deepEqual(again.result.problems.map((p) => p.outcome), ["candidate"], where);
+      assert.equal(ofType(again.events, "problem.finished").length, 1, where);
+      assert.equal(ofType(again.events, "task.created").length, 1, where);
+      assert.equal(again.result.report.resumed?.times, 2, where);
+      assertSound(again.events);
     }
   });
 });
@@ -653,5 +678,89 @@ describe("refusing to resume a run that is not the one the process would run", (
     lines[4] = (lines[4] ?? "").replace(/"ts":"(\d)/, (_m, d: string) => `"ts":"${(Number(d) + 1) % 10}`);
     writeFileSync(join(dir, "journal.jsonl"), lines.join("\n"));
     await assert.rejects(demoResume({ dir, bench: whole.bench, responses: [] }), /is corrupt at seq 4: hash does not match content/);
+  });
+
+  it("refuses a run that another process holds", async () => {
+    const { whole, dir, journal } = await cutRun();
+    // The parent of this process is alive, and is not this process.
+    writeFileSync(join(dir, "journal.jsonl.lock"), String(process.ppid));
+    await assert.rejects(demoResume({ dir, bench: whole.bench, responses: [] }), /the journal of .* cannot be opened: journal is locked by process \d+/);
+    assert.deepEqual(readFileSync(join(dir, "journal.jsonl")), journal);
+    rmSync(join(dir, "journal.jsonl.lock"));
+  });
+
+  it("finds the problems of a run in config.json, or else from its selection, and refuses ones that are not those the journal hashed", async () => {
+    const whole = await demoRun({ problems: 2, config: { sessions: 3 }, responses: [check("exact trivial_proof"), check("bad"), say("NOTES")] });
+    const cut = nth(whole.events, "attempt.started", 2);
+
+    // Without config.json: the selection {all: true} names both problems of the bench, which are the run's.
+    const bare = killedAt(whole.dir, cut);
+    rmSync(join(bare, "config.json"));
+    const resumed = await demoResume({ dir: bare, bench: whole.bench, responses: [check("exact trivial_proof")] });
+    assert.deepEqual(resumed.result.problems.map((p) => p.outcome), ["candidate", "candidate"]);
+
+    // With config.json changed: the hash in the journal says so.
+    const changed = killedAt(whole.dir, cut);
+    const config = JSON.parse(readFileSync(join(changed, "config.json"), "utf8")) as { problems: string[] };
+    writeFileSync(join(changed, "config.json"), JSON.stringify({ ...config, problems: config.problems.slice(0, 1) }));
+    await assert.rejects(demoResume({ dir: changed, bench: whole.bench, responses: [] }), /the problems of the run are not the ones the journal recorded/);
+
+    // A run of one problem of a bench of two, without config.json, cannot be recovered from `{all: true}`.
+    const one = await demoRun({ config: { sessions: 3 }, responses: [check("bad"), say("NOTES")] });
+    const lost = killedAt(one.dir, nth(one.events, "attempt.finished", 1));
+    rmSync(join(lost, "config.json"));
+    await assert.rejects(demoResume({ dir: lost, bench: one.bench, responses: [] }), /the problems of the run are not the ones the journal recorded/);
+  });
+});
+
+describe("resuming under other conditions", () => {
+  const script = (): FauxResponseStep[] => [check("bad"), say("NOTES: bad is not a lemma."), check("exact trivial_proof")];
+
+  it("leaves a problem it was stopped before it reached for a later resumption, and ends one it was stopped in as aborted", async () => {
+    const whole = await demoRun({ config: { sessions: 3 }, responses: script() });
+    const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+
+    // Stopped before the problem is taken up: nothing is taken up, and the problem has no outcome.
+    const before = new AbortController();
+    before.abort();
+    const early = await demoResume({ dir, bench: whole.bench, signal: before.signal, responses: script().slice(2) });
+    assert.equal(early.faux.state.callCount, 0);
+    assert.deepEqual(early.result.problems, []);
+    assert.equal(early.result.stopped, "aborted");
+    assert.equal(ofType(early.events, "run.finished")[0]?.data.stopped, "aborted");
+    assert.equal(ofType(early.events, "problem.finished").length, 0);
+
+    // So the run is not complete, and a resumption without a stop finishes it.
+    const later = await demoResume({ dir, bench: whole.bench, responses: script().slice(2) });
+    assert.deepEqual(later.result.problems.map((p) => p.outcome), ["candidate"]);
+    assert.deepEqual(ofType(later.events, "run.resumed").map((e) => e.data.resumption), [1, 2]);
+    assertSound(later.events);
+
+    // Stopped in the middle of the problem: it ends as aborted, as in a run that was not cut, and stays ended.
+    const during = new AbortController();
+    const stopped = await demoResume({
+      dir: killedAt(whole.dir, nth(whole.events, "attempt.started", 2)),
+      bench: whole.bench,
+      signal: during.signal,
+      responses: [() => { during.abort(); return check("exact trivial_proof"); }],
+    });
+    assert.deepEqual(stopped.result.problems.map((p) => [p.outcome, p.reason]), [["aborted", "the run was stopped"]]);
+    assert.equal(stopped.result.stopped, "aborted");
+    assertSound(stopped.events);
+  });
+
+  it("takes up several problems at the same time", async () => {
+    const proving = () => Array.from({ length: 8 }, () => check("exact trivial_proof"));
+    const logged: string[] = [];
+    const whole = await demoRun({ problems: 2, config: { sessions: 3, concurrency: 2 }, responses: proving() });
+    assert.deepEqual(whole.result.problems.map((p) => p.outcome), ["candidate", "candidate"]);
+    // Both problems have a session open when the process ends.
+    const cut = nth(whole.events, "attempt.started", 2) + 1;
+    const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, responses: proving(), log: (line) => logged.push(line) });
+    assert.deepEqual(resumed.result.problems.map((p) => p.outcome).sort(), ["candidate", "candidate"]);
+    assert.equal(logged.filter((line) => /taking it up again after the interruption/.test(line)).length, 2);
+    assert.equal(ofType(resumed.events, "problem.finished").length, 2);
+    assert.equal(ofType(resumed.events, "task.created").length, 2);
+    assertSound(resumed.events);
   });
 });
