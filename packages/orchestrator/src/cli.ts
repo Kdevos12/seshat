@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
 import { type Json, newId, readEvents } from "@seshat/core";
@@ -12,7 +13,7 @@ import { CapabilityError, CatalogError, messageOf, runContract, type Registry } 
 import { renderHealth } from "./health.ts";
 import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
+import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
@@ -22,7 +23,7 @@ const usage = `usage:
   harness models [PROVIDER]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
-              [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
+              [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
@@ -59,6 +60,7 @@ const { positionals, values } = parseArgs({
     turns: { type: "string" },
     "context-tokens": { type: "string" },
     "notes-chars": { type: "string" },
+    "cache-retention": { type: "string" },
     "budget-usd": { type: "string" },
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
@@ -172,6 +174,10 @@ function number(name: string, value: string | undefined, fallback: number | unde
   return parsed;
 }
 
+function isCacheRetention(value: string): value is CacheRetention {
+  return (CACHE_RETENTIONS as readonly string[]).includes(value);
+}
+
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** The problems a run works on, and how they were chosen. */
@@ -261,6 +267,10 @@ async function run(): Promise<number> {
     console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
   }
   const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
+  const cacheRetention = values["cache-retention"];
+  if (cacheRetention !== undefined && !isCacheRetention(cacheRetention)) {
+    throw new UsageError(`--cache-retention must be one of ${CACHE_RETENTIONS.join(", ")}`);
+  }
   const lines = selectLines();
   const options = lineOptions(values["line-option"] ?? []);
   const config: RunConfig = {
@@ -274,6 +284,7 @@ async function run(): Promise<number> {
       contextTokens: number("context-tokens", values["context-tokens"], DEFAULT_CONFIG.limits.contextTokens),
     },
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
+    ...(cacheRetention !== undefined ? { cacheRetention } : {}),
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
@@ -328,7 +339,7 @@ function finished(result: RunResult, dir: string): number {
 
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
-  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "budget-usd", "run-budget-usd", "concurrency",
+  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "budget-usd", "run-budget-usd", "concurrency",
   "tool", "lines", "ablation", "line-option", "sample", "seed", "problem", "all", "out",
 ] as const;
 
