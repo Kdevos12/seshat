@@ -271,7 +271,7 @@ Everything the resumed process writes is written by the orchestrator, after `run
 All but the last row are checked before the journal is opened. The last needs the registry, which
 is built on a journal that is open, so the resume opens it with the repair of a cut last line
 deferred (`deferRepair`, [the torn tail](#the-torn-tail)): the journal is read, nothing is written,
-and a refusal at any of these checks leaves the directory's bytes exactly as the crash left them.
+and a refusal at any of these checks leaves the journal's bytes exactly as the crash left them (the open still creates the projection, a file that is rebuilt from the journal).
 The repair is the first write of the resumption, made by `beginResumption` just before `run.resumed`
 records it. No flag that describes a run is accepted with `--resume`: its configuration, the model
 included, is read from `run.started`.
@@ -400,7 +400,7 @@ What each rebuilds, from what it journaled:
   left, those the journal holds for the site `graph.attempt` being spent; the final `twin` node is
   written once, whoever ends the side.
 - **M6** records a `watch` node after each attempt (the label and best Lean state it watched, the
-  last check's code, signal and retry). The resumed process replays the watch over those nodes of
+  last check's digest, signal and retry). The resumed process replays the watch over those nodes of
   the problem's finished attempts, restores which framings it already noted, the last check of the
   prover, and the notices it had not delivered: one that went to a session the interruption cut is
   delivered again, to the session that follows.
@@ -422,6 +422,11 @@ What each rebuilds, from what it journaled:
   earlier failures.
 - An `allocation` node can remain for a session that never started; the fleet counts the attempts
   that did.
+- Two problems that share a claim: the lines' records are the claim's, not the problem's, in three places. M2 writes
+  no final `twin` node for the second problem when the first wrote one for the same negation, M6 takes a framing
+  noted for one problem as noted for the other, and the problem whose recovery visits a shared claim's pending
+  certification first owns it. None changes a status; the resumed run differs from the run that was not cut only in
+  those records.
 - A claim an M0 run created and registered no problem for, when the process ended between the two
   events, stays in the journal as a claim no problem points at; the problem then gets a new one.
 - `durationMs` of a taken-up problem measures the resumed process only. Its cost, attempts and
