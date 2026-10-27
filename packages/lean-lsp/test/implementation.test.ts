@@ -339,6 +339,8 @@ describe("lean.lsp: multi_attempt joins a tactic to the start of its line, and s
     ["a name cut in two", "Le", 5, ["an.Elab.Command.x"], /'Lean' is not allowed/],
     ["a command cut in two", "run_", 7, ["cmd 1"], /'run_cmd' is not allowed/],
     ["a #eval cut in two", "#ev", 6, ["al 1"], /'#eval' is not allowed/],
+    ["a #eval glued after a name, which only the join makes a command", "x#ev", 7, ["al 1"], /'#eval' is not allowed/],
+    ["a #eval glued after a character outside the basic plane, which the server counts as one", "\u{1d55c}#ev", 7, ["al 1"], /'#eval' is not allowed/],
     ["a command cut in two on the second line of a tactic", "#ev\nsimp", 6, ["skip\nal 1"], /'#eval' is not allowed/],
     ["a comment closed by the tactic, which frees the line after it", "/- note\n#eval 1\n-/\nsimp", 3, ["-/"], /'#eval' is not allowed/],
   ];
@@ -450,6 +452,53 @@ describe("lean.lsp: multi_attempt joins a tactic to the start of its line, and s
       }
     }
     assert.ok(accepted > 50 && refused > 50, `the combinations cover both outcomes: ${accepted} accepted, ${refused} refused`);
+    await impl.close();
+  });
+});
+
+describe("lean.lsp: the core's strict reading of a model's text holds for the regions and for the tactics", () => {
+  // Each text is code that Lean runs while it elaborates, behind something a looser reader takes for a
+  // comment, a string or a name. Task 7's screen reads a model's text the way Lean's lexer does and
+  // refuses every one of them; lean.lsp elaborates what it is given, so it must refuse them too.
+  const HIDDEN: Array<[string, string]> = [
+    ["a command glued to a name", "x#eval 1"],
+    ["a command glued to a name that ends in a letter of another alphabet", "\u{1d55c}#eval 1"],
+    ["a keyword glued after a token that ends in letters", "#checkrun_cmd 1"],
+    ["a command after `<--`, which Lean reads as `<-` and then a comment only if nothing else is", "<-- #eval 1"],
+    ["a command after a character literal, which takes the `--` for its characters", "' -- x #eval 7777"],
+    ["a command after `/-/-/`, which is a whole comment, and a `-/` that closes nothing", "/-/-/ -/ #eval 7777 -- -/"],
+    ["a command after a doc comment whose body holds `--` and `/-`", "/-- -- /-\n-/ #eval 7777 -- -/"],
+  ];
+
+  for (const [name, text] of HIDDEN) {
+    it(`refuses ${name}, as a region and as a tactic, before the server hears of it`, async () => {
+      const fake = new FakeLeanLspMcp();
+      const { impl } = build(fake);
+      for (const op of ["diagnostics", "goal"] as const) {
+        await assert.rejects(invoke(impl, onSketch({ op, line: 1, proof: text })), (e: unknown) => {
+          assert.ok(e instanceof RefusedError, `${op}: ${String(e)}`);
+          assert.match(e.message, /^Refused before Lean ran; nothing was asked:\n- proof: '(#eval|run_cmd)' is not allowed/);
+          return true;
+        });
+      }
+      await assert.rejects(invoke(impl, onSketch({ op: "diagnostics", aux: text })), RefusedError);
+      await assert.rejects(invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp\nring\nring", tactics: ["omega", text] })), (e: unknown) => {
+        assert.ok(e instanceof RefusedError, String(e));
+        assert.match(e.message, /^Refused before Lean ran; nothing was asked:\n- tactic 2: '(#eval|run_cmd)' is not allowed/, "it names the tactic");
+        return true;
+      });
+      assert.equal(fake.calls.length, 0, "nothing at all was asked of the server");
+      await impl.close();
+    });
+  }
+
+  it("still lets through the comments, the strings and the names that those texts imitate", async () => {
+    const fake = new FakeLeanLspMcp();
+    const { impl } = build(fake);
+    for (const proof of ["omega -- #eval is not run here", "simp /- #eval 1 -/", "exact foo.x_eval"]) {
+      await assert.doesNotReject(invoke(impl, onSketch({ op: "diagnostics", proof })), proof);
+    }
+    await assert.doesNotReject(invoke(impl, onSketch({ op: "multi_attempt", line: 1, proof: "simp\nring\nring", tactics: ["omega -- #eval is not run here"] })));
     await impl.close();
   });
 });
