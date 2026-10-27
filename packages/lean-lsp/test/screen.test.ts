@@ -35,6 +35,28 @@ describe("what lean.lsp refuses before anything is asked", () => {
     ]);
   });
 
+  it("reads a model's text as Lean does, so that code hidden behind a lookalike of a comment is found", () => {
+    const hidden = [
+      "x#eval 1",
+      "\u{1d55c}#eval 1",
+      "#checkrun_cmd 1",
+      "<-- #eval 1",
+      "' -- x #eval 7777",
+      "/-/-/ -/ #eval 7777 -- -/",
+      "/-- -- /-\n-/ #eval 7777 -- -/",
+    ];
+    for (const text of hidden) {
+      assert.ok(screenRegions({ aux: "", proof: text }).some((r) => /^proof: '(#eval|run_cmd)' is not allowed$/.test(r)), `proof: ${JSON.stringify(text)}`);
+      assert.ok(screenRegions({ aux: text, proof: "simp" }).some((r) => /^aux: '(#eval|run_cmd)' is not allowed$/.test(r)), `aux: ${JSON.stringify(text)}`);
+      const tactics = screenTactics(["omega", text]);
+      assert.ok(tactics.length >= 1 && tactics.every((r) => r.startsWith("tactic 2: ")), `tactic: ${JSON.stringify(text)}: ${tactics.join(" | ")}`);
+    }
+    // Real comments stay comments.
+    for (const text of ["omega -- #eval 1", "simp /- #eval 1 -/", "simp\n/- #eval 1\n-/\nring"]) {
+      assert.deepEqual(screenRegions({ aux: "", proof: text }), [], JSON.stringify(text));
+    }
+  });
+
   it("refuses the line breaks that only the language server counts: they hide code from this screen and shift the lines", () => {
     // Lean ends a line comment at a line feed; the server's splitlines also ends it at each of these, so the
     // text after one is code to the server's trial documents and a comment to the screen.
