@@ -150,6 +150,35 @@ printed. A build that succeeds writes `lean-env.build.json` with the hash, and `
 Then the Lean server is pointed at the project: `LEAN_SERVER_PROJECT_DIR=$PWD/lean/env/<name>`
 ([lean.md](lean.md#deployment-for-the-bench)).
 
+## In a run
+
+The host profiles name the environment: `"leanEnv": "${env:LEAN_ENV:-base}"` in both
+`config/hosts/*.json`, so `LEAN_ENV=extended pnpm harness run ...` runs in `extended`, and a host
+without the key names none. `openRegistry` looks the environment up when it builds the registry:
+
+- **The project.** The lock is read from the project directory the Lean tools use: `LEAN_PROJECT_DIR`
+  when it is set (a plain checkout of the bench has no lock, so its environment is unresolved), and
+  otherwise `lean/env/<name>/`, which becomes the default `LEAN_PROJECT_DIR` once `build` has built
+  it (before that, Lake would fetch packages, so the certifier stays unavailable as it was). The hash
+  therefore names the project the harness's own tools run in; the project of a Lean server is
+  whatever it was started with (`LEAN_SERVER_PROJECT_DIR`), which the harness cannot see.
+- **The version of every Lean tool run.** For an implementation whose manifest `environment` has a
+  `lean` entry (`lean.check`, `lean.meta`, `lean.goals`, `lean.lsp`, `lean.certify`), the version in
+  `tool_run.started`, in the registry's answers, in `harness health` and in the certifier's record
+  is the manifest's pinned version followed by `+env:NAME@` and the first 12 digits of the hash:
+  `fb2393de+lean-v4.27.0+fc-bench-v1+env:base@3f2a9c04d7be`. The manifest's own `environment.project`
+  is the bench's project, which `base` is.
+- **One environment per run.** The registry reads the pin once. `run.started` records
+  `leanEnv: {name, hash}` (in `config.json` and the report too), and a resumed run is refused unless
+  its registry names the same name and hash. A run whose journal recorded no environment (from before
+  this existed) has none to keep.
+
+| Status of the environment | The run |
+|---|---|
+| `resolved` | Records the name and the hash. |
+| `unresolved` | Starts, records the name with a null hash, and says so in its log: its results cannot be matched to an environment. |
+| `stale`, `unknown` | Does not start, and says why: the file changed since the lock was made, the lock is another environment's or was edited, or there is no such environment. |
+
 ## What has not run
 
 Nothing here ran against Lean, Lake or GitHub. The tests use fixture manifests, a fixture fetcher and

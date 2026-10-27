@@ -171,6 +171,7 @@ const LABELS: Record<string, string> = {
   registry: "the capability registry (catalog and host profile)",
   tools: "the tools given to the provers",
   certifier: "the certifier",
+  leanEnv: "the Lean environment (name and hash)",
   prompt: "the prompts",
   policy: "the validation policy",
   lines: "the lines (ids, versions or options)",

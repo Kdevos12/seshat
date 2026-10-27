@@ -194,11 +194,11 @@ export function leanEnvironmentHash(name: string, options: LookupOptions = {}): 
 }
 
 /** What a run records of its environment, in `run.started`'s config. */
-export interface LeanEnvRecord {
+export type LeanEnvRecord = {
   name: string;
   /** Null when the environment was not resolved. */
   hash: string | null;
-}
+};
 
 /** The record of a pin. */
 export function leanEnvRecord(pin: Pick<LeanEnvPin, "name" | "hash">): LeanEnvRecord {

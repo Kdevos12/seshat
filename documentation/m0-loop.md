@@ -42,7 +42,8 @@ The code is in `packages/orchestrator/src`:
    of their list, the model and its thinking level, the provers, sessions, limits, notes length,
    budgets and concurrency, the other tools with their implementations and versions, the bench's
    hash and source, the registry's hash (manifests and host profile), the prompts' version and
-   hash, the validation policy, the certifier (`RunOptions.certifier`, or else the host's
+   hash, the validation policy, the Lean environment (`leanEnv`: its name and hash, null when it is not
+   resolved; [lean-env.md](lean-env.md#in-a-run)), the certifier (`RunOptions.certifier`, or else the host's
    `lean.certify`, if its profile lists one; the run logs which, or that there is none, and when the
    host's cannot be made at all, such as without a sandbox command, logs that it is unavailable and
    records the reason as `certifierUnavailable`), the code

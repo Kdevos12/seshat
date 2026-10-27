@@ -90,6 +90,7 @@ flowchart TB
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
   leanenv -->|"lakefile, lock"| envbuild
+  leanenv -->|"hash in the version<br/>of every Lean tool run"| journal
   envbuild -->|"the project<br/>Lean runs in"| leancheck
   leancheck -->|Lean file| fast
   fast -->|"open → computed"| journal
