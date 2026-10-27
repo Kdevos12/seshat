@@ -24,6 +24,7 @@ import {
   type ValidationPolicy,
   type ValidationReport,
 } from "@seshat/core";
+import { withEnvironmentImports } from "@seshat/lean-env";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 
 /** A bench problem ready to work on: its file in plain-header form, checked against the index, and cut into a sketch. */
@@ -33,9 +34,16 @@ export interface LoadedProblem {
   sketch: Sketch;
 }
 
-export function loadProblem(checkout: string, entry: ProblemEntry): LoadedProblem {
-  const source = toPlainHeader(readFileSync(join(checkout, entry.path), "utf8"));
-  verifyProblemFile(checkout, entry, source);
+/**
+ * Reads a problem's file, checks it against the index, and cuts it into a sketch. `imports` are the
+ * modules the run's Lean environment adds to every file (documentation/lean-env.md): the lines
+ * `import <module>` go after the file's own imports, so that the sketch, the reference and every
+ * file the provers and the certifier see have them.
+ */
+export function loadProblem(checkout: string, entry: ProblemEntry, imports: readonly string[] = []): LoadedProblem {
+  const plain = toPlainHeader(readFileSync(join(checkout, entry.path), "utf8"));
+  verifyProblemFile(checkout, entry, plain);
+  const source = withEnvironmentImports(plain, imports);
   return { entry, source, sketch: prepareSketch(source, entry.fullName) };
 }
 

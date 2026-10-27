@@ -179,6 +179,43 @@ without the key names none. `openRegistry` looks the environment up when it buil
 | `unresolved` | Starts, records the name with a null hash, and says so in its log: its results cannot be matched to an environment. |
 | `stale`, `unknown` | Does not start, and says why: the file changed since the lock was made, the lock is another environment's or was edited, or there is no such environment. |
 
+## Line M17: a run in an extended environment
+
+M17 (plan change LC3) is the line that tests whether more packages help: M0, or the best line, in
+`base` against the same run with M17 in `extended`, at equal budget (Task 14 measures it). It is an
+ordinary line (`--lines M17`, `config.lines`) with one option and no hook:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `env` | `extended` | The environment (`lean/env/<env>.toml`) the run is in, in place of the host's `LEAN_ENV`. |
+
+A line gives the environment through the optional `Line.leanEnv(options)` ([lines.md](lines.md#a-line)),
+and at most one enabled line may. The orchestrator then does the following, before any problem:
+
+1. **Builds the registry for that environment**: `RunOptions.registry(journal, blobs, {leanEnv})`; the
+   command line passes it to `openRegistry({leanEnv})`, which wins over `LEAN_ENV`. The environment is
+   pinned and recorded exactly as in [In a run](#in-a-run).
+2. **Refuses to start**, writing nothing, when the registry was built for another environment, or when
+   the environment has no hash (`unresolved`, as well as `stale` and `unknown`). A run with M17 in an
+   environment that cannot be named in the journal would be a comparison that cannot be checked, so the
+   leniency of an unresolved host environment does not apply.
+3. **Adds the extra packages' imports to every file of the run.** `environmentImports(lock)` is the
+   `lean_libs` of each package of the lock except the base project's, in the order of the file, without
+   repeats (`Duper`, then `LeanAPAP`, then `PFR`). `loadProblem` puts one `import <module>` line for
+   each after the file's own imports (`withEnvironmentImports`), so that the sketch, the reference file
+   and the files the provers and the certifier see all have them. A module the file imports already is
+   not added again.
+4. **Probes the server.** The Lean server of the host is started on a project the harness cannot see
+   (`LEAN_SERVER_PROJECT_DIR`). If it was started on the bench's, every file would fail with `unknown
+   module prefix`, and the run would count that against the provers. So the run first checks, as a
+   `lean.check` tool run in the journal, a file that is only the imports. If Lean answers with an error
+   or a hole, the run stops with the reason `lean_environment` before any problem is worked on, and its
+   log says which libraries the server could not import and to start it on the environment's project.
+   A server that does not answer, or times out, does not stop the run here: its problems report that.
+
+Resuming is safe: the environment's name and hash are in `run.started`, and a resumed run is refused
+in another one. The imports come from the lock, which the registry's hash has checked.
+
 ## What has not run
 
 Nothing here ran against Lean, Lake or GitHub. The tests use fixture manifests, a fixture fetcher and
@@ -196,3 +233,8 @@ a fake `lake`. To verify on a host that reaches them:
    change asks): `build` prints the time of each package, which says.
 5. That `import FormalConjectures...` works in a project that requires formal-conjectures as a
    dependency, as the bench's files do in the checkout itself.
+6. For M17: that the libraries of `extended` (`Duper`, `LeanAPAP`, `PFR`) import together in one file
+   without a clash of names, that the probe's error from a real server is the one the run reports, and that
+   a problem file with the extra imports checks as it does without them (an import adds notation and
+   instances; the bench's solved problems must still elaborate). The test of the line uses a simulated
+   Lean that rejects the probe by its text.
