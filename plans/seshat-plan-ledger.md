@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-21 11:43 UTC. `main` at 1fdb96a, 623 tests.
+Updated 2026-10-27 05:10 UTC. `main` at 2ba2990, 623 tests.
 
 ## Tasks
 
@@ -20,20 +20,24 @@ Updated 2026-10-21 11:43 UTC. `main` at 1fdb96a, 623 tests.
 | 7 | M11: small models, fingerprints, lookups | main | fix round 3 (two holes in the shared screen) | `task/t7` |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
-| 10 | M12: saturation kernel, subgoal scheduler | main | not started | |
+| 10 | M12: saturation kernel, subgoal scheduler, escalation ladder | main | not started | |
 | 11 | M4: context compiler, `expand`, `graph_query` | collaborator | not started (after 9) | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
-| 14 | Integration, `harness ablate` | main | not started (last) | |
+| 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | implementing | `task/t15` |
 | 16 | `lean.lsp` | main | re-review of fix round 1 | `task/t16` |
 | 17 | Consortium mode | main | not started (after 15) | |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
-| 19 | Task 8 follow-up: sampled settings, `judge` | main | not started (after 15) | |
+| 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
 | 21 | Lean environment and resolver, M17 | main | not started (after 15) | |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
-| Final | review of the whole build | main | after 14 | |
+| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | not started (after 15) | |
+| 24 | Session-frozen packet prefix | main | not started (after 15) | |
+| 25 | M18: curriculum of variants | main | not started (after 10) | |
+| 26 | `harness optimize-prompts` | main | not started (after 14) | |
+| Final | review of the whole build | main | after 26 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
 here are a copy that may lag: their log wins.
@@ -43,9 +47,9 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 24): T7, T16 and T15 in flight (T4 merged); then T17, T21, T19, T20, T10,
-  T13, T18, T22, T14 and the final review. At most three agents at once, because the account's
-  usage limits bind.
+- Main team (Ruling 27): T7, T16 and T15 in flight (T4 merged); then T23 and T24, T17, T21, T19,
+  T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
+  because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
   the main team needs from them: [collaborator-tasks.md](collaborator-tasks.md), "Between the
   teams".
@@ -68,6 +72,19 @@ Notes from the main team, newest last. Read them at the start of each session.
   to what precedes it, and comment openers that Lean does not read as comments (`<--`). They are
   fixed on `task/t7` before it merges. If your lines put model text into Lean files, go through
   `structuralCheck` or `forbiddenTokensIn` as the existing lines do, and pull after Task 7 merges.
+- 2026-10-27: The owner approved a fourth plan change,
+  [plan-change-memory-evolution.md](plan-change-memory-evolution.md) (Rulings 27 and 28). Global
+  Constraint 16 is new: learned artifacts carry a provenance stamp; nothing writes skills from the
+  agent's own experience; at most 3 human-written skills are loaded in full in a session, which
+  matters if Task 6 gives its tool namespaces skills; external text never becomes a lesson or a
+  system prompt. Task 9: lessons are stamped, drawn at random into sessions and judged by their
+  causal effect, which replaces the presence counter for deactivation; with `--human`, a lesson's
+  promotion to the global scope is staged for approval. Task 11: the compiler's unverified items
+  are drawn the same way, and the packet is a prefix frozen for the session plus a tail for each
+  request. The main team builds the shared parts next, Task 23 (the stamp, epochs, the draws and
+  their effect posteriors, memory across runs) and Task 24 (the `{ prefix, tail }` packet API); if
+  you get there first, build against the interfaces their sections give, and the second to merge
+  wires them. Details: [collaborator-tasks.md](collaborator-tasks.md), sections 4, 6, 7 and 8.
 
 ## Interface changes
 
@@ -306,3 +323,9 @@ Decision: both screen holes are fixed on task/t7 before it merges (fix round 3),
 Task 7: fix round 3 sent to the implementer (N1 with the wide variant unless a narrower one is argued with its corpus count, O1 with the callers of maskCommentsAndStrings listed, N2 N3 optional; FIX_BASE c79681e; findings file task-7-findings-r3.md)
 Task 16: fix round 1 implemented (17 commits 474e1cc..de49baf on task/t16, 677/677, 683 with the opt-in real-server tests; task/t16 pushed with --force-with-lease because the implementer amended its M9 commit, 0ad75eb became 1fe1395, after a commit made while a test failed); I1 screens the document multi_attempt has the server elaborate (matched the real build_attempt_text on 3000 random cases, 1500 in the committed test); I2 still_elaborating in both modes; M1-M12, M14, M15 done; M5 the probe of the real server is an opt-in test (LEAN_LSP_MCP_PYTHON, the real lean-lsp-mcp with canned lowest layers); M9 also counts socket timeouts and cut connections as network failures; the core x#eval hole stays for Task 7's merge
 Task 16: scoped re-review dispatched (FIX_BASE 447bc39, head de49baf; asked to attack the new splice screen with constructed inputs)
+Usage-limit stop 15: the session limit cut the T16 re-reviewer, the T7 fixer (after d67f28a) and the T15 implementer (after 20fc847 bbddad9 5bb8aa2 baf9dba 0b098e1) about 11:45 UTC (reset 16:00); all three resumed 16:04 UTC; task/t7 and task/t15 pushed 16:09
+Relay 2026-10-21 16:03 UTC: the owner approved plans/plan-change-memory-evolution.md in full (PE1-PE9 and line M18; decision card "Send everything" at 12:17 UTC, after the 08:28 message "these points are relevant and we can keep them"); to integrate into the plan and the rulings, with the new tasks placed in plan order, without interrupting the tasks in flight (approval checked against the card in the project)
+Usage-limit stop 16: the account's weekly limit cut the T15 implementer (uncommitted Workbench work), the T7 fixer (uncommitted N1/O1 work) and the T16 re-reviewer, and this controller mid-integration of the plan change, about 16:16 UTC on 2026-10-21 (reset 2026-10-27 05:00 UTC); the container restarted with its disk intact (worktrees, uncommitted changes, scratchpad); all three resumed 05:06 UTC on 2026-10-27
+- Ruling 27 (replaces the order of Ruling 24): plan-change-memory-evolution.md joins the plan: PE1 with PE2's mechanism is Task 23 (memory store, one implementation for M5, M4 and M15), PE5 is Task 24 (the packet API before Task 11), PE7 is Task 25 (line M18 after M12 in LINE_ORDER), PE8 is Task 26; PE2's uses, PE3, PE4, PE6 item 4 and PE9 amend Tasks 9, 10, 11, 14, 18 and 19; PE6's rules are Global Constraint 16; retry_stronger goes into Task 19, not Task 15 in flight; main team's order: T7, T16, T15 in flight, then T23 and T24, T17, T21, T19, T20, T10, T25, T13, T18, T22, T14, T26 and the final review — cost if wrong: Task 17 lands two tasks later.
+- Ruling 28: memory outlives a run through a chain of journals (`harness run --memory-from <runDir>`, the earlier journal pinned by its last hash and never written; verified facts carry over only under the same Lean environment; a problem's outcome only from its own certifications) — PE1, PE3 and PE9 assume memory beyond one run, which the plan did not have — cost if wrong: the chain becomes appends to one long-lived journal.
+2026-10-27: plan change integrated into the repository: plans/plan-change-memory-evolution.md (copied, quotes translated, task numbers reconciled), seshat-plan.md (amendment 7, Global Constraint 16, the learned-memory paragraph of the shared interfaces, Tasks 23 to 26, amendments to Tasks 9, 10, 11, 14, 18 and 19), Rulings 27 and 28, this ledger's rows and order, and collaborator-tasks.md (rules, Tasks 6, 9 and 11, "Between the teams"); a note for the collaborator
