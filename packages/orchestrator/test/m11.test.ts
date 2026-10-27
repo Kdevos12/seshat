@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
-import { type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, readEvents } from "@seshat/core";
+import { type CertificationRequest, type CertificationResult, type LeanCertifier, type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type LeanSnippet, readEvents } from "@seshat/core";
 import type { Line, LineRegistry } from "@seshat/lines";
 import { type CounterModel, negationProofs, oeisFactory, recognizeStatement } from "@seshat/models";
 import { type HostProfile, leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
@@ -85,6 +85,7 @@ async function m11Run(options: {
   lines?: LineRegistry;
   config?: Partial<RunConfig>;
   registry?: RunOptions["registry"];
+  certifier?: LeanCertifier;
 }) {
   const { checkout, index } = demoBench(options.file ?? FILE);
   const entry = index.problems.find((p) => p.fullName === options.problem);
@@ -101,6 +102,7 @@ async function m11Run(options: {
     models,
     registry: options.registry ?? demoRegistry(options.lean),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
+    ...(options.certifier !== undefined ? { certifier: options.certifier } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), faux, dir };
 }
@@ -172,6 +174,42 @@ describe("line M11 in a run", () => {
     assert.equal(result.problems[0]?.reason, "provers stopped: 1 line");
     assert.equal(ofType(events, "attempt.started").length, 0);
     assert.equal(faux.getPendingResponseCount(), 1);
+  });
+
+  it("has its refutation replayed by the certifier when the host has one: the claim becomes refuted and the problem ends refuted", async () => {
+    const proof = firstProof(LEFT_PROJECTION_COMMUTES, { kind: "magma", id: "2:0011", size: 2, table: [0, 0, 1, 1] });
+    const requests: CertificationRequest[] = [];
+    const certifier: LeanCertifier = {
+      implementation: "fake-certifier",
+      version: "0",
+      certify: async (request): Promise<CertificationResult> => {
+        requests.push(request);
+        return { verdict: "certified", reasons: [], axioms: ["propext"], timeMs: 1 };
+      },
+    };
+    const { result, events } = await m11Run({
+      problem: "Magmas.left_proj_comm",
+      lean: new MixedLean(() => true, [proof]),
+      responses: [check("exact trivial_proof")],
+      certifier,
+    });
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
+
+    // The fast check passed the line's proof of the negation; the kernel replay made the claim refuted.
+    const validations = ofType(events, "validation.finished");
+    assert.deepEqual(validations.map((v) => [v.data.method, v.data.verdict, v.data.negation ?? false]), [
+      ["repl", "valid", true],
+      ["kernel_replay", "valid", true],
+    ]);
+    const changes = ofType(events, "claim.status_changed").filter((c) => c.data.claimId === claimId);
+    assert.deepEqual(changes.map((c) => [c.data.from, c.data.to, c.data.validationId]), [["open", "refuted", validations[1]?.data.validationId]]);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0]?.target ?? "", /left_proj_comm_negation$/);
+    assert.match(requests[0]?.candidate ?? "", /ULift \(Fin 2\)/);
+
+    // The provers never started, and the problem has an outcome of its own.
+    assert.equal(ofType(events, "attempt.started").length, 0);
+    assert.equal(result.problems[0]?.outcome, "refuted");
   });
 
   it("tries a statement about a number with decide through lean.check, refutes it, and looks the failing numbers up as a sequence", async () => {
