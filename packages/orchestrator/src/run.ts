@@ -23,7 +23,8 @@ import {
   SKETCH_POLICY,
   stampProvenance,
 } from "@seshat/core";
-import { type JsonObject, type LineRegistry, resolveLines, resumeRefusals } from "@seshat/lines";
+import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
+import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
@@ -109,8 +110,12 @@ export interface RunOptions {
   /** The run directory, created by the run: journal, blobs, transcripts, proofs, report. */
   dir: string;
   models: Models;
-  /** Builds the registry of the run's host, writing tool runs to this journal and blobs. */
-  registry: (journal: Journal, blobs: BlobStore) => Registry;
+  /**
+   * Builds the registry of the run's host, writing tool runs to this journal and blobs. `leanEnv` is the
+   * Lean environment an enabled line puts the run in (line M17), in place of the host's: the registry
+   * has to be built for it (`registry.leanEnv`), or the run does not start.
+   */
+  registry: (journal: Journal, blobs: BlobStore, options?: { leanEnv?: string }) => Registry;
   /** Certifies the candidates. Default: the host's `lean.certify`, if its profile lists one; without a certifier no claim becomes `proved` or `refuted`. */
   certifier?: LeanCertifier;
   /** Stops the run: the problems in progress end as `aborted`. */
@@ -353,11 +358,49 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (created) rmSync(o.dir, { recursive: true, force: true });
     throw new RunSetupError(message, { cause });
   };
+  // A line may put the run in a Lean environment of its own (M17); otherwise the host's decides.
+  const wanted = lineLeanEnv(enabled.lines);
   let registry: Registry;
   try {
-    registry = o.registry(journal, blobs);
+    registry = o.registry(journal, blobs, wanted !== undefined ? { leanEnv: wanted.name } : {});
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
+  }
+  // The run is pinned to the Lean environment its registry was built for, for its whole life (documentation/lean-env.md).
+  const leanEnv = registry.leanEnv;
+  if (leanEnv !== undefined && (leanEnv.status === "stale" || leanEnv.status === "unknown")) {
+    return await abandon(`the Lean environment ${leanEnv.name} cannot be used: ${leanEnv.detail ?? leanEnv.status}`, undefined, registry);
+  }
+  if (wanted !== undefined) {
+    if (leanEnv === undefined || leanEnv.name !== wanted.name) {
+      return await abandon(
+        `line ${wanted.line} puts the run in the Lean environment ${wanted.name}, and the registry of host ${registry.host.host} was built for ${leanEnv === undefined ? "none" : leanEnv.name}`,
+        undefined,
+        registry,
+      );
+    }
+    if (leanEnv.hash === null) {
+      return await abandon(
+        `line ${wanted.line} needs the Lean environment ${wanted.name} resolved on this machine, and it is not (${leanEnv.detail ?? leanEnv.status}): ` +
+          "without a hash the run would not say which environment it ran in",
+        undefined,
+        registry,
+      );
+    }
+  }
+  // What line M17 adds to every file of the run: the imports of its environment's extra packages. A run
+  // that is in such an environment through the host's LEAN_ENV alone has the pin and the record, not these.
+  let envImports: string[] = [];
+  let envProbe: string | undefined;
+  if (wanted !== undefined && leanEnv?.hash != null && leanEnv.dir !== undefined) {
+    try {
+      const lock = readLock(leanEnv.dir);
+      if (lock === undefined || lock.hash !== leanEnv.hash) throw new Error(`the lock in ${leanEnv.dir} is not the one the registry pinned`);
+      envImports = environmentImports(lock);
+      envProbe = environmentProbe(lock);
+    } catch (error) {
+      return await abandon(`the Lean environment ${leanEnv.name}: ${messageOf(error)}`, error, registry);
+    }
   }
   const certifier = o.certifier ?? RegistryLeanCertifier.forHost(registry);
   // A certifier of the host that its factory refuses to make (no project, no sandbox) would fail every
@@ -385,6 +428,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
   const toolsRecord = pinned.tools.map((t) => ({ ...t }));
   const certifierRecord = certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`;
+  const leanEnvRecorded = leanEnv === undefined ? undefined : leanEnvRecord(leanEnv);
+  const leanEnvNote =
+    leanEnv === undefined
+      ? undefined
+      : leanEnv.hash !== null
+        ? `Lean environment ${leanEnv.name}, hash ${leanEnv.hash.slice(0, 12)}${leanEnv.built === true ? "" : " (resolved, not built here)"}`
+        : `Lean environment ${leanEnv.name} is not resolved (${leanEnv.detail ?? leanEnv.status}): the run records the name without a hash, and its results cannot be matched to an environment`;
   const certifierNote =
     certifier === undefined
       ? `no certifier on host ${registry.host.host}: a proof that passes the fast check stays a candidate`
@@ -411,6 +461,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       prompt: promptRecord,
       policy: policyRecord,
       certifier: certifierRecord,
+      ...(leanEnvRecorded !== undefined ? { leanEnv: leanEnvRecorded } : {}),
       ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
       // Only with lines, so that an M0 run records what it always did.
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
@@ -436,12 +487,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
+    if (leanEnvNote !== undefined) log(leanEnvNote);
   } else {
     // What needs the registry is checked now that it is built: a host, registry, tool or certifier
     // that is not the run's would make it another run.
     const changed = [
       ...(resume.started.host !== registry.host.host ? [`the host: the run recorded ${resume.started.host}, now ${registry.host.host}`] : []),
-      ...configMismatches(resume.started.config, { registry: registry.hash, tools: toolsRecord, certifier: certifierRecord }),
+      ...configMismatches(resume.started.config, {
+        registry: registry.hash,
+        tools: toolsRecord,
+        certifier: certifierRecord,
+        // A run of before the environments recorded none, and has none to keep.
+        ...(typeof resume.started.config === "object" && resume.started.config !== null && "leanEnv" in resume.started.config
+          ? { leanEnv: leanEnvRecorded ?? null }
+          : {}),
+      }),
     ];
     if (changed.length > 0) return await abandon(`the run cannot be resumed here: ${changed.join("; ")}`, undefined, registry);
     const resumption = beginResumption(journal, tasks, { runId, ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}) });
@@ -452,6 +512,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     );
     for (const note of pinned.notes) log(note);
     log(certifierNote);
+    if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
   // The memory and the lines' runtime exist only when a line is enabled or the run starts on earlier
@@ -536,7 +597,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     let loaded: LoadedProblem | undefined;
     let loadFailure = "";
     try {
-      loaded = loadProblem(o.checkout, entry);
+      loaded = loadProblem(o.checkout, entry, envImports);
     } catch (error) {
       loadFailure = messageOf(error);
     }
@@ -858,6 +919,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     }
     queue.push(...untouched);
   }
+  // An environment with extra packages: the server has to be able to import them before any problem is worked on.
+  if (envProbe !== undefined && leanEnv !== undefined && stopReason() === undefined) {
+    const missing = await probeEnvironment(registry, envProbe, o.signal);
+    if (missing !== undefined) {
+      stopped = "lean_environment";
+      log(`the Lean server cannot import the libraries of environment ${leanEnv.name} (${envImports.join(", ")}): ${missing}. Start it on ${leanEnv.dir ?? "the environment's project"} (LEAN_SERVER_PROJECT_DIR) and run again.`);
+    }
+  }
   let crashed: { error: unknown } | undefined;
   try {
     await pool(queue, config.concurrency, runProblem, (next) =>
@@ -912,6 +981,19 @@ function openEpochOf(journal: Journal, memory: MemoryStore, chain: MemoryChain, 
       `${m.edges} edge(s); ${same ? `the same Lean environment: verified statuses carry${carried !== "" ? ` (${carried})` : ""}` : `another Lean environment: ${m.reset} earlier status(es) and ${m.edgesReset} edge status(es) count for nothing until a stored proof passes validate again`}` +
       `${epoch !== undefined ? `; epoch ${epoch.epoch} opened: ${epoch.reason}` : ""}`,
   );
+}
+
+/**
+ * Checks that Lean can import the libraries of the run's environment, with one `lean.check` of a file
+ * that is only the imports (a tool run of the journal). Returns what Lean said when it cannot; undefined
+ * when it can, and when the check could not be made (no answer or too slow: the problems report that).
+ */
+async function probeEnvironment(registry: Registry, code: string, signal: AbortSignal | undefined): Promise<string | undefined> {
+  const checker = new RegistryLeanChecker(registry, { actor: "orchestrator" });
+  const [result] = await checker.check([{ id: "lean-env-probe", code }], { timeoutSec: 900, ...(signal !== undefined ? { signal } : {}) });
+  if (result === undefined || result.status === "valid" || result.status === "server_error" || result.status === "timeout") return undefined;
+  const said = result.messages.find((m) => m.severity === "error")?.text ?? result.error ?? result.status;
+  return said.split("\n")[0] ?? said;
 }
 
 /** Runs `run` on the items, `concurrency` at a time, in order, until `stop` says so of the next one. */

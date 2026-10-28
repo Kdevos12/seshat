@@ -155,6 +155,15 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lean-env:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+
   packages/lean-kimina:
     dependencies:
       '@seshat/core':
@@ -304,6 +313,9 @@ importers:
       '@seshat/induction':
         specifier: workspace:*
         version: link:../induction
+      '@seshat/lean-env':
+        specifier: workspace:*
+        version: link:../lean-env
       '@seshat/lean-kimina':
         specifier: workspace:*
         version: link:../lean-kimina

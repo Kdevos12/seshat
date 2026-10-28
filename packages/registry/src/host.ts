@@ -31,6 +31,12 @@ export interface CapabilityBinding {
 export interface HostProfile {
   host: string;
   description?: string;
+  /**
+   * The Lean environment the host runs against (`lean/env/<name>.toml`, documentation/lean-env.md):
+   * a name, usually `${env:LEAN_ENV:-base}`. Strings use the same variables as settings. Absent: the
+   * host names none, and its tool runs record the pinned versions of the manifests alone.
+   */
+  leanEnv?: string;
   capabilities: Record<string, CapabilityBinding>;
 }
 
@@ -40,6 +46,7 @@ const PROFILE_SCHEMA: JsonSchema = {
   properties: {
     host: { type: "string", pattern: "^[a-z][a-z0-9-]*$" },
     description: { type: "string" },
+    leanEnv: { type: "string", minLength: 1 },
     capabilities: {
       type: "object",
       additionalProperties: {
