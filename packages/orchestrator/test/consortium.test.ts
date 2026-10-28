@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import type { Line } from "@seshat/lines";
-import { buildReport, steerCommand } from "../src/index.ts";
+import { buildReport, hintCommand, steerCommand } from "../src/index.ts";
 import { assertSound, certifier, nth } from "./resume-helpers.ts";
 import { certifyingRegistry, check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { consortium, ended, TWO_PROBLEM_IDS, TWO_PROBLEMS } from "./turns-helpers.ts";
@@ -141,5 +141,31 @@ describe("a pause", () => {
     assert.equal(resumed.result.problems[0]?.outcome, "candidate");
     assert.ok(existsSync(join(dir, "turns", "2", "report.md")));
     assertSound(resumed.events);
+  });
+});
+
+describe("a consortium run that starts on another consortium run's memory (--memory-from)", () => {
+  it("numbers its own turns from 1, and takes none of the earlier team's hints, drops or forbidden strategies", async () => {
+    const earlier = await demoRun({ config: { sessions: 2, consortium: consortium({ tokens: 1 }) }, responses: [check("bad")] });
+    const claimId = ofType(earlier.events, "problem.registered")[0]?.data.claimId as string;
+    hintCommand(earlier.dir, { claimId, text: "An old hint from another run.", as: "olga", out: () => undefined });
+    steerCommand(earlier.dir, { drop: claimId, as: "olga", out: () => undefined });
+    steerCommand(earlier.dir, { forbid: "automation", as: "olga", out: () => undefined });
+
+    const prompts: string[] = [];
+    const record: FauxResponseStep = (context) => {
+      const first = context.messages.find((m) => m.role === "user");
+      prompts.push(typeof first?.content === "string" ? first.content : JSON.stringify(first?.content));
+      return check("exact trivial_proof");
+    };
+    const later = await demoRun({ memoryFrom: earlier.dir, config: { sessions: 2, consortium: consortium({}) }, responses: [record, record] });
+    assert.equal(ofType(later.events, "problem.registered")[0]?.data.claimId, claimId, "the problem's claim is the earlier run's: its hint and drop name a claim this run works on");
+    assert.deepEqual(ofType(later.events, "turn.started").map((e) => e.data.turn), [1], "the earlier run's turns are not this run's");
+    assert.equal(ended(later.events).data.turn, 1);
+    assert.equal(ofType(later.events, "problem.finished")[0]?.data.outcome, "candidate", "the earlier team's drop did not end the problem");
+    assert.ok(prompts.length >= 1);
+    assert.doesNotMatch(prompts.join("\n"), /Hints from the team|An old hint|What the team asks|automation/);
+    assert.equal(later.events.filter((e) => e.type === "node.recorded" && (e.data.kind === "hint" || e.data.kind === "steer")).length, 0);
+    assertSound(later.events);
   });
 });

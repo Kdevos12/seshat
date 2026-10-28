@@ -412,7 +412,7 @@ Options of `harness run`:
 | `--human` | off | Consortium mode: the run ends a turn at a breakpoint and waits for the team ([human.md](human.md)). Implied by a turn limit or `--turn-narrative`; not with `--ablation`. |
 | `--turn-tokens N`, `--turn-usd X`, `--turn-minutes N` | none | A turn ends when its input and output tokens, its dollars or its minutes reach the limit, counted over every prover and line. |
 | `--turn-narrative` | off | A model adds a short narrative to each turn's account, marked as model-written, with every id it cites checked. |
-| `--impasse-posterior X`, `--impasse-attempts N` | 0.1, 8 | When a problem is at an impasse: after `N` finished attempts, a success posterior below `X`. |
+| `--impasse-posterior X`, `--impasse-attempts N` | 0.1, 8 | When a problem is at an impasse: after `N` finished attempts, a success posterior at or below `X` (the boundary is included: the defaults fire at the 8th failed attempt; they are untuned). |
 | `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
 | `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
