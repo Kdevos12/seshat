@@ -18,6 +18,7 @@
     "@seshat/classical": "workspace:*",
     "@seshat/context": "workspace:*",
     "@seshat/core": "workspace:*",
+    "@seshat/decide": "workspace:*",
     "@seshat/fleet": "workspace:*",
     "@seshat/graph": "workspace:*",
     "@seshat/guards": "workspace:*",

@@ -62,6 +62,7 @@ flowchart TB
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
+    decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
     moretools["ATPs, SAT/SMT,<br/>counterexample search"]:::planned
   end
 
@@ -125,6 +126,7 @@ flowchart TB
   provers --> leangoals
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
+  fleet -.->|"cold start:<br/>capped pseudo-counts"| decide
   leanenv -->|"lakefile, lock"| envbuild
   leanenv -->|"hash in the version<br/>of every Lean tool run"| journal
   envbuild -->|"the project<br/>Lean runs in"| leancheck
@@ -201,7 +203,9 @@ where one does badly, and sends hard decisions to a stronger model. It samples e
 (temperature, thinking level, a diversity directive, standard or informal-first mode), discounts old failures per run and keeps
 a floor of exploration, so that a failure of a weaker configuration does not close a door for good
 ([documentation/fleet.md](documentation/fleet.md)). Informal-first sessions and the multi-call `judge` helper
-have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); it has only run against a simulated model and Lean. The other mechanisms will come as lines that a
+have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); it has only run against a simulated model and Lean.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
+with the run's own model as the default and the fallback) to order work, never to change a claim's status; with Jev on, short proof states go to a third party, and it has never run against the real service
+([documentation/decide.md](documentation/decide.md)). The other mechanisms will come as lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
 the run without it ([documentation/lines.md](documentation/lines.md)).
 

@@ -342,6 +342,21 @@ takes the address from `baseUrl` (`FINDSTAT_URL`). Its contract has 2 cases: the
 inversions on the permutations of 1, 2 and 3, and values that no statistic has. The request and the
 answer are guesses from the site's documentation as remembered and have never been made.
 
+## `decide.ask`
+
+A typed question put to a decision-only model: a choice among labelled options, a score on a few
+levels, or a yes/no, with the probability of each answer. It is `direct`, produces no node and
+justifies no status. The sites that may ask are a closed list (`site` in the manifest), and the
+forbidden ones are refused by the capability. Its implementation `jev` (factory `jev`) posts to
+Jev's decisions endpoint with a key from `JEV_API_KEY`, only to the hosts in `allowedHosts`, and
+refuses a prompt over 32,000 tokens; `faux` (factory `decide-faux`) is scripted, for tests. Its
+contract has 3 cases. The default backend, the run's own model, is not a registry implementation:
+the orchestrator answers with it when this capability is off, unreachable or refused.
+With `jev` on, short proof states go to a third party; the host profiles say so, and
+[decide.md](decide.md) covers the rest. The `faux` factory is registered in the production factories
+(it is needed by the tests and by `--decide-backend faux`), but the shipped profiles never list it. The request and the answer are guesses from the plan change
+and have never been made.
+
 For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,
 the time limit, a status 5xx, 408 or 429), and `harness health` asks each site for its front page.
 The three are `optional` in the host profiles, so on a host without outbound access `harness health`

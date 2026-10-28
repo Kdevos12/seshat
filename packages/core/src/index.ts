@@ -1,6 +1,7 @@
 export * from "./blobs.ts";
 export * from "./canonical-json.ts";
 export * from "./chain.ts";
+export * from "./decisions.ts";
 export * from "./events.ts";
 export * from "./ids.ts";
 export * from "./journal.ts";

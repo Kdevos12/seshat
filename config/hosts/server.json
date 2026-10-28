@@ -1,7 +1,7 @@
 {
   "host": "server",
   "leanEnv": "${env:LEAN_ENV:-base}",
-  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The Lean environment is LEAN_ENV (default base, lean/env/base.toml): a run records its hash, and LEAN_PROJECT_DIR defaults to the environment's project once `harness lean-env build` has built it. The certifier runs lake in the Lean project LEAN_PROJECT_DIR and is unavailable until this profile gives it a sandbox command: this host never runs it unsandboxed (documentation/certifier.md#where-untrusted-code-runs). SageMath runs in its container only. Lean's language server (lean-lsp-mcp, pinned) runs on the project in LEAN_PROJECT_DIR; its searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL. They are optional: `harness health` shows a site that does not answer as a warning and does not fail on it.",
+  "description": "The dedicated server for full bench runs. Kimina Lean Server runs on the same machine and requires its key. The Lean environment is LEAN_ENV (default base, lean/env/base.toml): a run records its hash, and LEAN_PROJECT_DIR defaults to the environment's project once `harness lean-env build` has built it. The certifier runs lake in the Lean project LEAN_PROJECT_DIR and is unavailable until this profile gives it a sandbox command: this host never runs it unsandboxed (documentation/certifier.md#where-untrusted-code-runs). SageMath runs in its container only. Lean's language server (lean-lsp-mcp, pinned) runs on the project in LEAN_PROJECT_DIR; its searches ask Loogle, LeanSearch, Lean Finder and a premise server over the network. The OEIS, the LMFDB and FindStat are asked over the network, at their public addresses or at OEIS_URL, LMFDB_URL and FINDSTAT_URL. They are optional: `harness health` shows a site that does not answer as a warning and does not fail on it. The Jev backend of decide.ask (documentation/decide.md) sends the states and questions of decisions to a third party, OpenRouter or TypeSafe AI, at the hosts this profile allows, and only when a run asks for it (--decide-backend jev or --decide-site) and JEV_API_KEY and a pinned JEV_MODEL are set; otherwise the run's model decides.",
   "capabilities": {
     "lean.check": {
       "use": ["kimina"],
@@ -59,6 +59,18 @@
     },
     "compute.sage": {
       "use": ["docker"]
+    },
+    "decide.ask": {
+      "use": ["jev"],
+      "optional": true,
+      "settings": {
+        "jev": {
+          "baseUrl": "${env:JEV_BASE_URL:-https://openrouter.ai/api/alpha}",
+          "apiKey": "${env:JEV_API_KEY}",
+          "model": "${env:JEV_MODEL}",
+          "allowedHosts": ["openrouter.ai", "api.typesafe.ai"]
+        }
+      }
     },
     "oeis.search": {
       "use": ["site"],
