@@ -33,6 +33,8 @@ simulated model and a simulated Lean.
 | Lean's language server for the provers: goals at a line, tactics tried at a line, Mathlib search (`lean.lsp`, lean-lsp-mcp 0.31.0), `harness run --tool lean.lsp` | `@seshat/lean-lsp`, `capabilities/lean.lsp`, `@seshat/orchestrator` | TypeScript done, tested with a stand-in server whose shapes were taken from the real release, and (opt-in, `LEAN_LSP_MCP_PYTHON`) against the real server with canned back-ends; not run against a real Lean |
 | Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
 | Certifier (kernel replay) | Lean code | Needs a Lean environment |
+| Lean environments as data: `lean/env/NAME.toml`, the resolver that refuses disagreeing toolchains and shared dependencies, the lock with the environment hash, `harness lean-env resolve`, `build` and `show` | `@seshat/lean-env`, `@seshat/orchestrator` | Resolver and lock done, tested on fixture manifests; `build` written against Lake, tested with a fake `lake`; nothing run against Lean, Lake or GitHub |
+| Line M17: the run's Lean environment is the line's (`extended` by default): registry built for it, the extra packages' imports in every file, a probe of the server, the run refused unless the environment is resolved | `@seshat/lean-env`, `@seshat/lines`, `@seshat/orchestrator` | Done, tested with a simulated Lean; not run against a real Lean, Lake or server |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
 | Task ledger: tasks and their transitions, typed routing of failures and drift, model-call sites, `harness run --resume` | `@seshat/core`, `@seshat/scheduler`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean and with a process killed by SIGKILL; a run with M1, M2, M6, M11 or the fleet can be resumed, tested by cutting runs at every event of their journals; never run with a real model or Lean |
 
@@ -66,6 +68,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [m0-loop.md](m0-loop.md): the M0 loop: runs, problems, provers, sessions, certification and the
   outcomes, budgets, the run directory, `harness run` (and `--resume`) and `harness report`.
 - [lean.md](lean.md): Lean checkers, the Kimina client, deployment.
+- [lean-env.md](lean-env.md): Lean environments as data: the environment files, the resolver and
+  what it refuses, the lock and the environment hash, the build, `harness lean-env`, and line M17.
 - [certifier.md](certifier.md): the certifier: what it answers, the process, the Lean program, where
   untrusted code runs, its settings, deployment, what is still to verify against Lean.
 - [lean-meta.md](lean-meta.md): the Lean meta tool: SeshatMeta's commands, the canonical form and
