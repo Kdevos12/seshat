@@ -31,15 +31,29 @@ export function emptyPosterior(): Posterior {
   return { choice: { ...UNIFORM }, success: { ...UNIFORM }, attempts: 0 };
 }
 
-/** The posterior with one more attempt, or the same posterior for one that says nothing. */
-export function addAttempt(p: Posterior, attempt: Pick<Attempt, "outcome" | "failureClass">, partial: number): Posterior {
+/**
+ * How much each attempt counts: 1 by default. `AttemptWeight` is the weight of a run discount and of
+ * an epoch's probation (`attemptWeights`), or any rule a caller gives.
+ */
+export type AttemptWeight = (attempt: Attempt) => number;
+
+/**
+ * The posterior with one more attempt, or the same posterior for one that says nothing. The attempt
+ * counts `weight` in both posteriors; `attempts` counts it once, whatever its weight, since it is
+ * the number of attempts that said something.
+ */
+export function addAttempt(p: Posterior, attempt: Pick<Attempt, "outcome" | "failureClass">, partial: number, weight = 1): Posterior {
   const reward = rewardOf(attempt, partial);
   if (reward === undefined) return p;
-  return { choice: betaUpdate(p.choice, reward), success: betaUpdate(p.success, attempt.outcome === "valid" ? 1 : 0), attempts: p.attempts + 1 };
+  return {
+    choice: betaUpdate(p.choice, reward, weight),
+    success: betaUpdate(p.success, attempt.outcome === "valid" ? 1 : 0, weight),
+    attempts: p.attempts + 1,
+  };
 }
 
-export function posteriorOf(attempts: readonly Attempt[], partial: number): Posterior {
-  return attempts.reduce((p, attempt) => addAttempt(p, attempt, partial), emptyPosterior());
+export function posteriorOf(attempts: readonly Attempt[], partial: number, weigh?: AttemptWeight): Posterior {
+  return attempts.reduce((p, attempt) => addAttempt(p, attempt, partial, weigh?.(attempt) ?? 1), emptyPosterior());
 }
 
 /** The strategy an attempt is counted under: the label M1 classified when it finished, else the one declared. */
@@ -47,25 +61,25 @@ export function strategyOf(attempt: Pick<Attempt, "strategy" | "declaredStrategy
   return attempt.strategy ?? attempt.declaredStrategy;
 }
 
-function group(attempts: readonly Attempt[], key: (attempt: Attempt) => string | undefined, partial: number): Map<string, Posterior> {
+export function group(attempts: readonly Attempt[], key: (attempt: Attempt) => string | undefined, partial: number, weigh?: AttemptWeight): Map<string, Posterior> {
   const found = new Map<string, Posterior>();
   for (const attempt of attempts) {
     const label = key(attempt);
     // An attempt that says nothing leaves no entry: a label is here only when something was counted under it.
     if (label === undefined || rewardOf(attempt, partial) === undefined) continue;
-    found.set(label, addAttempt(found.get(label) ?? emptyPosterior(), attempt, partial));
+    found.set(label, addAttempt(found.get(label) ?? emptyPosterior(), attempt, partial, weigh?.(attempt) ?? 1));
   }
   return found;
 }
 
 /** The posterior of each strategy label, from the attempts of a claim (and its equivalents). */
-export function strategyPosteriors(attempts: readonly Attempt[], partial: number): Map<string, Posterior> {
-  return group(attempts, strategyOf, partial);
+export function strategyPosteriors(attempts: readonly Attempt[], partial: number, weigh?: AttemptWeight): Map<string, Posterior> {
+  return group(attempts, strategyOf, partial, weigh);
 }
 
 /** The posterior of each model, from attempts on any claims. */
-export function modelPosteriors(attempts: readonly Attempt[], partial: number): Map<string, Posterior> {
-  return group(attempts, (attempt) => attempt.model, partial);
+export function modelPosteriors(attempts: readonly Attempt[], partial: number, weigh?: AttemptWeight): Map<string, Posterior> {
+  return group(attempts, (attempt) => attempt.model, partial, weigh);
 }
 
 /** The mean of the single-agent posterior: the chance that one more session proves the claim. */

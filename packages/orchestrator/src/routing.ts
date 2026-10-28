@@ -1,6 +1,6 @@
-import type { Journal, RouteAction } from "@seshat/core";
+import type { AttemptOutcome, Journal, RouteAction } from "@seshat/core";
 import { type DriftAction, type DriftKind, isDriftData } from "@seshat/guards";
-import type { FailureClass } from "@seshat/memory";
+import { type FailureClass, type ModelRanking, onlyWeakerFailures } from "@seshat/memory";
 import type { TaskLedger } from "@seshat/scheduler";
 
 /**
@@ -11,6 +11,10 @@ import type { TaskLedger } from "@seshat/scheduler";
  *
  * - `retry_fresh`: a new session on the same task. The error is local: the next session reads what
  *   Lean said and fixes it.
+ * - `retry_stronger`: a new session on the same task with the strongest model configured. It takes
+ *   the place of `branch` when every failure of the claim ran under a weaker configuration than the
+ *   strongest one (plan change PE3): a stalled claim is first tried with the model that has not been
+ *   tried on it, and only then with other constraints.
  * - `reset_upstream`: go back to the planning above the task and re-decompose the parent. The error
  *   is in what the task rests on (its statement, its decomposition), not in its proof.
  * - `branch`: open an alternative task under other constraints. The task is stuck: more of the same
@@ -134,17 +138,39 @@ export interface Decision {
 export class Router {
   private readonly journal: Journal;
   private readonly tasks: TaskLedger;
+  private readonly ranking: ModelRanking | undefined;
 
-  constructor(journal: Journal, tasks: TaskLedger) {
+  /** `ranking`: the run's models, weakest first, and its budget class; without it nothing is routed to `retry_stronger`. */
+  constructor(journal: Journal, tasks: TaskLedger, ranking?: ModelRanking) {
     this.journal = journal;
     this.tasks = tasks;
+    this.ranking = ranking;
+  }
+
+  /**
+   * `branch` becomes `retry_stronger` when every failure of the claim, this attempt's included,
+   * ran under a weaker configuration than the strongest one configured. Otherwise the route stands.
+   */
+  private stronger(route: Route, claimId: string): Route {
+    if (route.action !== "branch" || this.ranking === undefined) return route;
+    const attempts = this.journal.projection.attempts(claimId).map((row) => ({
+      model: row.model,
+      ...(row.outcome !== null ? { outcome: row.outcome as AttemptOutcome } : {}),
+      ...(row.provenance !== null ? { provenance: row.provenance } : {}),
+    }));
+    if (!onlyWeakerFailures(attempts, this.ranking)) return route;
+    const strongest = this.ranking.order.at(-1);
+    return {
+      action: "retry_stronger",
+      reason: `every failure of the claim ran under a weaker configuration than the strongest one configured (${strongest}); try that first, before ${route.reason}`,
+    };
   }
 
   attemptEnded(attempt: EndedAttempt): Decision[] {
     const p = this.journal.projection;
     const decisions: Decision[] = [];
     const decide = (signal: RouteSignal, said: string, ids: { nodeId?: string } = {}) => {
-      const route = routeOf(signal);
+      const route = this.stronger(routeOf(signal), attempt.claimId);
       const decision: Decision = {
         taskId: attempt.taskId,
         action: route.action,

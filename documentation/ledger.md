@@ -176,11 +176,12 @@ guard found (`drift_kind`, [guards.md](guards.md)), or a refuted part of a decom
 (`subgoal_refuted`, the part's claim id). The event is the decision and nothing more: it changes no
 task status and no claim status, and the journal accepts it from the orchestrator only.
 
-The action is one of three:
+The action is one of four:
 
 | Action | Meaning |
 |---|---|
 | `retry_fresh` | A new session on the same task. The error is local: the next session reads what Lean said and fixes it. |
+| `retry_stronger` | A new session on the same task with the strongest model configured. It takes the place of a `branch` when every failure of the claim ran under a weaker configuration than the strongest one (below). |
 | `reset_upstream` | Go back to the planning above the task and decompose the parent again. The error is in what the task rests on, not in its proof. |
 | `branch` | Open an alternative task under other constraints. The task is stuck, and more of the same would not get further. |
 
@@ -195,6 +196,15 @@ that a class or a kind added later does not compile until it is routed:
 | `subgoal_refuted` | `reset_upstream` |
 | drift `strategy_loop`, `session_loop` | `branch` |
 | drift `length_growth`, `unresolved_citation`, `sorry_as_known`, `raw_error_text`, `unanchored_revision`, `non_neutral_framing` | `retry_fresh` |
+
+`retry_stronger` is not a row of the table: it is not a route of a signal. The router takes it in the place
+of a `branch` when it knows the run's models (`ModelRanking`, the fleet's `ranking` option or its models in
+order, with the run's budget class) and the failures of the claim, this attempt's included, all ran under a
+configuration weaker than the strongest one (`onlyWeakerFailures` of `@seshat/memory`: a failed or
+no-submission attempt counts, a session that was cut does not, a model the run does not rank is weaker than any
+it does). Its reason says so and then gives the `branch` reason it replaced. The fleet reads it
+(`TaskApi.routings`) and gives the prover's next session the strongest model ([fleet.md](fleet.md#soft-failure-memory)).
+A claim that has failed under the strongest configuration, or under none, keeps its `branch`.
 
 Each row has its reason in the table, and the decision's `reason` is "what was seen: why this
 action", for example "the last check failed as restates_target: an auxiliary lemma states the target

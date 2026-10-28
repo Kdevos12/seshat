@@ -23,9 +23,10 @@ import {
   SKETCH_POLICY,
   stampProvenance,
 } from "@seshat/core";
+import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
-import { MemoryStore, type StatementIdentity } from "@seshat/memory";
+import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
 import { Ledger } from "./budget.ts";
@@ -308,6 +309,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     harnessVersion: o.codeRev ?? "unknown",
     budgetClass: budgetClassOf(config.budget.problemUsd),
   };
+  // The run's models, weakest first, for the soft failure memory: M1's "already tried" says when a line comes from a weaker model, and a
+  // stalled claim whose failures all do is routed to `retry_stronger` (documentation/fleet.md).
+  const ranking: ModelRanking = {
+    order: modelOrderOf(config.model, enabled.lines.find((entry) => entry.line.id === "fleet")?.options ?? {}),
+    budgetClass: provenance.budgetClass,
+  };
   const policyRecord = { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] };
   const linesRecord = enabled.lines.map(({ line, options }) => ({
     id: line.id,
@@ -434,7 +441,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
   // The task ledger: the orchestrator is its only writer (documentation/ledger.md).
   const tasks = new TaskLedger(journal);
-  const router = new Router(journal, tasks);
+  const router = new Router(journal, tasks, ranking);
 
   const toolsRecord = pinned.tools.map((t) => ({ ...t }));
   const certifierRecord = certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`;
@@ -559,6 +566,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       thinkingLevel: config.thinkingLevel,
       log,
       seed: config.seed ?? runId,
+      ranking,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);

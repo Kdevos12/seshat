@@ -214,6 +214,16 @@ export interface EventDataMap {
      */
     included?: string[];
     withheld?: string[];
+    /**
+     * The settings the session was given by a line that samples them (documentation/fleet.md,
+     * "Sampled settings"): `temperature`, `thinking`, `directive`, `mode`... Absent: the run's own.
+     */
+    settings?: { [key: string]: Json };
+    /**
+     * True when the session's strategy was drawn by the exploration floor (documentation/fleet.md),
+     * uniformly among the allowed labels and not from the posteriors. Absent: it was not.
+     */
+    exploration?: boolean;
   };
   /**
    * A model response of a session was paid for. The attempt's totals are in `attempt.finished`;

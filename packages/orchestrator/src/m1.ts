@@ -1,4 +1,5 @@
 import { LINE_TITLES, type Line } from "@seshat/lines";
+import { configClassOf } from "@seshat/core";
 import { classifyFailure, classifyStrategy, premisesOf, renderTried, STRATEGIES, TextIdentity } from "@seshat/memory";
 
 /** The most lines of the "already tried" section, when the run does not say (`--line-option M1.maxLines=...`). */
@@ -18,7 +19,7 @@ export const M1: Line = {
   requires: [],
   options: { maxLines: MAX_LINES },
   // Recorded in run.started: change it with the vocabulary, a classifier's rule or the section's format.
-  version: "m1-1",
+  version: "m1-2",
   // Everything M1 knows it reads from the memory (the claims and the attempts' typed summaries), so a
   // resumed process gives the same briefing: nothing is kept in the process.
   resume: "stateless",
@@ -27,7 +28,12 @@ export const M1: Line = {
   hooks: {
     briefing: async (session) => {
       const maxLines = typeof session.options.maxLines === "number" ? session.options.maxLines : MAX_LINES;
-      const lines = renderTried(session.memory.alreadyTried(session.claimId), { maxLines });
+      // With the run's models ranked, a line from another model or budget class says so ("with a smaller model").
+      const view =
+        session.ranking === undefined
+          ? undefined
+          : { current: configClassOf({ modelId: session.model, budgetClass: session.ranking.budgetClass }), ranking: session.ranking };
+      const lines = renderTried(session.memory.alreadyTried(session.claimId, view), { maxLines });
       return lines.length === 0 ? undefined : { title: "Already tried", text: lines.join("\n") };
     },
     afterAttempt: async (problem, attempt) => {

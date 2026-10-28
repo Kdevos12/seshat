@@ -157,10 +157,11 @@ export const EXTERNAL_BLOCKER = /^ext:[a-z][a-z0-9_.-]{0,63}$/;
 
 /**
  * What a routing decision does with a failed task (documentation/ledger.md, "Routing"): try again
- * in a fresh session, go back to the planning above the task, or open an alternative under other
- * constraints.
+ * in a fresh session, try again with the strongest model configured (when every failure so far
+ * comes from a weaker configuration), go back to the planning above the task, or open an
+ * alternative under other constraints.
  */
-export const ROUTE_ACTIONS = ["retry_fresh", "reset_upstream", "branch"] as const;
+export const ROUTE_ACTIONS = ["retry_fresh", "retry_stronger", "reset_upstream", "branch"] as const;
 export type RouteAction = (typeof ROUTE_ACTIONS)[number];
 
 export function isRouteAction(value: unknown): value is RouteAction {

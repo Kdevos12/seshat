@@ -195,6 +195,10 @@ export class Journal {
         if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`attempt ${d.attemptId}: bad site ${JSON.stringify(d.site)}`);
         this.checkProvenance(`attempt ${d.attemptId}`, d.provenance);
         this.checkDraw(d.attemptId, d.included, d.withheld);
+        if (d.settings !== undefined && (typeof d.settings !== "object" || d.settings === null || Array.isArray(d.settings))) {
+          throw new Error(`attempt ${d.attemptId}: settings must be an object`);
+        }
+        if (d.exploration !== undefined && typeof d.exploration !== "boolean") throw new Error(`attempt ${d.attemptId}: exploration must be true or false`);
         if (d.taskId !== undefined) {
           // Work is done inside a running task, for the task's own claim.
           const task = p.task(d.taskId);

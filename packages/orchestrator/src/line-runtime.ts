@@ -24,7 +24,7 @@ import type {
   TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
-import type { Draw, DrawItem, DrawOptions, MemoryStore } from "@seshat/memory";
+import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { routingInfo, type TaskLedger, taskInfo } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
@@ -74,6 +74,8 @@ export interface RunLinesOptions {
   signal?: AbortSignal;
   /** Seeds the draws of unverified items (`SessionContext.draw`). Default: the run's id, so that each run draws differently. */
   seed?: string | number;
+  /** The run's models, weakest first, and its budget class; the lines read it as `ProblemContext.ranking`. */
+  ranking?: ModelRanking;
 }
 
 export interface ProblemLinesOptions {
@@ -136,6 +138,9 @@ export interface SessionInfo {
   /** The unverified items the lines' draws included and withheld, once `beforeSession` has run. */
   included?: string[];
   withheld?: string[];
+  /** The settings the lines sampled for the session, and whether the exploration floor drew its strategy. */
+  settings?: JsonObject;
+  exploration?: boolean;
 }
 
 /** What the lines decided for a session about to start, merged in `LINE_ORDER`. */
@@ -151,6 +156,25 @@ export interface SessionPlan {
   /** The unverified items the lines drew into the session and the ones the draws withheld; recorded on `attempt.started`. */
   included?: string[];
   withheld?: string[];
+  /** The settings the lines sampled for the session, merged key by key; recorded on `attempt.started`. */
+  settings?: JsonObject;
+  /** The exploration floor drew the strategy; recorded on `attempt.started`. */
+  exploration?: boolean;
+}
+
+/** The thinking levels a line may sample for a session (the run's providers' own scale). */
+export const SESSION_THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** What is wrong with the settings a line sampled, or undefined: the keys that act on a session are checked here. */
+export function settingsProblem(settings: JsonObject): string | undefined {
+  const { temperature, thinking } = settings;
+  if (temperature !== undefined && !(typeof temperature === "number" && Number.isFinite(temperature) && temperature >= 0 && temperature <= 2)) {
+    return `settings.temperature must be a number from 0 to 2, got ${JSON.stringify(temperature)}`;
+  }
+  if (thinking !== undefined && !(typeof thinking === "string" && (SESSION_THINKING_LEVELS as readonly string[]).includes(thinking))) {
+    return `settings.thinking must be one of ${SESSION_THINKING_LEVELS.join(", ")}, got ${JSON.stringify(thinking)}`;
+  }
+  return undefined;
 }
 
 /** The lines' part in a session that starts: briefing sections, tools, and the in-session hooks. */
@@ -240,6 +264,7 @@ export class ProblemLines {
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
       options: entry.options,
+      ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
     };
     if (signal === undefined) this.contexts.set(id, context);
     return context;
@@ -259,6 +284,8 @@ export class ProblemLines {
       regions: info.regions,
       ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
       ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
+      ...(info.settings !== undefined ? { settings: info.settings } : {}),
+      ...(info.exploration !== undefined ? { exploration: info.exploration } : {}),
       draw: (items, options) => {
         if (!deciding) {
           throw new Error(`line ${entry.line.id}: the attempt ${info.attemptId} has started and its draw is recorded on attempt.started: draw the unverified items in beforeSession`);
@@ -360,6 +387,12 @@ export class ProblemLines {
         if (decision.model !== undefined) chosen = { line: id, name: decision.model };
         if (decision.strategy !== undefined) plan.strategy = decision.strategy;
         if (decision.subgoal !== undefined) plan.subgoal = decision.subgoal;
+        if (decision.settings !== undefined) {
+          const problem = settingsProblem(decision.settings);
+          if (problem !== undefined) throw new LineError(id, "beforeSession", problem);
+          plan.settings = { ...plan.settings, ...decision.settings };
+        }
+        if (decision.exploration !== undefined) plan.exploration = decision.exploration;
       }
       if (chosen !== undefined) {
         const { line, name } = chosen;
@@ -383,9 +416,18 @@ export class ProblemLines {
    */
   async openSession(info: SessionInfo, taken: readonly string[]): Promise<OpenedSession> {
     let sections: Briefing[] = [];
-    for (const { entry, hook } of this.with("briefing")) {
-      const briefing = await call(entry.line.id, "briefing", () => hook(this.sessionContext(entry, info)));
-      if (briefing !== undefined) sections.push(briefing);
+    for (const entry of this.run.o.lines) {
+      const id = entry.line.id;
+      const one = entry.line.hooks.briefing;
+      if (one !== undefined) {
+        const briefing = await call(id, "briefing", () => one(this.sessionContext(entry, info)));
+        if (briefing !== undefined) sections.push(briefing);
+      }
+      const several = entry.line.hooks.briefingSections;
+      if (several !== undefined) {
+        const more = await call(id, "briefingSections", () => several(this.sessionContext(entry, info)));
+        if (more !== undefined) sections.push(...more);
+      }
     }
     // Each line reviews the sections as the lines before it left them: it may drop or reword, not add.
     for (const { entry, hook } of this.with("reviewBriefing")) {
