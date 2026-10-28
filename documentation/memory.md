@@ -371,7 +371,34 @@ revision differs from the last journal of the chain. The report has a section on
 memory: its claims, how many statuses carried or were reset, its attempts, lessons, nodes, edges,
 validations and epochs. `--resume` reads the chain from the run's own journal.
 
-Not done: a chain is read in full at every open, and nothing has run against a real Lean or model.
+**The trust limit of the pin.** `--memory-from` is for your own runs. The pin detects a change made to a
+journal after a run started on it, but the hash chain is an unkeyed SHA-256: a journal edited and fully
+re-hashed before the new run starts is accepted. If it was recorded in the same Lean environment, its
+verified statuses then carry, because the replay applies inherited events without the journal's
+invariants, and its validations count; a forged `proved` with a forged `kernel_replay` validation would
+become a `proved` claim of the new run, and the edges and propagation that rest on it with it. So a
+carried status is as trustworthy as the directory it came from. What holds whatever the directory
+holds: a problem's outcome never comes from the earlier run (it needs this run's own certification), and
+the only real re-check is a stored proof (`storedProofs`) sent through `validate` and the certifier in
+the new run. Do not pass a run directory you did not produce, or whose storage others can write. The
+trust rules are in [trust.md](trust.md#memory-across-runs).
+
+**Limits.**
+
+- The Mathlib trigger of an epoch is the bench's git revision, the plan's stand-in: updating the bench
+  checkout opens an epoch and puts the memory in probation whether or not Mathlib changed. It errs on the
+  safe side.
+- Nodes of every kind carry in every environment; only claims, edges and validations are reset under
+  another one. No node holds a verified status today. The library lemma nodes of Tasks 6 and 9 will, and
+  must be filtered by the environment when they exist.
+- A stale lock file whose pid has been recycled by a live process (or is the run's own) makes the chain
+  unreadable: the message names the process, and removing the lock after checking the run has ended
+  clears it.
+- The fleet's strategy and model posteriors (`packages/fleet`) read `memory.attempts(...)` at full weight,
+  the chain's attempts after a model upgrade included; only `itemEffect` applies the probation weight
+  (`weightOf`). PE3 puts the fleet's discount in Task 19, which wires `weightOf(attempt.epoch)` there.
+- A chain is read and verified in full at every open (about 14 microseconds per event, and 30 more to
+  attach once), with no snapshot of the projection. Nothing has run against a real Lean or model.
 
 ## Reference files
 
