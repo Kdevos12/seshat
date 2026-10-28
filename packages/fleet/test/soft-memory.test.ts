@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal, type ValidationReport } from "@seshat/core";
-import type { FinishedAttempt, JsonObject, ProblemContext, SessionContext } from "@seshat/lines";
+import { type FinishedAttempt, InterruptedError, type JsonObject, type ProblemContext, type SessionContext } from "@seshat/lines";
 import { type Attempt, MemoryStore } from "@seshat/memory";
 import {
   allocations, attemptWeights, betaUpdate, checkStepDag, createFleet, DIRECTIVES, FLEET_OPTIONS, modelOrderOf, posteriorOf, runsBetween, sampleSettings, seeded,
@@ -434,5 +434,19 @@ describe("informal-first sessions in a fleet", () => {
     let standard = 0;
     for (let k = 0; k < 40; k++) if (sampleSettings(seeded(100 + k), modes, attempts, 0.5).settings.mode === "standard") standard += 1;
     assert.ok(standard >= 30, `standard drawn ${standard} of 40`);
+  });
+
+  it("records nothing, decides nothing and gives its place back when the turn refuses the DAG call", async () => {
+    const world = await setup({ epsilon: 0, stick: false, seed: 3, modes: ["nl_first"] });
+    const refused = async () => { throw new InterruptedError("the turn is over"); };
+    assert.equal(await world.hooks.beforeSession?.(withLlm(world, "p1", refused)), undefined, "no decision: the session does not start");
+    assert.deepEqual(allocations(world.memory, world.claimId), [], "no allocation");
+    assert.deepEqual(world.memory.nodes("step_dag_failure", { claimId: world.claimId }), [], "a refused call is not a failed try");
+    // The place is free: another prover is not kept off the strategy the first would have taken, and the next turn asks again.
+    const dagCalls: number[] = [];
+    const answer = async () => { dagCalls.push(1); return { value: dag, text: "", cost: {}, model: "faux/prover", modelCallId: "m", modelCallIds: ["m"] }; };
+    const decision = await world.hooks.beforeSession?.(withLlm(world, "p1", answer));
+    assert.ok(decision !== undefined, "the next turn decides");
+    assert.equal(dagCalls.length, 1);
   });
 });
