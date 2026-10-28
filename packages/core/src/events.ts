@@ -72,6 +72,15 @@ export interface AttemptCarry {
   notes?: string;
 }
 
+/** What ends a turn: any of the limits that is given, counted over every prover and line of the run. */
+export interface TurnLimit {
+  /** Input and output tokens. */
+  tokens?: number;
+  usd?: number;
+  /** Wall-clock minutes of the process that works the turn. */
+  minutes?: number;
+}
+
 export type AttemptOutcome = "valid" | "invalid" | "no_submission" | "budget_exhausted" | "aborted" | "error";
 
 /**
@@ -145,6 +154,49 @@ export interface EventDataMap {
     /** What was left open and is closed now. */
     interrupted: { attempts: number; toolRuns: number; tasks: number };
     codeRev?: string;
+  };
+  /**
+   * A turn of a consortium run begins (documentation/human.md): the work between two stops that
+   * wait for the research team. Written by the orchestrator, after `run.started` for turn 1 and after
+   * `run.resumed` for the others.
+   */
+  "turn.started": {
+    runId: string;
+    /** 1 for the first turn, then 2... */
+    turn: number;
+    /** What ends the turn, counted over every prover and line of the run. A limit that is absent is no limit. */
+    limit: TurnLimit;
+    /** Where the limit came from: the run's option, the team's steer, a flag of the resumption, or the turn before. */
+    source: string;
+    /** The run's spend when the turn began. */
+    startSpend: TokenCost;
+  };
+  /**
+   * A turn of a consortium run ended: no session starts and no model call is sent until the team has
+   * answered and the run is resumed, or the run is over (`reason` is then `finished`, or why it stopped).
+   * Written by the orchestrator, once for each `turn.started`.
+   */
+  "turn.ended": {
+    runId: string;
+    turn: number;
+    /**
+     * Why: `tokens`, `usd` or `minutes` (a limit was reached), `impasse`, `settled` or `disagreement` (a
+     * breakpoint), `interrupted` (the process before ended without writing this event), or `finished`
+     * or the reason the run stopped (`aborted`, `budget_exhausted`...): the run is over.
+     */
+    reason: string;
+    /** One sentence on what was reached. */
+    detail: string;
+    /** What the turn spent, and what the run has spent in all. */
+    spent: { turn: TokenCost; run: TokenCost };
+    /** Minutes the turn lasted in this process. */
+    minutes: number;
+    /** The problems that were begun or not and have no outcome: they wait for the next turn. Empty when the run is over. */
+    waiting: string[];
+    /** The breakpoint that ended the turn, when one did. */
+    breakpoint?: { kind: string; problemId?: string; nodeId?: string };
+    /** The blob of a narrative a model wrote about the turn (`--turn-narrative`), or why none was kept. */
+    narrative?: { hash?: string; rejected?: string };
   };
   "problem.registered": {
     problemId: string;
@@ -238,7 +290,7 @@ export interface EventDataMap {
     outcome: AttemptOutcome;
     /** The kind of failure of the attempt's last check, for an `invalid` attempt. */
     failureClass?: string;
-    /** Why the session ended: `model`, `turns`, `context`, `budget`, `solved`, `aborted`, `error`, or `line:<id>`. */
+    /** Why the session ended: `model`, `turns`, `context`, `budget`, `solved`, `aborted`, `error`, `turn` (a consortium turn ended), `interrupted` or `line:<id>`. */
     stoppedBy?: string;
     /** What failed, for an `error` attempt. */
     error?: string;
@@ -444,6 +496,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "node.updated",
   "model_call.finished",
   "run.resumed",
+  "turn.started",
+  "turn.ended",
   "attempt.charged",
   "task.created",
   "task.assigned",

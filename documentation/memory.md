@@ -18,7 +18,9 @@ Every write appends one event, which the journal checks against its invariants
 ([journal.md](journal.md#invariants)) before it is written; every read comes from the projection. A
 store writes as its `actor` (`memory` by default); `withActor("line:M1")` gives a view of the same
 store that writes as another actor. The orchestrator gives each line such a view, so the journal
-says which line wrote what. `blobs` is the run's blob store, for contents too large for an event:
+says which line wrote what. A view cannot make another view that writes as `orchestrator` or as `human:NAME`
+(the journal accepts a team's answer on the actor string alone, so the line's view may not speak as a person); only the
+root store, which the orchestrator and the answering commands hold, can. `blobs` is the run's blob store, for contents too large for an event:
 a node's data can name a blob by its hash.
 
 The memory is the graph of the mathematics. The work of a run (which prover does what, with what
@@ -167,6 +169,12 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 - contents too large for an event go to the blob store, and the node keeps their hash.
 
 `recordNode({kind, claimId?, data})` returns the node with its new id.
+
+The research team's answers are nodes written by the orchestrator under `human:NAME`, not through a
+store, and edited by nobody (the journal refuses a `node.updated` of a hint or a steer): `hint` (`provenance: "human"`, `by`, `text`, `afterTurn`) and `steer` (`action`: `focus`, `drop`,
+`forbid_strategy` or `turn_limit`, with `by` and `afterTurn`). The account of a turn also reads `judgment`
+nodes with `disagreement: true` (two informal validators that disagree), `obstruction` and `conjecture`
+(with `evidence`) nodes, and counts the kinds it does not know ([human.md](human.md)).
 
 ## Queries
 

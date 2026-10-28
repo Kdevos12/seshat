@@ -273,6 +273,11 @@ The journal is the only source: the run is the one `run.started` recorded, and n
 line held in memory is needed, because what a resumed run uses is in the journal and the blobs.
 Everything the resumed process writes is written by the orchestrator, after `run.resumed`.
 
+A consortium run's turn that ends at a limit or a breakpoint ([human.md](human.md)) is a clean kill: the
+sessions are closed with a carry (`stoppedBy: "turn"`, so that nothing of them is lost), the prover tasks
+stay `running`, and `harness resume` takes the run up with everything below. A turn that ended without its
+`turn.ended` is closed by the next process.
+
 ### What it refuses, before it writes anything
 
 | Refused | Because |
@@ -450,4 +455,6 @@ What each rebuilds, from what it journaled:
   outcome are the problem's whole.
 
 The report says that the run was resumed, how many sessions, tool runs and tasks the interruptions
-cut, and how many cut last lines it found.
+cut, and how many cut last lines it found. A resumption that follows a turn the run ended by itself (a limit or a
+breakpoint of a consortium run, [human.md](human.md#turns)) is the next turn and not an interruption: it is not
+counted there, and the tasks it finds `running` were left so by design.
