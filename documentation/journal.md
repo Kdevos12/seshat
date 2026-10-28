@@ -63,6 +63,7 @@ Event types:
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
 | `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
+| `ladder.escalated` | `problemId`, `from`, `to`, `lines`, `threshold`, `sinceProgressUsd`, `budgetUsd`, `reason` |
 | `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a
@@ -99,7 +100,8 @@ closed by the next process (`reason: "interrupted"`). A run that is paused after
 is `human:NAME`.
 
 The task events (`task.*`) are the ledger's ([ledger.md](ledger.md)): the work of a run, as tasks
-that point at claims and edges. Only the orchestrator writes them. `attempt.charged` is one model
+that point at claims and edges. Only the orchestrator writes them. `ladder.escalated` is a problem's move up the
+escalation ladder ([scheduler.md](scheduler.md)); the journal checks that the spend since the last Lean progress reaches the threshold. `attempt.charged` is one model
 response of a session, so that the cost of a session that was cut is not lost; `run.resumed` marks
 the run's continuation after a crash, and is followed by the orchestrator's closing of what the
 process left open: the sessions with no end (`attempt.finished`, `aborted`, `stoppedBy: "interrupted"`),

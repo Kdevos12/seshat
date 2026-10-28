@@ -80,13 +80,14 @@ export function readSketch(submission: Submission): SketchReading {
  * `validate` request: the sketch's other aux commands, and a main proof that introduces the holes as
  * hypotheses under the lemmas' own names. The sketch checked with only its named holes open, so
  * with each hole supplied as a hypothesis its main proof closes the theorem. `binders` are the
- * explicit binders of the theorem (`parseSignature(statement).args`).
+ * theorem's binders as written (`parseSignature(statement).binders`): `refine fun <binders> => ?_`
+ * introduces them under their own names, implicit and instance binders included.
  */
-export function linkProof(submission: Submission, reading: SketchReading, binders: readonly string[]): { aux: string; proof: string } {
+export function linkProof(submission: Submission, reading: SketchReading, binders: string): { aux: string; proof: string } {
   const hyps = reading.holes.map((_, k) => `h_aux_${k + 1}`);
   const prelude = [
     `intro ${hyps.join(" ")}`,
-    ...(binders.length > 0 ? [`intro ${binders.map((b) => (b === "‹_›" ? "_" : b)).join(" ")}`] : []),
+    ...(binders.trim() !== "" ? [`refine fun ${binders.trim()} => ?_`] : []),
     ...reading.holes.map((hole, k) => `have ${hole.name} := ${hyps[k]}`),
   ];
   return { aux: reading.others.join("\n\n"), proof: [...prelude, submission.proof.replace(/\s+$/, "")].join("\n") };

@@ -30,8 +30,8 @@ test("a sketch the scheduler cannot split says why", () => {
 test("the link proof introduces the holes under their own names", () => {
   const sub = { aux, proof: "exact aux_a 1" };
   const r = readSketch(sub);
-  const link = linkProof(sub, r, ["n"]);
-  assert.match(link.proof, /^intro h_aux_1 h_aux_2\nintro n\nhave aux_a := h_aux_1\nhave aux_b := h_aux_2\nexact aux_a 1$/);
+  const link = linkProof(sub, r, "{m : Nat} (n : Nat)");
+  assert.equal(link.proof, "intro h_aux_1 h_aux_2\nrefine fun {m : Nat} (n : Nat) => ?_\nhave aux_a := h_aux_1\nhave aux_b := h_aux_2\nexact aux_a 1");
   assert.match(link.aux, /helper/);
   assert.doesNotMatch(link.aux, /aux_a/);
 });
