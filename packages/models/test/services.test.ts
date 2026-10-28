@@ -82,7 +82,8 @@ describe("the OEIS, the LMFDB and FindStat as capabilities", () => {
     for (const host of ["local", "server"]) {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
       const optional = Object.entries(profile.capabilities).flatMap(([id, binding]) => (binding.optional === true ? [id] : []));
-      assert.deepEqual(optional.sort(), [...CAPABILITIES].sort(), host);
+      // decide.ask (Task 20) is optional too: off unless a run asks for it.
+      assert.deepEqual(optional.sort(), [...CAPABILITIES, "decide.ask"].sort(), host);
     }
   });
 

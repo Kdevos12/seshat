@@ -1,0 +1,236 @@
+{
+  "id": "decide.ask",
+  "version": 1,
+  "title": "Ask for a typed decision that orders work",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "ordering candidates that come without a model call (battery tactics, mined tactics, library lemmas tried by apply, aesop rules)",
+    "scoring the relevance of a conjecture on its statement alone",
+    "a Choice over strategy families as the prior of the fleet's cold start"
+  ],
+  "whenNot": [
+    "the fidelity of a Lean statement to an informal one, or their equivalence",
+    "anything Lean, a decision procedure or a tool can decide, including whether a step made progress",
+    "changing a claim's status: only a Lean proof through validate does",
+    "generating anything",
+    "using a probability as a threshold, before the site has a reliability curve: use it to order"
+  ],
+  "exposure": "auto",
+  "produces": [],
+  "timeoutMs": 60000,
+  "summary": [
+    "backend",
+    "model",
+    "costUsd"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "site",
+      "state",
+      "question"
+    ],
+    "properties": {
+      "site": {
+        "type": "string",
+        "enum": [
+          "conjecture.relevance",
+          "prove.search.order",
+          "fleet.cold_start"
+        ],
+        "description": "Where the decision is made; only these sites accept decide"
+      },
+      "state": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Compact: a goal and hypotheses, or a statement. Never a whole packet"
+      },
+      "question": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "instructions",
+              "options"
+            ],
+            "properties": {
+              "type": {
+                "const": "choice"
+              },
+              "instructions": {
+                "type": "string",
+                "minLength": 1
+              },
+              "options": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Option key to a short text; 2 to 255 options"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "instructions",
+              "levels"
+            ],
+            "properties": {
+              "type": {
+                "const": "score"
+              },
+              "instructions": {
+                "type": "string",
+                "minLength": 1
+              },
+              "levels": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 10,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Ordered levels, lowest first"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "instructions"
+            ],
+            "properties": {
+              "type": {
+                "const": "noul"
+              },
+              "instructions": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "use": {
+        "type": "string",
+        "enum": [
+          "order"
+        ],
+        "description": "Only order, until the site has a reliability curve"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "answer",
+      "probabilities",
+      "backend",
+      "model",
+      "costUsd"
+    ],
+    "properties": {
+      "answer": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "probabilities": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "backend": {
+        "type": "string",
+        "enum": [
+          "jev",
+          "faux"
+        ]
+      },
+      "model": {
+        "type": "string"
+      },
+      "costUsd": {
+        "type": "number",
+        "minimum": 0
+      },
+      "inputTokens": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "outputTokens": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "title": "order two tactics",
+      "input": {
+        "site": "prove.search.order",
+        "state": "n : ℕ\n⊢ n + 0 = n",
+        "question": {
+          "type": "choice",
+          "instructions": "Which candidate should be tried first?",
+          "options": {
+            "simp": "simp",
+            "omega": "omega"
+          }
+        }
+      },
+      "output": {
+        "answer": "simp",
+        "probabilities": {
+          "simp": 0.7,
+          "omega": 0.3
+        },
+        "backend": "jev",
+        "model": "PROVIDER/ID",
+        "costUsd": 0.0001
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "jev",
+      "version": "decisions-client-1",
+      "kind": "inproc",
+      "factory": "jev",
+      "description": "Jev, TypeSafe AI's decision-only model, through OpenRouter's Decisions endpoint or TypeSafe's API, with a small HTTP client. Needs JEV_API_KEY and a pinned JEV_MODEL in the environment and an allowed host in the profile. The state and the question are sent to a third party. The request and the answer are written from the plan change's description and have never been made against the real service.",
+      "environment": {
+        "service": "Jev decisions endpoint"
+      }
+    },
+    {
+      "id": "faux",
+      "version": "faux-1",
+      "kind": "inproc",
+      "factory": "decide-faux",
+      "description": "Scripted answers, for tests. Never listed by a shipped host profile."
+    }
+  ]
+}
