@@ -53,8 +53,8 @@ The code is in `packages/orchestrator/src`:
 4. Records `run.finished`, then writes `report.md` and `report.json`.
 
 The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
-(`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), when the Lean server cannot import the libraries of the run's
-environment (`lean_environment`, line M17: [lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)), or after three problems in
+(`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), when the Lean server cannot import the libraries of the environment that line M17 puts the run in
+(`lean_environment`; a run in an environment through the host's `LEAN_ENV` alone is not probed: [lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)), or after three problems in
 a row ended with a harness error (`errors`). The reason is in `run.finished`.
 
 A run whose process ended without a `run.finished` (a kill, a crash, a usage limit) is continued by

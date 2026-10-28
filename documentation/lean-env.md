@@ -120,7 +120,7 @@ says where an environment stands without throwing:
 A hash is only ever the lock's: never one guessed from the file. `harness lean-env show [NAME]` prints
 the status, the hash, whether it is built, the packages and the dependencies.
 
-### For other tasks
+### For later tasks
 
 ```ts
 import { leanEnvironmentHash, leanEnvOfConfig, sameLeanEnvironment, type LeanEnvRecord } from "@seshat/lean-env";
@@ -131,8 +131,8 @@ sameLeanEnvironment(recordedA, recordedB);      // true only when both have a ha
 ```
 
 "The same Lean environment" is `sameLeanEnvironment`: two environments whose hash is unknown are not
-the same, themselves included. The memory that outlives a run (Ruling 28) compares a run's record
-with the current one with it.
+the same, themselves included. The helper is meant for Task 23, which owns what the memory that
+outlives a run does with it.
 
 ## Building
 
@@ -172,6 +172,17 @@ without the key names none. `openRegistry` looks the environment up when it buil
   `leanEnv: {name, hash}` (in `config.json` and the report too), and a resumed run is refused unless
   its registry names the same name and hash. A run whose journal recorded no environment (from before
   this existed) has none to keep.
+- **What the hash states.** The hash is a statement of the lock, which `resolve` wrote from the
+  environment file and the manifests: not of what Lake built. Nothing compares the generated
+  `lakefile.toml` on disk (it can be edited after `resolve`; `build` uses it as it is) or the
+  `lake-manifest.json` Lake writes with the lock's dependencies, and a local package's content hash is
+  taken at `resolve` time, so editing `lean/SeshatMeta` afterwards leaves the status `resolved` with the
+  old hash. Resolve again after any such change. Checking the build against the lock is a known limit,
+  not done.
+- **The environment alone changes no file.** A run in an extended environment through the host's
+  `LEAN_ENV` alone has the pin and the record above, and nothing else: its problem files get no extra
+  import and the server is not probed. Those belong to line M17, below, so that a run is in the
+  environment's libraries exactly when its record lists M17.
 
 | Status of the environment | The run |
 |---|---|
@@ -199,12 +210,15 @@ and at most one enabled line may. The orchestrator then does the following, befo
    the environment has no hash (`unresolved`, as well as `stale` and `unknown`). A run with M17 in an
    environment that cannot be named in the journal would be a comparison that cannot be checked, so the
    leniency of an unresolved host environment does not apply.
-3. **Adds the extra packages' imports to every file of the run.** `environmentImports(lock)` is the
+3. **Adds the extra packages' imports to every file of the run**, which only this line does (see
+   [In a run](#in-a-run)). `environmentImports(lock)` is the
    `lean_libs` of each package of the lock except the base project's, in the order of the file, without
    repeats (`Duper`, then `LeanAPAP`, then `PFR`). `loadProblem` puts one `import <module>` line for
    each after the file's own imports (`withEnvironmentImports`), so that the sketch, the reference file
    and the files the provers and the certifier see all have them. A module the file imports already is
-   not added again.
+   not added again, whether its import is on a line of its own or with others (`import A B`). The added
+   lines shift every line number after the header: a line number in a report, or in the journal's
+   `source.line`, is the checkout's only in a run without M17.
 4. **Probes the server.** The Lean server of the host is started on a project the harness cannot see
    (`LEAN_SERVER_PROJECT_DIR`). If it was started on the bench's, every file would fail with `unknown
    module prefix`, and the run would count that against the provers. So the run first checks, as a
@@ -221,8 +235,10 @@ in another one. The imports come from the lock, which the registry's hash has ch
 Nothing here ran against Lean, Lake or GitHub. The tests use fixture manifests, a fixture fetcher and
 a fake `lake`. To verify on a host that reaches them:
 
-1. That the package names, repositories and `lean_lib` names in `extended.toml` are right (they are
-   from memory of the packages' lakefiles; `resolve` checks the names against the manifests, `build`
+1. That the package names, repositories and `lean_lib` names in `extended.toml` are right, and the
+   `name` and `lean_libs` of the base project in `base.toml` (`formal_conjectures`, `FormalConjectures`)
+   too: all are from memory of the packages' lakefiles, and neither environment was resolved against
+   the network (`resolve` checks the names against the manifests, `build`
    the libraries), and that `Duper`, `LeanAPAP` and `PFR` have the `v4.27.0` tags the plan change
    found on 2026-10-20 and agree with the bench's Mathlib.
 2. That `lake build <package>/<lib>` is the way to name a library of a dependency in this Lake

@@ -29,6 +29,13 @@ describe("what an environment adds to the files of a run", () => {
     assert.equal(withEnvironmentImports(source, ["Duper"]), source);
   });
 
+  it("reads several modules on one import line: none is added again, and the new lines follow that line", () => {
+    const source = "import Mathlib Duper\nimport Aesop\n\ndef x := 1\n";
+    assert.equal(withEnvironmentImports(source, ["Duper", "PFR"]), "import Mathlib Duper\nimport Aesop\nimport PFR\n\ndef x := 1\n");
+    assert.equal(withEnvironmentImports("import Mathlib Duper -- both\n\ndef x := 1\n", ["Duper", "PFR"]), "import Mathlib Duper -- both\nimport PFR\n\ndef x := 1\n");
+    assert.equal(withEnvironmentImports("import Mathlib Duper\n", ["Duper"]), "import Mathlib Duper\n");
+  });
+
   it("goes first into a file with no imports, and does not take an import in the middle of the file for a header", () => {
     assert.equal(withEnvironmentImports("def x := 1\n", ["Duper"]), "import Duper\ndef x := 1\n");
     assert.equal(withEnvironmentImports("def x := 1\nimport Mathlib\n", ["Duper"]), "import Duper\ndef x := 1\nimport Mathlib\n");
