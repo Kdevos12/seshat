@@ -1,7 +1,7 @@
 import { sha256Hex } from "@seshat/core";
 
 /** Changes with any change of the prompts below, and goes into `run.started`. */
-export const PROMPT_VERSION = "m0-2";
+export const PROMPT_VERSION = "m0-2.1";
 
 /** The system prompt of an M0 prover session; `tools` are the names of its tools besides lean_check. */
 export function systemPrompt(notesChars: number, tools: readonly string[] = []): string {

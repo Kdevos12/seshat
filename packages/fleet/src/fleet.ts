@@ -23,7 +23,7 @@ export const FLEET_OPTIONS = {
   strategies: true,
   /** A prover keeps its strategy from one session to the next while Lean gets further with it. */
   stick: true,
-  /** The models to choose among, `PROVIDER/ID`, by Thompson sampling on their results. Empty: the run's model only. */
+  /** The models to choose among, `PROVIDER/ID`, by Thompson sampling on their results. Empty: the run's model only. Their order says nothing about strength: `ranking` does. */
   models: [] as string[],
   /** The stronger model for hard decisions, `PROVIDER/ID`. Null: no escalation. */
   escalateTo: null,
@@ -51,7 +51,7 @@ export const FLEET_OPTIONS = {
   gamma: DEFAULT_GAMMA,
   /** The share of sessions whose strategy is drawn uniformly among the allowed labels, ignoring the posteriors (the exploration floor, PE3). */
   epsilon: 0.1,
-  /** Models weakest first, `PROVIDER/ID`, for the comparisons of the soft failure memory. Null: `models`, then `escalateTo`. */
+  /** Models weakest first, `PROVIDER/ID`, for the comparisons of the soft failure memory. Null: the run's model, then `escalateTo` (the order of `models` is not a ranking). */
   ranking: null,
   /** The temperature of a session: a number, a list of numbers to learn over, or `{"min": 0.2, "max": 1}` to draw from. Null: the run's own. */
   temperature: null,
@@ -126,14 +126,14 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
 
 /**
  * The models of a run, weakest first, as the soft failure memory compares them: the option `ranking`
- * when it is given, else the fleet's `models` in the order listed and then `escalateTo` (the stronger
- * model of an escalation is the strongest by definition), with the run's model first when it is not among them.
+ * when it is given, else the run's model and then `escalateTo` (the stronger model of an escalation is
+ * the strongest by definition). The order of the option `models` says nothing about strength: it is the
+ * list to choose among, so it is never read as a ranking.
  */
 export function modelOrderOf(runModel: string, options: Readonly<JsonObject>): string[] {
   const config = configOf(options);
-  const listed = config.ranking ?? [...config.models, ...(config.escalation.escalateTo !== null ? [config.escalation.escalateTo] : [])];
-  const order = [...new Set(listed)];
-  return order.length === 0 || (config.ranking === null && !order.includes(runModel)) ? [runModel, ...order.filter((m) => m !== runModel)] : order;
+  if (config.ranking !== null) return [...new Set(config.ranking)];
+  return [...new Set([runModel, ...(config.escalation.escalateTo !== null ? [config.escalation.escalateTo] : [])])];
 }
 
 /** What each strategy asks of a session, in a few words (the labels are M1's). */
@@ -397,6 +397,14 @@ export function createFleet(env: FleetEnv = {}): Line {
           }
         }
 
+        // The prover takes its place now, before anything is awaited: a prover that decides while this one waits for its
+        // DAG must see the strategy as taken (one Ralph loop at a time per (subgoal, strategy)).
+        problem.running.set(session.prover, { subgoal, ...(strategy !== undefined ? { strategy } : {}) });
+        if (strategy !== undefined) {
+          problem.last.set(session.prover, strategy);
+          run.assigned.set(session.attemptId, strategy);
+        }
+
         // The settings sampled for the session (temperature, thinking level, directive, mode), from their own stream.
         let settings: JsonObject | undefined;
         let settingDraws: AllocationData["settingDraws"];
@@ -410,18 +418,14 @@ export function createFleet(env: FleetEnv = {}): Line {
             const made = await stepDagFor(session, run, config, model);
             if (made.recorded !== undefined) dag = made.recorded.nodeId;
             else {
-              // No DAG that checks: the session runs as a standard one, and the record says so.
-              settings = { ...settings, mode: "standard" };
+              // No DAG that checks: the session runs as a standard one, and the record says so: `mode` is the mode that ran
+              // (the arm its outcome is counted for), `drawnMode` the one that was drawn.
+              settings = { ...settings, mode: "standard", drawnMode: "nl_first" };
               dagNote = made.note;
             }
           }
         }
 
-        problem.running.set(session.prover, { subgoal, ...(strategy !== undefined ? { strategy } : {}) });
-        if (strategy !== undefined) {
-          problem.last.set(session.prover, strategy);
-          run.assigned.set(session.attemptId, strategy);
-        }
         // This session starts after the prover's last attempt was journaled, so the provers that wait read a
         // posterior that holds it. They look again now that this prover has taken its place and its strategy.
         problem.gate.wake();

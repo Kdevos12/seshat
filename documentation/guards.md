@@ -69,7 +69,9 @@ in the journal. The wording of the question changed, so M6 is `m6-3`.
 - `framingProblems(text)` finds the wordings that put a statement as a thing to demonstrate ("prove
   that", "your task is to prove", "help you prove"). A test runs it on M0's own prompts. When another
   line's section has such a wording on an open conjecture, M6 records it (`noted`) once per problem and
-  leaves the section as it is: it cannot tell a lemma that is right to prove from the conjecture.
+  leaves the section as it is: it cannot tell a lemma that is right to prove from the conjecture. It does
+  not read the fleet's "Step plan", whose text is the model's own informal argument ("we show that ...");
+  the harness's wording around it asks to determine, and the fleet's tests check that.
 - The prove-and-refute twin is the graph line's (`@seshat/graph`, M2), not this one's.
 
 ## Resolved citations

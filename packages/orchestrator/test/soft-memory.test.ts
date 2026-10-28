@@ -75,7 +75,7 @@ describe("sampled settings in a run", () => {
 });
 
 describe("the anti-sycophancy instruction (PC10)", () => {
-  it("ends M6's question about an open conjecture, once, and no prompt shows a verdict of another agent", async () => {
+  it("ends M6's question about an open conjecture, once", async () => {
     const prompts: string[] = [];
     await demoRun({
       file: DEMO_FILE.replaceAll("research solved", "research open"),
@@ -85,6 +85,31 @@ describe("the anti-sycophancy instruction (PC10)", () => {
     });
     assert.ok((prompts[0] ?? "").includes(ANTI_SYCOPHANCY));
     assert.equal((prompts[0] ?? "").split(ANTI_SYCOPHANCY).length, 2, "once");
+  });
+
+  it("shows the prover no verdict of another agent: not the DAG author's doubt, in the plan or anywhere else", async () => {
+    const doubting = { ...{ proof: "Adding zero changes nothing.", steps: [{ id: "s1", statement: "Zero is a right identity.", dependsOn: [] }] }, doubt: "COUNTEREXAMPLE-AT-N-EQUALS-7 makes the statement false" };
+    const prompts: string[] = [];
+    const respond = (context: TranscriptContext): AssistantMessage => {
+      if (opening(context).includes("write the informal argument, and break it into")) return say(JSON.stringify(doubting));
+      if (context.messages.some((m) => m.role === "toolResult")) return say("notes");
+      prompts.push(...context.messages.map(textOf), opening(context));
+      return check("exact trivial_proof");
+    };
+    const { events } = await demoRun({
+      file: DEMO_FILE.replaceAll("research solved", "research open"),
+      filter: { ...DISCRETE, categories: ["research solved", "research open"] },
+      config: { lines: ["M1", "M6", "fleet"], ...seed(3, { strategies: false, modes: ["nl_first"], directives: true }), sessions: 1 },
+      responses: Array.from({ length: 8 }, () => respond),
+    });
+    // The plan and the directive were built and shown ...
+    assert.ok(prompts.some((p) => p.includes("# Step plan")), "the Step plan is in the prompt");
+    assert.ok(prompts.some((p) => p.includes("# Directive for this session")), "so is the directive");
+    // ... and the doubt, the verdict of another call on the statement, is in none of the prompts the prover saw.
+    assert.ok(prompts.every((p) => !/COUNTEREXAMPLE-AT-N-EQUALS-7|doubts the statement/.test(p)), "no prompt carries the DAG author's doubt");
+    // It is kept in the recorded node, for the report.
+    const [node] = nodesOf(events, "step_dag");
+    assert.match(JSON.stringify(node?.data.data), /COUNTEREXAMPLE-AT-N-EQUALS-7/);
   });
 
   it("leaves the question about a solved problem as it was", async () => {
@@ -162,6 +187,26 @@ describe("informal-first sessions (nl_first)", () => {
     assert.deepEqual(ofType(events, "attempt.started").map((e) => e.data.settings?.mode), ["nl_first", "nl_first"]);
   });
 
+  it("does not note the model's own argument in the Step plan as a non-neutral framing on an open conjecture", async () => {
+    const proving = { proof: "We show that n + 0 = n and prove that the statement holds.", steps: [{ id: "s1", statement: "Zero is a right identity.", dependsOn: [] }] };
+    const prompts: string[] = [];
+    const respond = (context: TranscriptContext): AssistantMessage => {
+      if (isDagCall(context)) return say(JSON.stringify(proving));
+      if (context.messages.some((m) => m.role === "toolResult")) return say("notes");
+      prompts.push(opening(context));
+      return check("exact trivial_proof");
+    };
+    const { events } = await demoRun({
+      file: DEMO_FILE.replaceAll("research solved", "research open"),
+      filter: { ...DISCRETE, categories: ["research solved", "research open"] },
+      config: { lines: ["M1", "M6", "fleet"], ...seed(3, { strategies: false, modes: ["nl_first"] }), sessions: 1 },
+      responses: Array.from({ length: 8 }, () => respond),
+    });
+    assert.match(prompts[0] ?? "", /# Step plan\nThis session works informal-first\./);
+    assert.match(prompts[0] ?? "", /We show that n \+ 0 = n and prove that the statement holds\./);
+    assert.deepEqual(nodesOf(events, "drift").filter((e) => (e.data.data as { kind?: string }).kind === "non_neutral_framing"), [], "M6 did not read the model's proof as its own framing");
+  });
+
   it("runs the session as a standard one, and says so, when the model cannot write a DAG that checks", async () => {
     const prompts: string[] = [];
     const respond = (context: TranscriptContext): AssistantMessage => {
@@ -178,7 +223,8 @@ describe("informal-first sessions (nl_first)", () => {
     assert.equal(ofType(events, "model_call.finished").filter((e) => e.data.site === "fleet.dag").length, 2, "the DAG is asked for once more with what was wrong");
     assert.equal(nodesOf(events, "step_dag").length, 0);
     assert.equal(nodesOf(events, "step_dag_failure").length, 1);
-    assert.equal(ofType(events, "attempt.started")[0]?.data.settings?.mode, "standard");
+    // The mode that ran, and the mode that was drawn.
+    assert.deepEqual(ofType(events, "attempt.started")[0]?.data.settings, { mode: "standard", drawnMode: "nl_first" });
     const [record] = allocations(events);
     assert.match(record?.dagNote ?? "", /the step DAG did not check: the steps form a cycle/);
     assert.doesNotMatch(prompts[0] ?? "", /# Step plan/);
@@ -230,6 +276,17 @@ describe("routing a stalled claim to a stronger model (retry_stronger)", () => {
     });
     assert.deepEqual(rows(events), [["retry_fresh", "unsolved_goals"], ["branch", "strategy_loop"]]);
     assert.ok(allocations(events).every((a) => a.routed === undefined));
+  });
+
+  it("does not read the order of `models` as a ranking: without `ranking` a branch stays a branch", async () => {
+    const { events } = await demoRun({
+      extraModels: ["small"],
+      // `models` lists "prover" before "small", which is not a statement that "small" is stronger.
+      config: { lines: ["M1", "M6", "fleet"], sessions: 2, ...seed(7, { strategies: false, models: ["faux/prover", "faux/small"] }) },
+      responses: loop,
+    });
+    assert.deepEqual(rows(events).map((row) => row[0]), ["retry_fresh", "branch"]);
+    assert.ok(allocations(events).every((a) => a.routed === undefined), "no session was sent to a model by a retry_stronger");
   });
 
   it("is a Router decision of the claim's attempts alone: a unit check of the three cases", () => {

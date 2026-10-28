@@ -312,9 +312,13 @@ evidence, not proof, since only `lean_check` decides; it asks the prover to use 
 cases, compute examples and search for counterexamples before writing Lean, and to find the values
 and witnesses a proof needs.
 
-`PROMPT_VERSION` (now `m0-2`) changes with any change of the prompts, and `run.started` records it
+`PROMPT_VERSION` (now `m0-2.1`) changes with any change of the prompts, and `run.started` records it
 with a hash of the prompts, tools' names included. Version `m0-2` added the section on other tools;
-without tools, its system prompt is that of `m0-1`. The tools' descriptions are in their manifests,
+without tools, its system prompt is that of `m0-1`. Version `m0-2.1` is a minor one: the lines now add
+sections to the prompt (the fleet's "Directive for this session" and "Step plan", the sentence that ends M6's
+question about an open conjecture), which are optional and recorded on the attempt, and the base prompt is
+unchanged. A minor change opens no epoch ([memory.md](memory.md#epochs)), and the provenance stamp tells the
+versions apart. The tools' descriptions are in their manifests,
 covered by the registry's hash.
 
 ## Budgets

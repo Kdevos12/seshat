@@ -294,6 +294,8 @@ const STATE_WORDS: Readonly<Record<StepState, string>> = {
 /**
  * The briefing section of an informal-first session: the informal argument, the steps with what Lean
  * said of each after the last check, and what to do. The wording asks to determine, not to demonstrate.
+ * The author's `doubt` is not in it: it is the verdict of another call on the statement, and no prompt shows
+ * a model another agent's verdict (PC10). It stays in the recorded node.
  */
 export function dagSection(recorded: RecordedDag, states?: { [stepId: string]: StepState }): Briefing {
   const steps = recorded.dag.steps
@@ -307,7 +309,6 @@ export function dagSection(recorded: RecordedDag, states?: { [stepId: string]: S
   const text =
     "This session works informal-first. An informal argument was written before any Lean, as steps that each use the earlier ones:\n\n" +
     `${recorded.dag.proof}\n\nSteps:\n${steps}\n\n` +
-    (recorded.dag.doubt !== undefined ? `The argument's author doubts the statement: ${recorded.dag.doubt}\n\n` : "") +
     "Write one auxiliary lemma named aux_<id> for each step, stating it in Lean, and close the theorem from them, with sorry in the lemmas not proved yet. " +
     (open === undefined
       ? "Check the skeleton first, then fill the lemmas one at a time. "

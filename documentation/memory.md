@@ -246,7 +246,10 @@ prompts' major version or the Mathlib revision is not the one of the memory's pr
 | The prompts' major version | `promptMajor(PROMPT_VERSION)`: the version up to its last integer, so `m0-3` is another major than `m0-2` and `m0-2.1` is the same one (a minor part is a rewording) |
 | The Mathlib revision | the bench's revision |
 
-A change of the harness version or of the budget class opens none. The orchestrator opens the epoch
+A change of the harness version or of the budget class opens none. Adding sections to the prover's prompt
+that are optional and recorded on the attempt (the lines' directive, step plan, framing sentence) is a minor
+change (`m0-2.1`): the provers' own prompt, what the old counters measured, is the same, so nothing goes
+into probation. The orchestrator opens the epoch
 when a run starts on the memory of an earlier run ([below](#memory-across-runs)); only the orchestrator
 may write the event, and a store of another actor is refused by the journal. `store.epoch()` is the
 current epoch, `store.epochs()` the epochs entered, and every attempt, lesson and learned node keeps the
@@ -415,7 +418,9 @@ trust rules are in [trust.md](trust.md#memory-across-runs).
   `gamma ^ runsAgo x weightOf(attempt.epoch)`, the first factor being the discount per run on the problem
   (`Attempt.runsAgo`, from the projection) and the second the probation of its epoch
   ([fleet.md](fleet.md#soft-failure-memory)); `itemEffect` applies the probation weight only. Nothing is deleted
-  by either.
+  by either. `compareClass` ranks the configurations of two attempts by the run's `ranking`; a model the run
+  does not rank counts as weaker, which is wrong when a run moves to a weaker or another model: set the fleet's
+  `ranking` then.
 - A chain is read and verified in full at every open (about 14 microseconds per event, and 30 more to
   attach once), with no snapshot of the projection. Nothing has run against a real Lean or model.
 

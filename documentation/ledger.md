@@ -222,6 +222,13 @@ When the orchestrator decides, after each attempt, for the task the attempt work
 
 An attempt that is valid, aborted, out of budget, an error or without a check has no decision.
 
+The decisions of an attempt are written right after its `attempt.finished`, one after the other, and a
+resumed run does not derive them again for an attempt that finished: a process that ended after the
+`attempt.finished` and before the decisions, or between two of them, loses the ones not yet written. The window is
+a few events wide, and until `retry_stronger` the decisions only explained the next session; with it, the session
+that follows runs on the model it would have had without the routing. The test at every event says so
+(`repeatsCost`).
+
 The orchestrator only records. `retry_fresh` is what the prover's loop does next in any case, so its
 decision explains the next session. `reset_upstream` and `branch` are for the lines that plan work
 (M12; M7 and M14 plug in at `branch`): they read the decisions through `TaskApi.routings`
