@@ -154,6 +154,43 @@ alone, used to order) and, if no backend is configured, `judge` (levels `irrelev
 `useful`, `central`); interruptions pass through. `poolScore` combines the proof rate, the relevance and
 the proof length; `prunePool` keeps the best.
 
+## Line M8
+
+`createM8()` (`m8.ts`; `M8` is the instance the orchestrator registers) runs, in `beforeProvers` and in
+`resumeProblem`, this pipeline on the problem's target:
+
+1. `recognizeStatement` (of `@seshat/models`) tells whether the target is about a natural number or about
+   magmas; any other statement gets no table, and the log says so. The objects are the numbers 0 to
+   `maxNumber`, or the magmas of `magmaBattery` (all up to `exhaustive` elements, then `samples` of size 4
+   drawn with a seed from the run's: `hash32(seed/problem/M8)`).
+2. The table of `defaultColumns(family)` (`columns.ts`) and the run's extra `columns` (JavaScript, or Sage
+   through `compute.sage` with `sage`), recorded as a `datatable` node.
+3. The classical part (option `classical`): Dalmatian bounds on the columns that have a Lean form, stated in
+   Lean in the reals and entered as candidates; a linear recurrence guessed from each integer column, kept
+   as a `recurrence` evidence node (the Lean form of a function of the column is for a prover to give);
+   a lookup of two columns as sequences through `oeis.search` (`identification` nodes), when the host has it.
+4. For each of `rounds` rounds, the model's hypotheses (site `induction.hypotheses`), run on the table; a
+   hypothesis with a counterexample is dropped, so is a vacuous one (`minSupport`). One without a Lean
+   statement goes through the step DAG and is formalized. The statement is screened, tried in Lean on its
+   first `testCases` numbers, and dropped if Lean refutes it, or if the cheap tactics close it (the
+   triviality filter; `createM8({triviality})` replaces it). The lemmas the run proved feed the next round.
+5. The pool: the best `conjectures` (10 to 50) by interest become `open` claims with origin `line:M8`, the
+   target as parent and a `derived_from` edge to it. Each is scored for relevance by `decide` (site
+   `conjecture.relevance`) or else `judge`, pruned by `prunePool`, and the `briefTop` best go to the
+   provers' briefing, re-scored with the attempts made since (the proof rate, the length of the proofs).
+
+Nothing here changes a claim's status. A conjecture stays `open` until a prover submits a proof through
+`validate`; a recurrence, a bound or a relation is a node about a claim, never a status (Rulings 13, 22, 23).
+The line declares `resume: "rebuild"`: claims, tables, edges and nodes are not written twice when the
+pipeline runs again, and the model calls are `reuse`d, so a resumed process pays for nothing it already has.
+
+Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
+`exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
+true, `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.
+
+Not run: the model's hypotheses are tested with the faux provider, Lean with a simulated `decide`, Sage
+and the OEIS with stand-ins.
+
 ## Tests, and what has not run
 
 `packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;
@@ -164,6 +201,7 @@ the classical bounds on the graphs with up to five vertices; the cap; a bound in
 (values, errors, time and memory limits, no `require`/`process`/`eval`, a seeded `Math.random`, an empty
 environment, the scratch directory removed, cancellation) and `datatable.test.ts` (columns, missing
 values, Sage through a stand-in, dependencies, records) and `hypotheses.test.ts` (the screen, interest,
-hypotheses and their execution, the informal DAG, test lemmas, triviality, the pool). None of it needs Lean, a model or a network.
+hypotheses and their execution, the informal DAG, test lemmas, triviality, the pool) and `m8.test.ts` (the
+options, a whole problem on numbers and on magmas, resuming, the briefing). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.

@@ -29,7 +29,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
 | `M3` | growing lemma library | `@seshat/library` | planned |
 | `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
-| `M8` | inductive engine | `@seshat/induction` | planned |
+| `M8` | inductive engine: data tables, classical conjecturing, executable hypotheses, the conjecture pool ([induction.md](induction.md#line-m8)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
 | `M13` | theory exploration and classical conjecturing | `@seshat/induction` | planned |
 | `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
 | `M5` | lessons with counters | `@seshat/lessons` | planned |

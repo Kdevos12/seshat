@@ -62,7 +62,8 @@ export function hypothesesSchema(max: number): JsonSchema {
 /** What the model is shown of a table: the columns with their code, and the first rows. */
 export function describeTable(table: DataTable, rows = 12): string {
   const names = table.columns.map((c) => c.name);
-  const lines = [`Objects: ${table.family}, ${table.objects.length} of them. Columns: ${table.columns.map((c) => `${c.name}${c.description ? ` (${c.description})` : ""}`).join(", ")}.`];
+  const shape = table.family === "integers" ? "each object is a non-negative integer, passed to programs as a number" : table.family === "magmas" ? "each object is {size, table}: the row-major multiplication table, table[a * size + b] being a*b" : "";
+  const lines = [`Objects: ${table.family}${shape !== "" ? ` (${shape})` : ""}, ${table.objects.length} of them. Columns: ${table.columns.map((c) => `${c.name}${c.description ? ` (${c.description})` : ""}`).join(", ")}.`];
   lines.push(names.join(" | "));
   for (let i = 0; i < Math.min(rows, table.rows.length); i++) lines.push(`${table.objectIds[i]}: ${(table.rows[i] ?? []).map((v) => JSON.stringify(v)).join(" | ")}`);
   return lines.join("\n");
