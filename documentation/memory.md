@@ -321,6 +321,51 @@ The presence counter that this replaces stays where it is, for comparison. The c
 against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
 real model.
 
+## Memory across runs
+
+`harness run --memory-from RUN_DIR` starts a run on the memory of an earlier one: its claims, edges,
+nodes, lessons, attempts and tool runs, its stamps and epochs, and the posteriors that follow from them.
+The earlier run is not copied and not written. `run.started` names it (`memoryFrom`: the directory, the
+run id, the hash of the last event and the number of events), and the new run's projection replays that
+journal first ([journal.md](journal.md#projection)).
+
+**Pinned by its last hash.** The earlier journal is read whole, its hash chain is verified, and the run is
+refused unless it ends at the hash the new run pinned. A run is also refused when the earlier journal is
+corrupt, is not a run, or is still being written by a live process. The pin is checked on every open, so a
+run whose earlier journal was written to afterwards cannot be resumed; start a new one on the new end.
+Chains nest: a run started on a run that was itself started on another reads both, oldest first, each
+checked against the hash its successor pinned. Blobs are read through to the earlier runs' directories
+(the newest first); the new run writes only its own.
+
+**What carries.** Verified facts carry only under the same Lean environment: the bench's revision and the
+Lean toolchain, or the environment's hash once a run records one (Task 21). The comparison is per journal
+of the chain, against the environment of the run that reads it, and an environment that is unknown on
+either side is not equal. Under the same environment a claim keeps the status the earlier journal gave
+it, its validations count, and its `lean_checked` edges propagate. Under another, the earlier statuses
+count for nothing: its claims are `open` and its edges `proposed`, the status it recorded stays visible as
+`earlierStatus`, and its validations are not validations here, so nothing can cite them. The proofs it
+stored are still readable (`storedProofs(claimId)`, the submission text from the earlier run's blobs), and
+a claim is proved again the usual way: the proof goes through `validate` and the certifier in the new run.
+The journal refuses a status change or an edge that cites a validation of another environment.
+
+**What does not carry.** A problem's outcome comes only from its own certifications (Ruling 23): the
+earlier run's problems, tasks, resumptions, spend and open attempts are not applied, and the report counts
+a problem as solved only when its own certification is in the new journal, even when its claim carried
+`proved`. The earlier attempts are memory ("already tried" reads them), not work of this run. Learned
+artifacts keep their stamp and stay unverified ([above](#provenance-and-epochs)); the posteriors and the
+uses that decide how an item is drawn ([below](#randomized-inclusion)) are computed over the whole chain,
+each outcome weighed by its epoch.
+
+**In a run.** The orchestrator reads the chain before it writes anything (a refusal leaves no
+directory), gives the run a memory store even without a line, takes up the claim an earlier run made for
+the same statement, and opens an epoch when the model family, the prompts' major version or the Mathlib
+revision differs from the last journal of the chain. The report has a section on what came from the
+memory: its claims, how many statuses carried or were reset, its attempts, lessons, nodes, edges,
+validations and epochs. `--resume` reads the chain from the run's own journal.
+
+Not done: the Lean environment's hash of Task 21 is not an input yet (the revision and the toolchain
+stand in for it), a chain is read in full at every open, and nothing has run against a real Lean or model.
+
 ## Reference files
 
 A proof is checked against a reference: a Lean file, and the theorem in it that states the claim
