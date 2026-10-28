@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 09:30 UTC. `main` at f952eaa, 1461 tests.
+Updated 2026-10-28 11:00 UTC. `main` at b67c84d, 1545 tests.
 
 ## Tasks
 
@@ -20,7 +20,7 @@ Updated 2026-10-28 09:30 UTC. `main` at f952eaa, 1461 tests.
 | 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
-| 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | not started | |
+| 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | implementing | |
 | 11 | M4: context compiler, `expand`, `graph_query` | collaborator | not started (after 9) | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
@@ -29,8 +29,8 @@ Updated 2026-10-28 09:30 UTC. `main` at f952eaa, 1461 tests.
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
-| 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | fix round | `task/t19` |
-| 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
+| 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | merged in `b67c84d` (faux model and simulated Lean only; the numbers are first guesses) | `task/t19` |
+| 20 | `decide`, optional Jev backend | main | implementing | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T17, T21, T23 and T24 merged; T19 in review fixes; then T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T17, T19, T21, T23 and T24 merged; T20 and T10 next; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -218,6 +218,22 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   untuned; names are self-asserted; multi-flag `steer` is not atomic; when a `contextPacket` line replaces the prompt
   (Task 11), the hints are added to the packet's tail, never to its frozen prefix. Not run against a
   real model or Lean.
+- Task 19, merged in `b67c84d`: `packages/core`: `attempt.started` gains `settings` and `exploration`
+  (validated), `PROJECTION_VERSION` 7 (`settings_json`, `exploration`, `runs_ago`), `ROUTE_ACTIONS` gains
+  `retry_stronger`; `packages/memory`: `Attempt.settings`, `exploration`, `runsAgo`, `alreadyTried(claimId,
+  view?)` (grouped by strategy and config class: "with a smaller model"), `classes.ts` (`ModelRanking`,
+  `compareClass`, `onlyWeakerFailures`); `packages/lines`: `judge` (an interruption passes through it),
+  `ANTI_SYCOPHANCY` and `withAntiSycophancy`, the hook `briefingSections`, `SessionDecision.settings` and
+  `exploration`, `SessionContext.settings` and `exploration`, `ProblemContext.ranking`;
+  `packages/orchestrator`: `Router(journal, tasks, ranking?)` with `Router.resumeTask` (the routing
+  decisions a kill left out are taken again on resume, once), `RunLinesOptions.ranking`,
+  `SessionOptions.temperature`; `packages/guards`: M6's question text (`m6-3`). Pages: [fleet.md](../documentation/fleet.md),
+  [lines.md](../documentation/lines.md), [guards.md](../documentation/guards.md). Decisions: `PROMPT_VERSION`
+  `m0-2.1`, a minor bump, so no epoch opens (the base prompt is unchanged; the new sections are optional and
+  recorded on the attempt); an unranked model counts as weaker in M1's class label, so set `ranking` when
+  switching models, and `retry_stronger` acts only on a stated order (a `ranking`, or the run model then
+  `escalateTo`); the order of the fleet's `models` is not a strength order. Not run against a real model:
+  the numbers (γ 0.8, ε 0.1, two DAG tries, eight steps) are first guesses.
 
 ## Log
 
@@ -513,3 +529,5 @@ Task 17: fix round 1 done (8 commits, 1455/1455, main merged in 81acb76, pushed 
 Task 17: scoped re-review of fix round 1: approved, one Important N1 (the account read a claim settled by a shared statement or carried by --memory-from as this problem's own certification); fixed in round 2 (2016291, 1459/1459)
 Task 17: merged: task/t17 pushed (2016291), merged into main f952eaa (--no-ff; 1461/1461), pushed; not run against a real model or Lean; deferred to the final review: N3 (a line can lower a human signature through the revocation path, documented), names self-asserted, multi-flag steer not atomic
 Task 19: scoped re-review of fix round 1: approved, one Important N1 (retry_stronger could send a claim to a weaker model when models are unranked); fixed in 8cedfad (1435/1435); decisions: unranked model counts as weaker for the class label (documented, set ranking), PROMPT_VERSION m0-2.1 (a minor bump opens no epoch); next: merge main into task/t19 and close the routing-loss window (a kill between attempt.finished and task.routed)
+Task 19: final scoped re-review (round 2 and round 3): approved, one Important J1 (judge swallowed an interruption); fixed in round 4 (fe1b641, 1543/1543); round 3 closed the routing-loss window (Router.decide idempotent, Router.resumeTask on resume) and a bug found at the merge (the fleet counted an interrupted DAG call as a failed try)
+Task 19: merged: task/t19 pushed (fe1b641), merged into main b67c84d (--no-ff; 1545/1545), pushed; not run against a real model; accepted differences from an uncut run documented in ledger.md (a harness-error attempt's guard finding may be routed on resume; a part refuted since is routed one session early); deferred to the final review: judge has no caller yet
