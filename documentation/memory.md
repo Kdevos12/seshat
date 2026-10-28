@@ -18,7 +18,9 @@ Every write appends one event, which the journal checks against its invariants
 ([journal.md](journal.md#invariants)) before it is written; every read comes from the projection. A
 store writes as its `actor` (`memory` by default); `withActor("line:M1")` gives a view of the same
 store that writes as another actor. The orchestrator gives each line such a view, so the journal
-says which line wrote what. `blobs` is the run's blob store, for contents too large for an event:
+says which line wrote what. A view cannot make another view that writes as `orchestrator` or as `human:NAME`
+(the journal accepts a team's answer on the actor string alone, so the line's view may not speak as a person); only the
+root store, which the orchestrator and the answering commands hold, can. `blobs` is the run's blob store, for contents too large for an event:
 a node's data can name a blob by its hash.
 
 The memory is the graph of the mathematics. The work of a run (which prover does what, with what
