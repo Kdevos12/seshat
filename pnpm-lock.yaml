@@ -103,6 +103,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/decide':
+        specifier: workspace:*
+        version: link:../decide
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

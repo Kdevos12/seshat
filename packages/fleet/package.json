@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@seshat/core": "workspace:*",
+    "@seshat/decide": "workspace:*",
     "@seshat/lines": "workspace:*",
     "@seshat/memory": "workspace:*",
     "@seshat/registry": "workspace:*"
