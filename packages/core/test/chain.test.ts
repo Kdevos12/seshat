@@ -178,7 +178,7 @@ describe("a run started on an earlier run's memory", () => {
     assert.notEqual(fresh.from.lastHash, chain.from.lastHash);
   });
 
-  it("refuses a journal whose hash chain is broken, one that is not a run, one still being written, and a loop", () => {
+  it("refuses a journal whose hash chain is broken, one that is not a run, and one still being written", () => {
     const a = earlier(ENV_A);
     const lines = readFileSync(join(a.dir, "journal.jsonl"), "utf8").split("\n");
     const tampered = join(base(), "run");
@@ -357,6 +357,73 @@ describe("a run started on an earlier run's memory", () => {
     assert.equal(through.has(old), true);
     const mine = through.put("a new proof");
     assert.equal(new BlobStore(join(a.dir, "blobs")).has(mine), false, "the earlier run's blobs are never written");
+  });
+});
+
+describe("the refusals of a chain of journals", () => {
+  /** Three runs, A then B on A then C on B; `dirs` are theirs. */
+  function three() {
+    const a = earlier(ENV_A);
+    const dirB = join(base(), "run");
+    const b = start(dirB, "run_b", ENV_A, loadMemoryChain(a.dir, environment(ENV_A)));
+    claim(b, "clm_b");
+    b.close();
+    const dirC = join(base(), "run");
+    start(dirC, "run_c", ENV_A, loadMemoryChain(dirB, environment(ENV_A))).close();
+    return { a: a.dir, b: dirB, c: dirC };
+  }
+
+  it("binds the whole chain by the newest pin: a journal of the grandparent that changed is refused, naming it", () => {
+    const { a, c } = three();
+    assert.equal(loadMemoryChain(c, environment(ENV_A)).segments.length, 3);
+    // Written to after B started on it: valid by itself, ends elsewhere than B pinned.
+    const again = Journal.open(a, "run_a");
+    claim(again, "clm_late");
+    again.close();
+    assert.throws(
+      () => loadMemoryChain(c, environment(ENV_A)),
+      (error: unknown) => error instanceof MemoryChainError && error.message.includes(a) && /not the one this run was started on/.test(error.message),
+    );
+    assert.throws(() => Journal.open(c, "run_c"), (error: unknown) => error instanceof MemoryChainError && error.message.includes(a));
+  });
+
+  it("refuses a grandparent whose events were changed, as corrupt, whatever the newer journals say", () => {
+    const { a, c } = three();
+    const text = readFileSync(join(a, "journal.jsonl"), "utf8");
+    writeFileSync(join(a, "journal.jsonl"), text.replace("notes", "other"));
+    assert.throws(() => loadMemoryChain(c, environment(ENV_A)), (error: unknown) => error instanceof MemoryChainError && error.message.includes(a) && /corrupt/.test(error.message));
+  });
+
+  it("refuses a chain whose predecessor is gone, naming where it was", () => {
+    const { a, c } = three();
+    rmSync(a, { recursive: true });
+    assert.throws(
+      () => loadMemoryChain(c, environment(ENV_A)),
+      (error: unknown) => error instanceof MemoryChainError && error.message.includes(a) && /holds no earlier run/.test(error.message),
+    );
+  });
+
+  it("refuses a chain that loops back to a journal it already read", () => {
+    // B names A as the run it started on, with a pin that A cannot meet; A names B with B's real last hash. Reading A, then B
+    // (whose pin matches), then A again is refused as a loop before anything is built on it.
+    const dirA = join(base(), "run");
+    const dirB = join(base(), "run");
+    const b = Journal.open(dirB, "run_b");
+    b.emit(
+      "run.started",
+      { runId: "run_b", benchId: "bench", problems: 1, host: "test", config: config(ENV_A), memoryFrom: { path: dirA, runId: "run_a", lastHash: "0".repeat(64), events: 1 } },
+      "orchestrator",
+    );
+    b.close();
+    const events = readEvents(join(dirB, "journal.jsonl"));
+    const a = Journal.open(dirA, "run_a");
+    a.emit(
+      "run.started",
+      { runId: "run_a", benchId: "bench", problems: 1, host: "test", config: config(ENV_A), memoryFrom: { path: dirB, runId: "run_b", lastHash: events.at(-1)?.hash as string, events: events.length } },
+      "orchestrator",
+    );
+    a.close();
+    assert.throws(() => loadMemoryChain(dirA, environment(ENV_A)), (error: unknown) => error instanceof MemoryChainError && /loops back to/.test(error.message));
   });
 });
 
