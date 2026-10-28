@@ -192,6 +192,26 @@ describe("a run started on an earlier run's memory (--memory-from)", () => {
   });
 });
 
+describe("memory across runs and the cached-token report", () => {
+  it("counts the cache reads of this run's charges only, and stamps the attempts with the provenance", async () => {
+    const script = [check("bad"), say("notes"), check("bad"), say("notes")];
+    const a = await demoRun({ responses: script, config: { sessions: 2 }, codeRev: "rev-a" });
+    assert.ok(a.result.report.cachedInputTokens > 0, "the faux provider caches the common prefix of a session");
+    const b = await demoRun({ bench: a.bench, memoryFrom: a.dir, responses: script, config: { sessions: 2 }, codeRev: "rev-b" });
+    const charged = ofType(b.events, "attempt.charged").reduce((n, e) => n + (e.data.cachedInputTokens ?? 0), 0);
+    const finished = ofType(b.events, "attempt.finished").reduce((n, e) => n + (e.data.cachedInputTokens ?? 0), 0);
+    assert.ok(charged > 0);
+    assert.equal(b.result.report.cachedInputTokens, Math.max(charged, finished), "the report's max rule, over this run's events");
+    assert.ok(b.result.report.cachedInputTokens < a.result.report.cachedInputTokens + charged, "nothing of the earlier run is added");
+    for (const { data } of ofType(b.events, "attempt.started")) {
+      assert.ok(isProvenance(data.provenance));
+      assert.equal(data.provenance?.harnessVersion, "rev-b");
+    }
+    assert.equal(b.result.report.attempts.total, 2);
+    assert.equal(b.result.report.memory?.taken?.attempts, 2, "the earlier attempts are memory");
+  });
+});
+
 describe("the epochs a run on earlier memory opens", () => {
   const modelsAt = async (earlier: string) => {
     const shared = benchIn({ rev: "rev-a", lean: ENV_A.lean });

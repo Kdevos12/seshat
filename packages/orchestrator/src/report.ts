@@ -43,6 +43,8 @@ export interface RunReport {
   usd: number;
   inputTokens: number;
   outputTokens: number;
+  /** Of `inputTokens`, the ones the provider read from its prompt cache (pi-ai's `cacheRead`). */
+  cachedInputTokens: number;
   /** Dollars per problem with a proof: a candidate, or a certified proof or refutation; undefined when there is none. */
   usdPerProof?: number;
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
@@ -226,10 +228,16 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const proofAttempts = new Set<string>();
   const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
   // What a session that never finished cost, from its charges.
-  const charges = new Map<string, { usd: number; inputTokens: number; outputTokens: number }>();
+  const charges = new Map<string, { usd: number; inputTokens: number; outputTokens: number; cachedInputTokens: number }>();
   let usd = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  let cachedInputTokens = 0;
+  // The cache reads each attempt was charged, kept after the attempt ends. An `attempt.finished` that
+  // the harness wrote from the charges (a session the harness failed in, or one a resumption cut)
+  // carries no `cachedInputTokens`: the charges are the only record of them. A finished total, when
+  // it has one, is the sum of the same charges, so the larger of the two is the attempt's figure.
+  const cachedCharged = new Map<string, number>();
 
   for (const event of events) {
     switch (event.type) {
@@ -252,11 +260,13 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       }
       case "attempt.charged": {
         const d = event.data;
-        const sum = charges.get(d.attemptId) ?? { usd: 0, inputTokens: 0, outputTokens: 0 };
+        const sum = charges.get(d.attemptId) ?? { usd: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
         sum.usd += d.usd;
         sum.inputTokens += d.inputTokens;
         sum.outputTokens += d.outputTokens;
+        sum.cachedInputTokens += d.cachedInputTokens ?? 0;
         charges.set(d.attemptId, sum);
+        cachedCharged.set(d.attemptId, (cachedCharged.get(d.attemptId) ?? 0) + (d.cachedInputTokens ?? 0));
         break;
       }
       case "attempt.finished": {
@@ -270,6 +280,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
+        cachedInputTokens += Math.max(d.cachedInputTokens ?? 0, cachedCharged.get(d.attemptId) ?? 0);
         break;
       }
       case "model_call.finished": {
@@ -280,6 +291,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
+        cachedInputTokens += d.cachedInputTokens ?? 0;
         break;
       }
       case "tool_run.started": {
@@ -313,6 +325,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     usd += sum.usd;
     inputTokens += sum.inputTokens;
     outputTokens += sum.outputTokens;
+    cachedInputTokens += sum.cachedInputTokens;
   }
   const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
   const durations = [...checks.durations].sort((a, b) => a - b);
@@ -348,6 +361,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     usd,
     inputTokens,
     outputTokens,
+    cachedInputTokens,
     ...(proofs > 0 ? { usdPerProof: usd / proofs } : {}),
     attempts,
     leanChecks: {
@@ -431,7 +445,8 @@ export function renderRunReport(report: RunReport): string {
     "",
     `Cost: ${money(report.usd)} in total` +
       `${report.usdPerProof !== undefined ? `, ${money(report.usdPerProof)} per problem with a proof or a refutation` : ""}. ` +
-      `Tokens: ${report.inputTokens} in, ${report.outputTokens} out.`,
+      `Tokens: ${report.inputTokens} in, ${report.outputTokens} out.` +
+      `${report.cachedInputTokens > 0 ? ` Cached input: ${report.cachedInputTokens} of the ${report.inputTokens} (${((report.cachedInputTokens / report.inputTokens) * 100).toFixed(0)}%).` : ""}`,
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +

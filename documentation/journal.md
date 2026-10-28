@@ -46,8 +46,8 @@ Event types:
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?` |
-| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`: one model response of a session |
-| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
+| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache): one model response of a session |
+| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version`, `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text`, `provenance?` |
@@ -56,7 +56,7 @@ Event types:
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
-| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens` |
+| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` |
 | `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |

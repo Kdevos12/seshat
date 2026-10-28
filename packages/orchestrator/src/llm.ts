@@ -76,6 +76,7 @@ export function lineLlm(o: LineLlmOptions): Llm {
         usd: cost.usd,
         inputTokens: cost.inputTokens,
         outputTokens: cost.outputTokens,
+        ...(cost.cachedInputTokens !== undefined ? { cachedInputTokens: cost.cachedInputTokens } : {}),
       },
       `line:${o.line}`,
     );
