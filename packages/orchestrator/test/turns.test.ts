@@ -83,6 +83,7 @@ describe("a consortium turn", () => {
       id: "M4",
       title: "asks twice",
       requires: [],
+      resume: "stateless",
       hooks: {
         beforeProvers: async (problem) => {
           asked.push((await problem.llm.complete({ prompt: "First question.", site: "test.first" })).text);
@@ -113,6 +114,7 @@ describe("a consortium turn", () => {
       id: "M4",
       title: "asks after each check",
       requires: [],
+      resume: "stateless",
       hooks: {
         afterCheck: async (session) => {
           await session.llm.complete({ prompt: "What do you make of that check?", site: "test.review" });
