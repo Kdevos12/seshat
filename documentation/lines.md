@@ -34,6 +34,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
+| `M17` | extended environment: the run's Lean has more packages than the bench's ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)) | `@seshat/lean-env` | built, not run against Lean |
 
 The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile.
 `@seshat/lean-local` (the certifier on the host) is no line, and it is written
@@ -70,6 +71,7 @@ interface Line {
   options?: JsonObject;       // the options and their defaults
   version?: string;           // recorded in run.started: change it when the line's behavior changes
   identity?: (env: { registry: Registry }) => StatementIdentity;  // how the run's memory names statements
+  leanEnv?: (options: JsonObject) => string;  // the Lean environment the line puts the run in (M17)
   strategies?: readonly string[];  // the labels the line classifies attempts with
   resume?: LineResume;        // "stateless", "rebuild" or {refuse: reason}: how a run with the line is resumed
   hooks: LineHooks;
@@ -84,9 +86,16 @@ model declares what it is trying, and the call's `SessionCheck.strategy` and the
 `FinishedAttempt.declaredStrategy` carry the declaration. A run without such a line offers the
 tool exactly as M0 does.
 
+`leanEnv` names the Lean environment the run is in ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)),
+from the line's options, in place of the host's `LEAN_ENV`. The run builds its registry for it, refuses
+to start unless it is resolved, and records its name and hash. Only a run with such a line also adds
+the environment's extra packages' imports to the problem files and probes the Lean server for them: a
+run in the same environment through the host's `LEAN_ENV` alone has the pin and the record, no imports
+and no probe. `lineLeanEnv(enabledLines)` gives the name, with the line that does.
+
 A run checks its lines before anything is written, and refuses to start, with every problem named,
 when an id is unknown or listed twice, a line is planned but not implemented, a line it requires is
-not enabled, two lines give the context packet or the statement identity, or an option is given
+not enabled, two lines give the context packet, the statement identity or the Lean environment, or an option is given
 for a line that is not enabled, that the line does not have, or with another type than its default
 (`resolveLines`). An option whose default is `null` means "not set": it has no type, and takes any
 JSON value.
@@ -379,7 +388,8 @@ since" list and its cap, a string answer as before, a malformed answer, and the 
 dollars of a frozen prefix against a packet compiled again.
 `packages/orchestrator/test/line-gates.test.ts` covers `beforeCheck` (a rejected call is no check),
 `reviewBriefing`, the notes a line gives and `afterProver`. `cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
-also checks that only one line gives the statement identity, and
+also checks that only one line gives the statement identity or the Lean environment, and
+`packages/orchestrator/test/m17.test.ts` runs M17 in whole runs ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)), and
 `packages/orchestrator/test/m1.test.ts` runs the real M1 ([m1-identity-memory.md](m1-identity-memory.md#tested-and-not-yet)).
 `m6.test.ts` and `fleet.test.ts` there run M6 and the fleet in whole runs ([guards.md](guards.md#tests-and-what-is-not-done),
 [fleet.md](fleet.md#tests-and-what-is-not-done)). `resumeRefusals` is tested in

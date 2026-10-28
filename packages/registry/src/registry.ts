@@ -35,6 +35,25 @@ export interface BlobSink {
   putJson(value: unknown): string;
 }
 
+/**
+ * The Lean environment a registry's tool runs belong to (documentation/lean-env.md): its name, its
+ * hash when it is resolved on this machine, and where its project is. `@seshat/lean-env` makes it
+ * (`lookupEnvironment`, the same shape); the registry only records it, so a run is pinned to one
+ * environment from its start to its end: the pin is read when the registry is built and never again.
+ */
+export interface LeanEnvPin {
+  name: string;
+  /** The environment hash; null when the environment is not resolved. */
+  hash: string | null;
+  /** The environment's project directory. */
+  dir?: string;
+  status?: "resolved" | "unresolved" | "stale" | "unknown";
+  /** Why the environment is not resolved, and what to do. */
+  detail?: string;
+  /** Whether `harness lean-env build` finished for this hash. */
+  built?: boolean;
+}
+
 export type McpTransportFactory = (server: McpServerSpec, spec: McpImplementationSpec) => McpTransport;
 
 export interface RegistryOptions {
@@ -49,6 +68,12 @@ export interface RegistryOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Builds MCP transports. Default: spawn stdio servers, connect to HTTP ones. */
   mcpTransport?: McpTransportFactory;
+  /**
+   * The Lean environment of the host. The implementations whose manifest `environment` has a `lean`
+   * entry record its hash in their version (`versionOf`), so that every tool run says which
+   * environment it ran in.
+   */
+  leanEnv?: LeanEnvPin;
 }
 
 export interface InvokeOptions {
@@ -120,6 +145,8 @@ export class Registry {
   readonly host: HostProfile;
   /** Pins the catalog and the host profile; recorded in `run.started`. */
   readonly hash: string;
+  /** The Lean environment the registry was built for, if the host names one. Fixed for the registry's life. */
+  readonly leanEnv: LeanEnvPin | undefined;
   private readonly factories: Readonly<Record<string, ImplementationFactory>>;
   private readonly journal: ToolRunSink | undefined;
   private readonly blobs: BlobSink | undefined;
@@ -135,6 +162,7 @@ export class Registry {
     this.blobs = options.blobs;
     this.env = options.env ?? process.env;
     this.mcpTransport = options.mcpTransport ?? defaultMcpTransport;
+    this.leanEnv = options.leanEnv === undefined ? undefined : { ...options.leanEnv };
     const problems = checkHostProfile(this.host, this.catalog);
     for (const [id, binding] of Object.entries(this.host.capabilities)) {
       for (const implId of binding.use) {
@@ -152,6 +180,18 @@ export class Registry {
   static load(options: Omit<RegistryOptions, "catalog" | "host"> & { catalogDir: string; configDir: string; host: string }): Registry {
     const { catalogDir, configDir, host, ...rest } = options;
     return new Registry({ ...rest, catalog: loadCatalog(catalogDir), host: loadHostProfile(hostProfilePath(configDir, host)) });
+  }
+
+  /**
+   * The version a tool run of this implementation records: the manifest's pinned version, and, for an
+   * implementation whose results depend on Lean (its manifest `environment` has `lean`) in a registry
+   * with a resolved Lean environment, `+env:<name>@<first 12 digits of the environment hash>`. The
+   * hash is in the version, so two tool runs differ in version exactly when their environments do.
+   */
+  versionOf(spec: ImplementationSpec): string {
+    const pin = this.leanEnv;
+    if (pin === undefined || pin.hash === null || spec.environment?.lean === undefined) return spec.version;
+    return `${spec.version}+env:${pin.name}@${pin.hash.slice(0, 12)}`;
   }
 
   /** Every capability of the catalog, by id. */
@@ -237,7 +277,7 @@ export class Registry {
         toolRunId,
         capability: manifest.id,
         implementation: spec.id,
-        version: spec.version,
+        version: this.versionOf(spec),
         inputHash,
         timeoutMs,
         ...(options.attemptId !== undefined ? { attemptId: options.attemptId } : {}),
@@ -291,7 +331,7 @@ export class Registry {
           : Object.fromEntries(manifest.summary.map((path) => [path, getPath(output, path) ?? null]));
       const outputHash = this.blobs?.putJson(output) ?? hashJson(output);
       const durationMs = finish("ok", { outputHash, ...(summary !== undefined ? { summary } : {}) });
-      return { output, toolRunId, implementation: spec.id, version: spec.version, durationMs };
+      return { output, toolRunId, implementation: spec.id, version: this.versionOf(spec), durationMs };
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
@@ -373,7 +413,7 @@ export class Registry {
         entries.push({
           capability: capabilityId,
           implementation: implId,
-          version: spec.version,
+          version: this.versionOf(spec),
           ok: check.ok,
           detail: check.detail ?? "",
           durationMs: Math.round(performance.now() - started),
