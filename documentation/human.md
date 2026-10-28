@@ -257,9 +257,18 @@ turn; the sessions in flight and their carries; a line's one-shot calls counted 
 breakpoint and its re-arming; the account from a scripted journal; a hint in the next session's prompt; a
 signature that propagates nothing (against a Lean-checked edge that does); each steer; the narrative
 accepted and refused; the command line; and a run in three turns against one that is not interrupted. For
-that last test the cut matrix was sampled, not covered: 3 x 3 token limits for the first two turns
-(1, 4,000 and 8,000 tokens, which fall after one, two and about four responses), the last turn unlimited,
-on two problems with five responses in all; cuts by dollars, by time and by breakpoint are tested singly.
+that last test the cut matrix was sampled, not covered, in three groups, each 3 x 3 or 3 x 2 token limits
+for the first two turns with the last turn unlimited. M0 on two problems with five responses in all, no
+certifier (1, 4,000 and 8,000 tokens, which fall after one, two and about four responses). The same with a
+certifier, so that a cut falls on a candidate (the problems are certified once each, in whatever turn, and a
+settled problem ends no turn a second time). M0 with line M2 and its refutation side, whose calls run beside the
+provers (1, 3,000 and 6,000 tokens for turn 1, 1 and 6,000 for turn 2): the same twin, the same two calls of the
+side, once each. Cuts by dollars, by time and by breakpoint are tested singly; M6, M11 and the fleet are not
+in the matrix (they call no model in the background; M6's and M11's own resume tests cover their state), and
+no matrix cell has more than three turns. Also tested one by one: the request refused at the point of sending
+while another prover waits in a line's `briefing`; a line's one-shot call refused after the model is resolved;
+a candidate certified at the limit, with a certifier that is down, and with none; a run on another
+consortium run's memory (`--memory-from`); a team's answer that a line tries to rewrite or forge.
 
 Not run: a real model (the narrative, and the effect of a hint on a model), a real Lean, a real wait
 between turns. Not built: sending the account to a chat and taking answers from there (the account is a file
