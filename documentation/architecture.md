@@ -36,7 +36,7 @@
 | `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
 | `@seshat/decide` | `decide`: typed choices, scores and yes/no answers that order work, the Jev and faux backends of `decide.ask`, the forbidden list, the orderer for `prove.search`, the cold-start priors ([decide.md](decide.md)) | core, lines, registry |
 | `@seshat/models` | The line M11: small models of the discrete domain, fingerprints, certified refutations, identification (M11); the implementations of `oeis.search`, `lmfdb.query` and `findstat.identify` | core, lines, memory, registry |
-| `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12 will join it | core, fleet, graph, lean-meta, lines, memory, registry |
+| `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12, and the curriculum of M18, join it | core, fleet, graph, lean-meta, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, M17, fleet), the M1 line, the `harness` command (and `harness lean-env`) | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 

@@ -9,7 +9,7 @@ function line(id: Line["id"], extra: Partial<Line> = {}): Line {
 
 describe("line ids and cumulative configs", () => {
   it("orders the lines as the plan builds them, and knows them", () => {
-    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9", "M17"]);
+    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M18", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9", "M17"]);
     assert.ok(isLineId("fleet") && isLineId("M14"));
     assert.ok(!isLineId("M0") && !isLineId("M15") && !isLineId("m1"));
     assert.ok(isAblationName("M0") && isAblationName("M9") && !isAblationName("M15"));
@@ -19,9 +19,9 @@ describe("line ids and cumulative configs", () => {
     assert.deepEqual(ablationLines("M0"), []);
     assert.deepEqual(ablationLines("M1"), ["M1"]);
     assert.deepEqual(ablationLines("M2"), ["M1", "M10", "M2"]);
-    assert.deepEqual(ablationLines("fleet"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet"]);
-    assert.deepEqual(ablationLines("M8"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M8"], "a suspended line is left out");
-    assert.deepEqual(ablationLines("M7"), ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7"], "but kept in its own config, which a run refuses");
+    assert.deepEqual(ablationLines("fleet"), ["M1", "M10", "M2", "M11", "M12", "M18", "M4", "M6", "fleet"]);
+    assert.deepEqual(ablationLines("M8"), ["M1", "M10", "M2", "M11", "M12", "M18", "M4", "M6", "fleet", "M3", "M8"], "a suspended line is left out");
+    assert.deepEqual(ablationLines("M7"), ["M1", "M10", "M2", "M11", "M12", "M18", "M4", "M6", "fleet", "M3", "M7"], "but kept in its own config, which a run refuses");
     assert.deepEqual(ablationLines("M9"), LINE_ORDER.filter((id) => id !== "M7" && id !== "M17"));
   });
 
