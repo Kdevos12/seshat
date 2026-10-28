@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 02:25 UTC. `main` at 52efd50, 1360 tests.
+Updated 2026-10-28 09:30 UTC. `main` at f952eaa, 1461 tests.
 
 ## Tasks
 
@@ -27,7 +27,7 @@ Updated 2026-10-28 02:25 UTC. `main` at 52efd50, 1360 tests.
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
-| 17 | Consortium mode | main | implementing | `task/t17` |
+| 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T21, T23 and T24 merged; T17 in flight; then T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T17, T21, T23 and T24 merged; T19 in review fixes; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -101,6 +101,11 @@ Notes from the main team, newest last. Read them at the start of each session.
   across runs is `--memory-from`. No shipped line calls `draw` yet: Tasks 9 and 11 are the first.
   Task 21: a line may give the Lean environment (`Line.leanEnv`); M17 does. Details under "Interface
   changes".
+- 2026-10-28: Task 17 is merged (`main` at `f952eaa`): `harness run --turn-tokens|--turn-usd|--turn-minutes`
+  stops the run at a limit, with a candidate certified first (Lean, no model call). A line that
+  catches errors around a model call must let `isInterrupted(error)` (`@seshat/lines`) through: it
+  means the turn paused the work, not that it failed. Task 6, 9 and 11 lines must declare `resume`
+  (a consortium run refuses a non-resumable line at start). Details under "Interface changes".
 
 ## Interface changes
 
@@ -194,6 +199,25 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   [trust.md](../documentation/trust.md). Known limits: the fleet's posteriors ignore epochs until
   Task 19; the Mathlib epoch trigger is the bench revision; nodes of every kind carry in every
   environment; reading the chain costs about 14 microseconds per event on every open (no snapshot).
+- Task 17, merged in `f952eaa`: `packages/core`: the events `turn.started` and `turn.ended`
+  (orchestrator-only), the type `TurnLimit`, `AttemptFinished.stoppedBy` documents `turn`,
+  `Projection.turns()`, the node kinds `hint` and `steer` (human kinds: the actor rule, no
+  `node.updated` for anyone; `human_signed` needs a `human:` actor), `INHERITED_SKIPPED` gains the
+  turn events; `packages/lines`: `InterruptedError` and `isInterrupted`, `LineLlmOptions.turn`,
+  `RunLinesOptions.turn`, `taskApi.ready()` orders focused claims first, `taskApi.propose` refuses
+  a dropped claim; `packages/memory`: `withActor` on a line's view refuses `orchestrator` and
+  `human:*`; `packages/orchestrator`: `Ledger.observe`, `RunConfig.consortium`, `RunOptions.turns`,
+  `ResumeOptions.turns`, `RunResult.turn`, `SessionStop` and `ProverStop` gain `"turn"`, prover
+  prompts gain "Hints from the team" and "What the team asks" only when the team answered,
+  `RunReport.turns`, the account (`turns/<n>/report.md` and `report.json`, from the journal alone),
+  the options `--human`, `--turn-*`, `--impasse-*`, `--claim`, `--as`, `--note`, `--focus`, `--drop`,
+  `--forbid`, the commands `hint`, `sign`, `steer`, `resume`, and `ablationRefusal(config)`, which
+  the future `harness ablate` (Task 14) must call for each config. Page: [human.md](../documentation/human.md).
+  Decisions: a limit bounds model work, not process lifetime (the process overshoots by the response
+  in flight and the certification); the impasse defaults (8 attempts, posterior below 0.1) are
+  untuned; names are self-asserted; multi-flag `steer` is not atomic; when a `contextPacket` line replaces the prompt
+  (Task 11), the hints are added to the packet's tail, never to its frozen prefix. Not run against a
+  real model or Lean.
 
 ## Log
 
@@ -477,3 +501,15 @@ Task 17: implementer dispatched (worktree wt/t17, branch task/t17 from main a2f9
 Task 23: review round 1: spec met, no Critical; Important I1 (Task 21's environment hash not an input), I2 (trust limit of the unkeyed hash chain undocumented), I3 (chain refusals untested), minors M1-M9; fix round done (merge of main ba280db, fixes 21894cd to fe074dd, 1358/1358)
 Task 23: scoped re-review of fix round 1: approved, no Critical or Important; notes N1 (resume checks leanEnv only when the recorded config has the key), N2, N3 (a non-string relative path in a hand-edited journal throws a TypeError instead of a MemoryChainError) deferred to the final review
 Task 23: merged: task/t23 pushed (fe074dd), merged into main 52efd50 (--no-ff; 1360/1360), pushed; not run against a real Lean or model; deferred to the final review: N1-N3, no draw call by a shipped line yet, chain read cost without snapshot
+Task 19: implementer dispatched (worktree wt/t19, branch task/t19 from main 6698879; brief task-19-brief.md)
+Task 17: implementer done (2 commits on task/t17, head a8d7a1c, 1331/1331; pushed); concern: a turn that ends while a problem holds a candidate leaves it uncertified until the next turn; review dispatched on a2f9c29..a8d7a1c
+Usage-limit stop 20: the 5-hour limit cut the T17 reviewer and the T19 implementer about 02:13 UTC (reset 06:00); resumed 06:07 UTC
+Task 17: review round 1: spec partially met (account gaps), no Critical (nothing the team sends changes a claim status); Important I1 (node.updated on human nodes), I2 (a turn cut kills M2's refutation twin), I3 (no gate where the request is sent), I4 (non-resumable line accepted in a consortium run), I5 (account gaps); decision: certify a held candidate before the turn ends (Lean, no model call); fix round sent with the merge of main (Task 23 conflicts) first
+Disk: removed the reviewer's local Lean 4.27.0 install (2.5 GB) from the scratchpad to free space; a later real-Lean check must download it again
+Task 19: implementer done (2 commits on task/t19, head 38da989, 1423/1423; pushed); review dispatched on 6698879..38da989; concern: retry_stronger only arises from M6 branch signals; unranked models count as weaker
+Task 19: review round 1: spec met (two recorded deviations: PROMPT_VERSION m0-2 unchanged; PC10 doubt shown), no Critical; Important I1 (race in strategy exclusion across the DAG call), I2 (the DAG author's doubt in the prover's briefing), I3 (strength order inferred from the order of models); minors M1-M9; fix round sent
+Task 19: fix round 1 done (01a4c65, 1432/1432): race fixed, doubt dropped from briefing, models order no longer a strength order, mode ran vs drawnMode, PROMPT_VERSION m0-2.1 (minor), unranked models documented; found a window: a kill between attempt.finished and task.routed loses routing decisions on resume (Router); scoped re-review dispatched
+Task 17: fix round 1 done (8 commits, 1455/1455, main merged in 81acb76, pushed aa10c28); scoped re-review dispatched
+Task 17: scoped re-review of fix round 1: approved, one Important N1 (the account read a claim settled by a shared statement or carried by --memory-from as this problem's own certification); fixed in round 2 (2016291, 1459/1459)
+Task 17: merged: task/t17 pushed (2016291), merged into main f952eaa (--no-ff; 1461/1461), pushed; not run against a real model or Lean; deferred to the final review: N3 (a line can lower a human signature through the revocation path, documented), names self-asserted, multi-flag steer not atomic
+Task 19: scoped re-review of fix round 1: approved, one Important N1 (retry_stronger could send a claim to a weaker model when models are unranked); fixed in 8cedfad (1435/1435); decisions: unranked model counts as weaker for the class label (documented, set ranking), PROMPT_VERSION m0-2.1 (a minor bump opens no epoch); next: merge main into task/t19 and close the routing-loss window (a kill between attempt.finished and task.routed)
