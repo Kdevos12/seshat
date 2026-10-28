@@ -268,6 +268,8 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   agent.subscribe((event) => {
     if (event.type !== "message_end" || event.message.role !== "assistant") return;
     last = event.message;
+    // A request the turn gate refused was never sent: no response, no charge, no zero-cost attempt record.
+    if (refusedMessages.has(event.message)) return;
     turns += 1;
     const charge = messageCost(o.model, event.message);
     cost.usd += charge.usd;
@@ -349,6 +351,8 @@ function textOf(message: AssistantMessage | undefined): string | undefined {
 }
 
 /** The answer to a request that was not sent: an aborted response with no content, which the session reads as the turn's end. */
+const refusedMessages = new WeakSet<object>();
+
 function refusedStream(model: Model<Api>, reason: string): ReturnType<typeof createAssistantMessageEventStream> {
   const stream = createAssistantMessageEventStream();
   const message: AssistantMessage = {
@@ -362,6 +366,7 @@ function refusedStream(model: Model<Api>, reason: string): ReturnType<typeof cre
     errorMessage: reason,
     timestamp: Date.now(),
   };
+  refusedMessages.add(message);
   stream.push({ type: "error", reason: "aborted", error: message });
   stream.end(message);
   return stream;
