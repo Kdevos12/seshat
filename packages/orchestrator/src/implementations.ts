@@ -77,6 +77,21 @@ export function leanEnvPin(
   return { pin, projectDir: given ?? (pin.status === "resolved" && pin.built === true ? pin.dir : undefined) };
 }
 
+/**
+ * The Lean environment a host will be pinned to, with its hash from the lock, without building a
+ * registry: what a run that starts on earlier journals compares them by before anything is written.
+ * Undefined for a host that names none.
+ */
+export function hostLeanEnv(options: Pick<OpenRegistryOptions, "host" | "configDir" | "leanEnv" | "envRoot" | "env"> = {}): { name: string; hash: string | null } | undefined {
+  const profile = loadHostProfile(hostProfilePath(options.configDir ?? `${REPO_ROOT}config`, hostName(options.host)));
+  const found = leanEnvPin(profile, {
+    ...(options.leanEnv !== undefined ? { override: options.leanEnv } : {}),
+    ...(options.envRoot !== undefined ? { envRoot: options.envRoot } : {}),
+    ...(options.env !== undefined ? { env: options.env } : {}),
+  });
+  return found === undefined ? undefined : { name: found.pin.name, hash: found.pin.hash };
+}
+
 /** The registry of this repository, for a host. */
 export function openRegistry(options: OpenRegistryOptions = {}): Registry {
   const { host, catalogDir, configDir, factories, leanEnv, envRoot, env, ...rest } = options;
