@@ -74,6 +74,11 @@ interrupted (the test says what was sampled). A process that ended in the middle
 `turn.ended` (a kill, a usage limit) is closed by the next one: `turn.ended` with the reason `interrupted`,
 then the next turn.
 
+Because every turn after the first is a resumption, a consortium run starts only with lines that can be
+resumed ([lines.md](lines.md#resuming-a-run-with-lines)): `harness run --human` or `--turn-usd 2` with a
+line that is `{refuse: ...}` or does not say how it resumes is refused before anything is spent, with the same
+message `harness resume` would give, instead of spending a turn and then being unable to continue.
+
 A turn costs a session per cut: a session cut by the turn is a session used (`--sessions`). A run meant to
 take many turns should give its provers more sessions.
 

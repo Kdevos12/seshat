@@ -57,7 +57,8 @@ Lean environment.
 run --resume: continues a run whose process ended without finishing it (documentation/ledger.md, "Resume"),
 from the journal in RUN_DIR. The run's configuration is the one it began with, so no flag that describes a run
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
-with a line that keeps state in the process (M2, M6, the fleet) cannot be resumed.
+with a line that cannot be resumed (a line that keeps state in the process and cannot rebuild it) is refused when it
+starts as a consortium run and when it is resumed.
 Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
 two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer

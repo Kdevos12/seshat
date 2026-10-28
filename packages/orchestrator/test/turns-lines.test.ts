@@ -220,3 +220,19 @@ describe("the point where a request is sent (review round 1, I3)", () => {
     journal.close();
   });
 });
+
+describe("a consortium run with a line that cannot be resumed (review round 1, I4)", () => {
+  const stateful: Line = { id: "M1", title: "keeps state in the process", requires: [], resume: { refuse: "its state lives in the process" }, hooks: {} };
+
+  it("is refused when it starts, before anything is spent, as it would be when it resumes", async () => {
+    await assert.rejects(
+      () => demoRun({ lines: { M1: stateful }, config: { lines: ["M1"], consortium: consortium({ usd: 2 }) }, responses: [check("bad")] }),
+      /a consortium run .* is resumed after each turn, and it cannot be: line M1 cannot be resumed: its state lives in the process/,
+    );
+  });
+
+  it("is not a reason to refuse an ordinary run with the same line", async () => {
+    const run = await demoRun({ lines: { M1: stateful }, config: { lines: ["M1"], sessions: 1 }, responses: [check("exact trivial_proof")] });
+    assert.equal(run.result.problems[0]?.outcome, "candidate");
+  });
+});

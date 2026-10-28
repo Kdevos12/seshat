@@ -337,6 +337,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
   const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
+  // A consortium run is resumed after every turn: it starts only with lines that can be (documentation/human.md, "Turns").
+  if (config.consortium !== undefined && resume === undefined) {
+    const refusals = resumeRefusals(enabled.lines);
+    if (refusals.length > 0) throw new RunSetupError(`a consortium run (--human or a turn limit) is resumed after each turn, and it cannot be: ${refusals.join("; ")}`);
+  }
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const promptRecord = { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
