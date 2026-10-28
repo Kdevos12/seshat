@@ -477,6 +477,40 @@ export interface EventDataMap {
     reason: string;
   };
   /**
+   * A decision of the `decide` capability (documentation/decide.md): a typed choice, score or yes/no
+   * about a short state, used to order work and never to change a status. Written by the orchestrator
+   * only, so that no line forges or hides one; the journal refuses a site that may not use decide.
+   */
+  "decision.made": {
+    decisionId: string;
+    /** Hash of the site, the state and the question: a question asked again in the problem is answered from here, not paid twice. */
+    key: string;
+    line: string;
+    problemId: string;
+    claimId?: string;
+    site: string;
+    /** Who answered. */
+    backend: "llm" | "jev" | "faux";
+    /** What the configuration asked for; differs from `backend` after a fallback. */
+    requested: "llm" | "jev" | "faux";
+    /** Why the requested backend did not answer. */
+    fallback?: string;
+    /** The model that answered, as it named itself (`provider/id`; the votes' models joined by a comma). */
+    model: string;
+    type: "choice" | "score" | "noul";
+    /** The labels the answer is among, in order. */
+    labels: string[];
+    /** Blob of `{site, state, question}`. */
+    requestHash: string;
+    stateHash: string;
+    answer: string | number | boolean;
+    /** The full distribution over `labels`, summing to 1. */
+    probabilities: Record<string, number>;
+    costUsd: number;
+    modelCallIds: string[];
+    toolRunId?: string;
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -527,6 +561,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "task.routed",
   "ladder.escalated",
   "memory.epoch_opened",
+  "decision.made",
 ];
 
 export function isEventType(value: unknown): value is EventType {

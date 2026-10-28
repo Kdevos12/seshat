@@ -24,11 +24,13 @@ import type {
   TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
+import type { DecideConfig } from "@seshat/decide";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
 import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
+import { problemDecide } from "./decide.ts";
 import { lineLlm } from "./llm.ts";
 import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
@@ -81,6 +83,8 @@ export interface RunLinesOptions {
   seed?: string | number;
   /** The run's models, weakest first, and its budget class; the lines read it as `ProblemContext.ranking`. */
   ranking?: ModelRanking;
+  /** The `decide` configuration (documentation/decide.md). Default: the run's model at every site. */
+  decide?: DecideConfig;
 }
 
 export interface ProblemLinesOptions {
@@ -263,6 +267,19 @@ export class ProblemLines {
     const id = entry.line.id;
     const actor = `line:${id}`;
     const own = signal ?? this.p.signal;
+    const llm = lineLlm({
+      line: id,
+      journal: o.journal,
+      blobs: o.blobs,
+      models: o.models,
+      model: o.model,
+      resolveModel: (name) => this.run.resolveModel(name),
+      thinkingLevel: o.thinkingLevel,
+      ledger: this.p.ledger,
+      problemId: this.p.problemId,
+      signal: own,
+      ...(o.turn !== undefined ? { turn: o.turn } : {}),
+    });
     const context: ProblemContext = {
       line: id,
       runId: o.runId,
@@ -272,16 +289,17 @@ export class ProblemLines {
       domain: this.p.domain,
       memory: o.memory.withActor(actor),
       registry: o.registry,
-      llm: lineLlm({
+      llm,
+      decide: problemDecide({
         line: id,
+        config: o.decide ?? { backend: "llm", sites: {}, votes: 1 },
         journal: o.journal,
         blobs: o.blobs,
-        models: o.models,
-        model: o.model,
-        resolveModel: (name) => this.run.resolveModel(name),
-        thinkingLevel: o.thinkingLevel,
+        registry: o.registry,
+        llm,
         ledger: this.p.ledger,
         problemId: this.p.problemId,
+        claimId: this.p.claimId,
         signal: own,
         ...(o.turn !== undefined ? { turn: o.turn } : {}),
       }),
