@@ -29,7 +29,7 @@ Updated 2026-10-28 09:30 UTC. `main` at f952eaa, 1461 tests.
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
-| 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
+| 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | fix round | `task/t19` |
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
