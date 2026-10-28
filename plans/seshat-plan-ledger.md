@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 11:00 UTC. `main` at b67c84d, 1545 tests.
+Updated 2026-10-28 13:30 UTC. `main` at 62ed6fa, 1606 tests.
 
 ## Tasks
 
@@ -30,7 +30,7 @@ Updated 2026-10-28 11:00 UTC. `main` at b67c84d, 1545 tests.
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | merged in `b67c84d` (faux model and simulated Lean only; the numbers are first guesses) | `task/t19` |
-| 20 | `decide`, optional Jev backend | main | implementing | |
+| 20 | `decide`, optional Jev backend | main | merged in `62ed6fa` (fake server and faux backend only; Jev's request and response shapes are guessed) | `task/t20` | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T17, T19, T21, T23 and T24 merged; T20 and T10 next; then T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T17, T19, T20, T21, T23 and T24 merged; T10 in flight; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -234,6 +234,19 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   switching models, and `retry_stronger` acts only on a stated order (a `ranking`, or the run model then
   `escalateTo`); the order of the fleet's `models` is not a strength order. Not run against a real model:
   the numbers (γ 0.8, ε 0.1, two DAG tries, eight steps) are first guesses.
+- Task 20, merged in `62ed6fa`: new package `packages/decide` (the `decide.ask` capability: backends
+  `llm` (the default: the run's own model), `jev` and `faux`; a closed allowlist of three sites; the
+  32k refusal; fallback to `llm` on a missing key or an unreachable host, journaled); `packages/core`:
+  the event `decision.made` (orchestrator-only, journal-checked), `Projection.decision`,
+  `decisionByKey`, `decisions` (`PROJECTION_VERSION` 8; skipped for inherited journals);
+  `packages/lines`: optional `ProblemContext.decide`; `packages/orchestrator`: `RunConfig.decide`,
+  `RunLinesOptions.decide`, CLI flags; `packages/fleet`: options `coldStart` and `coldStartWeight`
+  (capped pseudo-counts that fade and are gone after six attempts of a claim); `config/hosts/*.json`:
+  a `decide.ask` entry (optional). Task 6's `prove.search` orderer does not exist yet: the interface and
+  a test double are in; the collaborator's Task 6 calls `decideOrderer`. A request must state its `use`
+  (what the answer is for); results only order. Proof states go to a third party when `jev` is on
+  ([decide.md](../documentation/decide.md)). An answer without a reported cost is booked at
+  $0.01. Not run against a real Jev.
 
 ## Log
 
@@ -531,3 +544,7 @@ Task 17: merged: task/t17 pushed (2016291), merged into main f952eaa (--no-ff; 1
 Task 19: scoped re-review of fix round 1: approved, one Important N1 (retry_stronger could send a claim to a weaker model when models are unranked); fixed in 8cedfad (1435/1435); decisions: unranked model counts as weaker for the class label (documented, set ranking), PROMPT_VERSION m0-2.1 (a minor bump opens no epoch); next: merge main into task/t19 and close the routing-loss window (a kill between attempt.finished and task.routed)
 Task 19: final scoped re-review (round 2 and round 3): approved, one Important J1 (judge swallowed an interruption); fixed in round 4 (fe1b641, 1543/1543); round 3 closed the routing-loss window (Router.decide idempotent, Router.resumeTask on resume) and a bug found at the merge (the fleet counted an interrupted DAG call as a failed try)
 Task 19: merged: task/t19 pushed (fe1b641), merged into main b67c84d (--no-ff; 1545/1545), pushed; not run against a real model; accepted differences from an uncut run documented in ledger.md (a harness-error attempt's guard finding may be routed on resume; a part refuted since is routed one session early); deferred to the final review: judge has no caller yet
+Task 10: implementer dispatched (worktree wt/t10, branch task/t10 from main 68b098c; brief task-10-brief.md)
+Task 20: implementer dispatched (worktree wt/t20, branch task/t20 from main 68b098c; brief task-20-brief.md)
+Task 20: implementer done (3 commits, 1599/1599); review round 1: spec met, no Critical; Important I1 (duplicate questions paid twice), I2 (cold-start prior permanent), I3 (use optional), commit order not green per commit, minors; fix round done with the branch rewritten (455cdfe to 1250c94, every early commit passes pnpm check, tip 1604/1604); fix accepted by the controller from the report, no second review
+Task 20: merged: task/t20 merged into main 62ed6fa (--no-ff; 1606/1606), pushed; not run against a real Jev (request and response shapes guessed); deferred to the final review: the orderer's log path has no test of its own, I1's new test was not run against the old code
