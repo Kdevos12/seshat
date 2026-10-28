@@ -213,8 +213,8 @@ export function createM6(env: M6Env = {}): Line {
     title: LINE_TITLES.M6,
     requires: [],
     options: M6_OPTIONS,
-    // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording.
-    version: "m6-2",
+    // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording (m6-3: the question about an open conjecture carries the anti-sycophancy instruction).
+    version: "m6-3",
     // What the line keeps across a prover's sessions (the detectors' counts, the last check, the notices waiting for the next session)
     // and the framing findings it has made are made again from the journal when a problem is taken up: see `resumeProblem`.
     resume: "rebuild",
