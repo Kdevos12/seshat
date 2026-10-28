@@ -338,7 +338,10 @@ interruption is not a failure, and the contract for a line is:
 A line that does not catch errors from `llm` needs to do nothing: the error reaches the harness, which
 reads the problem as waiting. A line that does catch them (M2's refutation side, which runs alongside the
 provers and is not awaited until `afterProblem`) must follow the contract. M2 is the only line of today that
-calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule.
+calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule. The fleet's step-DAG
+call ([fleet.md](fleet.md#informal-first-sessions)) and `judge` (above) follow it: the fleet records no failed try and
+gives the prover's place back, and `judge` rethrows the interruption at once, asks no more calls and returns no
+partial judgment (a vote from fewer calls than asked is never returned as a complete one).
 
 ### `tasks`
 

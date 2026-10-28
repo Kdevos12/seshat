@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ANTI_SYCOPHANCY, judge, type Llm, type LlmRequest, type LlmResult, withAntiSycophancy, withJson } from "../src/index.ts";
+import { ANTI_SYCOPHANCY, InterruptedError, isInterrupted, judge, type Llm, type LlmRequest, type LlmResult, withAntiSycophancy, withJson } from "../src/index.ts";
 
 /** An `Llm` that answers from a script, one text (or error) per call, and records the requests. */
 function scripted(texts: Array<string | Error>) {
@@ -109,5 +109,23 @@ describe("judge by score", () => {
     const answer = await judge(llm, { prompt: "Rate it.", site: "test.x", k: 1, min: 0, max: 10 });
     assert.equal(answer.result, 4, "the first answer is above the scale and goes back once");
     assert.match(requests[0]?.prompt ?? "", /"maximum":10/);
+  });
+});
+
+describe("judge under an interruption (the consortium turn is over)", () => {
+  it("rejects with the interruption when a call is refused, asks no more, and returns no partial judgment", async () => {
+    const { llm, requests } = scripted([verdict("a"), new InterruptedError("the turn is over"), verdict("a")]);
+    await assert.rejects(judge(llm, { prompt: "p", site: "test.x", k: 3, options: ["a", "b"] }), (error: unknown) => isInterrupted(error));
+    assert.equal(requests.length, 2, "the third call is not asked for");
+    const { llm: scoring, requests: scored } = scripted([new InterruptedError("the turn is over")]);
+    await assert.rejects(judge(scoring, { prompt: "p", site: "test.x", k: 2, min: 0, max: 1 }), (error: unknown) => isInterrupted(error));
+    assert.equal(scored.length, 1);
+  });
+
+  it("still takes an ordinary failure of a call for a missing vote", async () => {
+    const { llm } = scripted([verdict("a"), new Error("the model errs"), verdict("a")]);
+    const answer = await judge(llm, { prompt: "p", site: "test.x", k: 3, options: ["a", "b"] });
+    assert.equal(answer.votes.length, 2);
+    assert.equal(answer.failures.length, 1);
   });
 });

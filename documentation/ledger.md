@@ -229,7 +229,11 @@ resumed run takes them for the last attempt that finished of each task whose pro
 before the prover's next session): the missing ones are written, in the order an uncut run writes them, and
 a task whose attempt was fully routed gets nothing. An attempt the resumption itself closed (`stopped_by:
 "interrupted"`) was not ended by its prover and has none. This holds for a consortium run too: the next turn resumes
-the prover the same way.
+the prover the same way. Two differences from a run that was not cut remain, and are accepted: an attempt that ended in
+the harness-error path of the prover (its `attempt.finished` written, then the failure thrown) never reached the
+routing in the original run, but a resumed one takes its guard findings; and a part of a decomposition refuted between
+the attempt's end and the kill is routed at the resumption, one session earlier. Each is one more decision of the kind
+the table already gives, and none changes a status.
 
 The orchestrator only records. `retry_fresh` is what the prover's loop does next in any case, so its
 decision explains the next session. `reset_upstream` and `branch` are for the lines that plan work
