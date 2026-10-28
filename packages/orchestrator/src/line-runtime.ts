@@ -17,10 +17,13 @@ import type {
   Proposal,
   ProverEnd,
   ResumedProblem,
+  ScheduledTask,
   SessionCheck,
   SessionContext,
   Target,
   TaskApi,
+  TaskEnd,
+  TaskInfo,
   TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
@@ -624,6 +627,16 @@ export class ProblemLines {
     });
   }
 
+  /** The first of the `ready` tasks that a line other than the scheduling line proposed and works itself (its `runTask`), with that line. */
+  private workerOf(scheduling: EnabledLine, ready: readonly TaskInfo[]): { entry: EnabledLine; task: TaskInfo; hook: (problem: ProblemContext, task: TaskInfo, owner: string) => Promise<TaskEnd> } | undefined {
+    for (const task of ready) {
+      const entry = this.run.o.lines.find((e) => `line:${e.line.id}` === task.proposedBy);
+      const hook = entry?.line.hooks.runTask;
+      if (entry !== undefined && entry !== scheduling && hook !== undefined && this.active(entry)) return { entry, task, hook };
+    }
+    return undefined;
+  }
+
   private async runTasks(entry: EnabledLine, count: number): Promise<void> {
     const id = entry.line.id;
     const tasks = this.run.o.tasks;
@@ -634,21 +647,33 @@ export class ProblemLines {
       const context = this.context(entry);
       const ready = context.tasks.ready().filter((task) => task.proposedBy !== undefined);
       for (const { entry: other, hook } of this.with("assignOwners")) await call(other.line.id, "assignOwners", () => hook(this.context(other), ready));
-      const choice = await call(id, "schedule", () => schedule(context, context.tasks.ready().filter((task) => task.proposedBy !== undefined)));
+      // A task that another line proposed and works itself (`runTask`) goes first; the scheduling line chooses among its own.
+      const worker = this.workerOf(entry, ready);
+      let runner = id;
+      let hookName: "schedule" | "runTask" = "schedule";
+      let choice: ScheduledTask | undefined;
+      if (worker !== undefined) {
+        runner = worker.entry.line.id;
+        hookName = "runTask";
+        const task = worker.task;
+        choice = { taskId: task.taskId, reason: `proposed by line ${runner}, which works it`, run: (owner) => worker.hook(this.context(worker.entry), task, owner) };
+      } else {
+        choice = await call(id, "schedule", () => schedule(context, context.tasks.ready().filter((task) => task.proposedBy !== undefined)));
+      }
       if (choice === undefined) return;
       const row = tasks.get(choice.taskId);
       if (row === undefined || row.status !== "ready" || row.problem_id !== this.p.problemId) {
-        throw new LineError(id, "schedule", `${choice.taskId} is not a ready task of this problem`);
+        throw new LineError(runner, hookName, `${choice.taskId} is not a ready task of this problem`);
       }
-      tasks.start(choice.taskId, `scheduled by line ${id}: ${choice.reason}`);
+      tasks.start(choice.taskId, `${hookName === "runTask" ? "worked" : "scheduled"} by line ${runner}: ${choice.reason}`);
       this.log(`task ${choice.taskId} starts: ${choice.reason}`);
       let end;
       try {
-        end = await call(id, "schedule", () => choice.run(tasks.get(choice.taskId)?.owner ?? `line:${id}`));
+        end = await call(runner, hookName, () => choice.run(tasks.get(choice.taskId)?.owner ?? `line:${runner}`));
       } catch (error) {
         // A process that ended, or a turn that ended, leaves the task running; the resumption gives it back.
         if (isInterrupted(error) || (error instanceof LineError && isInterrupted(error.cause))) throw error;
-        tasks.fail(choice.taskId, `line ${id} failed: ${messageOf(error)}`);
+        tasks.fail(choice.taskId, `line ${runner} failed: ${messageOf(error)}`);
         tasks.promote(this.p.problemId);
         throw error;
       }

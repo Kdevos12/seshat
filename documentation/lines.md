@@ -24,6 +24,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences ([models.md](models.md#the-line)) | `@seshat/models` | built, not run against Lean |
 | `M12` | saturation kernel and subgoal scheduler: given-clause loop, weighted proof numbers, subsumption through Lean-checked instances, named holes as claims worked by inner provers, the escalation ladder ([scheduler.md](scheduler.md)) | `@seshat/scheduler` | built, not run against Lean |
+| `M18` | curriculum of variants, rung 1 of the ladder: special cases and weakenings of a hard problem, solved first with a capped share of its budget, their proofs reaching later briefings ([curriculum.md](curriculum.md)) | `@seshat/scheduler` | built, not run against Lean or a model |
 | `M4` | context compiler | `@seshat/context` | planned |
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
@@ -169,6 +170,7 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what this problem's lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is the problem's own so far: `proved` when its own candidate was certified, never `refuted` (a line's refutation is certified after the hook), and never `proved` because another problem proved a claim they share. |
 | `schedule(problem, ready)` | Between the outer sessions of a prover and after the last one (the scheduling line only; at most one enabled line gives it). | Choose which of the problem's `ready` tasks, those it proposed, to work on and give the work (`ScheduledTask`: the task, why, and `run(owner)`, which answers `{ended: "done" \| "failed", reason}`). The orchestrator starts the task, awaits `run`, and ends the task by the answer; `done` is refused if the task's criterion does not hold. See [Scheduling](#scheduling). |
 | `assignOwners(problem, ready)` | Before `schedule` chooses. | Give an owner, through `problem.tasks.assign`, to the `ready` tasks a line proposed (the fleet does, Ruling 29). Every line that gives it is called, in `LINE_ORDER`, and the last assignment stands. |
+| `runTask(problem, task, owner)` | In the schedule step, before `schedule` chooses, for the first `ready` task that this line proposed (a line that is not the scheduling line; M18's variants). | Do the work on the task and answer `{ended: "done" \| "failed", reason}` (`TaskEnd`). The orchestrator starts the task and ends it by the answer, as for a scheduled one. See [Scheduling](#scheduling). |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
@@ -427,8 +429,8 @@ where it works all of them. Steps are serialised, so that provers never schedule
 early when the problem has a candidate or is stopped. For each task:
 
 1. calls every line's `assignOwners` with the `ready` tasks that lines proposed, in `LINE_ORDER`;
-2. calls `schedule(problem, ready)`; `undefined` ends the step;
-3. starts the task it chose (`running`, with the line's reason), calls `run(owner)`, and ends the
+2. if one of those tasks was proposed by a line other than the scheduling line that gives `runTask`, takes the first such task, and that line's `runTask(problem, task, owner)` does the work; otherwise calls `schedule(problem, ready)`, and `undefined` ends the step;
+3. starts the task chosen (`running`, with the line's reason), calls `run(owner)` (or `runTask`), and ends the
    task `done` or `failed` by the answer (`done` only if the acceptance criterion holds, else
    `failed` with the criterion's reason).
 
@@ -503,8 +505,8 @@ position each real line takes on resuming, and `resume-lines.test.ts` resumes wh
 M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
 M1, M2, M6 and the fleet together at every event.
 
-M1, M2, M11, M12, M6 and the fleet are the lines built. M2 has its own tests
-([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m12.test.ts` and `resume-m12.test.ts` run M12 ([scheduler.md](scheduler.md#tests-and-what-has-not-run)). `packages/orchestrator/test/m11.test.ts` runs M11 in
+M1, M2, M11, M12, M18, M6 and the fleet are the lines built. M2 has its own tests
+([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m12.test.ts` and `resume-m12.test.ts` run M12 ([scheduler.md](scheduler.md#tests-and-what-has-not-run)); `m18.test.ts` and `resume-m18.test.ts` run M18 ([curriculum.md](curriculum.md#tests-and-what-has-not-run)). `packages/orchestrator/test/m11.test.ts` runs M11 in
 `runBench` with the simulated model and Lean, a refutation through `validate` and a node and edge of
 each kind it writes included ([models.md](models.md#the-line)). Nothing here has run against a real
 model or Lean.
