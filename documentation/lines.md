@@ -88,8 +88,10 @@ tool exactly as M0 does.
 
 `leanEnv` names the Lean environment the run is in ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)),
 from the line's options, in place of the host's `LEAN_ENV`. The run builds its registry for it, refuses
-to start unless it is resolved, adds its packages' imports to the problem files, and records its name and
-hash. `lineLeanEnv(enabledLines)` gives it, with the line that does.
+to start unless it is resolved, and records its name and hash. Only a run with such a line also adds
+the environment's extra packages' imports to the problem files and probes the Lean server for them: a
+run in the same environment through the host's `LEAN_ENV` alone has the pin and the record, no imports
+and no probe. `lineLeanEnv(enabledLines)` gives the name, with the line that does.
 
 A run checks its lines before anything is written, and refuses to start, with every problem named,
 when an id is unknown or listed twice, a line is planned but not implemented, a line it requires is

@@ -7,7 +7,8 @@ import { BUILD_FILE, loadEnvSpec, resolveEnvironment, writeEnvironment, type Fet
 import type { LeanChecker } from "@seshat/core";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile, type LeanEnvPin } from "@seshat/registry";
 import { REPO_ROOT, RunSetupError, type RunOptions } from "../src/index.ts";
-import { check, DemoLean, demoAnswer, demoRun, ofType, tempDir } from "./m0-helpers.ts";
+import { assertSound, nth } from "./resume-helpers.ts";
+import { check, DemoLean, demoAnswer, demoResume, demoRun, killedAt, ofType, say, tempDir } from "./m0-helpers.ts";
 
 /**
  * Line M17 in a run: the run's Lean environment is the one the line names, its extra packages'
@@ -146,5 +147,45 @@ describe("line M17 in a run", () => {
     assert.equal(ofType(events, "attempt.started").length, 0, "no prover ran");
     assert.equal(ofType(events, "run.finished")[0]?.data.stopped, "lean_environment");
     assert.ok(log.some((l) => /cannot import the libraries of environment extended \(Duper\): unknown module prefix 'Duper'\. Start it on .* \(LEAN_SERVER_PROJECT_DIR\)/.test(l)));
+  });
+
+  it("leaves the files and the server alone in a run that is in the environment through the host alone: the pin and the record, not the line's imports and probe", async () => {
+    const { extended } = await pins();
+    for (const lines of [[], ["M1"]]) {
+      const asked: Array<string | undefined> = [];
+      const lean = new DemoLean();
+      const { events } = await demoRun({ lean, registry: registryFor(() => extended, asked), config: { lines, sessions: 1 }, responses: [check("exact trivial_proof")] });
+      assert.deepEqual(asked, [undefined], "the registry is the host's");
+      assert.deepEqual((ofType(events, "run.started")[0]?.data.config as { leanEnv?: unknown }).leanEnv, { name: "extended", hash: extended.hash }, "recorded");
+      assert.ok(ofType(events, "tool_run.started").every((e) => String(e.data.version).endsWith(`+env:extended@${String(extended.hash).slice(0, 12)}`)));
+      assert.ok(lean.calls.length > 0);
+      assert.ok(lean.calls.every((call) => !call.code.includes("import Duper")), "no extra import, no probe");
+    }
+  });
+
+  it("is resumed with the line, in the environment it began in, and the probe runs again", async () => {
+    const { extended } = await pins();
+    const options = { lines: ["M17"], sessions: 2 };
+    const whole = await demoRun({ registry: registryFor(() => extended, []), config: options, responses: [check("bad"), say("NOTES: bad."), check("exact trivial_proof")] });
+    const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+    const lean = new DemoLean();
+    const resumed = await demoResume({ dir, bench: whole.bench, lean, registry: registryFor(() => extended, []), responses: [check("exact trivial_proof")] });
+    assert.equal(resumed.result.problems[0]?.outcome, "candidate");
+    assertSound(resumed.events);
+    assert.deepEqual((ofType(resumed.events, "run.started")[0]?.data.config as { lines?: Array<{ id: string }> }).lines?.map((l) => l.id), ["M17"]);
+    assert.equal(lean.calls[0]?.code, PROBE, "the server is probed again in the resuming process");
+    assert.ok(lean.calls.slice(1).every((call) => /^import FormalConjectures\.Util\.ProblemImports\nimport Duper\n/.test(call.code)));
+    assert.equal(new Set(ofType(resumed.events, "tool_run.started").map((e) => e.data.version)).size, 1);
+  });
+
+  it("refuses to resume a run with the line under a pin whose hash is not the project's (the line reads the imports from the lock, which the pin must name)", async () => {
+    const { extended } = await pins();
+    const whole = await demoRun({ registry: registryFor(() => extended, []), config: { lines: ["M17"], sessions: 2 }, responses: [check("bad"), say("NOTES: bad."), check("exact trivial_proof")] });
+    const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+    const other: LeanEnvPin = { ...extended, hash: "cd".repeat(32) };
+    await assert.rejects(
+      demoResume({ dir, bench: whole.bench, responses: [], registry: registryFor(() => other, []) }),
+      (error: Error) => error instanceof RunSetupError && /^the Lean environment extended: the lock in .* is not the one the registry pinned/.test(error.message),
+    );
   });
 });

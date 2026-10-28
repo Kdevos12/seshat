@@ -15,7 +15,8 @@ export function environmentImports(lock: Pick<EnvLock, "packages">): string[] {
   return modules;
 }
 
-const IMPORT = /^import\s+(\S+)\s*$/;
+/** An `import` line: `import A`, or `import A B` (Lean takes several modules on one line). */
+const IMPORT = /^import\s+(\S+(?:\s+\S+)*)\s*$/;
 
 /**
  * Adds `import <module>` for each module to a Lean file in plain-header form (its first non-blank
@@ -30,7 +31,7 @@ export function withEnvironmentImports(source: string, modules: readonly string[
   for (const [i, line] of lines.entries()) {
     const found = IMPORT.exec(line.replace(/\s*--.*$/, ""));
     if (found !== null) {
-      present.add(found[1] as string);
+      for (const module of (found[1] as string).split(/\s+/)) present.add(module);
       last = i;
     } else if (line.trim() !== "" && !line.trim().startsWith("--")) {
       break;

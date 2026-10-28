@@ -344,10 +344,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       );
     }
   }
-  // What the environment adds to every file of the run: the imports of its extra packages.
+  // What line M17 adds to every file of the run: the imports of its environment's extra packages. A run
+  // that is in such an environment through the host's LEAN_ENV alone has the pin and the record, not these.
   let envImports: string[] = [];
   let envProbe: string | undefined;
-  if (leanEnv?.hash != null && leanEnv.dir !== undefined) {
+  if (wanted !== undefined && leanEnv?.hash != null && leanEnv.dir !== undefined) {
     try {
       const lock = readLock(leanEnv.dir);
       if (lock === undefined || lock.hash !== leanEnv.hash) throw new Error(`the lock in ${leanEnv.dir} is not the one the registry pinned`);
