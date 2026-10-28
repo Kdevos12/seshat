@@ -170,6 +170,10 @@ export class Router {
     const p = this.journal.projection;
     const decisions: Decision[] = [];
     const decide = (signal: RouteSignal, said: string, ids: { nodeId?: string } = {}) => {
+      // Idempotent: a decision already in the journal for this attempt and this signal (or this finding, for a guard's) is not taken twice,
+      // so that the decisions a cut left partial can be taken again on resume without repeating the ones that were written.
+      const known = p.taskRoutes(attempt.taskId);
+      if (ids.nodeId !== undefined ? known.some((r) => r.node_id === ids.nodeId) : known.some((r) => r.attempt_id === attempt.attemptId && r.signal_type === signal.type && r.signal_value === signal.value)) return;
       const route = this.stronger(routeOf(signal), attempt.claimId);
       const decision: Decision = {
         taskId: attempt.taskId,
@@ -194,22 +198,33 @@ export class Router {
       decide({ type: "failure_class", value: attempt.failureClass }, `the last check failed as ${attempt.failureClass}`);
     }
 
-    const routed = p.taskRoutes(attempt.taskId);
     for (const node of p.nodes("drift", attempt.claimId)) {
       const data = node.data;
       if (!isDriftData(data) || data.attemptId !== attempt.attemptId || !ROUTED_DRIFT_ACTIONS.includes(data.action)) continue;
-      if (routed.some((r) => r.node_id === node.node_id)) continue;
       decide({ type: "drift_kind", value: data.kind }, `a guard found ${data.kind} (${data.action}): ${data.detail}`, { nodeId: node.node_id });
     }
 
     for (const edge of p.edges({ from: attempt.claimId, kinds: ["decomposes_into"] })) {
       for (const part of edge.to) {
         if (p.claim(part)?.status !== "refuted") continue;
-        if (routed.some((r) => r.signal_type === "subgoal_refuted" && r.signal_value === part)) continue;
-        if (decisions.some((d) => d.signal.type === "subgoal_refuted" && d.signal.value === part)) continue;
+        if (p.taskRoutes(attempt.taskId).some((r) => r.signal_type === "subgoal_refuted" && r.signal_value === part)) continue;
         decide({ type: "subgoal_refuted", value: part }, `part ${part} of a decomposition of the claim was refuted`);
       }
     }
     return decisions;
+  }
+
+  /**
+   * The decisions a process that ended left out, for a task whose prover resumes: those of its last attempt that
+   * finished, if the process ended after the attempt's `attempt.finished` and before all of its decisions were written
+   * (`attemptEnded` is called right after that event, and the decisions follow one another). Taking them again is
+   * idempotent, so a task whose attempt was fully routed gets nothing, and the ones taken are in the order of an
+   * uncut run. An attempt the resumption itself closed (`stopped_by: "interrupted"`) was not ended by its prover and
+   * is left alone, as is a task with no finished attempt.
+   */
+  resumeTask(taskId: string, claimId: string): Decision[] {
+    const last = this.journal.projection.attemptsOfTask(taskId).at(-1);
+    if (last === undefined || last.finished_seq === null || last.stopped_by === "interrupted") return [];
+    return this.attemptEnded({ attemptId: last.attempt_id, taskId, claimId, ...(last.failure_class !== null ? { failureClass: last.failure_class as FailureClass } : {}) });
   }
 }

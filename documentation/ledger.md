@@ -222,12 +222,14 @@ When the orchestrator decides, after each attempt, for the task the attempt work
 
 An attempt that is valid, aborted, out of budget, an error or without a check has no decision.
 
-The decisions of an attempt are written right after its `attempt.finished`, one after the other, and a
-resumed run does not derive them again for an attempt that finished: a process that ended after the
-`attempt.finished` and before the decisions, or between two of them, loses the ones not yet written. The window is
-a few events wide, and until `retry_stronger` the decisions only explained the next session; with it, the session
-that follows runs on the model it would have had without the routing. The test at every event says so
-(`repeatsCost`).
+The decisions of an attempt are written right after its `attempt.finished`, one after the other, and they are
+idempotent: a decision for the same attempt and the same signal (the same finding, for a guard's) is not taken twice.
+A process that ended after the `attempt.finished` and before all the decisions were written leaves some out, so a
+resumed run takes them for the last attempt that finished of each task whose prover resumes (`Router.resumeTask`,
+before the prover's next session): the missing ones are written, in the order an uncut run writes them, and
+a task whose attempt was fully routed gets nothing. An attempt the resumption itself closed (`stopped_by:
+"interrupted"`) was not ended by its prover and has none. This holds for a consortium run too: the next turn resumes
+the prover the same way.
 
 The orchestrator only records. `retry_fresh` is what the prover's loop does next in any case, so its
 decision explains the next session. `reset_upstream` and `branch` are for the lines that plan work
@@ -432,13 +434,13 @@ What each rebuilds, from what it journaled:
 
 ### What a resumed run does not restore
 
-- A model response in flight at the interruption, and the routing decisions the process had not yet
-  written: neither is made up.
+- A model response in flight at the interruption: it is not made up. (The routing decisions the process had not yet
+  written for the prover's last finished attempt are: [Routing decisions](#routing-decisions).)
 - The sessions a line skipped (its `beforeSession` stopped them) are not recorded, so a resumed
   prover may be offered them again.
 - A session that was cut in the middle: what it had done is in the journal, but a line's view of it
   is not carried (M6 does not read a cut session's checkpoint; the next session is given the same
-  notice again). A routing decision lost between `attempt.finished` and `task.routed` is not made.
+  notice again).
 - M2's refutation side: an answer that was lost between its `model_call.finished` and its validation
   is not asked for again (the try is spent), and a resumed side's prompt lacks the feedback of the
   earlier failures.

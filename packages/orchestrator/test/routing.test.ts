@@ -208,4 +208,47 @@ describe("Router", () => {
     assert.equal(journal.projection.taskRoutes(taskId).length, 1);
     journal.close();
   });
+
+  describe("the decisions a process that ended left out", () => {
+    /** The attempt of `setup` finished as an unsolved goal, and a guard stopped its session as a loop. */
+    function finished(stoppedBy = "model") {
+      const world = setup();
+      world.journal.emit(
+        "attempt.finished",
+        { attemptId: "att_1", outcome: "invalid", failureClass: "unsolved_goals", stoppedBy, durationMs: 1, turns: 1, usd: 0, inputTokens: 0, outputTokens: 0 },
+        "prover:p1",
+      );
+      world.journal.emit("node.recorded", { nodeId: "nod_1", kind: "drift", claimId: "clm_1", data: { kind: "strategy_loop", action: "stopped_session", detail: "3 checks", attemptId: "att_1", prover: "p1" } }, "line:M6");
+      return world;
+    }
+    const rows = (world: ReturnType<typeof setup>) => world.journal.projection.taskRoutes(world.taskId).map((r) => [r.signal_type, r.signal_value]);
+    const both = [["failure_class", "unsolved_goals"], ["drift_kind", "strategy_loop"]];
+
+    it("takes both decisions of an attempt whose process ended before either was written, in the order of a run that did not end", () => {
+      const world = finished();
+      assert.deepEqual(world.router.resumeTask(world.taskId, "clm_1").map((d) => d.action), ["retry_fresh", "branch"]);
+      assert.deepEqual(rows(world), both);
+      world.journal.close();
+    });
+
+    it("takes only the one that was not written when the process ended between the two, and none when both were", () => {
+      const world = finished();
+      world.tasks.route({ taskId: world.taskId, action: "retry_fresh", signal: { type: "failure_class", value: "unsolved_goals" }, reason: "r", attemptId: "att_1" });
+      assert.deepEqual(world.router.resumeTask(world.taskId, "clm_1").map((d) => d.signal.type), ["drift_kind"]);
+      assert.deepEqual(rows(world), both);
+      assert.deepEqual(world.router.resumeTask(world.taskId, "clm_1"), [], "nothing more the second time");
+      assert.deepEqual(world.router.attemptEnded({ attemptId: "att_1", taskId: world.taskId, claimId: "clm_1", failureClass: "unsolved_goals" }), [], "nor from attemptEnded itself");
+      assert.deepEqual(rows(world), both);
+      world.journal.close();
+    });
+
+    it("leaves an attempt that the resumption closed, a task without a finished attempt and a task without attempts alone", () => {
+      const closed = finished("interrupted");
+      assert.deepEqual(closed.router.resumeTask(closed.taskId, "clm_1"), []);
+      closed.journal.close();
+      const open = setup();
+      assert.deepEqual(open.router.resumeTask(open.taskId, "clm_1"), []);
+      open.journal.close();
+    });
+  });
 });
