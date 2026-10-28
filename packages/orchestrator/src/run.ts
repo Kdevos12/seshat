@@ -977,6 +977,17 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // ended does, and the resumption takes up whatever the journal holds (a candidate, a certification, the
       // provers' files and notes). A problem that has an end of its own, whatever the turn, ends now.
       if (turn?.ended !== undefined && crash === undefined && resumeFailure === undefined && !ledger.exhausted && !(o.signal?.aborted ?? false)) {
+        // Certify before exiting (documentation/human.md, "Turns"): a candidate the problem holds is certified now, and what
+        // the lines submitted for this problem with it. That is Lean and no model call: no session, no `afterProblem`, no
+        // request. The claim becomes `proved` or `refuted` through the normal validation, so the account says so, and the
+        // problem keeps no outcome: the next turn ends it, with its lines, from the certification the journal holds.
+        try {
+          if (workbench.candidate !== undefined) await workbench.certify(o.signal);
+          await benches?.certifyPending({ problemId: entry.id, claimId, workbench }, o.signal);
+        } catch (error) {
+          // A certifier that is down or too slow leaves the candidate as it was; the next turn certifies it, as after a kill.
+          log(`${entry.fullName}: the certification at the end of the turn did not finish (${messageOf(error)}); the next turn takes it up`);
+        }
         return undefined;
       }
 
