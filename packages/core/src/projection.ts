@@ -186,6 +186,9 @@ export interface ModelCallRow {
   seq: number;
   /** Where the call was made; null in journals older than the tags. */
   site: string | null;
+  /** The blobs of the request and of the answer (the answer only for an `ok` call). */
+  request_hash: string | null;
+  response_hash: string | null;
 }
 
 export interface TaskRow {
@@ -405,7 +408,7 @@ create index if not exists nodes_by_kind on nodes (kind, claim_id);
 create table if not exists model_calls (
   model_call_id text primary key, line text not null, problem_id text, attempt_id text, model text not null,
   outcome text not null, usd real not null, input_tokens integer not null, output_tokens integer not null,
-  duration_ms integer not null, seq integer not null, site text);
+  duration_ms integer not null, seq integer not null, site text, request_hash text, response_hash text);
 create index if not exists model_calls_by_problem on model_calls (problem_id);
 create table if not exists tasks (
   task_id text primary key, kind text not null, problem_id text, claim_id text, edge_id text, owner text,
@@ -720,10 +723,10 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `insert into model_calls (model_call_id, line, problem_id, attempt_id, model, outcome, usd, input_tokens,
-           output_tokens, duration_ms, seq, site) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           output_tokens, duration_ms, seq, site, request_hash, response_hash) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.modelCallId, d.line, d.problemId ?? null, d.attemptId ?? null, d.model, d.outcome, d.usd, d.inputTokens,
-          d.outputTokens, d.durationMs, event.seq, d.site ?? null);
+          d.outputTokens, d.durationMs, event.seq, d.site ?? null, d.requestHash, d.responseHash ?? null);
         return;
       }
       case "task.created": {
@@ -785,6 +788,26 @@ export class Projection {
   claimsByStatement(statementId: string): ClaimRow[] {
     const rows = this.db.prepare("select * from claims where statement_id = ? order by created_seq").all(statementId) as unknown as StoredClaim[];
     return rows.map(claimRow);
+  }
+
+  /** The claims of a status (any, without `statuses`) and a header (any, without `header`; null: none), in the order they were created. */
+  claimsWhere(filter: { statuses?: readonly ClaimStatus[]; header?: string | null; kind?: ClaimKind } = {}): ClaimRow[] {
+    const where: string[] = [];
+    const values: Array<string | null> = [];
+    if (filter.statuses !== undefined) {
+      where.push(`status in (${filter.statuses.map(() => "?").join(", ")})`);
+      values.push(...filter.statuses);
+    }
+    if (filter.header !== undefined) {
+      where.push(filter.header === null ? "header is null" : "header = ?");
+      if (filter.header !== null) values.push(filter.header);
+    }
+    if (filter.kind !== undefined) {
+      where.push("kind = ?");
+      values.push(filter.kind);
+    }
+    const sql = `select * from claims${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_seq`;
+    return (this.db.prepare(sql).all(...values) as unknown as StoredClaim[]).map(claimRow);
   }
 
   problem(problemId: string): ProblemRow | undefined {

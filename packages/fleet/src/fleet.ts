@@ -3,6 +3,7 @@ import { isInterrupted, LINE_TITLES } from "@seshat/lines";
 import type { Briefing, JsonObject, Line, SessionContext, SessionDecision } from "@seshat/lines";
 import { type AllocationData, allocations } from "./allocation.ts";
 import { UNIFORM } from "./beta.ts";
+import { chooseOwner, type Worker } from "./owners.ts";
 import { thompson } from "./choose.ts";
 import {
   dagSection, dagTries, latestStepStates, MAX_DAG_TRIES, proposeStepDag, type RecordedDag, recordStepDag, STEP_DAG_FAILURE_KIND, STEP_STATUS_KIND, stepDagOf, stepStates,
@@ -279,7 +280,7 @@ export function createFleet(env: FleetEnv = {}): Line {
     requires: ["M1"],
     options: FLEET_OPTIONS,
     // Recorded in run.started: change it with a rule of the policy, a default or the wording of the assignment.
-    version: "fleet-2",
+    version: "fleet-3",
     // The width gate and the strategy each prover sticks to live in the process, and the journal gives them back: see `resumeProblem`.
     resume: "rebuild",
     hooks: {
@@ -300,6 +301,39 @@ export function createFleet(env: FleetEnv = {}): Line {
         const counted = new Set(held.attempts.filter((attempt) => !attempt.interrupted).map((attempt) => attempt.attemptId));
         for (const { data } of allocations(problem.memory, problem.claimId)) {
           if (data.strategy !== undefined && !ended.has(data.prover) && counted.has(data.attemptId)) state.last.set(data.prover, data.strategy);
+        }
+      },
+
+      /**
+       * The owners of the tasks lines proposed (Ruling 29). The workers are the problem's provers, named by
+       * the owners of their own tasks; the one with the least load among them, drawn by Thompson sampling
+       * from its record on such tasks, takes each task that has no prover for an owner. The draw is seeded by the
+       * option `seed`, the run's seed otherwise, the problem and the task's place among the problem's proposed tasks.
+       */
+      assignOwners: async (problem, ready) => {
+        const all = problem.tasks.list();
+        const owners = [...new Set(all.flatMap((t) => (t.proposedBy === undefined && t.kind === "prove" && t.owner?.startsWith("prover:") === true ? [t.owner] : [])))].sort();
+        if (owners.length === 0) return;
+        const config = configOf(problem.options);
+        const base = config.seed ?? problem.seed ?? problem.runId;
+        const proposed = all.filter((t) => t.proposedBy !== undefined);
+        for (const task of ready) {
+          if (task.proposedBy === undefined || task.owner?.startsWith("prover:") === true) continue;
+          const current = problem.tasks.list().filter((t) => t.proposedBy !== undefined);
+          const workers: Worker[] = owners.map((owner) => {
+            const held = current.filter((t) => t.owner === owner);
+            return {
+              owner,
+              load: held.filter((t) => t.status === "ready" || t.status === "blocked" || t.status === "running").length,
+              done: held.filter((t) => t.status === "done").length,
+              failed: held.filter((t) => t.status === "failed").length,
+            };
+          });
+          const place = proposed.findIndex((t) => t.taskId === task.taskId);
+          const choice = chooseOwner(randomFor(`${base}:owner:${problem.problemId}:${place}`), workers);
+          if (choice === undefined) continue;
+          const result = problem.tasks.assign(task.taskId, choice.owner, choice.reason);
+          if (!result.assigned) problem.log(`the fleet could not give ${task.taskId} to ${choice.owner}: ${result.reason}`);
         }
       },
 
