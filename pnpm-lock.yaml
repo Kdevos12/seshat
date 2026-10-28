@@ -86,6 +86,18 @@ importers:
 
   packages/core: {}
 
+  packages/decide:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/fleet:
     dependencies:
       '@seshat/core':
@@ -301,6 +313,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/decide':
+        specifier: workspace:*
+        version: link:../decide
       '@seshat/fleet':
         specifier: workspace:*
         version: link:../fleet

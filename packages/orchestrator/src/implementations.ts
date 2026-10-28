@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { fauxFactory, jevFactory } from "@seshat/decide";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
 import { lookupEnvironment } from "@seshat/lean-env";
 import { leanLspFactory } from "@seshat/lean-lsp";
@@ -31,6 +32,8 @@ export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   oeis: oeisFactory(),
   lmfdb: lmfdbFactory(),
   findstat: findstatFactory(),
+  jev: jevFactory(),
+  "decide-faux": fauxFactory(),
 };
 
 export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "host" | "factories" | "leanEnv"> {

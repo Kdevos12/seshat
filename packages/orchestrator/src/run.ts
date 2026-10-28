@@ -32,6 +32,7 @@ import { TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
 import { Ledger } from "./budget.ts";
 import { beginTurn, closeTurn, waitingProblems } from "./consortium.ts";
+import { checkDecideSettings, type DecideSettings, resolveDecideSettings, sitesSentOutside } from "@seshat/decide";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
 import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
@@ -98,6 +99,12 @@ export interface RunConfig {
    * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
    */
   seed?: string | number;
+  /**
+   * Who makes the typed decisions that order work (documentation/decide.md): `backend` (default
+   * `llm`, the run's model), `sites` to override per site or switch one `off`, `votes` for the run's
+   * model. Absent: the run's model everywhere. With `jev`, proof states go to a third party.
+   */
+  decide?: DecideSettings;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -231,6 +238,7 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
+  problems.push(...checkDecideSettings(config.decide));
   return problems;
 }
 
@@ -540,6 +548,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only in a consortium run, for the same reason.
       ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
+      // Only when given, so that a run without it records what it always did.
+      ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -631,10 +641,15 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ranking,
+      decide: resolveDecideSettings(config.decide),
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
+    const outside = sitesSentOutside(resolveDecideSettings(config.decide));
+    if (outside.length > 0) {
+      log(`decide: at ${outside.join(", ")} the states and questions are sent to Jev, a third party (documentation/decide.md); without its key or host the run's model decides`);
+    }
   }
 
   const runLedger = new Ledger(config.budget.runUsd);

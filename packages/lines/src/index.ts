@@ -1,3 +1,4 @@
+export * from "./decide.ts";
 export * from "./ids.ts";
 export * from "./interrupted.ts";
 export * from "./judge.ts";

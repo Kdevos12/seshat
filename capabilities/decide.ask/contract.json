@@ -1,0 +1,101 @@
+{
+  "capability": "decide.ask",
+  "cases": [
+    {
+      "name": "a choice",
+      "purpose": "A choice answers with one of its option keys and a distribution over them.",
+      "input": {
+        "site": "prove.search.order",
+        "state": "n : ℕ\n⊢ n + 0 = n",
+        "question": {
+          "type": "choice",
+          "instructions": "Which candidate should be tried first?",
+          "options": {
+            "simp": "simp",
+            "omega": "omega",
+            "rfl": "rfl"
+          }
+        }
+      },
+      "expect": [
+        {
+          "path": "answer",
+          "matches": "^(simp|omega|rfl)$"
+        },
+        {
+          "path": "probabilities.simp",
+          "atLeast": 0
+        },
+        {
+          "path": "probabilities.omega",
+          "atLeast": 0
+        },
+        {
+          "path": "probabilities.rfl",
+          "atLeast": 0
+        },
+        {
+          "path": "backend",
+          "matches": "^(jev|faux)$"
+        },
+        {
+          "path": "costUsd",
+          "atLeast": 0
+        }
+      ]
+    },
+    {
+      "name": "a score",
+      "purpose": "A score answers with one of its levels.",
+      "input": {
+        "site": "conjecture.relevance",
+        "state": "∀ n : ℕ, n + 0 = n",
+        "question": {
+          "type": "score",
+          "instructions": "How relevant is this conjecture to the problem at hand?",
+          "levels": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "path": "answer",
+          "matches": "^(low|medium|high)$"
+        },
+        {
+          "path": "probabilities.medium",
+          "atLeast": 0
+        }
+      ]
+    },
+    {
+      "name": "a yes or no",
+      "purpose": "A noul answers true or false, with the weight of yes and no.",
+      "input": {
+        "site": "conjecture.relevance",
+        "state": "∀ n : ℕ, n + 0 = n",
+        "question": {
+          "type": "noul",
+          "instructions": "Is the conjecture relevant to the problem at hand?"
+        }
+      },
+      "expect": [
+        {
+          "path": "answer",
+          "exists": true
+        },
+        {
+          "path": "probabilities.yes",
+          "atLeast": 0
+        },
+        {
+          "path": "probabilities.no",
+          "atLeast": 0
+        }
+      ]
+    }
+  ]
+}

@@ -87,6 +87,12 @@ bypass the journal either: the memory store keeps it private ([memory.md](memory
 raises a status only through `validate` ([lines.md](lines.md#validate)). The one other change of
 status a line makes only lowers one: `retractClaim`, the revocation described above.
 
+A decision (`decision.made`, [decide.md](decide.md)) cannot bypass it either: it orders work and
+changes no claim's status, only the orchestrator writes it, and the journal refuses one at a site
+outside the closed list, and one whose answer is not among its labels. The sites where a decision
+would amount to a verdict (fidelity, equivalence, status, progress) are refused by name. With the
+`jev` backend, proof states go to a third party: that is off unless the run asks.
+
 The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
 to set, a task is `done` only when its claim already has the status its criterion asks for, and
 only the orchestrator writes them. A resumed run ([ledger.md](ledger.md#resume)) does not trust

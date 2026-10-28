@@ -7,7 +7,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
-import { type Json, newId, readEvents } from "@seshat/core";
+import { type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
+import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
@@ -31,6 +32,7 @@ const usage = `usage:
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
               [--impasse-posterior X] [--impasse-attempts N]
+              [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
@@ -96,6 +98,9 @@ const { positionals, values } = parseArgs({
     ablation: { type: "string" },
     "line-option": { type: "string", multiple: true },
     "draw-seed": { type: "string" },
+    "decide-backend": { type: "string" },
+    "decide-site": { type: "string", multiple: true },
+    "decide-votes": { type: "string" },
     "memory-from": { type: "string" },
     resume: { type: "string" },
     human: { type: "boolean" },
@@ -310,6 +315,24 @@ function consortiumFlags(): ConsortiumConfig | undefined {
   return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative };
 }
 
+/** `--decide-backend`, `--decide-site SITE=BACKEND` and `--decide-votes`: who makes the typed decisions (documentation/decide.md). */
+function decideFlags(): DecideSettings | undefined {
+  const backend = values["decide-backend"];
+  const votes = number("decide-votes", values["decide-votes"], undefined);
+  const sites: Record<string, DecisionBackend | "off"> = {};
+  for (const given of values["decide-site"] ?? []) {
+    const match = /^([a-z][a-z0-9_.]*)=(\w+)$/.exec(given);
+    if (match === null) throw new UsageError(`--decide-site takes SITE=llm|jev|off, got ${JSON.stringify(given)}`);
+    sites[match[1] as string] = match[2] as DecisionBackend | "off";
+  }
+  if (backend === undefined && votes === undefined && Object.keys(sites).length === 0) return undefined;
+  if (backend !== undefined && backend !== "llm" && backend !== "jev") throw new UsageError(`--decide-backend must be llm or jev, got ${backend}`);
+  const settings: DecideSettings = { ...(backend !== undefined ? { backend } : {}), ...(Object.keys(sites).length > 0 ? { sites } : {}), ...(votes !== undefined ? { votes } : {}) };
+  const problems = checkDecideSettings(settings);
+  if (problems.length > 0) throw new UsageError(problems.join("; "));
+  return settings;
+}
+
 /** `harness hint RUN_DIR --claim ID "text"`. */
 function hint(): number {
   const dir = requireTarget("hint", "a run directory");
@@ -383,6 +406,7 @@ async function run(): Promise<number> {
   }
   const lines = selectLines();
   const options = lineOptions(values["line-option"] ?? []);
+  const decide = decideFlags();
   const config: RunConfig = {
     selection,
     model: values.model,
@@ -402,6 +426,7 @@ async function run(): Promise<number> {
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
+    ...(decide !== undefined ? { decide } : {}),
   };
   const host = hostName(values.host);
   const runId = newId("run");
@@ -460,7 +485,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "memory-from", "sample", "seed", "problem", "all", "out",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "out",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
