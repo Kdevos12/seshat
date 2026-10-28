@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TextIdentity } from "@seshat/memory";
-import { ablationLines, isAblationName, isLineId, type Line, LINE_ORDER, lineLeanEnv, type LineRegistry, resolveLines, resumeRefusals, SUSPENDED_LINES } from "../src/index.ts";
+import { ablationLines, InterruptedError, isAblationName, isInterrupted, isLineId, type Line, LINE_ORDER, lineLeanEnv, type LineRegistry, resolveLines, resumeRefusals, SUSPENDED_LINES } from "../src/index.ts";
 
 function line(id: Line["id"], extra: Partial<Line> = {}): Line {
   return { id, title: `the line ${id}`, requires: [], hooks: {}, ...extra };
@@ -132,5 +132,15 @@ describe("resumeRefusals", () => {
 
   it("names every line that cannot, in the plan's order", () => {
     assert.equal(resumeRefusals(enabled(stateless, keeps, silent)).length, 2);
+  });
+});
+
+describe("interrupted work", () => {
+  it("is an interruption however many layers of code wrapped it, and a plain error is not", () => {
+    assert.equal(isInterrupted(new InterruptedError()), true);
+    assert.equal(isInterrupted(new Error("the twin failed", { cause: new Error("layer", { cause: new InterruptedError("paused") }) })), true);
+    assert.equal(isInterrupted(new Error("the model call failed")), false);
+    assert.equal(isInterrupted("paused"), false);
+    assert.equal(isInterrupted(undefined), false);
   });
 });

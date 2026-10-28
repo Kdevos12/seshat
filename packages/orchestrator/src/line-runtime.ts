@@ -31,6 +31,8 @@ import type { Ledger } from "./budget.ts";
 import { lineLlm } from "./llm.ts";
 import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
+import { steering } from "./team.ts";
+import type { Turn } from "./turns.ts";
 import type { ClaimBenches } from "./validate.ts";
 
 /** A hook of a line threw: a failure of the harness, which names the line and the hook. */
@@ -72,6 +74,8 @@ export interface RunLinesOptions {
   log: (line: string) => void;
   /** The run's stop signal. */
   signal?: AbortSignal;
+  /** The consortium turn of the run, when it has them: the lines' model calls stop when it is over. */
+  turn?: Turn;
   /** Seeds the draws of unverified items (`SessionContext.draw`). Default: the run's id, so that each run draws differently. */
   seed?: string | number;
   /** The run's models, weakest first, and its budget class; the lines read it as `ProblemContext.ranking`. */
@@ -252,6 +256,7 @@ export class ProblemLines {
         ledger: this.p.ledger,
         problemId: this.p.problemId,
         signal: own,
+        ...(o.turn !== undefined ? { turn: o.turn } : {}),
       }),
       validate: (request) =>
         o.benches.validate(request, {
@@ -581,7 +586,16 @@ function taskApi(tasks: TaskLedger, journal: Journal, who: { problemId: string; 
       const row = projection().task(taskId);
       return row !== undefined && row.problem_id === problemId ? taskInfo(row) : undefined;
     },
-    ready: () => projection().tasks({ problemId, statuses: ["ready"] }).map(taskInfo),
+    // What the team asked to be worked on first comes first (documentation/human.md); otherwise the order tasks were made in.
+    ready: () => {
+      const focus = steering(projection()).focus;
+      const rank = (claimId: string | null) => (claimId === null ? focus.length : focus.indexOf(claimId) < 0 ? focus.length : focus.indexOf(claimId));
+      return projection()
+        .tasks({ problemId, statuses: ["ready"] })
+        .map((row, order) => ({ row, order }))
+        .sort((a, b) => rank(a.row.claim_id) - rank(b.row.claim_id) || a.order - b.order)
+        .map(({ row }) => taskInfo(row));
+    },
     routings: (taskId) => {
       const own = new Set(projection().tasks({ problemId }).map((task) => task.task_id));
       if (taskId !== undefined && !own.has(taskId)) return [];
@@ -591,6 +605,9 @@ function taskApi(tasks: TaskLedger, journal: Journal, who: { problemId: string; 
         .map(routingInfo);
     },
     propose: (proposal) => {
+      // A claim the team gave up gets no more tasks.
+      const about = proposal.claimId ?? who.claimId;
+      if (steering(projection()).dropped.has(about)) return { accepted: false, reason: `the team dropped claim ${about}: no task is made for it` };
       const result = tasks.propose(who, proposal);
       if (result.accepted) tasks.promote(problemId);
       return result;

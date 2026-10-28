@@ -41,6 +41,8 @@ Event types:
 | `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `codeRev?` |
 | `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
 | `run.resumed` | `runId`, `resumption` (1, 2...), `tornTail?` (`action`, `bytes`, `sha256`), `spent` (`usd`, `inputTokens`, `outputTokens`), `interrupted` (`attempts`, `toolRuns`, `tasks`), `codeRev?` |
+| `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`): a turn of a consortium run begins ([human.md](human.md)) |
+| `turn.ended` | `runId`, `turn`, `reason` (`tokens`, `usd`, `minutes`, `impasse`, `settled`, `disagreement`, `interrupted`, `finished` or why the run stopped), `detail`, `spent` (`turn` and `run`: `usd`, `inputTokens`, `outputTokens`), `minutes`, `waiting` (problem ids), `breakpoint?` (`kind`, `problemId?`, `nodeId?`), `narrative?` (`hash?`, `rejected?`) |
 | `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
@@ -88,6 +90,13 @@ that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386
 A `model_call.finished` records a one-shot model call a mechanism made outside a prover session
 (a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs. Its
 `site` says where the call was made ([ledger.md](ledger.md#sites)).
+
+`turn.started` and `turn.ended` bracket the turns of a consortium run ([human.md](human.md#turns)): the
+orchestrator alone writes them, one turn is open at a time, and a turn that was cut without its end is
+closed by the next process (`reason: "interrupted"`). A run that is paused after `turn.ended` has no
+`run.finished`: the report reads it as paused, not finished. The research team's answers are
+`node.recorded` (kinds `hint` and `steer`) and `edge.status_changed` (`human_signed`) events whose actor
+is `human:NAME`.
 
 The task events (`task.*`) are the ledger's ([ledger.md](ledger.md)): the work of a run, as tasks
 that point at claims and edges. Only the orchestrator writes them. `attempt.charged` is one model
@@ -167,9 +176,12 @@ anywhere else is corruption, and the journal refuses to open.
 - an edge has an unknown kind or status, no target, several targets when it is not a
   `decomposes_into`, a target twice, itself as a target, or a `link` on a kind no lemma checks;
 - an edge status change's `from` is not the edge's current status, or `to` is the same;
+- an edge is added with the status `human_signed`, or changes to it, and its actor is not `human:NAME` (a signature is a person's);
 - an edge becomes `lean_checked` (when it is added or later) without a link lemma and a valid
   validation of a claim whose statement is the link's ([trust.md](trust.md#edges));
-- a node kind is not a lowercase word (`[a-z][a-z0-9_]*`, at most 32 characters);
+- a node kind is not a lowercase word (`[a-z][a-z0-9_]*`, at most 32 characters), or is `hint` or `steer`
+  and its actor is not `human:NAME` (the research team's answers are a person's, [human.md](human.md)); a `node.updated`
+  names a `hint` or a `steer` (nobody edits one, whoever asks: a person who changes their mind writes a new one);
 - a site is not made of dot-separated lowercase words (`graph.attempt`);
 - an attempt is charged after it finished, or for an amount that is not a non-negative number;
 - a task event comes from another actor than the orchestrator, or breaks a rule of the ledger
@@ -177,6 +189,7 @@ anywhere else is corruption, and the journal refuses to open.
   acceptance criterion of a `done` task, the way back from `running`, an attempt for a task that is
   not running;
 - a resumption is not the next number;
+- a turn event comes from another actor than the orchestrator, a turn begins while the one before is open or with a number that is not the next, a turn ends that is not the open one or with no reason, or a turn limit is not a positive number ([human.md](human.md#turns));
 - a provenance is not a stamp of six non-empty fields; an attempt's `included` and `withheld` are not lists
   of item ids, or name an id twice;
 - `memory.epoch_opened` comes from another actor than the orchestrator, is not the epoch after the

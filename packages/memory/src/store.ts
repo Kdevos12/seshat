@@ -291,9 +291,14 @@ export class MemoryStore {
 
   /**
    * The same store, writing as another actor (`line:M1`...). A view reads the reference files of the
-   * root store but cannot set one (`setReference`).
+   * root store but cannot set one (`setReference`), nor make a view that writes as `orchestrator` or `human:*`.
    */
   withActor(actor: string): MemoryStore {
+    // What a line holds is a view: it may not speak as the orchestrator or as a person, whose records the journal accepts
+    // on the strength of the actor string alone (a hint, a steer, a signature, a status change).
+    if (this.#view && (actor === "orchestrator" || actor.startsWith("human:"))) {
+      throw new Error(`withActor: a view given to a line cannot write as "${actor}"`);
+    }
     const view = new MemoryStore({
       journal: this.#journal,
       blobs: this.blobs,

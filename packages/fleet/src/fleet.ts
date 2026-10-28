@@ -1,5 +1,5 @@
 import { type Attempt, attemptDepth, STRATEGIES } from "@seshat/memory";
-import { LINE_TITLES } from "@seshat/lines";
+import { isInterrupted, LINE_TITLES } from "@seshat/lines";
 import type { Briefing, JsonObject, Line, SessionContext, SessionDecision } from "@seshat/lines";
 import { type AllocationData, allocations } from "./allocation.ts";
 import { UNIFORM } from "./beta.ts";
@@ -192,6 +192,8 @@ interface RunState {
 interface DagResult {
   recorded?: RecordedDag;
   note?: string;
+  /** True when the consortium turn ended before the DAG could be asked for: nothing is recorded, and the session does not start. */
+  interrupted?: boolean;
 }
 
 const RUNS = new WeakMap<object, RunState>();
@@ -242,6 +244,8 @@ async function stepDagFor(session: SessionContext, run: RunState, config: FleetC
       session.memory.recordNode({ kind: STEP_DAG_FAILURE_KIND, claimId: session.claimId, data: { attemptId: session.attemptId, problems: proposal.problems } });
       return { note: `the step DAG did not check: ${proposal.problems.slice(0, 3).join("; ")}` };
     } catch (error) {
+      // The turn ended: not a failure of the try. Nothing is recorded, and the next turn asks again (documentation/lines.md, "Interrupted work").
+      if (isInterrupted(error)) return { interrupted: true };
       // The problem ended or its budget is spent: the prover stops on its own signal. Any other failure of the call is a failed try.
       if (session.signal.aborted || session.budget.exhausted) return { note: "the problem ended before the step DAG was written" };
       const message = error instanceof Error ? error.message : String(error);
@@ -399,6 +403,7 @@ export function createFleet(env: FleetEnv = {}): Line {
 
         // The prover takes its place now, before anything is awaited: a prover that decides while this one waits for its
         // DAG must see the strategy as taken (one Ralph loop at a time per (subgoal, strategy)).
+        const previousStrategy = problem.last.get(session.prover);
         problem.running.set(session.prover, { subgoal, ...(strategy !== undefined ? { strategy } : {}) });
         if (strategy !== undefined) {
           problem.last.set(session.prover, strategy);
@@ -416,6 +421,15 @@ export function createFleet(env: FleetEnv = {}): Line {
           if (Object.keys(sampled.draws).length > 0) settingDraws = sampled.draws;
           if (settings.mode === "nl_first") {
             const made = await stepDagFor(session, run, config, model);
+            if (made.interrupted === true) {
+              // The turn is over: the session will not start, so the prover gives its place back and nothing is decided or recorded.
+              problem.running.delete(session.prover);
+              if (previousStrategy === undefined) problem.last.delete(session.prover);
+              else problem.last.set(session.prover, previousStrategy);
+              run.assigned.delete(session.attemptId);
+              problem.gate.wake();
+              return undefined;
+            }
             if (made.recorded !== undefined) dag = made.recorded.nodeId;
             else {
               // No DAG that checks: the session runs as a standard one, and the record says so: `mode` is the mode that ran

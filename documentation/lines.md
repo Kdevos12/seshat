@@ -233,6 +233,12 @@ request by request: the prefix is frozen at the first `{ prefix, tail }`. An ans
 neither a string, nor undefined, nor an object with two strings (and well-formed `facts` and
 `newSince`) fails the line in `contextPacket`, which ends the session with an error.
 
+A packet replaces the session's opening prompt, which is where the sections of the briefing and the research
+team's answers ([human.md](human.md#the-teams-answers)) are written. So that a packet does not drop what the team
+said, the harness adds the team's sections (the hints, and what the team asks) to the end of the packet's message in
+every request: after a string packet, and after the tail of a `{ prefix, tail }` one, never in the frozen prefix. The
+lines' own briefing sections are the line's to put in its packet.
+
 The frozen prefix is the harness's guarantee that the bytes are the same; the provider's cache is
 what pays for it. `--cache-retention none|short|long` asks the provider for that retention on every
 request of a session (pi-ai's `cacheRetention`; [m0-loop.md](m0-loop.md#budgets)). The report gives
@@ -304,6 +310,35 @@ counterexample is as valuable as a proof. Do not defer to how the task is phrase
 `withAntiSycophancy(system?)` puts it in front of a system prompt. `judge`, the fleet's step-DAG prompt and M6's question
 about an open conjecture ([guards.md](guards.md#neutral-framing)) carry it; a line that writes another prompt that judges or
 reranks does the same. No prompt of the harness shows a model another agent's verdict.
+
+### The judgment node
+
+Two informal validators that disagree are recorded by the line that runs them (plan change PC9) as a node
+`kind: "judgment"`, on the claim judged, with `data.disagreement: true`. The other fields are the line's own;
+the harness reads `data.subject` (a short text, "the step from n to n+1") for the breakpoint's message. A
+`judgment` node without `disagreement: true`, or with another value, records a judgment that agreed. The
+harness reads the node and nothing else about it: a `disagreement` breakpoint ends the turn once for each such
+node ([human.md](human.md#breakpoints)), and the account lists it. No line writes one yet; PC9's `judge` helper,
+when it exists, should write exactly this shape.
+
+### Interrupted work
+
+A consortium run ends its turns by itself ([human.md](human.md#turns)): after the limit no model call is
+sent, and `problem.llm` (and `session.llm`) throw `InterruptedError` of `@seshat/lines` (the harness throws
+its subclass, `TurnEndedError`; `isInterrupted(error)` is true however many layers wrapped it). The
+interruption is not a failure, and the contract for a line is:
+
+- it records nothing as an end, a failure or an exhaustion: no `end: "error"`, no "gave up";
+- it leaves its durable state (nodes, edges, claims) as it was, so that the run resumed from the
+  journal rebuilds the work from what the journal holds and does it again from where it was (the model
+  calls the journal holds count as made; a call the interruption refused was never made);
+- it does not retry: the next call would be refused too;
+- an optional mechanism that only logs a failure (`soft` in M2) logs that it was interrupted.
+
+A line that does not catch errors from `llm` needs to do nothing: the error reaches the harness, which
+reads the problem as waiting. A line that does catch them (M2's refutation side, which runs alongside the
+provers and is not awaited until `afterProblem`) must follow the contract. M2 is the only line of today that
+calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule.
 
 ### `tasks`
 
