@@ -223,6 +223,48 @@ Options (`--line-option M13.<name>=<value>`): `maxSize` 5, `maxTerms` 4000, `max
 `auto` (or `nat`), `relations` []. Resume: `rebuild` (the exploration is a function of the target and the seed;
 claims, edges, candidates and relation nodes are not written twice).
 
+## Program search (line M16)
+
+For a subgoal that carries a computable score (a construction, a witness of a size, a bound, a search for a
+counterexample), a model can write the programs that build the object. `evolve.ts` is the search, after
+FunSearch (plan change PC8); `m16.ts` is the line.
+
+A task declares its search with `declareSearch(memory, claimId, spec)`, a `search_spec` node about the claim the
+witness settles. The spec (`SearchSpec`) holds the description and signature of the programs, the `inputs` they are
+run on, the scoring program (`score`, a JavaScript function expression of `{input, output}` returning a number, or
+null for an invalid output; or `scoreSage`, a Sage expression in `i` and `x`, run through `compute.sage`), the `seeds`
+(programs to start from), an optional `target` score, and how a witness is written: `statement` (a claim of its own,
+with `{witness}` in it) and `proof` (the tactic proof, `decide` by default). The line triggers on the problem's own
+claim and on the claim of each unfinished task of kind `search`.
+
+The search (`runSearch`): a `ProgramDatabase` of `islands`, each a list of clusters of programs that have the same
+score on every input (the signature), the shortest `clusterSize` of a cluster kept. Each round draws `shown`
+programs from one island (chosen at random among the non-empty ones; clusters by a softmax of their scores at
+`temperature`, programs of a cluster biased to short ones by `lengthBias`), puts them in the prompt as versions in
+order of score (`buildPrompt`) and asks the model for `samples` programs (site `search.program`, `reuse`d). Every
+`resetEvery` rounds the worse half of the islands is emptied and gets a copy of the best program of a surviving
+island. Every draw comes from a source seeded with the run's seed, the problem and the spec, so a search runs the
+same twice, and a resumed process replays the model's answers from the journal and goes through the same rounds.
+The defaults are small for our budget; all are options (`--line-option M16.rounds=20`).
+
+Every program, the model's and the scoring one, runs in the sandbox (above) with a time per call, a total time and a heap
+limit; a program that fails, loops or returns an invalid output has no score and is not added. The programs that were
+scored are `search_program` nodes (code, score, signature, round, island), at most `recordPrograms`.
+
+The score only guides the search. The best program is run on the witness input; its output is written as a Lean term
+by `leanTerm`, which writes integers, booleans and lists of them and refuses anything else (so no text a model wrote
+reaches a Lean file through the witness), put in the spec's templates, screened as every model-influenced Lean text is
+(`screenLeanText`), and submitted through `validate` as a proof of a claim (the spec's `statement` becomes an `open`
+claim with a `derived_from` edge to the problem's claim, or the claim itself is the one settled). It is submitted only
+when the target score is reached (or the spec has no target). The verdict, the best score and the witness are a
+`search_result` node, written once; the provers' briefing says what the search found and that a score proves nothing.
+
+The line is on rung 2 of the escalation ladder (`rung: 2`; with the ladder of line M12 on, it works a problem only
+after the ladder moves it up that far), declares `resume: "rebuild"`, and works the search in `beforeProvers`. It does
+not move the ledger's tasks: the orchestrator does not yet give a line that is not the scheduler a hook to work the tasks it
+did not propose, so the `search` task stays as it was and the search is run for its claim at the start. Sage scoring
+ran against a stand-in only.
+
 ## Tests, and what has not run
 
 `packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;
@@ -236,6 +278,8 @@ values, Sage through a stand-in, dependencies, records) and `hypotheses.test.ts`
 hypotheses and their execution, the informal DAG, test lemmas, triviality, the pool) and `m8.test.ts` (the
 options, a whole problem on numbers and on magmas, resuming, the briefing) and `explore.test.ts` (the monoid
 laws from the free monoid, the laws of the numbers, left-projection magmas, the cut, the line M13 with
-its sink, PSLQ relations). None of it needs Lean, a model or a network.
+its sink, PSLQ relations) and `m16.test.ts` (the database: clusters, seeded draws, the biases, resets; what reaches Lean;
+scoring in the sandbox and through a Sage stand-in; a faux-model run that improves a toy score and submits the
+witness; resume; the budget). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.
