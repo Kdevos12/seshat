@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { chainOfJournal, type MemoryChain } from "./chain.ts";
+import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisions.ts";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
@@ -308,6 +309,10 @@ export class Journal {
         if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`model call ${d.modelCallId}: bad site ${JSON.stringify(d.site)}`);
         return;
       }
+      case "decision.made":
+        this.onlyOrchestrator(event.type, actor);
+        this.checkDecision(event.data);
+        return;
       case "run.started":
       case "run.finished":
         return;
@@ -386,6 +391,44 @@ export class Journal {
         return;
       }
     }
+  }
+
+  /**
+   * A decision names a site that may use decide, a backend, and a distribution over its labels that
+   * sums to 1 with the answer among them. It changes no claim, and only the orchestrator writes it.
+   */
+  private checkDecision(d: EventDataMap["decision.made"]): void {
+    const p = this.projection;
+    const what = `decision ${d.decisionId}`;
+    if (p.decision(d.decisionId)) throw new Error(`${what} already exists`);
+    if (!p.problem(d.problemId)) throw new Error(`${what}: unknown problem ${d.problemId}`);
+    if (d.claimId !== undefined && !p.claim(d.claimId)) throw new Error(`${what}: unknown claim ${d.claimId}`);
+    if (p.decisionByKey(d.problemId, d.key)) throw new Error(`${what}: the problem already holds a decision for this question (${d.key})`);
+    const site = decisionSiteProblem(d.site);
+    if (site !== undefined) throw new Error(`${what}: ${site}`);
+    const types = DECISION_SITES[d.site] ?? [];
+    if (!types.includes(d.type)) throw new Error(`${what}: ${d.site} asks ${types.join(" or ")}, not a ${d.type}`);
+    for (const [name, backend] of [["backend", d.backend], ["requested", d.requested]] as const) {
+      if (!(DECISION_BACKENDS as readonly string[]).includes(backend)) throw new Error(`${what}: unknown ${name} ${String(backend)}`);
+    }
+    if (d.backend !== d.requested && (typeof d.fallback !== "string" || d.fallback === "")) {
+      throw new Error(`${what}: ${d.requested} was asked and ${d.backend} answered, so it says why`);
+    }
+    if (!Array.isArray(d.labels) || d.labels.length < 2 || new Set(d.labels).size !== d.labels.length) {
+      throw new Error(`${what}: labels are two or more distinct names`);
+    }
+    let total = 0;
+    for (const label of d.labels) {
+      const q = d.probabilities?.[label];
+      if (typeof q !== "number" || !Number.isFinite(q) || q < 0 || q > 1) throw new Error(`${what}: the probability of ${label} must be a number from 0 to 1`);
+      total += q;
+    }
+    if (Object.keys(d.probabilities).length !== d.labels.length) throw new Error(`${what}: probabilities has a key that is not a label`);
+    if (Math.abs(total - 1) > 1e-3) throw new Error(`${what}: the probabilities sum to ${total}, not 1`);
+    const answer = d.type === "noul" ? (d.answer === true ? "yes" : d.answer === false ? "no" : undefined) : d.answer;
+    if (typeof answer !== "string" || !d.labels.includes(answer)) throw new Error(`${what}: the answer ${JSON.stringify(d.answer)} is not one of its labels`);
+    if (typeof d.costUsd !== "number" || !Number.isFinite(d.costUsd) || d.costUsd < 0) throw new Error(`${what}: costUsd must be a non-negative number`);
+    if (!SITE.test(d.site)) throw new Error(`${what}: bad site`);
   }
 
   /** A provenance, when there is one (or has to be), has the six fields of the stamp. */

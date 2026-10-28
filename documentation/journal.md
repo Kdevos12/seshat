@@ -64,6 +64,7 @@ Event types:
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
 | `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
 | `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
+| `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a
 theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`). Its `header` holds the imports, `open`s and
@@ -118,6 +119,11 @@ many runs before the current one it was made in (`runs_ago`: 0 for this run, 1 f
 which the fleet's discount reads.
 `memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
 ([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
+`decision.made` records a typed decision of `decide` ([decide.md](decide.md)): who answered and who was asked,
+the full distribution and the answer, with the model calls and the tool run that paid for it; only the
+orchestrator writes it, and it changes no claim. The projection keeps it in `decisions` (by problem and
+`key`, so that a question asked again is answered from it) and does not carry it into a run that starts on
+this journal (`--memory-from`).
 
 `run.started` may carry `memoryFrom` (`path`, `relative?`, `runId`, `lastHash`, `events`): the earlier run
 this one starts on. `relative` is its directory relative to the new run's, tried first so that a lineage
@@ -194,6 +200,10 @@ anywhere else is corruption, and the journal refuses to open.
   of item ids, or name an id twice;
 - `memory.epoch_opened` comes from another actor than the orchestrator, is not the epoch after the
   current one, or has no reason, no change that opens an epoch, or no provenance;
+- `decision.made` comes from another actor than the orchestrator, names a site that may not use `decide` (the
+  forbidden list, or a site off the list of [decide.md](decide.md#where-it-may-be-used)) or a question type the
+  site does not ask, repeats a question the problem already holds, falls back with no reason, or has a
+  distribution that is not over its labels, not from 0 to 1 or not summing to 1, or an answer outside them;
 - a claim status or an edge cites a validation of an earlier run recorded in another Lean environment:
   such a validation counts for nothing here ([memory.md](memory.md#memory-across-runs)).
 
@@ -218,7 +228,7 @@ Applying an event is idempotent: an event at or below the last applied seq is sk
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 7) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 8) is kept in SQLite's
 `user_version`.
 
 A run that starts on earlier journals (`Journal.open(dir, run, {memory})`, which a journal that has

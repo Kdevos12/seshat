@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { DecideSettings } from "@seshat/decide";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type BenchIndex, type ProblemEntry, sample } from "@seshat/bench";
 import {
@@ -134,6 +135,7 @@ function configOf(recorded: unknown): RunConfig {
       : {}),
     ...(consortium !== undefined ? { consortium } : {}),
     ...(typeof r.seed === "string" || typeof r.seed === "number" ? { seed: r.seed } : {}),
+    ...(typeof r.decide === "object" && r.decide !== null && !Array.isArray(r.decide) ? { decide: r.decide as DecideSettings } : {}),
   };
 }
 
