@@ -34,8 +34,14 @@ export interface SourceRef {
 
 export interface TokenCost {
   usd: number;
+  /** Input tokens in all: the ones billed at the full price, the cache reads and the cache writes. */
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Of `inputTokens`, the ones the provider read from its prompt cache (pi-ai's `cacheRead`). Absent
+   * when none was, and in journals written before this field.
+   */
+  cachedInputTokens?: number;
 }
 
 /**

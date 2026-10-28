@@ -156,7 +156,7 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `beforeSession(session)` | Before each session, before its attempt is recorded. | Change the session's model, declare its strategy or subgoal (recorded on `attempt.started`), skip the session, or stop the prover. A later line's model, strategy or subgoal wins; the first `skip` or `stop` is taken. |
 | `briefing(session)` | Before each session, after `beforeSession`. | Give a titled section for the session's opening message, after the notes, the file and the last check. |
 | `tools(session)` | Before each session. | Give the prover extra tools, as neutral specs (name, description, JSON schema of the arguments, `run(args, signal)` returning text) that the orchestrator adapts to pi tools. A failing call goes back to the model as a tool error. Names are lowercase letters, digits and `_`, and may not clash. |
-| `contextPacket(session, request)` | Before each model request of a session, the first one and the wrap-up included. | Return the whole context of the request (M4): it replaces every message after the system prompt and the tool declarations. Undefined leaves the request as it is. At most one enabled line may give this hook. |
+| `contextPacket(session, request)` | Before each model request of a session, the first one and the wrap-up included. | Return the whole context of the request (M4): it replaces every message after the system prompt and the tool declarations. A string is the request's one message, compiled again for every request. `{ prefix, tail }` is a prefix the session freezes and a tail for each request ([below](#the-context-packet)). Undefined leaves the request as it is. At most one enabled line may give this hook. |
 | `beforeCheck(session, proposal)` | Before each `lean_check` runs. | Reject the call, with a reason the model reads as a tool error. The file is not sent to Lean, and the call is no check: no validation, not counted, its declared strategy not recorded. The first line in this order that rejects is taken. It guards the prover's calls only: certification is no `lean_check`, and no hook sees it ([m0-loop.md](m0-loop.md#certification)). |
 | `afterCheck(session, check)` | After each `lean_check` of a session. | Stop the session with a reason (a drift detector). The attempt ends with `stoppedBy: "line:<id>"`, and the model is not asked for notes. A check that makes the candidate still ends the session as `solved`. |
 | `reviewBriefing(session, sections)` | After the lines' `briefing`, before the session starts. | Drop or reword the sections the session gets (keep the title), never add, replace or reorder one: every title returned must be one it was given, in the same order, or the line has failed. Each line gets the list as the lines before it left it; undefined keeps it. |
@@ -198,6 +198,37 @@ have, its attempt id (recorded only after `beforeSession`; a skipped session's i
 recorded), its model, the prover's regions as the session starts, and the strategy and subgoal
 `beforeSession` declared. The model's own declaration, through `lean_check`'s `strategy` argument,
 is on each `SessionCheck` and, for its last one, on the `FinishedAttempt`.
+
+### The context packet
+
+A line's `contextPacket` hook (M4) answers a string or a `FrozenPacket`. A string is the whole
+request, recompiled before every request, as it was before Task 24. A provider's prompt cache
+covers a request from its first byte up to the first byte that differs from an earlier request, so
+a packet that is compiled again can change near its start, and then the system prompt and the tools
+are all the cache covers. `{ prefix, tail }` is the answer for a packet that must keep it valid
+(plan change PE5):
+
+| Field | What it is |
+|---|---|
+| `prefix` | What the session starts from and keeps: the objective, the useful facts, the candidate premises, what was already tried, the active lessons and the draws of Task 23. The session freezes the prefix of its first request that answers one and sends it, byte for byte, on every later request of the session, the wrap-up included. The `prefix` of a later answer is not read; the first time a session's line answers a different one, the progress log says so (`line M4 answered a prefix that differs from the frozen one; the session keeps the first`), once per session. A line that returns `request.prefix` is not told off. A new session freezes its own. |
+| `tail` | What changes from request to request: the sketch's state, the last raw Lean feedback, the budget left. Read on every request and placed after the prefix. |
+| `facts?`, `newSince?` | The option that brings what is learned during a session to the model before the next session: `facts` is one short text for each fact known now, and the facts of the first answer are those the prefix holds. With `newSince: N` (a whole number from 1; absent or 0: off), the facts of a later answer that the first did not have are listed at the end of the tail under "New since this session started:", in the order given, at most N of them and a last line "(k more)" for the rest. Nothing else of the prefix moves. A line that uses `newSince` sends `facts` from its first answer: if the first answer has none and a later one has, every fact counts as new, including the ones the prefix holds. |
+
+The request the model gets is the system prompt and the tools, then one user message of two texts:
+the prefix and the tail (the tail is left out when it is empty). `PacketRequest.prefix` is the
+frozen prefix from the second request on, so a line may return it as it is and not compile it
+again. A line that answers a string on one request and a `{ prefix, tail }` on another is read
+request by request: the prefix is frozen at the first `{ prefix, tail }`. An answer that is
+neither a string, nor undefined, nor an object with two strings (and well-formed `facts` and
+`newSince`) fails the line in `contextPacket`, which ends the session with an error.
+
+The frozen prefix is the harness's guarantee that the bytes are the same; the provider's cache is
+what pays for it. `--cache-retention none|short|long` asks the provider for that retention on every
+request of a session (pi-ai's `cacheRetention`; [m0-loop.md](m0-loop.md#budgets)). The report gives
+the cached input tokens and the dollars per problem with a proof, so that a frozen prefix and a
+packet compiled again are compared on cost and solve rate, which Task 14 does once M4 exists. The
+effect on a real provider's bill has not been measured: the tests read it from pi-ai's faux
+provider, which caches the longest common prefix of a session's requests.
 
 ### Claims a line states
 
@@ -350,7 +381,11 @@ attempt; a run with no line that records nothing of the lines; a problem settled
 `beforeProvers` through `validate` (an invalid proof, a refutation that changes no status, a valid
 proof of another claim and of the problem's), with the provers left idle; unknown, planned and
 unmet lines refused before anything is written; a failing hook; sessions skipped and stopped; a
-line's model call charged to the problem; the context packet of each request, and its failure.
+line's model call charged to the problem; the context packet of each request, and its failure. `packages/orchestrator/test/packet.test.ts`
+covers the frozen prefix: byte-identical across the requests of a session (the wrap-up included)
+while the line's own prefix changes, the changing tail, a new session freezing its own, the "new
+since" list and its cap, a string answer as before, a malformed answer, and the cached tokens and
+dollars of a frozen prefix against a packet compiled again.
 `packages/orchestrator/test/line-gates.test.ts` covers `beforeCheck` (a rejected call is no check),
 `reviewBriefing`, the notes a line gives and `afterProver`. `cli.test.ts` covers `--lines`, `--ablation` and `--line-option`. `packages/lines/test/lines.test.ts`
 also checks that only one line gives the statement identity or the Lean environment, and

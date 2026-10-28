@@ -117,6 +117,7 @@ function configOf(recorded: unknown): RunConfig {
     notesChars: whole("notesChars", r.notesChars),
     budget: { problemUsd: whole("budget.problemUsd", budget.problemUsd), ...(typeof runUsd === "number" ? { runUsd } : {}) },
     concurrency: whole("concurrency", r.concurrency),
+    ...(r.cacheRetention === "none" || r.cacheRetention === "short" || r.cacheRetention === "long" ? { cacheRetention: r.cacheRetention } : {}),
     tools: tools.map((tool) => {
       const capability = (tool as { capability?: unknown } | null)?.capability;
       return typeof capability === "string" ? capability : missing("a tool's capability");
