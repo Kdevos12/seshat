@@ -184,7 +184,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
-      const sections = [...(opened?.sections ?? []), ...teamBriefing(journal.projection, workbench.claimId)];
+      const team = teamBriefing(journal.projection, workbench.claimId);
+      const sections = [...(opened?.sections ?? []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       result = await (o.session ?? runSession)({
         tools: [
@@ -219,6 +220,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         wrapUp: session < o.sessions,
         ...(o.turn !== undefined ? { turn: o.turn } : {}),
         ...(veto !== undefined ? { veto } : {}),
+        ...(team.length > 0 ? { teamSections: team } : {}),
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
         ...(strategies.length > 0 ? { strategies } : {}),
         ...(o.cacheRetention !== undefined ? { cacheRetention: o.cacheRetention } : {}),

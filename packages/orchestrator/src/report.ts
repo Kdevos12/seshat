@@ -232,6 +232,12 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   if (started === undefined) throw new Error("the journal has no run.started event");
   // A run that was resumed finishes again: its end is the last one, if no resumption came after it.
   const resumptions = events.flatMap((e, seq) => (e.type === "run.resumed" ? [{ seq, data: e.data }] : []));
+  // A resumption that follows a turn the run ended by itself (a limit, a breakpoint) is the next turn, not the repair of a process
+  // that ended: the tasks it finds `running` were left so by design. Only the other resumptions are interruptions.
+  const crashed = resumptions.filter((r) => {
+    const before = events.slice(0, r.seq).findLast((e) => e.type === "turn.started" || e.type === "turn.ended");
+    return !(before?.type === "turn.ended" && before.data.reason !== "interrupted");
+  });
   const lastFinished = events.findLastIndex((e) => e.type === "run.finished");
   const finished =
     lastFinished > (resumptions.at(-1)?.seq ?? -1) ? (events[lastFinished]?.data as EventDataMap["run.finished"] | undefined) : undefined;
@@ -364,16 +370,16 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(leanEnv !== undefined ? { leanEnv } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
-    ...(resumptions.length > 0
+    ...(crashed.length > 0
       ? {
           resumed: {
-            times: resumptions.length,
+            times: crashed.length,
             interrupted: {
-              attempts: resumptions.reduce((sum, r) => sum + r.data.interrupted.attempts, 0),
-              toolRuns: resumptions.reduce((sum, r) => sum + r.data.interrupted.toolRuns, 0),
-              tasks: resumptions.reduce((sum, r) => sum + r.data.interrupted.tasks, 0),
+              attempts: crashed.reduce((sum, r) => sum + r.data.interrupted.attempts, 0),
+              toolRuns: crashed.reduce((sum, r) => sum + r.data.interrupted.toolRuns, 0),
+              tasks: crashed.reduce((sum, r) => sum + r.data.interrupted.tasks, 0),
             },
-            tornTails: resumptions.filter((r) => r.data.tornTail !== undefined).length,
+            tornTails: crashed.filter((r) => r.data.tornTail !== undefined).length,
           },
         }
       : {}),

@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { type HarnessEvent, Journal, loadMemoryChain, environmentOf, readEvents } from "@seshat/core";
-import { buildAccount, renderAccount, turnNarrative, unresolvedInNarrative, writeAccount } from "../src/index.ts";
+import { buildAccount, plainNarrative, renderAccount, turnNarrative, unresolvedInNarrative, unsupportedInNarrative, writeAccount } from "../src/index.ts";
 import { scriptedJournal } from "./scripted-journal.ts";
 
 describe("the account of a turn", () => {
@@ -260,6 +260,57 @@ describe("the narrative of a turn", () => {
     assert.equal(calls, 2);
     assert.equal(result.hash, undefined);
     assert.match(result.rejected ?? "", /cited .*arXiv:1234\.5678.*resolve to nothing in the journal/);
+  });
+
+  it("reduces a narrative to plain text: no HTML, image, link or URL reaches the reader, and the cite markers stay", () => {
+    const hostile = [
+      "Part A is proved [cite: clm_X]. <img src=x onerror=alert(1)> ![chart](https://evil.example/p.png)",
+      "[read the proof](https://evil.example/steal?c=1) or see https://evil.example/more and <a href=\"javascript:x\">here</a>.",
+      "# A heading",
+      "[ref]: https://evil.example/definition",
+    ].join("\n");
+    const plain = plainNarrative(hostile);
+    assert.doesNotMatch(plain, /<|https?:|evil\.example|\]\(/);
+    assert.match(plain, /Part A is proved \[cite: clm_X\]\./);
+    assert.match(plain, /read the proof or see \[link removed\]/);
+    assert.match(plain, /^A heading$/m);
+    // The account that carries a hostile narrative shows plain text.
+    const shape = scriptedJournal();
+    shape.journal.close();
+    const run = scriptedJournal({ narrative: `Part A is proved [cite: ${shape.claims.proved}] ![x](https://evil.example/x.png) <script>1</script>` });
+    run.journal.close();
+    const account = writeAccount(run.dir, 1);
+    assert.doesNotMatch(account.narrative?.text ?? "", /evil|<script/);
+    assert.doesNotMatch(readFileSync(join(run.dir, "turns", "1", "report.md"), "utf8"), /evil\.example|<script/);
+  });
+
+  it("refuses a narrative that states a status the journal does not hold, and lets hedged and true statements pass", async () => {
+    const s = scriptedJournal();
+    const p = s.journal.projection;
+    // Part B is an open leaf, part A is proved, part C is only computed, the odd-prime claim is refuted.
+    assert.deepEqual(unsupportedInNarrative(p, `Part A is proved [cite: ${s.claims.proved}]; the odd-prime claim is refuted [cite: ${s.claims.refuted}].`), []);
+    assert.deepEqual(unsupportedInNarrative(p, `Part B is proved [cite: ${s.claims.leaf}].`), [`${s.claims.leaf} is open in the journal, and the narrative says proved`]);
+    assert.deepEqual(unsupportedInNarrative(p, `Part C has been proved [cite: ${s.claims.computed}].`), [`${s.claims.computed} is computed in the journal, and the narrative says proved`]);
+    assert.deepEqual(unsupportedInNarrative(p, `Part A is refuted [cite: ${s.claims.proved}].`), [`${s.claims.proved} is proved in the journal, and the narrative says refuted`]);
+    assert.deepEqual(unsupportedInNarrative(p, `The problem is proved [cite: ${s.problems.stuck}].`), [`${s.problems.stuck} is unfinished in the journal, and the narrative says proved`]);
+    // Hedges, negations and plans are not statements that something was settled.
+    assert.deepEqual(unsupportedInNarrative(p, `Part B is not yet proved [cite: ${s.claims.leaf}]. The team hopes it will be proved [cite: ${s.claims.leaf}]. If ${s.claims.leaf} were proved the root would follow.`), []);
+
+    // In the narrative's turn: one chance to correct it, then it is not kept, and the reason says what was wrong.
+    const prompts: string[] = [];
+    const wrong = `Part B is proved [cite: ${s.claims.leaf}].`;
+    const result = await turnNarrative({
+      journal: s.journal,
+      turn: 1,
+      ending: { reason: "impasse", detail: "d", waiting: [s.problems.stuck] },
+      call: async (request) => (prompts.push(request.prompt), { text: wrong, modelCallId: "mc" }),
+      keep: () => assert.fail("nothing is kept"),
+    });
+    s.journal.close();
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[1] ?? "", /said what the journal does not hold: clm_\w+ is open in the journal, and the narrative says proved/);
+    assert.equal(result.hash, undefined);
+    assert.match(result.rejected ?? "", /^it said clm_\w+ is open in the journal, and the narrative says proved$/);
   });
 
   it("checks ids against the journal: markers, bare ids, literature and empty markers", () => {

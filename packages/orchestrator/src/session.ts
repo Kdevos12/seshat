@@ -56,6 +56,12 @@ export interface SessionOptions {
    * guards, and the call is no check.
    */
   veto?: (proposal: { aux: string; proof: string; strategy?: string }) => string | undefined;
+  /**
+   * What the team said (its hints and what it asks), as sections. They are in the opening prompt; when a line's
+   * `contextPacket` replaces the messages after the system prompt they would be lost, so they are added to the
+   * packet's tail (never to its frozen prefix) in every request (documentation/human.md, "The team's answers").
+   */
+  teamSections?: ReadonlyArray<{ title: string; text: string }>;
   /** Tools besides lean_check, for this session's attempt. */
   tools?: AgentTool<never, unknown>[];
   /** The enabled lines' hooks inside the session: the context packet, and the look at each check. */
@@ -231,10 +237,12 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
               const answer = await packet(requests, messages, frozen?.prefix);
               if (answer === undefined) return messages;
               const system = messages.filter((m) => m.role === "system");
-              if (typeof answer === "string") return [...system, { role: "user", content: answer, timestamp: Date.now() }];
+              const team = (o.teamSections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
+              if (typeof answer === "string") return [...system, { role: "user", content: `${answer}${team}`, timestamp: Date.now() }];
               const composed = composePacket(answer, frozen);
               frozen = composed.state;
-              const { prefix, tail } = composed.texts;
+              const { prefix } = composed.texts;
+              const tail = `${composed.texts.tail}${composed.texts.tail === "" ? team.replace(/^\n\n/, "") : team}`;
               // Providers refuse an empty text block: an empty prefix or tail is left out.
               const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
               return [...system, { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() }];

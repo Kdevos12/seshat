@@ -6,8 +6,8 @@ import { type BlobStore, type HarnessEvent, readEvents } from "@seshat/core";
 import type { Line } from "@seshat/lines";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { ablationRefusal, buildReport, type ConsortiumConfig, renderRunReport, type RunConfig } from "../src/index.ts";
-import { assertSound } from "./resume-helpers.ts";
-import { check, demoRun, ofType, say } from "./m0-helpers.ts";
+import { assertSound, nth } from "./resume-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { blobsOf, consortium, ended, TWO_PROBLEM_IDS, TWO_PROBLEMS } from "./turns-helpers.ts";
 
 describe("a consortium turn", () => {
@@ -190,6 +190,21 @@ describe("a consortium turn", () => {
     assert.match(readFileSync(join(run.dir, "report.md"), "utf8"), /The run is paused after turn 1/);
     // The journal alone rebuilds the same report.
     assert.deepEqual(buildReport(readEvents(join(run.dir, "journal.jsonl"))), report);
+  });
+
+  it("is no crash in the run's report: a resumption after a turn is not counted among the interruptions", async () => {
+    const run = await demoRun({ config: { consortium: consortium({ tokens: 100 }), sessions: 3 }, responses: spare() });
+    const next = await demoResume({ dir: run.dir, bench: run.bench, turns: { limit: { tokens: 1e12 } }, responses: [check("exact trivial_proof")] });
+    assert.equal(ofType(next.events, "run.resumed").length, 1);
+    assert.ok((ofType(next.events, "run.resumed")[0]?.data.interrupted.tasks ?? 0) > 0, "the prover task was left running by the turn, by design");
+    const report = buildReport(next.events);
+    assert.equal(report.resumed, undefined, "a turn end is not an interruption");
+    assert.doesNotMatch(renderRunReport(report), /was resumed .* time\(s\) after its process ended/);
+    assert.equal(report.turns?.count, 2);
+    // A process that really ended (a turn left open) is still reported.
+    const open = await demoRun({ config: { consortium: consortium({ tokens: 1e12 }), sessions: 3 }, responses: [check("bad"), say("NOTES"), check("exact trivial_proof")] });
+    const cut = await demoResume({ dir: killedAt(open.dir, nth(open.events, "attempt.started", 2)), bench: open.bench, responses: [check("exact trivial_proof")] });
+    assert.equal(buildReport(cut.events).resumed?.times, 1);
   });
 
   it("is not a consortium run without the option: the journal has no turn events", async () => {
