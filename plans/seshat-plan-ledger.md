@@ -37,7 +37,9 @@ Updated 2026-10-28 15:30 UTC. `main` at c8bb412, 1656 tests.
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | implementing | `task/t25` | |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
-| Final | review of the whole build | main | after 26 | |
+| 27 | Installable packs: tools and skills (PD7) | main | not started (after 11) | |
+| 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | not started (next after 25 and 13, ahead of 14) | |
+| Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
 here are a copy that may lag: their log wins.
@@ -47,9 +49,10 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T10, T17, T19, T20, T21, T23 and T24 merged; T25 and T13 next; then T19,
-  T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
-  because the account's usage limits bind.
+- Main team (Rulings 27 and 30): T1 to T5, T7, T8, T10, T15 to T17, T19 to T21, T23 and T24 merged; T25 and
+  T13 in flight; then T28 (prices, cache accounting, off-peak; before any real run), T18, T22, T14, T26, T27
+  (once Task 11 has merged) and the final review. At most three agents at once, because the account's usage
+  limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
   the main team needs from them: [collaborator-tasks.md](collaborator-tasks.md), "Between the
   teams".
@@ -106,6 +109,15 @@ Notes from the main team, newest last. Read them at the start of each session.
   catches errors around a model call must let `isInterrupted(error)` (`@seshat/lines`) through: it
   means the turn paused the work, not that it failed. Task 6, 9 and 11 lines must declare `resume`
   (a consortium run refuses a non-resumable line at start). Details under "Interface changes".
+- 2026-10-28: The owner approved a fifth plan change,
+  [plan-change-polya-costs.md](plan-change-polya-costs.md) (Ruling 30). Two small notes for you, nothing
+  else changes in your tasks. Task 6: document that `grind` carries a commutative-ring module that
+  normalizes by a Gröbner basis (so polynomial identities with hypotheses are one of its jobs), and read
+  the battery's tactic list from the host's Lean instead of assuming `polyrith` exists (whether it is
+  still in the pinned Mathlib is read from the host); the digest's table in collaborator-tasks.md
+  section 5 now says so. Task 21 is merged: its optional `GroebnerTactic` library entry (PD4 item 2) is
+  a follow-up of the main team, no action for you. The main team builds Task 28 (price table, cache
+  accounting) and Task 27 (installable packs, after your Task 11, additive on the registry) on its own.
 
 ## Interface changes
 
