@@ -143,4 +143,20 @@ describe("provenance in the journal", () => {
     assert.deepEqual(p.itemAttempts("b").map((r) => [r.attempt.attempt_id, r.included]), [["att_1", true], ["att_2", false]]);
     journal.close();
   });
+
+  it("records the settings a line sampled and the exploration flag on the attempt, and checks their shape", () => {
+    const journal = open();
+    claim(journal);
+    const started = { claimId: "clm_1", prover: "p1", iteration: 1, model: "m" };
+    assert.throws(() => journal.emit("attempt.started", { ...started, attemptId: "att_1", settings: [1] as never }, "prover:p1"), /settings must be an object/);
+    assert.throws(() => journal.emit("attempt.started", { ...started, attemptId: "att_1", exploration: "yes" as never }, "prover:p1"), /exploration must be true or false/);
+    journal.emit("attempt.started", { ...started, attemptId: "att_1", settings: { temperature: 0.5, directive: "doubt" }, exploration: true }, "prover:p1");
+    journal.emit("attempt.started", { ...started, attemptId: "att_2", exploration: false }, "prover:p1");
+    journal.emit("attempt.started", { ...started, attemptId: "att_3" }, "prover:p1");
+    const p = journal.projection;
+    assert.deepEqual([p.attempt("att_1")?.settings, p.attempt("att_1")?.exploration, p.attempt("att_1")?.runs_ago], [{ temperature: 0.5, directive: "doubt" }, true, 0]);
+    assert.deepEqual([p.attempt("att_2")?.settings, p.attempt("att_2")?.exploration], [null, false]);
+    assert.deepEqual([p.attempt("att_3")?.settings, p.attempt("att_3")?.exploration], [null, null]);
+    journal.close();
+  });
 });

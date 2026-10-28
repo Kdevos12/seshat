@@ -1,4 +1,5 @@
 import { maskCommentsAndStrings } from "@seshat/core";
+import { ANTI_SYCOPHANCY } from "@seshat/lines";
 
 /**
  * The category of a problem as formal-conjectures writes it in the theorem's attributes
@@ -22,7 +23,9 @@ export function isOpenConjecture(category: string | undefined): boolean {
  * The question a prover is asked about a statement (plan §9, neutral framing): to determine whether
  * it holds, never to prove it. A prover told to prove a false statement proves it in 29% of the cases
  * (BrokenMath), so an open conjecture is never put as a thing to demonstrate. `known` is for a
- * statement from a list of solved problems, which a formalization can still get wrong.
+ * statement from a list of solved problems, which a formalization can still get wrong. The question
+ * about an open conjecture ends with the fixed anti-sycophancy instruction (plan change PC10), the one
+ * every prompt that judges or reranks carries too (`ANTI_SYCOPHANCY` of `@seshat/lines`).
  */
 export function neutralQuestion(options: { known?: boolean } = {}): string {
   if (options.known === true) {
@@ -36,7 +39,7 @@ export function neutralQuestion(options: { known?: boolean } = {}): string {
     "Determine whether this theorem holds. It is an open conjecture: it may be true, or false as formalized, and nothing " +
     "here says which. Look for a proof and for a counterexample with equal care. lean_check accepts only a proof of the " +
     "statement as written; if you find a counterexample, or come to believe the statement is false, say so in your notes, " +
-    "with the witness."
+    `with the witness. ${ANTI_SYCOPHANCY}`
   );
 }
 

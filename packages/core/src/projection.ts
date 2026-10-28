@@ -71,6 +71,12 @@ export interface AttemptRow {
   withheld: string[] | null;
   /** The memory's epoch when the attempt started. */
   epoch: number;
+  /** The settings a line sampled for the session (`attempt.started`); null when none were. */
+  settings: { [key: string]: Json } | null;
+  /** True when the exploration floor drew the session's strategy; false when it did not; null for a session that recorded neither. */
+  exploration: boolean | null;
+  /** How many runs before the current one the attempt was made in: 0 for this run, 1 for the last run of the chain, and so on. */
+  runs_ago: number;
 }
 
 export interface ToolRunRow {
@@ -311,7 +317,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 6;
+export const PROJECTION_VERSION = 7;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -354,7 +360,8 @@ create table if not exists attempts (
   role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text,
   task_id text, site text, charged_usd real not null default 0, charged_input_tokens integer not null default 0,
   charged_output_tokens integer not null default 0, charged_requests integer not null default 0, carry_json text,
-  provenance_json text, included_json text, withheld_json text, epoch integer not null default 0);
+  provenance_json text, included_json text, withheld_json text, epoch integer not null default 0,
+  settings_json text, exploration integer, runs_ago integer not null default 0);
 create index if not exists attempts_by_claim on attempts (claim_id);
 create index if not exists attempts_by_task on attempts (task_id);
 create table if not exists tool_runs (
@@ -437,7 +444,7 @@ export function edgesSql(filter: EdgeFilter): { sql: string; values: SQLInputVal
 export class Projection {
   private readonly db: DatabaseSync;
   /** Set while the events of an earlier journal are applied: whether that journal's statuses carry. */
-  private inherit: { carried: boolean } | undefined;
+  private inherit: { carried: boolean; ago: number } | undefined;
 
   private constructor(db: DatabaseSync) {
     this.db = db;
@@ -500,8 +507,9 @@ export class Projection {
     let seq = -chain.segments.reduce((n, segment) => n + segment.events.length, 0);
     this.db.exec("begin");
     try {
-      for (const segment of chain.segments) {
-        this.inherit = { carried: segment.carried };
+      for (const [index, segment] of chain.segments.entries()) {
+        // How many runs before the one being written this journal is: the last of the chain is 1.
+        this.inherit = { carried: segment.carried, ago: chain.segments.length - index };
         for (const event of segment.events) this.applyUnchecked({ ...event, seq: seq++ } as HarnessEvent);
       }
       this.setMeta("chain_hash", chain.hash);
@@ -588,12 +596,14 @@ export class Projection {
         const epoch = this.currentEpoch();
         db.prepare(
           `insert into attempts (attempt_id, claim_id, prover, iteration, model, started_seq, role, declared_strategy, subgoal,
-           task_id, site, provenance_json, included_json, withheld_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           task_id, site, provenance_json, included_json, withheld_json, epoch, settings_json, exploration, runs_ago)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.attemptId, d.claimId, d.prover, d.iteration, d.model, event.seq, d.role ?? null, d.strategy ?? null, d.subgoal ?? null,
           // The tasks of an earlier run are not in this ledger: its attempts belong to none of this run's.
           inherit !== undefined ? null : (d.taskId ?? null), d.site ?? null, d.provenance === undefined ? null : canonicalJson(d.provenance),
-          d.included === undefined ? null : canonicalJson(d.included), d.withheld === undefined ? null : canonicalJson(d.withheld), epoch);
+          d.included === undefined ? null : canonicalJson(d.included), d.withheld === undefined ? null : canonicalJson(d.withheld), epoch,
+          d.settings === undefined ? null : canonicalJson(d.settings), d.exploration === undefined ? null : d.exploration ? 1 : 0, inherit?.ago ?? 0);
         const item = db.prepare("insert into attempt_items (attempt_id, item_id, included, epoch) values (?, ?, ?, ?)");
         for (const id of d.included ?? []) item.run(d.attemptId, id, 1, epoch);
         for (const id of d.withheld ?? []) item.run(d.attemptId, id, 0, epoch);
@@ -1109,17 +1119,21 @@ function claimRow({ domain_json, ...rest }: StoredClaim): ClaimRow {
   return { ...rest, domain: domain_json === null ? [] : (JSON.parse(domain_json) as string[]) };
 }
 
-type StoredAttempt = Omit<AttemptRow, "premises" | "carry" | "provenance" | "included" | "withheld"> & {
+type StoredAttempt = Omit<AttemptRow, "premises" | "carry" | "provenance" | "included" | "withheld" | "settings" | "exploration"> & {
   premises_json: string | null;
   carry_json: string | null;
   provenance_json: string | null;
   included_json: string | null;
   withheld_json: string | null;
+  settings_json: string | null;
+  exploration: number | null;
 };
 
-function attemptRow({ premises_json, carry_json, provenance_json, included_json, withheld_json, ...rest }: StoredAttempt): AttemptRow {
+function attemptRow({ premises_json, carry_json, provenance_json, included_json, withheld_json, settings_json, exploration, ...rest }: StoredAttempt): AttemptRow {
   return {
     ...rest,
+    settings: settings_json === null ? null : (JSON.parse(settings_json) as { [key: string]: Json }),
+    exploration: exploration === null ? null : exploration === 1,
     premises: premises_json === null ? null : (JSON.parse(premises_json) as string[]),
     carry: carry_json === null ? null : (JSON.parse(carry_json) as AttemptCarry),
     provenance: provenance_json === null ? null : (JSON.parse(provenance_json) as Provenance),

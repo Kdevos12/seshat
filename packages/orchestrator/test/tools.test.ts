@@ -40,7 +40,7 @@ describe("tools besides lean_check", () => {
   });
 
   it("are named in the system prompt, which is unchanged without them", () => {
-    assert.equal(PROMPT_VERSION, "m0-2");
+    assert.equal(PROMPT_VERSION, "m0-2.1");
     assert.doesNotMatch(systemPrompt(4000), /# Other tools/);
     assert.match(systemPrompt(4000, ["compute_sage"]), /\n# Other tools\nBesides lean_check you have: compute_sage\. .* only lean_check decides\./);
   });
@@ -119,7 +119,7 @@ describe("M0 with compute.sage", () => {
     );
     const started = ofType(events, "run.started")[0]?.data.config as { tools: unknown[]; prompt: { version: string } };
     assert.deepEqual(started.tools, [{ capability: "compute.sage", implementation: "local", version: "0.9.5" }]);
-    assert.equal(started.prompt.version, "m0-2");
+    assert.equal(started.prompt.version, "m0-2.1");
     assert.deepEqual(result.report.tools, { "compute.sage": { calls: 4, outcomes: { ok: 2, error: 2 }, attempts: 2, proofs: 1 } });
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /tools: lean_check, compute\.sage \(local 0\.9\.5\)\.[\s\S]*\ncompute\.sage: 4 call\(s\) \(2 ok, 2 error\) in 2 attempt\(s\), 1 of which found a proof\./);
   });

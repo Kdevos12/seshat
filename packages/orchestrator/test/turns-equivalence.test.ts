@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
-import { assertSound } from "./resume-helpers.ts";
-import { check, demoResume, demoRun, ofType } from "./m0-helpers.ts";
+import { assertSound, consumed } from "./resume-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { consortium, TWO_PROBLEMS } from "./turns-helpers.ts";
 
 /**
@@ -82,4 +82,28 @@ describe("a run in several turns", () => {
       });
     }
   }
+});
+
+describe("a consortium turn cut between an attempt's end and its routing decisions", () => {
+  // Three sessions: an unknown name, a hole, a proof.
+  const script = (): FauxResponseStep[] => [check("bad"), say("NOTES: bad is not a lemma."), check("have h : 1 = 1 := rfl\nsorry"), say("NOTES: fill the hole."), check("exact trivial_proof")];
+  const routed = (events: readonly HarnessEvent[]) =>
+    ofType(events, "task.routed").map((e) => [e.data.action, e.data.signal.value, ofType(events, "attempt.started").findIndex((a) => a.data.attemptId === e.data.attemptId)]);
+
+  it("is resumed by the next turn to the decisions, the outcome and the work of a turn that was not cut", async () => {
+    // The turn's process ends right after the first attempt's end, before the decision about it was written (its limit is not reached).
+    const whole = await demoRun({ config: { sessions: 3, consortium: consortium({ tokens: 1e12 }) }, responses: script() });
+    assert.deepEqual(routed(whole.events), [["retry_fresh", "unknown_identifier", 0], ["retry_fresh", "holes", 1]]);
+    const cutAt = whole.events.findIndex((e) => e.type === "task.routed");
+    assert.equal(whole.events[cutAt - 1]?.type, "attempt.finished", "the cut falls between the attempt's end and the decision about it");
+    const dir = killedAt(whole.dir, cutAt);
+    const next = await demoResume({ dir, bench: whole.bench, turns: { limit: { tokens: 1e12 } }, responses: script().slice(consumed(whole.events.slice(0, cutAt))) });
+    assert.deepEqual(routed(next.events), routed(whole.events), "the decision the cut lost was taken by the next turn, once");
+    assert.deepEqual(ofType(next.events, "problem.finished").map((e) => e.data.outcome), ofType(whole.events, "problem.finished").map((e) => e.data.outcome));
+    assert.equal(next.faux.state.callCount, whole.faux.state.callCount - consumed(whole.events.slice(0, cutAt)), "no response asked for twice");
+    // The decision about the first attempt comes before the second attempt starts.
+    const index = (type: string, nth: number) => next.events.flatMap((e, i) => (e.type === type ? [i] : []))[nth] ?? -1;
+    assert.ok(index("task.routed", 0) < index("attempt.started", 1));
+    assertSound(next.events);
+  });
 });

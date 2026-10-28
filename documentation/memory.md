@@ -186,7 +186,7 @@ nodes with `disagreement: true` (two informal validators that disagree), `obstru
 | `edges({from?, to?, kinds?, minStatus?})` | The edges that meet every criterion, in the order they were added. `to` matches any target and is answered from an index of targets, not by scanning the edges; `minStatus` counts in the order `proposed`, `computed`, `informal_checked`, `human_signed`, `lean_checked`. |
 | `equivalents(claimId)` | The claim and every claim reached from it through `lean_checked` `equiv` edges, in both directions: the claim first. |
 | `attempts(claimId, {includeEquivalents?})` | The attempts on the claim (and on its equivalents), in the order they started, with their role, strategies, premises and outcome. |
-| `alreadyTried(claimId)` | The attempts on the claim and its equivalents that were accepted or failed, grouped by their classified strategy: how many, how they failed, the last failure. Never the attempts' text ([m1-identity-memory.md](m1-identity-memory.md#already-tried)). |
+| `alreadyTried(claimId, view?)` | The attempts on the claim and its equivalents that were accepted or failed, grouped by their classified strategy: how many, how they failed, the last failure. Never the attempts' text ([m1-identity-memory.md](m1-identity-memory.md#already-tried)). With a `view` (the session's configuration and the run's `ModelRanking`) the groups are also split by configuration class, each saying how it compares with the session's. |
 | `validations(claimId)` | Its validations, of the claim and of its negation, in order. |
 | `node(id)` | The node, its data with every patch applied in order. |
 | `nodes(kind, {claimId?})` | The nodes of a kind (about one claim), in the order they were recorded. |
@@ -254,7 +254,10 @@ prompts' major version or the Mathlib revision is not the one of the memory's pr
 | The prompts' major version | `promptMajor(PROMPT_VERSION)`: the version up to its last integer, so `m0-3` is another major than `m0-2` and `m0-2.1` is the same one (a minor part is a rewording) |
 | The Mathlib revision | the bench's revision |
 
-A change of the harness version or of the budget class opens none. The orchestrator opens the epoch
+A change of the harness version or of the budget class opens none. Adding sections to the prover's prompt
+that are optional and recorded on the attempt (the lines' directive, step plan, framing sentence) is a minor
+change (`m0-2.1`): the provers' own prompt, what the old counters measured, is the same, so nothing goes
+into probation. The orchestrator opens the epoch
 when a run starts on the memory of an earlier run ([below](#memory-across-runs)); only the orchestrator
 may write the event, and a store of another actor is refused by the journal. `store.epoch()` is the
 current epoch, `store.epochs()` the epochs entered, and every attempt, lesson and learned node keeps the
@@ -419,9 +422,13 @@ trust rules are in [trust.md](trust.md#memory-across-runs).
 - A stale lock file whose pid has been recycled by a live process (or is the run's own) makes the chain
   unreadable: the message names the process, and removing the lock after checking the run has ended
   clears it.
-- The fleet's strategy and model posteriors (`packages/fleet`) read `memory.attempts(...)` at full weight,
-  the chain's attempts after a model upgrade included; only `itemEffect` applies the probation weight
-  (`weightOf`). PE3 puts the fleet's discount in Task 19, which wires `weightOf(attempt.epoch)` there.
+- The fleet's strategy, model and settings posteriors (`packages/fleet`) weigh each attempt by
+  `gamma ^ runsAgo x weightOf(attempt.epoch)`, the first factor being the discount per run on the problem
+  (`Attempt.runsAgo`, from the projection) and the second the probation of its epoch
+  ([fleet.md](fleet.md#soft-failure-memory)); `itemEffect` applies the probation weight only. Nothing is deleted
+  by either. `compareClass` ranks the configurations of two attempts by the run's `ranking`; a model the run
+  does not rank counts as weaker, which is wrong when a run moves to a weaker or another model: set the fleet's
+  `ranking` then.
 - A chain is read and verified in full at every open (about 14 microseconds per event, and 30 more to
   attach once), with no snapshot of the projection. Nothing has run against a real Lean or model.
 

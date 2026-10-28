@@ -17,23 +17,27 @@ attempts in the memory, and the typed lines of M1's "already tried" section. The
 length of a run, which prover works on which subgoal with which strategy and which provers wait for
 a place. That is the policy's own state; nothing a prover wrote goes through it.
 
-The fleet's posteriors read the attempts of the memory at full weight. After a run that starts on earlier
-journals (`--memory-from`) and a model upgrade, those include the earlier attempts without the probation
-weight of the epoch; the discount is Task 19's (PE3, [memory.md](memory.md#memory-across-runs)).
+Every posterior counts an attempt with a weight: the discount of the runs on the problem since it, and the
+probation of its epoch after a model upgrade or a change of prompts ([soft failure memory](#soft-failure-memory),
+[memory.md](memory.md#memory-across-runs)). In one run and one epoch every weight is 1.
 
 ## What it decides
 
-Before each session of a prover, the `beforeSession` hook decides three things, in this order:
+Before each session of a prover, the `beforeSession` hook decides, in this order:
 
 1. **Whether the prover starts now** (the width, below). A prover that does not fit waits.
-2. **The strategy** the session works on, one of M1's labels. It becomes the session's briefing
+2. **The strategy** the session works on, one of M1's labels: drawn from the posteriors, or, for a share
+   `epsilon` of the sessions, uniformly (the exploration floor). It becomes the session's briefing
    section "Strategy for this session" and the strategy declared on the attempt.
-3. **The model** of the session, among the models the run is given, or the stronger model of an
-   escalation.
+3. **The model** of the session, among the models the run is given; the strongest configured when a
+   routing decision asked for `retry_stronger`; or the stronger model of an escalation.
+4. **The settings** of the session, sampled from the configured distributions: temperature, thinking
+   level, a diversity directive, the session mode (standard or informal-first).
 
 The decision is written as an `allocation` node of the claim, and the attempt that follows carries
-the strategy and the model. When a run gives the line nothing to choose (`strategies` off and no
-`models`), no node is written and the session is M0's.
+the strategy, the model, the settings and whether the exploration floor drew the strategy. When a run gives
+the line nothing to choose (`strategies` off, no `models`, no settings), no node is written and the session
+is M0's.
 
 ## Posteriors
 
@@ -80,12 +84,131 @@ went further in that session than in any earlier one of the prover and no other 
 otherwise it draws again (rule `thompson`). A strategy that gets Lean further is worth another
 session.
 
+## Soft failure memory
+
+A failure is soft evidence (plan change PE3): it says something about the configuration that failed
+(a model, a budget, a prompt, a moment), not about the claim. Four rules keep an old or foreign failure from
+shutting a door for good. None deletes anything; the journal keeps every attempt.
+
+**Discount per run.** Every attempt carries `runsAgo`: how many runs on the problem lie between it and the run
+that reads it (0 for the current run; each earlier run of a `--memory-from` chain that made an attempt on
+the claim adds 1; a run that did not work on the claim is not counted, and the current run counts as 0 even
+before its first attempt). The weight of an attempt in every posterior is
+
+    gamma ^ runsAgo  x  probation(epoch)
+
+with `gamma` the option of the same name (0.8), and `probation(epoch)` the weight of its epoch
+(`MemoryStore.weightOf`: 1 for the current epoch, `k = 0.25` for each epoch opened since: the shrink of
+Task 23 for a model, prompt or Mathlib change). So an earlier run's counts are multiplied by 0.8 on each
+new run and shrunk again when the model changed, while a new outcome counts in full. The weighted update is
+`Beta(alpha + w r, beta + w (1 - r))` for an observation worth `r`; an attempt still counts once in
+`attempts`, whatever its weight. Example: two failures of the last run give the success posterior
+Beta(1, 1 + 2 x 0.8) = Beta(1, 2.6), a rate of 0.278 against 0.25 at full weight; with the model changed
+since, each also weighs 0.25, giving Beta(1, 1.4).
+
+**Exploration floor.** With probability `epsilon` (0.1) a session's strategy is drawn uniformly among the
+allowed labels (those no other prover is on), whatever the posteriors say, so that a strategy that failed ten
+times is still tried now and then. The session is recorded: `exploration: true` on its `attempt.started` and
+`rule: "exploration"` in its allocation; a session drawn from the posteriors records `exploration: false`
+while the floor is on. The floor has its own random stream (`key:exploration`), so a session it does not take
+draws what it would have drawn without the floor. `epsilon: 0` turns it off.
+
+**Grouping by configuration.** M1's "already tried" section groups the attempts by strategy and by
+configuration class (the model family and the budget class of the attempt's provenance stamp), and a line from
+another class says so: `induction: 3 attempts, unsolved goals (with a smaller model)`. A model is weaker or
+stronger by its place in the run's ranking (the option `ranking`, weakest first; otherwise the run's model, then
+`escalateTo`). The order of the option `models` is not read as a ranking: it lists what to choose among, and
+only `ranking` says which is stronger. A model the run does not rank counts as weaker than any it does (a
+model that is no longer configured is taken for an older one). That default is safe for trust (it only changes
+the words of an advice and which model a `retry_stronger` goes to) and right for the usual case, a run on a
+better model than the earlier one; it is wrong when a run moves to a weaker model or sideways to another one:
+it then reads the earlier, larger model's failures as "(with a smaller model)" and invites trying again what
+a larger model failed. Set `ranking` (all the models, weakest first) when a run moves to a weaker or different
+model. In one family the smaller budget class is the weaker. The session's own configuration comes first. The same rule is `compareClass` of
+`@seshat/memory`.
+
+**`retry_stronger`.** When a guard's finding would route a claim to `branch` (open an alternative under other
+constraints) and every failure of the claim (this attempt included) ran under a configuration weaker than
+the strongest one configured, the router records `retry_stronger` instead ([ledger.md](ledger.md#routing-decisions)),
+and the prover's next session is given the strongest model: the allocation says `routed: "retry_stronger"`.
+A claim is thus tried with the model it has not been tried with before it is tried with other constraints.
+A failure from the strongest configuration, or none, leaves the `branch`. So does a failure of a model the run
+does not rank: the routing acts only on an order the run stated (a `ranking`, or an `escalateTo` above the run's
+model). With `--model small` and `models` listing `big`, no `ranking` and no `escalateTo`, nothing says `big` is not
+the stronger one, so a stalled claim whose sessions ran on `big` keeps its `branch` and is not sent back to `small`
+(M1's advice still calls such a line "with a smaller model": set `ranking`). A session that was cut is not a
+failure of its configuration. The next session takes the decision only if it is about that prover's last
+attempt, and the escalation, which has its own caps, overrides it.
+
+## Sampled settings
+
+A line that samples a session's settings records them, so that they can be learned and reproduced (plan change
+PC6). The fleet samples, when the options are given:
+
+| Setting | Option | Sampled |
+|---|---|---|
+| `temperature` | a number, a list of numbers, or `{"min", "max"}` | a fixed value is recorded; a range is drawn uniformly (rounded to 0.01); a list is learned |
+| `thinking` | a list of levels (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) | learned |
+| `directive` | `true` (the built-in six) or an object from label to sentence | learned; the sentence is a briefing section "Directive for this session" |
+| `mode` | `["standard", "nl_first"]` | learned |
+
+The built-in directives are `small_cases`, `more_general`, `other_tool`, `shortest`, `skeleton` and `doubt`. Each is
+worded to ask for no demonstration (M6's framing check finds nothing in them).
+
+A discrete setting (and a temperature given as a list) is learned like a strategy: for each value, a Beta
+posterior over the attempts of the claim that were given it (the `choice` reward, weighted as above), and
+Thompson sampling picks the value with the highest draw; a value nothing is known of has the flat posterior, so
+it is tried. The draws are in the allocation (`settingDraws`). The settings come from their own stream
+(`key:settings`).
+
+The settings are in the `settings` of the session's `attempt.started`, and they act: the orchestrator sends the
+temperature with each request of the session, and runs it at the thinking level (the run's own otherwise). Lines
+that sample are merged key by key, in the order of the lines; a temperature outside 0 to 2 or an unknown thinking
+level is a line failure in `beforeSession`.
+
+## Informal-first sessions
+
+With `modes` including `nl_first` (plan change PC11 item 1), a session drawn for that mode works from a step DAG:
+the informal argument broken into steps, written before any Lean. This is the ProofFlow idea (an informal
+argument made a graph, then formalized step by step), and it is a proposal throughout: nothing it records is
+a verdict, and only Lean, through `validate`, ever changes a claim's status.
+
+1. **The DAG.** The first informal-first session of a claim asks the model for the argument as a `completeJson`
+   (site `fleet.dag`, the model of the session): `proof`, `steps` (`id`, `statement`, `dependsOn`), and a `doubt`
+   when the model thinks the statement false. Provers that ask at once share the call. If the consortium turn is over
+   when the call is made ([human.md](human.md#turns)), nothing is recorded: not a failed try, no allocation; the
+   prover gives its place back and its session does not start, and the next turn asks again.
+2. **The check.** The harness checks the shape (`checkStepDag`): at most `dagSteps` steps, ids that are short
+   lowercase names and unique, every dependency a step, **acyclic**, **no forward reference** (a step is listed
+   after the ones it uses), and **every step but the last used** by a later one. A DAG that does not check is sent
+   back once with what was wrong. Two tries that fail leave a `step_dag_failure` node and the session runs as a
+   standard one; the allocation says why (`dagNote`). The attempt records `mode: standard`, the mode that ran,
+   which is the arm its outcome counts for, and `drawnMode: nl_first`, the mode that was drawn. After
+   `MAX_DAG_TRIES` (2) failed tries on a claim no more are paid for.
+3. **The record.** A checked DAG is a `step_dag` node of the claim (learned, so stamped), each step is an
+   `informal` claim of origin `line:fleet`, and the `decomposes_into` edges (each step from the steps it uses, the
+   target from the last step) are proposals. The claims stay `open`. The node is written last, so a process that
+   ends in the middle leaves no half-recorded DAG; the claims and edges are safe to write again.
+4. **The session.** The briefing section "Step plan" gives the argument, the steps, and what Lean said of each
+   after the session before (not the model's `doubt` about the statement: that is the verdict of another call,
+   which no prompt shows a prover, PC10; it stays in the node for the report); the prover writes one lemma `aux_<id>` for each step, in its aux region, and closes
+   the theorem from them. The allocation names the DAG node.
+5. **Lean's errors go to the step they are in.** After the session, a `step_status` node records for each step
+   `closed`, `error`, `hole` (a `sorry`) or `missing` (no lemma), from the position of Lean's messages in the last
+   check: a message belongs to the lemma whose declaration contains its line; an error outside every lemma belongs
+   to the main proof and to no step. Only states are kept, never Lean's text. The next session is told which steps
+   are not closed and leaves the closed ones as they are. Nothing is written about the steps' claims: a lemma that
+   Lean accepts is not a proof of the step's claim in the memory, and the claim stays open.
+
+The mode competes like any other setting: if sessions in this mode prove more, Thompson sampling draws it more.
+
 ## One loop at a time per (subgoal, strategy)
 
 A subgoal is the session's `subgoal`, or the claim when it has none. Two provers working at once on
 a subgoal are never told the same strategy: the draw leaves out the strategies the others are on.
 Provers on different subgoals are independent. The Ralph loop that runs a strategy on a subgoal is
-then one at a time.
+then one at a time. The prover takes its place (its strategy) as soon as the strategy is drawn, before the
+informal-first DAG is awaited, so a prover that decides while another waits for its DAG sees the strategy as taken.
 
 ## Width
 
@@ -134,11 +257,13 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | Field | Meaning |
 |---|---|
 | `attemptId`, `prover`, `session` | the session the decision is for |
-| `strategy`, `rule` | the strategy, and `thompson` or `continued` |
-| `model`, `escalated` | the model, when the fleet chose one, and whether it is the stronger one |
+| `strategy`, `rule` | the strategy, and `thompson`, `continued` or `exploration` |
+| `model`, `escalated`, `routed` | the model, when the fleet chose one, whether it is the stronger one, and `retry_stronger` when a routing decision chose it |
 | `width`, `waited` | the width of the subgoal when the prover was admitted, and whether it waited for a place |
 | `successRate`, `attempts` | the single-agent rate of the claim and the attempts it is made of |
-| `draws` | the draw of each candidate strategy, rounded |
+| `draws` | the draw of each candidate strategy, rounded (absent for an exploration draw) |
+| `settings`, `settingDraws` | the settings sampled, and the draw of each value of the learned ones |
+| `dag`, `dagNote` | the `step_dag` node an informal-first session works from, or why a session drawn for that mode ran as a standard one |
 
 ## Options
 
@@ -148,7 +273,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 |---|---|---|
 | `strategies` | true | tell each session a strategy |
 | `stick` | true | keep a strategy while Lean gets further with it |
-| `models` | `[]` | `PROVIDER/ID` models to choose among; empty: the run's model |
+| `models` | `[]` | `PROVIDER/ID` models to choose among; empty: the run's model. The order says nothing about strength: `ranking` does |
 | `escalateTo` | null | the stronger model for hard decisions; null: no escalation |
 | `seed` | null | seeds the draws; null: the run's id |
 | `widen` | true | keep the provers at work on a subgoal to its width |
@@ -160,6 +285,14 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `escalateBelow` | 0.25 | the rate under which a decision is hard |
 | `maxEscalations` | 2 | escalated sessions per claim, at most |
 | `partialCredit` | 0.5 | what the deepest failure is worth to a choice, against 1 for a proof |
+| `gamma` | 0.8 | the discount of an earlier run's evidence, per run on the problem |
+| `epsilon` | 0.1 | the share of sessions whose strategy is drawn uniformly (the exploration floor) |
+| `ranking` | null | models weakest first, `PROVIDER/ID`, the only statement of which is stronger; null: the run's model, then `escalateTo` |
+| `temperature` | null | a number, a list to learn over, or `{"min": 0.2, "max": 1}`; null: the run's own |
+| `thinking` | null | thinking levels to learn over, such as `["low","high"]`; null: the run's own |
+| `directives` | null | `true` for the built-in directives, or an object from label to sentence |
+| `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
+| `dagSteps` | 8 | the most steps in an informal-first session's DAG |
 
 ## Resuming
 
@@ -172,11 +305,20 @@ The Thompson draws come from the seeded source and the posterior of the journal,
 draws what the run that was not cut drew; the tests compare the allocations, draws included. An
 `allocation` node written for a session that never started stays, and is not counted as an attempt.
 
+Everything the soft failure memory and the settings need is rebuilt from the journal and the seeded streams: the
+weights come from the `runsAgo` and `epoch` of the attempts, the learned settings and the exploration flags from
+the attempts' `settings` and `exploration`, the step DAG and its states from the `step_dag` and `step_status`
+nodes, the pending `retry_stronger` from the routing decisions of the ledger. The one thing held in the process is
+the promise that makes provers who ask for a DAG at once share a call; it is only a deduplication. A process that
+ended after the DAG call was paid and before the DAG was recorded asks for it again on resuming, and pays for the
+call twice (the same as any call of a line made between two sessions).
+
 ## The hooks it uses
 
 `beforeSession` (the decision above), `briefing` (the section "Strategy for this session", worded to
-ask for no demonstration: M6's framing check finds nothing in it), `afterAttempt` (the strategy the
-prover was on is free for the others), `afterProver` (the prover is no longer ahead of anyone, and the
+ask for no demonstration: M6's framing check finds nothing in it), `briefingSections` (the directive and the
+step plan), `afterAttempt` (the strategy the prover was on is free for the others, and the states of the
+steps of an informal-first session are recorded), `afterProver` (the prover is no longer ahead of anyone, and the
 waiting provers look again) and `afterProblem` (the policy's state of the problem is dropped). The
 line API got `afterProver` for this and for M6 ([lines.md](lines.md)).
 
@@ -196,13 +338,32 @@ provers that work at once, its section next to M6's question on an open conjectu
 provers over two sessions, that the second opening of each has its own notes and file and none of the
 other's, beside the typed summaries of the memory.
 
+- `packages/fleet/test/soft-memory.test.ts` covers the discount arithmetic (`gamma ^ runs x probation`, the runs
+  that did not work on the claim, the weighted Beta update), the share of the exploration floor over a seeded run
+  (and its off and all-on cases), the sampling of the settings and what is learned over them, the shape of a step
+  DAG (cycle, forward reference, unused step, unknown dependency) and the states of the steps from Lean's
+  messages. `packages/orchestrator/test/soft-memory.test.ts` runs them in whole runs: the temperature and the
+  thinking level reach the model, the informal-first session end to end (the DAG call, the nodes, the claims and
+  edges, the plan in the briefing, the states of the steps in the next session, the fallback to a standard
+  session), `retry_stronger` against `branch`, and a chain of two runs for the discount and "(with a smaller
+  model)". `packages/memory/test/classes.test.ts` covers the grouping by configuration class and the rule behind
+  `retry_stronger`.
 - `packages/orchestrator/test/resume-lines.test.ts` resumes runs of the fleet at each boundary between
   sessions (the same allocations and draws, the same prompts) and at every event of the journal,
-  and checks that a prover does not wait for one that had ended.
+  and checks that a prover does not wait for one that had ended; the same for sampled settings with the
+  floor on, and for informal-first sessions, at a sample of the events.
 - Nothing ran against a real model or a real Lean. The simulated sessions take no time, so the gate is
-  tested for its order and its caps, not for how much it speeds a real run up.
+  tested for its order and its caps, not for how much it speeds a real run up. In particular the
+  step DAGs are written by a faux model, so whether a real model writes DAGs that check, and whether the
+  informal-first mode proves more than the standard one, is not known; the temperature and thinking levels
+  are checked to reach the provider's request, not for what they do to its answers. Some providers reject or
+  ignore a temperature when reasoning is on; a temperature together with a thinking level is untested here, and
+  `settingsProblem` checks only the range.
 - The numbers (the width thresholds, 2 attempts, 4 and 8 provers, the escalation after 3 attempts
-  under 0.25, a partial credit of 0.5) are a first guess to set on the bench.
+  under 0.25, a partial credit of 0.5, gamma 0.8, epsilon 0.1) are a first guess to set on the bench.
+- `retry_stronger` arises only from a guard's `branch` signal (M6's loops), the one route to a branch there is;
+  without M6 nothing routes to it. The strength order is the run's own statement (the `ranking` option), not a
+  property of the models. The settings posteriors are per claim, like the strategies'.
 - Nothing gives a session a `subgoal` other than its claim yet; the saturation kernel (M12) will, and
   the width and the exclusion of strategies then apply per subgoal.
 - A model's cost is not in its posterior: Thompson sampling chooses the model that gets further, not

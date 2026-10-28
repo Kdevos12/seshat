@@ -35,6 +35,8 @@ export interface SessionOptions {
   models: Models;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
+  /** Sent with each of the session's requests (a line sampled it: documentation/fleet.md); absent: the provider's own. */
+  temperature?: number;
   systemPrompt: string;
   prompt: string;
   workbench: Workbench;
@@ -213,14 +215,18 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
 
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
+  const temperature = o.temperature;
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
     // The one place where a request is sent: the consortium turn is read here, immediately before the send, so that no
-    // request goes out after the limit however the provers and lines interleave (documentation/human.md, "Turns").
+    // request goes out after the limit however the provers and lines interleave (documentation/human.md, "Turns"). A refused
+    // request draws and records nothing; the sampled settings (the temperature) and the cache policy go with a request that is sent.
     streamFn: (model, context, options) => {
       const over = o.turn?.ended;
       if (over !== undefined) return refusedStream(model, `the turn is over (${over.detail}): the request was not sent`);
-      return o.models.streamSimple(model, context, cacheRetention === undefined ? options : { ...options, cacheRetention });
+      return o.models.streamSimple(model, context, cacheRetention === undefined && temperature === undefined
+        ? options
+        : { ...options, ...(cacheRetention !== undefined ? { cacheRetention } : {}), ...(temperature !== undefined ? { temperature } : {}) });
     },
     toolExecution: "sequential",
     sessionId: o.attemptId,

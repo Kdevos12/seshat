@@ -138,6 +138,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     const attemptId = newId("att");
     let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions };
     let model = o.model;
+    let thinkingLevel = o.thinkingLevel;
+    let temperature: number | undefined;
     if (o.lines !== undefined) {
       const plan = await o.lines.beforeSession(info);
       if (plan.stop !== undefined) return done("line");
@@ -150,7 +152,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(plan.subgoal !== undefined ? { subgoal: plan.subgoal } : {}),
         ...(plan.included !== undefined ? { included: plan.included } : {}),
         ...(plan.withheld !== undefined ? { withheld: plan.withheld } : {}),
+        ...(plan.settings !== undefined ? { settings: plan.settings } : {}),
+        ...(plan.exploration !== undefined ? { exploration: plan.exploration } : {}),
       };
+      // The settings a line sampled act on the session; the journal records them as they were given.
+      if (typeof plan.settings?.thinking === "string") thinkingLevel = plan.settings.thinking as ThinkingLevel;
+      if (typeof plan.settings?.temperature === "number") temperature = plan.settings.temperature;
       // The problem may have ended while the lines decided.
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
       if (o.ledger.exhausted) return done("budget");
@@ -173,6 +180,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.stamp !== undefined ? { provenance: o.stamp(info.model) } : {}),
         ...(info.included !== undefined ? { included: info.included } : {}),
         ...(info.withheld !== undefined ? { withheld: info.withheld } : {}),
+        ...(info.settings !== undefined ? { settings: info.settings } : {}),
+        ...(info.exploration !== undefined ? { exploration: info.exploration } : {}),
       },
       actor,
     );
@@ -199,7 +208,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ],
         models: o.models,
         model,
-        thinkingLevel: o.thinkingLevel,
+        thinkingLevel,
+        ...(temperature !== undefined ? { temperature } : {}),
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,

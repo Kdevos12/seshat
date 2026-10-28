@@ -176,11 +176,12 @@ guard found (`drift_kind`, [guards.md](guards.md)), or a refuted part of a decom
 (`subgoal_refuted`, the part's claim id). The event is the decision and nothing more: it changes no
 task status and no claim status, and the journal accepts it from the orchestrator only.
 
-The action is one of three:
+The action is one of four:
 
 | Action | Meaning |
 |---|---|
 | `retry_fresh` | A new session on the same task. The error is local: the next session reads what Lean said and fixes it. |
+| `retry_stronger` | A new session on the same task with the strongest model configured. It takes the place of a `branch` when every failure of the claim ran under a weaker configuration than the strongest one (below). |
 | `reset_upstream` | Go back to the planning above the task and decompose the parent again. The error is in what the task rests on, not in its proof. |
 | `branch` | Open an alternative task under other constraints. The task is stuck, and more of the same would not get further. |
 
@@ -195,6 +196,15 @@ that a class or a kind added later does not compile until it is routed:
 | `subgoal_refuted` | `reset_upstream` |
 | drift `strategy_loop`, `session_loop` | `branch` |
 | drift `length_growth`, `unresolved_citation`, `sorry_as_known`, `raw_error_text`, `unanchored_revision`, `non_neutral_framing` | `retry_fresh` |
+
+`retry_stronger` is not a row of the table: it is not a route of a signal. The router takes it in the place
+of a `branch` when it knows the run's models (`ModelRanking`, the fleet's `ranking` option or its models in
+order, with the run's budget class) and the failures of the claim, this attempt's included, all ran under a
+configuration weaker than the strongest one (`onlyWeakerFailures` of `@seshat/memory`: a failed or
+no-submission attempt counts, a session that was cut does not, a model the run does not rank is weaker than any
+it does). Its reason says so and then gives the `branch` reason it replaced. The fleet reads it
+(`TaskApi.routings`) and gives the prover's next session the strongest model ([fleet.md](fleet.md#soft-failure-memory)).
+A claim that has failed under the strongest configuration, or under none, keeps its `branch`.
 
 Each row has its reason in the table, and the decision's `reason` is "what was seen: why this
 action", for example "the last check failed as restates_target: an auxiliary lemma states the target
@@ -211,6 +221,19 @@ When the orchestrator decides, after each attempt, for the task the attempt work
   before.
 
 An attempt that is valid, aborted, out of budget, an error or without a check has no decision.
+
+The decisions of an attempt are written right after its `attempt.finished`, one after the other, and they are
+idempotent: a decision for the same attempt and the same signal (the same finding, for a guard's) is not taken twice.
+A process that ended after the `attempt.finished` and before all the decisions were written leaves some out, so a
+resumed run takes them for the last attempt that finished of each task whose prover resumes (`Router.resumeTask`,
+before the prover's next session): the missing ones are written, in the order an uncut run writes them, and
+a task whose attempt was fully routed gets nothing. An attempt the resumption itself closed (`stopped_by:
+"interrupted"`) was not ended by its prover and has none. This holds for a consortium run too: the next turn resumes
+the prover the same way. Two differences from a run that was not cut remain, and are accepted: an attempt that ended in
+the harness-error path of the prover (its `attempt.finished` written, then the failure thrown) never reached the
+routing in the original run, but a resumed one takes its guard findings; and a part of a decomposition refuted between
+the attempt's end and the kill is routed at the resumption, one session earlier. Each is one more decision of the kind
+the table already gives, and none changes a status.
 
 The orchestrator only records. `retry_fresh` is what the prover's loop does next in any case, so its
 decision explains the next session. `reset_upstream` and `branch` are for the lines that plan work
@@ -415,13 +438,13 @@ What each rebuilds, from what it journaled:
 
 ### What a resumed run does not restore
 
-- A model response in flight at the interruption, and the routing decisions the process had not yet
-  written: neither is made up.
+- A model response in flight at the interruption: it is not made up. (The routing decisions the process had not yet
+  written for the prover's last finished attempt are: [Routing decisions](#routing-decisions).)
 - The sessions a line skipped (its `beforeSession` stopped them) are not recorded, so a resumed
   prover may be offered them again.
 - A session that was cut in the middle: what it had done is in the journal, but a line's view of it
   is not carried (M6 does not read a cut session's checkpoint; the next session is given the same
-  notice again). A routing decision lost between `attempt.finished` and `task.routed` is not made.
+  notice again).
 - M2's refutation side: an answer that was lost between its `model_call.finished` and its validation
   is not asked for again (the try is spent), and a resumed side's prompt lacks the feedback of the
   earlier failures.

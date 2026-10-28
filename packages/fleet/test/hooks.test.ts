@@ -8,7 +8,10 @@ import type { FinishedAttempt, JsonObject, ProblemContext, ResumedProblem, Sessi
 import { MemoryStore } from "@seshat/memory";
 import { allocations, createFleet, FLEET_OPTIONS } from "../src/index.ts";
 
-/** A run's memory over a real journal, one claim, and the means to write the attempts a prover's session writes. */
+/**
+ * A run's memory over a real journal, one claim, and the means to write the attempts a prover's session writes. The exploration floor
+ * is off unless a test asks for it (`epsilon`): these tests are about the posteriors.
+ */
 async function setup(options: JsonObject = {}, fleet = createFleet()) {
   const dir = mkdtempSync(join(tmpdir(), "mh-fleet-"));
   const journal = Journal.open(dir, "run_1");
@@ -20,7 +23,7 @@ async function setup(options: JsonObject = {}, fleet = createFleet()) {
   const hooks = fleet.hooks;
 
   const problem = (): ProblemContext =>
-    ({ line: "fleet", runId: "run_1", problemId: "prob_1", claimId, memory: memory.withActor("line:fleet"), registry, signal: controller.signal, options: { ...FLEET_OPTIONS, ...options } }) as unknown as ProblemContext;
+    ({ line: "fleet", runId: "run_1", problemId: "prob_1", claimId, memory: memory.withActor("line:fleet"), registry, signal: controller.signal, options: { ...FLEET_OPTIONS, epsilon: 0, ...options } }) as unknown as ProblemContext;
   const context = (prover: string, session: number): SessionContext =>
     ({ ...problem(), prover, session, sessions: 99, attemptId: `att_${prover}_${session}`, model: "faux/prover", regions: { aux: "", proof: "" } }) as unknown as SessionContext;
 
@@ -33,7 +36,12 @@ async function setup(options: JsonObject = {}, fleet = createFleet()) {
     attempts += 1;
     journal.emit(
       "attempt.started",
-      { attemptId: ctx.attemptId, claimId, prover, iteration: number, model: decision?.model ?? "faux/prover", ...(decision?.strategy !== undefined ? { strategy: decision.strategy } : {}) },
+      {
+        attemptId: ctx.attemptId, claimId, prover, iteration: number, model: decision?.model ?? "faux/prover",
+        ...(decision?.strategy !== undefined ? { strategy: decision.strategy } : {}),
+        ...(decision?.settings !== undefined ? { settings: decision.settings } : {}),
+        ...(decision?.exploration !== undefined ? { exploration: decision.exploration } : {}),
+      },
       `prover:${prover}`,
     );
     return decision;

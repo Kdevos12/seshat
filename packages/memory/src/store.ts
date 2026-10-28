@@ -32,7 +32,7 @@ import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epoc
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
 import { signatureMessage } from "./signature.ts";
-import { type TriedStrategy, triedStrategies } from "./tried.ts";
+import { type TriedStrategy, type TriedView, triedStrategies } from "./tried.ts";
 
 export interface MemoryStoreOptions {
   journal: Journal;
@@ -213,6 +213,12 @@ export interface Attempt {
   /** The unverified items a draw showed the session, and the ones it withheld (absent: no draw). */
   included?: string[];
   withheld?: string[];
+  /** The settings a line sampled for the session (the fleet's: temperature, thinking, directive, mode); absent: the run's own. */
+  settings?: { [key: string]: Json };
+  /** True when the exploration floor drew the session's strategy, false when it did not; absent when no line decides strategies. */
+  exploration?: boolean;
+  /** How many runs before the current one the attempt was made in (0: this run; 1: the last run of the chain...). */
+  runsAgo?: number;
 }
 
 /**
@@ -629,10 +635,12 @@ export class MemoryStore {
 
   /**
    * What was already tried on a claim and its equivalents, by strategy: counts, failure classes and
-   * the last failure's typed detail (plan §3.3). The attempts' text is not in it.
+   * the last failure's typed detail (plan §3.3). The attempts' text is not in it. With a `view` (the
+   * session's configuration and the run's ranking of models), attempts are also grouped by the
+   * configuration they ran under, and a line from another one says how it differs (PE3).
    */
-  alreadyTried(claimId: string): TriedStrategy[] {
-    return triedStrategies(this.attempts(claimId, { includeEquivalents: true }));
+  alreadyTried(claimId: string, view?: TriedView): TriedStrategy[] {
+    return triedStrategies(this.attempts(claimId, { includeEquivalents: true }), view);
   }
 
   /** The validations of a claim (proofs of it and of its negation), in order. */
@@ -806,6 +814,9 @@ function toAttempt(row: AttemptRow): Attempt {
     epoch: row.epoch,
     included: row.included,
     withheld: row.withheld,
+    settings: row.settings,
+    exploration: row.exploration,
+    runsAgo: row.runs_ago,
   });
 }
 
