@@ -45,7 +45,7 @@ Event types:
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
-| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?` |
+| `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?`, `settings?`, `exploration?` |
 | `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache): one model response of a session |
 | `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version` (for a Lean tool in a resolved environment, followed by `+env:NAME@` and the first 12 digits of the environment hash), `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
@@ -102,7 +102,11 @@ candidate.
 The learned, unverified records carry a `provenance` stamp (`modelId`, `promptVersion`, `mathlibRev`,
 `harnessVersion`, `budgetClass`, `createdAt`): an attempt, a lesson and a node a mechanism learned
 from outcomes. `included` and `withheld` on an attempt are the unverified memory items a line drew into
-the session and the ones the draw left out ([memory.md](memory.md#randomized-inclusion)).
+the session and the ones the draw left out ([memory.md](memory.md#randomized-inclusion)). `settings` are what a line sampled
+for the session (`temperature`, `thinking`, `directive`, `mode`; absent: the run's own) and `exploration` says whether the
+exploration floor drew its strategy ([fleet.md](fleet.md#sampled-settings)). The projection also keeps, for each attempt, how
+many runs before the current one it was made in (`runs_ago`: 0 for this run, 1 for the last run of the `memoryFrom` chain...),
+which the fleet's discount reads.
 `memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
 ([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
 
@@ -201,7 +205,7 @@ Applying an event is idempotent: an event at or below the last applied seq is sk
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 6) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 7) is kept in SQLite's
 `user_version`.
 
 A run that starts on earlier journals (`Journal.open(dir, run, {memory})`, which a journal that has

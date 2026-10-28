@@ -31,9 +31,9 @@ describe("the routing table", () => {
     assert.equal(routeOf({ type: "subgoal_refuted", value: "clm_x" }).action, "reset_upstream");
     for (const kind of ["strategy_loop", "session_loop"] as const) assert.equal(routeOf({ type: "drift_kind", value: kind }).action, "branch", kind);
     for (const kind of ["statement_drift", "restated_target"] as const) assert.equal(routeOf({ type: "drift_kind", value: kind }).action, "reset_upstream", kind);
-    // All three actions are used, and the table has no other.
+    // Three actions are in the table, and it has no other: `retry_stronger` is not a route of a signal, the Router takes it in the place of a `branch`.
     const used = new Set([...Object.values(FAILURE_ROUTES), ...Object.values(DRIFT_ROUTES), SUBGOAL_REFUTED_ROUTE].map((r) => r.action));
-    assert.deepEqual([...used].sort(), [...ROUTE_ACTIONS].sort());
+    assert.deepEqual([...used].sort(), ROUTE_ACTIONS.filter((action) => action !== "retry_stronger").sort());
   });
 
   it("routes only the findings that stopped a session or restarted a prover", () => {

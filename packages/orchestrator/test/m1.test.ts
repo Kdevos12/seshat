@@ -196,7 +196,7 @@ describe("M1 in a run", () => {
     // The option sets what the sessions are told, not what the memory keeps.
     assert.equal(ofType(events, "attempt.finished")[0]?.data.strategy, "induction");
     const started = ofType(events, "run.started")[0]?.data.config as { lines?: unknown };
-    assert.deepEqual(started.lines, [{ id: "M1", version: "m1-1", options: { maxLines: 0 } }]);
+    assert.deepEqual(started.lines, [{ id: "M1", version: "m1-2", options: { maxLines: 0 } }]);
   });
 
   it("refuses a strategy that is not in the vocabulary, and goes on", async () => {

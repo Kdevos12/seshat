@@ -177,6 +177,13 @@ a closing `... and N more strategies` included; below 2 there is no section, whi
 sections are ablated while the attempts are still labeled. The sections are made when a session
 starts: provers that run at the same time see only the attempts that had finished by then.
 
+With the run's models ranked (every run has its own model at least), the attempts are also split by the configuration
+they ran under (the model family and budget class of the attempt's provenance stamp), and a line from a configuration
+other than the session's says so: `induction: 3 attempts, unsolved goals (with a smaller model)`, or `a larger model`, `a smaller
+budget`, `another model`. A failure of a smaller model is soft evidence about this session's model. Lines of the session's own
+configuration come first. The rule that compares two configurations is in [fleet.md](fleet.md#soft-failure-memory). Without a
+ranking (a context an older caller builds) the section is as before. M1 is `m1-2` for this.
+
 An accepted attempt shows as a count, never as its proof. On a claim another problem proved, the
 section tells the second problem's provers that a strategy worked, and they still prove it
 themselves.

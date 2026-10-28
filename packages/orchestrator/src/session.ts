@@ -33,6 +33,8 @@ export interface SessionOptions {
   models: Models;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
+  /** Sent with each of the session's requests (a line sampled it: documentation/fleet.md); absent: the provider's own. */
+  temperature?: number;
   systemPrompt: string;
   prompt: string;
   workbench: Workbench;
@@ -180,12 +182,18 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
 
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
+  const temperature = o.temperature;
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
     streamFn:
-      cacheRetention === undefined
+      cacheRetention === undefined && temperature === undefined
         ? o.models.streamSimple.bind(o.models)
-        : (model, context, options) => o.models.streamSimple(model, context, { ...options, cacheRetention }),
+        : (model, context, options) =>
+            o.models.streamSimple(model, context, {
+              ...options,
+              ...(cacheRetention !== undefined ? { cacheRetention } : {}),
+              ...(temperature !== undefined ? { temperature } : {}),
+            }),
     toolExecution: "sequential",
     sessionId: o.attemptId,
     // The context packet of a line (M4) replaces every message after the system messages, which

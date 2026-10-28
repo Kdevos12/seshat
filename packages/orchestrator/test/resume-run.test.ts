@@ -631,7 +631,7 @@ describe("resuming a run with lines", () => {
     const journal = readFileSync(join(dir, "journal.jsonl"));
     await assert.rejects(
       demoResume({ dir, bench: whole.bench, lines: { ...LINES, M1: { ...M1, version: "m1-99" } }, responses: [] }),
-      /the run cannot be resumed with this code: the lines \(ids, versions or options\): the run recorded \[\{.*"version":"m1-1".*\}\], now \[\{.*"version":"m1-99".*\}\]/,
+      /the run cannot be resumed with this code: the lines \(ids, versions or options\): the run recorded \[\{.*"version":"m1-2".*\}\], now \[\{.*"version":"m1-99".*\}\]/,
     );
     assert.deepEqual(readFileSync(join(dir, "journal.jsonl")), journal);
   });

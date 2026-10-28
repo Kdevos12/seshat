@@ -178,7 +178,7 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 | `edges({from?, to?, kinds?, minStatus?})` | The edges that meet every criterion, in the order they were added. `to` matches any target and is answered from an index of targets, not by scanning the edges; `minStatus` counts in the order `proposed`, `computed`, `informal_checked`, `human_signed`, `lean_checked`. |
 | `equivalents(claimId)` | The claim and every claim reached from it through `lean_checked` `equiv` edges, in both directions: the claim first. |
 | `attempts(claimId, {includeEquivalents?})` | The attempts on the claim (and on its equivalents), in the order they started, with their role, strategies, premises and outcome. |
-| `alreadyTried(claimId)` | The attempts on the claim and its equivalents that were accepted or failed, grouped by their classified strategy: how many, how they failed, the last failure. Never the attempts' text ([m1-identity-memory.md](m1-identity-memory.md#already-tried)). |
+| `alreadyTried(claimId, view?)` | The attempts on the claim and its equivalents that were accepted or failed, grouped by their classified strategy: how many, how they failed, the last failure. Never the attempts' text ([m1-identity-memory.md](m1-identity-memory.md#already-tried)). With a `view` (the session's configuration and the run's `ModelRanking`) the groups are also split by configuration class, each saying how it compares with the session's. |
 | `validations(claimId)` | Its validations, of the claim and of its negation, in order. |
 | `node(id)` | The node, its data with every patch applied in order. |
 | `nodes(kind, {claimId?})` | The nodes of a kind (about one claim), in the order they were recorded. |
@@ -411,9 +411,11 @@ trust rules are in [trust.md](trust.md#memory-across-runs).
 - A stale lock file whose pid has been recycled by a live process (or is the run's own) makes the chain
   unreadable: the message names the process, and removing the lock after checking the run has ended
   clears it.
-- The fleet's strategy and model posteriors (`packages/fleet`) read `memory.attempts(...)` at full weight,
-  the chain's attempts after a model upgrade included; only `itemEffect` applies the probation weight
-  (`weightOf`). PE3 puts the fleet's discount in Task 19, which wires `weightOf(attempt.epoch)` there.
+- The fleet's strategy, model and settings posteriors (`packages/fleet`) weigh each attempt by
+  `gamma ^ runsAgo x weightOf(attempt.epoch)`, the first factor being the discount per run on the problem
+  (`Attempt.runsAgo`, from the projection) and the second the probation of its epoch
+  ([fleet.md](fleet.md#soft-failure-memory)); `itemEffect` applies the probation weight only. Nothing is deleted
+  by either.
 - A chain is read and verified in full at every open (about 14 microseconds per event, and 30 more to
   attach once), with no snapshot of the projection. Nothing has run against a real Lean or model.
 

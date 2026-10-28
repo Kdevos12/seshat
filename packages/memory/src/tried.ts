@@ -1,3 +1,5 @@
+import type { ConfigClass } from "@seshat/core";
+import { attemptClass, type ClassDifference, classKey, compareClass, describeDifference, type ModelRanking } from "./classes.ts";
 import type { Attempt } from "./store.ts";
 
 /** What was tried with one strategy on a claim and its equivalents. */
@@ -12,6 +14,20 @@ export interface TriedStrategy {
   failures: Array<{ class: string; count: number }>;
   /** The last failed attempt: its class and its typed detail. */
   last?: { attemptId: string; class: string; detail?: string };
+  /**
+   * Set when `triedStrategies` was given the configuration of the session: the configuration of
+   * these attempts (`FAMILY@BUDGET_CLASS`) and how it compares with the session's. Absent: the
+   * attempts are not grouped by configuration.
+   */
+  configClass?: string;
+  difference?: ClassDifference;
+}
+
+/** The configuration a briefing is made for, and the ranking that says whether another one was weaker (PE3). */
+export interface TriedView {
+  /** The configuration of the session that reads the summary. */
+  current: ConfigClass;
+  ranking: ModelRanking;
 }
 
 /**
@@ -20,12 +36,15 @@ export interface TriedStrategy {
  * (aborted, out of budget, a harness error), says nothing about its strategy. Most attempts first,
  * then the most recent, then by label.
  */
-export function triedStrategies(attempts: readonly Attempt[]): TriedStrategy[] {
-  const groups = new Map<string, { attempts: number; accepted: number; failures: Map<string, number>; lastSeq: number; last?: Attempt }>();
+export function triedStrategies(attempts: readonly Attempt[], view?: TriedView): TriedStrategy[] {
+  const groups = new Map<string, { strategy: string; klass?: ConfigClass; attempts: number; accepted: number; failures: Map<string, number>; lastSeq: number; last?: Attempt }>();
   for (const attempt of attempts) {
     if (attempt.strategy === undefined || (attempt.outcome !== "valid" && attempt.outcome !== "invalid")) continue;
-    const group = groups.get(attempt.strategy) ?? { attempts: 0, accepted: 0, failures: new Map<string, number>(), lastSeq: -1 };
-    groups.set(attempt.strategy, group);
+    // With a view, the same strategy under another configuration is another line: a failure of a smaller model is soft evidence.
+    const klass = view === undefined ? undefined : attemptClass(attempt, view.ranking.budgetClass);
+    const key = klass === undefined ? attempt.strategy : `${attempt.strategy}\u0000${classKey(klass)}`;
+    const group = groups.get(key) ?? { strategy: attempt.strategy, ...(klass !== undefined ? { klass } : {}), attempts: 0, accepted: 0, failures: new Map<string, number>(), lastSeq: -1 };
+    groups.set(key, group);
     group.attempts += 1;
     group.lastSeq = Math.max(group.lastSeq, attempt.finishedSeq ?? attempt.startedSeq);
     if (attempt.outcome === "valid") {
@@ -36,10 +55,15 @@ export function triedStrategies(attempts: readonly Attempt[]): TriedStrategy[] {
     group.failures.set(cls, (group.failures.get(cls) ?? 0) + 1);
     if (group.last === undefined || (attempt.finishedSeq ?? 0) >= (group.last.finishedSeq ?? 0)) group.last = attempt;
   }
+  const difference = (group: { klass?: ConfigClass }): ClassDifference | undefined =>
+    view === undefined || group.klass === undefined ? undefined : compareClass(view.ranking, group.klass, view.current);
+  // The lines of the session's own configuration come first, then the others: what it did itself weighs more.
+  const foreign = (group: { klass?: ConfigClass }): number => (difference(group)?.relation === "same" || difference(group) === undefined ? 0 : 1);
   return [...groups]
-    .sort(([a, x], [b, y]) => y.attempts - x.attempts || y.lastSeq - x.lastSeq || (a < b ? -1 : 1))
-    .map(([strategy, group]) => ({
-      strategy,
+    .sort(([a, x], [b, y]) => foreign(x) - foreign(y) || y.attempts - x.attempts || y.lastSeq - x.lastSeq || (a < b ? -1 : 1))
+    .map(([, group]) => ({
+      strategy: group.strategy,
+      ...(group.klass !== undefined ? { configClass: classKey(group.klass), difference: difference(group) as ClassDifference } : {}),
       attempts: group.attempts,
       accepted: group.accepted,
       failures: [...group.failures].sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1)).map(([cls, count]) => ({ class: cls, count })),
@@ -67,7 +91,9 @@ export function describeTried(entry: TriedStrategy): string {
   } else if (only !== undefined) {
     parts.push([only, ...more].map((f) => `${f.count} ${words(f.class)}`).join(", ") + (entry.last?.detail !== undefined ? `; last: ${entry.last.detail}` : ""));
   }
-  return `${entry.strategy}: ${parts.join(", ")}`;
+  // A line from another configuration says so: its failures say less about this session's model and budget.
+  const other = entry.difference !== undefined && entry.difference.relation !== "same" ? ` (with ${describeDifference(entry.difference)})` : "";
+  return `${entry.strategy}: ${parts.join(", ")}${other}`;
 }
 
 /**
