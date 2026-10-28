@@ -133,6 +133,7 @@ function configOf(recorded: unknown): RunConfig {
         }
       : {}),
     ...(consortium !== undefined ? { consortium } : {}),
+    ...(typeof r.seed === "string" || typeof r.seed === "number" ? { seed: r.seed } : {}),
   };
 }
 

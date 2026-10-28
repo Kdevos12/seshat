@@ -1,9 +1,11 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
 import { Projection, StaleProjectionError } from "./projection.ts";
+import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
 import {
@@ -30,12 +32,25 @@ export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer"];
 export class Journal {
   readonly log: EventLog;
   readonly projection: Projection;
+  /** The earlier journals this run starts on (its `run.started`'s `memoryFrom`), if any. */
+  readonly chain: MemoryChain | undefined;
   private readonly unsubscribe: () => void;
 
-  /** Catches the projection up with the journal. Throws `StaleProjectionError` if it cannot. */
-  constructor(log: EventLog, projection: Projection) {
+  /**
+   * Catches the projection up with the journal. Throws `StaleProjectionError` if it cannot, or if it was
+   * built on another chain of earlier journals than `chain`.
+   */
+  constructor(log: EventLog, projection: Projection, chain?: MemoryChain) {
     this.log = log;
     this.projection = projection;
+    this.chain = chain;
+    if (projection.chainHash() !== chain?.hash) {
+      // A projection with no events of its own and no chain takes the chain; any other is of another history.
+      if (chain === undefined || projection.chainHash() !== undefined || projection.lastSeq() >= 0) {
+        throw new StaleProjectionError("the projection was built on another chain of earlier journals");
+      }
+      projection.attachChain(chain);
+    }
     const seq = projection.lastSeq();
     if (seq > log.length - 1) {
       throw new StaleProjectionError(`projection is at seq ${seq}, journal ends at ${log.length - 1}`);
@@ -53,29 +68,36 @@ export class Journal {
   /**
    * Opens `<dir>/journal.jsonl` and its projection `<dir>/projection.sqlite`. A projection that
    * lags is caught up; one that does not match is deleted and rebuilt from the journal.
+   *
+   * `memory` is the chain of earlier journals a new run starts on (`loadMemoryChain`). A journal that
+   * already has events reads its own chain from its `run.started`, checked against what it pinned
+   * (`MemoryChainError` when an earlier journal is gone or changed).
    */
-  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean } = {}): Journal {
+  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean; memory?: MemoryChain } = {}): Journal {
+    const { memory, ...logOptions } = options;
+    const file = join(dir, "journal.jsonl");
+    const chain = memory ?? chainOfJournal(file);
     mkdirSync(dir, { recursive: true });
-    const log = EventLog.open(join(dir, "journal.jsonl"), { run, ...options });
+    const log = EventLog.open(file, { run, ...logOptions });
     const path = join(dir, "projection.sqlite");
     try {
       try {
-        return Journal.attach(log, path);
+        return Journal.attach(log, path, chain);
       } catch (error) {
         if (!(error instanceof StaleProjectionError)) throw error;
       }
       for (const suffix of ["", "-wal", "-shm"]) rmSync(path + suffix, { force: true });
-      return Journal.attach(log, path);
+      return Journal.attach(log, path, chain);
     } catch (error) {
       log.close();
       throw error;
     }
   }
 
-  private static attach(log: EventLog, path: string): Journal {
+  private static attach(log: EventLog, path: string, chain: MemoryChain | undefined): Journal {
     const projection = Projection.open(path);
     try {
-      return new Journal(log, projection);
+      return new Journal(log, projection, chain);
     } catch (error) {
       projection.close();
       throw error;
@@ -89,6 +111,15 @@ export class Journal {
 
   private check(event: EventBody, actor: string): void {
     const p = this.projection;
+    // A validation of an earlier run in another Lean environment counts for nothing: nothing cites it.
+    if (event.type === "claim.status_changed" || event.type === "edge.added" || event.type === "edge.status_changed") {
+      const id = event.data.validationId;
+      if (id !== undefined && p.earlierValidation(id)) {
+        throw new Error(
+          `validation ${id} is from an earlier run in another Lean environment: it counts for nothing until its proof passes validate again in this run`,
+        );
+      }
+    }
     switch (event.type) {
       case "claim.created": {
         const d = event.data;
@@ -165,6 +196,8 @@ export class Journal {
         if (!p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
         if (p.attempt(d.attemptId)) throw new Error(`attempt ${d.attemptId} already exists`);
         if (d.site !== undefined && !SITE.test(d.site)) throw new Error(`attempt ${d.attemptId}: bad site ${JSON.stringify(d.site)}`);
+        this.checkProvenance(`attempt ${d.attemptId}`, d.provenance);
+        this.checkDraw(d.attemptId, d.included, d.withheld);
         if (d.taskId !== undefined) {
           // Work is done inside a running task, for the task's own claim.
           const task = p.task(d.taskId);
@@ -194,6 +227,7 @@ export class Journal {
       }
       case "lesson.recorded":
         if (!p.attempt(event.data.attemptId)) throw new Error(`unknown attempt ${event.data.attemptId}`);
+        this.checkProvenance(`a lesson of attempt ${event.data.attemptId}`, event.data.provenance);
         return;
       case "tool_run.started":
         if (p.toolRun(event.data.toolRunId)) throw new Error(`tool run ${event.data.toolRunId} already exists`);
@@ -251,6 +285,7 @@ export class Journal {
         if (HUMAN_NODE_KINDS.includes(d.kind) && !actor.startsWith("human:")) {
           throw new Error(`node ${d.nodeId}: a ${d.kind} is the research team's, written by human:NAME, not by ${actor}`);
         }
+        this.checkProvenance(`node ${d.nodeId}`, d.provenance);
         return;
       }
       case "node.updated":
@@ -291,6 +326,22 @@ export class Journal {
         if (typeof event.data.reason !== "string" || event.data.reason === "") throw new Error(`turn ${event.data.turn}: a turn ends for a reason`);
         return;
       }
+      case "memory.epoch_opened": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        const expected = p.currentEpoch() + 1;
+        if (d.epoch !== expected) throw new Error(`this is epoch ${expected} of the memory, not ${String(d.epoch)}`);
+        if (typeof d.reason !== "string" || d.reason === "") throw new Error(`epoch ${d.epoch}: an epoch needs a reason`);
+        if (!Array.isArray(d.changes) || d.changes.length === 0) throw new Error(`epoch ${d.epoch}: it opens because something changed, and changes says what`);
+        for (const change of d.changes) {
+          if (!EPOCH_FIELDS.includes(change?.field)) throw new Error(`epoch ${d.epoch}: ${JSON.stringify(change)} is not a change that opens an epoch (${EPOCH_FIELDS.join(", ")})`);
+          if (typeof change.from !== "string" || typeof change.to !== "string" || change.from === change.to) {
+            throw new Error(`epoch ${d.epoch}: the change of ${change.field} goes from one value to another`);
+          }
+        }
+        this.checkProvenance(`epoch ${d.epoch}`, d.provenance, true);
+        return;
+      }
       case "task.created":
         this.onlyOrchestrator(event.type, actor);
         this.checkTaskCreated(event.data);
@@ -324,6 +375,30 @@ export class Journal {
         if (d.attemptId !== undefined && !p.attempt(d.attemptId)) throw new Error(`unknown attempt ${d.attemptId}`);
         if (d.nodeId !== undefined && !p.node(d.nodeId)) throw new Error(`unknown node ${d.nodeId}`);
         return;
+      }
+    }
+  }
+
+  /** A provenance, when there is one (or has to be), has the six fields of the stamp. */
+  private checkProvenance(what: string, provenance: unknown, required = false): void {
+    if (provenance === undefined) {
+      if (required) throw new Error(`${what} needs a provenance`);
+      return;
+    }
+    const problems = provenanceProblems(provenance);
+    if (problems.length > 0) throw new Error(`${what}: ${problems.join("; ")}`);
+  }
+
+  /** The items a draw included and withheld are two lists of ids, with no id twice and none in both. */
+  private checkDraw(attemptId: string, included: unknown, withheld: unknown): void {
+    const seen = new Set<string>();
+    for (const [name, list] of [["included", included], ["withheld", withheld]] as const) {
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) throw new Error(`attempt ${attemptId}: ${name} is a list of item ids`);
+      for (const id of list) {
+        if (typeof id !== "string" || id === "") throw new Error(`attempt ${attemptId}: ${name} holds item ids`);
+        if (seen.has(id)) throw new Error(`attempt ${attemptId}: item ${id} is drawn twice (included and withheld together, or listed twice)`);
+        seen.add(id);
       }
     }
   }

@@ -199,6 +199,12 @@ recorded), its model, the prover's regions as the session starts, and the strate
 `beforeSession` declared. The model's own declaration, through `lean_check`'s `strategy` argument,
 is on each `SessionCheck` and, for its last one, on the `FinishedAttempt`.
 
+It also has `draw(items, options?)` and `drawn`, the randomized inclusion of unverified items
+([memory.md](memory.md#randomized-inclusion)): in `beforeSession` a line passes the ids of the lessons,
+schema hints or other unverified items it selected, shows only the ones `included`, and the orchestrator
+records the two lists on `attempt.started`. A claim is never drawn. `drawn` gives what the session's
+draws included and withheld to the hooks after `beforeSession`, which cannot draw.
+
 ### The context packet
 
 A line's `contextPacket` hook (M4) answers a string or a `FrozenPacket`. A string is the whole

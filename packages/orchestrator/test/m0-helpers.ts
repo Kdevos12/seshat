@@ -216,6 +216,10 @@ export async function demoRun(options: {
   codeRev?: string;
   /** What a consortium run takes from its process: the turn's limit, a narrative, a clock. */
   turns?: TurnProcess;
+  /** The directory of an earlier run to start on (`harness run --memory-from`). */
+  memoryFrom?: string;
+  /** The Lean environment the registry is pinned to, as the CLI resolves it before the registry is built. */
+  leanEnvironment?: RunOptions["leanEnvironment"];
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
@@ -237,6 +241,8 @@ export async function demoRun(options: {
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
+    ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
+    ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }

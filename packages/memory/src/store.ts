@@ -12,12 +12,23 @@ import {
   type EdgeRow,
   type EdgeStatus,
   edgeStatusRank,
+  epochChanges,
+  type EpochChange,
+  type EpochRow,
   type Journal,
   type Json,
+  type LessonRow,
   newId,
   type NodeRow,
+  type Provenance,
+  type ProvenanceContext,
+  type RandomSource,
+  stampProvenance,
   type ValidationRow,
 } from "@seshat/core";
+import { type Draw, type DrawItem, type DrawOptions, drawItems } from "./draw.ts";
+import { armOf, effectOf, type ItemEffect } from "./effect.ts";
+import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epochs.ts";
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
 import { signatureMessage } from "./signature.ts";
@@ -31,6 +42,16 @@ export interface MemoryStoreOptions {
   identity?: StatementIdentity;
   /** Who the events are from. Default: `memory`. */
   actor?: string;
+  /**
+   * What the run knows of its provenance (documentation/memory.md, "Provenance and epochs"): the
+   * stamp of every learned artifact the store writes, and the epoch it opens. Without it `stamp`,
+   * `openEpoch` and a learned node refuse.
+   */
+  provenance?: ProvenanceContext;
+  /** The share of an older epoch's counters that probation keeps. Default 0.25. */
+  probation?: number;
+  /** The clock of the stamps. Default: the system's. */
+  now?: () => Date;
 }
 
 export interface ClaimInput {
@@ -65,6 +86,11 @@ export interface Claim {
   gloss?: string;
   parentId?: string;
   header?: string;
+  /**
+   * The status an earlier run recorded in another Lean environment. It counts for nothing: `status`
+   * is what this run established (`open` until a stored proof passes `validate` again).
+   */
+  earlierStatus?: ClaimStatus;
   createdSeq: number;
   updatedSeq: number;
 }
@@ -95,6 +121,8 @@ export interface Edge {
   validationId?: string;
   note?: string;
   link?: EdgeLink;
+  /** The status an earlier run recorded in another Lean environment; it counts for nothing. */
+  earlierStatus?: EdgeStatus;
   createdSeq: number;
   updatedSeq: number;
 }
@@ -114,6 +142,11 @@ export interface NodeInput {
   kind: string;
   claimId?: string;
   data: Json;
+  /**
+   * True for a node a mechanism learned from outcomes rather than from Lean (a lesson, a schema, a
+   * channel statistic, a posterior): it is stamped with the run's provenance (Global Constraint 16).
+   */
+  learned?: boolean;
 }
 
 export interface MemoryNode {
@@ -124,6 +157,29 @@ export interface MemoryNode {
   data: Json;
   createdSeq: number;
   updatedSeq: number;
+  /** Set on a node that was recorded `learned`. */
+  provenance?: Provenance;
+  /** The memory's epoch when it was recorded. */
+  epoch: number;
+}
+
+/** A model's own notes of a session, kept as a lesson record (`lesson.recorded`). */
+export interface Lesson {
+  attemptId: string;
+  claimId: string;
+  text: string;
+  provenance?: Provenance;
+  epoch: number;
+  seq: number;
+}
+
+/** An epoch the memory entered. */
+export interface Epoch {
+  epoch: number;
+  reason: string;
+  changes: EpochChange[];
+  provenance: Provenance;
+  seq: number;
 }
 
 export interface Attempt {
@@ -150,6 +206,30 @@ export interface Attempt {
   durationMs?: number;
   startedSeq: number;
   finishedSeq?: number;
+  /** The stamp of the record. Absent in a journal older than the stamps. */
+  provenance?: Provenance;
+  /** The memory's epoch when the attempt started; absent counts as 0. */
+  epoch?: number;
+  /** The unverified items a draw showed the session, and the ones it withheld (absent: no draw). */
+  included?: string[];
+  withheld?: string[];
+}
+
+/**
+ * A proof an earlier run stored under another Lean environment: its text is in the earlier run's blobs, and
+ * it is a candidate for `validate` here, nothing more. Its validation counts for nothing.
+ */
+export interface StoredProof {
+  validationId: string;
+  claimId: string;
+  /** True for a proof of the claim's negation. */
+  negation: boolean;
+  /** What the earlier run's check was. */
+  method: "repl" | "kernel_replay";
+  verdict: "valid" | "invalid";
+  submissionHash: string;
+  /** The submission's text; undefined when the blob is gone. */
+  text?: string;
 }
 
 export interface Validation {
@@ -181,7 +261,11 @@ export class MemoryStore {
   readonly blobs: BlobStore;
   readonly identity: StatementIdentity;
   readonly actor: string;
+  /** The share of an older epoch's counters that probation keeps. */
+  readonly probation: number;
   readonly #journal: Journal;
+  readonly #provenance: ProvenanceContext | undefined;
+  readonly #now: (() => Date) | undefined;
   /** Shared by the views `withActor` makes. Only the root store writes to it. */
   #references: Map<string, ClaimReference>;
   /** True for a store made by `withActor`: what a line is given. */
@@ -192,6 +276,10 @@ export class MemoryStore {
     this.blobs = options.blobs;
     this.identity = options.identity ?? new TextIdentity();
     this.actor = options.actor ?? "memory";
+    this.probation = options.probation ?? DEFAULT_PROBATION;
+    if (!(this.probation >= 0 && this.probation <= 1)) throw new RangeError(`the probation k must be between 0 and 1, got ${this.probation}`);
+    this.#provenance = options.provenance;
+    this.#now = options.now;
     this.#references = new Map();
   }
 
@@ -200,7 +288,15 @@ export class MemoryStore {
    * root store but cannot set one (`setReference`).
    */
   withActor(actor: string): MemoryStore {
-    const view = new MemoryStore({ journal: this.#journal, blobs: this.blobs, identity: this.identity, actor });
+    const view = new MemoryStore({
+      journal: this.#journal,
+      blobs: this.blobs,
+      identity: this.identity,
+      actor,
+      probation: this.probation,
+      ...(this.#provenance !== undefined ? { provenance: this.#provenance } : {}),
+      ...(this.#now !== undefined ? { now: this.#now } : {}),
+    });
     view.#references = this.#references;
     view.#view = true;
     return view;
@@ -289,10 +385,153 @@ export class MemoryStore {
     const nodeId = newId("nod");
     this.#journal.emit(
       "node.recorded",
-      { nodeId, kind: input.kind, ...(input.claimId !== undefined ? { claimId: input.claimId } : {}), data: input.data },
+      {
+        nodeId,
+        kind: input.kind,
+        ...(input.claimId !== undefined ? { claimId: input.claimId } : {}),
+        data: input.data,
+        ...(input.learned === true ? { provenance: this.stamp() } : {}),
+      },
       this.actor,
     );
     return this.node(nodeId) as MemoryNode;
+  }
+
+  /**
+   * The provenance stamp of an artifact made now (documentation/memory.md, "Provenance and epochs"):
+   * the run's model, prompt version, Mathlib revision, harness version and budget class, and the
+   * time. `modelId` names another model when the session that made the artifact ran one. A mechanism
+   * that learns something from outcomes stamps it with this, whatever it stores it as.
+   */
+  stamp(options: { modelId?: string } = {}): Provenance {
+    if (this.#provenance === undefined) throw new Error("this store has no provenance context: the run gives it one (MemoryStoreOptions.provenance)");
+    return stampProvenance(this.#provenance, { ...(options.modelId !== undefined ? { modelId: options.modelId } : {}), ...(this.#now !== undefined ? { now: this.#now() } : {}) });
+  }
+
+  /** The run's provenance context, if the store was given one. */
+  get provenanceContext(): ProvenanceContext | undefined {
+    return this.#provenance;
+  }
+
+  /** The memory's current epoch: 0 until the first `memory.epoch_opened`. */
+  epoch(): number {
+    return this.#journal.projection.currentEpoch();
+  }
+
+  /** The epochs the memory entered, in order; epoch 0 is not among them. */
+  epochs(): Epoch[] {
+    return this.#journal.projection.epochs().map(toEpoch);
+  }
+
+  /**
+   * Opens a new epoch: the unverified artifacts recorded in older epochs are in probation from now on
+   * (their outcomes weigh `probation` per epoch since, `weightOf`), and nothing is deleted. The
+   * journal lets only the orchestrator write the event, so a store of another actor is refused there.
+   */
+  openEpoch(input: { changes: readonly EpochChange[]; reason?: string }): Epoch {
+    const epoch = this.epoch() + 1;
+    this.#journal.emit(
+      "memory.epoch_opened",
+      { epoch, reason: input.reason ?? describeEpochChanges(input.changes), changes: [...input.changes], provenance: this.stamp() },
+      this.actor,
+    );
+    return this.epochs().at(-1) as Epoch;
+  }
+
+  /**
+   * Opens a new epoch when the run's provenance context differs from `previous`, the context of the
+   * memory's previous run, in the prover model family, the prompts' major version or the Mathlib
+   * revision (plan change PE1 item 2). Returns the epoch it opened, or undefined when none changed.
+   */
+  openEpochIfChanged(previous: ProvenanceContext): Epoch | undefined {
+    if (this.#provenance === undefined) throw new Error("this store has no provenance context: the run gives it one (MemoryStoreOptions.provenance)");
+    const changes = epochChanges(previous, this.#provenance);
+    return changes.length === 0 ? undefined : this.openEpoch({ changes });
+  }
+
+  /**
+   * How much an outcome recorded in epoch `epoch` weighs now: 1 in the current epoch, `probation` for
+   * each epoch opened since. The counters of an unverified item are sums of these weights, so an item
+   * of an older epoch is in probation and earns its standing again only through new outcomes.
+   */
+  weightOf(epoch: number): number {
+    return probationWeight(this.epoch(), epoch, this.probation);
+  }
+
+  /**
+   * Randomized inclusion (plan change PE2; documentation/memory.md, "Randomized inclusion"). Takes the
+   * unverified items a line selected for a session and draws each with probability `pNew` (0.5) while it
+   * has been included fewer than `nNew` (20) times in the current epoch, then `p` (0.9), from `random`,
+   * the run's seeded source. Returns what to show and what to withhold; the orchestrator records the two
+   * lists on `attempt.started` (`SessionContext.draw` does both). Writes nothing itself.
+   *
+   * A claim, whether the goal or a verified fact, and an item flagged `verified` are never drawn: they
+   * come back in `fixed`, to be shown, and are in neither list.
+   */
+  draw(items: readonly (string | DrawItem)[], random: RandomSource, options: Partial<DrawOptions> = {}): Draw {
+    const projection = this.#journal.projection;
+    const epoch = projection.currentEpoch();
+    return drawItems(items, random, { isFact: (id) => projection.claim(id) !== undefined, uses: (id) => projection.itemUses(id, epoch) }, options);
+  }
+
+  /** How many sessions were shown the item (it was included) since the current epoch began. */
+  itemUses(itemId: string): number {
+    const projection = this.#journal.projection;
+    return projection.itemUses(itemId, projection.currentEpoch());
+  }
+
+  /**
+   * An item's effect on the success of an attempt, as two Beta posteriors (plan change PE2 item 2):
+   * the attempts whose draw included it against those whose draw withheld it, among the attempts on the
+   * claims of `claimIds` (the claim group: for one claim, `equivalents(claimId)`; absent: any claim) with
+   * the strategy label `strategy` (the label classified when the attempt finished, else the one declared;
+   * absent: any). A proof the fast check accepted is a success and a failed check a failure; a session
+   * that was cut says nothing. Each outcome counts with the probation weight of its epoch
+   * (`weightOf`), so an item of an older epoch is in probation and earns its standing again only through
+   * new outcomes. `P(effect < 0)` is `pNegative`; `shouldDeactivate` applies M5's rule to it.
+   */
+  itemEffect(itemId: string, scope: { claimIds?: readonly string[]; strategy?: string } = {}): ItemEffect {
+    return this.#effects(itemId, scope).get(scope.strategy) ?? effectOf(itemId, scope, armOf(0, 0, 0), armOf(0, 0, 0));
+  }
+
+  /**
+   * The same effect for each strategy label the item's attempts carry in the group, in the order of the
+   * labels; attempts with no label come last under no `strategy`. Only labels with an attempt appear.
+   */
+  itemEffects(itemId: string, scope: { claimIds?: readonly string[] } = {}): ItemEffect[] {
+    const by = this.#effects(itemId, scope, true);
+    return [...by.entries()].sort(([a], [b]) => (a === undefined ? 1 : b === undefined ? -1 : a < b ? -1 : a > b ? 1 : 0)).map(([, effect]) => effect);
+  }
+
+  #effects(itemId: string, scope: { claimIds?: readonly string[]; strategy?: string }, split = false): Map<string | undefined, ItemEffect> {
+    const group = scope.claimIds === undefined ? undefined : new Set(scope.claimIds);
+    type Tally = { with: [number, number, number]; without: [number, number, number] };
+    const tallies = new Map<string | undefined, Tally>();
+    for (const { attempt, included } of this.#journal.projection.itemAttempts(itemId)) {
+      if (group !== undefined && !group.has(attempt.claim_id)) continue;
+      const label = attempt.strategy ?? attempt.declared_strategy ?? undefined;
+      if (scope.strategy !== undefined && label !== scope.strategy) continue;
+      if (attempt.outcome !== "valid" && attempt.outcome !== "invalid") continue;
+      const key = split ? label : scope.strategy;
+      const tally = tallies.get(key) ?? { with: [0, 0, 0], without: [0, 0, 0] };
+      tallies.set(key, tally);
+      const arm = included ? tally.with : tally.without;
+      const weight = this.weightOf(attempt.epoch);
+      if (attempt.outcome === "valid") arm[0] += weight;
+      else arm[1] += weight;
+      arm[2] += 1;
+    }
+    return new Map(
+      [...tallies].map(([label, t]) => [
+        label,
+        effectOf(itemId, { ...(scope.claimIds !== undefined ? { claimIds: scope.claimIds } : {}), ...(label !== undefined ? { strategy: label } : {}) }, armOf(...t.with), armOf(...t.without)),
+      ]),
+    );
+  }
+
+  /** The lessons recorded about a claim (the models' own notes, `lesson.recorded`), in order. */
+  lessons(claimId: string): Lesson[] {
+    return this.#journal.projection.lessons(claimId).map(toLesson);
   }
 
   /** Applies a JSON merge patch (RFC 7386) to a node's data. */
@@ -396,6 +635,29 @@ export class MemoryStore {
     return this.#journal.projection.validations(claimId).map(toValidation);
   }
 
+  /**
+   * The proofs of a claim that an earlier run stored under another Lean environment, to submit again
+   * through `validate`; none for a run that started on nothing, or whose environment is the earlier one's
+   * (their validations count, `validations`). A proof is as good as its validation here, not before.
+   */
+  storedProofs(claimId: string): StoredProof[] {
+    return this.#journal.projection
+      .earlierValidations(claimId)
+      .filter((row) => row.verdict === "valid")
+      .map((row) => {
+        const text = this.blobs.get(row.submission_hash);
+        return present<StoredProof>({
+          validationId: row.validation_id,
+          claimId: row.claim_id,
+          negation: row.negation,
+          method: row.method,
+          verdict: row.verdict,
+          submissionHash: row.submission_hash,
+          text,
+        });
+      });
+  }
+
   node(nodeId: string): MemoryNode | undefined {
     const row = this.#journal.projection.node(nodeId);
     return row === undefined ? undefined : toNode(row);
@@ -458,6 +720,7 @@ function toClaim(row: ClaimRow): Claim {
     gloss: row.gloss,
     parentId: row.parent_id,
     header: row.header,
+    earlierStatus: row.earlier_status,
     createdSeq: row.created_seq,
     updatedSeq: row.updated_seq,
   });
@@ -475,6 +738,7 @@ function toEdge(row: EdgeRow): Edge {
     validationId: row.validation_id,
     note: row.note,
     link: row.link_name === null || row.link_statement === null ? undefined : { name: row.link_name, statement: row.link_statement },
+    earlierStatus: row.earlier_status,
     createdSeq: row.created_seq,
     updatedSeq: row.updated_seq,
   });
@@ -489,9 +753,26 @@ function toNode(row: NodeRow): MemoryNode {
       claimId: row.claim_id,
       createdSeq: row.created_seq,
       updatedSeq: row.updated_seq,
+      provenance: row.provenance,
+      epoch: row.epoch,
     }),
     data: row.data,
   };
+}
+
+function toLesson(row: LessonRow): Lesson {
+  return present<Lesson>({
+    attemptId: row.attempt_id,
+    claimId: row.claim_id,
+    text: row.text,
+    provenance: row.provenance,
+    epoch: row.epoch,
+    seq: row.seq,
+  });
+}
+
+function toEpoch(row: EpochRow): Epoch {
+  return { epoch: row.epoch, reason: row.reason, changes: row.changes, provenance: row.provenance, seq: row.seq };
 }
 
 function toAttempt(row: AttemptRow): Attempt {
@@ -516,6 +797,10 @@ function toAttempt(row: AttemptRow): Attempt {
     durationMs: row.duration_ms,
     startedSeq: row.started_seq,
     finishedSeq: row.finished_seq,
+    provenance: row.provenance,
+    epoch: row.epoch,
+    included: row.included,
+    withheld: row.withheld,
   });
 }
 

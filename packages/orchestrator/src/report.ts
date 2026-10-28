@@ -1,6 +1,15 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type EventDataMap, type HarnessEvent, readEvents, SITE_PROVER_SESSION } from "@seshat/core";
+import {
+  chainOfJournal,
+  type EventDataMap,
+  type HarnessEvent,
+  type MemoryFrom,
+  type MemorySummary,
+  Projection,
+  readEvents,
+  SITE_PROVER_SESSION,
+} from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
 import { type Redundancy, redundancy } from "@seshat/memory";
 
@@ -68,6 +77,26 @@ export interface RunReport {
    * Absent when no attempt has a label, which is every run without the M1 line.
    */
   redundancy?: Redundancy;
+  /**
+   * What the run took from the earlier journals it started on (`--memory-from`); absent for a run that
+   * started on none. The problems' outcomes above are the run's own certifications: nothing here is
+   * credited to them.
+   */
+  memory?: MemoryLine;
+}
+
+/** The earlier memory a run started on (documentation/memory.md, "Memory across runs"). */
+export interface MemoryLine {
+  /** The run `run.started` names, with the hash and length of its journal that the run pinned. */
+  from: MemoryFrom;
+  /** The journals of the chain, the run named and the ones it was started on in turn. */
+  journals: number;
+  /** True when every journal of the chain was recorded in the Lean environment of this run: verified statuses carried. */
+  sameEnvironment: boolean;
+  /** What came from the chain; absent when the chain could not be read when the report was made. */
+  taken?: MemorySummary;
+  /** Why the chain could not be read. */
+  unavailable?: string;
 }
 
 /** What one site of the harness spent (documentation/ledger.md, "Sites"). */
@@ -398,6 +427,20 @@ function cell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
+function memoryParagraph(m: MemoryLine): string[] {
+  const head = `Memory from the earlier run ${m.from.runId} (${m.journals} journal(s) in the chain, ${m.from.events} events in the first, last hash ${m.from.lastHash.slice(0, 12)}): `;
+  if (m.taken === undefined) return [`${head}it could not be read when this report was made (${m.unavailable ?? "unknown reason"}).`];
+  const t = m.taken;
+  const carried = Object.entries(t.carried).map(([status, n]) => `${n} ${status}`).join(", ");
+  return [
+    `${head}${t.claims} claim(s), ${t.attempts} attempt(s), ${t.toolRuns} tool run(s), ${t.lessons} lesson(s), ${t.nodes} node(s), ${t.edges} edge(s), ${t.epochs} epoch(s). ` +
+      `${m.sameEnvironment
+        ? `The same Lean environment: ${t.validations.carried} validation(s) and the statuses of the claims carried${carried !== "" ? ` (${carried})` : ""}.`
+        : `Another Lean environment for ${t.validations.notCarried} validation(s): ${t.reset} claim status(es) and ${t.edgesReset} edge status(es) of the earlier runs count for nothing until a stored proof passes validate again.`} ` +
+      "A problem's outcome above comes from this run's own certifications, never from the earlier memory.",
+  ];
+}
+
 export function renderRunReport(report: RunReport): string {
   const c = report.config as
     | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[] }
@@ -468,6 +511,7 @@ export function renderRunReport(report: RunReport): string {
             `(${(report.redundancy.share * 100).toFixed(0)}%) failed again as an earlier attempt on the same claim or an equivalent one had.`,
         ]
       : []),
+    ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
     "",
@@ -481,9 +525,33 @@ export function renderRunReport(report: RunReport): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** The earlier memory a run started on, from its `run.started`; the chain is read again and replayed under the run's own events. */
+function memoryLine(journalPath: string, events: readonly HarnessEvent[]): MemoryLine | undefined {
+  const first = events[0];
+  if (first?.type !== "run.started" || first.data.memoryFrom === undefined) return undefined;
+  const from = first.data.memoryFrom;
+  try {
+    const chain = chainOfJournal(journalPath);
+    if (chain === undefined) return undefined;
+    const projection = Projection.inMemory();
+    try {
+      projection.attachChain(chain);
+      for (const event of events) projection.apply(event);
+      return { from, journals: chain.segments.length, sameEnvironment: chain.segments.every((s) => s.carried), taken: projection.memorySummary() };
+    } finally {
+      projection.close();
+    }
+  } catch (error) {
+    return { from, journals: 1, sameEnvironment: false, unavailable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /** Writes `report.md` and `report.json` in a run directory, from its journal. */
 export function writeReport(dir: string): RunReport {
-  const report = buildReport(readEvents(join(dir, "journal.jsonl")));
+  const events = readEvents(join(dir, "journal.jsonl"));
+  const report = buildReport(events);
+  const memory = memoryLine(join(dir, "journal.jsonl"), events);
+  if (memory !== undefined) report.memory = memory;
   writeFileSync(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   writeFileSync(join(dir, "report.md"), renderRunReport(report));
   return report;

@@ -192,6 +192,237 @@ nodes with `disagreement: true` (two informal validators that disagree), `obstru
 Records use the events' names (`claimId`, `parentId`, `declaredStrategy`...), and a field that is
 not set is absent.
 
+## Provenance and epochs
+
+An artifact a mechanism learns from outcomes rather than from Lean is unverified (Global
+Constraint 16): an attempt record that "already tried" reads, a lesson, a posterior, a schema, a
+channel statistic, a prompt. It carries a provenance stamp, and it never becomes a fact. A claim
+proved by the certifier, an edge checked by a Lean lemma, a library lemma are model independent and
+carry none.
+
+```ts
+interface Provenance {
+  modelId: string;        // the prover model as configured, PROVIDER/ID
+  promptVersion: string;  // the provers' PROMPT_VERSION
+  mathlibRev: string;     // the bench's revision, which stands in for Mathlib's (see "Limits" under Memory across runs)
+  harnessVersion: string; // the code revision of the run
+  budgetClass: string;    // tiny, small, medium, large, huge or unbounded, from the dollars per problem
+  createdAt: string;      // ISO 8601
+}
+```
+
+What is stamped, today:
+
+| Artifact | Where the stamp is |
+|---|---|
+| An attempt record | `provenance` of `attempt.started`, with the model of the session. M1's "already tried" and the fleet's posteriors read these records. |
+| A model's notes | `provenance` of `lesson.recorded`. |
+| A node a mechanism learned | `provenance` of `node.recorded`, set by `recordNode({..., learned: true})`. |
+| An epoch | `provenance` of `memory.epoch_opened`, the run that opened it. |
+
+`store.stamp({modelId?})` is the helper that later artifacts use (lessons, schemas and cells, prompts):
+it gives the stamp of an artifact made now, from the context the run gave the store
+(`MemoryStoreOptions.provenance`). A mechanism that learns something stamps it, whatever record it
+stores it in; a node says `learned: true` and the store stamps it. `store.attempts(...)` gives each
+attempt's `provenance`, `epoch`, `included` and `withheld`, and `store.lessons(claimId)` the lessons.
+
+The orchestrator builds the context from the run: the configured model, `PROMPT_VERSION`, the bench's
+revision as `mathlibRev`, the code revision as `harnessVersion` (`unknown` without one) and the budget
+class of `budget.problemUsd`. A run that is resumed stamps with its resumed process's code revision.
+
+### Config classes
+
+PE3 groups attempts by the configuration they ran under. `configClassOf(provenance)` gives
+`{family, budgetClass}`, and `configClassKey` the same as one string. The family of a model is its
+`PROVIDER/ID` without a snapshot suffix (`-20250929`, `-2025-09-29`, `@20250929`, `-latest`), so a
+new snapshot is the same family and a new version number is another one: a model upgrade is what
+starves a posterior (PE3). The rule reads the text of the id; an id it does not recognize is its own
+family. The budget classes are `tiny` (under $0.5 per problem), `small` (under $2), `medium` (under
+$10), `large` (under $50), `huge`, and `unbounded`.
+
+### Epochs
+
+The memory has a current epoch, 0 at first. A new epoch opens, with the event `memory.epoch_opened`
+(its number, the reason in words, the changes, the stamp of the run), when the prover model family, the
+prompts' major version or the Mathlib revision is not the one of the memory's previous run:
+
+| Trigger | Compared |
+|---|---|
+| The prover model family | `modelFamily` of the configured model |
+| The prompts' major version | `promptMajor(PROMPT_VERSION)`: the version up to its last integer, so `m0-3` is another major than `m0-2` and `m0-2.1` is the same one (a minor part is a rewording) |
+| The Mathlib revision | the bench's revision |
+
+A change of the harness version or of the budget class opens none. The orchestrator opens the epoch
+when a run starts on the memory of an earlier run ([below](#memory-across-runs)); only the orchestrator
+may write the event, and a store of another actor is refused by the journal. `store.epoch()` is the
+current epoch, `store.epochs()` the epochs entered, and every attempt, lesson and learned node keeps the
+epoch it was recorded in. Nothing is deleted: the journal keeps all.
+
+### Probation
+
+On a new epoch the unverified artifacts of older epochs enter probation. Their counters are shrunk
+toward the prior: Beta(a, b) becomes Beta(1 + (a - 1) k, 1 + (b - 1) k), with k = 0.25 by default
+(`MemoryStoreOptions.probation`). Counters here are sums of outcomes, so the shrinkage is a weight on
+each outcome: `store.weightOf(epoch)` is 1 for an outcome of the current epoch and k for each epoch
+opened since, and `shrinkBeta(beta, k)` is the same arithmetic on a posterior that already exists.
+An item regains weight only through outcomes: the weight of an old outcome does not come back with time
+or with the item being shown, and a new outcome counts in full. The [randomized inclusion](#randomized-inclusion) of unverified items treats an
+item of an older epoch as new again, so it is shown at random until it has earned its place again.
+
+## Randomized inclusion
+
+A lesson present in a successful attempt is credited with the success even when it did not cause it,
+so a lesson that is shown often gains points by being there and never leaves (plan change PE2). The
+memory store draws the unverified items a session is shown at random, and judges each by its effect.
+Tasks 9, 11 and 18 call it for lessons, schema hints, inspiration examples and library hint sections.
+
+**The draw.** `store.draw(items, random, options?)` takes the ids of the unverified items a line
+selected for a session and includes each with probability `pNew` (0.5) while it has been included
+fewer than `nNew` (20) times in the current epoch, then `p` (0.9). It returns `{included, withheld,
+fixed, chances, uses}` and writes nothing. The draw is made one item at a time in the order of the ids,
+from a seeded random source, so the same seed and history give the same draw whatever order a line lists
+the items in. A *use* is a session that included the item (`attempt.started`'s `included`); a withheld
+item was not used. A new epoch counts uses from zero, so an item in probation is drawn at `pNew` again
+([above](#probation)).
+
+What is never drawn: a claim, whether the goal or a verified fact, and any item the caller flags
+`{id, verified: true}`. They come back in `fixed`, to be shown, and appear in neither list. A line passes
+only what it chose to show; the facts a proof needs and the goal are not subject to withholding.
+
+**In a run.** A line draws in `beforeSession` with `session.draw(items, options?)`: the orchestrator
+draws from the run's seeded source (`--draw-seed`, default the run's id; the stream is seeded by the
+seed, the problem, the prover, the session and the line), and records both lists on `attempt.started`
+(`included`, `withheld`). The briefing and the other hooks of the session read `session.drawn`, so what
+the line shows is what the journal says it showed; they cannot draw, since the attempt has started. An
+item drawn twice in one session keeps its first outcome. A session with no draw records neither list.
+A resumed run draws what the run that was not cut would have drawn: the stream is keyed by the seed (or
+the run's id), the problem, the prover, the session and the line, all of which a resumed process recreates,
+and an item's uses are the `attempt.started` records of the journal, which the cut session had written.
+The random numbers do not depend on the order in which provers run; the use count does. With
+`--concurrency` above 1, or several provers on a problem, the session at which an item reaches `nNew`
+uses (and so passes from `pNew` to `p`) depends on how the sessions interleaved, which the journal
+records but a second run need not repeat.
+
+```ts
+beforeSession: async (session) => {
+  const { included } = session.draw(lessons.map((l) => l.id)); // recorded on attempt.started
+  ...
+},
+briefing: async (session) => ({ title: "Lessons", text: show(session.drawn.included) }),
+```
+
+**The effect.** An item's effect is the difference between the success rates of the attempts that were
+shown it and of those that were denied it, in one group of claims and one strategy label, as two Beta
+posteriors. `store.itemEffect(itemId, {claimIds?, strategy?})` gives `{with, without, difference,
+pNegative}`; each side is `{attempts, successes, failures, posterior}` with the posterior Beta(1 +
+successes, 1 + failures). Only the attempts whose draw named the item count, the included ones on one
+side and the withheld ones on the other, which is what makes the comparison causal: an attempt that
+was never offered the item was selected by something else. A proof the fast check accepted is a
+success, a failed check a failure, and a session that was cut says nothing. The claim group is the set of
+claims the caller names (for one claim, `store.equivalents(claimId)`, the group "already tried" reads);
+the strategy label is the one classified when the attempt finished, else the one declared.
+`store.itemEffects(itemId, {claimIds?})` gives the effect for each label.
+
+Each outcome counts with the probation weight of its epoch ([above](#probation)), so an item of an
+older epoch regains weight only through new outcomes. `pNegative` is P(effect < 0), the chance that the
+rate with the item is below the rate without it: the integral of one posterior against the other, exact
+up to the integration and deterministic. `shouldDeactivate(effect, {minObservations, threshold?})` is
+M5's rule: deactivate when P(effect < 0) is above the threshold (0.9) after at least `minObservations`
+observations on each side. An observation counts with the probation weight of its epoch (the arm's
+`successes + failures`), so evidence from before an epoch opened does not satisfy the minimum until
+outcomes of the current epoch make it up; in the current epoch an observation is an attempt. `pNew`, `nNew`,
+`p`, the threshold and the minimum are options of the caller.
+
+The presence counter that this replaces stays where it is, for comparison. The causal rule is measured
+against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
+real model.
+
+## Memory across runs
+
+`harness run --memory-from RUN_DIR` starts a run on the memory of an earlier one: its claims, edges,
+nodes, lessons, attempts and tool runs, its stamps and epochs, and the posteriors that follow from them.
+The earlier run is not copied and not written. `run.started` names it (`memoryFrom`: the directory, the
+run id, the hash of the last event and the number of events), and the new run's projection replays that
+journal first ([journal.md](journal.md#projection)).
+
+**Where it is.** `memoryFrom` records the earlier directory twice: the absolute `path`, and `relative`, the
+way from the new run's directory to it. A run, a resume and a report look at the relative one first and
+fall back to the absolute one, so a lineage whose directories moved together (a copy of a `runs/` tree)
+still reads; a run that recorded no relative path (older ones) needs the absolute one to exist. Which
+journal is found there is the pin's business, below. `Journal.open` finds what a run started on by reading
+the first line of its journal only.
+
+**Pinned by its last hash.** The earlier journal is read whole, its hash chain is verified, and the run is
+refused unless it ends at the hash the new run pinned. A run is also refused when the earlier journal is
+corrupt, is not a run, or is still being written by a live process. The pin is checked on every open, so a
+run whose earlier journal was written to afterwards cannot be resumed; start a new one on the new end.
+Chains nest: a run started on a run that was itself started on another reads both, oldest first, each
+checked against the hash its successor pinned. Blobs are read through to the earlier runs' directories
+(the newest first); the new run writes only its own.
+
+**What carries.** Verified facts carry only under the same Lean environment. A run is in the environment
+it is pinned to ([lean-env.md](lean-env.md)): `run.started`'s `config.leanEnv` records its name and hash,
+and two runs are in the same environment exactly when both hashes are strings and equal (`env:HASH`). A
+record whose hash is null (the environment was not resolved) is in none that can be compared: it never
+equals another, itself included. A journal that recorded no environment (a run before Task 21, or a host
+that names none) is identified by the bench's revision and the Lean toolchain (`bench:REV|lean:TOOLCHAIN`),
+which never equals a hash, and an unknown revision or toolchain is incomparable too. So two environments
+with the same bench and toolchain but different packages (`base` and `extended`) do not carry in either
+direction. The comparison is per journal of the chain, against the environment of the run that reads it.
+The reading run's environment is resolved before the chain is read (`RunOptions.leanEnvironment`, which
+the command line fills from the host's lock with `hostLeanEnv`, without building the registry), and the run
+is refused when the registry it then builds is pinned to another. Under the same environment a claim keeps the status the earlier journal gave
+it, its validations count, and its `lean_checked` edges propagate. Under another, the earlier statuses
+count for nothing: its claims are `open` and its edges `proposed`, the status it recorded stays visible as
+`earlierStatus`, and its validations are not validations here, so nothing can cite them. The proofs it
+stored are still readable (`storedProofs(claimId)`, the submission text from the earlier run's blobs), and
+a claim is proved again the usual way: the proof goes through `validate` and the certifier in the new run.
+The journal refuses a status change or an edge that cites a validation of another environment.
+
+**What does not carry.** A problem's outcome comes only from its own certifications (Ruling 23): the
+earlier run's problems, tasks, resumptions, spend and open attempts are not applied, and the report counts
+a problem as solved only when its own certification is in the new journal, even when its claim carried
+`proved`. The earlier attempts are memory ("already tried" reads them), not work of this run. Learned
+artifacts keep their stamp and stay unverified ([above](#provenance-and-epochs)); the posteriors and the
+uses that decide how an item is drawn ([below](#randomized-inclusion)) are computed over the whole chain,
+each outcome weighed by its epoch.
+
+**In a run.** The orchestrator reads the chain before it writes anything (a refusal leaves no
+directory), gives the run a memory store even without a line, takes up the claim an earlier run made for
+the same statement, and opens an epoch when the model family, the prompts' major version or the Mathlib
+revision differs from the last journal of the chain. The report has a section on what came from the
+memory: its claims, how many statuses carried or were reset, its attempts, lessons, nodes, edges,
+validations and epochs. `--resume` reads the chain from the run's own journal.
+
+**The trust limit of the pin.** `--memory-from` is for your own runs. The pin detects a change made to a
+journal after a run started on it, but the hash chain is an unkeyed SHA-256: a journal edited and fully
+re-hashed before the new run starts is accepted. If it was recorded in the same Lean environment, its
+verified statuses then carry, because the replay applies inherited events without the journal's
+invariants, and its validations count; a forged `proved` with a forged `kernel_replay` validation would
+become a `proved` claim of the new run, and the edges and propagation that rest on it with it. So a
+carried status is as trustworthy as the directory it came from. What holds whatever the directory
+holds: a problem's outcome never comes from the earlier run (it needs this run's own certification), and
+the only real re-check is a stored proof (`storedProofs`) sent through `validate` and the certifier in
+the new run. Do not pass a run directory you did not produce, or whose storage others can write. The
+trust rules are in [trust.md](trust.md#memory-across-runs).
+
+**Limits.**
+
+- The Mathlib trigger of an epoch is the bench's git revision, the plan's stand-in: updating the bench
+  checkout opens an epoch and puts the memory in probation whether or not Mathlib changed. It errs on the
+  safe side.
+- Nodes of every kind carry in every environment; only claims, edges and validations are reset under
+  another one. No node holds a verified status today. The library lemma nodes of Tasks 6 and 9 will, and
+  must be filtered by the environment when they exist.
+- A stale lock file whose pid has been recycled by a live process (or is the run's own) makes the chain
+  unreadable: the message names the process, and removing the lock after checking the run has ended
+  clears it.
+- The fleet's strategy and model posteriors (`packages/fleet`) read `memory.attempts(...)` at full weight,
+  the chain's attempts after a model upgrade included; only `itemEffect` applies the probation weight
+  (`weightOf`). PE3 puts the fleet's discount in Task 19, which wires `weightOf(attempt.epoch)` there.
+- A chain is read and verified in full at every open (about 14 microseconds per event, and 30 more to
+  attach once), with no snapshot of the projection. Nothing has run against a real Lean or model.
+
 ## Reference files
 
 A proof is checked against a reference: a Lean file, and the theorem in it that states the claim

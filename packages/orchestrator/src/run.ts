@@ -1,21 +1,27 @@
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import type { BenchIndex, ProblemEntry } from "@seshat/bench";
 import {
   BlobStore,
+  budgetClassOf,
   CheckFailedError,
+  environmentId,
   hashJson,
   isFinalTaskStatus,
   Journal,
   type Json,
   type LeanCertifier,
+  loadMemoryChain,
+  type MemoryChain,
   newId,
   type ProblemOutcome,
   ProofValidator,
+  type ProvenanceContext,
   type Reference,
   SKETCH_POLICY,
+  stampProvenance,
 } from "@seshat/core";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
@@ -86,6 +92,11 @@ export interface RunConfig {
    * and an account for the research team. Absent: an ordinary run, which records what it always did.
    */
   consortium?: ConsortiumConfig;
+  /**
+   * Seeds the draws of unverified memory items (documentation/memory.md, "Randomized inclusion"). A
+   * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
+   */
+  seed?: string | number;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -115,6 +126,15 @@ export interface RunOptions {
    * has to be built for it (`registry.leanEnv`), or the run does not start.
    */
   registry: (journal: Journal, blobs: BlobStore, options?: { leanEnv?: string }) => Registry;
+  /**
+   * The Lean environment the registry will be pinned to (its name and hash, as the lock gives them),
+   * resolved without building the registry, which needs the journal. A run that starts on earlier
+   * journals (`memoryFrom`) compares environments by it, before anything is written; the run is
+   * refused when the registry it then builds is pinned to another. Absent: the run's environment is
+   * the bench's revision and toolchain, and a registry that is pinned to an environment is refused
+   * together with `memoryFrom`.
+   */
+  leanEnvironment?: (options?: { leanEnv?: string }) => { name: string; hash: string | null } | undefined;
   /** Certifies the candidates. Default: the host's `lean.certify`, if its profile lists one; without a certifier no claim becomes `proved` or `refuted`. */
   certifier?: LeanCertifier;
   /** Stops the run: the problems in progress end as `aborted`. */
@@ -126,6 +146,12 @@ export interface RunOptions {
   runId?: string;
   /** The lines that can be enabled, by id. Default: `LINES`, the lines implemented so far. */
   lines?: LineRegistry;
+  /**
+   * The directory of an earlier run to start on (documentation/memory.md, "Memory across runs"): its journal
+   * is replayed before this run's own, pinned by its last hash in `run.started`, and nothing writes it.
+   * Ignored by a resume, which reads what the run was started on from its own journal.
+   */
+  memoryFrom?: string;
   /** What a consortium run takes from the process that works it, not from its recorded configuration. */
   turns?: TurnProcess;
 }
@@ -313,6 +339,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const promptRecord = { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) };
+  // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
+  const provenance: ProvenanceContext = {
+    modelId: config.model,
+    promptVersion: PROMPT_VERSION,
+    mathlibRev: o.index.source.rev,
+    harnessVersion: o.codeRev ?? "unknown",
+    budgetClass: budgetClassOf(config.budget.problemUsd),
+  };
   const policyRecord = { holes: SKETCH_POLICY.holes, timeoutSec: SKETCH_POLICY.timeoutSec, allowedAxioms: [...SKETCH_POLICY.allowedAxioms] };
   const linesRecord = enabled.lines.map(({ line, options }) => ({
     id: line.id,
@@ -348,24 +382,36 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const runId = resume?.runId ?? o.runId ?? newId("run");
   const log = o.log ?? (() => {});
   const created = resume === undefined && !existsSync(o.dir);
+  // The earlier journals a new run starts on, read and checked before anything is written. What is
+  // the same Lean environment is decided by the bench's revision and the Lean toolchain (the environment's hash, once a run records one).
+  // A line may put the run in a Lean environment of its own (M17); otherwise the host's decides.
+  const wanted = lineLeanEnv(enabled.lines);
+  let chain: MemoryChain | undefined;
+  if (resume === undefined && o.memoryFrom !== undefined) {
+    try {
+      const reading = o.leanEnvironment?.(wanted !== undefined ? { leanEnv: wanted.name } : {});
+      chain = loadMemoryChain(o.memoryFrom, environmentId(o.index.source, reading));
+    } catch (error) {
+      throw new RunSetupError(`the memory of ${o.memoryFrom} cannot be used: ${messageOf(error)}`, { cause: error });
+    }
+  }
   let journal: Journal;
   try {
     // A resume may still refuse (the host, registry, tools or certifier are not the run's): it leaves the
     // journal's cut last line for `beginResumption` to deal with, so that a refusal writes nothing to it.
-    journal = Journal.open(o.dir, runId, resume !== undefined ? { deferRepair: true } : {});
+    // A resumed run reads its chain of earlier journals from its own `run.started`.
+    journal = Journal.open(o.dir, runId, { ...(resume !== undefined ? { deferRepair: true } : {}), ...(chain !== undefined ? { memory: chain } : {}) });
   } catch (error) {
     if (resume === undefined) throw error;
     throw new RunSetupError(`the journal of ${o.dir} cannot be opened: ${messageOf(error)}`, { cause: error });
   }
-  const blobs = new BlobStore(join(o.dir, "blobs"));
+  const blobs = new BlobStore(join(o.dir, "blobs"), journal.chain?.blobDirs ?? []);
   const abandon = async (message: string, cause: unknown, opened?: Registry): Promise<never> => {
     await opened?.close();
     journal.close();
     if (created) rmSync(o.dir, { recursive: true, force: true });
     throw new RunSetupError(message, { cause });
   };
-  // A line may put the run in a Lean environment of its own (M17); otherwise the host's decides.
-  const wanted = lineLeanEnv(enabled.lines);
   let registry: Registry;
   try {
     registry = o.registry(journal, blobs, wanted !== undefined ? { leanEnv: wanted.name } : {});
@@ -435,6 +481,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const toolsRecord = pinned.tools.map((t) => ({ ...t }));
   const certifierRecord = certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`;
   const leanEnvRecorded = leanEnv === undefined ? undefined : leanEnvRecord(leanEnv);
+  if (resume === undefined && chain !== undefined && environmentId(o.index.source, leanEnvRecorded) !== chain.environment) {
+    return await abandon(
+      "the registry of the run is pinned to another Lean environment than the one the memory of earlier runs was read for " +
+        `(${leanEnvRecorded === undefined ? "none" : `${leanEnvRecorded.name}, hash ${leanEnvRecorded.hash ?? "unresolved"}`}): pass \`leanEnvironment\` to the run`,
+      undefined,
+      registry,
+    );
+  }
   const leanEnvNote =
     leanEnv === undefined
       ? undefined
@@ -473,6 +527,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
       // Only in a consortium run, for the same reason.
       ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
+      ...(config.seed !== undefined ? { seed: config.seed } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -487,6 +542,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         host: registry.host.host,
         config: recorded,
         ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
+        ...(chain !== undefined ? { memoryFrom: { ...chain.from, relative: relative(resolve(o.dir), chain.from.path) } } : {}),
       },
       "orchestrator",
     );
@@ -536,12 +592,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     log(`the team dropped ${dropped.problems.length} problem(s) and ${dropped.tasks} other task(s)`);
   }
 
-  // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
+  // The memory and the lines' runtime exist only when a line is enabled or the run starts on earlier
+  // journals: M0 on nothing runs as it always did.
   let runLines: RunLines | undefined;
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
-  if (enabled.lines.length > 0) {
-    memory = new MemoryStore({ journal, blobs, ...(identity !== undefined ? { identity } : {}) });
+  if (enabled.lines.length > 0 || journal.chain !== undefined) {
+    memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
+    if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
+  }
+  if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
       lines: enabled.lines,
@@ -557,6 +617,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       resolveModel: (name) => resolveModel(o.models, name),
       thinkingLevel: config.thinkingLevel,
       log,
+      seed: config.seed ?? runId,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
     });
@@ -637,8 +698,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     // fails on it) ends this problem as an error, with a claim made as in M0 to register it by.
     let claimId: string;
     let namingFailure: string | undefined;
+    // A run on earlier journals takes up the claim an earlier M0 run made for the same statement.
+    const earlierClaim = again === undefined && journal.chain !== undefined ? journal.projection.claimsByStatement(entry.statementId)[0] : undefined;
     if (again !== undefined) {
       claimId = again.claimId;
+    } else if (earlierClaim !== undefined) {
+      claimId = earlierClaim.claim_id;
     } else if (memory === undefined) {
       claimId = createClaim(entry);
     } else {
@@ -652,7 +717,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           })
         ).claimId;
       } catch (error) {
-        namingFailure = messageOf(error);
+        // With lines a statement the memory cannot name ends the problem; an M0 run that only starts on earlier journals goes on as it always did.
+        if (enabled.lines.length > 0) namingFailure = messageOf(error);
         claimId = createClaim(entry);
       }
     }
@@ -877,6 +943,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 signal: controller.signal,
                 transcript,
                 tools: pinned.tools,
+                stamp: (modelId) => stampProvenance(provenance, { modelId }),
                 onAttemptEnd: (attempt) => {
                   void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });
                   breakpoints?.afterAttempt(entry.id);
@@ -1052,6 +1119,30 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   }
   const report = writeReport(o.dir);
   return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
+}
+
+/**
+ * A run that starts on earlier journals opens an epoch when its model family, its prompts' major version
+ * or its Mathlib revision differs from the run before (documentation/memory.md, "Provenance and
+ * epochs"), and says what it took from them.
+ */
+function openEpochOf(journal: Journal, memory: MemoryStore, chain: MemoryChain, now: ProvenanceContext, log: (line: string) => void): void {
+  const last = chain.segments.at(-1)?.run;
+  const epoch = memory.withActor("orchestrator").openEpochIfChanged({
+    modelId: last?.model ?? now.modelId,
+    promptVersion: last?.promptVersion ?? now.promptVersion,
+    mathlibRev: last?.mathlibRev ?? now.mathlibRev,
+    harnessVersion: now.harnessVersion,
+    budgetClass: now.budgetClass,
+  });
+  const m = journal.projection.memorySummary();
+  const carried = Object.entries(m.carried).map(([status, n]) => `${n} ${status}`).join(", ");
+  const same = chain.segments.every((segment) => segment.carried);
+  log(
+    `memory from run ${chain.from.runId} (${chain.segments.length} journal(s)): ${m.claims} claim(s), ${m.attempts} attempt(s), ${m.lessons} lesson(s), ${m.nodes} node(s), ` +
+      `${m.edges} edge(s); ${same ? `the same Lean environment: verified statuses carry${carried !== "" ? ` (${carried})` : ""}` : `another Lean environment: ${m.reset} earlier status(es) and ${m.edgesReset} edge status(es) count for nothing until a stored proof passes validate again`}` +
+      `${epoch !== undefined ? `; epoch ${epoch.epoch} opened: ${epoch.reason}` : ""}`,
+  );
 }
 
 /**

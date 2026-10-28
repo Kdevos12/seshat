@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-27 20:24 UTC. `main` at ab4bda3, 1181 tests.
+Updated 2026-10-28 02:25 UTC. `main` at 52efd50, 1360 tests.
 
 ## Tasks
 
@@ -27,14 +27,14 @@ Updated 2026-10-27 20:24 UTC. `main` at ab4bda3, 1181 tests.
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
-| 17 | Consortium mode | main | not started (after 15) | |
+| 17 | Consortium mode | main | implementing | `task/t17` |
 | 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | not started (after 15, 23) | |
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
-| 21 | Lean environment and resolver, M17 | main | not started (after 15) | |
+| 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
-| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | implementing | `task/t23` |
-| 24 | Session-frozen packet prefix | main | implementing | `task/t24` |
+| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
+| 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | not started (after 10) | |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
 | Final | review of the whole build | main | after 26 | |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15 and T16 merged; T23 and T24 in flight; then T17, T21, T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T21, T23 and T24 merged; T17 in flight; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -92,6 +92,15 @@ Notes from the main team, newest last. Read them at the start of each session.
   run with it is resumed (`Line.resume`), and a registered line that declares nothing makes `harness run
   --resume` refuse: Tasks 6, 9 and 11 must declare theirs. Use `completeJson(llm, request)` from
   `@seshat/lines` for schema-checked JSON. Details under "Interface changes".
+- 2026-10-28: Tasks 21, 23 and 24 are merged (`main` at `52efd50`). Pull. Task 24: `contextPacket` may
+  answer `{ prefix, tail }`; compile Task 11's packet through it (on Anthropic the prefix may not be
+  cached at its end until pi-ai marks a block-level breakpoint; unmeasured). Task 23: the memory store
+  has `stamp` (provenance on every learned, unverified record you write: pass it), `draw` for the
+  randomized inclusion of unverified items (record `included` and `withheld` through
+  `SessionContext.draw`), `itemEffect` for a lesson's causal effect, epochs and probation; memory
+  across runs is `--memory-from`. No shipped line calls `draw` yet: Tasks 9 and 11 are the first.
+  Task 21: a line may give the Lean environment (`Line.leanEnv`); M17 does. Details under "Interface
+  changes".
 
 ## Interface changes
 
@@ -138,6 +147,53 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   --resume`, `Ledger.seed`, `Workbench.adopt`, the report keys `sites` and `resumed`; the core
   projection queries `modelCallsOfProblem` and `claimsWithAttempts`. Every line now declares
   `resume`; yours (Tasks 6, 9, 11) must too. Page: [ledger.md](../documentation/ledger.md).
+- Task 24, merged in `3a9d76c`: `packages/lines`: `contextPacket` may answer a string (as before) or
+  `{ prefix, tail, facts?, newSince? }`; `PacketRequest.prefix` carries the session's frozen prefix
+  (the first prefix a session got is sent byte for byte on every later request of that session; a
+  later, different prefix is ignored and logged once); a line that uses `newSince` sends `facts` from
+  its first answer, otherwise every fact counts as new; `packages/orchestrator`: `--cache-retention`
+  and `RunConfig.cacheRetention`, passed to pi-ai; `cachedInputTokens` on the cost figures and in the
+  report (the larger of an attempt's charged sum and its finished total, so errored and resumed
+  sessions keep theirs). Pages: [lines.md](../documentation/lines.md),
+  [m0-loop.md](../documentation/m0-loop.md). For the collaborator (Task 11): compile the packet
+  through it. Known limit: pi-ai's Anthropic adapter marks only the last block of the last message
+  for caching, so the frozen prefix may not be cached at its end on Anthropic; Task 14 cannot show a
+  saving there until pi-ai or a block-level breakpoint changes (unmeasured). `plans/seshat-plan.md`
+  still describes `contextPacket(session)` as one text: update the plan when the owner approves.
+- Task 21, merged in `a2f9c29`: new package `packages/lean-env` (the resolver, the lock and its
+  environment hash, `harness lean-env resolve|build`, the imports of an extended environment, line
+  `M17`); `lean/env/*.toml`; `packages/registry`: a registry can be built for one Lean environment, the
+  hash is part of every Lean tool run's recorded version (`+env:NAME@` and the first 12 digits), one
+  environment per run; `config/hosts/*.json`: `LEAN_ENV`; `packages/core`: the stop reason
+  `lean_environment` (comment only) and `run.started.config.leanEnv` (`name`, `hash`);
+  `packages/lines`: `LINE_ORDER` and `LINE_TITLES` gain M17, the optional `Line.leanEnv(options)` hook,
+  `resolveLines` refuses two lines that both give the environment; `packages/orchestrator`: the
+  optional third argument `{ leanEnv }` of `RunOptions.registry`, the optional `imports` of
+  `loadProblem`, M17 in the registry of lines (stateless on resume), the CLI passes the environment to
+  `openRegistry`; a resume under another name or hash is refused. Imports and the server probe run only
+  with M17 enabled; a host's `LEAN_ENV` alone pins and records the environment without them. Page:
+  [lean-env.md](../documentation/lean-env.md). Not run against a real Lean, Lake, GitHub or a Kimina
+  server; the package names in `extended.toml` and `base.toml` are from memory. Known limit: the hash
+  states the lock, not what Lake built. For Task 23: `sameLeanEnvironment`, `leanEnvOfConfig` and
+  `leanEnvironmentHash` are meant for its environment check.
+- Task 23, merged in `52efd50`: `packages/core`: `run.started.memoryFrom` (the earlier journal, its last
+  hash and a relative path), the event `memory.epoch_opened` (orchestrator-only, journal-checked), the
+  optional `provenance` on `attempt.started`, `lesson.recorded` and `node.recorded`, `included` and
+  `withheld` on `attempt.started`, `Journal.open` option `memory` and `Journal.chain`, `Projection`
+  methods for the chain, the epochs and item uses (`PROJECTION_VERSION` 6; rows gain `earlier_status`
+  and `carried`), `BlobStore(dir, readFrom?)`, `chain.ts`, `provenance.ts`, `random.ts`;
+  `packages/memory`: `MemoryStore.stamp`, `epoch`, `openEpochIfChanged`, `weightOf`, `draw`,
+  `itemUses`, `itemEffect`, `storedProofs`, `Claim` and `Edge` `earlierStatus`; `packages/lines`:
+  `SessionContext.draw` and `drawn`; `packages/orchestrator`: `RunOptions.memoryFrom`,
+  `RunOptions.leanEnvironment` (the CLI fills it from the host's lock), `RunConfig.seed`,
+  `RunReport.memory`, `--memory-from`, `--draw-seed`. Verified facts carry only under the same Lean
+  environment (Task 21's hash; bench revision and toolchain for a run without one); under another, a
+  claim's earlier status counts for nothing until a stored proof passes `validate` again. The hash
+  chain is an unkeyed SHA-256: `--memory-from` is for the user's own runs. Pages:
+  [memory.md](../documentation/memory.md), [journal.md](../documentation/journal.md),
+  [trust.md](../documentation/trust.md). Known limits: the fleet's posteriors ignore epochs until
+  Task 19; the Mathlib epoch trigger is the bench revision; nodes of every kind carry in every
+  environment; reading the chain costs about 14 microseconds per event on every open (no snapshot).
 
 ## Log
 
@@ -406,3 +462,18 @@ Task 15: merged: task/t15 pushed (8be0807, 1179/1179), merged into main ab4bda3 
 Task 15: complete; resume tested with the faux model and a simulated Lean, and a real child process killed with SIGKILL; not run against a real Lean or model; deferred to the final review: M10 structure, routing decisions lost between attempt.finished and task.routed, the M11 "do not resubmit" test, resume tests for statement_drift, restated_target and length_growth notices
 Task 23: implementer dispatched (worktree wt/t23, branch task/t23 from main ab4bda3; brief task-23-brief.md)
 Task 24: implementer dispatched (worktree wt/t24, branch task/t24 from main ab4bda3; brief task-24-brief.md; told not to touch the memory store, Task 23 runs in parallel)
+Task 21: implementer dispatched (worktree wt/t21, branch task/t21 from main ab4bda3; brief task-21-brief.md; third slot, mostly independent of T23 and T24; asked to expose an environment hash function for Task 23)
+Task 24: implementer DONE_WITH_CONCERNS (commit c88491d on task/t24, base ab4bda3, 1191/1191; task/t24 pushed); `contextPacket` may answer {prefix, tail, facts?, newSince?}, the first prefix of a session frozen and sent byte for byte on every later request (wrap-up included), `PacketRequest.prefix` given from the second request on, one user message of two text blocks, the "new since" list built by the harness from `facts` and `newSince`, `--cache-retention` / `RunConfig.cacheRetention` passed to pi-ai through a streamFn wrapper (recorded in run.started when given, restored on resume), `cachedInputTokens` on the cost events and in the report; concerns: pi-ai's Anthropic adapter marks only the last block of the last message (the tail), so the prefix may not be cached there without a pi-ai change (automatic prefix caches are unaffected; unmeasured), nothing run against a real provider, later prefixes are ignored silently, "new since" matches exact strings, cachedInputTokens is in events only (not in SQLite)
+Task 24: review dispatched (ab4bda3..c88491d; named risks: byte-for-byte across requests incl. tool calls, retry and resume, the contract against PE5 and the collaborator's Task 11 brief, trust (packet text is not a fact), cost sums and resumed budgets, cacheRetention handling, honesty about caching, additivity of shared files, tests that would fail without the freezing)
+Task 24: re-review of fix round 1: approved (report-side max of the charged sum and the finished total; both new tests fail when it is reverted); minor: no test that the completeJson adder keeps cachedInputTokens (deferred)
+Task 24: merged: main brought into task/t24 (af7615c, 1194/1194), merged into main 3a9d76c (--no-ff; 1196/1196 there), pushed; not run against a real provider; the Anthropic adapter of pi-ai may not cache the prefix at its end (recorded in Interface changes)
+Task 21: implementer done (3 commits on task/t21, head 98561bd, 1255/1255; pushed); a full disk (130k leftover test temp dirs in /tmp from tests that never remove them) blocked it once; agents now run tests with a TMPDIR in the scratchpad; the leak (m0-helpers tempDir/demoBench, lean-lsp helpers) is deferred to the final review
+Task 21: review round 1: spec met, no Critical; Important I1 (imports and probe ran for any extended environment, not only with line M17) and minors M4-M10; fix round sent
+Task 23: implementer's work committed in two commits, the third (memory across runs) uncommitted when a usage limit hit; resumed 01:07 UTC after the reset
+Task 21: fix round 1 done by the implementer (d49c877: imports and probe only with M17, multi-module import lines, tests for a resumed M17 run and a bad pin, docs); accepted by the controller from the diff, no second review (small, tested)
+Task 21: merged: main brought into task/t21 (44dd01e, 1274/1274; one conflict in journal.md), merged into main a2f9c29 (1276/1276), pushed; not run against a real Lean, Lake or GitHub; deferred to the final review: M1 lock vs on-disk lakefile hardening, M3 probe lets server_error through, test temp directories never removed
+Task 23: committed in four commits (head a9fd1bc), main (Task 24) merged in cb8989e, 1257/1257; the two failures seen earlier were the controller emptying the shared test temp directory during the run; review dispatched on ab4bda3..a9fd1bc
+Task 17: implementer dispatched (worktree wt/t17, branch task/t17 from main a2f9c29; brief task-17-brief.md; own TMPDIR per agent)
+Task 23: review round 1: spec met, no Critical; Important I1 (Task 21's environment hash not an input), I2 (trust limit of the unkeyed hash chain undocumented), I3 (chain refusals untested), minors M1-M9; fix round done (merge of main ba280db, fixes 21894cd to fe074dd, 1358/1358)
+Task 23: scoped re-review of fix round 1: approved, no Critical or Important; notes N1 (resume checks leanEnv only when the recorded config has the key), N2, N3 (a non-string relative path in a hand-edited journal throws a TypeError instead of a MemoryChainError) deferred to the final review
+Task 23: merged: task/t23 pushed (fe074dd), merged into main 52efd50 (--no-ff; 1360/1360), pushed; not run against a real Lean or model; deferred to the final review: N1-N3, no draw call by a shipped line yet, chain read cost without snapshot
