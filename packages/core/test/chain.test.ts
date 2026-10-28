@@ -24,16 +24,18 @@ function base(): string {
   return mkdtempSync(join(tmpdir(), "mh-chain-"));
 }
 
-function config(source: { rev: string; lean: string }, model = "prov/model-5") {
-  return { model, prompt: { version: "m0-2" }, bench: { hash: "h", source: { repo: "r", ...source } } };
+type LeanEnv = { name: string; hash: string | null };
+
+function config(source: { rev: string; lean: string }, model = "prov/model-5", leanEnv?: LeanEnv) {
+  return { model, prompt: { version: "m0-2" }, bench: { hash: "h", source: { repo: "r", ...source } }, ...(leanEnv !== undefined ? { leanEnv } : {}) };
 }
 
 /** Starts a run in `dir` on the chain, if any, the way the orchestrator does. */
-function start(dir: string, runId: string, source: typeof ENV_A, chain?: MemoryChain): Journal {
+function start(dir: string, runId: string, source: typeof ENV_A, chain?: MemoryChain, leanEnv?: LeanEnv): Journal {
   const journal = Journal.open(dir, runId, chain !== undefined ? { memory: chain } : {});
   journal.emit(
     "run.started",
-    { runId, benchId: "bench", problems: 1, host: "test", config: config(source), ...(chain !== undefined ? { memoryFrom: chain.from } : {}) },
+    { runId, benchId: "bench", problems: 1, host: "test", config: config(source, "prov/model-5", leanEnv), ...(chain !== undefined ? { memoryFrom: chain.from } : {}) },
     "orchestrator",
   );
   return journal;
@@ -68,9 +70,9 @@ function attempt(journal: Journal, attemptId: string, claimId: string): void {
 }
 
 /** An earlier run in `dir`: a claim, an attempt with a tool run, a lesson, a node, proved when `proved`. */
-function earlier(source: typeof ENV_A, proved = true): { dir: string; claimId: string } {
+function earlier(source: typeof ENV_A, proved = true, leanEnv?: LeanEnv): { dir: string; claimId: string } {
   const dir = join(base(), "run");
-  const journal = start(dir, "run_a", source);
+  const journal = start(dir, "run_a", source, undefined, leanEnv);
   claim(journal, "clm_a");
   attempt(journal, "att_a", "clm_a");
   journal.emit("tool_run.started", { toolRunId: "tr_a", capability: "lean.check", implementation: "demo", version: "0", inputHash: "i", attemptId: "att_a" }, "prover:p1");
@@ -83,17 +85,27 @@ function earlier(source: typeof ENV_A, proved = true): { dir: string; claimId: s
   return { dir, claimId: "clm_a" };
 }
 
-const environment = (source: typeof ENV_A) => environmentId(source);
+const environment = (source: typeof ENV_A, leanEnv?: LeanEnv) => environmentId(source, leanEnv);
 
 describe("the environment of a run", () => {
-  it("is the bench's revision and Lean toolchain, or the environment's hash when a run records one", () => {
+  it("is the bench's revision and Lean toolchain when a run records no environment", () => {
     assert.equal(environment(ENV_A), "bench:rev-a|lean:leanprover/lean4:v4.20.0");
     assert.notEqual(environment(ENV_A), environment(ENV_B));
-    assert.equal(environmentId(ENV_A, "abc"), "env:abc");
+    assert.equal(environmentId(ENV_A, { hash: "abc" }), "env:abc");
     assert.equal(environmentOf(config(ENV_A)), environment(ENV_A));
   });
 
-  it("is none that can be compared when the revision or the toolchain is unknown", () => {
+  it("is the Lean environment's hash when a run records one (Task 21), whatever the bench says", () => {
+    assert.equal(environment(ENV_A, { name: "base", hash: "h1" }), "env:h1");
+    assert.equal(environment(ENV_A, { name: "base", hash: "h1" }), environment(ENV_B, { name: "other", hash: "h1" }), "the hash is the identity, not the bench or the name");
+    assert.notEqual(environment(ENV_A, { name: "base", hash: "h1" }), environment(ENV_A, { name: "extended", hash: "h2" }));
+    assert.equal(environmentOf(config(ENV_A, "m", { name: "base", hash: "h1" })), "env:h1");
+    assert.notEqual(environment(ENV_A, { name: "base", hash: "h1" }), environment(ENV_A), "a hash never equals the bench's id");
+  });
+
+  it("is none that can be compared when the recorded environment has no hash, or the revision or the toolchain is unknown", () => {
+    assert.equal(environment(ENV_A, { name: "base", hash: null }), undefined, "a record without a hash is not the bench's id");
+    assert.equal(environmentOf(config(ENV_A, "m", { name: "base", hash: null })), undefined);
     assert.equal(environmentId({ rev: "unknown", lean: "lean-1" }), undefined);
     assert.equal(environmentId({ rev: "rev-a", lean: "unknown" }), undefined);
     assert.equal(environmentId({}), undefined);
@@ -345,5 +357,58 @@ describe("a run started on an earlier run's memory", () => {
     assert.equal(through.has(old), true);
     const mine = through.put("a new proof");
     assert.equal(new BlobStore(join(a.dir, "blobs")).has(mine), false, "the earlier run's blobs are never written");
+  });
+});
+
+describe("a chain across Lean environments (Task 21's hash)", () => {
+  const BASE = { name: "base", hash: "hash-base" };
+  const EXTENDED = { name: "extended", hash: "hash-extended" };
+
+  /** What a run in `reading` sees of a proved claim of an earlier run recorded in `recorded`, with the same bench revision and toolchain. */
+  function sees(recorded: LeanEnv | undefined, reading: LeanEnv | undefined) {
+    const a = earlier(ENV_A, true, recorded);
+    const chain = loadMemoryChain(a.dir, environment(ENV_A, reading));
+    const journal = start(join(base(), "run"), "run_b", ENV_A, chain, reading);
+    try {
+      const p = journal.projection;
+      return { carried: chain.segments[0]?.carried, status: p.claim("clm_a")?.status, validations: p.validations("clm_a").length, earlier: p.claim("clm_a")?.earlier_status };
+    } finally {
+      journal.close();
+    }
+  }
+
+  it("carries the statuses of an earlier run that recorded the same hash", () => {
+    assert.deepEqual(sees(BASE, BASE), { carried: true, status: "proved", validations: 2, earlier: null });
+  });
+
+  it("carries nothing between two environments with the same bench revision and toolchain and different hashes", () => {
+    assert.deepEqual(sees(EXTENDED, BASE), { carried: false, status: "open", validations: 0, earlier: "proved" });
+    assert.deepEqual(sees(BASE, EXTENDED), { carried: false, status: "open", validations: 0, earlier: "proved" });
+  });
+
+  it("carries nothing when either hash is null, even from an earlier run with the same record", () => {
+    const unresolved = { name: "base", hash: null };
+    for (const [recorded, reading] of [[unresolved, unresolved], [unresolved, BASE], [BASE, unresolved]] as const) {
+      assert.deepEqual(sees(recorded, reading), { carried: false, status: "open", validations: 0, earlier: "proved" });
+    }
+  });
+
+  it("never equates an earlier run without a recorded environment with a reading run that has a hash, or the reverse", () => {
+    assert.deepEqual(sees(undefined, BASE), { carried: false, status: "open", validations: 0, earlier: "proved" });
+    assert.deepEqual(sees(BASE, undefined), { carried: false, status: "open", validations: 0, earlier: "proved" });
+    assert.equal(sees(undefined, undefined).carried, true, "two journals of the bench's id still compare by it");
+  });
+
+  it("reads the reading run's environment from its own journal on reopen, so the same statuses carry", () => {
+    const a = earlier(ENV_A, true, BASE);
+    const dir = join(base(), "run");
+    start(dir, "run_b", ENV_A, loadMemoryChain(a.dir, environment(ENV_A, BASE)), BASE).close();
+    const again = Journal.open(dir, "run_b");
+    try {
+      assert.equal(again.projection.claim("clm_a")?.status, "proved");
+      assert.equal(again.chain?.environment, "env:hash-base");
+    } finally {
+      again.close();
+    }
   });
 });

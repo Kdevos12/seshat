@@ -116,6 +116,15 @@ export interface RunOptions {
    * has to be built for it (`registry.leanEnv`), or the run does not start.
    */
   registry: (journal: Journal, blobs: BlobStore, options?: { leanEnv?: string }) => Registry;
+  /**
+   * The Lean environment the registry will be pinned to (its name and hash, as the lock gives them),
+   * resolved without building the registry, which needs the journal. A run that starts on earlier
+   * journals (`memoryFrom`) compares environments by it, before anything is written; the run is
+   * refused when the registry it then builds is pinned to another. Absent: the run's environment is
+   * the bench's revision and toolchain, and a registry that is pinned to an environment is refused
+   * together with `memoryFrom`.
+   */
+  leanEnvironment?: (options?: { leanEnv?: string }) => { name: string; hash: string | null } | undefined;
   /** Certifies the candidates. Default: the host's `lean.certify`, if its profile lists one; without a certifier no claim becomes `proved` or `refuted`. */
   certifier?: LeanCertifier;
   /** Stops the run: the problems in progress end as `aborted`. */
@@ -333,10 +342,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const created = resume === undefined && !existsSync(o.dir);
   // The earlier journals a new run starts on, read and checked before anything is written. What is
   // the same Lean environment is decided by the bench's revision and the Lean toolchain (the environment's hash, once a run records one).
+  // A line may put the run in a Lean environment of its own (M17); otherwise the host's decides.
+  const wanted = lineLeanEnv(enabled.lines);
   let chain: MemoryChain | undefined;
   if (resume === undefined && o.memoryFrom !== undefined) {
     try {
-      chain = loadMemoryChain(o.memoryFrom, environmentId(o.index.source));
+      const reading = o.leanEnvironment?.(wanted !== undefined ? { leanEnv: wanted.name } : {});
+      chain = loadMemoryChain(o.memoryFrom, environmentId(o.index.source, reading));
     } catch (error) {
       throw new RunSetupError(`the memory of ${o.memoryFrom} cannot be used: ${messageOf(error)}`, { cause: error });
     }
@@ -358,8 +370,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (created) rmSync(o.dir, { recursive: true, force: true });
     throw new RunSetupError(message, { cause });
   };
-  // A line may put the run in a Lean environment of its own (M17); otherwise the host's decides.
-  const wanted = lineLeanEnv(enabled.lines);
   let registry: Registry;
   try {
     registry = o.registry(journal, blobs, wanted !== undefined ? { leanEnv: wanted.name } : {});
@@ -429,6 +439,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const toolsRecord = pinned.tools.map((t) => ({ ...t }));
   const certifierRecord = certifier === undefined ? null : `${certifier.implementation} ${certifier.version}`;
   const leanEnvRecorded = leanEnv === undefined ? undefined : leanEnvRecord(leanEnv);
+  if (resume === undefined && chain !== undefined && environmentId(o.index.source, leanEnvRecorded) !== chain.environment) {
+    return await abandon(
+      "the registry of the run is pinned to another Lean environment than the one the memory of earlier runs was read for " +
+        `(${leanEnvRecorded === undefined ? "none" : `${leanEnvRecorded.name}, hash ${leanEnvRecorded.hash ?? "unresolved"}`}): pass \`leanEnvironment\` to the run`,
+      undefined,
+      registry,
+    );
+  }
   const leanEnvNote =
     leanEnv === undefined
       ? undefined
