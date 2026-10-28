@@ -7,3 +7,6 @@
  * without touching the lockfile (documentation/lines.md, "Adding a line").
  */
 export * from "./ledger.ts";
+export * from "./kernel.ts";
+export * from "./proofnumbers.ts";
+export * from "./holes.ts";
