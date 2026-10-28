@@ -24,7 +24,7 @@ export interface ProblemLine {
   /**
    * The escalation ladder (documentation/scheduler.md, "The ladder"): the rung that was on when the
    * problem ended and the dollars spent at each rung. Present for a run with the M12 line or a
-   * `ladder.escalated` event; `solvedAtRung` is absent for a problem with no proof or refutation.
+   * `ladder.escalated` event; `solvedAtRung` is only for a certified outcome (`proved` or `refuted`): absent for a candidate, which the certifier has not confirmed, and for a problem with none.
    */
   ladder?: { endedAtRung: number; solvedAtRung?: number; usdByRung: Record<string, number> };
 }

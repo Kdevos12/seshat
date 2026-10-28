@@ -38,6 +38,8 @@ export class ProofNumbers {
   private readonly claims = new Map<string, PnClaim>();
   private readonly groups = new Map<string, PnGroup[]>();
   private readonly memo = new Map<string, PnNode>();
+  /** Counts the times a cycle was cut: a node whose subtree cut one depends on the path to it and is not memoized. */
+  private cuts = 0;
 
   constructor(claims: readonly PnClaim[], groups: readonly PnGroup[]) {
     for (const c of claims) this.claims.set(c.id, c);
@@ -61,22 +63,21 @@ export class ProofNumbers {
     if (claim.settled) return this.keep({ id, pn: 0, dpn: Infinity });
     if (claim.dead) return this.keep({ id, pn: Infinity, dpn: 0 });
     // A cycle: the claim on the path counts as unreachable here; nothing is memoized under it.
-    if (path.has(id)) return { id, pn: Infinity, dpn: 0 };
+    if (path.has(id)) {
+      this.cuts += 1;
+      return { id, pn: Infinity, dpn: 0 };
+    }
+    const cutsBefore = this.cuts;
     path.add(id);
     let pn = Infinity;
     const dpns: number[] = [];
-    let cut = false;
     if (claim.prove !== undefined) {
       pn = claim.prove;
       dpns.push(claim.disprove ?? claim.prove);
     }
     for (const group of this.groups.get(id) ?? []) {
       const parts = [...new Set(group.parts)];
-      const nodes = parts.map((p) => {
-        const n = this.compute(p, path);
-        if (path.has(p)) cut = true;
-        return n;
-      });
+      const nodes = parts.map((p) => this.compute(p, path));
       if (nodes.length === 0) continue;
       pn = Math.min(pn, nodes.reduce((s, n) => s + n.pn, 0));
       dpns.push(Math.min(...nodes.map((n) => n.dpn)));
@@ -84,7 +85,8 @@ export class ProofNumbers {
     const dpn = dpns.reduce((s, d) => s + d, 0);
     path.delete(id);
     const node: PnNode = { id, pn, dpn };
-    return cut ? node : this.keep(node);
+    // Anything computed under a cut cycle is left out of the memo, so that `of` does not depend on the order of the queries.
+    return this.cuts !== cutsBefore ? node : this.keep(node);
   }
 
   private keep(node: PnNode): PnNode {

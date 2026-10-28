@@ -184,4 +184,35 @@ describe("line M12 in a run", () => {
     });
     assert.ok(off[0]?.startsWith("begin:") && off.includes("briefing:1"), off.join(" "));
   });
+
+  /** A second sketch with a hole of its own. */
+  const AUX2 = `lemma aux_third (n : ℕ) : n * 1 = n := by
+  sorry`;
+
+  it("caps the tasks per outer session, not per problem: a later sketch's holes get theirs", { timeout: 30000 }, async () => {
+    const { events } = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { maxInnerTasks: 1, rounds: 1 } } },
+      lean: new DemoLean(m12Answer),
+      // Session 1: two holes, one task (the cap), proved between the sessions. Session 2: a new sketch with a hole of its own, and a task for it.
+      responses: [check(SKETCH_PROOF, AUX), say("notes"), json("exact hole_ok"), check(SKETCH_PROOF, AUX2), say("notes"), json("exact hole_ok")],
+    });
+    const made = ofType(events, "task.created").filter((e) => e.data.proposedBy === "line:M12");
+    assert.deepEqual(made.map((e) => (e.data.title ?? "").split(":")[0]), ["aux_left", "aux_third"]);
+  });
+
+  it("leaves the parent unsettled when Lean rejects the link lemma of the decomposition, though the holes are proved", { timeout: 30000 }, async () => {
+    const rejecting = (code: string) => (code.includes("h_aux_1") ? { messages: [{ severity: "error" as const, pos: { line: 1, column: 0 }, text: "type mismatch" }] } : m12Answer(code));
+    const { result, events } = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 1 },
+      lean: new DemoLean(rejecting),
+      responses: [check(SKETCH_PROOF, AUX), say("notes"), json("exact hole_ok"), json("exact hole_ok")],
+    });
+    assert.equal(ofType(events, "edge.status_changed").filter((e) => e.data.to === "lean_checked").length, 0);
+    assert.equal(nodes(events, "derivation").length, 0);
+    assert.equal(result.problems[0]?.outcome, "unsolved");
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
+    assert.deepEqual(ofType(events, "claim.status_changed").filter((e) => e.data.claimId === claimId).map((e) => e.data.to), []);
+  });
 });
