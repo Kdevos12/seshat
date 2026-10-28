@@ -34,9 +34,14 @@ charge, so there is one count and no place that escapes it.
 
 At the limit:
 
-- no session starts, no model call is sent, and no problem starts. The check is made before each of them,
-  at the one place that sends a request (`runSession`, `lineLlm`, the prover's loop and the run's queue),
-  and it is only ever read there;
+- no session starts, no model call is sent, and no problem starts. The check is made before each of them
+  (the run's queue, the prover's loop, before and after the lines open a session), and once more at the
+  point where a request is sent: the session's stream function reads the turn immediately before it calls
+  the provider, and `lineLlm` reads it again after the model is resolved, with nothing that waits between
+  the check and the call. So when two provers and the lines work at once, a response that ends the turn
+  stops the request another prover was about to send, however long that prover waited in a line's
+  `briefing` or in `openSession`. A request that is stopped there ends its session with `stoppedBy: "turn"`
+  and counts as a cut, not as an error. The turn is only ever read;
 - a response already in flight finishes, and is paid for and counted. At most one per prover and per line
   call is in flight, so the turn can pass its limit by that much (`--turn-usd 2` can spend a little more
   than $2);

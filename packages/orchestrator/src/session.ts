@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { type CacheRetention, StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
+import { type CacheRetention, createAssistantMessageEventStream, StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
 import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
@@ -209,10 +209,13 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const cacheRetention = o.cacheRetention;
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
-    streamFn:
-      cacheRetention === undefined
-        ? o.models.streamSimple.bind(o.models)
-        : (model, context, options) => o.models.streamSimple(model, context, { ...options, cacheRetention }),
+    // The one place where a request is sent: the consortium turn is read here, immediately before the send, so that no
+    // request goes out after the limit however the provers and lines interleave (documentation/human.md, "Turns").
+    streamFn: (model, context, options) => {
+      const over = o.turn?.ended;
+      if (over !== undefined) return refusedStream(model, `the turn is over (${over.detail}): the request was not sent`);
+      return o.models.streamSimple(model, context, cacheRetention === undefined ? options : { ...options, cacheRetention });
+    },
     toolExecution: "sequential",
     sessionId: o.attemptId,
     // The context packet of a line (M4) replaces every message after the system messages, which
@@ -335,4 +338,23 @@ function textOf(message: AssistantMessage | undefined): string | undefined {
     .join("\n")
     .trim();
   return text === "" ? undefined : text;
+}
+
+/** The answer to a request that was not sent: an aborted response with no content, which the session reads as the turn's end. */
+function refusedStream(model: Model<Api>, reason: string): ReturnType<typeof createAssistantMessageEventStream> {
+  const stream = createAssistantMessageEventStream();
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "aborted",
+    errorMessage: reason,
+    timestamp: Date.now(),
+  };
+  stream.push({ type: "error", reason: "aborted", error: message });
+  stream.end(message);
+  return stream;
 }

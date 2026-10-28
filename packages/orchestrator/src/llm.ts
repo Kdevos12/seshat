@@ -47,6 +47,10 @@ export function lineLlm(o: LineLlmOptions): Llm {
     });
     const modelCallId = newId("mc");
     const started = performance.now();
+    // Read again, immediately before the send: another response may have ended the turn while the model was being resolved.
+    // Nothing between this check and the call awaits, so no response can end the turn in between.
+    const overNow = o.turn?.ended;
+    if (overNow !== undefined) throw new TurnEndedError(overNow);
     const options: SimpleStreamOptions = {
       signal: o.signal,
       ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
