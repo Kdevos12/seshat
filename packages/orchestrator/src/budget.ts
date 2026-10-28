@@ -68,12 +68,18 @@ export class Ledger {
 
 /**
  * The cost of one model response: the cost the provider reported, or else the one computed from
- * the model's prices (some adapters report no cost). Input tokens include cache reads and writes.
+ * the model's prices (some adapters report no cost). Input tokens include cache reads and writes; the
+ * cache reads are also given apart, when there are some, as `cachedInputTokens`.
  */
 export function messageCost(model: Model<Api>, message: AssistantMessage): TokenCost {
   const usage = message.usage;
   const usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
-  return { usd, inputTokens: usage.input + usage.cacheRead + usage.cacheWrite, outputTokens: usage.output };
+  return {
+    usd,
+    inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
+    outputTokens: usage.output,
+    ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
+  };
 }
 
 /** Prompt size of the request that produced `message`, in tokens. */

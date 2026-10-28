@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import type { BenchIndex, ProblemEntry } from "@seshat/bench";
 import {
   BlobStore,
@@ -70,6 +70,8 @@ export interface RunConfig {
   concurrency: number;
   /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
   tools: string[];
+  /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
+  cacheRetention?: CacheRetention;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -143,6 +145,9 @@ const MAX_FAILED_PROBLEMS = 3;
 
 export { RunSetupError };
 
+/** The values of `RunConfig.cacheRetention`, as pi-ai names them. */
+export const CACHE_RETENTIONS: readonly CacheRetention[] = ["none", "short", "long"];
+
 /** The problems of a configuration, or an empty list when it is sound. */
 export function checkConfig(config: RunConfig): string[] {
   const problems: string[] = [];
@@ -155,6 +160,9 @@ export function checkConfig(config: RunConfig): string[] {
   whole("limits.contextTokens", config.limits.contextTokens, 1000);
   whole("notesChars", config.notesChars, 100);
   whole("concurrency", config.concurrency, 1);
+  if (config.cacheRetention !== undefined && !CACHE_RETENTIONS.includes(config.cacheRetention)) {
+    problems.push(`cacheRetention must be one of ${CACHE_RETENTIONS.join(", ")}, got ${String(config.cacheRetention)}`);
+  }
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
@@ -409,6 +417,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       notesChars: config.notesChars,
       budget: { problemUsd: config.budget.problemUsd, runUsd: config.budget.runUsd ?? null },
       concurrency: config.concurrency,
+      // Only when given, so that a run without it records what it always did.
+      ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
@@ -785,6 +795,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 sessions: config.sessions,
                 limits: config.limits,
                 notesChars: config.notesChars,
+                ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
                 ledger,
                 signal: controller.signal,
                 transcript,
