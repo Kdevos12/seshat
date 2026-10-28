@@ -17,3 +17,5 @@ export * from "./screen.ts";
 export * from "./columns.ts";
 export * from "./options.ts";
 export * from "./m8.ts";
+export * from "./explore.ts";
+export * from "./m13.ts";

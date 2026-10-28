@@ -191,6 +191,38 @@ true, `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.
 Not run: the model's hypotheses are tested with the faux provider, Lean with a simulated `decide`, Sage
 and the OEIS with stand-ins.
 
+## Theory exploration (line M13)
+
+`explore(structure, {maxSize, maxTerms, maxLaws})` (`explore.ts`) is QuickSpec's idea on plain data. A
+`Structure` is a signature (symbols with an arity and the way Lean writes them), variables, and test points:
+places with a value for each variable and a way to apply each symbol. The terms over the signature are
+enumerated by size, and every term is evaluated at every point; a term that agrees with an earlier one on all
+points is not kept as a new term but gives the equation `earlier = term`, and the earlier terms are the only
+ones larger terms are built from (so the enumeration stays small). The equations are then reduced to a minimal
+set: in order of size (the more general first), an equation is dropped when rewriting both sides to normal form
+with the equations kept so far, each oriented to a smaller (size, then text) side, gives the same term. Three
+structures are provided: `natStructure` (0, 1, + and *; all values to 4 when that is at most 200 points, else a
+seeded sample), `freeMonoidStructure` (words over a, b, c under concatenation: the laws that hold are the
+monoid laws, and `1 * 1 = 1` is dropped as a consequence of `x * 1 = x`) and `magmaStructure` (a list of
+magmas). The equations hold on the points tried and nothing more: they are conjectures.
+
+`createM13({sink})` (`m13.ts`; `M13` is the registered instance) runs `explore` on the target's domain. A target
+about a natural number is explored over 0, 1, + and *; a target about magmas, over the magmas of `magmaBattery`
+that satisfy its hypotheses (at most `models`), so that the laws found are consequences of the hypotheses in
+the sample. Each minimal law is an `open` claim (origin `line:M13`, the target as parent, a `derived_from` edge
+to it; for magmas, in the target's own binders and hypotheses) and is handed to the library's sink as a
+`LibraryCandidate`. The default sink (`memorySink`) writes a `library_candidate` node about the claim, once;
+the library of line M3 gives its own sink when it is built (`createM13({ sink: (memory) => ... })`), and
+until then the candidates wait in the memory. The target's provers get the laws in a briefing, marked as
+not theorems. M13 also does the classical conjecturing that needs no objects: the option `relations`, a list
+of lists of constants (`pi`, `e`, `ln(2)`, decimal texts...), is searched with PSLQ, and a relation found
+is an `integer_relation` node saying how many digits agree and whether that is significant: a numerical
+coincidence until proved, never a status.
+
+Options (`--line-option M13.<name>=<value>`): `maxSize` 5, `maxTerms` 4000, `maxLaws` 12, `models` 40, `theory`
+`auto` (or `nat`), `relations` []. Resume: `rebuild` (the exploration is a function of the target and the seed;
+claims, edges, candidates and relation nodes are not written twice).
+
 ## Tests, and what has not run
 
 `packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;
@@ -202,6 +234,8 @@ the classical bounds on the graphs with up to five vertices; the cap; a bound in
 environment, the scratch directory removed, cancellation) and `datatable.test.ts` (columns, missing
 values, Sage through a stand-in, dependencies, records) and `hypotheses.test.ts` (the screen, interest,
 hypotheses and their execution, the informal DAG, test lemmas, triviality, the pool) and `m8.test.ts` (the
-options, a whole problem on numbers and on magmas, resuming, the briefing). None of it needs Lean, a model or a network.
+options, a whole problem on numbers and on magmas, resuming, the briefing) and `explore.test.ts` (the monoid
+laws from the free monoid, the laws of the numbers, left-projection magmas, the cut, the line M13 with
+its sink, PSLQ relations). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.
