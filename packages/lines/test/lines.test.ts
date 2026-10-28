@@ -9,7 +9,7 @@ function line(id: Line["id"], extra: Partial<Line> = {}): Line {
 
 describe("line ids and cumulative configs", () => {
   it("orders the lines as the plan builds them, and knows them", () => {
-    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M13", "M14", "M5", "M9", "M17"]);
+    assert.deepEqual([...LINE_ORDER], ["M1", "M10", "M2", "M11", "M12", "M4", "M6", "fleet", "M3", "M7", "M8", "M16", "M13", "M14", "M5", "M9", "M17"]);
     assert.ok(isLineId("fleet") && isLineId("M14"));
     assert.ok(!isLineId("M0") && !isLineId("M15") && !isLineId("m1"));
     assert.ok(isAblationName("M0") && isAblationName("M9") && !isAblationName("M15"));
