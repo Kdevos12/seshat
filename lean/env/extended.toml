@@ -1,0 +1,31 @@
+# The first candidate of line M17 (documentation/lean-env.md): the base environment and three
+# libraries that have a v4.27.0 tag, checked on 2026-10-20 (plan change LC1). The package names and
+# the lean_lib names are from memory of their lakefiles: `harness lean-env resolve extended` checks
+# the package names against their manifests, `harness lean-env build extended` the libraries. Keep
+# the extension only if M17 wins against `base` at equal budget (Task 14).
+description = "base, plus Duper (a superposition prover), LeanAPAP and PFR (additive combinatorics)."
+toolchain = "leanprover/lean4:v4.27.0"
+
+[base]
+name = "formal_conjectures"
+git = "https://github.com/google-deepmind/formal-conjectures"
+rev = "bench-v1-lean4.27.0"
+lean_libs = ["FormalConjectures"]
+
+[[package]]
+name = "Duper"
+git = "https://github.com/leanprover-community/duper"
+rev = "v4.27.0"
+lean_libs = ["Duper"]
+
+[[package]]
+name = "LeanAPAP"
+git = "https://github.com/YaelDillies/LeanAPAP"
+rev = "v4.27.0"
+lean_libs = ["LeanAPAP"]
+
+[[package]]
+name = "PFR"
+git = "https://github.com/teorth/pfr"
+rev = "v4.27.0"
+lean_libs = ["PFR"]

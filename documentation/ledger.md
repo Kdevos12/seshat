@@ -266,7 +266,7 @@ Everything the resumed process writes is written by the orchestrator, after `run
 | other prompts (version and hash), validation policy or lines (ids, versions, options) than `run.started` recorded | the code that resumes is not the code that began the run |
 | an enabled line that cannot be resumed ([lines](#lines)) | its state would be lost |
 | the run's model, when this process cannot reach it (an unknown provider, no credentials) | the same refusal as `harness run` |
-| another host, capability registry (catalog and host profile), tools or certifier than the run began with | it would be another run |
+| another host, capability registry (catalog and host profile), tools, certifier or Lean environment (name and hash) than the run began with | it would be another run. A run from before environments were recorded has none to keep. |
 
 All but the last row are checked before the journal is opened. The last needs the registry, which
 is built on a journal that is open, so the resume opens it with the repair of a cut last line

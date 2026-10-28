@@ -68,7 +68,7 @@ export class RegistryLeanChecker implements LeanChecker {
 
   constructor(registry: Registry, options: { attemptId?: string; actor?: string } = {}) {
     this.registry = registry;
-    this.version = registry.hash.slice(0, 12);
+    this.version = `${registry.hash.slice(0, 12)}${registry.leanEnv?.hash != null ? `+env:${registry.leanEnv.name}@${registry.leanEnv.hash.slice(0, 12)}` : ""}`;
     this.attemptId = options.attemptId;
     this.actor = options.actor;
   }
@@ -174,7 +174,7 @@ export class RegistryLeanCertifier implements LeanCertifier {
     if (spec === undefined) return undefined;
     return new RegistryLeanCertifier(registry, {
       implementation: `${LEAN_CERTIFY}/${spec.id}`,
-      version: spec.version,
+      version: registry.versionOf(spec),
       ...(options.actor !== undefined ? { actor: options.actor } : {}),
     });
   }
