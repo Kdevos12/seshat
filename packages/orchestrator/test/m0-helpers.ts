@@ -18,7 +18,7 @@ import type { LineRegistry } from "@seshat/lines";
 import { leanCertifyImplementation, leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import type { FakeSage } from "./fixtures/fake-sage.ts";
-import { DEFAULT_CONFIG, REPO_ROOT, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
+import { DEFAULT_CONFIG, REPO_ROOT, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, type TurnProcess } from "../src/index.ts";
 
 export const DEMO_FILE = `import FormalConjectures.Util.ProblemImports
 
@@ -214,6 +214,8 @@ export async function demoRun(options: {
   /** A bench the run shares with another run (a resumption of it). Default: a new one from `file` and `filter`. */
   bench?: { checkout: string; index: BenchIndex };
   codeRev?: string;
+  /** What a consortium run takes from its process: the turn's limit, a narrative, a clock. */
+  turns?: TurnProcess;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
@@ -234,6 +236,7 @@ export async function demoRun(options: {
     ...(options.log !== undefined ? { log: options.log } : {}),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
+    ...(options.turns !== undefined ? { turns: options.turns } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }
@@ -256,6 +259,7 @@ export async function demoResume(options: {
   pricePerMillion?: number;
   extraModels?: readonly string[];
   codeRev?: string;
+  turns?: TurnProcess;
 }): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
   const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
@@ -271,6 +275,7 @@ export async function demoResume(options: {
     ...(options.log !== undefined ? { log: options.log } : {}),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
+    ...(options.turns !== undefined ? { turns: options.turns } : {}),
   });
   return { result, events: readEvents(join(options.dir, "journal.jsonl")), faux, lean };
 }

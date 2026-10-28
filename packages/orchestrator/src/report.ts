@@ -30,6 +30,8 @@ export interface RunReport {
   stopped?: string;
   /** The times the run continued after its process ended; absent for a run that never did. */
   resumed?: ResumedLine;
+  /** The turns of a consortium run (documentation/human.md); absent for any other run. */
+  turns?: TurnsLine;
   /** Problems the run was given; those without a line had no outcome. */
   planned: number;
   problems: ProblemLine[];
@@ -78,6 +80,18 @@ export interface SiteLine {
   outputTokens: number;
   /** Its part of the total cost, from 0 to 1. */
   share: number;
+}
+
+/** The turns of a consortium run: how many, why each ended, and whether the run waits for the team. */
+export interface TurnsLine {
+  /** Turns that began. */
+  count: number;
+  /** The turns' endings, by reason. */
+  reasons: Record<string, number>;
+  /** True when the last turn ended and problems still wait for the team: the run is paused, not finished. */
+  paused: boolean;
+  /** The last turn that ended. */
+  last?: { turn: number; reason: string; detail: string; waiting: number };
 }
 
 /** What the resumptions of a run found and did (documentation/ledger.md, "Resume"). */
@@ -192,6 +206,9 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const lastFinished = events.findLastIndex((e) => e.type === "run.finished");
   const finished =
     lastFinished > (resumptions.at(-1)?.seq ?? -1) ? (events[lastFinished]?.data as EventDataMap["run.finished"] | undefined) : undefined;
+  const turnEnds = events.flatMap((e) => (e.type === "turn.ended" ? [e.data] : []));
+  const turnsStarted = events.filter((e) => e.type === "turn.started").length;
+  const lastTurnEnd = turnEnds.at(-1);
   const targets = new Map<string, string>();
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
@@ -331,6 +348,16 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
           },
         }
       : {}),
+    ...(turnsStarted > 0
+      ? {
+          turns: {
+            count: turnsStarted,
+            reasons: turnEnds.reduce<Record<string, number>>((all, end) => ({ ...all, [end.reason]: (all[end.reason] ?? 0) + 1 }), {}),
+            paused: finished === undefined && lastTurnEnd !== undefined && lastTurnEnd.turn === turnsStarted && lastTurnEnd.waiting.length > 0,
+            ...(lastTurnEnd !== undefined ? { last: { turn: lastTurnEnd.turn, reason: lastTurnEnd.reason, detail: lastTurnEnd.detail, waiting: lastTurnEnd.waiting.length } } : {}),
+          },
+        }
+      : {}),
     planned: started.problems,
     problems,
     outcomes,
@@ -386,7 +413,14 @@ export function renderRunReport(report: RunReport): string {
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
       `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}`,
-    report.finished ? (report.stopped !== undefined ? `The run stopped early: ${report.stopped}.` : "The run is complete.") : "The run has not finished.",
+    report.finished
+      ? report.stopped !== undefined
+        ? `The run stopped early: ${report.stopped}.`
+        : "The run is complete."
+      : report.turns?.paused === true && report.turns.last !== undefined
+        ? `The run is paused after turn ${report.turns.last.turn} (${report.turns.last.reason}: ${report.turns.last.detail}); ${report.turns.last.waiting} problem(s) wait for the team. Its account is turns/${report.turns.last.turn}/report.md.`
+        : "The run has not finished.",
+    ...(report.turns !== undefined ? [`Turns: ${report.turns.count} (ended by ${counts(report.turns.reasons)}).`] : []),
     ...(report.resumed !== undefined
       ? [
           `The run was resumed ${report.resumed.times} time(s) after its process ended: ${report.resumed.interrupted.attempts} session(s), ` +

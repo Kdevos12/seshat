@@ -114,6 +114,14 @@ proposed the edge. Either way, a claim becomes `proved` only through a certified
 claim, so a wrong edge can mislead a search, never prove anything. An edge's status can go down
 again, with a reason (the lemma's file changed, a dependency was retracted).
 
+A person's signature is the `human_signed` status of an edge, written under the person's name
+(`harness sign`, [human.md](human.md#the-teams-answers)). It ranks below `lean_checked`, so no rule follows it, no
+claim changes because of it, and it never lowers an edge's status. The rest of what the research team
+sends is of the same kind: a hint is a `hint` node of provenance `human`, shown to the provers as a
+suggestion and never as a fact, and a steer is a record that changes the order or the end of the work, not a
+status. Nothing the team sends makes a claim `computed`, `proved` or `refuted`: that stays a Lean check, and
+the certifier's kernel replay.
+
 The line M2 follows `lean_checked` edges with logic rules ([graph.md](graph.md)). What the rules
 derive is a proposal: the line writes the composed Lean proof (the link lemmas applied to the proofs
 of the premises) and submits it like any other, so a claim goes up only through a proof of its own

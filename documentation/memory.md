@@ -168,6 +168,12 @@ The core only checks that a node is well formed, so a mechanism adds a kind with
 
 `recordNode({kind, claimId?, data})` returns the node with its new id.
 
+The research team's answers are nodes written by the orchestrator under `human:NAME`, not through a
+store: `hint` (`provenance: "human"`, `by`, `text`, `afterTurn`) and `steer` (`action`: `focus`, `drop`,
+`forbid_strategy` or `turn_limit`, with `by` and `afterTurn`). The account of a turn also reads `judgment`
+nodes with `disagreement: true` (two informal validators that disagree), `obstruction` and `conjecture`
+(with `evidence`) nodes, and counts the kinds it does not know ([human.md](human.md)).
+
 ## Queries
 
 | Query | Gives |

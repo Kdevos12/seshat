@@ -12,7 +12,9 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
 counter-models; M6: guards and drift detectors; M17: a run in an extended Lean environment; the fleet policy) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
-whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). The Lean the harness runs against is written
+whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
+token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
+steers go into the journal and change no claim's status ([documentation/human.md](documentation/human.md)). The Lean the harness runs against is written
 as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve` checks for
 consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)); line M17 puts a run in
 one with more packages than the bench's.
@@ -39,6 +41,9 @@ flowchart TB
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
   m17["Line M17: extended environment<br/>the run's Lean has more<br/>packages than the bench's"]:::wait
+  team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
+  account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
+  narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
@@ -73,6 +78,13 @@ flowchart TB
   ledger -->|"one task per prover"| provers
   ledger -->|"task events,<br/>routing decisions"| journal
   journal -->|"resume after<br/>a crash"| orchestrator
+  orchestrator -->|"a turn ends: limit,<br/>breakpoint"| account
+  journal -->|"read, no model"| account
+  account --> team
+  team -->|"hints, signatures,<br/>steers, as human"| journal
+  team -->|"harness resume"| orchestrator
+  llm -.->|"if asked"| narrative
+  narrative -.->|"marked model-written"| account
   bench -->|statements| identity
   identity -->|claims| journal
   fleet -->|"who works on what"| provers
@@ -130,6 +142,11 @@ prover, and a routing decision for each failed check), never copying a claim's s
 whose process ended is continued from the journal alone: `harness run --resume` takes up each
 problem where the journal left it, with the budgets that were left, and records one certification
 per candidate ([documentation/ledger.md](documentation/ledger.md#resume)).
+With `--human` or a turn limit (`--turn-tokens`, `--turn-usd`, `--turn-minutes`) the run ends a turn by itself, at the limit or at a breakpoint
+(an impasse, a problem settled, two informal validators in disagreement): no session or model call starts after it, the account
+`turns/N/report.md` is built from the journal alone, and the run waits until the team has answered with `harness hint`, `sign` and `steer`
+and resumed it. Those answers are recorded under each person's name and change no claim's status
+([documentation/human.md](documentation/human.md)).
 Lean is the judge: no statement becomes `proved` without the certifier's kernel replay
 ([documentation/certifier.md](documentation/certifier.md)). A run certifies each candidate when the
 host has a certifier, and the lines' proofs of other claims and of negations too: a certified proof
@@ -173,6 +190,8 @@ pnpm harness models
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --turn-usd 2
+pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and: harness resume runs/RUN_ID --checkout ...
 pnpm harness lean-env resolve base
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```

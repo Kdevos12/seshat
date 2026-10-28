@@ -22,6 +22,7 @@ import type { JsonObject, ResumedProblem } from "@seshat/lines";
 import { messageOf } from "@seshat/registry";
 import type { TaskLedger } from "@seshat/scheduler";
 import { chargedTotals } from "./budget.ts";
+import { readConsortium } from "./consortium.ts";
 import type { Candidate, RecordedCertification, Workbench } from "./problem.ts";
 import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
@@ -107,6 +108,7 @@ function configOf(recorded: unknown): RunConfig {
   const tools = Array.isArray(r.tools) ? r.tools : missing("tools");
   const lines = Array.isArray(r.lines) ? (r.lines as Array<Record<string, unknown>>) : undefined;
   const runUsd = budget.runUsd;
+  const consortium = readConsortium(r.consortium);
   return {
     selection: (r.selection ?? null) as Json,
     model: text("model"),
@@ -130,6 +132,7 @@ function configOf(recorded: unknown): RunConfig {
           ),
         }
       : {}),
+    ...(consortium !== undefined ? { consortium } : {}),
   };
 }
 
