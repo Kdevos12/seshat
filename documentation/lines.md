@@ -280,6 +280,25 @@ double, a wrapper) is still an `Llm`. The function uses the member when the `Llm
 line's context has the member. `withJson(complete)` builds an `Llm` from a plain `complete`, for the
 orchestrator and for tests.
 
+### Interrupted work
+
+A consortium run ends its turns by itself ([human.md](human.md#turns)): after the limit no model call is
+sent, and `problem.llm` (and `session.llm`) throw `InterruptedError` of `@seshat/lines` (the harness throws
+its subclass, `TurnEndedError`; `isInterrupted(error)` is true however many layers wrapped it). The
+interruption is not a failure, and the contract for a line is:
+
+- it records nothing as an end, a failure or an exhaustion: no `end: "error"`, no "gave up";
+- it leaves its durable state (nodes, edges, claims) as it was, so that the run resumed from the
+  journal rebuilds the work from what the journal holds and does it again from where it was (the model
+  calls the journal holds count as made; a call the interruption refused was never made);
+- it does not retry: the next call would be refused too;
+- an optional mechanism that only logs a failure (`soft` in M2) logs that it was interrupted.
+
+A line that does not catch errors from `llm` needs to do nothing: the error reaches the harness, which
+reads the problem as waiting. A line that does catch them (M2's refutation side, which runs alongside the
+provers and is not awaited until `afterProblem`) must follow the contract. M2 is the only line of today that
+calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule.
+
 ### `tasks`
 
 The ledger holds the work of a problem as tasks ([ledger.md](ledger.md)): the provers' own, and

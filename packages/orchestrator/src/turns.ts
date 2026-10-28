@@ -1,4 +1,5 @@
 import type { HarnessEvent, TokenCost, TurnLimit } from "@seshat/core";
+import { InterruptedError } from "@seshat/lines";
 import { latestSteer } from "./team.ts";
 
 /**
@@ -62,7 +63,7 @@ export interface TurnEnd {
 }
 
 /** Thrown to whoever asks to send a model call after the turn ended: no model call is sent. */
-export class TurnEndedError extends Error {
+export class TurnEndedError extends InterruptedError {
   readonly end: TurnEnd;
 
   constructor(end: TurnEnd) {
