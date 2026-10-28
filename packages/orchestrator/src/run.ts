@@ -938,6 +938,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
               };
               const resumed = carried.get(task.taskId);
               tasks.start(task.taskId, resumed === undefined ? `prover ${task.name} starts` : `prover ${task.name} resumes after the interruption, at session ${resumed.session + 1}`);
+              // The decisions a process that ended left out for the prover's last finished attempt, before its next session reads them.
+              if (resumed !== undefined) router.resumeTask(task.taskId, claimId);
               return runProver({
                 name: task.name,
                 taskId: task.taskId,

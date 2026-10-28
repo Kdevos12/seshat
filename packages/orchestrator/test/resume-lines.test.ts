@@ -119,8 +119,11 @@ async function resumedAtEveryEvent(o: {
   sameBetweenSessions?: (whole: HarnessEvent[], resumed: HarnessEvent[], where: string) => void;
   options?: Partial<Parameters<typeof demoRun>[0]>;
   every?: number;
-  /** True when work a session needs before it starts (a model call whose record a cut can precede) is paid again after such a cut: the cost is then not compared. */
-  repeatsCost?: boolean;
+  /**
+   * For the cuts where work a session needs before it starts (a model call whose record a cut can precede) is paid again: given the
+   * events before the cut, true when the cut is one of them, and the cost is then not compared. The other cuts compare it.
+   */
+  repeatsCost?: (prefix: HarnessEvent[]) => boolean;
 }): Promise<number> {
   const whole = await demoRun({ config: o.config, responses: o.script(), ...o.options });
   const tail: FauxResponseStep[] = Array.from({ length: 8 }, () => say("done"));
@@ -145,7 +148,7 @@ async function resumedAtEveryEvent(o: {
     if (ofType(prefix, "attempt.started").length === ofType(prefix, "attempt.finished").length) {
       between += 1;
       assert.deepEqual(resumed.result.problems.map((p) => [p.outcome, p.attempts]), whole.result.problems.map((p) => [p.outcome, p.attempts]), where);
-      if (o.repeatsCost !== true) assert.ok(Math.abs(costOf(resumed.result) - costOf(whole.result)) < 1e-9, `${where}: the same cost`);
+      if (o.repeatsCost?.(prefix) !== true) assert.ok(Math.abs(costOf(resumed.result) - costOf(whole.result)) < 1e-9, `${where}: the same cost`);
       o.sameBetweenSessions?.(whole.events, resumed.events, where);
     }
     assertSound(resumed.events);
@@ -637,9 +640,12 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
         script: () => [...loop],
         outcomes: ["candidate", "unsolved"],
         options: { extraModels: ["strong"] },
-        // A cut after `attempt.finished` and before the routing decisions loses them (documentation/ledger.md, "Routing
-        // decisions"): the next session then runs on the model it would have had without the routing, so the cost differs.
-        repeatsCost: true,
+        // A cut anywhere between two sessions, `attempt.finished` and the routing decisions included, reaches the outcome and the cost of
+        // the run that was not cut, with the same decisions and the same sessions: the resumed run takes the decisions that were left out.
+        sameBetweenSessions: (whole, resumed, where) => {
+          assert.deepEqual(routes(resumed), routes(whole), `${where}: the same routing decisions`);
+          assert.deepEqual(decided(resumed), decided(whole), `${where}: the same decisions`);
+        },
         check: (resumed, where) => {
           // The attempt that starts after a retry_stronger decision of the journal goes to the strongest model.
           const at = resumed.findIndex((e) => e.type === "task.routed" && e.data.action === "retry_stronger");
@@ -650,6 +656,13 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
       assert.ok(runs > 20, `${runs} cuts`);
     });
   });
+
+  /**
+   * A cut after the step DAG's model call was paid and before the DAG (or its failure) was recorded: the next process asks again and pays
+   * twice. The only cuts of the informal-first tests where the cost may differ from the run that was not cut.
+   */
+  const paysDagTwice = (prefix: HarnessEvent[]): boolean =>
+    ofType(prefix, "model_call.finished").some((e) => e.data.site === "fleet.dag") && nodesOf(prefix, "step_dag").length + nodesOf(prefix, "step_dag_failure").length === 0;
 
   describe("informal-first", () => {
     const dag = {
@@ -712,7 +725,7 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
           outcomes: ["unsolved"],
           every: 4,
           // A cut after the DAG call was paid and before it was recorded asks for the DAG again.
-          repeatsCost: true,
+          repeatsCost: paysDagTwice,
           sameBetweenSessions: (whole, resumed, where) => assert.deepEqual(modes(resumed), modes(whole), `${where}: the same modes`),
           check: (resumed, where) => {
             assert.ok(steps(resumed).dags <= 1, `${where}: at most one DAG`);
@@ -730,7 +743,7 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
         outcomes: ["unsolved"],
         every: 3,
         // A cut after the DAG call was paid and before it was recorded asks for the DAG again: the call is paid twice.
-        repeatsCost: true,
+        repeatsCost: paysDagTwice,
         sameBetweenSessions: (_whole, resumed, where) => assert.ok(steps(resumed).dags === 1, `${where}: the DAG is there after the first session`),
         check: (resumed, where) => {
           assert.ok(steps(resumed).dags <= 1, `${where}: at most one DAG`);
