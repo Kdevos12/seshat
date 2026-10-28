@@ -465,6 +465,8 @@ A run that was resumed says so: how many times, how many sessions, tool runs and
 interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`). The next
 turn of a consortium run, after the run paused by itself, is not an interruption and is not in that count.
 
+A run with the line M12 (or one with a `ladder.escalated` event) adds a table of the escalation ladder: for each problem the rung it ended at, the rung at which it was solved, and the dollars each rung cost (`ladder` on the problem's line in `report.json`; [scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change)).
+
 A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
 waits for the team says it is paused after turn N and where the account is, instead of "has not finished".
 

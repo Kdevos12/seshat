@@ -578,6 +578,11 @@ export class MemoryStore {
     return row === undefined ? undefined : toClaim(row);
   }
 
+  /** The claims of the memory with a status (any, without `statuses`), a header and a kind, in the order they were created. */
+  claims(filter: { statuses?: readonly ClaimStatus[]; header?: string | null; kind?: ClaimKind } = {}): Claim[] {
+    return this.#journal.projection.claimsWhere(filter).map(toClaim);
+  }
+
   /** The first claim with this statement id. */
   claimByStatement(statementId: string): Claim | undefined {
     const row = this.#journal.projection.claimsByStatement(statementId)[0];

@@ -64,6 +64,15 @@ export interface Line {
    * "Resume"). Absent: the run is not resumed, because the line has not said it can be.
    */
   resume?: LineResume;
+  /**
+   * The rung of the escalation ladder the line works on (documentation/scheduler.md, "The ladder"). Absent or 0: the
+   * line works from the start of every problem. With the ladder on (the line M12 with its `ladder` option), a line of
+   * rung 1 or more gets its hooks for a problem only once the ladder has moved that problem up to its rung; with the
+   * ladder off, every line works from the start and the rung says nothing. Rungs are counted over the enabled lines: a
+   * rung no enabled line has does not exist. The rungs are compressed to indexes: the sorted distinct values of the enabled lines
+   * are rungs 1, 2, ..., so a line alone on `rung: 3` is rung 1, and `ladder.escalated` names the index.
+   */
+  rung?: number;
   hooks: LineHooks;
 }
 
@@ -192,6 +201,23 @@ export interface LineHooks {
    */
   reviewBriefing?: (session: SessionContext, sections: readonly Briefing[]) => Promise<Briefing[] | undefined>;
   /**
+   * The line's choice among the problem's `ready` tasks that it proposed (a line that gives this hook
+   * is the problem's scheduler; at most one enabled line may). The orchestrator calls it between
+   * sessions and after the last one, with the ready tasks in the order they were made, and works
+   * the task chosen: it assigns the owner (the fleet's choice, if the fleet is on), starts the task,
+   * awaits `run`, and ends the task by what `run` answers, checking its acceptance criterion
+   * (documentation/lines.md, "Scheduling"). `undefined` means nothing is worth working on now. A
+   * `run` that throws an interruption leaves its task `running`, as a process that ended does, and the
+   * resumed run makes it `ready` again.
+   */
+  schedule?: (problem: ProblemContext, ready: readonly TaskInfo[]) => Promise<ScheduledTask | undefined>;
+  /**
+   * Before the scheduling line chooses, for the `ready` tasks that a line proposed (not the provers' own): a
+   * line that owns the choice of who works on what (the fleet, Ruling 29) assigns their owners through
+   * `problem.tasks.assign`. Every line that gives it is called, in `LINE_ORDER`; the last assignment stands.
+   */
+  assignOwners?: (problem: ProblemContext, ready: readonly TaskInfo[]) => Promise<void>;
+  /**
    * After each session, before its attempt is recorded: what it returns goes into
    * `attempt.finished` (a later line's fields win). Not called for a session the harness failed.
    */
@@ -207,6 +233,18 @@ export interface LineHooks {
    */
   afterProblem?: (problem: ProblemContext, end: ProblemEnd) => Promise<void>;
 }
+
+/** The task a scheduling line chose (`LineHooks.schedule`) and the work on it. */
+export interface ScheduledTask {
+  taskId: string;
+  /** Why this one: for the log and the task's reason. */
+  reason: string;
+  /** Does the work; `owner` is who the orchestrator assigned the task to. */
+  run: (owner: string) => Promise<TaskEnd>;
+}
+
+/** How the work on a scheduled task ended. `done` is checked against the task's criterion by the orchestrator. */
+export type TaskEnd = { ended: "done"; reason: string } | { ended: "failed"; reason: string };
 
 /** What every hook of a problem gets. */
 export interface ProblemContext {
@@ -254,6 +292,8 @@ export interface ProblemContext {
   signal: AbortSignal;
   /** The line's options: its defaults with the run's values over them. */
   options: Readonly<JsonObject>;
+  /** The run's seed: what a line's draws are seeded with (a number or a text; the run's id when the run was given none). */
+  seed?: string | number;
   /**
    * The models the run has, weakest first, and its budget class: what a line needs to say whether a
    * configuration was weaker than another (documentation/fleet.md, "Soft failure memory"). Absent in
@@ -506,6 +546,14 @@ export interface LlmRequest {
    * a call without is recorded as `<line>.unlabeled`.
    */
   site?: string;
+  /**
+   * The call is a pure function of its request: when the journal holds an `ok` call of this line, for this
+   * problem and site, made with the same model, system text, prompt and token limit, its recorded answer is
+   * returned at no cost and the model is not asked again. A line whose work a process may cut sets it, so
+   * that the resumed process does not pay for an answer it already has. Give the prompt what makes the
+   * call new (the session number): two calls with one prompt are one call.
+   */
+  reuse?: boolean;
 }
 
 /** A call whose answer must be JSON of a given shape. */
@@ -671,4 +719,10 @@ export interface TaskApi {
   routings: (taskId?: string) => RoutingInfo[];
   /** Proposes a task. Nothing is written when the orchestrator refuses it. */
   propose: (proposal: TaskProposal) => TaskProposalResult;
+  /**
+   * Changes the owner of a task of the problem that has not started. The orchestrator commits it
+   * (`task.assigned`) or refuses it with a reason. The fleet's choice of owners goes through the
+   * orchestrator, not through a line; a line that wants a task done by someone else says so here.
+   */
+  assign: (taskId: string, owner: string, reason: string) => { assigned: true } | { assigned: false; reason: string };
 }

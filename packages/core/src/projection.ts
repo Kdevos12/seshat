@@ -200,6 +200,9 @@ export interface ModelCallRow {
   seq: number;
   /** Where the call was made; null in journals older than the tags. */
   site: string | null;
+  /** The blobs of the request and of the answer (the answer only for an `ok` call). */
+  request_hash: string | null;
+  response_hash: string | null;
 }
 
 export interface TaskRow {
@@ -244,6 +247,18 @@ export interface TaskRouteRow {
   reason: string;
   attempt_id: string | null;
   node_id: string | null;
+}
+
+export interface LadderRow {
+  seq: number;
+  problem_id: string;
+  from: number;
+  to: number;
+  lines: string[];
+  threshold: number;
+  since_progress_usd: number;
+  budget_usd: number;
+  reason: string;
 }
 
 export interface ResumptionRow {
@@ -331,7 +346,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 8;
+export const PROJECTION_VERSION = 9;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -346,6 +361,7 @@ const INHERITED_SKIPPED: readonly string[] = [
   "task.assigned",
   "task.status_changed",
   "task.routed",
+  "ladder.escalated",
   // A decision is answered from its own run's journal: the same problem id in a chained run is another problem.
   "decision.made",
 ];
@@ -408,7 +424,7 @@ create index if not exists nodes_by_kind on nodes (kind, claim_id);
 create table if not exists model_calls (
   model_call_id text primary key, line text not null, problem_id text, attempt_id text, model text not null,
   outcome text not null, usd real not null, input_tokens integer not null, output_tokens integer not null,
-  duration_ms integer not null, seq integer not null, site text);
+  duration_ms integer not null, seq integer not null, site text, request_hash text, response_hash text);
 create index if not exists model_calls_by_problem on model_calls (problem_id);
 create table if not exists decisions (
   decision_id text primary key, key text not null, problem_id text not null, line text not null, site text not null,
@@ -424,6 +440,10 @@ create table if not exists task_routes (
   seq integer primary key, task_id text not null, action text not null, signal_type text not null,
   signal_value text not null, reason text not null, attempt_id text, node_id text);
 create index if not exists task_routes_by_task on task_routes (task_id);
+create table if not exists ladder (
+  seq integer primary key, problem_id text not null, from_rung integer not null, to_rung integer not null, lines_json text not null,
+  threshold real not null, since_progress_usd real not null, budget_usd real not null, reason text not null);
+create index if not exists ladder_by_problem on ladder (problem_id);
 create table if not exists resumptions (seq integer primary key, resumption integer not null, data_json text not null);
 create table if not exists epochs (
   epoch integer primary key, seq integer not null, reason text not null, changes_json text not null, provenance_json text not null);
@@ -723,10 +743,10 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `insert into model_calls (model_call_id, line, problem_id, attempt_id, model, outcome, usd, input_tokens,
-           output_tokens, duration_ms, seq, site) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           output_tokens, duration_ms, seq, site, request_hash, response_hash) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.modelCallId, d.line, d.problemId ?? null, d.attemptId ?? null, d.model, d.outcome, d.usd, d.inputTokens,
-          d.outputTokens, d.durationMs, event.seq, d.site ?? null);
+          d.outputTokens, d.durationMs, event.seq, d.site ?? null, d.requestHash, d.responseHash ?? null);
         return;
       }
       case "decision.made": {
@@ -769,6 +789,14 @@ export class Projection {
           d.epoch, event.seq, d.reason, canonicalJson(d.changes), canonicalJson(d.provenance));
         return;
       }
+      case "ladder.escalated": {
+        const d = event.data;
+        db.prepare(
+          `insert into ladder (seq, problem_id, from_rung, to_rung, lines_json, threshold, since_progress_usd, budget_usd, reason)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(event.seq, d.problemId, d.from, d.to, canonicalJson(d.lines), d.threshold, d.sinceProgressUsd, d.budgetUsd, d.reason);
+        return;
+      }
       case "task.routed": {
         const d = event.data;
         db.prepare(
@@ -788,6 +816,26 @@ export class Projection {
   claimsByStatement(statementId: string): ClaimRow[] {
     const rows = this.db.prepare("select * from claims where statement_id = ? order by created_seq").all(statementId) as unknown as StoredClaim[];
     return rows.map(claimRow);
+  }
+
+  /** The claims of a status (any, without `statuses`) and a header (any, without `header`; null: none), in the order they were created. */
+  claimsWhere(filter: { statuses?: readonly ClaimStatus[]; header?: string | null; kind?: ClaimKind } = {}): ClaimRow[] {
+    const where: string[] = [];
+    const values: Array<string | null> = [];
+    if (filter.statuses !== undefined) {
+      where.push(`status in (${filter.statuses.map(() => "?").join(", ")})`);
+      values.push(...filter.statuses);
+    }
+    if (filter.header !== undefined) {
+      where.push(filter.header === null ? "header is null" : "header = ?");
+      if (filter.header !== null) values.push(filter.header);
+    }
+    if (filter.kind !== undefined) {
+      where.push("kind = ?");
+      values.push(filter.kind);
+    }
+    const sql = `select * from claims${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_seq`;
+    return (this.db.prepare(sql).all(...values) as unknown as StoredClaim[]).map(claimRow);
   }
 
   problem(problemId: string): ProblemRow | undefined {
@@ -969,6 +1017,32 @@ export class Projection {
         ? this.db.prepare("select * from task_routes order by seq").all()
         : this.db.prepare("select * from task_routes where task_id = ? order by seq").all(taskId)
     ) as unknown as TaskRouteRow[];
+  }
+
+  /** The moves of a problem up the ladder (every problem's, without an id), in order. */
+  ladder(problemId?: string): LadderRow[] {
+    const rows = (
+      problemId === undefined
+        ? this.db.prepare("select * from ladder order by seq").all()
+        : this.db.prepare("select * from ladder where problem_id = ? order by seq").all(problemId)
+    ) as unknown as Array<{ seq: number; problem_id: string; from_rung: number; to_rung: number; lines_json: string; threshold: number; since_progress_usd: number; budget_usd: number; reason: string }>;
+    return rows.map((r) => ({
+      seq: r.seq,
+      problem_id: r.problem_id,
+      from: r.from_rung,
+      to: r.to_rung,
+      lines: JSON.parse(r.lines_json) as string[],
+      threshold: r.threshold,
+      since_progress_usd: r.since_progress_usd,
+      budget_usd: r.budget_usd,
+      reason: r.reason,
+    }));
+  }
+
+  /** The rung a problem is on: 0 until it moves up. */
+  ladderRung(problemId: string): number {
+    const row = this.db.prepare("select max(to_rung) as rung from ladder where problem_id = ?").get(problemId) as { rung: number | null };
+    return row.rung ?? 0;
   }
 
   /** The times the run was resumed, in order. */

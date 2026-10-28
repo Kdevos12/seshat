@@ -390,6 +390,26 @@ export class Journal {
         if (d.nodeId !== undefined && !p.node(d.nodeId)) throw new Error(`unknown node ${d.nodeId}`);
         return;
       }
+      case "ladder.escalated": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
+        const rung = p.ladderRung(d.problemId);
+        if (d.from !== rung) throw new Error(`problem ${d.problemId} is on rung ${rung}, not ${String(d.from)}`);
+        if (!Number.isInteger(d.to) || d.to <= d.from) throw new Error(`problem ${d.problemId}: a ladder moves up (${String(d.from)} to ${String(d.to)})`);
+        if (!Array.isArray(d.lines) || d.lines.length === 0 || d.lines.some((l) => typeof l !== "string" || l === "")) {
+          throw new Error(`problem ${d.problemId}: a rung is made of lines`);
+        }
+        if (!(typeof d.threshold === "number" && d.threshold > 0 && d.threshold <= 1)) throw new Error(`problem ${d.problemId}: the threshold is a fraction of the budget`);
+        if (!(Number.isFinite(d.budgetUsd) && d.budgetUsd > 0 && Number.isFinite(d.sinceProgressUsd) && d.sinceProgressUsd >= 0)) {
+          throw new Error(`problem ${d.problemId}: the ladder needs the budget and the spend`);
+        }
+        if (d.sinceProgressUsd < d.threshold * d.budgetUsd - 1e-9) {
+          throw new Error(`problem ${d.problemId}: ${String(d.sinceProgressUsd)} of ${String(d.budgetUsd)} dollars is under the threshold ${String(d.threshold)}`);
+        }
+        if (typeof d.reason !== "string" || d.reason === "") throw new Error(`problem ${d.problemId}: a move up the ladder needs a reason`);
+        return;
+      }
     }
   }
 

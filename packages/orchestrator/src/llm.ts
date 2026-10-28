@@ -45,6 +45,21 @@ export function lineLlm(o: LineLlmOptions): Llm {
       prompt: request.prompt,
       maxTokens: request.maxTokens ?? null,
     });
+    if (request.reuse === true) {
+      // A call the journal holds with this very request: a process that ended after it was made, and before its answer was used.
+      const held = o.journal.projection
+        .modelCallsOfProblem(o.problemId)
+        .findLast((call) => call.line === o.line && call.site === site && call.request_hash === requestHash && call.outcome === "ok" && call.response_hash !== null);
+      const text = held?.response_hash === null || held === undefined ? undefined : o.blobs.get(held.response_hash);
+      if (held !== undefined && text !== undefined) {
+        return {
+          text,
+          cost: { usd: held.usd, inputTokens: held.input_tokens, outputTokens: held.output_tokens },
+          model: held.model,
+          modelCallId: held.model_call_id,
+        };
+      }
+    }
     const modelCallId = newId("mc");
     const started = performance.now();
     // Read again, immediately before the send: another response may have ended the turn while the model was being resolved.

@@ -58,6 +58,11 @@ export function resolveLines(
   }
   const packets = enabled.filter((line) => line.hooks.contextPacket !== undefined).map((line) => line.id);
   if (packets.length > 1) problems.push(`lines ${packets.join(" and ")} all give the context packet; enable one of them`);
+  const schedulers = enabled.filter((line) => line.hooks.schedule !== undefined).map((line) => line.id);
+  if (schedulers.length > 1) problems.push(`lines ${schedulers.join(" and ")} all schedule the problem's tasks; enable one of them`);
+  for (const line of enabled) {
+    if (line.rung !== undefined && !(Number.isInteger(line.rung) && line.rung >= 0)) problems.push(`line ${line.id} has rung ${String(line.rung)}: a rung is a whole number from 0`);
+  }
   const environments = enabled.filter((line) => line.leanEnv !== undefined).map((line) => line.id);
   if (environments.length > 1) problems.push(`lines ${environments.join(" and ")} all give the Lean environment; enable one of them`);
   const identities = enabled.filter((line) => line.identity !== undefined).map((line) => line.id);

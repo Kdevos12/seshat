@@ -8,9 +8,9 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and six lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and seven lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory) are written and tested with a
+counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -45,6 +45,9 @@ flowchart TB
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
+  m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::built
+  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers"]:::wait
+  ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m17["Line M17: extended environment<br/>the run's Lean has more<br/>packages than the bench's"]:::wait
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
@@ -111,6 +114,13 @@ flowchart TB
   m11 -->|"nodes, computed edges"| journal
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
+  provers -->|"sketches ending in<br/>named sorry holes"| m12
+  m12 -->|"holes as claims,<br/>one prove task each"| holes
+  holes -->|"link lemma, hole proofs"| leancheck
+  holes -->|"claims, edges, tasks"| journal
+  m12 -->|"lemmas proved,<br/>with their names"| provers
+  journal -->|"spend since the<br/>last Lean progress"| ladder
+  ladder -->|"ladder.escalated:<br/>starts the lines of the rung"| journal
   provers -.-> moretools
   leanmeta -.->|"statement ids"| kg
   provers --> leangoals
@@ -193,7 +203,7 @@ where one does badly, and sends hard decisions to a stronger model. It samples e
 (temperature, thinking level, a diversity directive, standard or informal-first mode), discounts old failures per run and keeps
 a floor of exploration, so that a failure of a weaker configuration does not close a door for good
 ([documentation/fleet.md](documentation/fleet.md)). Informal-first sessions and the multi-call `judge` helper
-have only run against a simulated model. `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
+have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); it has only run against a simulated model and Lean.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
 with the run's own model as the default and the fallback) to order work, never to change a claim's status; with Jev on, short proof states go to a third party, and it has never run against the real service
 ([documentation/decide.md](documentation/decide.md)). The other mechanisms will come as lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
