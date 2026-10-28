@@ -13,6 +13,7 @@ export class Ledger {
   outputTokens = 0;
   requests = 0;
   private readonly listeners: Array<() => void> = [];
+  private readonly observers: Array<(cost: TokenCost) => void> = [];
   private announced = false;
 
   constructor(limitUsd?: number, parent?: Ledger) {
@@ -41,12 +42,21 @@ export class Ledger {
   }
 
   charge(cost: TokenCost): void {
+    for (const observer of this.observers) observer(cost);
     this.usd += cost.usd;
     this.inputTokens += cost.inputTokens;
     this.outputTokens += cost.outputTokens;
     this.requests += 1;
     this.parent?.charge(cost);
     if (this.exhausted) this.announce();
+  }
+
+  /**
+   * Told of every charge to this ledger, which is every charge to it or to a ledger below it. The
+   * run's ledger is told of all the spending of the run: a turn counts its limit with it.
+   */
+  observe(observer: (cost: TokenCost) => void): void {
+    this.observers.push(observer);
   }
 
   get exhausted(): boolean {

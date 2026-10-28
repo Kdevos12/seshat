@@ -28,7 +28,9 @@ import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRe
 import { MemoryStore, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
+import { Breakpoints } from "./breakpoints.ts";
 import { Ledger } from "./budget.ts";
+import { beginTurn, closeTurn, waitingProblems } from "./consortium.ts";
 import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
 import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
@@ -51,6 +53,9 @@ import {
   type RecordedRun,
 } from "./resume.ts";
 import { Router } from "./routing.ts";
+import { applyDrops, claimAndParts, steering } from "./team.ts";
+import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
+import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
@@ -82,6 +87,11 @@ export interface RunConfig {
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
   lineOptions?: Record<string, JsonObject>;
+  /**
+   * Consortium mode (documentation/human.md): turns that end by themselves at a limit or a breakpoint,
+   * and an account for the research team. Absent: an ordinary run, which records what it always did.
+   */
+  consortium?: ConsortiumConfig;
   /**
    * Seeds the draws of unverified memory items (documentation/memory.md, "Randomized inclusion"). A
    * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
@@ -142,6 +152,18 @@ export interface RunOptions {
    * Ignored by a resume, which reads what the run was started on from its own journal.
    */
   memoryFrom?: string;
+  /** What a consortium run takes from the process that works it, not from its recorded configuration. */
+  turns?: TurnProcess;
+}
+
+/** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
+export interface TurnProcess {
+  /** The limit of this turn, when the process is told one: it wins over the team's steer and the turn before's. */
+  limit?: TurnLimit;
+  /** A model writes a narrative of this turn, whatever the run's configuration says. */
+  narrative?: boolean;
+  /** Milliseconds, as `performance.now()` gives them: a test sets its own clock. */
+  clock?: () => number;
 }
 
 export interface ProblemResult {
@@ -164,6 +186,19 @@ export interface RunResult {
   stopped?: string;
   /** The report written in the run directory. */
   report: RunReport;
+  /** The turn this process worked, for a consortium run: how it ended, and where its account is. */
+  turn?: TurnSummary;
+}
+
+/** How the turn a process worked ended (documentation/human.md). */
+export interface TurnSummary {
+  number: number;
+  reason: string;
+  detail: string;
+  /** True when problems wait for the team: the run is not finished, and `harness resume` goes on. */
+  paused: boolean;
+  /** The account of the turn, relative to the run directory. */
+  account: string;
 }
 
 /** Problems ending with a harness error in a row: the run stops. */
@@ -194,6 +229,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
+  if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   return problems;
 }
 
@@ -249,6 +285,8 @@ export interface ResumeOptions {
   codeRev?: string;
   /** The lines that can be enabled, by id. Default: `LINES`. */
   lines?: LineRegistry;
+  /** The next turn of a consortium run: its limit, whether a model narrates it, its clock. */
+  turns?: TurnProcess;
 }
 
 /**
@@ -279,6 +317,7 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.log !== undefined ? { log: o.log } : {}),
       ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
       ...(o.lines !== undefined ? { lines: o.lines } : {}),
+      ...(o.turns !== undefined ? { turns: o.turns } : {}),
     },
     recorded,
   );
@@ -298,6 +337,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
   const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
+  // A consortium run is resumed after every turn: it starts only with lines that can be (documentation/human.md, "Turns").
+  if (config.consortium !== undefined && resume === undefined) {
+    const refusals = resumeRefusals(enabled.lines);
+    if (refusals.length > 0) throw new RunSetupError(`a consortium run (--human or a turn limit) is resumed after each turn, and it cannot be: ${refusals.join("; ")}`);
+  }
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const promptRecord = { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
@@ -331,6 +375,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     const lastResumption = resume.events.findLastIndex((event) => event.type === "run.resumed");
     if (lastEnd > lastResumption && o.problems.every((entry) => ended.has(entry.id))) {
       throw new RunSetupError(`the run is complete: every problem has an outcome and the run finished, so there is nothing to resume in ${o.dir}`);
+    }
+    if (config.consortium === undefined && (o.turns?.limit !== undefined || o.turns?.narrative === true)) {
+      throw new RunSetupError("a turn limit or --turn-narrative goes with a run that began with --human or a turn limit: this run is an ordinary one");
     }
   }
   const model = await resolveModel(o.models, config.model);
@@ -483,6 +530,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
       // Only with lines, so that an M0 run records what it always did.
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
+      // Only in a consortium run, for the same reason.
+      ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
     };
     writeFileSync(
@@ -533,6 +582,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
+  // What the team asked for, carried out before any work: a problem whose claim it dropped ends (documentation/human.md).
+  const dropped = resume !== undefined ? applyDrops(journal, tasks) : undefined;
+  // Consortium mode: the turn this process works. It ends by itself at its limit or at a breakpoint.
+  const turn: Turn | undefined =
+    config.consortium === undefined
+      ? undefined
+      : beginTurn(journal, { consortium: config.consortium, ...(o.turns?.limit !== undefined ? { flag: o.turns.limit } : {}), ...(o.turns?.clock !== undefined ? { now: o.turns.clock } : {}) });
+  if (turn !== undefined) {
+    const limit = Object.entries(turn.limit).map(([name, value]) => `${value} ${name}`).join(", ");
+    log(`turn ${turn.number} begins: ${limit === "" ? "no limit, only the breakpoints end it" : `it ends at ${limit}`} (${turn.source})`);
+  }
+  if (dropped !== undefined && (dropped.problems.length > 0 || dropped.tasks > 0)) {
+    log(`the team dropped ${dropped.problems.length} problem(s) and ${dropped.tasks} other task(s)`);
+  }
+
   // The memory and the lines' runtime exist only when a line is enabled or the run starts on earlier
   // journals: M0 on nothing runs as it always did.
   let runLines: RunLines | undefined;
@@ -560,14 +624,24 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
+      ...(turn !== undefined ? { turn } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
   }
 
   const runLedger = new Ledger(config.budget.runUsd);
+  // The turn counts every model response of the run, a prover's or a line's, as the run's ledger is charged.
+  if (turn !== undefined) runLedger.observe((cost) => turn.charge(cost));
+  const breakpoints =
+    turn !== undefined && config.consortium !== undefined
+      ? new Breakpoints({ journal, turn, settings: config.consortium.impasse, events: resume?.events ?? [] })
+      : undefined;
   // The outcomes the earlier processes wrote stay; the budget starts from what the journal says was spent.
   const results: ProblemResult[] = resume === undefined ? [] : finishedResults(resume.events, o.problems, o.dir);
   if (resume !== undefined) runLedger.seed(journal.projection.totalSpend());
+  for (const problem of dropped?.problems ?? []) {
+    results.push({ problemId: problem.problemId, outcome: "aborted", reason: "dropped by the team", attempts: problem.attempts, usd: problem.usd, durationMs: problem.durationMs });
+  }
   let stopped: string | undefined;
   let failedInARow = 0;
   const stopReason = (): string | undefined => {
@@ -579,7 +653,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
   const runProblem = async ({ entry, k, again }: QueuedProblem): Promise<void> => {
     const result = await solveProblem(entry, again);
+    if (result === undefined) {
+      log(`[${k + 1}/${o.problems.length}] ${entry.fullName}: waits for the next turn`);
+      return;
+    }
     results.push(result);
+    breakpoints?.afterProblem(entry.id);
     failedInARow = result.outcome === "error" ? failedInARow + 1 : 0;
     if (failedInARow >= MAX_FAILED_PROBLEMS && stopped === undefined) stopped = "errors";
     log(
@@ -605,7 +684,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
    * and its registration, its tasks, its spend, the candidate it found and what its provers carried are
    * taken from the journal (documentation/ledger.md, "Resume").
    */
-  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem): Promise<ProblemResult> => {
+  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem): Promise<ProblemResult | undefined> => {
     const started = performance.now();
     const ledger = runLedger.child(config.budget.problemUsd);
     if (again !== undefined) ledger.seed(journal.projection.problemSpend(entry.id));
@@ -685,11 +764,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
      * a harness error, except that a proof or a refutation found stays found, as when certification
      * fails.
      */
-    const settle = async (lines: ProblemLines, workbench: Workbench, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult> => {
+    const settle = async (lines: ProblemLines, workbench: Workbench, outcome: ProblemOutcome, reason?: string, proof?: string): Promise<ProblemResult | undefined> => {
       let failure: string | undefined;
       try {
         await lines.afterProblem({ outcome, ...(reason !== undefined ? { reason } : {}), attempts, usd: ledger.usd });
       } catch (error) {
+        // The turn ended while the lines closed the problem: it waits for the next turn, as one cut there by a kill does.
+        if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
         failure = messageOf(error);
       }
       const pending = await benches?.certifyPending({ problemId: entry.id, claimId, workbench }, o.signal);
@@ -786,7 +867,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // With lines: the problem's lines, their `beforeProvers`, and `afterProblem` before the end.
       let lines: ProblemLines | undefined;
       let lineFailure: string | undefined;
-      let end: (outcome: ProblemOutcome, reason?: string, proof?: string) => ProblemResult | Promise<ProblemResult> = finish;
+      let end: (outcome: ProblemOutcome, reason?: string, proof?: string) => ProblemResult | undefined | Promise<ProblemResult | undefined> = finish;
       if (runLines !== undefined && memory !== undefined) {
         memory.setReference(claimId, { source: problem.source, theorem: entry.fullName });
         const problemLines = runLines.problem({
@@ -812,7 +893,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             await problemLines.resumeProblem(resumedProblemOf(journal, { problemId: entry.id, begun, endedProvers }));
           }
         } catch (error) {
-          lineFailure = messageOf(error);
+          // A line that wanted a model call after the turn ended has not failed: the problem waits for the next turn.
+          if (!(turn?.ended !== undefined && isTurnEnded(error))) lineFailure = messageOf(error);
         }
       }
       // The provers that have work: all of them in a fresh problem, the ones that are `ready` in a problem
@@ -867,9 +949,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 transcript,
                 tools: pinned.tools,
                 stamp: (modelId) => stampProvenance(provenance, { modelId }),
-                onAttemptEnd: (attempt) => void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId }),
-                onEnd: (result) =>
-                  end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" }),
+                onAttemptEnd: (attempt) => {
+                  void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });
+                  breakpoints?.afterAttempt(entry.id);
+                },
+                // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
+                onEnd: (result) => {
+                  if (result.stop === "turn") return;
+                  end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
+                },
+                ...(turn !== undefined ? { turn } : {}),
                 ...(resumed !== undefined ? { resume: resumed } : {}),
                 ...(lines !== undefined ? { lines } : {}),
               }).catch((error: unknown) => {
@@ -883,6 +972,24 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = workbench.attemptIds.length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+
+      // The turn ended while the problem worked: it waits for the next one, as the problem of a process that
+      // ended does, and the resumption takes up whatever the journal holds (a candidate, a certification, the
+      // provers' files and notes). A problem that has an end of its own, whatever the turn, ends now.
+      if (turn?.ended !== undefined && crash === undefined && resumeFailure === undefined && !ledger.exhausted && !(o.signal?.aborted ?? false)) {
+        // Certify before exiting (documentation/human.md, "Turns"): a candidate the problem holds is certified now, and what
+        // the lines submitted for this problem with it. That is Lean and no model call: no session, no `afterProblem`, no
+        // request. The claim becomes `proved` or `refuted` through the normal validation, so the account says so, and the
+        // problem keeps no outcome: the next turn ends it, with its lines, from the certification the journal holds.
+        try {
+          if (workbench.candidate !== undefined) await workbench.certify(o.signal);
+          await benches?.certifyPending({ problemId: entry.id, claimId, workbench }, o.signal);
+        } catch (error) {
+          // A certifier that is down or too slow leaves the candidate as it was; the next turn certifies it, as after a kill.
+          log(`${entry.fullName}: the certification at the end of the turn did not finish (${messageOf(error)}); the next turn takes it up`);
+        }
+        return undefined;
+      }
 
       const candidate = workbench.candidate;
       if (candidate !== undefined) {
@@ -936,6 +1043,18 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       else if (!registered.has(entry.id)) untouched.push({ entry, k });
     }
     queue.push(...untouched);
+    // What the team asked to work on first goes first, the newest ask before the older ones; the rest keeps its order.
+    const focus = steering(journal.projection).focus;
+    if (focus.length > 0) {
+      const rank = (q: QueuedProblem): number => {
+        const claimId = journal.projection.problem(q.entry.id)?.claim_id;
+        if (claimId === undefined) return focus.length;
+        const at = focus.findIndex((id) => claimAndParts(journal.projection, id).includes(claimId));
+        return at < 0 ? focus.length : at;
+      };
+      queue.sort((a, b) => rank(a) - rank(b));
+      log(`the team asked to work first on ${focus.join(", ")}`);
+    }
   }
   // An environment with extra packages: the server has to be able to import them before any problem is worked on.
   if (envProbe !== undefined && leanEnv !== undefined && stopReason() === undefined) {
@@ -946,35 +1065,76 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     }
   }
   let crashed: { error: unknown } | undefined;
+  let turnSummary: TurnSummary | undefined;
   try {
-    await pool(queue, config.concurrency, runProblem, (next) =>
-      next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined,
+    await pool(
+      queue,
+      config.concurrency,
+      runProblem,
+      (next) => turn?.ended !== undefined || (next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined),
     );
   } catch (error) {
     crashed = { error };
     stopped ??= "errors";
   } finally {
-    stopped = stopReason() ?? (results.length < o.problems.length ? "aborted" : undefined);
-    const summary = journal.projection.runSummary();
-    journal.emit(
-      "run.finished",
-      {
-        runId,
-        attempted: results.filter((r) => r.attempts > 0).length,
-        solved: summary.solved,
-        refuted: summary.refuted,
-        candidates: summary.candidates,
-        usd: runLedger.usd,
-        ...(stopped !== undefined ? { stopped } : {}),
-      },
-      "orchestrator",
-    );
+    // The turn is over and problems wait: the run is paused, not finished. `harness resume` goes on.
+    const waiting = turn === undefined ? [] : waitingProblems(journal, o.problems);
+    const paused = turn !== undefined && turn.ended !== undefined && stopReason() === undefined && crashed === undefined && waiting.length > 0;
+    stopped = paused ? undefined : (stopReason() ?? (results.length < o.problems.length ? "aborted" : undefined));
+    if (turn !== undefined) {
+      const end = turn.ended;
+      const reason = paused && end !== undefined ? end.reason : (stopped ?? "finished");
+      const detail = paused && end !== undefined ? end.detail : stopped !== undefined ? `the run stopped: ${stopped}` : "every problem has an outcome";
+      let narrative: { hash?: string; rejected?: string } | undefined;
+      if (config.consortium !== undefined && (config.consortium.narrative || o.turns?.narrative === true)) {
+        narrative = await turnNarrative({
+          journal,
+          turn: turn.number,
+          ending: { reason, detail, waiting, ...(paused && end?.breakpoint !== undefined ? { breakpoint: end.breakpoint } : {}) },
+          keep: (text) => blobs.put(text),
+          log,
+          call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal }),
+        }).catch((error: unknown) => ({ rejected: messageOf(error) }));
+      }
+      closeTurn(journal, turn, {
+        reason,
+        detail,
+        ...(paused && end?.breakpoint !== undefined ? { breakpoint: end.breakpoint } : {}),
+        waiting,
+        ...(narrative !== undefined ? { narrative } : {}),
+      });
+      turnSummary = { number: turn.number, reason, detail, paused, account: `turns/${turn.number}/report.md` };
+    }
+    if (!paused) {
+      const summary = journal.projection.runSummary();
+      journal.emit(
+        "run.finished",
+        {
+          runId,
+          attempted: results.filter((r) => r.attempts > 0).length,
+          solved: summary.solved,
+          refuted: summary.refuted,
+          candidates: summary.candidates,
+          usd: runLedger.usd,
+          ...(stopped !== undefined ? { stopped } : {}),
+        },
+        "orchestrator",
+      );
+    }
     await registry.close();
     journal.close();
   }
   if (crashed !== undefined) throw crashed.error;
+  // The account is built from the journal alone, once it is closed (documentation/human.md).
+  if (turnSummary !== undefined) {
+    try {
+      writeAccount(o.dir, turnSummary.number);
+    } catch (error) {
+      log(`the account of turn ${turnSummary.number} could not be written: ${messageOf(error)}`);
+    }
+  }
   const report = writeReport(o.dir);
-  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report };
+  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
 }
 
 /**
