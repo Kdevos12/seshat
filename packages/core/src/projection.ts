@@ -316,6 +316,9 @@ export const PROJECTION_VERSION = 6;
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
   "run.resumed",
+  // The turns of an earlier consortium run are not this run's: its first turn is turn 1.
+  "turn.started",
+  "turn.ended",
   "problem.registered",
   "problem.finished",
   "model_call.finished",
@@ -324,6 +327,13 @@ const INHERITED_SKIPPED: readonly string[] = [
   "task.status_changed",
   "task.routed",
 ];
+
+/**
+ * The node kinds only a person writes: the hints and steers of the research team. Nobody edits one (a
+ * person who changes their mind writes a new one), and a run that starts on earlier journals does not
+ * take them: a team's answers belong to the run they were given to (documentation/human.md).
+ */
+export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer"];
 
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
@@ -662,6 +672,7 @@ export class Projection {
       }
       case "node.recorded": {
         const d = event.data;
+        if (inherit !== undefined && HUMAN_NODE_KINDS.includes(d.kind)) return;
         db.prepare(
           `${insert} into nodes (node_id, kind, claim_id, data_json, created_seq, updated_seq, provenance_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
@@ -671,7 +682,9 @@ export class Projection {
       }
       case "node.updated": {
         const d = event.data;
-        const row = db.prepare("select data_json from nodes where node_id = ?").get(d.nodeId) as { data_json: string };
+        const row = db.prepare("select data_json from nodes where node_id = ?").get(d.nodeId) as { data_json: string } | undefined;
+        if (row === undefined && inherit !== undefined) return;
+        if (row === undefined) throw new Error(`unknown node ${d.nodeId}`);
         const data = mergePatch(JSON.parse(row.data_json) as Json, d.patch);
         db.prepare("update nodes set data_json = ?, updated_seq = ? where node_id = ?").run(canonicalJson(data), event.seq, d.nodeId);
         return;

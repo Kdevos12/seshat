@@ -4,7 +4,7 @@ import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
-import { Projection, StaleProjectionError } from "./projection.ts";
+import { HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
 import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
@@ -21,9 +21,6 @@ import {
   isTaskStatus,
   TASK_WRITER,
 } from "./tasks.ts";
-
-/** The node kinds only a person writes: the hints and steers of the research team. */
-export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer"];
 
 /**
  * The single writer of a run: every fact goes through `emit`, which checks the invariants against
@@ -243,6 +240,7 @@ export class Journal {
         if (p.edge(d.edgeId)) throw new Error(`edge ${d.edgeId} already exists`);
         if (!isEdgeKind(d.kind)) throw new Error(`edge ${d.edgeId} has unknown kind ${String(d.kind)}`);
         if (!isEdgeStatus(d.status)) throw new Error(`edge ${d.edgeId} has unknown status ${String(d.status)}`);
+        this.checkSigner(`edge ${d.edgeId}`, d.status, actor);
         if (d.to.length === 0) throw new Error(`edge ${d.edgeId} has no target`);
         if (d.kind !== "decomposes_into" && d.to.length !== 1) {
           throw new Error(`a ${d.kind} edge has one target, edge ${d.edgeId} has ${d.to.length}`);
@@ -268,6 +266,7 @@ export class Journal {
         if (edge.status !== d.from) throw new Error(`edge ${d.edgeId} is ${edge.status}, not ${d.from}`);
         if (!isEdgeStatus(d.to)) throw new Error(`edge ${d.edgeId}: unknown status ${String(d.to)}`);
         if (d.to === d.from) throw new Error(`edge ${d.edgeId} is already ${d.to}`);
+        this.checkSigner(`edge ${d.edgeId}`, d.to, actor);
         if (d.validationId !== undefined && !p.validation(d.validationId)) throw new Error(`unknown validation ${d.validationId}`);
         if (d.to === "lean_checked") {
           const link = edge.link_name === null || edge.link_statement === null ? undefined : { name: edge.link_name, statement: edge.link_statement };
@@ -288,9 +287,15 @@ export class Journal {
         this.checkProvenance(`node ${d.nodeId}`, d.provenance);
         return;
       }
-      case "node.updated":
-        if (!p.node(event.data.nodeId)) throw new Error(`unknown node ${event.data.nodeId}`);
+      case "node.updated": {
+        const node = p.node(event.data.nodeId);
+        if (!node) throw new Error(`unknown node ${event.data.nodeId}`);
+        // A team's answer is edited by nobody, not even by the person who gave it: they write a new one (documentation/human.md).
+        if (HUMAN_NODE_KINDS.includes(node.kind)) {
+          throw new Error(`node ${event.data.nodeId}: a ${node.kind} is the research team's and is not edited, ${actor} cannot rewrite it: a person who changes their mind writes a new one`);
+        }
         return;
+      }
       case "model_call.finished": {
         const d = event.data;
         if (p.modelCall(d.modelCallId)) throw new Error(`model call ${d.modelCallId} already exists`);
@@ -406,6 +411,13 @@ export class Journal {
   /** Task events are the orchestrator's: a line proposes a task through its context and the orchestrator commits it. */
   private onlyOrchestrator(type: EventType, actor: string): void {
     if (actor !== TASK_WRITER) throw new Error(`${type} is written by the ${TASK_WRITER} only, not by ${actor}`);
+  }
+
+  /** A signature is a person's: an edge reaches `human_signed` only through an event of `human:NAME` (documentation/human.md). */
+  private checkSigner(what: string, status: string, actor: string): void {
+    if (status === "human_signed" && !actor.startsWith("human:")) {
+      throw new Error(`${what}: human_signed is a person's signature, written by human:NAME, not by ${actor}`);
+    }
   }
 
   private checkTaskCreated(d: EventDataMap["task.created"]): void {

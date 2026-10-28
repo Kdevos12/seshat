@@ -128,10 +128,12 @@ again, with a reason (the lemma's file changed, a dependency was retracted).
 
 A person's signature is the `human_signed` status of an edge, written under the person's name
 (`harness sign`, [human.md](human.md#the-teams-answers)). It ranks below `lean_checked`, so no rule follows it, no
-claim changes because of it, and it never lowers an edge's status. The rest of what the research team
+claim changes because of it, and it never lowers an edge's status. The journal accepts it only from an actor
+`human:NAME`, whether the edge is added already signed or changes to it, so no line or model can sign. The rest of what the research team
 sends is of the same kind: a hint is a `hint` node of provenance `human`, shown to the provers as a
 suggestion and never as a fact, and a steer is a record that changes the order or the end of the work, not a
-status. Nothing the team sends makes a claim `computed`, `proved` or `refuted`: that stays a Lean check, and
+status. Both are written by `human:NAME` alone and edited by nobody (`node.updated` of a hint or a steer is
+refused for every actor), so what the briefing, the account and the drops read back is what the person wrote. Nothing the team sends makes a claim `computed`, `proved` or `refuted`: that stays a Lean check, and
 the certifier's kernel replay.
 
 The line M2 follows `lean_checked` edges with logic rules ([graph.md](graph.md)). What the rules
