@@ -302,6 +302,20 @@ describe("MemoryStore references", () => {
     journal.close();
   });
 
+  it("lets a line's view write as no person and not as the orchestrator, so the actor string cannot forge a team's answer (N2)", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: ": True", origin: "test", kind: "formal" });
+    const view = memory.withActor("line:M1");
+    for (const actor of ["human:carol", "orchestrator"]) {
+      assert.throws(() => view.withActor(actor), /cannot write as/, actor);
+      assert.throws(() => view.withActor("line:M2").withActor(actor), /cannot write as/, actor);
+    }
+    // Another line is still a line, and the root store (the orchestrator's and the commands') still makes the views they need.
+    assert.doesNotThrow(() => view.withActor("line:M2"));
+    assert.doesNotThrow(() => memory.withActor("human:carol").recordNode({ kind: "hint", claimId, data: { provenance: "human", by: "carol", text: "try induction" } }));
+    journal.close();
+  });
+
   it("let only the root store set a reference: a line's view cannot replace the file a proof is compared with", async () => {
     const { memory, journal } = open();
     const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", header: "import Mathlib\n", origin: "test" });
