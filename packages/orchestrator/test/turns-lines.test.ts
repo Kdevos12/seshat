@@ -149,3 +149,74 @@ describe("line M2 across turns", () => {
     }
   }
 });
+
+describe("the point where a request is sent (review round 1, I3)", () => {
+  /** A line that holds prover p2 in `briefing` (inside `openSession`, after the prover's checks of the turn) until `release` is called: it has passed the gates and has not sent. */
+  const holding = (held: Promise<void>, release: () => void): Line => ({
+    id: "M1",
+    title: "holds a prover between its check of the turn and its request",
+    requires: [],
+    resume: "stateless",
+    hooks: {
+      briefing: async (session) => {
+        if (session.prover === "p2") await held;
+        return undefined;
+      },
+      // p1's response has been counted by now, and it reached the limit: p2 may go on.
+      afterCheck: async (session) => {
+        if (session.prover === "p1") release();
+        return undefined;
+      },
+    },
+  });
+
+  it("sends no request after the limit, even from a prover that passed every earlier check before the limit was reached", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const run = await demoRun({
+      lines: { M1: holding(held, release) },
+      config: { lines: ["M1"], provers: 2, sessions: 3, consortium: consortium({ tokens: 1 }) },
+      // The first response (prover p1's) reaches the limit, and only then is p2 let go of: its request must not be sent.
+      responses: Array.from({ length: 10 }, () => check("bad")),
+    });
+    assert.equal(run.faux.state.callCount, 1, "one request was sent in all: p1's");
+    assert.equal(ofType(run.events, "turn.ended")[0]?.data.reason, "tokens");
+    // The refused request ended p2's session with the turn, not with an error.
+    const attempts = ofType(run.events, "attempt.finished");
+    assert.ok(attempts.every((a) => a.data.stoppedBy === "turn"), attempts.map((a) => a.data.stoppedBy).join(","));
+    assert.equal(attempts.some((a) => a.data.error !== undefined), false);
+    assertSound(run.events);
+  });
+
+  it("refuses a line's one-shot call when the turn ended while the model was being resolved, and sends nothing", async () => {
+    const { models, faux } = fauxModels();
+    faux.setResponses([say("an answer")]);
+    const journal = Journal.open(mkdtempSync(join(tmpdir(), "mh-llm-")), "run_1");
+    const root = new Ledger();
+    const turn = new Turn({ number: 1, limit: { tokens: 1000 }, source: "test", startSpend: { usd: 0, inputTokens: 0, outputTokens: 0 } });
+    root.observe((cost) => turn.charge(cost));
+    const model = faux.getModel();
+    const llm = lineLlm({
+      line: "M2",
+      journal,
+      blobs: new BlobStore(join(mkdtempSync(join(tmpdir(), "mh-llm-")), "blobs")),
+      models,
+      model: `${model.provider}/${model.id}`,
+      // Another response ends the turn while the model is being resolved.
+      resolveModel: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        turn.strike({ reason: "tokens", detail: "another response reached the limit" });
+        return model;
+      },
+      thinkingLevel: "off",
+      ledger: root.child(),
+      problemId: "prb_1",
+      signal: new AbortController().signal,
+      turn,
+    });
+    await assert.rejects(() => llm.complete({ prompt: "p", site: "graph.attempt" }), (error: unknown) => isTurnEnded(error) && isInterrupted(error));
+    assert.equal(faux.state.callCount, 0, "no request was sent");
+    assert.equal(journal.projection.modelCallsOfProblem("prb_1").length, 0);
+    journal.close();
+  });
+});
