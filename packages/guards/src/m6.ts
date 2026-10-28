@@ -81,6 +81,13 @@ const DETECTOR_KINDS: readonly string[] = ["statement_drift", "restated_target",
 
 const OWN_TITLES = ["The question", "Course change"];
 
+/**
+ * Sections whose text is the model's own: the fleet's "Step plan" quotes an informal argument the model wrote
+ * ("we show that ..."), which says nothing about how the harness frames the statement. The wording the harness
+ * wrote around it is checked by a test that runs `framingProblems` on it (orchestrator/test/soft-memory.test.ts); the scan would only note the model's proof as a drift.
+ */
+const MODEL_TEXT_TITLES = ["Step plan"];
+
 function flag(options: Readonly<JsonObject>, key: keyof typeof M6_OPTIONS): boolean {
   const value = options[key];
   return typeof value === "boolean" ? value : (M6_OPTIONS[key] as boolean);
@@ -213,8 +220,8 @@ export function createM6(env: M6Env = {}): Line {
     title: LINE_TITLES.M6,
     requires: [],
     options: M6_OPTIONS,
-    // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording.
-    version: "m6-2",
+    // Recorded in run.started: change it with a guard's rule, a detector's threshold or a notice's wording (m6-3: the question about an open conjecture carries the anti-sycophancy instruction).
+    version: "m6-3",
     // What the line keeps across a prover's sessions (the detectors' counts, the last check, the notices waiting for the next session)
     // and the framing findings it has made are made again from the journal when a problem is taken up: see `resumeProblem`.
     resume: "rebuild",
@@ -307,7 +314,7 @@ export function createM6(env: M6Env = {}): Line {
               text = scrubbed.text;
             }
           }
-          if (framed && !OWN_TITLES.includes(section.title)) {
+          if (framed && !OWN_TITLES.includes(section.title) && !MODEL_TEXT_TITLES.includes(section.title)) {
             const problems = framingProblems(section.text);
             const key = `${session.problemId}/${clip(section.title, 60)}`;
             if (problems.length > 0 && !run.noted.has(key)) {

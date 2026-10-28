@@ -10,7 +10,7 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
 (independent provers on pi, in sessions that pass on their notes) and six lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M17: a run in an extended Lean environment; the fleet policy) are written and tested with a
+counter-models; M6: guards and drift detectors; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -34,7 +34,9 @@ flowchart TB
   classDef planned fill:#f1f3f6,stroke:#8a92a3,stroke-width:2px,stroke-dasharray:6 4,color:#1b2230
 
   bench["Bench<br/>575 Lean problems"]:::built
-  fleet["Fleet policy<br/>Thompson sampling<br/>on verdicts"]:::built
+  fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run"]:::built
+  dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
+  judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
@@ -92,7 +94,12 @@ flowchart TB
   narrative -.->|"marked model-written"| account
   bench -->|statements| identity
   identity -->|claims| journal
-  fleet -->|"who works on what"| provers
+  fleet -->|"who works on what,<br/>with which settings"| provers
+  fleet -->|"mode nl_first"| dag
+  dag -->|"step plan"| provers
+  dag -->|"informal step claims,<br/>decomposes_into proposals"| journal
+  llm <-->|"k calls, never<br/>a verdict"| judge
+  ledger -->|"retry_stronger<br/>before branch"| fleet
   guards -->|"reject a call,<br/>stop a session"| provers
   guards -->|"drift nodes"| journal
   bench -->|"problems, when<br/>M11 is on"| m11
@@ -180,8 +187,11 @@ guards against hallucination and the drift detectors: neutral framing, citations
 resolve, no raw error text, anchored revisions, and sessions stopped when they loop
 ([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what each session
 works on by Thompson sampling on the verdicts the memory holds, puts more provers on a subgoal only
-where one does badly, and sends hard decisions to a stronger model
-([documentation/fleet.md](documentation/fleet.md)). The other mechanisms will come as lines that a
+where one does badly, and sends hard decisions to a stronger model. It samples each session's settings
+(temperature, thinking level, a diversity directive, standard or informal-first mode), discounts old failures per run and keeps
+a floor of exploration, so that a failure of a weaker configuration does not close a door for good
+([documentation/fleet.md](documentation/fleet.md)). Informal-first sessions and the multi-call `judge` helper
+have only run against a simulated model. The other mechanisms will come as lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
 the run without it ([documentation/lines.md](documentation/lines.md)).
 

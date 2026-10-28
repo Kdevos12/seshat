@@ -12,12 +12,17 @@ export type AllocationData = {
   session: number;
   /** The strategy the session was told to work on. */
   strategy?: string;
-  /** `thompson`: drawn from the posteriors; `continued`: the prover's last strategy, kept because Lean got further with it. */
-  rule?: "thompson" | "continued";
+  /**
+   * `thompson`: drawn from the posteriors; `continued`: the prover's last strategy, kept because Lean got
+   * further with it; `exploration`: drawn uniformly among the allowed labels by the exploration floor.
+   */
+  rule?: "thompson" | "continued" | "exploration";
   /** The model the session was given, when the fleet chose one. */
   model?: string;
   /** True when the model is the stronger one, for a hard decision. */
   escalated?: boolean;
+  /** `retry_stronger`: the model is the strongest configured because a routing decision about the prover's last session asked for it. */
+  routed?: "retry_stronger";
   /** The width of the subgoal when the session was admitted, and whether the prover waited for a place. */
   width: number;
   waited: boolean;
@@ -26,6 +31,12 @@ export type AllocationData = {
   attempts: number;
   /** The draws of the strategies that were candidates, rounded. */
   draws?: { [label: string]: number };
+  /** The settings sampled for the session, as recorded on the attempt, and the draw of each value of the ones learned. */
+  settings?: { [setting: string]: Json };
+  settingDraws?: { [setting: string]: { [value: string]: number } };
+  /** The node of the step DAG an informal-first session works from, or why a session drawn for that mode ran as a standard one. */
+  dag?: string;
+  dagNote?: string;
 };
 
 export function isAllocationData(data: Json): data is AllocationData {

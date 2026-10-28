@@ -134,7 +134,9 @@ in `resume`:
 
 A resume compares each line's `version` with the run's record and refuses another. Writing new kinds of
 nodes is a change of version: M2 is `m2-2` and M6 `m6-2` (they began to write the nodes they rebuild from), M11 is
-`2` (its `beforeProvers` became safe to run twice), the fleet stays `fleet-1`. A run begun before a bump cannot be
+`2` (its `beforeProvers` became safe to run twice), the fleet is `fleet-2` (it began to sample settings, to explore, to discount by run and to write step DAGs), M1 is `m1-2` (its
+"already tried" section names a configuration other than the session's) and M6 `m6-3` (its question carries the anti-sycophancy
+instruction). A run begun before a bump cannot be
 resumed after it.
 
 Today M1 and M11 are `stateless` (everything they know they read from the memory; M11's `beforeProvers` skips what the
@@ -153,8 +155,9 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | Hook | When | What it may do |
 |---|---|---|
 | `beforeProvers(problem)` | Once per problem, after its reference type is known, before any prover starts. | Submit proofs or refutations through `validate`, add claims, edges and nodes, or settle the problem. Once a proof of the problem's claim passes, the remaining lines' `beforeProvers` and the provers do not run. |
-| `beforeSession(session)` | Before each session, before its attempt is recorded. | Change the session's model, declare its strategy or subgoal (recorded on `attempt.started`), skip the session, or stop the prover. A later line's model, strategy or subgoal wins; the first `skip` or `stop` is taken. |
+| `beforeSession(session)` | Before each session, before its attempt is recorded. | Change the session's model, declare its strategy or subgoal, sample its `settings` (temperature, thinking level...) and say whether the exploration floor drew its strategy (all recorded on `attempt.started`), skip the session, or stop the prover. A later line's model, strategy or subgoal wins, `settings` merge key by key with a later line's key winning; the first `skip` or `stop` is taken. `temperature` (0 to 2) and `thinking` act on the session; a value outside those is a line failure. |
 | `briefing(session)` | Before each session, after `beforeSession`. | Give a titled section for the session's opening message, after the notes, the file and the last check. |
+| `briefingSections(session)` | Right after the same line's `briefing`. | Give several titled sections at once (the fleet's directive and step plan). The sections go where `briefing`'s would, and `reviewBriefing` sees them all alike. |
 | `tools(session)` | Before each session. | Give the prover extra tools, as neutral specs (name, description, JSON schema of the arguments, `run(args, signal)` returning text) that the orchestrator adapts to pi tools. A failing call goes back to the model as a tool error. Names are lowercase letters, digits and `_`, and may not clash. |
 | `contextPacket(session, request)` | Before each model request of a session, the first one and the wrap-up included. | Return the whole context of the request (M4): it replaces every message after the system prompt and the tool declarations. A string is the request's one message, compiled again for every request. `{ prefix, tail }` is a prefix the session freezes and a tail for each request ([below](#the-context-packet)). Undefined leaves the request as it is. At most one enabled line may give this hook. |
 | `beforeCheck(session, proposal)` | Before each `lean_check` runs. | Reject the call, with a reason the model reads as a tool error. The file is not sent to Lean, and the call is no check: no validation, not counted, its declared strategy not recorded. The first line in this order that rejects is taken. It guards the prover's calls only: certification is no `lean_check`, and no hook sees it ([m0-loop.md](m0-loop.md#certification)). |
@@ -193,11 +196,13 @@ The problem's context (`ProblemContext`):
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
 
-A session's context (`SessionContext`) adds the prover, the session's number and the most it may
+`ProblemContext.ranking` is the run's models, weakest first, and its budget class (`ModelRanking` of `@seshat/memory`): what a line needs to
+say that one configuration was weaker than another. A session's context (`SessionContext`) adds the prover, the session's number and the most it may
 have, its attempt id (recorded only after `beforeSession`; a skipped session's id is never
 recorded), its model, the prover's regions as the session starts, and the strategy and subgoal
 `beforeSession` declared. The model's own declaration, through `lean_check`'s `strategy` argument,
-is on each `SessionCheck` and, for its last one, on the `FinishedAttempt`.
+is on each `SessionCheck` and, for its last one, on the `FinishedAttempt`. From `briefing` on, `settings` and `exploration` are what
+`beforeSession` sampled for the session.
 
 It also has `draw(items, options?)` and `drawn`, the randomized inclusion of unverified items
 ([memory.md](memory.md#randomized-inclusion)): in `beforeSession` a line passes the ids of the lessons,
@@ -286,6 +291,26 @@ double, a wrapper) is still an `Llm`. The function uses the member when the `Llm
 line's context has the member. `withJson(complete)` builds an `Llm` from a plain `complete`, for the
 orchestrator and for tests.
 
+### `judge`
+
+`judge(problem.llm, {prompt, site, k, options, models?, system?, maxTokens?})` is for informal judgments that Lean cannot
+decide (a conjecture's relevance, a statement's fidelity, a rerank) and never for what Lean can (plan change PC9). It makes `k`
+independent calls (one after the other, so the journal has them in order), each a `completeJson` that must answer with one of
+`options` (`{verdict, reason?}`), and returns the `votes` (answer, model, call id, reason), the `result` (the majority label,
+undefined without a strict majority), `disagreement` (some vote differs) and the summed `cost`. With `models`, call `i` goes to
+`models[i % models.length]`, so the votes are cross-model. With `{min, max}` instead of `options` each call gives a
+`score` and the result is the mean; `disagreement` is a spread over `spread` (0.25) of the scale. A call that fails or does
+not fit the schema twice gives no vote (its message is in `failures`); all of them failing rejects. `disagreement` is a
+reason to escalate (a human breakpoint with `--human`, otherwise the claim stays unsigned), never a verdict: what `judge`
+returns changes no claim's status. Every call's system prompt starts with `ANTI_SYCOPHANCY` (below), and its prompt must not
+contain another agent's verdict.
+
+**Anti-sycophancy (PC10).** `ANTI_SYCOPHANCY` is one fixed sentence: *Be truthful. The statement may be false, and a
+counterexample is as valuable as a proof. Do not defer to how the task is phrased: disagree when the evidence warrants it.*
+`withAntiSycophancy(system?)` puts it in front of a system prompt. `judge`, the fleet's step-DAG prompt and M6's question
+about an open conjecture ([guards.md](guards.md#neutral-framing)) carry it; a line that writes another prompt that judges or
+reranks does the same. No prompt of the harness shows a model another agent's verdict.
+
 ### The judgment node
 
 Two informal validators that disagree are recorded by the line that runs them (plan change PC9) as a node
@@ -313,7 +338,10 @@ interruption is not a failure, and the contract for a line is:
 A line that does not catch errors from `llm` needs to do nothing: the error reaches the harness, which
 reads the problem as waiting. A line that does catch them (M2's refutation side, which runs alongside the
 provers and is not awaited until `afterProblem`) must follow the contract. M2 is the only line of today that
-calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule.
+calls `llm` in the background; the context compiler, M6's judges and M11 will have the same rule. The fleet's step-DAG
+call ([fleet.md](fleet.md#informal-first-sessions)) and `judge` (above) follow it: the fleet records no failed try and
+gives the prover's place back, and `judge` rethrows the interruption at once, asks no more calls and returns no
+partial judgment (a vote from fewer calls than asked is never returned as a complete one).
 
 ### `tasks`
 

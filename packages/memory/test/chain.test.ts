@@ -103,3 +103,26 @@ describe("the memory of a run started on an earlier one", () => {
     }
   });
 });
+
+describe("how many runs ago an attempt was made, and the settings it was given", () => {
+  it("is 0 for this run's attempts and 1 for the last run of the chain, with the settings and the exploration flag read back", () => {
+    const { memory, journal } = later(earlier());
+    try {
+      journal.emit(
+        "attempt.started",
+        { attemptId: "att_new", claimId: "clm_1", prover: "p9", iteration: 1, model: "m", settings: { thinking: "high", temperature: 0.4 }, exploration: false },
+        "prover:p9",
+      );
+      journal.emit("attempt.finished", { attemptId: "att_new", outcome: "invalid", failureClass: "syntax", durationMs: 1, turns: 1, usd: 0, inputTokens: 0, outputTokens: 0 }, "prover:p9");
+      const all = memory.attempts("clm_1");
+      assert.equal(all.length, 41);
+      assert.equal(all.filter((a) => a.runsAgo === 1).length, 40, "the earlier run's");
+      const fresh = all.find((a) => a.attemptId === "att_new");
+      assert.deepEqual([fresh?.runsAgo, fresh?.exploration, fresh?.settings], [0, false, { thinking: "high", temperature: 0.4 }]);
+      assert.equal(all.find((a) => a.runsAgo === 1)?.settings, undefined);
+      assert.equal(all.find((a) => a.runsAgo === 1)?.exploration, undefined);
+    } finally {
+      journal.close();
+    }
+  });
+});

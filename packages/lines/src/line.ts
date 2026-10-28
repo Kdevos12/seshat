@@ -14,7 +14,7 @@ import type {
   TokenCost,
   ValidationReport,
 } from "@seshat/core";
-import type { Draw, DrawItem, DrawOptions, MemoryStore, StatementIdentity } from "@seshat/memory";
+import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking, StatementIdentity } from "@seshat/memory";
 import type { JsonSchema, Registry } from "@seshat/registry";
 import type { LineId } from "./ids.ts";
 
@@ -154,6 +154,11 @@ export interface LineHooks {
    */
   briefing?: (session: SessionContext) => Promise<Briefing | undefined>;
   /**
+   * Like `briefing`, for a line that has more than one section for a session, each with its own title
+   * (the fleet's directive and step plan). Called after the line's `briefing`, whose section comes first.
+   */
+  briefingSections?: (session: SessionContext) => Promise<readonly Briefing[] | undefined>;
+  /**
    * The whole context of each model request of a session (M4), the first one included: what
    * replaces every message after the system prompt. A string is the request's one message,
    * recompiled for every request. A `FrozenPacket` is a prefix that the session freezes at its first
@@ -242,6 +247,12 @@ export interface ProblemContext {
   signal: AbortSignal;
   /** The line's options: its defaults with the run's values over them. */
   options: Readonly<JsonObject>;
+  /**
+   * The models the run has, weakest first, and its budget class: what a line needs to say whether a
+   * configuration was weaker than another (documentation/fleet.md, "Soft failure memory"). Absent in
+   * a context an older caller builds.
+   */
+  ranking?: ModelRanking;
 }
 
 /** The problem's theorem. */
@@ -272,6 +283,9 @@ export interface SessionContext extends ProblemContext {
   /** The strategy and subgoal `beforeSession` declared, recorded on `attempt.started`. */
   strategy?: string;
   subgoal?: string;
+  /** The settings `beforeSession` sampled and whether the exploration floor drew the strategy, as recorded on `attempt.started` (set from `briefing` on). */
+  settings?: JsonObject;
+  exploration?: boolean;
   /**
    * Randomized inclusion of unverified items (documentation/memory.md, "Randomized inclusion"). In
    * `beforeSession`, a line that selected unverified items for the session (lessons, schema hints,
@@ -361,6 +375,17 @@ export interface SessionDecision {
   /** Declared for the session, recorded on `attempt.started`. */
   strategy?: string;
   subgoal?: string;
+  /**
+   * The settings this line sampled for the session, recorded as they are on `attempt.started`
+   * (documentation/fleet.md, "Sampled settings"). Two keys act on the session: `temperature` (a number
+   * from 0 to 2, sent with each of the session's requests) and `thinking` (a thinking level of the
+   * run's providers: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`). Any other key is only
+   * recorded: a line that samples a `directive` or a `mode` shows it in its own briefing. Settings
+   * merge key by key in `LINE_ORDER`, a later line's key winning.
+   */
+  settings?: JsonObject;
+  /** True when the exploration floor drew the strategy and not the posteriors, false when the floor was in force and did not; absent when there is no floor. Recorded on `attempt.started`. */
+  exploration?: boolean;
   /** Skip this session, for this reason: the prover goes on with its next one. */
   skip?: string;
   /** Stop the prover, for this reason: it starts no more session. */

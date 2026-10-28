@@ -16,10 +16,14 @@ export function betaMean(b: Beta): number {
 /**
  * The posterior after one more observation worth `reward` in [0, 1]: a success is 1, a failure 0,
  * and a failure that got far (partial credit) in between. `alpha` takes the reward, `beta` the rest.
+ * `weight` (default 1) scales the observation: the discount of an earlier run and the probation of
+ * an older epoch make an old observation count for less (documentation/fleet.md, "Soft failure
+ * memory"), which is the shrinkage Beta(1 + (a - 1) w, 1 + (b - 1) w) of sums of outcomes.
  */
-export function betaUpdate(b: Beta, reward: number): Beta {
+export function betaUpdate(b: Beta, reward: number, weight = 1): Beta {
   const r = Math.min(Math.max(reward, 0), 1);
-  return { alpha: b.alpha + r, beta: b.beta + (1 - r) };
+  const w = Math.max(weight, 0);
+  return { alpha: b.alpha + w * r, beta: b.beta + w * (1 - r) };
 }
 
 /** A draw from the posterior: Thompson sampling plays the arm with the highest draw. */

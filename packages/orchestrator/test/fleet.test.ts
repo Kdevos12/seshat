@@ -39,7 +39,8 @@ function allocations(events: readonly HarnessEvent[]): AllocationData[] {
 }
 
 const FLEET = { lines: ["M1", "fleet"] };
-const seed = (n: number, more: Record<string, unknown> = {}) => ({ lineOptions: { fleet: { seed: n, ...more } } as never });
+// The exploration floor is off unless a test asks for it: most of these are about the posteriors.
+const seed = (n: number, more: Record<string, unknown> = {}) => ({ lineOptions: { fleet: { seed: n, epsilon: 0, ...more } } as never });
 
 describe("the fleet policy in a run", () => {
   it("needs M1, whose classified labels its posteriors are made of", async () => {

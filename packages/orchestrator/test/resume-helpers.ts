@@ -78,13 +78,16 @@ export function consumed(events: readonly HarnessEvent[]): number {
 }
 
 /**
- * The cuts that fall between two sessions: right after a session's end and the routing decision that
- * follows it, where the process that ended had nothing in flight, so that the resumed one goes on
+ * The cuts that fall between two sessions: right after a session's end and the routing decisions that
+ * follow it, where the process that ended had nothing in flight, so that the resumed one goes on
  * exactly where the first would have.
  */
 export function boundaries(events: readonly HarnessEvent[]): number[] {
   return events.flatMap((event, index) => {
     if (event.type !== "attempt.finished") return [];
-    return [events[index + 1]?.type === "task.routed" ? index + 2 : index + 1];
+    // After every routing decision of the attempt: a guard's finding can add a second one to the first.
+    let end = index + 1;
+    while (events[end]?.type === "task.routed") end += 1;
+    return [end];
   });
 }
