@@ -154,6 +154,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@seshat/library':
         specifier: workspace:*
         version: link:../library

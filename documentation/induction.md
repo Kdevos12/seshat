@@ -121,6 +121,39 @@ value of the other, over at least three distinct values: every column is a funct
 `monotone` (a never-decreasing relation that is not a function). They are facts about the table, which
 the conjecturing then turns into claims to prove.
 
+## Hypotheses, informal steps, test lemmas, interest and the pool
+
+`proposeHypotheses(llm, {target, table, count, known, round, model})` asks a model (site
+`induction.hypotheses`, reusable) for hypotheses about a data table at four levels: observation, pattern,
+structure and generalization. Each has an informal reading, a Lean `statement` when it can be stated, a
+premise and a conclusion as programs over the table's columns, and the columns it uses. Statements go
+through the strict screen first (`screenLeanText`, `statementProblem`: `structuralCheck` and
+`forbiddenTokensIn` on the masked text); a hypothesis whose statement fails keeps only its informal
+reading. `executeHypotheses` runs the programs in the sandbox on every row and keeps the counterexamples:
+a hypothesis with a counterexample is dropped before any Lean time is spent.
+
+An informal hypothesis goes through the step DAG first (plan change PC11, item 2):
+`proposeHypothesisDag` asks for a `StepDag` (checked by `checkStepDag`), `recordHypothesisDag` writes its
+steps as informal claims (origin `line:M8`) with `decomposes_into` edges and a learned node last, and
+`dependencyMatch` records ProofScore's dependency-match (the F1 of the declared against the found
+auxiliary dependencies) as a fidelity measure. `formalizeHypothesis` then asks for the Lean statement.
+
+`testLemmas` checks a statement on small cases through `evaluateWithLean` (a `decide`-style example per
+case): each case is `passed`, `failed`, `skipped` or `inconclusive`, and one failure drops the
+hypothesis. `TrivialityTest` tries the cheap tactics (`rfl`, `decide`, `omega`, `simp`, `norm_num`) on the
+statement; one that closes it is trivial and is not kept as a conjecture.
+
+`interestOf(hypothesis, known, properties)` scores a hypothesis on non-vacuity (the premise holds on
+enough objects), novelty (against the known statements), surprise (the conclusion is not implied by a
+single column) and significance (how many objects and how few counterexamples), weighted 0.2, 0.3,
+0.2, 0.3; a vacuous one is flagged.
+
+The pool of PC4, item 2 (`pool.ts`): 10 to 50 proposals, each an `open` claim with a `derived_from`
+edge to the target. `relevanceOf` asks `decide` (site `conjecture.relevance`, a Score on the statement
+alone, used to order) and, if no backend is configured, `judge` (levels `irrelevant`, `marginal`,
+`useful`, `central`); interruptions pass through. `poolScore` combines the proof rate, the relevance and
+the proof length; `prunePool` keeps the best.
+
 ## Tests, and what has not run
 
 `packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;
@@ -130,6 +163,7 @@ is not significant), `dalmatian.test.ts` (truth and significance on a hand-made 
 the classical bounds on the graphs with up to five vertices; the cap; a bound in Lean), `sandbox.test.ts`
 (values, errors, time and memory limits, no `require`/`process`/`eval`, a seeded `Math.random`, an empty
 environment, the scratch directory removed, cancellation) and `datatable.test.ts` (columns, missing
-values, Sage through a stand-in, dependencies, records). None of it needs Lean, a model or a network.
+values, Sage through a stand-in, dependencies, records) and `hypotheses.test.ts` (the screen, interest,
+hypotheses and their execution, the informal DAG, test lemmas, triviality, the pool). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.
