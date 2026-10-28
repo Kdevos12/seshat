@@ -553,3 +553,31 @@ describe("a journal a crash cut", () => {
     assert.throws(() => EventLog.open(path, { run: "run_1" }), /corrupt at seq 0/);
   });
 });
+
+describe("ladder.escalated", () => {
+  const rung = (extra: Record<string, unknown> = {}) => ({
+    problemId: "prb_clm_1", from: 0, to: 1, lines: ["M18"], threshold: 0.3, sinceProgressUsd: 1.6, budgetUsd: 5, reason: "no Lean progress yet", ...extra,
+  });
+
+  it("is orchestrator-only, moves up from the rung the problem is on, and checks the spend against the threshold", () => {
+    const dir = tempDir();
+    try {
+      const journal = Journal.open(dir, "run_ladder");
+      seedProblem(journal);
+      assert.throws(() => journal.emit("ladder.escalated", rung() as never, "line:M12"), /orchestrator/);
+      assert.throws(() => journal.emit("ladder.escalated", rung({ problemId: "prb_x" }) as never, "orchestrator"), /unknown problem/);
+      assert.throws(() => journal.emit("ladder.escalated", rung({ sinceProgressUsd: 1.4 }) as never, "orchestrator"), /under the threshold/);
+      assert.throws(() => journal.emit("ladder.escalated", rung({ from: 1, to: 2 }) as never, "orchestrator"), /is on rung 0/);
+      assert.throws(() => journal.emit("ladder.escalated", rung({ to: 0 }) as never, "orchestrator"), /moves up/);
+      assert.throws(() => journal.emit("ladder.escalated", rung({ lines: [] }) as never, "orchestrator"), /made of lines/);
+      journal.emit("ladder.escalated", rung() as never, "orchestrator");
+      assert.equal(journal.projection.ladderRung("prb_clm_1"), 1);
+      assert.throws(() => journal.emit("ladder.escalated", rung() as never, "orchestrator"), /is on rung 1/);
+      journal.emit("ladder.escalated", rung({ from: 1, to: 3, lines: ["M15", "M16"], threshold: 0.6, sinceProgressUsd: 3.2 }) as never, "orchestrator");
+      assert.deepEqual(journal.projection.ladder("prb_clm_1").map((r) => [r.from, r.to, r.lines]), [[0, 1, ["M18"]], [1, 3, ["M15", "M16"]]]);
+      assert.equal(journal.projection.ladderRung("prb_other"), 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

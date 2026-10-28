@@ -232,6 +232,18 @@ export interface TaskRouteRow {
   node_id: string | null;
 }
 
+export interface LadderRow {
+  seq: number;
+  problem_id: string;
+  from: number;
+  to: number;
+  lines: string[];
+  threshold: number;
+  since_progress_usd: number;
+  budget_usd: number;
+  reason: string;
+}
+
 export interface ResumptionRow {
   seq: number;
   resumption: number;
@@ -317,7 +329,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 7;
+export const PROJECTION_VERSION = 8;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -332,6 +344,7 @@ const INHERITED_SKIPPED: readonly string[] = [
   "task.assigned",
   "task.status_changed",
   "task.routed",
+  "ladder.escalated",
 ];
 
 /**
@@ -404,6 +417,10 @@ create table if not exists task_routes (
   seq integer primary key, task_id text not null, action text not null, signal_type text not null,
   signal_value text not null, reason text not null, attempt_id text, node_id text);
 create index if not exists task_routes_by_task on task_routes (task_id);
+create table if not exists ladder (
+  seq integer primary key, problem_id text not null, from_rung integer not null, to_rung integer not null, lines_json text not null,
+  threshold real not null, since_progress_usd real not null, budget_usd real not null, reason text not null);
+create index if not exists ladder_by_problem on ladder (problem_id);
 create table if not exists resumptions (seq integer primary key, resumption integer not null, data_json text not null);
 create table if not exists epochs (
   epoch integer primary key, seq integer not null, reason text not null, changes_json text not null, provenance_json text not null);
@@ -741,6 +758,14 @@ export class Projection {
           d.epoch, event.seq, d.reason, canonicalJson(d.changes), canonicalJson(d.provenance));
         return;
       }
+      case "ladder.escalated": {
+        const d = event.data;
+        db.prepare(
+          `insert into ladder (seq, problem_id, from_rung, to_rung, lines_json, threshold, since_progress_usd, budget_usd, reason)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(event.seq, d.problemId, d.from, d.to, canonicalJson(d.lines), d.threshold, d.sinceProgressUsd, d.budgetUsd, d.reason);
+        return;
+      }
       case "task.routed": {
         const d = event.data;
         db.prepare(
@@ -922,6 +947,32 @@ export class Projection {
         ? this.db.prepare("select * from task_routes order by seq").all()
         : this.db.prepare("select * from task_routes where task_id = ? order by seq").all(taskId)
     ) as unknown as TaskRouteRow[];
+  }
+
+  /** The moves of a problem up the ladder (every problem's, without an id), in order. */
+  ladder(problemId?: string): LadderRow[] {
+    const rows = (
+      problemId === undefined
+        ? this.db.prepare("select * from ladder order by seq").all()
+        : this.db.prepare("select * from ladder where problem_id = ? order by seq").all(problemId)
+    ) as unknown as Array<{ seq: number; problem_id: string; from_rung: number; to_rung: number; lines_json: string; threshold: number; since_progress_usd: number; budget_usd: number; reason: string }>;
+    return rows.map((r) => ({
+      seq: r.seq,
+      problem_id: r.problem_id,
+      from: r.from_rung,
+      to: r.to_rung,
+      lines: JSON.parse(r.lines_json) as string[],
+      threshold: r.threshold,
+      since_progress_usd: r.since_progress_usd,
+      budget_usd: r.budget_usd,
+      reason: r.reason,
+    }));
+  }
+
+  /** The rung a problem is on: 0 until it moves up. */
+  ladderRung(problemId: string): number {
+    const row = this.db.prepare("select max(to_rung) as rung from ladder where problem_id = ?").get(problemId) as { rung: number | null };
+    return row.rung ?? 0;
   }
 
   /** The times the run was resumed, in order. */
