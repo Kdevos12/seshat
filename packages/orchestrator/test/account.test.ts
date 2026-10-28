@@ -139,7 +139,7 @@ describe("the account (review round 1)", () => {
     const fast = "val_cut_fast";
     const cert = "val_cut_cert";
     const validate = (validationId: string, method: "repl" | "kernel_replay") =>
-      s.journal.emit("validation.finished", { validationId, claimId: s.claims.stuck, method, verdict: "valid", reasons: [], axioms: ["propext"], submissionHash: "h" }, method === "repl" ? "validator" : "certifier");
+      s.journal.emit("validation.finished", { validationId, claimId: s.claims.stuck, method, verdict: "valid", reasons: [], axioms: ["propext"], submissionHash: "h", problemId: s.problems.stuck }, method === "repl" ? "validator" : "certifier");
     validate(fast, "repl");
     s.journal.emit("claim.status_changed", { claimId: s.claims.stuck, from: "open", to: "computed", reason: "a proof passed the fast check", validationId: fast }, "validator");
     validate(cert, "kernel_replay");
@@ -156,6 +156,59 @@ describe("the account (review round 1)", () => {
     assert.match(renderAccount(account), /Nothing to search: the claim is certified, and the next turn closes the problem\./);
     // Turn 1 did not have it.
     assert.equal(buildAccount(readEvents(join(s.dir, "journal.jsonl")), 1).problems.find((x) => x.problemId === s.problems.stuck)?.state, "waiting");
+  });
+
+  it("does not call a problem proved because its claim is proved by another problem that shares the claim (N1, Ruling 23)", () => {
+    const s = scriptedJournal();
+    const o = "orchestrator";
+    // M1 keeps one claim per statement: problem B is registered on the claim problem A is about, and has done nothing.
+    const twin = "Bench.lean#same_statement";
+    s.journal.emit("problem.registered", { problemId: twin, claimId: s.claims.stuck, target: "same_statement", source: { repo: "r", rev: "x", path: "Bench.lean" }, domain: [] }, o);
+    s.journal.emit("turn.started", { runId: "run_scripted", turn: 2, limit: { tokens: 1 }, source: "a flag of the resumption", startSpend: zero }, o);
+    s.journal.emit("validation.finished", { validationId: "val_a_fast", claimId: s.claims.stuck, method: "repl", verdict: "valid", reasons: [], axioms: [], submissionHash: "h", problemId: s.problems.stuck }, "validator");
+    s.journal.emit("claim.status_changed", { claimId: s.claims.stuck, from: "open", to: "computed", reason: "a proof passed the fast check", validationId: "val_a_fast" }, "validator");
+    s.journal.emit("validation.finished", { validationId: "val_a_cert", claimId: s.claims.stuck, method: "kernel_replay", verdict: "valid", reasons: [], axioms: [], submissionHash: "h", problemId: s.problems.stuck }, "certifier");
+    s.journal.emit("claim.status_changed", { claimId: s.claims.stuck, from: "computed", to: "proved", reason: "the candidate was certified", validationId: "val_a_cert" }, "validator");
+    s.journal.emit("turn.ended", { runId: "run_scripted", turn: 2, reason: "tokens", detail: "a limit", spent: { turn: zero, run: zero }, minutes: 0, waiting: [s.problems.decomposed, twin] }, o);
+    const account = buildAccount(readEvents(join(s.dir, "journal.jsonl")), 2);
+    s.journal.close();
+    const [a, b] = [s.problems.stuck, twin].map((id) => account.problems.find((x) => x.problemId === id));
+    assert.equal(a?.state, "proved", "the problem that certified the claim earned it");
+    assert.equal(b?.claimStatus, "proved", "the claim is proved");
+    assert.notEqual(b?.state, "proved", "the problem that only shares the claim did not");
+    assert.match(b?.reason ?? "", /not by this problem's own certification/);
+    assert.equal(account.summary.proved, 1, "one problem proved, not two");
+    const asked = account.summary.asked.join("\n");
+    assert.match(asked, new RegExp(`Problem ${s.problems.stuck} is settled`));
+    assert.doesNotMatch(asked, new RegExp(`Problem ${twin.replace(/[.#]/g, "\\$&")} is settled`));
+  });
+
+  it("does not call a problem proved because the claim it was registered on carried a proved status from an earlier run (N1, --memory-from)", () => {
+    const config = { model: "m", prompt: { version: "x" }, bench: { hash: "h", source: { repo: "r", rev: "rev", lean: "lean4:v4" } }, consortium: { limit: { tokens: 5 }, impasse: { posteriorBelow: 0.1, minAttempts: 8 }, narrative: false } };
+    const base = mkdtempSync(join(tmpdir(), "mh-acc-"));
+    const earlier = Journal.open(join(base, "a"), "run_a");
+    earlier.emit("run.started", { runId: "run_a", benchId: "b", problems: 1, host: "t", config }, "orchestrator");
+    earlier.emit("claim.created", { claimId: "clm_old", statementId: "sid_old", statement: ": P", origin: "test", status: "open" }, "memory");
+    earlier.emit("problem.registered", { problemId: "Old.lean#p", claimId: "clm_old", target: "p", source: { repo: "r", rev: "x", path: "Old.lean" }, domain: [] }, "orchestrator");
+    earlier.emit("validation.finished", { validationId: "val_old", claimId: "clm_old", method: "kernel_replay", verdict: "valid", reasons: [], axioms: [], submissionHash: "h", problemId: "Old.lean#p" }, "certifier");
+    earlier.emit("claim.status_changed", { claimId: "clm_old", from: "open", to: "proved", reason: "certified", validationId: "val_old" }, "validator");
+    earlier.close();
+    const chain = loadMemoryChain(join(base, "a"), environmentOf(config));
+    const dir = join(base, "b");
+    const journal = Journal.open(dir, "run_b", { memory: chain });
+    journal.emit("run.started", { runId: "run_b", benchId: "b", problems: 1, host: "t", config, memoryFrom: chain.from }, "orchestrator");
+    journal.emit("problem.registered", { problemId: "New.lean#p", claimId: "clm_old", target: "p", source: { repo: "r", rev: "x", path: "New.lean" }, domain: [] }, "orchestrator");
+    journal.emit("turn.started", { runId: "run_b", turn: 1, limit: { tokens: 5 }, source: "the run's option", startSpend: zero }, "orchestrator");
+    journal.emit("turn.ended", { runId: "run_b", turn: 1, reason: "tokens", detail: "d", spent: { turn: zero, run: zero }, minutes: 0, waiting: ["New.lean#p"] }, "orchestrator");
+    const events = readEvents(join(dir, "journal.jsonl"));
+    journal.close();
+    const account = buildAccount(events, 1, { chain });
+    const [problem] = account.problems;
+    assert.equal(problem?.claimStatus, "proved", "the carried status is shown as the claim's");
+    assert.notEqual(problem?.state, "proved", "this run's problem did not earn it");
+    assert.match(problem?.reason ?? "", /not by this problem's own certification/);
+    assert.equal(account.summary.proved, 0);
+    assert.doesNotMatch(account.summary.asked.join("\n"), /is settled/);
   });
 
   it("does not print Signed by for an actor that is not a person", () => {
