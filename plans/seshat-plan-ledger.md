@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 13:30 UTC. `main` at 62ed6fa, 1606 tests.
+Updated 2026-10-28 15:30 UTC. `main` at c8bb412, 1656 tests.
 
 ## Tasks
 
@@ -20,10 +20,10 @@ Updated 2026-10-28 13:30 UTC. `main` at 62ed6fa, 1606 tests.
 | 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
-| 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | implementing | |
+| 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | merged in `c8bb412` (faux model, simulated Lean and a faux `lean.meta` only; the link lemma proof never met a real Lean) | `task/t10` | |
 | 11 | M4: context compiler, `expand`, `graph_query` | collaborator | not started (after 9) | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
-| 13 | M8, M13, M14, M16: induction, exploration, repairs | main | not started | |
+| 13 | M8, M13, M14, M16: induction, exploration, repairs | main | implementing | `task/t13` | |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
@@ -35,7 +35,7 @@ Updated 2026-10-28 13:30 UTC. `main` at 62ed6fa, 1606 tests.
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
-| 25 | M18: curriculum of variants | main | not started (after 10) | |
+| 25 | M18: curriculum of variants | main | implementing | `task/t25` | |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
 | Final | review of the whole build | main | after 26 | |
 
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T17, T19, T20, T21, T23 and T24 merged; T10 in flight; then T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T10, T17, T19, T20, T21, T23 and T24 merged; T25 and T13 next; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -247,6 +247,20 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   (what the answer is for); results only order. Proof states go to a third party when `jev` is on
   ([decide.md](../documentation/decide.md)). An answer without a reported cost is booked at
   $0.01. Not run against a real Jev.
+- Task 10, merged in `c8bb412`: new package `packages/scheduler` (given-clause kernel, weighted proof
+  numbers, sketch hole reader, subsumption through Lean-checked instances); line `M12`;
+  `packages/core`: the event `ladder.escalated` (orchestrator-only, journal-checked, projected by
+  problem), `PROJECTION_VERSION` 9, `model_calls` gains `request_hash` and `response_hash`,
+  `Projection.claimsWhere`, `Projection.ladder`, `ladderRung`; `packages/memory`: `MemoryStore.claims(filter)`;
+  `packages/lines`: `Line.rung`, the hooks `schedule` and `assignOwners`, `ScheduledTask`, `TaskEnd`,
+  `LlmRequest.reuse`, `TaskApi.assign` (Ruling 29 is done), `ProblemContext.seed`; `resolveLines` refuses
+  two `schedule` lines and an invalid rung; `packages/fleet`: `owners.ts`, `assignOwners`, version
+  `fleet-3`; `packages/orchestrator`: the ladder and rung gating in `line-runtime.ts`, the report's rung
+  table (`rungSpend`), and one fix in `run.ts` (`benches.recover` on resume uses the run's signal, so the
+  hole claims of a cut run are certified). A line built later (M18 in Task 25, M15, M16) registers its
+  rung with `Line.rung` and its `beforeProvers` must be safe to call twice (it is called again on
+  resume). Page: [scheduler.md](../documentation/scheduler.md). Not run against a real Lean or model;
+  the price model and the 0.3 and 0.6 fractions are untuned; a refuted hole through M12 is untested.
 
 ## Log
 
@@ -548,3 +562,7 @@ Task 10: implementer dispatched (worktree wt/t10, branch task/t10 from main 68b0
 Task 20: implementer dispatched (worktree wt/t20, branch task/t20 from main 68b098c; brief task-20-brief.md)
 Task 20: implementer done (3 commits, 1599/1599); review round 1: spec met, no Critical; Important I1 (duplicate questions paid twice), I2 (cold-start prior permanent), I3 (use optional), commit order not green per commit, minors; fix round done with the branch rewritten (455cdfe to 1250c94, every early commit passes pnpm check, tip 1604/1604); fix accepted by the controller from the report, no second review
 Task 20: merged: task/t20 merged into main 62ed6fa (--no-ff; 1606/1606), pushed; not run against a real Jev (request and response shapes guessed); deferred to the final review: the orderer's log path has no test of its own, I1's new test was not run against the old code
+Task 10: implementer done (4 commits incl. the merge of main, 1646/1646); review round 1: spec met bar two gaps (maxInnerTasks per problem instead of per outer session; "simplify early, generate late" unnamed), no Critical; Important I1, I2 (a cut between ladder.escalated and the rung lines' start leaves a rung line uninitialised on resume), minors; fix round 1 (0ee6705, 1654/1654); fix accepted by the controller from the report
+Task 10: merged: task/t10 merged into main c8bb412 (--no-ff; 1656/1656), pushed; not run against a real Lean or model; deferred to the final review: a refuted hole through M12 is untested, the price model and the 0.3/0.6 fractions are untuned, the commit history of M7 note
+Task 25: implementer dispatched (worktree wt/t25, branch task/t25 from main c8bb412)
+Task 13: implementer dispatched (worktree wt/t13, branch task/t13 from main c8bb412)
