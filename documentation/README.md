@@ -92,6 +92,9 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
   graphs and integers, evaluators, fingerprints, certified refutations, identification of
   sequences, the OEIS, LMFDB and FindStat as capabilities (line M11).
+- [induction.md](induction.md): the inductive engine and what a program may do: data tables, the classical
+  conjecturing (recurrences, PSLQ, the Dalmatian heuristic), the sandbox for programs, and the lines M8,
+  M13 and M16 as they are built.
 - [decide.md](decide.md): typed decisions that order work: the sites and the forbidden list, the backends
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.

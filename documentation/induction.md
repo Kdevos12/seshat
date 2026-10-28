@@ -1,0 +1,135 @@
+# Induction: data, classical conjectures, and what a program may do
+
+`@seshat/induction` is the package behind the lines M8 (the inductive engine), M13 (theory exploration)
+and M16 (program search) ([lines.md](lines.md)). It is the part of the harness that looks at data
+before it asks for a proof: it makes tables of small cases, finds the regularities in them, and turns
+the regularities into conjectures. The research notes behind it are the experimental-mathematics
+chain: produce the data, identify it, conjecture, test, prove (plan §12).
+
+**Nothing here proves anything.** A recurrence guessed from twenty terms, an integer relation found by
+PSLQ, a bound that holds on every graph with six vertices: each is a conjecture, an `open` claim with
+the evidence next to it. A claim changes status only when a Lean proof of it goes through `validate`
+([trust.md](trust.md)); the output of a program or a computer algebra system is a `computed` edge or a
+node, never a status (Ruling 13). A conjecture is `open` and stays `open` until Lean says otherwise.
+
+This page grows with the package: the algorithms and the sandbox come first, then the line M8, the
+exploration of theories and program search.
+
+## The classical conjecturing, without a model
+
+Three methods, each a pure function with no model call. They are what the research notes call the
+channel of classical conjectures ("Notre conception", §7): cheap, deterministic, and aimed at the
+conjectures that have a path to a proof.
+
+### Linear recurrences (gfun's guess-then-prove)
+
+| Call | Does |
+|---|---|
+| `berlekampMassey(terms)` | The shortest linear recurrence with constant coefficients over the rationals (exact, on `bigint`). |
+| `guessLinearRecurrence(terms, {minSurplus, maxOrder})` | The Berlekamp-Massey recurrence as a `Recurrence`, when it leaves at least `minSurplus` (2) terms beyond twice its order. |
+| `guessHolonomic(terms, {minSurplus, maxOrder, maxDegree})` | A recurrence with polynomial coefficients, `sum P_i(n) f(n+i) = 0`, by linear algebra over the rationals, from the shapes with the fewest unknowns up. |
+| `recurrenceHolds`, `predictTerms` | Whether a recurrence holds on more terms; the next terms it predicts (a guess that stops being integral is a wrong guess). |
+| `recurrenceStatement(rec, {fn})` | The recurrence as a conjecture in Lean's signature form, about a function `fn` from ℕ, read in ℤ. |
+
+A system with as many unknowns as equations has a solution that says nothing, so every guess demands a
+**surplus**: equations beyond the unknowns. The Catalan numbers come out of 12 terms as `(n+2) f(n+1) = (4n+2) f(n)`
+(order 1, degree 1, four unknowns, seven equations to spare), out of 6 only when the caller accepts a
+surplus of 1, and the primes give no recurrence at all. The guess does not prove itself: the conjecture
+`recurrenceStatement` writes is a claim for a prover, and a recurrence that holds on the terms is
+checked against more terms (`recurrenceHolds`) before the line records it.
+
+### Integer relations (PSLQ)
+
+`findIntegerRelation(numbers, {digits, maxCoefficient})` runs PSLQ (Ferguson and Bailey) in fixed-point
+arithmetic on `bigint`, on decimal texts or on named constants (`pi`, `e`, `phi`, `sqrt(m)`, `ln(m)`,
+`atan(1/k)`; `constant(name, bits)` computes them, π by the Gauss-Legendre iteration). The tolerance is
+the usual `eps^0.75` of the digits given. The answer says how many digits the relation agrees to and how
+many digits it takes to write, and calls the match `significant` only when the first exceeds the second
+by at least `margin` (10) digits: a relation of two small integers that holds to three digits is a
+coincidence. The tests find the golden ratio's polynomial, the minimal polynomial of `√2 + √3`, Machin's
+formula among π and two arctangents, `ln 6 = ln 2 + ln 3`, and the BBP formula for π among π and four
+series (`1, -4, 2, 1, 1`). **The PSLQ here is written for this package; no dependency was added.**
+
+### The Dalmatian heuristic
+
+`dalmatian(columns, {target, direction, maxSize})` is the conjecturing of Fajtlowicz's Graffiti, in the
+form of Larson and Van Cleemput (IJCAI 2017). From the numeric invariants of a table it builds
+expressions by growing size (sums, differences, products, quotients, `max`, `min`, square roots, floors,
+ceilings, squares, and the constants 1 and 2), de-duplicated by their values on the objects, and keeps a
+bound `target <= f` when it passes two tests:
+
+- **truth**: it holds on every object;
+- **significance**: it is strictly better than every conjecture kept so far on at least one object.
+
+A conjecture that a newer one makes insignificant is dropped, so the output is the strongest bounds with
+no known counterexample, not every true one. On the graphs with up to five vertices it finds
+`maxdeg <= n - 1`, the mean degree as the bound on the smallest degree (`mindeg <= m * (2 / n)`) and as
+the lower bound on the largest, and does not keep the true `mindeg <= maxdeg`, which is never the best.
+`maxExpressions` caps the work and the result says when it was reached (`capped`). `boundStatement` writes
+a conjecture in Lean's signature form, in ℝ, when the invariants have Lean terms.
+
+## The sandbox for programs
+
+A program a model proposes, or a task declares, is never trusted. `runValues(source, args, limits)` runs
+a JavaScript function expression on JSON arguments and returns its JSON value on each. It is the sandbox
+of `@seshat/models` ([models.md](models.md#the-sandbox)) generalized from a boolean to a value, with a
+memory watcher and a scratch directory added.
+
+| What | How |
+|---|---|
+| Process | One Node process for the run, started with `--permission`: it reads only its own script, and has no file to write, no child process, no worker. |
+| Environment | Empty: none of the harness's keys. |
+| Working directory | A scratch directory made for the run and removed after it. |
+| Context | A `node:vm` context with no global but the language's: no `require`, `process`, `fetch`; no `eval` or `new Function` (code generation from strings is off); the data reaches it as JSON text. `Math.random` is a seeded generator (`seed`), so a program that draws gives the same values on every run. |
+| Time | `callMs` (500) for one call, `totalMs` (30 000) for the run, which kills the process. A call over its time, a thrown error or a value that is not JSON gives no value, with the reason in `notes`, and the next call goes on. |
+| Memory | `--max-old-space-size` (`memoryMb`, 128) for the V8 heap; and `rssMb` (512) for the resident memory of the process, polled every 25 ms from `/proc` where that exists (Linux), which catches what the heap limit does not (typed arrays). |
+| Size | A program of at most 20 000 characters; a value of at most `maxBytes` (200 000). |
+
+**What is isolated and what is not.** This is a guard against the mistakes of a program a model wrote
+(loops, memory, thrown errors, a value too large), not against one written to escape. `node:vm` is not a
+security boundary. Node's permission model, in the Node version this runs on, restricts the file system,
+child processes and workers but **not the network**: the program's only barrier against the network is that
+its context has no API for it, and a program that escaped the context could use one. The memory limit is
+polled, not enforced by the kernel, so a program can use more than `rssMb` between two reads. SageMath is
+never run this way: a Sage program goes only through the capability `compute.sage` ([compute.md](compute.md)),
+which has its own limits. [trust.md](trust.md#what-runs-where) says what runs where.
+
+## Data tables
+
+A **data table** (`DataTable`, the node kind `datatable`) is one row for each of a list of small objects,
+one column for each invariant, and the code that produced every column.
+
+```ts
+const table = await buildTable({
+  family: "integers",
+  objects: ints, objectIds: ints.map(String),
+  columns: [{ name: "n", program: "(n) => n" }, { name: "square", program: "(n) => n * n", lean: "fun n => n ^ 2" }],
+});
+```
+
+A column is JavaScript (run in the sandbox above) or Sage (`sage`, an expression in `o`, the Sage object of
+the row, built from the table's `sageObject` applied to the object's id; run through the `SageRun` of
+`@seshat/models`, which is `compute.sage` in a run). A value a program could not give is `null`, and the
+table's `notes` say why. The table's id is the hash of its objects and the columns' code, so the same table is
+the same node. `recordTable` writes a `datatable` node about a claim (the rows in the node when there are at
+most 2 000 values, else in a blob the node names) and does not write a table twice; `readTables` reads them
+back from the memory alone.
+
+`invariantDependencies(table)` is the map of how the numeric columns relate: `equal` (the same on every
+row), `at_most` (one never exceeds the other), `determines` (rows with the same value of one have the same
+value of the other, over at least three distinct values: every column is a function of a constant) and
+`monotone` (a never-decreasing relation that is not a function). They are facts about the table, which
+the conjecturing then turns into claims to prove.
+
+## Tests, and what has not run
+
+`packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;
+the Catalan, central binomial, Motzkin and derangement recurrences; the surplus; the primes),
+`pslq.test.ts` (the constants to 50 digits against known values; the five relations above; a coincidence
+is not significant), `dalmatian.test.ts` (truth and significance on a hand-made table; displacement;
+the classical bounds on the graphs with up to five vertices; the cap; a bound in Lean), `sandbox.test.ts`
+(values, errors, time and memory limits, no `require`/`process`/`eval`, a seeded `Math.random`, an empty
+environment, the scratch directory removed, cancellation) and `datatable.test.ts` (columns, missing
+values, Sage through a stand-in, dependencies, records). None of it needs Lean, a model or a network.
+SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
+prints.
