@@ -69,7 +69,13 @@ function check(schema: JsonSchema, text: string): { value: Json } | { problems: 
 }
 
 function sum(a: LlmResult["cost"], b: LlmResult["cost"]): LlmResult["cost"] {
-  return { usd: a.usd + b.usd, inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens };
+  const cached = (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0);
+  return {
+    usd: a.usd + b.usd,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    ...(cached > 0 ? { cachedInputTokens: cached } : {}),
+  };
 }
 
 /**
