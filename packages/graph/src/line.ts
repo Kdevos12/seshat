@@ -1,5 +1,5 @@
 import { EDGE_KINDS, EDGE_STATUSES, CLAIM_STATUSES } from "@seshat/core";
-import { type Briefing, isInterrupted, type JsonObject, type Line, type LineTool, type ProblemContext, type ResumedProblem } from "@seshat/lines";
+import { type Briefing, isInterrupted, type JsonObject, type Line, type Llm, type LineTool, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { Atms } from "./atms.ts";
 import { completeDerivations, realize, revokeUnsupported } from "./realize.ts";
 import { graphQuery, parseGraphQuery, renderSubgraph, ShortIds } from "./query.ts";
@@ -94,7 +94,7 @@ interface Work {
   recorded?: boolean;
   /** The refutation side, running alongside the provers. */
   /** How the refutation side ended; undefined when it was interrupted (the run paused), which is no end at all. */
-  side?: Promise<{ end: TwinRecord["end"]; tries: number } | undefined>;
+  side?: Promise<{ end: TwinRecord["end"]; tries: number; interrupted?: true } | undefined>;
   /** How the refutation side ended before the process ended, when it did. */
   sideBefore?: { end: TwinRecord["end"]; tries: number };
   tried: Set<string>;
@@ -257,8 +257,23 @@ export function createM2Line(): Line {
         }
         return { end, tries };
       };
+      // The calls this process made, to say how many the side made if a pause cuts it short (the result of a side that ended has its own count).
+      let made = 0;
+      const counted: Llm = {
+        ...problem.llm,
+        complete: async (request) => {
+          try {
+            const result = await problem.llm.complete(request);
+            made += 1;
+            return result;
+          } catch (error) {
+            if (!isInterrupted(error)) made += 1;
+            throw error;
+          }
+        },
+      };
       work.side = runTwin({
-        llm: problem.llm,
+        llm: counted,
         memory: problem.memory,
         validate: problem.validate,
         signal: problem.signal,
@@ -274,7 +289,9 @@ export function createM2Line(): Line {
           // A pause of the run is no failure: the node stays `pending`, and the resumed run asks only for the calls the journal does not hold.
           if (isInterrupted(error)) {
             problem.log("twin: the refutation side was interrupted");
-            return undefined;
+            // `twin_work` stays `pending`, so a resumed run asks again. If the problem closes anyway (the turn ended while `afterProblem`
+            // was joining the side), `afterProblem` records the side as `stopped`, not as `idle` with no call.
+            return { end: "stopped", tries: spent + made, interrupted: true };
           }
           problem.log(`twin: the refutation side failed: ${error instanceof Error ? error.message : String(error)}`);
           return ended("error", spent);

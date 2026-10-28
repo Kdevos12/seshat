@@ -41,7 +41,8 @@ At the limit:
   the check and the call. So when two provers and the lines work at once, a response that ends the turn
   stops the request another prover was about to send, however long that prover waited in a line's
   `briefing` or in `openSession`. A request that is stopped there ends its session with `stoppedBy: "turn"`
-  and counts as a cut, not as an error. The turn is only ever read;
+  and counts as a cut, not as an error. A request that was refused was never sent: it leaves no response, no
+  charge, no zero-cost `attempt.charged` and no count in the session's `turns` or the ledger's requests. The turn is only ever read;
 - a response already in flight finishes, and is paid for and counted. At most one per prover and per line
   call is in flight, so the turn can pass its limit by that much (`--turn-usd 2` can spend a little more
   than $2);
@@ -146,7 +147,12 @@ answers later. It has:
      resumes), and the fleet's leading strategies for the claim and its parts, read from the fleet's
      `allocation` nodes: how many sessions each strategy was given, how many on the stronger model, and the
      success rate the fleet last read. A problem whose claim was certified when the turn ended says `proved`
-     or `refuted` and that it closes when the run resumes; the team is asked to read it as settled;
+     or `refuted` and that it closes when the run resumes; the team is asked to read it as settled. The account
+     says so only when a valid `kernel_replay` validation of the claim made by this problem's own workbench
+     (its `problem_id`) is in this journal. A claim that is `proved` or `refuted` for another reason (another
+     problem that shares the statement, since a statement has one claim, or a status carried over by
+     `--memory-from`) is shown as the claim's status with a note that this problem did not earn it, and the
+     problem stays waiting or in progress, is not counted among the proved and is not asked about as settled;
 3. the team's answers so far, and those since the turn before (for a turn that a crash left open, since its
    start: an answer given after the crash is news to the turn that follows);
 4. the kinds of record the account has no section for, with how many there are (`unknownKinds` in the
@@ -217,7 +223,12 @@ judge:
   outcome of the problem and not a status of the claim;
 - `forbid` binds the provers' checks only (`teamVeto` runs in `lean_check`). A proof a line submits through
   `validate` (M2's composed proofs, the refutation side's tries) is not vetoed: it is checked by Lean and the
-  certifier like any other, and a strategy the team ruled out for the provers may still be tried there.
+  certifier like any other, and a strategy the team ruled out for the provers may still be tried there;
+- a signature is not a status of a claim and carries none, but it can be erased: a line may lower an edge's
+  status through the revocation path that already exists (M2 lowers an edge whose premise is revoked), and
+  the journal accepts that for `human_signed` like for any status below `lean_checked`. The signature stays
+  in the journal as an event, and the account reads the edge's status as it stands. A team that wants to
+  know whether its signature still holds reads the edge, not its own earlier command.
 
 The journal's invariants hold for these events like any others: `turn.*` is the orchestrator's alone, a
 `hint` or `steer` node is accepted only from an actor `human:NAME` (so no line or model can write one in
@@ -261,13 +272,17 @@ that last test the cut matrix was sampled, not covered, in three groups, each 3 
 for the first two turns with the last turn unlimited. M0 on two problems with five responses in all, no
 certifier (1, 4,000 and 8,000 tokens, which fall after one, two and about four responses). The same with a
 certifier, so that a cut falls on a candidate (the problems are certified once each, in whatever turn, and a
-settled problem ends no turn a second time). M0 with line M2 and its refutation side, whose calls run beside the
+settled problem ends no turn a second time). M0 with line M2 (the only line in the matrix) and its refutation side, whose calls run beside the
 provers (1, 3,000 and 6,000 tokens for turn 1, 1 and 6,000 for turn 2): the same twin, the same two calls of the
 side, once each. Cuts by dollars, by time and by breakpoint are tested singly; M6, M11 and the fleet are not
 in the matrix (they call no model in the background; M6's and M11's own resume tests cover their state), and
 no matrix cell has more than three turns. Also tested one by one: the request refused at the point of sending
 while another prover waits in a line's `briefing`; a line's one-shot call refused after the model is resolved;
-a candidate certified at the limit, with a certifier that is down, and with none; a run on another
+a candidate certified at the limit, with a certifier that is down, and with none; a request the turn gate refused
+(it leaves no response, no charge and no zero-cost attempt record); the refutation side cut while the problem
+closes (recorded `stopped`, with the calls it made); the actor a line's memory view may write as (never
+`orchestrator` or `human:NAME`); the account of a problem that shares a proved claim, and of one that took a proved
+claim from an earlier run; a run on another
 consortium run's memory (`--memory-from`); a team's answer that a line tries to rewrite or forge.
 
 Not run: a real model (the narrative, and the effect of a hint on a model), a real Lean, a real wait

@@ -292,7 +292,11 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     const scope = claimAndParts(p, problem.claim_id);
     const claim = p.claim(problem.claim_id);
     const claimStatus = claim?.status ?? "unknown";
-    if ((claimStatus === "proved" || claimStatus === "refuted") && claim !== undefined && claim.updated_seq > previousEnd) settledNow.push(problem.problem_id);
+    // A problem is certified when its own workbench's `kernel_replay` validation of its claim is valid: a claim shared with another
+    // problem (M1 keeps one claim per statement), or carried over by `--memory-from`, can be proved without this problem having
+    // earned it (Ruling 23). Only a certification of this problem turns the claim's status into the problem's state.
+    const certifiedHere = (claimStatus === "proved" || claimStatus === "refuted") && p.validations(problem.claim_id).some((v) => v.method === "kernel_replay" && v.verdict === "valid" && v.problem_id === problem.problem_id);
+    if (certifiedHere && claim !== undefined && claim.updated_seq > previousEnd) settledNow.push(problem.problem_id);
 
     // How it got there: the claim's status changes in order, with what justified each.
     const history: string[] = [];
@@ -371,13 +375,15 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
       problemId: problem.problem_id,
       target: problem.target,
       claimId: problem.claim_id,
-      state: problem.outcome ?? (claimStatus === "proved" || claimStatus === "refuted" ? claimStatus : waitingSet.has(problem.problem_id) || (end === undefined && attemptsOfProblem.length === 0) ? "waiting" : "in progress"),
+      state: problem.outcome ?? (certifiedHere ? claimStatus : waitingSet.has(problem.problem_id) || (end === undefined && attemptsOfProblem.length === 0) ? "waiting" : "in progress"),
       claimStatus,
       ...(problem.reason !== null
         ? { reason: clip(problem.reason, 300) }
-        : problem.outcome === null && (claimStatus === "proved" || claimStatus === "refuted")
+        : problem.outcome === null && certifiedHere
           ? { reason: `the claim was certified (${claimStatus}); the problem closes when the run resumes` }
-          : {}),
+          : problem.outcome === null && (claimStatus === "proved" || claimStatus === "refuted")
+            ? { reason: `the claim is ${claimStatus}, but not by this problem's own certification (another problem that shares the claim, or an earlier run, did it); this problem has not been settled` }
+            : {}),
       history: history.slice(-MAX_PER_LIST),
       attempts: attemptsOfProblem.length,
       sessionsStoppedByTurn: turnStopped,
