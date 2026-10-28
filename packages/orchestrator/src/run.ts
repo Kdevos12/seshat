@@ -7,11 +7,14 @@ import {
   BlobStore,
   budgetClassOf,
   CheckFailedError,
+  environmentId,
   hashJson,
   isFinalTaskStatus,
   Journal,
   type Json,
   type LeanCertifier,
+  loadMemoryChain,
+  type MemoryChain,
   newId,
   type ProblemOutcome,
   ProofValidator,
@@ -117,6 +120,12 @@ export interface RunOptions {
   runId?: string;
   /** The lines that can be enabled, by id. Default: `LINES`, the lines implemented so far. */
   lines?: LineRegistry;
+  /**
+   * The directory of an earlier run to start on (documentation/memory.md, "Memory across runs"): its journal
+   * is replayed before this run's own, pinned by its last hash in `run.started`, and nothing writes it.
+   * Ignored by a resume, which reads what the run was started on from its own journal.
+   */
+  memoryFrom?: string;
 }
 
 export interface ProblemResult {
@@ -309,16 +318,27 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const runId = resume?.runId ?? o.runId ?? newId("run");
   const log = o.log ?? (() => {});
   const created = resume === undefined && !existsSync(o.dir);
+  // The earlier journals a new run starts on, read and checked before anything is written. What is
+  // the same Lean environment is decided by the bench's revision and the Lean toolchain (the environment's hash, once a run records one).
+  let chain: MemoryChain | undefined;
+  if (resume === undefined && o.memoryFrom !== undefined) {
+    try {
+      chain = loadMemoryChain(o.memoryFrom, environmentId(o.index.source));
+    } catch (error) {
+      throw new RunSetupError(`the memory of ${o.memoryFrom} cannot be used: ${messageOf(error)}`, { cause: error });
+    }
+  }
   let journal: Journal;
   try {
     // A resume may still refuse (the host, registry, tools or certifier are not the run's): it leaves the
     // journal's cut last line for `beginResumption` to deal with, so that a refusal writes nothing to it.
-    journal = Journal.open(o.dir, runId, resume !== undefined ? { deferRepair: true } : {});
+    // A resumed run reads its chain of earlier journals from its own `run.started`.
+    journal = Journal.open(o.dir, runId, { ...(resume !== undefined ? { deferRepair: true } : {}), ...(chain !== undefined ? { memory: chain } : {}) });
   } catch (error) {
     if (resume === undefined) throw error;
     throw new RunSetupError(`the journal of ${o.dir} cannot be opened: ${messageOf(error)}`, { cause: error });
   }
-  const blobs = new BlobStore(join(o.dir, "blobs"));
+  const blobs = new BlobStore(join(o.dir, "blobs"), journal.chain?.blobDirs ?? []);
   const abandon = async (message: string, cause: unknown, opened?: Registry): Promise<never> => {
     await opened?.close();
     journal.close();
@@ -399,6 +419,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         host: registry.host.host,
         config: recorded,
         ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
+        ...(chain !== undefined ? { memoryFrom: chain.from } : {}),
       },
       "orchestrator",
     );
@@ -423,12 +444,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     log(certifierNote);
   }
 
-  // The memory and the lines' runtime exist only when a line is enabled: M0 runs as it always did.
+  // The memory and the lines' runtime exist only when a line is enabled or the run starts on earlier
+  // journals: M0 on nothing runs as it always did.
   let runLines: RunLines | undefined;
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
-  if (enabled.lines.length > 0) {
+  if (enabled.lines.length > 0 || journal.chain !== undefined) {
     memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
+    if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
+  }
+  if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
       lines: enabled.lines,
@@ -510,8 +535,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     // fails on it) ends this problem as an error, with a claim made as in M0 to register it by.
     let claimId: string;
     let namingFailure: string | undefined;
+    // A run on earlier journals takes up the claim an earlier M0 run made for the same statement.
+    const earlierClaim = again === undefined && journal.chain !== undefined ? journal.projection.claimsByStatement(entry.statementId)[0] : undefined;
     if (again !== undefined) {
       claimId = again.claimId;
+    } else if (earlierClaim !== undefined) {
+      claimId = earlierClaim.claim_id;
     } else if (memory === undefined) {
       claimId = createClaim(entry);
     } else {
@@ -525,7 +554,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           })
         ).claimId;
       } catch (error) {
-        namingFailure = messageOf(error);
+        // With lines a statement the memory cannot name ends the problem; an M0 run that only starts on earlier journals goes on as it always did.
+        if (enabled.lines.length > 0) namingFailure = messageOf(error);
         claimId = createClaim(entry);
       }
     }
@@ -847,6 +877,30 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   if (crashed !== undefined) throw crashed.error;
   const report = writeReport(o.dir);
   return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report };
+}
+
+/**
+ * A run that starts on earlier journals opens an epoch when its model family, its prompts' major version
+ * or its Mathlib revision differs from the run before (documentation/memory.md, "Provenance and
+ * epochs"), and says what it took from them.
+ */
+function openEpochOf(journal: Journal, memory: MemoryStore, chain: MemoryChain, now: ProvenanceContext, log: (line: string) => void): void {
+  const last = chain.segments.at(-1)?.run;
+  const epoch = memory.withActor("orchestrator").openEpochIfChanged({
+    modelId: last?.model ?? now.modelId,
+    promptVersion: last?.promptVersion ?? now.promptVersion,
+    mathlibRev: last?.mathlibRev ?? now.mathlibRev,
+    harnessVersion: now.harnessVersion,
+    budgetClass: now.budgetClass,
+  });
+  const m = journal.projection.memorySummary();
+  const carried = Object.entries(m.carried).map(([status, n]) => `${n} ${status}`).join(", ");
+  const same = chain.segments.every((segment) => segment.carried);
+  log(
+    `memory from run ${chain.from.runId} (${chain.segments.length} journal(s)): ${m.claims} claim(s), ${m.attempts} attempt(s), ${m.lessons} lesson(s), ${m.nodes} node(s), ` +
+      `${m.edges} edge(s); ${same ? `the same Lean environment: verified statuses carry${carried !== "" ? ` (${carried})` : ""}` : `another Lean environment: ${m.reset} earlier status(es) and ${m.edgesReset} edge status(es) count for nothing until a stored proof passes validate again`}` +
+      `${epoch !== undefined ? `; epoch ${epoch.epoch} opened: ${epoch.reason}` : ""}`,
+  );
 }
 
 /** Runs `run` on the items, `concurrency` at a time, in order, until `stop` says so of the next one. */
