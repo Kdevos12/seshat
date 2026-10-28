@@ -9,3 +9,8 @@ export * from "./recurrence.ts";
 export * from "./dalmatian.ts";
 export * from "./datatable.ts";
 export * from "./sandbox.ts";
+export * from "./formalize.ts";
+export * from "./hypotheses.ts";
+export * from "./interest.ts";
+export * from "./pool.ts";
+export * from "./screen.ts";

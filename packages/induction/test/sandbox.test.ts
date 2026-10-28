@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { booleans, numbers, runValues } from "../src/index.ts";
 
@@ -61,12 +62,18 @@ describe("the sandbox for programs", () => {
 
   it("runs with an empty environment and a scratch directory that is removed, and cannot read or write files", async () => {
     process.env.SESHAT_SECRET_FOR_TEST = "hunter2";
-    const before = readdirSync(tmpdir()).filter((f) => f.startsWith("seshat-prog-"));
-    const run = await runValues("(n) => typeof process === 'undefined' ? 'no process' : 'process'", [0]);
-    assert.deepEqual(run.values, ["no process"]);
-    delete process.env.SESHAT_SECRET_FOR_TEST;
-    const after = readdirSync(tmpdir()).filter((f) => f.startsWith("seshat-prog-"));
-    assert.deepEqual(after, before, "the scratch directory is gone");
+    // A private temporary directory, so that tests running beside this one cannot add scratch directories to the listing.
+    const outer = process.env.TMPDIR;
+    const own = mkdtempSync(join(tmpdir(), "own-"));
+    process.env.TMPDIR = own;
+    try {
+      const run = await runValues("(n) => typeof process === 'undefined' ? 'no process' : 'process'", [0]);
+      assert.deepEqual(run.values, ["no process"]);
+      assert.deepEqual(readdirSync(own), [], "the scratch directory is gone");
+    } finally {
+      delete process.env.SESHAT_SECRET_FOR_TEST;
+      if (outer === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = outer;
+    }
   });
 
   it("stops when it is cancelled", async () => {
