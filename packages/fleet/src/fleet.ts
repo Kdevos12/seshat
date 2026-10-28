@@ -1,4 +1,4 @@
-import { coldStartPriors, DEFAULT_COLD_START_WEIGHT, MAX_COLD_START_WEIGHT, withPrior } from "@seshat/decide";
+import { coldStartPriors, DEFAULT_COLD_START_WEIGHT, fadedWeight, MAX_COLD_START_WEIGHT, withPrior } from "@seshat/decide";
 import { type Attempt, attemptDepth, STRATEGIES } from "@seshat/memory";
 import { isInterrupted, LINE_TITLES } from "@seshat/lines";
 import type { Briefing, JsonObject, Line, SessionContext, SessionDecision } from "@seshat/lines";
@@ -376,9 +376,11 @@ export function createFleet(env: FleetEnv = {}): Line {
           } else {
             const posteriors = strategyPosteriors(attempts, config.partial, weights);
             // The decision's prior (an option, off by default) is added to what the journal says; a pause passes through, any other failure leaves the flat prior.
+            // It fades with the problem's attempts and is gone after a few (COLD_START_FADE_ATTEMPTS): no decision is asked then.
+            const priorWeight = fadedWeight(config.coldStartWeight, attempts.length);
             const priors =
-              config.coldStart && session.decide !== undefined
-                ? await coldStartPriors(session.decide, { statement: session.target.statement, families: allowed, weight: config.coldStartWeight })
+              config.coldStart && session.decide !== undefined && priorWeight > 0
+                ? await coldStartPriors(session.decide, { statement: session.target.statement, families: allowed, weight: priorWeight, log: session.log })
                 : undefined;
             const picked = thompson(random, allowed.map((label) => [label, withPrior(posteriors.get(label)?.choice, priors?.[label]) ?? UNIFORM] as const));
             if (picked !== undefined) {

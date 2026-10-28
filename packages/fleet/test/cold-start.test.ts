@@ -6,7 +6,9 @@ import { describe, it } from "node:test";
 import { BlobStore, Journal } from "@seshat/core";
 import type { Decide, DecideRequest, Decision, JsonObject, ProblemContext, SessionContext } from "@seshat/lines";
 import { InterruptedError } from "@seshat/lines";
-import { MemoryStore } from "@seshat/memory";
+import { type Attempt, MemoryStore, STRATEGIES } from "@seshat/memory";
+import { proved } from "./helpers.ts";
+import { COLD_START_FADE_ATTEMPTS, fadedWeight } from "@seshat/decide";
 import { createFleet, FLEET_OPTIONS } from "../src/index.ts";
 
 /** A decide that puts all the weight on `favoured` among the families it is asked about, and counts its calls. */
@@ -32,7 +34,18 @@ function deciding(favoured: string, backend: "llm" | "off" = "llm"): Decide & { 
   };
 }
 
-async function picks(options: JsonObject, decide: Decide | undefined, sessions = 60): Promise<string[]> {
+/** The store, with the attempts it reports replaced (its other methods keep their own `this`). */
+function withAttempts<T extends object>(store: T, attempts: Attempt[]): T {
+  return new Proxy(store, {
+    get(target, prop) {
+      if (prop === "attempts") return () => attempts;
+      const value = Reflect.get(target, prop, target) as unknown;
+      return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
+
+async function picks(options: JsonObject, decide: Decide | undefined, sessions = 60, evidence: Attempt[] = []): Promise<string[]> {
   const dir = mkdtempSync(join(tmpdir(), "mh-fleet-"));
   const journal = Journal.open(dir, "run_1");
   try {
@@ -44,7 +57,7 @@ async function picks(options: JsonObject, decide: Decide | undefined, sessions =
     const chosen: string[] = [];
     for (let session = 1; session <= sessions; session++) {
       const ctx = {
-        line: "fleet", runId: "run_1", problemId: "prob_1", claimId, memory: memory.withActor("line:fleet"), registry: {}, signal: controller.signal,
+        line: "fleet", runId: "run_1", problemId: "prob_1", claimId, memory: evidence.length > 0 ? withAttempts(memory.withActor("line:fleet"), evidence) : memory.withActor("line:fleet"), registry: {}, signal: controller.signal,
         options: { ...FLEET_OPTIONS, epsilon: 0, widen: false, stick: false, ...options },
         target: { statement }, prover: "p1", session, sessions: 99, attemptId: `att_${session}`, model: "faux/prover", regions: { aux: "", proof: "" },
         ...(decide !== undefined ? { decide } : {}),
@@ -61,6 +74,13 @@ async function picks(options: JsonObject, decide: Decide | undefined, sessions =
 const share = (chosen: string[], label: string) => chosen.filter((c) => c === label).length / chosen.length;
 
 describe("the fleet's cold start", () => {
+  it("weighs the prior less with each attempt, to nothing at the fade", () => {
+    assert.equal(fadedWeight(2, 0), 2);
+    assert.equal(fadedWeight(2, COLD_START_FADE_ATTEMPTS / 2), 1);
+    assert.equal(fadedWeight(2, COLD_START_FADE_ATTEMPTS), 0);
+    assert.equal(fadedWeight(2, 100), 0);
+  });
+
   it("is off by default: decide is not asked, and the choice is as it was", async () => {
     const decide = deciding("induction");
     const chosen = await picks({}, decide);
@@ -93,5 +113,21 @@ describe("the fleet's cold start", () => {
       throw new InterruptedError();
     };
     await assert.rejects(picks({ coldStart: true }, decide), InterruptedError);
+  });
+
+  it("fades as the problem's attempts arrive, and the evidence overturns it", async () => {
+    const [favoured, other] = STRATEGIES as readonly string[];
+    assert.ok(favoured !== undefined && other !== undefined);
+    // No evidence: the prior is in force. Six attempts of the problem later it is gone, and decide is not asked.
+    const six = Array.from({ length: COLD_START_FADE_ATTEMPTS }, () => proved(other, { claimId: "clm_1" }));
+    const decide = deciding(favoured);
+    const chosen = await picks({ coldStart: true }, decide, 60, six);
+    assert.equal(decide.asked.length, 0, "the prior is gone after the fade");
+    assert.deepEqual(chosen, await picks({}, undefined, 60, six), "the choice is the one without a cold start");
+    // With the prior still in force (five attempts of the problem, a sixth of its weight left) the journal's
+    // evidence for `other` overturns a prior for `favoured`.
+    const five = Array.from({ length: 5 }, () => proved(other, { claimId: "clm_1" }));
+    const early = await picks({ coldStart: true, epsilon: 0 }, deciding(favoured), 60, five);
+    assert.ok(share(early, other) > share(early, favoured), `${share(early, other)} against ${share(early, favoured)}`);
   });
 });

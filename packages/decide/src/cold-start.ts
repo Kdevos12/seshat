@@ -7,6 +7,18 @@ import { ForbiddenDecisionError } from "./errors.ts";
  * them. It only seeds a prior for the choice of a strategy; it settles no claim.
  */
 export const COLD_START_SITE = "fleet.cold_start";
+/**
+ * The attempts of the problem after which the prior is gone: the weight falls linearly from its
+ * value at no attempt to nothing at this many, so the prior seeds the first sessions and then the
+ * journal's own evidence decides alone.
+ */
+export const COLD_START_FADE_ATTEMPTS = 6;
+
+/** The weight of the prior once `attempts` attempts of the problem are in the journal. */
+export function fadedWeight(weight: number, attempts: number): number {
+  return weight * Math.max(0, 1 - attempts / COLD_START_FADE_ATTEMPTS);
+}
+
 /** The default total weight of the prior, in pseudo-attempts. */
 export const DEFAULT_COLD_START_WEIGHT = 2;
 /** No configuration makes the prior weigh more than this: past a few attempts the journal must win. */
@@ -46,7 +58,7 @@ export function withPrior(posterior: BetaCounts | undefined, prior: BetaCounts |
  */
 export async function coldStartPriors(
   decide: Decide,
-  request: { statement: string; families: readonly string[]; weight?: number; instructions?: string },
+  request: { statement: string; families: readonly string[]; weight?: number; instructions?: string; log?: (text: string) => void },
 ): Promise<Record<string, BetaCounts> | undefined> {
   if (request.families.length < 2 || decide.backendFor(COLD_START_SITE) === "off") return undefined;
   try {
@@ -63,6 +75,7 @@ export async function coldStartPriors(
     return pseudoCounts(decision.probabilities, request.weight);
   } catch (error) {
     if (isInterrupted(error) || error instanceof ForbiddenDecisionError || error instanceof RangeError) throw error;
+    request.log?.(`decide: no cold-start prior, the decision failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500));
     return undefined;
   }
 }
