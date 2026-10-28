@@ -1,5 +1,5 @@
 import { EDGE_KINDS, EDGE_STATUSES, CLAIM_STATUSES } from "@seshat/core";
-import type { Briefing, JsonObject, Line, LineTool, ProblemContext, ResumedProblem } from "@seshat/lines";
+import { type Briefing, isInterrupted, type JsonObject, type Line, type LineTool, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { Atms } from "./atms.ts";
 import { completeDerivations, realize, revokeUnsupported } from "./realize.ts";
 import { graphQuery, parseGraphQuery, renderSubgraph, ShortIds } from "./query.ts";
@@ -93,7 +93,8 @@ interface Work {
   /** Whether the problem's `twin` node is already written (the process ended after `afterProblem` wrote it). */
   recorded?: boolean;
   /** The refutation side, running alongside the provers. */
-  side?: Promise<{ end: TwinRecord["end"]; tries: number }>;
+  /** How the refutation side ended; undefined when it was interrupted (the run paused), which is no end at all. */
+  side?: Promise<{ end: TwinRecord["end"]; tries: number } | undefined>;
   /** How the refutation side ended before the process ended, when it did. */
   sideBefore?: { end: TwinRecord["end"]; tries: number };
   tried: Set<string>;
@@ -134,6 +135,11 @@ export function createM2Line(): Line {
       await run();
     } catch (error) {
       if (problem.signal.aborted) return;
+      // Interrupted, not failed: the run pauses and rebuilds this from the journal when it resumes (documentation/lines.md).
+      if (isInterrupted(error)) {
+        problem.log(`${what} was interrupted`);
+        return;
+      }
       problem.log(`${what} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -265,6 +271,11 @@ export function createM2Line(): Line {
           return ended(result.end, spent + result.attempts);
         },
         (error: unknown) => {
+          // A pause of the run is no failure: the node stays `pending`, and the resumed run asks only for the calls the journal does not hold.
+          if (isInterrupted(error)) {
+            problem.log("twin: the refutation side was interrupted");
+            return undefined;
+          }
           problem.log(`twin: the refutation side failed: ${error instanceof Error ? error.message : String(error)}`);
           return ended("error", spent);
         },

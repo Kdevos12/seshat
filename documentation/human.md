@@ -49,8 +49,12 @@ At the limit:
   `run.finished`, because the run is not finished: `report.md` says it is paused.
 
 A line that asks for a model call after the turn is over is not failing: the call raises
-`TurnEndedError`, which the run reads as "this problem waits", and the line does the work again in the next
-turn from where it was (`beforeProvers` runs again, `afterProblem` too).
+`TurnEndedError`, an `InterruptedError` ([lines.md](lines.md#interrupted-work)) which the run reads as
+"this problem waits", and the line does the work again in the next turn from where it was
+(`beforeProvers` runs again, `afterProblem` too). A line that catches errors from a model call must let
+this one through, or record nothing as an end: M2's refutation side, which runs alongside the provers,
+leaves its node `pending` when a call is refused, and the next turn asks only for the calls the journal
+does not hold.
 
 `turn.started` records the limit and where it came from: the flag of the resumption, a steer, the turn
 before's limit (it carries over), or the run's option, in that order.
