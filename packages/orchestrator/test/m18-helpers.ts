@@ -34,3 +34,11 @@ export function responder(count = 40): FauxResponseStep[] {
   };
   return Array.from({ length: count }, () => step);
 }
+
+/** Like `m18Answer`, but the link lemma of a special-case edge is never proved (no closer works), and `exact neg_ok` proves a negation. */
+export function strictAnswer(code: string): FakeLeanAnswer {
+  const proof = proofOf(code);
+  if (proof === undefined) return {};
+  if (proof.includes("var_ok") || proof.includes("neg_ok")) return {};
+  return demoAnswer(code);
+}

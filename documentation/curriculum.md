@@ -15,7 +15,7 @@ on rung 1 only so that problems that the cheap stack solves never pay for it.
 
 1. **Nothing until the ladder moves the problem up.** With the ladder on (M12's option `ladder`), the
    orchestrator gives M18 no hook for a problem until `ladder.escalated` moves it to rung 1, then calls
-   `beforeProvers`. With the ladder off M18 starts at once, like every line.
+   `beforeProvers`. With the ladder off M18 starts at once, like every line, and the curriculum runs before the first attempt (capped as below). `beforeProvers` does nothing for a problem whose claim is already settled.
 2. **One request for variants** (site `curriculum.variants`). A model is shown the target and its header
    and asked for at most `maxVariants` statements the target implies, easiest first, of three kinds:
    `small_case` (a specific small value), `prime_case` (a prime, or a special family) and
@@ -49,7 +49,7 @@ The `briefing` hook adds a section **Special cases already proved**: every claim
 that Lean accepted (`computed` or `proved`), with a note on whether Lean checked that the target implies it, and
 `examples` (1 or 2, default 2) of their proofs as `theorem variant_k ... := by ...`. The examples are drawn from the
 run's seeded source (`seeded(hash32(seed:m18:problem:prover:session))`, the seed being the option `seed` or the run's seed), so
-a resumed run draws the same ones. The section says the facts do not prove the target. Claims that
+a resumed run draws the same ones. The section says that Lean accepted a proof of each statement, that only those marked checked are known to follow from the target, and that none proves it. (`computed` is the fast check; the certifier runs when the problem ends, so a variant is rarely `proved` while sessions run.) Claims that
 are not accepted never appear in it: what a model proposed and Lean did not accept is not a fact.
 Because the section reads the edges of the memory, a proved special case of the target made by another problem or
 run that shares the claim ([memory.md](memory.md)) reaches the briefing too.
@@ -64,10 +64,16 @@ run that shares the claim ([memory.md](memory.md)) reaches the briefing too.
   checks that the target has no status change.
 - **The budget cap.** The line spends at most `share` (default 0.2) of the problem's dollar budget: the request
   for variants and the inner sessions count, in the dollars the problem's ledger counts (the calls go through
-  `problem.llm`), so they are in the ladder's spend and in the report's dollars per rung. A call starts while the
-  line's spend is under the cap and the dearest inner session so far still fits; the first call is made under the cap, so the line
-  can pass it by that call's excess, and no more. When the share is spent, the open variants' tasks fail with that
-  reason. A problem with no dollar budget has no cap to count against; `maxVariants` and `sessionsPerVariant` bound the work.
+  `problem.llm`), so they are in the ladder's spend and in the report's dollars per rung. Before each call the line
+  reserves the dearest call it has made so far (the request for variants included): a call starts only while the spend is
+  under the cap and the spend plus that reserve fits. With a cap of 0.20 and a request that cost 0.19, no session is started.
+  The first call has no reserve, and a call can cost more than the dearest before it, so the cap holds as long as calls cost
+  about what the dearest earlier one did; it can be passed by at most what the last call cost beyond its reserve. When the
+  share is spent, the open variants' tasks fail with that reason. A problem with no dollar budget has no share to count:
+  the line is capped at the option `unbudgetedUsd` (default 1) instead, which also holds when the ladder is off and the
+  curriculum runs before the first attempt. The cost of a call whose JSON answer failed is not on the error; it is taken from the
+  problem's spend over the call, which includes what concurrent provers spent meanwhile, so the count can be too high (the cap then
+  trips early, never late).
 - **It learns nothing from outcomes.** The line writes what a model proposed and tried as `learned` nodes, which the
   memory stamps with the run's provenance (Global Constraint 16, [memory.md](memory.md#provenance-and-epochs)). None of
   it is read as a fact, and no later decision is made from it except the count of the line's own spend.
@@ -76,6 +82,7 @@ run that shares the claim ([memory.md](memory.md)) reaches the briefing too.
 
 | Option (`--line-option M18.NAME=...`) | Default | Meaning |
 |---|---|---|
+| `unbudgetedUsd` | 1 | The most the line may spend on a problem with no dollar budget. |
 | `share` | 0.2 | The share of the problem's dollar budget the line may spend in all (0 turns it off). |
 | `maxVariants` | 4 | The most variants made for a problem (at most 12). |
 | `sessionsPerVariant` | 3 | Inner sessions on a variant before its task fails. |
@@ -97,10 +104,10 @@ and `beforeProvers` are the same function, which reads the nodes, the claims and
 undone. It is safe to call twice:
 
 - the request for variants is made once (an `m18_generation` node says it was), and a cut between the call and
-  the node finds the answer again, free, because the call is `reuse: true`;
+  the node finds the answer again, at no new charge, because the call is `reuse: true`;
 - `createVariant` returns the claim and the edge that exist; a variant is recorded once; a variant with a task gets no second one;
 - a session cut between the model's answer and Lean's verdict is a `pending` record: the resumed session asks the same
-  question, gets the recorded answer at no cost, and ends that record;
+  question, gets the recorded answer at no new charge (its recorded cost still counts in the share), and ends that record;
 - a variant already accepted when its task starts again has its edge checked, if the cut came before that.
 
 A cut between the move up the ladder and the next session resumes with the variants' tasks worked before that session
