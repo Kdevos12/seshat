@@ -49,6 +49,15 @@ At the limit:
   attempt `aborted` with `stoppedBy: "turn"` and a `carry` (the file as it stood, the last check, the
   notes with a line that says where the turn cut the session). The next turn's session starts from it, as
   after any cut session ([ledger.md](ledger.md#resume));
+- a problem that holds a candidate (a proof the fast check accepted) is certified before the run exits:
+  the certification is Lean, with no model call, so it is not held back by the limit. The run certifies the
+  problem's own candidate and what the lines submitted for it (the same certification a run makes at the end
+  of a problem), and runs nothing else for the problem: no session, no `afterProblem`, no request. The claim
+  becomes `proved` or `refuted` through the normal validation, the account says so, and the problem keeps no
+  outcome: the next turn closes it from the certification the journal holds, without certifying again. The
+  `settled` breakpoint is not struck a second time by that close, so it does not cost a turn. A certifier that
+  is down or too slow leaves the candidate as it was (the run says so in its log), and the next turn
+  certifies it, as after a kill;
 - the run writes `turn.ended` (the turn's number, the reason, what the turn spent and what the run has
   spent, the minutes, the problems that wait), then the account, and exits with 0. It does not write
   `run.finished`, because the run is not finished: `report.md` says it is paused.
@@ -60,6 +69,11 @@ A line that asks for a model call after the turn is over is not failing: the cal
 this one through, or record nothing as an end: M2's refutation side, which runs alongside the provers,
 leaves its node `pending` when a call is refused, and the next turn asks only for the calls the journal
 does not hold.
+
+The limits bound model work, not the life of the process. `--turn-minutes` is read where a request would be
+sent and after each response; a process overshoots it by the response in flight and by the time of the
+certifications above (a kernel replay in a sandbox, up to the certifier's timeout for each candidate). The
+narrative ([below](#the-narrative)) is one more model call, made after the limit, with a budget of its own.
 
 `turn.started` records the limit and where it came from: the flag of the resumption, a steer, the turn
 before's limit (it carries over), or the run's option, in that order.

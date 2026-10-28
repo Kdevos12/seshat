@@ -79,12 +79,15 @@ export class Breakpoints {
   private readonly turn: Turn;
   private readonly settings: ImpasseSettings;
   private readonly seen: Seen;
+  /** The seq of the last turn that ended before this one began: a claim settled before it was reported in that turn's account. */
+  private readonly lastEnded: number;
 
   constructor(o: { journal: Journal; turn: Turn; settings: ImpasseSettings; events: readonly HarnessEvent[] }) {
     this.journal = o.journal;
     this.turn = o.turn;
     this.settings = o.settings;
     this.seen = readSeen(o.events);
+    this.lastEnded = o.events.findLast((event) => event.type === "turn.ended")?.seq ?? -1;
   }
 
   /** After an attempt of a problem ended: its impasse, and any disagreement the lines recorded. */
@@ -98,7 +101,11 @@ export class Breakpoints {
     const p = this.journal.projection;
     const problem = p.problem(problemId);
     if (problem === undefined) return;
-    if ((problem.outcome === "proved" || problem.outcome === "refuted") && !this.seen.settled.has(problemId)) {
+    // A claim the end of an earlier turn certified (a candidate held at the limit is certified before the run exits) was in
+    // that turn's account as settled: closing the problem now is not news, and does not end this turn.
+    const claim = p.claim(problem.claim_id);
+    const certifiedBefore = claim !== undefined && claim.updated_seq >= 0 && claim.updated_seq < this.lastEnded;
+    if ((problem.outcome === "proved" || problem.outcome === "refuted") && !this.seen.settled.has(problemId) && !certifiedBefore) {
       this.turn.strike({
         reason: "settled",
         detail: `${problem.target} is ${problem.outcome}`,
