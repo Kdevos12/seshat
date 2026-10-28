@@ -20,6 +20,9 @@ import {
   TASK_WRITER,
 } from "./tasks.ts";
 
+/** The node kinds only a person writes: the hints and steers of the research team. */
+export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer"];
+
 /**
  * The single writer of a run: every fact goes through `emit`, which checks the invariants against
  * the projection, appends to the journal, then updates the projection.
@@ -244,6 +247,10 @@ export class Journal {
         if (p.claim(d.nodeId)) throw new Error(`${d.nodeId} is already a claim`);
         if (!NODE_KIND.test(d.kind)) throw new Error(`node ${d.nodeId}: bad kind ${JSON.stringify(d.kind)}`);
         if (d.claimId !== undefined && !p.claim(d.claimId)) throw new Error(`unknown claim ${d.claimId}`);
+        // The research team's answers are a person's: no line or model can write one in a person's name (documentation/human.md).
+        if (HUMAN_NODE_KINDS.includes(d.kind) && !actor.startsWith("human:")) {
+          throw new Error(`node ${d.nodeId}: a ${d.kind} is the research team's, written by human:NAME, not by ${actor}`);
+        }
         return;
       }
       case "node.updated":
@@ -264,6 +271,24 @@ export class Journal {
         this.onlyOrchestrator(event.type, actor);
         const expected = p.resumptions().length + 1;
         if (event.data.resumption !== expected) throw new Error(`this is resumption ${expected} of the run, not ${event.data.resumption}`);
+        return;
+      }
+      case "turn.started": {
+        this.onlyOrchestrator(event.type, actor);
+        const turns = p.turns();
+        if (turns.started !== turns.ended) throw new Error(`turn ${turns.started} has not ended: a turn begins only when the one before has`);
+        if (event.data.turn !== turns.started + 1) throw new Error(`this is turn ${turns.started + 1} of the run, not ${event.data.turn}`);
+        for (const [name, value] of Object.entries(event.data.limit)) {
+          if (typeof value !== "number" || !(value > 0)) throw new Error(`turn ${event.data.turn}: the limit ${name} must be a positive number`);
+        }
+        return;
+      }
+      case "turn.ended": {
+        this.onlyOrchestrator(event.type, actor);
+        const turns = p.turns();
+        if (turns.started !== turns.ended + 1) throw new Error("no turn is open: a turn ends once, after it began");
+        if (event.data.turn !== turns.started) throw new Error(`turn ${turns.started} is the one that is open, not ${event.data.turn}`);
+        if (typeof event.data.reason !== "string" || event.data.reason === "") throw new Error(`turn ${event.data.turn}: a turn ends for a reason`);
         return;
       }
       case "task.created":

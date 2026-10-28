@@ -408,6 +408,12 @@ export class Projection {
       case "run.started":
       case "run.finished":
         return;
+      case "turn.started":
+        this.setMeta("turn_started", String(event.data.turn));
+        return;
+      case "turn.ended":
+        this.setMeta("turn_ended", String(event.data.turn));
+        return;
       case "run.resumed": {
         db.prepare("insert into resumptions (seq, resumption, data_json) values (?, ?, ?)").run(
           event.seq, event.data.resumption, canonicalJson(event.data));
@@ -705,6 +711,11 @@ export class Projection {
   resumptions(): ResumptionRow[] {
     const rows = this.db.prepare("select * from resumptions order by seq").all() as unknown as Array<{ seq: number; resumption: number; data_json: string }>;
     return rows.map((r) => ({ seq: r.seq, resumption: r.resumption, data: JSON.parse(r.data_json) as EventDataMap["run.resumed"] }));
+  }
+
+  /** The turns of a consortium run: how many began and how many ended (0 and 0 for a run that has none). */
+  turns(): { started: number; ended: number } {
+    return { started: Number(this.meta("turn_started") ?? 0), ended: Number(this.meta("turn_ended") ?? 0) };
   }
 
   /** The seq of the last `run.resumed`, or -1 if the run was never resumed. */
