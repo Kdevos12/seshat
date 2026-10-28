@@ -169,6 +169,7 @@ Every hook is optional and async. They run in `LINE_ORDER`, at these points:
 | `afterProblem(problem, end)` | After the provers, before `problem.finished`, for every problem whose `beforeProvers` point was reached. | Record what the problem taught. Its signal is the run's, not the problem's, which is aborted once the problem is solved. The problem's own candidate is certified before it, and what this problem's lines submitted ([`validate`](#validate)) is certified after it; so the `outcome` it is told is the problem's own so far: `proved` when its own candidate was certified, never `refuted` (a line's refutation is certified after the hook), and never `proved` because another problem proved a claim they share. |
 | `schedule(problem, ready)` | Between the outer sessions of a prover and after the last one (the scheduling line only; at most one enabled line gives it). | Choose which of the problem's `ready` tasks, those it proposed, to work on and give the work (`ScheduledTask`: the task, why, and `run(owner)`, which answers `{ended: "done" \| "failed", reason}`). The orchestrator starts the task, awaits `run`, and ends the task by the answer; `done` is refused if the task's criterion does not hold. See [Scheduling](#scheduling). |
 | `assignOwners(problem, ready)` | Before `schedule` chooses. | Give an owner, through `problem.tasks.assign`, to the `ready` tasks a line proposed (the fleet does, Ruling 29). Every line that gives it is called, in `LINE_ORDER`, and the last assignment stands. |
+| `runTask(problem, task, owner)` | In the schedule step, before `schedule` chooses, for the first `ready` task that this line proposed (a line that is not the scheduling line; M18's variants). | Do the work on the task and answer `{ended: "done" \| "failed", reason}` (`TaskEnd`). The orchestrator starts the task and ends it by the answer, as for a scheduled one. See [Scheduling](#scheduling). |
 
 A hook that throws is a failure of the harness, named after the line and the hook (`line M6 failed
 in afterCheck: ...`). In `beforeProvers` or `afterProblem`, the problem ends as `error`, except that
@@ -427,8 +428,8 @@ where it works all of them. Steps are serialised, so that provers never schedule
 early when the problem has a candidate or is stopped. For each task:
 
 1. calls every line's `assignOwners` with the `ready` tasks that lines proposed, in `LINE_ORDER`;
-2. calls `schedule(problem, ready)`; `undefined` ends the step;
-3. starts the task it chose (`running`, with the line's reason), calls `run(owner)`, and ends the
+2. if one of those tasks was proposed by a line other than the scheduling line that gives `runTask`, takes the first such task, and that line's `runTask(problem, task, owner)` does the work; otherwise calls `schedule(problem, ready)`, and `undefined` ends the step;
+3. starts the task chosen (`running`, with the line's reason), calls `run(owner)` (or `runTask`), and ends the
    task `done` or `failed` by the answer (`done` only if the acceptance criterion holds, else
    `failed` with the criterion's reason).
 
