@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import type { BenchIndex } from "@seshat/bench";
 import { BlobStore, environmentId, isProvenance, Journal, loadMemoryChain, readEvents } from "@seshat/core";
 import { MemoryStore } from "@seshat/memory";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile, type LeanEnvPin } from "@seshat/registry";
-import { hostLeanEnv, openRegistry, PROMPT_VERSION, renderRunReport, REPO_ROOT, RunSetupError, type RunOptions } from "../src/index.ts";
+import { hostLeanEnv, openRegistry, PROMPT_VERSION, renderRunReport, REPO_ROOT, writeReport, RunSetupError, type RunOptions } from "../src/index.ts";
 import { loadEnvSpec, resolveEnvironment, writeEnvironment, type Fetcher } from "@seshat/lean-env";
 import type { LeanChecker } from "@seshat/core";
 import { writeFileSync } from "node:fs";
@@ -64,7 +64,9 @@ describe("a run started on an earlier run's memory (--memory-from)", () => {
 
     const last = a.events.at(-1);
     const started = ofType(b.events, "run.started")[0]?.data;
-    assert.deepEqual(started?.memoryFrom, { path: a.dir, runId: a.result.runId, lastHash: last?.hash, events: a.events.length });
+    assert.deepEqual(started?.memoryFrom, {
+      path: a.dir, relative: relative(b.dir, a.dir), runId: a.result.runId, lastHash: last?.hash, events: a.events.length,
+    });
     assert.equal(b.events[0]?.seq, 0, "the run's own events are numbered from 0");
     assert.deepEqual(ofType(b.events, "claim.created"), [], "the claim of the earlier run is the problem's claim");
     assert.equal(ofType(b.events, "problem.registered")[0]?.data.claimId, claimId);
@@ -81,6 +83,17 @@ describe("a run started on an earlier run's memory (--memory-from)", () => {
     } finally {
       journal.close();
     }
+  });
+
+  it("still reads, resumes and reports after the run directories moved together", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mh-chain-move-"));
+    const a = await demoRun({ dir: join(root, "lineage", "a"), certifier: certifier().certifier, responses: [check("exact trivial_proof")] });
+    const b = await demoRun({ dir: join(root, "lineage", "b"), bench: a.bench, memoryFrom: a.dir, responses: [check("sorry"), say("notes")], config: { sessions: 2 } });
+    renameSync(join(root, "lineage"), join(root, "moved"));
+    // The report of the newest run reads the chain from where it is now.
+    const text = renderRunReport(writeReport(join(root, "moved", "b")));
+    assert.match(text, /Memory from the earlier run run_.*1 claim\(s\)/);
+    assert.doesNotMatch(text, /could not be read/);
   });
 
   it("credits no problem outcome to the earlier run: the problem is proved only by its own certification", async () => {

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import type { BenchIndex, ProblemEntry } from "@seshat/bench";
@@ -498,7 +498,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         host: registry.host.host,
         config: recorded,
         ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
-        ...(chain !== undefined ? { memoryFrom: chain.from } : {}),
+        ...(chain !== undefined ? { memoryFrom: { ...chain.from, relative: relative(resolve(o.dir), chain.from.path) } } : {}),
       },
       "orchestrator",
     );

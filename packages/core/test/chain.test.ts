@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
   BlobStore,
   environmentId,
   environmentOf,
+  firstEvent,
   Journal,
   loadMemoryChain,
   MemoryChainError,
@@ -31,11 +32,14 @@ function config(source: { rev: string; lean: string }, model = "prov/model-5", l
 }
 
 /** Starts a run in `dir` on the chain, if any, the way the orchestrator does. */
-function start(dir: string, runId: string, source: typeof ENV_A, chain?: MemoryChain, leanEnv?: LeanEnv): Journal {
+function start(dir: string, runId: string, source: typeof ENV_A, chain?: MemoryChain, leanEnv?: LeanEnv, relativeToo = false): Journal {
   const journal = Journal.open(dir, runId, chain !== undefined ? { memory: chain } : {});
   journal.emit(
     "run.started",
-    { runId, benchId: "bench", problems: 1, host: "test", config: config(source, "prov/model-5", leanEnv), ...(chain !== undefined ? { memoryFrom: chain.from } : {}) },
+    {
+      runId, benchId: "bench", problems: 1, host: "test", config: config(source, "prov/model-5", leanEnv),
+      ...(chain !== undefined ? { memoryFrom: { ...chain.from, ...(relativeToo ? { relative: relative(resolve(dir), chain.from.path) } : {}) } } : {}),
+    },
     "orchestrator",
   );
   return journal;
@@ -424,6 +428,68 @@ describe("the refusals of a chain of journals", () => {
     );
     a.close();
     assert.throws(() => loadMemoryChain(dirA, environment(ENV_A)), (error: unknown) => error instanceof MemoryChainError && /loops back to/.test(error.message));
+  });
+});
+
+describe("the head of a journal and where an earlier journal is", () => {
+  it("reads the first event of a long journal from its head, and nothing from a file with no whole first line", () => {
+    const a = earlier(ENV_A);
+    const long = Journal.open(a.dir, "run_a");
+    for (let k = 0; k < 400; k++) claim(long, `clm_pad_${k}`);
+    long.close();
+    const first = firstEvent(join(a.dir, "journal.jsonl"));
+    assert.equal(first?.type, "run.started");
+    const big = join(base(), "big.jsonl");
+    writeFileSync(big, `${JSON.stringify({ type: "run.started", data: { pad: "é".repeat(100_000) } })}\nsecond\n`);
+    assert.equal(((firstEvent(big)?.data as unknown) as { pad: string }).pad.length, 100_000, "a first line longer than a read, with multi-byte characters across chunks");
+    writeFileSync(big, "");
+    assert.equal(firstEvent(big), undefined);
+    writeFileSync(big, "{broken");
+    assert.equal(firstEvent(big), undefined);
+    assert.equal(firstEvent(join(base(), "none.jsonl")), undefined);
+  });
+
+  it("finds the earlier run next to the newer one after both directories moved together, and still pins it", () => {
+    const root = base();
+    const dirA = join(root, "lineage", "a");
+    const dirB = join(root, "lineage", "b");
+    const a = start(dirA, "run_a", ENV_A);
+    claim(a, "clm_a");
+    a.close();
+    start(dirB, "run_b", ENV_A, loadMemoryChain(dirA, environment(ENV_A)), undefined, true).close();
+    const moved = join(root, "moved");
+    renameSync(join(root, "lineage"), moved);
+    const again = Journal.open(join(moved, "b"), "run_b");
+    try {
+      assert.equal(again.projection.claim("clm_a")?.status, "open");
+      assert.equal(again.chain?.segments[0]?.dir, join(moved, "a"), "the relative form was tried first");
+    } finally {
+      again.close();
+    }
+    // The pin is what decides: another run in that place is refused.
+    const other = join(moved, "a");
+    const later = Journal.open(other, "run_a");
+    claim(later, "clm_later");
+    later.close();
+    assert.throws(() => Journal.open(join(moved, "b"), "run_b"), (error: unknown) => error instanceof MemoryChainError && /not the one this run was started on/.test(error.message));
+  });
+
+  it("falls back to the absolute path when nothing is at the relative one, and fails without a relative one when the directory moved", () => {
+    const root = base();
+    const dirA = join(root, "lineage", "a");
+    const dirB = join(root, "lineage", "b");
+    start(dirA, "run_a", ENV_A).close();
+    start(dirB, "run_b", ENV_A, loadMemoryChain(dirA, environment(ENV_A)), undefined, true).close();
+    // B alone is moved: the relative form leads nowhere, the absolute one still finds A.
+    const elsewhere = join(root, "elsewhere", "b");
+    mkdirSync(join(root, "elsewhere"));
+    renameSync(dirB, elsewhere);
+    Journal.open(elsewhere, "run_b").close();
+    // A run that recorded no relative path (before this) cannot find A once both moved.
+    const dirC = join(root, "lineage", "c");
+    start(dirC, "run_c", ENV_A, loadMemoryChain(dirA, environment(ENV_A))).close();
+    renameSync(join(root, "lineage"), join(root, "gone"));
+    assert.throws(() => Journal.open(join(root, "gone", "c"), "run_c"), (error: unknown) => error instanceof MemoryChainError && /holds no earlier run/.test(error.message));
   });
 });
 

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { canonicalJson, sha256Hex } from "./canonical-json.ts";
 import type { HarnessEvent } from "./events.ts";
 import { readEvents, verifyChain } from "./log.ts";
@@ -13,6 +13,12 @@ import { readEvents, verifyChain } from "./log.ts";
 export interface MemoryFrom {
   /** The absolute path of the earlier run's directory. */
   path: string;
+  /**
+   * The earlier run's directory relative to the directory of the run that names it, when that run
+   * recorded one. It is tried first, so that a lineage whose directories moved together still reads;
+   * the pin below is what decides that what it finds is the right journal.
+   */
+  relative?: string;
   runId: string;
   /** The hash of the last event of the earlier journal. The run is refused on a journal that ends otherwise. */
   lastHash: string;
@@ -81,18 +87,42 @@ export function environmentOf(config: unknown): string | undefined {
   return environmentId(c?.bench?.source ?? {}, recorded);
 }
 
-/** The first event of a journal file, if it has a whole one: how a run finds what it was started on. */
+/**
+ * The first event of a journal file, if it has a whole one: how a run finds what it was started on.
+ * Only the head of the file is read, up to the end of its first line, however long the journal is.
+ */
 export function firstEvent(path: string): HarnessEvent | undefined {
   if (!existsSync(path)) return undefined;
-  const text = readFileSync(path, "utf8");
-  const end = text.indexOf("\n");
-  const line = end < 0 ? text : text.slice(0, end);
+  const fd = openSync(path, "r");
+  const parts: Buffer[] = [];
+  try {
+    const chunk = Buffer.alloc(64 * 1024);
+    for (;;) {
+      const n = readSync(fd, chunk, 0, chunk.length, null);
+      if (n === 0) break;
+      const end = chunk.subarray(0, n).indexOf(10);
+      parts.push(Buffer.from(chunk.subarray(0, end < 0 ? n : end)));
+      if (end >= 0) break;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  const line = Buffer.concat(parts).toString("utf8");
   if (line === "") return undefined;
   try {
     return JSON.parse(line) as HarnessEvent;
   } catch {
     return undefined;
   }
+}
+
+/** Where the journal a run names is: its relative path from `base` when a journal is there, else the absolute path it recorded. */
+function earlierDir(base: string, from: MemoryFrom): string {
+  if (from.relative !== undefined) {
+    const near = resolve(base, from.relative);
+    if (existsSync(join(near, "journal.jsonl"))) return near;
+  }
+  return resolve(from.path);
 }
 
 function alive(pid: number): boolean {
@@ -170,7 +200,7 @@ export function loadMemoryChain(path: string, environment: string | undefined, e
     newestFirst.push(segment);
     const started = segment.events[0];
     const earlier = started?.type === "run.started" ? started.data.memoryFrom : undefined;
-    next = earlier === undefined ? undefined : { dir: resolve(earlier.path), expect: earlier };
+    next = earlier === undefined ? undefined : { dir: earlierDir(segment.dir, earlier), expect: earlier };
   }
   const segments = newestFirst.reverse();
   const last = segments.at(-1) as ChainSegment;
@@ -188,5 +218,5 @@ export function chainOfJournal(journalPath: string): MemoryChain | undefined {
   const first = firstEvent(journalPath);
   if (first?.type !== "run.started" || first.data.memoryFrom === undefined) return undefined;
   const from = first.data.memoryFrom;
-  return loadMemoryChain(from.path, environmentOf(first.data.config), from);
+  return loadMemoryChain(earlierDir(dirname(resolve(journalPath)), from), environmentOf(first.data.config), from);
 }
