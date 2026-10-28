@@ -24,7 +24,7 @@ const usage = `usage:
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--draw-seed S] [--out DIR]
+              [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness report RUN_DIR [--json]
 
@@ -35,6 +35,9 @@ provers a direct capability besides lean_check, such as compute.sage. --lines en
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
 --line-option sets an option of an enabled line, its VALUE read as JSON when it parses. --draw-seed seeds the draws of
 unverified memory items (documentation/memory.md, "Randomized inclusion"): the same seed draws the same.
+--memory-from starts the run on the memory of an earlier run (documentation/memory.md, "Memory across runs"): its
+journal is read first, pinned by its last hash, and never written; its verified facts carry only under the same
+Lean environment.
 run --resume: continues a run whose process ended without finishing it (documentation/ledger.md, "Resume"),
 from the journal in RUN_DIR. The run's configuration is the one it began with, so no flag that describes a run
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
@@ -68,6 +71,7 @@ const { positionals, values } = parseArgs({
     ablation: { type: "string" },
     "line-option": { type: "string", multiple: true },
     "draw-seed": { type: "string" },
+    "memory-from": { type: "string" },
     resume: { type: "string" },
     json: { type: "boolean" },
     help: { type: "boolean", short: "h" },
@@ -300,6 +304,7 @@ async function run(): Promise<number> {
     log: (line) => console.error(line),
     runId,
     ...(codeRev !== undefined ? { codeRev } : {}),
+    ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
   });
   return finished(result, dir);
 }
@@ -332,7 +337,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "sample", "seed", "problem", "all", "out",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "memory-from", "sample", "seed", "problem", "all", "out",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
