@@ -86,6 +86,11 @@ export interface Claim {
   gloss?: string;
   parentId?: string;
   header?: string;
+  /**
+   * The status an earlier run recorded in another Lean environment. It counts for nothing: `status`
+   * is what this run established (`open` until a stored proof passes `validate` again).
+   */
+  earlierStatus?: ClaimStatus;
   createdSeq: number;
   updatedSeq: number;
 }
@@ -116,6 +121,8 @@ export interface Edge {
   validationId?: string;
   note?: string;
   link?: EdgeLink;
+  /** The status an earlier run recorded in another Lean environment; it counts for nothing. */
+  earlierStatus?: EdgeStatus;
   createdSeq: number;
   updatedSeq: number;
 }
@@ -206,6 +213,23 @@ export interface Attempt {
   /** The unverified items a draw showed the session, and the ones it withheld (absent: no draw). */
   included?: string[];
   withheld?: string[];
+}
+
+/**
+ * A proof an earlier run stored under another Lean environment: its text is in the earlier run's blobs, and
+ * it is a candidate for `validate` here, nothing more. Its validation counts for nothing.
+ */
+export interface StoredProof {
+  validationId: string;
+  claimId: string;
+  /** True for a proof of the claim's negation. */
+  negation: boolean;
+  /** What the earlier run's check was. */
+  method: "repl" | "kernel_replay";
+  verdict: "valid" | "invalid";
+  submissionHash: string;
+  /** The submission's text; undefined when the blob is gone. */
+  text?: string;
 }
 
 export interface Validation {
@@ -611,6 +635,29 @@ export class MemoryStore {
     return this.#journal.projection.validations(claimId).map(toValidation);
   }
 
+  /**
+   * The proofs of a claim that an earlier run stored under another Lean environment, to submit again
+   * through `validate`; none for a run that started on nothing, or whose environment is the earlier one's
+   * (their validations count, `validations`). A proof is as good as its validation here, not before.
+   */
+  storedProofs(claimId: string): StoredProof[] {
+    return this.#journal.projection
+      .earlierValidations(claimId)
+      .filter((row) => row.verdict === "valid")
+      .map((row) => {
+        const text = this.blobs.get(row.submission_hash);
+        return present<StoredProof>({
+          validationId: row.validation_id,
+          claimId: row.claim_id,
+          negation: row.negation,
+          method: row.method,
+          verdict: row.verdict,
+          submissionHash: row.submission_hash,
+          text,
+        });
+      });
+  }
+
   node(nodeId: string): MemoryNode | undefined {
     const row = this.#journal.projection.node(nodeId);
     return row === undefined ? undefined : toNode(row);
@@ -673,6 +720,7 @@ function toClaim(row: ClaimRow): Claim {
     gloss: row.gloss,
     parentId: row.parent_id,
     header: row.header,
+    earlierStatus: row.earlier_status,
     createdSeq: row.created_seq,
     updatedSeq: row.updated_seq,
   });
@@ -690,6 +738,7 @@ function toEdge(row: EdgeRow): Edge {
     validationId: row.validation_id,
     note: row.note,
     link: row.link_name === null || row.link_statement === null ? undefined : { name: row.link_name, statement: row.link_statement },
+    earlierStatus: row.earlier_status,
     createdSeq: row.created_seq,
     updatedSeq: row.updated_seq,
   });

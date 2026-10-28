@@ -1,4 +1,5 @@
 import type { Json } from "./canonical-json.ts";
+import type { MemoryFrom } from "./chain.ts";
 import type { EpochChange, Provenance } from "./provenance.ts";
 import type { AttemptRole, ClaimKind, EdgeKind, EdgeLink } from "./records.ts";
 import type { ClaimStatus, EdgeStatus } from "./status.ts";
@@ -88,6 +89,11 @@ export interface EventDataMap {
     host: string;
     config: Json;
     codeRev?: string;
+    /**
+     * The earlier run this one starts on: its journal is replayed before this one, checked against
+     * `lastHash` (documentation/memory.md, "Memory across runs"). Absent: a run from nothing.
+     */
+    memoryFrom?: MemoryFrom;
   };
   "run.finished": {
     runId: string;

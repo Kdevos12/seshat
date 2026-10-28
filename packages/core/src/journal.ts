@@ -1,5 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
@@ -28,12 +29,25 @@ import {
 export class Journal {
   readonly log: EventLog;
   readonly projection: Projection;
+  /** The earlier journals this run starts on (its `run.started`'s `memoryFrom`), if any. */
+  readonly chain: MemoryChain | undefined;
   private readonly unsubscribe: () => void;
 
-  /** Catches the projection up with the journal. Throws `StaleProjectionError` if it cannot. */
-  constructor(log: EventLog, projection: Projection) {
+  /**
+   * Catches the projection up with the journal. Throws `StaleProjectionError` if it cannot, or if it was
+   * built on another chain of earlier journals than `chain`.
+   */
+  constructor(log: EventLog, projection: Projection, chain?: MemoryChain) {
     this.log = log;
     this.projection = projection;
+    this.chain = chain;
+    if (projection.chainHash() !== chain?.hash) {
+      // A projection with no events of its own and no chain takes the chain; any other is of another history.
+      if (chain === undefined || projection.chainHash() !== undefined || projection.lastSeq() >= 0) {
+        throw new StaleProjectionError("the projection was built on another chain of earlier journals");
+      }
+      projection.attachChain(chain);
+    }
     const seq = projection.lastSeq();
     if (seq > log.length - 1) {
       throw new StaleProjectionError(`projection is at seq ${seq}, journal ends at ${log.length - 1}`);
@@ -51,29 +65,36 @@ export class Journal {
   /**
    * Opens `<dir>/journal.jsonl` and its projection `<dir>/projection.sqlite`. A projection that
    * lags is caught up; one that does not match is deleted and rebuilt from the journal.
+   *
+   * `memory` is the chain of earlier journals a new run starts on (`loadMemoryChain`). A journal that
+   * already has events reads its own chain from its `run.started`, checked against what it pinned
+   * (`MemoryChainError` when an earlier journal is gone or changed).
    */
-  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean } = {}): Journal {
+  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean; memory?: MemoryChain } = {}): Journal {
+    const { memory, ...logOptions } = options;
+    const file = join(dir, "journal.jsonl");
+    const chain = memory ?? chainOfJournal(file);
     mkdirSync(dir, { recursive: true });
-    const log = EventLog.open(join(dir, "journal.jsonl"), { run, ...options });
+    const log = EventLog.open(file, { run, ...logOptions });
     const path = join(dir, "projection.sqlite");
     try {
       try {
-        return Journal.attach(log, path);
+        return Journal.attach(log, path, chain);
       } catch (error) {
         if (!(error instanceof StaleProjectionError)) throw error;
       }
       for (const suffix of ["", "-wal", "-shm"]) rmSync(path + suffix, { force: true });
-      return Journal.attach(log, path);
+      return Journal.attach(log, path, chain);
     } catch (error) {
       log.close();
       throw error;
     }
   }
 
-  private static attach(log: EventLog, path: string): Journal {
+  private static attach(log: EventLog, path: string, chain: MemoryChain | undefined): Journal {
     const projection = Projection.open(path);
     try {
-      return new Journal(log, projection);
+      return new Journal(log, projection, chain);
     } catch (error) {
       projection.close();
       throw error;
@@ -87,6 +108,15 @@ export class Journal {
 
   private check(event: EventBody, actor: string): void {
     const p = this.projection;
+    // A validation of an earlier run in another Lean environment counts for nothing: nothing cites it.
+    if (event.type === "claim.status_changed" || event.type === "edge.added" || event.type === "edge.status_changed") {
+      const id = event.data.validationId;
+      if (id !== undefined && p.earlierValidation(id)) {
+        throw new Error(
+          `validation ${id} is from an earlier run in another Lean environment: it counts for nothing until its proof passes validate again in this run`,
+        );
+      }
+    }
     switch (event.type) {
       case "claim.created": {
         const d = event.data;

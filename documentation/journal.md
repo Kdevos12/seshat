@@ -106,6 +106,10 @@ the session and the ones the draw left out ([memory.md](memory.md#randomized-inc
 `memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
 ([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
 
+`run.started` may carry `memoryFrom` (`path`, `runId`, `lastHash`, `events`): the earlier run this one
+starts on. The projection replays that journal before this one, and the run is refused when the
+journal no longer ends at `lastHash` ([memory.md](memory.md#memory-across-runs)).
+
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
 Attempt outcomes: `valid`, `invalid`, `no_submission`, `budget_exhausted`, `aborted`, `error`.
@@ -171,7 +175,9 @@ anywhere else is corruption, and the journal refuses to open.
 - a provenance is not a stamp of six non-empty fields; an attempt's `included` and `withheld` are not lists
   of item ids, or name an id twice;
 - `memory.epoch_opened` comes from another actor than the orchestrator, is not the epoch after the
-  current one, or has no reason, no change that opens an epoch, or no provenance.
+  current one, or has no reason, no change that opens an epoch, or no provenance;
+- a claim status or an edge cites a validation of an earlier run recorded in another Lean environment:
+  such a validation counts for nothing here ([memory.md](memory.md#memory-across-runs)).
 
 ## Projection
 
@@ -194,8 +200,22 @@ Applying an event is idempotent: an event at or below the last applied seq is sk
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 5) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 6) is kept in SQLite's
 `user_version`.
+
+A run that starts on earlier journals (`Journal.open(dir, run, {memory})`, which a journal that has
+events reads from its own `run.started`) has its projection built on them: `attachChain` replays them
+before the run's own events, with negative seqs (the last is -1), so the run's own seqs are what they
+would be without a chain. Of an earlier journal the projection keeps the claims, attempts, tool runs,
+lessons, validations, edges, nodes and epochs; its problems, tasks, resumptions and model calls are that
+run's own and are left out, so its spend, its open attempts and its problem outcomes are not this run's
+(`totalSpend`, `openAttempts`, `claimsWithAttempts` and `runSummary` count rows with a seq of 0 or more).
+A journal recorded in another Lean environment keeps no status: its claims stay `open` and its edges
+`proposed`, with the status it recorded in `earlier_status`, and its validations have `carried = 0`
+(`validation` and `validations` do not return them; `earlierValidation(s)` do). `memorySummary()` counts
+what came from the chain. A projection built on another chain (`chainHash`) is rebuilt. `runSummary()`
+counts a claim that carried `proved` for a problem only when that problem's own certification is in this
+journal.
 
 `runSummary()` gives the number of problems, `solved` (claim `proved`), `refuted` (claim
 `refuted`), `candidates` (claim `computed`), attempts, cost in dollars and tokens: the attempts'
@@ -206,10 +226,11 @@ outcomes (`problem.finished`, and the report, which counts those).
 
 ## Blobs
 
-`BlobStore(dir)` keeps texts by their sha256, in `dir/<first two hex digits>/<hash>`: `put(text)`
+`BlobStore(dir, readFrom?)` keeps texts by their sha256, in `dir/<first two hex digits>/<hash>`: `put(text)`
 returns the hash, `putJson(value)` stores the canonical JSON and returns `hashJson(value)`, and
 `get` checks that the content still matches its name. A blob is written to a temporary file and
-then renamed, so no one ever reads half a blob.
+then renamed, so no one ever reads half a blob. `readFrom` lists the blob directories of the earlier runs a run
+starts on: `get` and `has` look in `dir` first and then in those, and nothing is ever written to them.
 
 The events carry hashes, and the blobs hold what they name: the files provers submitted
 (`submissionHash`) and, when the registry is given the store, the input and output of every tool

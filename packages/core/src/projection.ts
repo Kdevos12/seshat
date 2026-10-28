@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { canonicalJson, type Json, mergePatch } from "./canonical-json.ts";
+import type { MemoryChain } from "./chain.ts";
 import type { AttemptCarry, EventDataMap, HarnessEvent, ProblemOutcome, SourceRef } from "./events.ts";
 import type { EpochChange, Provenance } from "./provenance.ts";
 import { type AttemptRole, type ClaimKind, type EdgeKind, SITE_PROVER_SESSION } from "./records.ts";
@@ -19,6 +20,12 @@ export interface ClaimRow {
   kind: ClaimKind;
   parent_id: string | null;
   header: string | null;
+  /**
+   * The status an earlier run's journal recorded for the claim when that run was in another Lean
+   * environment: it counts for nothing (`status` stays what this run established, `open` until a
+   * stored proof passes `validate` again). Null: nothing earlier, or the earlier status carried.
+   */
+  earlier_status: ClaimStatus | null;
 }
 
 export interface AttemptRow {
@@ -103,6 +110,11 @@ export interface ValidationRow {
   negation: boolean;
   /** The problem whose workbench made the check. */
   problem_id: string | null;
+  /**
+   * False for a validation of an earlier run in another Lean environment (`Projection.earlierValidation`):
+   * it is not found by `validation` and `validations`, and no status can cite it.
+   */
+  carried: boolean;
 }
 
 export interface EdgeRow {
@@ -121,6 +133,8 @@ export interface EdgeRow {
   link_statement: string | null;
   created_seq: number;
   updated_seq: number;
+  /** The status an earlier run in another Lean environment recorded; it counts for nothing (as `ClaimRow.earlier_status`). */
+  earlier_status: EdgeStatus | null;
 }
 
 export interface NodeRow {
@@ -272,11 +286,44 @@ export interface RunSummary {
   outputTokens: number;
 }
 
+/** What a run took from the journals it started on (`Projection.memorySummary`), for its report. */
+export interface MemorySummary {
+  /** Claims that came from the earlier journals. */
+  claims: number;
+  /** Of those, the ones whose status carried (same Lean environment), by status; `open` is not listed. */
+  carried: Record<string, number>;
+  /** Claims whose earlier status counts for nothing: another Lean environment, so they are open until a stored proof validates again. */
+  reset: number;
+  attempts: number;
+  toolRuns: number;
+  lessons: number;
+  nodes: number;
+  /** Edges that came from the earlier journals, and the ones among them whose status was reset to `proposed`. */
+  edges: number;
+  edgesReset: number;
+  /** Validations of the earlier journals: the ones that count and the ones that do not. */
+  validations: { carried: number; notCarried: number };
+  /** Epochs the earlier journals opened. */
+  epochs: number;
+}
+
 /** The projection is not a prefix of the journal (it is ahead, from another journal, or older code). */
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 5;
+export const PROJECTION_VERSION = 6;
+
+/** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
+const INHERITED_SKIPPED: readonly string[] = [
+  "run.resumed",
+  "problem.registered",
+  "problem.finished",
+  "model_call.finished",
+  "task.created",
+  "task.assigned",
+  "task.status_changed",
+  "task.routed",
+];
 
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
@@ -287,7 +334,7 @@ create table if not exists problems (
 create table if not exists claims (
   claim_id text primary key, statement_id text not null, statement text not null,
   origin text not null, status text not null, created_seq integer not null, updated_seq integer not null,
-  gloss text, domain_json text, kind text not null, parent_id text, header text);
+  gloss text, domain_json text, kind text not null, parent_id text, header text, earlier_status text);
 create index if not exists claims_by_statement on claims (statement_id);
 create index if not exists claims_by_parent on claims (parent_id);
 create table if not exists attempts (
@@ -312,11 +359,11 @@ create index if not exists lessons_by_claim on lessons (claim_id);
 create table if not exists validations (
   validation_id text primary key, claim_id text not null, attempt_id text, method text not null, verdict text not null,
   reasons_json text not null, axioms_json text not null, submission_hash text not null, seq integer not null,
-  negation integer not null, problem_id text);
+  negation integer not null, problem_id text, carried integer not null default 1);
 create table if not exists edges (
   edge_id text primary key, kind text not null, from_id text not null, status text not null, attempt_id text,
   tool_run_id text, validation_id text, note text, link_name text, link_statement text,
-  created_seq integer not null, updated_seq integer not null);
+  created_seq integer not null, updated_seq integer not null, earlier_status text);
 create index if not exists edges_by_from on edges (from_id);
 create table if not exists edge_targets (
   edge_id text not null, position integer not null, to_id text not null, primary key (edge_id, position));
@@ -379,6 +426,8 @@ export function edgesSql(filter: EdgeFilter): { sql: string; values: SQLInputVal
  */
 export class Projection {
   private readonly db: DatabaseSync;
+  /** Set while the events of an earlier journal are applied: whether that journal's statuses carry. */
+  private inherit: { carried: boolean } | undefined;
 
   private constructor(db: DatabaseSync) {
     this.db = db;
@@ -422,6 +471,39 @@ export class Projection {
     return this.meta("last_hash");
   }
 
+  /** The hash of the chain of earlier journals this projection was built on; undefined: none. */
+  chainHash(): string | undefined {
+    return this.meta("chain_hash");
+  }
+
+  /**
+   * Replays the journals a run starts on, oldest first, before the run's own events (documentation/memory.md,
+   * "Memory across runs"). Their events get negative numbers (the last is -1), so the run's own seqs, and
+   * everything that compares them, are what they would be without a chain. Only for a projection that is
+   * empty. Of an earlier journal, the claims, attempts, tool runs, lessons, validations, edges, nodes and
+   * epochs are kept; its problems, tasks, resumptions and model calls are not (they are that run's
+   * own); a journal recorded in another Lean environment keeps no claim or edge status and no validation
+   * that counts (`ChainSegment.carried`).
+   */
+  attachChain(chain: MemoryChain): void {
+    if (this.lastSeq() >= 0 || this.chainHash() !== undefined) throw new Error("a chain of journals attaches to an empty projection only");
+    let seq = -chain.segments.reduce((n, segment) => n + segment.events.length, 0);
+    this.db.exec("begin");
+    try {
+      for (const segment of chain.segments) {
+        this.inherit = { carried: segment.carried };
+        for (const event of segment.events) this.applyUnchecked({ ...event, seq: seq++ } as HarnessEvent);
+      }
+      this.setMeta("chain_hash", chain.hash);
+      this.db.exec("commit");
+    } catch (error) {
+      this.db.exec("rollback");
+      throw error;
+    } finally {
+      this.inherit = undefined;
+    }
+  }
+
   apply(event: HarnessEvent): void {
     if (event.seq <= this.lastSeq()) return;
     if (event.seq !== this.lastSeq() + 1) {
@@ -441,6 +523,11 @@ export class Projection {
 
   private applyUnchecked(event: HarnessEvent): void {
     const db = this.db;
+    const inherit = this.inherit;
+    // What an earlier run did on its own account is not this run's: its problems, tasks, resumptions and spend.
+    if (inherit !== undefined && INHERITED_SKIPPED.includes(event.type)) return;
+    const kept = inherit !== undefined && !inherit.carried;
+    const insert = inherit !== undefined ? "insert or ignore" : "insert";
     switch (event.type) {
       case "run.started":
       case "run.finished":
@@ -466,7 +553,7 @@ export class Projection {
       case "claim.created": {
         const d = event.data;
         db.prepare(
-          `insert into claims (claim_id, statement_id, statement, origin, status, created_seq, updated_seq, gloss, domain_json,
+          `${insert} into claims (claim_id, statement_id, statement, origin, status, created_seq, updated_seq, gloss, domain_json,
            kind, parent_id, header) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.claimId, d.statementId, d.statement, d.origin, d.status, event.seq, event.seq, d.gloss ?? null,
@@ -475,7 +562,9 @@ export class Projection {
       }
       case "claim.status_changed": {
         const d = event.data;
-        db.prepare("update claims set status = ?, updated_seq = ? where claim_id = ?").run(d.to, event.seq, d.claimId);
+        // Another Lean environment: the status the earlier run reached is remembered, and counts for nothing.
+        if (kept) db.prepare("update claims set earlier_status = ? where claim_id = ?").run(d.to, d.claimId);
+        else db.prepare("update claims set status = ?, updated_seq = ? where claim_id = ?").run(d.to, event.seq, d.claimId);
         return;
       }
       case "attempt.started": {
@@ -486,7 +575,8 @@ export class Projection {
            task_id, site, provenance_json, included_json, withheld_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.attemptId, d.claimId, d.prover, d.iteration, d.model, event.seq, d.role ?? null, d.strategy ?? null, d.subgoal ?? null,
-          d.taskId ?? null, d.site ?? null, d.provenance === undefined ? null : canonicalJson(d.provenance),
+          // The tasks of an earlier run are not in this ledger: its attempts belong to none of this run's.
+          inherit !== undefined ? null : (d.taskId ?? null), d.site ?? null, d.provenance === undefined ? null : canonicalJson(d.provenance),
           d.included === undefined ? null : canonicalJson(d.included), d.withheld === undefined ? null : canonicalJson(d.withheld), epoch);
         const item = db.prepare("insert into attempt_items (attempt_id, item_id, included, epoch) values (?, ?, ?, ?)");
         for (const id of d.included ?? []) item.run(d.attemptId, id, 1, epoch);
@@ -538,34 +628,36 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `insert into validations (validation_id, claim_id, attempt_id, method, verdict, reasons_json, axioms_json,
-           submission_hash, seq, negation, problem_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           submission_hash, seq, negation, problem_id, carried) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.validationId, d.claimId, d.attemptId ?? null, d.method, d.verdict, canonicalJson(d.reasons),
-          canonicalJson(d.axioms), d.submissionHash, event.seq, d.negation === true ? 1 : 0, d.problemId ?? null);
+          canonicalJson(d.axioms), d.submissionHash, event.seq, d.negation === true ? 1 : 0,
+          // The problems of an earlier run are not this run's: a problem's checks are its own run's.
+          inherit !== undefined ? null : (d.problemId ?? null), kept ? 0 : 1);
         return;
       }
       case "edge.added": {
         const d = event.data;
         db.prepare(
-          `insert into edges (edge_id, kind, from_id, status, attempt_id, tool_run_id, validation_id, note, link_name,
-           link_statement, created_seq, updated_seq) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `${insert} into edges (edge_id, kind, from_id, status, attempt_id, tool_run_id, validation_id, note, link_name,
+           link_statement, created_seq, updated_seq, earlier_status) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
-          d.edgeId, d.kind, d.from, d.status, d.attemptId ?? null, d.toolRunId ?? null, d.validationId ?? null, d.note ?? null,
-          d.link?.name ?? null, d.link?.statement ?? null, event.seq, event.seq);
-        const target = db.prepare("insert into edge_targets (edge_id, position, to_id) values (?, ?, ?)");
+          d.edgeId, d.kind, d.from, kept ? "proposed" : d.status, d.attemptId ?? null, d.toolRunId ?? null, d.validationId ?? null, d.note ?? null,
+          d.link?.name ?? null, d.link?.statement ?? null, event.seq, event.seq, kept && d.status !== "proposed" ? d.status : null);
+        const target = db.prepare(`${insert} into edge_targets (edge_id, position, to_id) values (?, ?, ?)`);
         d.to.forEach((to, position) => target.run(d.edgeId, position, to));
         return;
       }
       case "edge.status_changed": {
         const d = event.data;
-        db.prepare("update edges set status = ?, validation_id = ?, updated_seq = ? where edge_id = ?").run(
-          d.to, d.validationId ?? null, event.seq, d.edgeId);
+        if (kept) db.prepare("update edges set earlier_status = ? where edge_id = ?").run(d.to === "proposed" ? null : d.to, d.edgeId);
+        else db.prepare("update edges set status = ?, validation_id = ?, updated_seq = ? where edge_id = ?").run(d.to, d.validationId ?? null, event.seq, d.edgeId);
         return;
       }
       case "node.recorded": {
         const d = event.data;
         db.prepare(
-          "insert into nodes (node_id, kind, claim_id, data_json, created_seq, updated_seq, provenance_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?)",
+          `${insert} into nodes (node_id, kind, claim_id, data_json, created_seq, updated_seq, provenance_json, epoch) values (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           d.nodeId, d.kind, d.claimId ?? null, canonicalJson(d.data), event.seq, event.seq,
           d.provenance === undefined ? null : canonicalJson(d.provenance), this.currentEpoch());
@@ -709,13 +801,27 @@ export class Projection {
     return row.n;
   }
 
+  /** A validation that counts: this run's, or an earlier run's in the same Lean environment. */
   validation(validationId: string): ValidationRow | undefined {
-    const row = this.db.prepare("select * from validations where validation_id = ?").get(validationId) as StoredValidation | undefined;
+    const row = this.db.prepare("select * from validations where validation_id = ? and carried = 1").get(validationId) as StoredValidation | undefined;
     return row === undefined ? undefined : validationRow(row);
   }
 
+  /** The validations of a claim that count, in order. */
   validations(claimId: string): ValidationRow[] {
-    const rows = this.db.prepare("select * from validations where claim_id = ? order by seq").all(claimId) as unknown as StoredValidation[];
+    const rows = this.db.prepare("select * from validations where claim_id = ? and carried = 1 order by seq").all(claimId) as unknown as StoredValidation[];
+    return rows.map(validationRow);
+  }
+
+  /** A validation of an earlier run in another Lean environment: it counts for nothing, and a stored proof of it has to pass `validate` again. */
+  earlierValidation(validationId: string): ValidationRow | undefined {
+    const row = this.db.prepare("select * from validations where validation_id = ? and carried = 0").get(validationId) as StoredValidation | undefined;
+    return row === undefined ? undefined : validationRow(row);
+  }
+
+  /** The claim's validations that do not count (`earlierValidation`), in order. */
+  earlierValidations(claimId: string): ValidationRow[] {
+    const rows = this.db.prepare("select * from validations where claim_id = ? and carried = 0 order by seq").all(claimId) as unknown as StoredValidation[];
     return rows.map(validationRow);
   }
 
@@ -809,13 +915,13 @@ export class Projection {
 
   /** The attempts that started and have no end: the ones a crash cut. */
   openAttempts(): AttemptRow[] {
-    const rows = this.db.prepare("select * from attempts where finished_seq is null order by started_seq").all() as unknown as StoredAttempt[];
+    const rows = this.db.prepare("select * from attempts where finished_seq is null and started_seq >= 0 order by started_seq").all() as unknown as StoredAttempt[];
     return rows.map(attemptRow);
   }
 
   /** The tool runs that started and have no end. */
   openToolRuns(): ToolRunRow[] {
-    return this.db.prepare("select * from tool_runs where finished_seq is null order by started_seq").all() as unknown as ToolRunRow[];
+    return this.db.prepare("select * from tool_runs where finished_seq is null and started_seq >= 0 order by started_seq").all() as unknown as ToolRunRow[];
   }
 
   /** The model calls the lines made for a problem, in order. */
@@ -825,7 +931,7 @@ export class Projection {
 
   /** The claims that any attempt of the run worked for, in the order the first one started. */
   claimsWithAttempts(): string[] {
-    const rows = this.db.prepare("select claim_id from attempts group by claim_id order by min(started_seq)").all() as unknown as Array<{ claim_id: string }>;
+    const rows = this.db.prepare("select claim_id from attempts where started_seq >= 0 group by claim_id order by min(started_seq)").all() as unknown as Array<{ claim_id: string }>;
     return rows.map((row) => row.claim_id);
   }
 
@@ -854,7 +960,7 @@ export class Projection {
 
   /** What the whole run cost so far: every attempt and every model call. */
   totalSpend(): Spend {
-    return this.spend({ from: "attempts", params: [] }, { from: "model_calls", params: [] });
+    return this.spend({ from: "attempts where started_seq >= 0", params: [] }, { from: "model_calls", params: [] });
   }
 
   private spend(attempts: { from: string; params: SQLInputValue[] }, calls?: { from: string; params: SQLInputValue[] }): Spend {
@@ -898,7 +1004,7 @@ export class Projection {
       `select coalesce(site, ?) as site, coalesce(sum(coalesce(usd, charged_usd)), 0) as usd,
        coalesce(sum(coalesce(input_tokens, charged_input_tokens)), 0) as input_tokens,
        coalesce(sum(coalesce(output_tokens, charged_output_tokens)), 0) as output_tokens,
-       coalesce(sum(coalesce(turns, charged_requests)), 0) as requests from attempts group by 1`,
+       coalesce(sum(coalesce(turns, charged_requests)), 0) as requests from attempts where started_seq >= 0 group by 1`,
     ).all(SITE_PROVER_SESSION) as unknown as Array<{ site: string; usd: number; input_tokens: number; output_tokens: number; requests: number }>;
     for (const r of attempts) add(r.site, r.usd, r.input_tokens, r.output_tokens, r.requests);
     const calls = this.db.prepare(
@@ -909,24 +1015,56 @@ export class Projection {
     return [...sites.values()].sort((x, y) => y.usd - x.usd || x.site.localeCompare(y.site));
   }
 
-  /** Counts and costs of the run: the attempts' and the lines' model calls. */
+  /**
+   * Counts and costs of the run: the attempts' and the lines' model calls. Of the earlier journals a run
+   * started on, nothing is counted: a claim whose status carried from one is counted for a problem only
+   * when that problem's own certification (`kernel_replay`, valid) of it is in this journal, so a problem's
+   * outcome comes from its own run (Ruling 23).
+   */
   runSummary(): RunSummary {
     const p = this.db.prepare("select count(*) as n from problems").get() as { n: number };
-    const byStatus = (status: string) =>
+    const byStatus = (status: string, own: string) =>
       (this.db.prepare(
-        "select count(*) as n from problems join claims using (claim_id) where claims.status = ?",
+        `select count(*) as n from problems join claims using (claim_id) where claims.status = ? and (claims.updated_seq >= 0 or exists (
+           select 1 from validations v where v.problem_id = problems.problem_id and v.claim_id = claims.claim_id and v.verdict = 'valid' and ${own}))`,
       ).get(status) as { n: number }).n;
-    const attempts = (this.db.prepare("select count(*) as n from attempts").get() as { n: number }).n;
+    const attempts = (this.db.prepare("select count(*) as n from attempts where started_seq >= 0").get() as { n: number }).n;
     const total = this.totalSpend();
     return {
       problems: p.n,
-      solved: byStatus("proved"),
-      refuted: byStatus("refuted"),
-      candidates: byStatus("computed"),
+      solved: byStatus("proved", "v.method = 'kernel_replay' and v.negation = 0"),
+      refuted: byStatus("refuted", "v.method = 'kernel_replay' and v.negation = 1"),
+      candidates: byStatus("computed", "v.negation = 0"),
       attempts,
       usd: total.usd,
       inputTokens: total.inputTokens,
       outputTokens: total.outputTokens,
+    };
+  }
+
+  /** What the run took from the journals it started on (all zeros for a run that started on none). */
+  memorySummary(): MemorySummary {
+    const count = (sql: string): number => (this.db.prepare(sql).get() as { n: number }).n;
+    const carried: Record<string, number> = {};
+    const byStatus = this.db.prepare(
+      "select status, count(*) as n from claims where created_seq < 0 and updated_seq < 0 and status != 'open' group by status order by status",
+    ).all() as unknown as Array<{ status: string; n: number }>;
+    for (const row of byStatus) carried[row.status] = row.n;
+    return {
+      claims: count("select count(*) as n from claims where created_seq < 0"),
+      carried,
+      reset: count("select count(*) as n from claims where created_seq < 0 and earlier_status is not null and earlier_status != 'open'"),
+      attempts: count("select count(*) as n from attempts where started_seq < 0"),
+      toolRuns: count("select count(*) as n from tool_runs where started_seq < 0"),
+      lessons: count("select count(*) as n from lessons where seq < 0"),
+      nodes: count("select count(*) as n from nodes where created_seq < 0"),
+      edges: count("select count(*) as n from edges where created_seq < 0"),
+      edgesReset: count("select count(*) as n from edges where created_seq < 0 and earlier_status is not null"),
+      validations: {
+        carried: count("select count(*) as n from validations where seq < 0 and carried = 1"),
+        notCarried: count("select count(*) as n from validations where seq < 0 and carried = 0"),
+      },
+      epochs: count("select count(*) as n from epochs where seq < 0"),
     };
   }
 
@@ -989,14 +1127,15 @@ function taskRow({ acceptance_json, budget_json, depends_on_json, blocked_by_jso
   };
 }
 
-type StoredValidation = Omit<ValidationRow, "reasons" | "axioms" | "negation"> & {
+type StoredValidation = Omit<ValidationRow, "reasons" | "axioms" | "negation" | "carried"> & {
   reasons_json: string;
   axioms_json: string;
   negation: number;
+  carried: number;
 };
 
-function validationRow({ reasons_json, axioms_json, negation, ...rest }: StoredValidation): ValidationRow {
-  return { ...rest, reasons: JSON.parse(reasons_json) as string[], axioms: JSON.parse(axioms_json) as string[], negation: negation === 1 };
+function validationRow({ reasons_json, axioms_json, negation, carried, ...rest }: StoredValidation): ValidationRow {
+  return { ...rest, reasons: JSON.parse(reasons_json) as string[], axioms: JSON.parse(axioms_json) as string[], negation: negation === 1, carried: carried === 1 };
 }
 
 type StoredEdge = Omit<EdgeRow, "to">;

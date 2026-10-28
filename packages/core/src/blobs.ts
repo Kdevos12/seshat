@@ -10,9 +10,12 @@ import { canonicalJson, type Json, sha256Hex } from "./canonical-json.ts";
  */
 export class BlobStore {
   readonly dir: string;
+  /** The blob directories of earlier runs, read after this one's and never written (documentation/memory.md, "Memory across runs"). */
+  readonly readFrom: readonly string[];
 
-  constructor(dir: string) {
+  constructor(dir: string, readFrom: readonly string[] = []) {
     this.dir = dir;
+    this.readFrom = readFrom;
     mkdirSync(dir, { recursive: true });
   }
 
@@ -36,13 +39,13 @@ export class BlobStore {
   }
 
   has(hash: string): boolean {
-    return existsSync(this.path(hash));
+    return this.found(hash) !== undefined;
   }
 
-  /** The text stored under `hash`, or undefined. Throws if the file does not match its name. */
+  /** The text stored under `hash` here or in an earlier run's directory, or undefined. Throws if the file does not match its name. */
   get(hash: string): string | undefined {
-    const path = this.path(hash);
-    if (!existsSync(path)) return undefined;
+    const path = this.found(hash);
+    if (path === undefined) return undefined;
     const text = readFileSync(path, "utf8");
     if (sha256Hex(text) !== hash) throw new Error(`blob ${hash} does not match its content`);
     return text;
@@ -53,8 +56,17 @@ export class BlobStore {
     return text === undefined ? undefined : (JSON.parse(text) as Json);
   }
 
-  private path(hash: string): string {
+  private path(hash: string, dir: string = this.dir): string {
     if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error(`not a sha256: ${JSON.stringify(hash)}`);
-    return join(this.dir, hash.slice(0, 2), hash);
+    return join(dir, hash.slice(0, 2), hash);
+  }
+
+  /** The file that holds `hash`: this run's, else the first earlier run's that has it. */
+  private found(hash: string): string | undefined {
+    for (const dir of [this.dir, ...this.readFrom]) {
+      const path = this.path(hash, dir);
+      if (existsSync(path)) return path;
+    }
+    return undefined;
   }
 }
