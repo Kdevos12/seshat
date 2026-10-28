@@ -172,6 +172,20 @@ export interface ItemAttemptRow {
   included: boolean;
 }
 
+/** A decision of the `decide` capability (`decision.made`). */
+export interface DecisionRow {
+  decision_id: string;
+  key: string;
+  problem_id: string;
+  line: string;
+  site: string;
+  backend: string;
+  requested: string;
+  seq: number;
+  /** The event's data. */
+  data: EventDataMap["decision.made"];
+}
+
 export interface ModelCallRow {
   model_call_id: string;
   line: string;
@@ -317,7 +331,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 7;
+export const PROJECTION_VERSION = 8;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -332,6 +346,8 @@ const INHERITED_SKIPPED: readonly string[] = [
   "task.assigned",
   "task.status_changed",
   "task.routed",
+  // A decision is answered from its own run's journal: the same problem id in a chained run is another problem.
+  "decision.made",
 ];
 
 /**
@@ -394,6 +410,10 @@ create table if not exists model_calls (
   outcome text not null, usd real not null, input_tokens integer not null, output_tokens integer not null,
   duration_ms integer not null, seq integer not null, site text);
 create index if not exists model_calls_by_problem on model_calls (problem_id);
+create table if not exists decisions (
+  decision_id text primary key, key text not null, problem_id text not null, line text not null, site text not null,
+  backend text not null, requested text not null, seq integer not null, data_json text not null);
+create index if not exists decisions_by_problem on decisions (problem_id, key);
 create table if not exists tasks (
   task_id text primary key, kind text not null, problem_id text, claim_id text, edge_id text, owner text,
   acceptance_json text not null, budget_json text not null, depends_on_json text not null, parent_task_id text,
@@ -709,6 +729,14 @@ export class Projection {
           d.outputTokens, d.durationMs, event.seq, d.site ?? null);
         return;
       }
+      case "decision.made": {
+        const d = event.data;
+        db.prepare(
+          `insert into decisions (decision_id, key, problem_id, line, site, backend, requested, seq, data_json)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(d.decisionId, d.key, d.problemId, d.line, d.site, d.backend, d.requested, event.seq, canonicalJson(d));
+        return;
+      }
       case "task.created": {
         const d = event.data;
         db.prepare(
@@ -890,6 +918,25 @@ export class Projection {
 
   modelCall(modelCallId: string): ModelCallRow | undefined {
     return this.db.prepare("select * from model_calls where model_call_id = ?").get(modelCallId) as ModelCallRow | undefined;
+  }
+
+  decision(decisionId: string): DecisionRow | undefined {
+    const row = this.db.prepare("select * from decisions where decision_id = ?").get(decisionId) as StoredDecision | undefined;
+    return row === undefined ? undefined : decisionRow(row);
+  }
+
+  /** The decision a problem already holds for a question (`decision.made`'s `key`). */
+  decisionByKey(problemId: string, key: string): DecisionRow | undefined {
+    const row = this.db.prepare("select * from decisions where problem_id = ? and key = ?").get(problemId, key) as StoredDecision | undefined;
+    return row === undefined ? undefined : decisionRow(row);
+  }
+
+  /** The decisions of the run, in order; of one site or one problem when given. */
+  decisions(filter: { problemId?: string; site?: string } = {}): DecisionRow[] {
+    const rows = this.db
+      .prepare("select * from decisions where (? is null or problem_id = ?) and (? is null or site = ?) order by seq")
+      .all(filter.problemId ?? null, filter.problemId ?? null, filter.site ?? null, filter.site ?? null) as unknown as StoredDecision[];
+    return rows.map(decisionRow);
   }
 
   task(taskId: string): TaskRow | undefined {
@@ -1154,6 +1201,12 @@ type StoredTask = Omit<TaskRow, "acceptance" | "budget" | "depends_on" | "blocke
   depends_on_json: string;
   blocked_by_json: string | null;
 };
+
+type StoredDecision = Omit<DecisionRow, "data"> & { data_json: string };
+
+function decisionRow({ data_json, ...rest }: StoredDecision): DecisionRow {
+  return { ...rest, data: JSON.parse(data_json) as DecisionRow["data"] };
+}
 
 function taskRow({ acceptance_json, budget_json, depends_on_json, blocked_by_json, ...rest }: StoredTask): TaskRow {
   return {
