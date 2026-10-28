@@ -24,6 +24,8 @@ export const M18_OPTIONS = {
   maxVariants: 4,
   /** Inner sessions on one variant before its task fails. */
   sessionsPerVariant: 3,
+  /** The dollars the line may spend on a problem that has no dollar budget (no share to count). */
+  unbudgetedUsd: 1,
   /** Proofs of variants shown in a session's briefing as examples (1 or 2), chosen from the run's seeded source. */
   examples: 2,
   /** Seeds the choice of examples. Null: the run's seed. */
@@ -32,6 +34,7 @@ export const M18_OPTIONS = {
 
 interface Settings {
   share: number;
+  unbudgetedUsd: number;
   maxVariants: number;
   sessions: number;
   examples: number;
@@ -47,6 +50,7 @@ function settings(options: Readonly<JsonObject>): Settings {
   const seed = options.seed;
   return {
     share: typeof share === "number" && Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : M18_OPTIONS.share,
+    unbudgetedUsd: typeof options.unbudgetedUsd === "number" && Number.isFinite(options.unbudgetedUsd) ? Math.max(0, options.unbudgetedUsd) : M18_OPTIONS.unbudgetedUsd,
     maxVariants: whole("maxVariants", 0, 12),
     sessions: whole("sessionsPerVariant", 1, 20),
     examples: whole("examples", 1, 2),
@@ -174,25 +178,25 @@ function nodesOf<T>(problem: ProblemContext, kind: string): T[] {
     .filter((record) => record.problemId === problem.problemId);
 }
 
-/** What the line has spent on the problem, from its records, and the dearest inner session it has had. */
-function spendOf(problem: ProblemContext): { usd: number; dearestSession: number } {
-  const sessions = nodesOf<CurriculumSession>(problem, M18_SESSION_KIND).map((r) => r.usd);
-  const generations = nodesOf<CurriculumGeneration>(problem, M18_GENERATION_KIND).map((r) => r.usd);
-  return { usd: [...sessions, ...generations].reduce((a, b) => a + b, 0), dearestSession: Math.max(0, ...sessions) };
+/** What the line has spent on the problem, from its records, and the dearest single call it has made (the request for variants included). */
+function spendOf(problem: ProblemContext): { usd: number; dearest: number } {
+  const costs = [...nodesOf<CurriculumSession>(problem, M18_SESSION_KIND), ...nodesOf<CurriculumGeneration>(problem, M18_GENERATION_KIND)].map((r) => r.usd);
+  return { usd: costs.reduce((a, b) => a + b, 0), dearest: Math.max(0, ...costs) };
 }
 
 /**
  * Whether the line may make another model call for the problem: its share of the problem's budget is the cap, counted in the
- * dollars the problem's ledger counts (the calls go through `problem.llm`, so the ladder sees them). A call starts while the
- * spend is under the cap and the dearest inner session so far still fits, so the line overshoots by at most what its first
- * call costs over the cap.
- * A problem with no dollar budget has no cap to count against; the options bound the work then.
+ * dollars the problem's ledger counts (the calls go through `problem.llm`, so the ladder sees them). Before each call the
+ * dearest call so far is reserved: a call starts only while the spend is under the cap and the spend plus that reserve still
+ * fits. The first call (the request for variants) has no reserve, and a later call may cost more than the dearest before it, so
+ * the cap is held to the extent that calls cost about what the dearest earlier one did; the line passes it by at most what its
+ * last call cost beyond that reserve. A problem with no dollar budget is capped at `unbudgetedUsd` instead.
  */
-export function roomFor(problem: ProblemContext, s: Pick<Settings, "share">): { ok: boolean; spent: number; cap: number } {
+export function roomFor(problem: ProblemContext, s: Pick<Settings, "share" | "unbudgetedUsd">): { ok: boolean; spent: number; cap: number } {
   const limit = problem.budget.limitUsd;
-  const cap = limit === undefined ? Number.POSITIVE_INFINITY : s.share * limit;
-  const { usd, dearestSession } = spendOf(problem);
-  return { ok: usd < cap - 1e-12 && usd + dearestSession <= cap + 1e-12, spent: usd, cap };
+  const cap = limit === undefined ? s.unbudgetedUsd : s.share * limit;
+  const { usd, dearest } = spendOf(problem);
+  return { ok: usd < cap - 1e-12 && usd + dearest <= cap + 1e-12, spent: usd, cap };
 }
 
 /** The line's session records of a task: the ones that ended in the order they were made, and the one a cut left pending, with its node. */
@@ -349,6 +353,9 @@ export function createM18Line(): Line {
   async function begin(problem: ProblemContext): Promise<void> {
     const s = settings(problem.options);
     if (problem.signal.aborted) return;
+    // A problem already settled (a resumed run whose candidate was found) needs no curriculum.
+    const status = problem.memory.claim(problem.claimId)?.status;
+    if (status === "computed" || status === "proved" || status === "refuted") return;
     await generate(problem, s);
     ensureTasks(problem, s);
   }
@@ -361,6 +368,8 @@ export function createM18Line(): Line {
       const status = problem.memory.claim(claimId)?.status;
       if (accepted(status)) {
         // Also what a cut left undone: the claim passed and the edge was not yet checked.
+        const left = sessionsOf(problem, task.taskId).pending;
+        if (left !== undefined) problem.memory.updateNode(left.nodeId, { ok: true, pending: false, reasons: [] }, "the check had ended");
         await soft(problem, "the check of the special_case_of edge", () => checkLink(problem, claimId));
         return { ended: "done", reason: `the claim is ${status ?? "settled"}` };
       }
@@ -464,7 +473,7 @@ export function createM18Line(): Line {
           `theorem variant_${k + 1} ${fact.statement.trim()} := by\n${dedent(proof.proof).split("\n").map((l) => `  ${l}`).join("\n")}${proof.aux.trim() !== "" ? `\n(with the helper lemmas:\n${proof.aux.trim()}\n)` : ""}`,
         );
         const text = [
-          `While the target resisted, easier variants of it were solved first with a small share of the budget. Lean accepted these (they are facts; they do not prove the target):\n${listed.join("\n")}`,
+          `While the target resisted, statements near it were tried first with a small share of the budget. Lean accepted a proof of each of these; only those marked checked are known to follow from the target, and none of them proves it:\n${listed.join("\n")}`,
           examples.length > 0 ? `${examples.length === 1 ? "A proof" : "Proofs"} of ${examples.length === 1 ? "one" : "some"}, as ${examples.length === 1 ? "an example" : "examples"} of what worked on the easier cases:\n\n${examples.join("\n\n")}` : "",
         ].filter((t) => t !== "").join("\n\n");
         return { title: "Special cases already proved", text };

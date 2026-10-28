@@ -3,10 +3,11 @@ import { describe, it } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
 import { createM2Line } from "@seshat/graph";
+import type { Line } from "@seshat/lines";
 import { createM12Line, createM18Line, M18_OPTIONS } from "@seshat/scheduler";
 import { buildReport } from "../src/report.ts";
 import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
-import { HYPOTHESIS, m18Answer, proves, SMALL, variants } from "./m18-helpers.ts";
+import { HYPOTHESIS, m18Answer, proves, SMALL, strictAnswer, variants } from "./m18-helpers.ts";
 import { certifier, sessionPromptOf } from "./resume-helpers.ts";
 
 const nodes = (events: readonly HarnessEvent[], kind: string) => ofType(events, "node.recorded").filter((e) => e.data.kind === kind);
@@ -151,19 +152,19 @@ describe("line M18 in a run", () => {
   });
 
   it("spends no more than its share of the problem's budget, and fails the tasks it cannot pay for", { timeout: 30000 }, async () => {
-    // 4% of the budget, 0.002 dollars: the call for the variants and one session fit, and the second variant's task is refused its session.
+    // 7% of the budget, 0.0035 dollars, with the dearest call reserved: the call for the variants and one session fit, and the second variant's task is refused its session.
     const { events, result } = await demoRun({
       lines: lines(),
-      config: { ...config, lineOptions: { M12: { fractions: [0.1] }, M18: { share: 0.04 } } as never },
+      config: { ...config, lineOptions: { M12: { fractions: [0.1] }, M18: { share: 0.07 } } as never },
       lean: new DemoLean(m18Answer),
       responses: [...script().slice(0, 6), check("bad"), say("notes")],
     });
     const spent = sum(ofType(events, "model_call.finished").filter((m) => m.data.line === "M18").map((m) => m.data.usd));
-    const cap = 0.04 * BUDGET;
+    const cap = 0.07 * BUDGET;
     const calls = ofType(events, "model_call.finished").filter((m) => m.data.line === "M18");
     assert.equal(calls.length, 2, "the call for the variants and one session, not the second");
-    // It overshoots by at most one call: the last call began under the cap.
-    assert.ok(spent > cap - (calls.at(-1)?.data.usd ?? 0) && spent < cap + (calls.at(-1)?.data.usd ?? 0), `${spent} against a cap of ${cap}`);
+    // The second session was not started because the dearest call so far would not fit under the cap.
+    assert.ok(spent <= cap, `${spent} against a cap of ${cap}`);
     const tasks = ofType(events, "task.created").filter((e) => e.data.proposedBy === "line:M18");
     const ends = tasks.map((t) => ofType(events, "task.status_changed").filter((e) => e.data.taskId === t.data.taskId).at(-1));
     assert.deepEqual(ends.map((e) => e?.data.to), ["done", "failed"]);
@@ -222,5 +223,55 @@ describe("line M18 in a run", () => {
     });
     assert.deepEqual(ofType(events, "ladder.escalated"), []);
     assert.deepEqual(ofType(events, "model_call.finished").filter((m) => m.data.line === "M18").map((m) => m.data.site), ["curriculum.variants", "curriculum.prove"]);
+  });
+
+  it("keeps an edge proposed when no closer proves its link lemma, says so in the briefing, and derives nothing for the target", { timeout: 30000 }, async () => {
+    const prompts: string[] = [];
+    const steps = script();
+    const watch = (step: FauxResponseStep) => (context: Parameters<typeof sessionPromptOf>[0]) => {
+      if (!context.messages.some((m) => m.role === "assistant")) prompts.push(sessionPromptOf(context));
+      return step as never;
+    };
+    const { events } = await demoRun({
+      lines: { ...lines(), M2: createM2Line() },
+      config: { ...config, lines: ["M2", "M12", "M18"], lineOptions: { M12: { fractions: [0.1] }, M2: { twin: false } } as never },
+      lean: new DemoLean(strictAnswer),
+      responses: [...steps.slice(0, 7), watch(steps[7] as FauxResponseStep), steps[8] as never],
+    });
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
+    assert.deepEqual(ofType(events, "edge.status_changed").filter((e) => e.data.to === "lean_checked"), []);
+    const third = prompts[0] ?? "";
+    assert.ok(third.includes(`- ${SMALL} (offered as a special case of the target; the implication is not checked)`));
+    assert.match(third, /only those marked checked are known to follow from the target/);
+    assert.equal(ofType(events, "claim.status_changed").some((s) => s.data.claimId === claimId), false);
+    assert.equal(ofType(events, "problem.finished")[0]?.data.outcome, "unsolved");
+  });
+
+  it("leaves the target alone when another line refutes a variant whose edge is unchecked", { timeout: 30000 }, async () => {
+    // The refutation of a special case would refute the target only through a Lean-checked edge; here it is proposed.
+    let refuted = false;
+    const refuter: Line = {
+      id: "M14", title: "refutes a variant", requires: ["M12"], resume: "stateless",
+      hooks: {
+        beforeSession: async (session) => {
+          const edge = session.memory.edges({ kinds: ["special_case_of"] })[0];
+          if (edge === undefined || refuted) return undefined;
+          refuted = true;
+          await session.validate({ claimId: edge.from, negation: true, proof: "exact neg_ok" });
+          return undefined;
+        },
+      },
+    };
+    const steps = script();
+    const { events } = await demoRun({
+      lines: { ...lines(), M14: refuter },
+      config: { ...config, lines: ["M12", "M18", "M14"] },
+      lean: new DemoLean(strictAnswer),
+      responses: steps,
+    });
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId as string;
+    assert.equal(refuted, true);
+    assert.equal(ofType(events, "validation.finished").some((v) => v.data.negation === true && v.data.verdict === "valid"), true, "the variant's negation was accepted");
+    assert.equal(ofType(events, "claim.status_changed").some((s) => s.data.claimId === claimId), false);
   });
 });

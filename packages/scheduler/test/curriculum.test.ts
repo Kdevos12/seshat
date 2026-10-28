@@ -63,7 +63,7 @@ describe("the share of the budget", () => {
   const record = (kind: string, usd: number) => ({ kind, data: { problemId: "prb_1", usd } });
 
   it("allows calls while the spend is under the share, and not a call that the dearest session would pass", () => {
-    const share = { share: 0.2 };
+    const share = { share: 0.2, unbudgetedUsd: 1 };
     assert.deepEqual(roomFor(problem([], 1), share), { ok: true, spent: 0, cap: 0.2 });
     assert.equal(roomFor(problem([record(M18_GENERATION_KIND, 0.1)], 1), share).ok, true);
     // 0.05 for the variants and 0.07 for a session: another session of 0.07 still fits under the cap of 0.2, and the one after it would not.
@@ -71,14 +71,17 @@ describe("the share of the budget", () => {
     assert.equal(after.ok, true);
     assert.ok(Math.abs(after.spent - 0.12) < 1e-12);
     assert.equal(roomFor(problem([record(M18_GENERATION_KIND, 0.05), record(M18_SESSION_KIND, 0.07), record(M18_SESSION_KIND, 0.07)], 1), share).ok, false);
+    // The reserve: a share of 0.20, the request for variants cost 0.19: the next call is not made, whatever it would cost.
+    assert.equal(roomFor(problem([record(M18_GENERATION_KIND, 0.19)], 1), share).ok, false);
+    assert.equal(roomFor(problem([record(M18_GENERATION_KIND, 0.09)], 1), share).ok, true);
     assert.equal(roomFor(problem([record(M18_GENERATION_KIND, 0.25)], 1), share).ok, false, "the cap is passed");
   });
 
-  it("counts only this problem's records, has no cap without a dollar budget, and none to spend at a share of 0", () => {
+  it("counts only this problem's records, is capped at unbudgetedUsd without a dollar budget, and none to spend at a share of 0", () => {
     const other = { kind: M18_SESSION_KIND, data: { problemId: "prb_2", usd: 9 } };
-    assert.equal(roomFor(problem([other], 1), { share: 0.2 }).spent, 0);
-    assert.deepEqual(roomFor(problem([record(M18_SESSION_KIND, 50)], null), { share: 0.2 }), { ok: true, spent: 50, cap: Number.POSITIVE_INFINITY });
-    assert.equal(roomFor(problem([], 1), { share: 0 }).ok, false);
+    assert.equal(roomFor(problem([other], 1), { share: 0.2, unbudgetedUsd: 1 }).spent, 0);
+    assert.deepEqual(roomFor(problem([record(M18_SESSION_KIND, 50)], null), { share: 0.2, unbudgetedUsd: 1 }), { ok: false, spent: 50, cap: 1 });
+    assert.equal(roomFor(problem([], 1), { share: 0, unbudgetedUsd: 1 }).ok, false);
   });
 });
 
