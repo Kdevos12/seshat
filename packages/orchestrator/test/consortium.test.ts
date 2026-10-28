@@ -1,0 +1,119 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import type { FauxResponseStep } from "@earendil-works/pi-ai";
+import type { Line } from "@seshat/lines";
+import { buildReport } from "../src/index.ts";
+import { assertSound, certifier, nth } from "./resume-helpers.ts";
+import { certifyingRegistry, check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { consortium, ended, TWO_PROBLEM_IDS, TWO_PROBLEMS } from "./turns-helpers.ts";
+
+/** A session that fails and says so: two model responses. */
+const failing = (n: number): FauxResponseStep[] => Array.from({ length: n }, (_, i) => [check("bad"), say(`NOTES ${i}: bad is not a lemma.`)]).flat();
+
+describe("breakpoints", () => {
+  it("end the turn at an impasse: the posterior of a problem is low after enough failed attempts", async () => {
+    const run = await demoRun({
+      file: TWO_PROBLEMS,
+      problems: 2,
+      config: { sessions: 6, consortium: consortium({}, { impasse: { posteriorBelow: 0.5, minAttempts: 2 } }) },
+      responses: failing(8),
+    });
+    const turn = ended(run.events);
+    assert.equal(turn.data.reason, "impasse");
+    assert.deepEqual(turn.data.breakpoint, { kind: "impasse", problemId: TWO_PROBLEM_IDS[0] });
+    assert.match(turn.data.detail, /2 finished attempts and its success posterior is 0\.250, below 0\.5/);
+    // No limit was given: only the breakpoint ended the turn. Two sessions, four responses; none after the breakpoint.
+    assert.deepEqual(ofType(run.events, "turn.started")[0]?.data.limit, {});
+    assert.equal(ofType(run.events, "attempt.finished").length, 2);
+    assert.equal(run.faux.state.callCount, 4);
+    assert.equal(ofType(run.events, "problem.registered").length, 1, "the second problem did not start");
+    assert.deepEqual(turn.data.waiting, TWO_PROBLEM_IDS);
+    assert.equal(run.result.turn?.reason, "impasse");
+    assert.match(readFileSync(join(run.dir, "turns", "1", "report.md"), "utf8"), /at an impasse/);
+
+    // The next turn does not stop at the same impasse at once: it takes as many new attempts as an impasse needs.
+    const next = await demoResume({ dir: run.dir, bench: run.bench, responses: failing(8) });
+    const second = ended(next.events);
+    assert.equal(second.data.turn, 2);
+    assert.equal(second.data.reason, "impasse");
+    assert.equal(ofType(next.events, "attempt.finished").length, 4, "two more attempts, then the impasse again");
+    assert.equal(next.faux.state.callCount, 4);
+    assert.equal(ofType(next.events, "run.finished").length, 0);
+    assertSound(next.events);
+  });
+
+  it("end the turn when a problem is settled, once, and the next turn goes on to the other problems", async () => {
+    const c = certifier();
+    const run = await demoRun({
+      file: TWO_PROBLEMS,
+      problems: 2,
+      config: { sessions: 3, consortium: consortium() },
+      registry: certifyingRegistry(c.certifier),
+      certifier: c.certifier,
+      responses: [check("exact trivial_proof"), check("exact trivial_proof")],
+    });
+    const turn = ended(run.events);
+    assert.equal(turn.data.reason, "settled");
+    assert.deepEqual(turn.data.breakpoint, { kind: "settled", problemId: TWO_PROBLEM_IDS[0] });
+    assert.match(turn.data.detail, /add_zero' is proved|is proved/);
+    assert.deepEqual(turn.data.waiting, [TWO_PROBLEM_IDS[1]]);
+    assert.equal(ofType(run.events, "problem.finished")[0]?.data.outcome, "proved");
+    assert.equal(run.faux.state.callCount, 1);
+    assert.equal(ofType(run.events, "run.finished").length, 0, "the run waits: the second problem has not begun");
+
+    const next = await demoResume({ dir: run.dir, bench: run.bench, responses: [check("exact trivial_proof")], registry: certifyingRegistry(c.certifier), certifier: c.certifier });
+    // The second problem is settled too, which is a new breakpoint of the same kind; but no problem is left, so the run ends.
+    const last = ended(next.events);
+    assert.equal(last.data.turn, 2);
+    assert.equal(last.data.reason, "finished");
+    assert.deepEqual(last.data.waiting, []);
+    assert.equal(ofType(next.events, "run.finished").length, 1);
+    assert.equal(next.result.turn?.paused, false);
+    assert.deepEqual(ofType(next.events, "problem.finished").map((e) => e.data.outcome), ["proved", "proved"]);
+    assert.equal(buildReport(next.events).turns?.paused, false);
+  });
+
+  it("end the turn when two informal validators disagree, and report it once", async () => {
+    const line: Line = {
+      id: "M4",
+      title: "records a disagreement",
+      requires: [],
+      resume: "stateless",
+      hooks: {
+        beforeProvers: async (problem) => {
+          problem.memory.recordNode({ kind: "judgment", claimId: problem.claimId, data: { disagreement: true, subject: "the step from n to n+1", votes: ["sound", "gap"] } });
+        },
+      },
+    };
+    const run = await demoRun({ lines: { M4: line }, config: { lines: ["M4"], sessions: 3, consortium: consortium() }, responses: [check("bad"), say("NOTES: x"), check("bad"), say("NOTES: y"), check("exact trivial_proof")] });
+    const turn = ended(run.events);
+    assert.equal(turn.data.reason, "disagreement");
+    assert.equal(turn.data.breakpoint?.kind, "disagreement");
+    assert.match(turn.data.detail, /two informal validators disagree about clm_\w+: the step from n to n\+1/);
+    assert.equal(run.faux.state.callCount, 2, "the first session ended, and no other began");
+
+    // It is not reported again: the next turn works the problem on.
+    const next = await demoResume({ dir: run.dir, bench: run.bench, lines: { M4: line }, responses: [check("bad"), say("NOTES: y"), check("exact trivial_proof")] });
+    assert.equal(ended(next.events).data.reason, "finished");
+    assert.equal(ofType(next.events, "problem.finished")[0]?.data.outcome, "candidate");
+  });
+});
+
+describe("a pause", () => {
+  it("is closed by the next process if the one before ended without closing its turn", async () => {
+    // No limit and no breakpoint: the turn ends with the run. Cut the journal in the middle of the turn, as a kill does.
+    const whole = await demoRun({ config: { sessions: 3, consortium: consortium() }, responses: [check("bad"), say("NOTES"), check("exact trivial_proof")] });
+    const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+    const resumed = await demoResume({ dir, bench: whole.bench, responses: [check("exact trivial_proof")] });
+    const turns = resumed.events.filter((e) => e.type === "turn.started" || e.type === "turn.ended").map((e) => (e.type === "turn.started" ? `started ${e.data.turn}` : `ended ${e.data.turn} ${e.data.reason}`));
+    assert.deepEqual(turns, ["started 1", "ended 1 interrupted", "started 2", "ended 2 finished"]);
+    const interrupted = ofType(resumed.events, "turn.ended")[0];
+    assert.match(interrupted?.data.detail ?? "", /ended without closing it/);
+    assert.deepEqual(interrupted?.data.waiting, [whole.result.problems[0]?.problemId]);
+    assert.equal(resumed.result.problems[0]?.outcome, "candidate");
+    assert.ok(existsSync(join(dir, "turns", "2", "report.md")));
+    assertSound(resumed.events);
+  });
+});

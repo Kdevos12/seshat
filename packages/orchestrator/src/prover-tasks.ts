@@ -56,8 +56,8 @@ export function createProverTasks(tasks: TaskLedger, o: ProverTasksOptions): Pro
 /** How a prover ended, for the end of its task. */
 export type ProverTaskEnd =
   | {
-      /** `ProverResult.stop`. */
-      stop: ProverStop;
+      /** `ProverResult.stop`. A prover that the consortium turn interrupted (`turn`) has not ended: its task stays `running` until the run is resumed. */
+      stop: Exclude<ProverStop, "turn">;
       /** Sessions the prover could use. */
       sessions: number;
       /** What ran out, when the budget did: "the problem's budget" or "the run's budget". */
