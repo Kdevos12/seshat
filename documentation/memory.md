@@ -329,6 +329,13 @@ The earlier run is not copied and not written. `run.started` names it (`memoryFr
 run id, the hash of the last event and the number of events), and the new run's projection replays that
 journal first ([journal.md](journal.md#projection)).
 
+**Where it is.** `memoryFrom` records the earlier directory twice: the absolute `path`, and `relative`, the
+way from the new run's directory to it. A run, a resume and a report look at the relative one first and
+fall back to the absolute one, so a lineage whose directories moved together (a copy of a `runs/` tree)
+still reads; a run that recorded no relative path (older ones) needs the absolute one to exist. Which
+journal is found there is the pin's business, below. `Journal.open` finds what a run started on by reading
+the first line of its journal only.
+
 **Pinned by its last hash.** The earlier journal is read whole, its hash chain is verified, and the run is
 refused unless it ends at the hash the new run pinned. A run is also refused when the earlier journal is
 corrupt, is not a run, or is still being written by a live process. The pin is checked on every open, so a

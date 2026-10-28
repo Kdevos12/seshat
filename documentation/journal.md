@@ -106,8 +106,9 @@ the session and the ones the draw left out ([memory.md](memory.md#randomized-inc
 `memory.epoch_opened` opens the memory's next epoch, with the reason and what changed
 ([memory.md](memory.md#provenance-and-epochs)); only the orchestrator writes it.
 
-`run.started` may carry `memoryFrom` (`path`, `runId`, `lastHash`, `events`): the earlier run this one
-starts on. The projection replays that journal before this one, and the run is refused when the
+`run.started` may carry `memoryFrom` (`path`, `relative?`, `runId`, `lastHash`, `events`): the earlier run
+this one starts on. `relative` is its directory relative to the new run's, tried first so that a lineage
+whose directories moved together still reads; `path` is the absolute one it falls back to. The projection replays that journal before this one, and the run is refused when the
 journal no longer ends at `lastHash` ([memory.md](memory.md#memory-across-runs)).
 
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
