@@ -150,6 +150,42 @@ describe("line M2 across turns", () => {
   }
 });
 
+describe("the refutation side cut while the problem is closing (re-review, N5)", () => {
+  it("records a side that a turn cut inside afterProblem as stopped, with the calls it made, and not as idle with none", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // The turn is still open when afterProblem begins to join the side; the side's first answer, which is long, then ends the turn.
+    const line: Line = {
+      ...m2Line,
+      hooks: {
+        ...m2Line.hooks,
+        afterProblem: async (problem, end) => {
+          release();
+          await m2Line.hooks.afterProblem?.(problem, end);
+        },
+      },
+    };
+    const router = async (context: TranscriptContext): Promise<AssistantMessage> => {
+      if (isTwin(context)) {
+        await gate;
+        return say(lean(`exact bad -- ${"padding ".repeat(5000)}`));
+      }
+      return say("I will stop here.");
+    };
+    const run = await demoRun({
+      lines: { M2: line },
+      config: { lines: ["M2"], sessions: 1, consortium: consortium({ tokens: 8000 }) },
+      lean: new DemoLean(toyAnswer),
+      responses: Array.from({ length: 10 }, () => router),
+    });
+    const spent = ofType(run.events, "turn.ended")[0]?.data.spent.turn;
+    assert.ok((spent?.inputTokens ?? 0) + (spent?.outputTokens ?? 0) > 8000, "the side's answer reached the limit while the problem was closing");
+    assert.equal(twinCalls(run.events), 1, "the side's second call was refused");
+    assert.deepEqual(nodesOf(run.events, "twin").map((n) => [n.checked, n.end, n.tries]), [[true, "stopped", 1]], "not idle with no call");
+    assertSound(run.events);
+  });
+});
+
 describe("the point where a request is sent (review round 1, I3)", () => {
   /** A line that holds prover p2 in `briefing` (inside `openSession`, after the prover's checks of the turn) until `release` is called: it has passed the gates and has not sent. */
   const holding = (held: Promise<void>, release: () => void): Line => ({
@@ -185,6 +221,10 @@ describe("the point where a request is sent (review round 1, I3)", () => {
     const attempts = ofType(run.events, "attempt.finished");
     assert.ok(attempts.every((a) => a.data.stoppedBy === "turn"), attempts.map((a) => a.data.stoppedBy).join(","));
     assert.equal(attempts.some((a) => a.data.error !== undefined), false);
+    // N4: the refused request was never sent, so it left no response and no zero-cost charge behind.
+    assert.equal(ofType(run.events, "attempt.charged").length, 1, "one response was charged: p1's");
+    assert.equal(attempts.reduce((n, a) => n + a.data.turns, 0), 1, "one response in all");
+    assert.ok(ofType(run.events, "attempt.charged").every((e) => e.data.inputTokens + e.data.outputTokens > 0), "no charge of zero tokens");
     assertSound(run.events);
   });
 
