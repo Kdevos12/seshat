@@ -58,7 +58,11 @@ export async function recordHypothesisDag(memory: MemoryStore, claimId: string, 
   for (const step of dag.steps) if (step.dependsOn.length > 0) link(claims[step.id] as string, step.dependsOn.map((id) => claims[id] as string));
   const last = dag.steps.at(-1);
   if (last !== undefined) link(claimId, [claims[last.id] as string]);
-  const node = memory.recordNode({ kind: HYPOTHESIS_DAG_KIND, claimId, learned: true, data: { hypothesis: hypothesisId, proof: dag.proof, steps: dag.steps as unknown as Json, claims, ...(dag.doubt !== undefined ? { doubt: dag.doubt } : {}) } });
+  // Written last, and once: a resumed run that finds the node has nothing left to write.
+  const existing = memory.nodes(HYPOTHESIS_DAG_KIND, { claimId }).find((n) => (n.data as { hypothesis?: string }).hypothesis === hypothesisId);
+  const node =
+    existing ??
+    memory.recordNode({ kind: HYPOTHESIS_DAG_KIND, claimId, learned: true, data: { hypothesis: hypothesisId, proof: dag.proof, steps: dag.steps as unknown as Json, claims, ...(dag.doubt !== undefined ? { doubt: dag.doubt } : {}) } });
   return { nodeId: node.nodeId, dag, claims };
 }
 

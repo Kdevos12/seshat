@@ -14,3 +14,6 @@ export * from "./hypotheses.ts";
 export * from "./interest.ts";
 export * from "./pool.ts";
 export * from "./screen.ts";
+export * from "./columns.ts";
+export * from "./options.ts";
+export * from "./m8.ts";
