@@ -55,7 +55,7 @@ export function effectOf(
 
 /** The deactivation rule of M5 (PE2 item 2): both options. */
 export interface DeactivationRule {
-  /** At least this many attempts on each side. */
+  /** At least this many observations on each side, each weighed by its epoch's probation weight. */
   minObservations: number;
   /** Deactivate when P(effect < 0) is above this. Default 0.9. */
   threshold?: number;
@@ -63,9 +63,15 @@ export interface DeactivationRule {
 
 /**
  * Whether the item should be deactivated: P(effect < 0) above the threshold (0.9) after at least
- * `minObservations` attempts with the item and as many without it.
+ * `minObservations` observations with the item and as many without it. An observation counts with the
+ * probation weight of its epoch (`successes + failures` of the arm, which are weighted), so an item whose
+ * evidence is old and in probation has not enough observations until new outcomes of the current epoch
+ * make up the minimum; in the current epoch an observation counts one, as an attempt does.
  */
 export function shouldDeactivate(effect: ItemEffect, rule: DeactivationRule): boolean {
   const threshold = rule.threshold ?? 0.9;
-  return effect.with.attempts >= rule.minObservations && effect.without.attempts >= rule.minObservations && effect.pNegative > threshold;
+  const observed = (arm: EffectArm) => arm.successes + arm.failures;
+  // The sums of weights can fall a rounding error short of a whole number of attempts.
+  const enough = (arm: EffectArm) => observed(arm) + 1e-9 >= rule.minObservations;
+  return enough(effect.with) && enough(effect.without) && effect.pNegative > threshold;
 }
