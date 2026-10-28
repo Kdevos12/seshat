@@ -14,6 +14,8 @@ import { renderHealth } from "./health.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
+import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
@@ -27,8 +29,16 @@ const usage = `usage:
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
+              [--impasse-posterior X] [--impasse-attempts N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
+  harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
+                [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
+  harness hint RUN_DIR --claim ID "text" [--as NAME]
+  harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
+  harness steer RUN_DIR [--focus CLAIM] [--drop CLAIM] [--forbid STRATEGY [--claim CLAIM]]
+                [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
@@ -47,7 +57,15 @@ Lean environment.
 run --resume: continues a run whose process ended without finishing it (documentation/ledger.md, "Resume"),
 from the journal in RUN_DIR. The run's configuration is the one it began with, so no flag that describes a run
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
-with a line that keeps state in the process (M2, M6, the fleet) cannot be resumed.`;
+with a line that cannot be resumed (a line that keeps state in the process and cannot rebuild it) is refused when it
+starts as a consortium run and when it is resumed.
+Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
+over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
+two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer
+record a person's answer in the journal (it changes no claim's status); resume (or run --resume) starts the next turn.
+--turn-narrative adds a short model-written narrative to the account (one more model call, made after the limit,
+with a budget of its own of $0.25 that --turn-usd does not bound; its markdown is reduced to plain text, every id
+it cites must exist, and a status it states must be the journal's). A turn limit cannot go with --ablation.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -80,6 +98,19 @@ const { positionals, values } = parseArgs({
     "draw-seed": { type: "string" },
     "memory-from": { type: "string" },
     resume: { type: "string" },
+    human: { type: "boolean" },
+    "turn-tokens": { type: "string" },
+    "turn-usd": { type: "string" },
+    "turn-minutes": { type: "string" },
+    "turn-narrative": { type: "boolean" },
+    "impasse-posterior": { type: "string" },
+    "impasse-attempts": { type: "string" },
+    claim: { type: "string" },
+    as: { type: "string" },
+    note: { type: "string" },
+    focus: { type: "string" },
+    drop: { type: "string" },
+    forbid: { type: "string" },
     json: { type: "boolean" },
     find: { type: "boolean" },
     "env-dir": { type: "string" },
@@ -105,6 +136,10 @@ async function main(): Promise<number> {
     if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
+    if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
+    if (command === "hint") return hint();
+    if (command === "sign") return sign();
+    if (command === "steer") return steer();
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(`${error.message}\n\n${usage}`);
@@ -244,6 +279,66 @@ function lineOptions(given: readonly string[]): Record<string, JsonObject> {
   return Object.fromEntries([...options].map(([id, line]) => [id, Object.fromEntries(line)]));
 }
 
+function requireTarget(command: string, what: string): string {
+  if (target === undefined) throw new UsageError(`${command} needs ${what}`);
+  return target;
+}
+
+/** The limit the turn flags give, or undefined when none is given. */
+function turnLimit(): TurnLimit | undefined {
+  const tokens = number("turn-tokens", values["turn-tokens"], undefined);
+  const usd = number("turn-usd", values["turn-usd"], undefined);
+  const minutes = number("turn-minutes", values["turn-minutes"], undefined);
+  for (const [name, value] of [["turn-tokens", tokens], ["turn-usd", usd], ["turn-minutes", minutes]] as const) {
+    if (value !== undefined && !(value > 0)) throw new UsageError(`--${name} must be positive, got ${value}`);
+  }
+  const limit: TurnLimit = { ...(tokens !== undefined ? { tokens } : {}), ...(usd !== undefined ? { usd } : {}), ...(minutes !== undefined ? { minutes } : {}) };
+  return Object.keys(limit).length > 0 ? limit : undefined;
+}
+
+/** Consortium mode: on with --human, and implied by a turn limit or --turn-narrative (documentation/human.md). */
+function consortiumFlags(): ConsortiumConfig | undefined {
+  const limit = turnLimit();
+  const narrative = values["turn-narrative"] === true;
+  const posterior = number("impasse-posterior", values["impasse-posterior"], undefined);
+  const attempts = number("impasse-attempts", values["impasse-attempts"], undefined);
+  if (values.human !== true && limit === undefined && !narrative) {
+    if (posterior !== undefined || attempts !== undefined) throw new UsageError("--impasse-posterior and --impasse-attempts go with --human or a turn limit");
+    return undefined;
+  }
+  if (values.ablation !== undefined) throw new UsageError(ablationRefusal({ consortium: { limit: {}, impasse: DEFAULT_IMPASSE, narrative: false } }) as string);
+  return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative };
+}
+
+/** `harness hint RUN_DIR --claim ID "text"`. */
+function hint(): number {
+  const dir = requireTarget("hint", "a run directory");
+  if (values.claim === undefined) throw new UsageError("hint needs --claim ID: the claim the hint is about");
+  if (third === undefined) throw new UsageError("hint needs the text of the hint");
+  return hintCommand(dir, { claimId: values.claim, text: third, as: values.as, out: (line) => console.log(line) });
+}
+
+/** `harness sign RUN_DIR EDGE_ID`. */
+function sign(): number {
+  const dir = requireTarget("sign", "a run directory");
+  if (third === undefined) throw new UsageError("sign needs the id of the edge to sign");
+  return signCommand(dir, { edgeId: third, note: values.note, as: values.as, out: (line) => console.log(line) });
+}
+
+/** `harness steer RUN_DIR ...`. */
+function steer(): number {
+  const dir = requireTarget("steer", "a run directory");
+  return steerCommand(dir, {
+    focus: values.focus,
+    drop: values.drop,
+    forbid: values.forbid,
+    claimId: values.claim,
+    limit: turnLimit(),
+    as: values.as,
+    out: (line) => console.log(line),
+  });
+}
+
 /** The commit of this repository, with `+dirty` when tracked files have changes. */
 function codeRevision(): string | undefined {
   const git = (args: string[]) =>
@@ -272,6 +367,7 @@ async function run(): Promise<number> {
   if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID (harness models lists them)");
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const consortium = consortiumFlags();
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
@@ -304,6 +400,7 @@ async function run(): Promise<number> {
     tools: [...new Set(values.tool ?? [])],
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
+    ...(consortium !== undefined ? { consortium } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
   const host = hostName(values.host);
@@ -346,10 +443,16 @@ function stoppable(): AbortController {
   return controller;
 }
 
-/** Prints a run's report and says how it ended in the exit code. */
+/** Prints a run's report and says how it ended in the exit code. A run that waits for the team ends well. */
 function finished(result: RunResult, dir: string): number {
   process.stdout.write(renderRunReport(result.report));
   console.log(`Run directory: ${dir}`);
+  if (result.turn !== undefined) {
+    console.log(`Turn ${result.turn.number} ended: ${result.turn.reason} (${result.turn.detail}). The account: ${join(dir, result.turn.account)}`);
+    if (result.turn.paused) {
+      console.log(`The run waits for the team. Answer with harness hint, sign and steer, then: harness resume ${dir} --checkout DIR`);
+    }
+  }
   if (result.stopped === undefined || result.stopped === "budget_exhausted") return 0;
   return result.stopped === "aborted" ? 130 : 1;
 }
@@ -379,6 +482,8 @@ async function resume(directory: string): Promise<number> {
   const host = hostName(values.host);
   const controller = stoppable();
   const codeRev = codeRevision();
+  const limit = turnLimit();
+  if (values.human === true) throw new UsageError("--human is given when a run begins; a run resumed keeps the mode it began with");
   const result = await resumeBench({
     dir,
     index,
@@ -388,6 +493,9 @@ async function resume(directory: string): Promise<number> {
     signal: controller.signal,
     log: (line) => console.error(line),
     ...(codeRev !== undefined ? { codeRev } : {}),
+    ...(limit !== undefined || values["turn-narrative"] === true
+      ? { turns: { ...(limit !== undefined ? { limit } : {}), ...(values["turn-narrative"] === true ? { narrative: true } : {}) } }
+      : {}),
   });
   return finished(result, dir);
 }

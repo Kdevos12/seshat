@@ -196,7 +196,7 @@ describe("MemoryStore edges and nodes", () => {
     const edge = memory.addEdge({ kind: "equiv", from: c, to: [b], link: cb.link });
     assert.deepEqual(memory.equivalents(a), [a, b], "a proposed edge does not count");
     memory.setEdgeStatus(edge.edgeId, "lean_checked", { reason: "link lemma checked", validationId: cb.validationId });
-    memory.addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
+    memory.withActor("human:test").addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
     const ae = await checkedLink(memory, journal, ": P_a → P_e");
     memory.addEdge({ kind: "implies", from: a, to: e, status: "lean_checked", ...ae });
     assert.deepEqual(memory.equivalents(a), [a, b, c]);
@@ -235,7 +235,7 @@ describe("MemoryStore edges and nodes", () => {
     const c = (await memory.ensureClaim({ statement: ": C", origin: "test" })).claimId;
     const parts = memory.addEdge({ kind: "decomposes_into", from: a, to: [b, c] });
     const uses = memory.addEdge({ kind: "uses", from: b, to: c, status: "computed" });
-    const signed = memory.addEdge({ kind: "special_case_of", from: c, to: a, status: "human_signed" });
+    const signed = memory.withActor("human:test").addEdge({ kind: "special_case_of", from: c, to: a, status: "human_signed" });
     assert.deepEqual(parts.to, [b, c]);
     assert.deepEqual(memory.edges({ to: c }).map((x) => x.edgeId), [parts.edgeId, uses.edgeId]);
     assert.deepEqual(memory.edges({ minStatus: "computed" }).map((x) => x.edgeId), [uses.edgeId, signed.edgeId]);
@@ -299,6 +299,20 @@ describe("MemoryStore references", () => {
     const open_ = negationReference({ source: "namespace A\ntheorem «odd name» : True := trivial\n", theorem: "A.«odd name»" });
     assert.equal(open_.theorem, "A.«odd name_negation»");
     assert.throws(() => memory.setReference("clm_x", { source, theorem: "x" }), /unknown claim clm_x/);
+    journal.close();
+  });
+
+  it("lets a line's view write as no person and not as the orchestrator, so the actor string cannot forge a team's answer (N2)", async () => {
+    const { memory, journal } = open();
+    const { claimId } = await memory.ensureClaim({ statement: ": True", origin: "test", kind: "formal" });
+    const view = memory.withActor("line:M1");
+    for (const actor of ["human:carol", "orchestrator"]) {
+      assert.throws(() => view.withActor(actor), /cannot write as/, actor);
+      assert.throws(() => view.withActor("line:M2").withActor(actor), /cannot write as/, actor);
+    }
+    // Another line is still a line, and the root store (the orchestrator's and the commands') still makes the views they need.
+    assert.doesNotThrow(() => view.withActor("line:M2"));
+    assert.doesNotThrow(() => memory.withActor("human:carol").recordNode({ kind: "hint", claimId, data: { provenance: "human", by: "carol", text: "try induction" } }));
     journal.close();
   });
 

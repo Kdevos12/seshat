@@ -22,10 +22,11 @@ The code is in `packages/orchestrator/src`:
 | `feedback.ts` | What a check says to the prover, and the failure class of a check. |
 | `budget.ts` | Ledgers of dollars and tokens. |
 | `report.ts` | The report of a run, built from its journal alone. |
-| `cli.ts` | `harness models`, `harness run` (and `harness run --resume`), `harness report`, with the other commands. |
+| `cli.ts` | `harness models`, `harness run` (and `harness run --resume`), `harness report`, `harness hint`, `sign`, `steer` and `resume`, with the other commands. |
 | `lines.ts` | The lines a run can enable, by id; none is implemented yet ([lines.md](lines.md)). |
 | `line-runtime.ts` | The enabled lines of a run: their contexts, and their hooks at each point of a problem, a prover and a session. |
 | `llm.ts` | The lines' one-shot model calls, charged and recorded. |
+| `turns.ts`, `consortium.ts`, `breakpoints.ts`, `account.ts`, `team.ts`, `team-command.ts` | Consortium mode: turns that end at a limit or a breakpoint, the account of each, and the team's answers ([human.md](human.md)). |
 | `validate.ts` | The lines' `validate`: proofs of any claim, or of its negation, through the validator; and the certification of what they submitted. |
 
 ## A run
@@ -51,6 +52,12 @@ The code is in `packages/orchestrator/src`:
    options (only when there are some, so that an M0 run records what it always did).
 3. Works on the problems in order, `concurrency` at a time.
 4. Records `run.finished`, then writes `report.md` and `report.json`.
+
+With `--human` or a turn limit (consortium mode, [human.md](human.md)) the run also records `turn.started`
+before the work, and the work can end early, at the turn's limit or at a breakpoint: no session, problem
+or model call starts after that, the sessions in flight stop after their response with `stoppedBy: "turn"`,
+and the run records `turn.ended`, writes the account `turns/1/report.md` and exits **without** `run.finished`:
+the run is paused, and `harness resume` goes on. The configuration is recorded (`consortium`) only in such a run.
 
 The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
 (`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), when the Lean server cannot import the libraries of the environment that line M17 puts the run in
@@ -214,6 +221,7 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
 | `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
 | `line:<id>` | An enabled line's `afterCheck` stopped it ([lines.md](lines.md#the-hooks)); no notes are asked for. | `invalid` |
+| `turn` | The consortium turn ended: the session stops after the response in flight, and no notes are asked for. The notes it had go on with a line that says where the turn cut the session ([human.md](human.md#turns)). | `aborted` |
 | `interrupted` | The process ended in the middle of the session. Written by the orchestrator when the run is resumed, at the cost of the session's charges, with no carry ([ledger.md](ledger.md#resume)). | `aborted` |
 
 When `turns` or `context` ends a session that is not the prover's last, one more request asks the
@@ -359,6 +367,7 @@ per prover, can take a ledger past its limit.
 | `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. |
 | `proofs/NAME-HASH.lean` | The file of each candidate proof. |
 | `report.md`, `report.json` | The report. |
+| `turns/N/report.md`, `turns/N/report.json` | The account of turn N, for the research team: only in a consortium run ([human.md](human.md#the-account)). |
 
 ## Commands
 
@@ -400,6 +409,10 @@ Options of `harness run`:
 | `--lines ID,...` | none | The lines to enable, such as `M1,M6,fleet`; repeatable. None: M0 ([lines.md](lines.md)). M1, M2, M6 and `fleet` are the lines built ([m1-identity-memory.md](m1-identity-memory.md), [graph.md](graph.md), [guards.md](guards.md), [fleet.md](fleet.md)); a run that enables a line not built yet refuses to start. |
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
+| `--human` | off | Consortium mode: the run ends a turn at a breakpoint and waits for the team ([human.md](human.md)). Implied by a turn limit or `--turn-narrative`; not with `--ablation`. |
+| `--turn-tokens N`, `--turn-usd X`, `--turn-minutes N` | none | A turn ends when its input and output tokens, its dollars or its minutes reach the limit, counted over every prover and line. |
+| `--turn-narrative` | off | A model adds a short narrative to each turn's account, marked as model-written, with every id it cites checked. |
+| `--impasse-posterior X`, `--impasse-attempts N` | 0.1, 8 | When a problem is at an impasse: after `N` finished attempts, a success posterior at or below `X` (the boundary is included: the defaults fire at the 8th failed attempt; they are untuned). |
 | `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
 | `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
@@ -412,11 +425,17 @@ certifier and the lines have to be the ones it began with. A run with a line tha
 is resumed, or refuses, cannot be resumed, and a run that is complete has nothing to resume: both
 are refused before anything is written, with the reason. M1, M2, M6 and the fleet can be resumed.
 
+`harness resume RUN_DIR --checkout DIR` is the same command. For a consortium run it begins the next turn,
+and takes `--turn-tokens`, `--turn-usd`, `--turn-minutes` and `--turn-narrative` (a limit given here wins over
+the team's steer and over the turn before's); `--human` is given when a run begins and cannot be given
+here. `harness hint`, `harness sign` and `harness steer` record the team's answers between two turns
+([human.md](human.md#the-teams-answers)).
+
 Progress goes to the standard error, one line per problem, and the report goes to the standard
 output at the end. A first Ctrl-C stops the run: the problems in progress end as `aborted`, and the
 journal and the report are still written. A second Ctrl-C quits at once.
 
-Exit codes: 0 when the run is complete or its budget ran out; 1 when it stopped on errors, or on a
+Exit codes: 0 when the run is complete or its budget ran out, or when a consortium run ended its turn and waits for the team; 1 when it stopped on errors, or on a
 bug (printed with its stack); 2 for a mistake in the command or its inputs, found before anything
 is written; 130 when it was interrupted.
 
@@ -439,7 +458,11 @@ provers' sessions, the sites of the lines' one-shot calls), each with its share 
 given by the bench, and novelty, since the bench's problems are solved ones.
 
 A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
-interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`).
+interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`). The next
+turn of a consortium run, after the run paused by itself, is not an interruption and is not in that count.
+
+A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
+waits for the team says it is paused after turn N and where the account is, instead of "has not finished".
 
 ## Tested, and not yet
 

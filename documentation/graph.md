@@ -392,6 +392,16 @@ answered is submitted again). The refutation side has `twinTries` minus the mode
 holds for the site `graph.attempt`; when none is left it ends as `exhausted`. The final `twin` node
 is written once, whether the first process or the resumed one ends the side.
 
+A consortium turn that ends under the side is a pause, not an end ([lines.md](lines.md#interrupted-work)): a
+call the turn refused (`InterruptedError`) leaves `twin_work` at `pending`, and the next turn asks for the
+calls that remain, so a run cut into turns makes the same calls as one that is not (tested for M2 with a
+refutation side, cut at 1, 3,000 and 6,000 tokens in the first turn and 1 and 6,000 in the second).
+
+A turn can also end while the problem is closing, when `afterProblem` joins a side whose last answer crosses
+the limit. The side's next call is refused, the problem closes in this turn and is not resumed, so the `twin` node
+is written as `stopped` with the calls this process made (plus those the journal already held), not as `idle`.
+The `twin_work` node stays `pending`; nothing derives from a `stopped` side.
+
 Not restored: an answer of the side that was lost between its model call and its validation (the
 try is spent), and the earlier failures the side's prompt quotes.
 

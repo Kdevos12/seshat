@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Model, Models, SimpleStreamOptions } from "
 import { type BlobStore, type Journal, newId, SITE } from "@seshat/core";
 import { type LineId, type Llm, type LlmRequest, type LlmResult, withJson } from "@seshat/lines";
 import { type Ledger, messageCost } from "./budget.ts";
+import { type Turn, TurnEndedError } from "./turns.ts";
 
 export interface LineLlmOptions {
   line: LineId;
@@ -18,6 +19,8 @@ export interface LineLlmOptions {
   ledger: Ledger;
   problemId: string;
   signal: AbortSignal;
+  /** The consortium turn, when the run has them: once it is over, no call is sent (documentation/human.md). */
+  turn?: Turn;
 }
 
 /**
@@ -27,6 +30,8 @@ export interface LineLlmOptions {
  */
 export function lineLlm(o: LineLlmOptions): Llm {
   return withJson(async (request: LlmRequest): Promise<LlmResult> => {
+    const over = o.turn?.ended;
+    if (over !== undefined) throw new TurnEndedError(over);
     if (o.signal.aborted) throw new Error(`the problem has ended (${String(o.signal.reason)}): no more model calls`);
     if (o.ledger.exhausted) throw new Error("the problem's budget is spent: no more model calls");
     // Checked before the call is paid for: the journal refuses a site that is not a dotted lowercase name.
@@ -42,6 +47,10 @@ export function lineLlm(o: LineLlmOptions): Llm {
     });
     const modelCallId = newId("mc");
     const started = performance.now();
+    // Read again, immediately before the send: another response may have ended the turn while the model was being resolved.
+    // Nothing between this check and the call awaits, so no response can end the turn in between.
+    const overNow = o.turn?.ended;
+    if (overNow !== undefined) throw new TurnEndedError(overNow);
     const options: SimpleStreamOptions = {
       signal: o.signal,
       ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),

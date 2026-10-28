@@ -545,3 +545,45 @@ describe("a chain across Lean environments (Task 21's hash)", () => {
     }
   });
 });
+
+describe("a run that starts on a consortium run's journal", () => {
+  const turn = (journal: Journal, n: number, ending = true) => {
+    const spent = { usd: 0, inputTokens: 0, outputTokens: 0 };
+    journal.emit("turn.started", { runId: journal.log.run, turn: n, limit: { tokens: 10 }, source: "the run's option", startSpend: spent }, "orchestrator");
+    if (ending) {
+      journal.emit("turn.ended", { runId: journal.log.run, turn: n, reason: "tokens", detail: "a limit", spent: { turn: spent, run: spent }, minutes: 0, waiting: [] }, "orchestrator");
+    }
+  };
+
+  it("does not count the earlier run's turns: its own first turn is turn 1", () => {
+    const dir = join(base(), "run");
+    const a = start(dir, "run_a", ENV_A);
+    claim(a, "clm_a");
+    turn(a, 1);
+    turn(a, 2);
+    a.close();
+    const chain = loadMemoryChain(dir, environment(ENV_A));
+    const b = start(join(base(), "run"), "run_b", ENV_A, chain);
+    assert.deepEqual(b.projection.turns(), { started: 0, ended: 0 });
+    turn(b, 1);
+    assert.deepEqual(b.projection.turns(), { started: 1, ended: 1 });
+    b.close();
+  });
+
+  it("does not take the earlier team's hints and steers: a team's answers belong to the run they were given to", () => {
+    const dir = join(base(), "run");
+    const a = start(dir, "run_a", ENV_A);
+    claim(a, "clm_a");
+    a.emit("node.recorded", { nodeId: "nod_hint", kind: "hint", claimId: "clm_a", data: { provenance: "human", by: "alice", text: "Use induction" } }, "human:alice");
+    a.emit("node.recorded", { nodeId: "nod_steer", kind: "steer", claimId: "clm_a", data: { provenance: "human", by: "alice", action: "drop" } }, "human:alice");
+    a.emit("node.recorded", { nodeId: "nod_evidence", kind: "evidence", claimId: "clm_a", data: { note: "x" } }, "test");
+    a.close();
+    const chain = loadMemoryChain(dir, environment(ENV_A));
+    const b = start(join(base(), "run"), "run_b", ENV_A, chain);
+    assert.deepEqual(b.projection.nodes("hint"), []);
+    assert.deepEqual(b.projection.nodes("steer"), []);
+    assert.equal(b.projection.nodes("evidence").length, 1, "its other records are inherited as before");
+    assert.ok(b.projection.claim("clm_a"), "and its claims");
+    b.close();
+  });
+});
