@@ -1,0 +1,15 @@
+{
+  "name": "@seshat/decide",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The decide capability: typed choices, scores and yes/no answers that order work, by the run's model or Jev, with the forbidden list, the 32k refusal and the journaled decisions.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

@@ -1,3 +1,4 @@
+import { coldStartPriors, DEFAULT_COLD_START_WEIGHT, fadedWeight, MAX_COLD_START_WEIGHT, withPrior } from "@seshat/decide";
 import { type Attempt, attemptDepth, STRATEGIES } from "@seshat/memory";
 import { isInterrupted, LINE_TITLES } from "@seshat/lines";
 import type { Briefing, JsonObject, Line, SessionContext, SessionDecision } from "@seshat/lines";
@@ -63,6 +64,10 @@ export const FLEET_OPTIONS = {
   modes: null,
   /** The most steps in the DAG of an informal-first session. */
   dagSteps: 8,
+  /** Seed the strategy choice with a prior from `decide` (site fleet.cold_start): a Choice over the families, as pseudo-counts of weight `coldStartWeight`. Off: the flat prior. */
+  coldStart: false,
+  /** The total weight of that prior in pseudo-attempts (0 to 4): the journal's own attempts outweigh it after a few. */
+  coldStartWeight: DEFAULT_COLD_START_WEIGHT,
 } satisfies JsonObject;
 
 /** What the fleet reads of its options, checked. */
@@ -80,6 +85,8 @@ interface FleetConfig {
   ranking: string[] | null;
   settings: SettingsConfig;
   dagSteps: number;
+  coldStart: boolean;
+  coldStartWeight: number;
 }
 
 function configOf(options: Readonly<JsonObject>): FleetConfig {
@@ -107,6 +114,8 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
   if (!(gamma >= 0 && gamma <= 1)) throw new Error("the option gamma must be between 0 and 1");
   const epsilon = num("epsilon");
   if (!(epsilon >= 0 && epsilon <= 1)) throw new Error("the option epsilon must be between 0 and 1");
+  const coldStartWeight = num("coldStartWeight");
+  if (!(coldStartWeight >= 0 && coldStartWeight <= MAX_COLD_START_WEIGHT)) throw new Error(`the option coldStartWeight must be between 0 and ${MAX_COLD_START_WEIGHT}`);
   return {
     strategies: bool("strategies"),
     stick: bool("stick"),
@@ -121,6 +130,8 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
     ranking: ranking as string[] | null,
     settings: settingsConfigOf(options),
     dagSteps: Math.max(1, Math.floor(num("dagSteps"))),
+    coldStart: bool("coldStart"),
+    coldStartWeight,
   };
 }
 
@@ -364,7 +375,14 @@ export function createFleet(env: FleetEnv = {}): Line {
             rule = "continued";
           } else {
             const posteriors = strategyPosteriors(attempts, config.partial, weights);
-            const picked = thompson(random, allowed.map((label) => [label, posteriors.get(label)?.choice ?? UNIFORM] as const));
+            // The decision's prior (an option, off by default) is added to what the journal says; a pause passes through, any other failure leaves the flat prior.
+            // It fades with the problem's attempts and is gone after a few (COLD_START_FADE_ATTEMPTS): no decision is asked then.
+            const priorWeight = fadedWeight(config.coldStartWeight, attempts.length);
+            const priors =
+              config.coldStart && session.decide !== undefined && priorWeight > 0
+                ? await coldStartPriors(session.decide, { statement: session.target.statement, families: allowed, weight: priorWeight, log: session.log })
+                : undefined;
+            const picked = thompson(random, allowed.map((label) => [label, withPrior(posteriors.get(label)?.choice, priors?.[label]) ?? UNIFORM] as const));
             if (picked !== undefined) {
               strategy = picked.choice;
               rule = "thompson";

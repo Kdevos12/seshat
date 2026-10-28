@@ -193,6 +193,7 @@ The problem's context (`ProblemContext`):
 | `budget` | The problem's budget as it stands: its limit, what was spent, whether it is exhausted. |
 | `tasks` | The problem's task ledger ([ledger.md](ledger.md)): its tasks, read-only, and a way to propose more ([below](#tasks)). |
 | `log` | A line of the run's progress log, prefixed with the problem and the line. |
+| `decide` | Optional: `decide({site, type, ...})` puts a typed question to the run's decision backend ([decide.md](decide.md)). Absent unless the run switched it on. Its answer only orders work, and a line that uses it lets an interruption through (`isInterrupted`) and re-reads its decisions on resume, so that none is paid twice. |
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
 

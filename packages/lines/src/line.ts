@@ -16,6 +16,7 @@ import type {
 } from "@seshat/core";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking, StatementIdentity } from "@seshat/memory";
 import type { JsonSchema, Registry } from "@seshat/registry";
+import type { Decide } from "./decide.ts";
 import type { LineId } from "./ids.ts";
 
 /** A JSON object: a line's options, a tool's argument schema. */
@@ -227,6 +228,12 @@ export interface ProblemContext {
   registry: Registry;
   /** One-shot model calls, charged to the problem's budget. */
   llm: Llm;
+  /**
+   * Typed decisions that order work (documentation/decide.md). Absent in a context an older caller
+   * builds. A line that uses it lets an interruption through and asks the same question for the
+   * same state when resumed: the journal answers.
+   */
+  decide?: Decide;
   /**
    * Submits a Lean proof of a claim, or of its negation, through the validator. The only way a
    * line raises a claim's status. The one other change of status a line makes is to lower one:

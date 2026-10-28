@@ -100,7 +100,7 @@ describe("harness CLI", () => {
     assert.equal(all.code, 1);
     assert.match(
       all.stdout,
-      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn findstat\.identify\/site \S+ .*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
+      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn decide\.ask\/jev \S+ .*JEV_API_KEY, JEV_MODEL not set\nwarn findstat\.identify\/site \S+ .*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
     );
     assert.match(all.stdout, /^warn lmfdb\.query\/site \S+ /m);
     assert.match(all.stdout, /^warn oeis\.search\/site \S+ /m);
@@ -205,6 +205,10 @@ describe("harness run --lines", () => {
       [["--lines", "M1", "--ablation", "M2"], /^choose the lines with --lines or --ablation, not both/],
       [["--ablation", "M15"], /^--ablation must be M0 or a line \(M1, M10, M2, .*\), got M15/],
       [["--line-option", "M1:k=1"], /^--line-option takes ID\.KEY=VALUE, got "M1:k=1"/],
+      [["--decide-backend", "faux"], /^--decide-backend must be llm or jev, got faux/],
+      [["--decide-site", "prove.search.order"], /^--decide-site takes SITE=llm\|jev\|off/],
+      [["--decide-site", "fidelity.review=jev"], /^decide.sites.fidelity.review: decide is forbidden at fidelity.review/],
+      [["--decide-votes", "12"], /^decide.votes must be a whole number from 1 to 9, got 12/],
     ];
     const results = await Promise.all(options.map(([args]) => harness(["run", "--checkout", checkout, "--model", "a/b", "--all", ...args])));
     options.forEach(([args, message], k) => {
