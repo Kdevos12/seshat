@@ -27,7 +27,7 @@ const d = await problem.decide.decide({
   site: "prove.search.order",            // one of the three sites below
   state: "n : ℕ\n⊢ n + 0 = n",           // compact: a goal, or a statement; never a whole packet
   question: { type: "choice", instructions: "Which first?", options: { simp: "simp", omega: "omega" } },
-  use: "order",                          // the only use, see "Calibration"
+  use: "order",                          // required, and the only value, see "Calibration"
 });
 d.answer; d.probabilities; d.backend; d.model; d.costUsd; d.replayed;
 ```
@@ -97,6 +97,11 @@ at one token per three characters, a deliberately high count for mathematics) is
 `jev` implementation (`DecisionTooLargeError`) rather than sent in the provider's slower, less
 accurate long-context mode. `decide` then answers with the run's model and records why.
 
+The `jev` client does not follow redirects (`redirect: "error"`): a redirect would send the state to
+a host that was never checked against `allowedHosts`. An answer that does not say its cost
+(`usage.cost`) is booked at a conservative estimate of $0.01 (`JEV_UNREPORTED_COST_USD`), since Jev
+charged for the call; it is not refused, which would leave the money off the books.
+
 The model of `jev` is pinned in the host profile through `JEV_MODEL`; a name that ends in `latest`
 is refused, so a decision can always be replayed against the exact snapshot.
 
@@ -136,11 +141,17 @@ A line that calls `decide` follows the contract of interrupted work ([lines.md](
 it lets `isInterrupted(error)` through. Before any backend is called, and again before a fallback,
 `decide` checks whether the consortium turn is over and throws the same error `problem.llm` would.
 
+The same question asked twice at once (several provers starting together) is one ask: the second
+shares the first one's answer (`replayed: true`, paid once, written once), and a failed ask is not
+kept, so the next one asks again.
+
 A decision is identified by its site, state and question. Asked again in the same problem, it is
 answered from the journal (`replayed: true`, `costUsd: 0`), nothing is asked and nothing is paid, so
 a line declared `resume: "stateless"` that asks the same questions of the same state when its hook
 runs again after `harness run --resume` pays once. A decision cut before it was written is made
-again, and a partial vote already paid for stays on the books. Decisions of an earlier journal that
+again, and a partial vote already paid for stays on the books. A decision that fell back is replayed as it was written: if the key is set in the environment when
+the run is resumed, the run's model's answer still stands and Jev is not asked again for that
+question. Decisions of an earlier journal that
 a run starts on (`--memory-from`) are not read: they belong to that run.
 
 ## Calibration: order only
@@ -148,8 +159,9 @@ a run starts on (`--memory-from`) are not read: they belong to that run.
 No threshold on a probability, from either backend, until a reliability curve exists for the site
 (plan change J4). The independent measurements range from an ECE of 0.03 to 0.15 for Jev, and the
 provider's own `confidence` measures the concentration of the distribution, not correctness. So
-`use` is `order`: `use: "threshold"` is refused with `ForbiddenDecisionError`, and the manifest
-accepts only `order`. The curve will come from the journal: a decision is labeled by the Lean
+`use` is required and is `order`: `use: "threshold"`, or a request that does not say, is refused with
+`ForbiddenDecisionError`, and the manifest accepts only `order`. The distribution a `Decision` carries
+is plain data, so a caller that thresholds it anyway is a matter for review, not for the type. The curve will come from the journal: a decision is labeled by the Lean
 outcome (did the chosen or top-ranked candidate lead to a proved subgoal within the problem), and
 `harness ablate` (Task 14) will print the per-site table and the ECE. `decision.made` holds what
 that needs. `createDecide` takes an optional `calibrated(site)`, false everywhere today, for the
@@ -172,9 +184,13 @@ the harness calls the orderer until Task 6 does.
 **The fleet's cold start.** With the fleet option `coldStart` (off by default), the first Thompson
 draw of a strategy is seeded with a Choice over the strategy families allowed at that moment. The
 distribution becomes pseudo-counts Beta(1 + w p, 1 + w (1 - p)) for each family, added to what the
-journal says; `w` is `coldStartWeight`, 2 by default and at most 4, so that a few attempts of the
-journal outweigh it. A weight of 0, the site `off`, no `decide` or a failed decision leaves the flat
+journal says; `w` is `coldStartWeight`, 2 by default and at most 4, and it fades linearly with the
+attempts of the claim (and subgoal) in the journal: gone at 6 (`COLD_START_FADE_ATTEMPTS`), when no
+decision is asked any more, so the prior seeds the first sessions and the journal decides after. A weight of 0, the site `off`, no `decide` or a failed decision leaves the flat
 prior the fleet had. See [fleet.md](fleet.md).
+
+When the orderer or the cold start keeps the flat or given order because a decision failed, it says
+so in the progress log (`log`, passed by the caller; the fleet passes the session's).
 
 ## What is not done, and what has not run
 

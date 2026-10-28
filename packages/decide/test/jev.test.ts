@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { UnavailableError } from "@seshat/registry";
-import { DecisionTooLargeError, ForbiddenDecisionError, JevClient, type JevOptions } from "../src/index.ts";
+import { DecisionTooLargeError, ForbiddenDecisionError, JEV_UNREPORTED_COST_USD, JevClient, type JevOptions } from "../src/index.ts";
 import { fakeJev } from "./fake-jev.ts";
 import { ORDER, RELEVANCE } from "./helpers.ts";
 
@@ -15,6 +15,13 @@ const options = (over: Partial<JevOptions> = {}): JevOptions => ({
 const signal = new AbortController().signal;
 
 describe("the Jev client", () => {
+  it("does not follow a redirect: the state is never sent to a host that was not checked", async () => {
+    let init: RequestInit | undefined;
+    const client = new JevClient({ ...options(), fetch: async (_url, i) => ((init = i), Response.json({ answer: "simp", distribution: { simp: 1 }, usage: { cost: 0 } })) });
+    await client.decide(ORDER, signal);
+    assert.equal(init?.redirect, "error");
+  });
+
   it("posts the state and the question to the Decisions endpoint with the pinned model and the key", async () => {
     const server = fakeJev();
     const out = await new JevClient({ ...options(), fetch: server.fetch }).decide(ORDER, signal);
@@ -39,7 +46,7 @@ describe("the Jev client", () => {
     const server = fakeJev();
     const client = new JevClient({ ...options(), fetch: server.fetch });
     assert.equal((await client.decide(RELEVANCE, signal)).answer, "high");
-    const noul = await client.decide({ site: "conjecture.relevance", state: "s", question: { type: "noul", instructions: "Relevant?" } }, signal);
+    const noul = await client.decide({ site: "conjecture.relevance", state: "s", question: { type: "noul", instructions: "Relevant?" }, use: "order" }, signal);
     assert.deepEqual([noul.answer, noul.probabilities.yes], [false, 0.3]);
     assert.deepEqual(server.seen[0]?.body.levels, ["low", "medium", "high"]);
   });
@@ -71,7 +78,8 @@ describe("the Jev client", () => {
     await assert.rejects(reply({ answer: "simp" }).decide(ORDER, signal), /no distribution/);
     await assert.rejects(reply({ answer: "zzz", distribution: { simp: 1 }, usage: { cost: 0 } }).decide(ORDER, signal), /not one of the question's labels/);
     await assert.rejects(reply({ answer: "simp", distribution: { nope: 1 }, usage: { cost: 0 } }).decide(ORDER, signal), /not one of the question's labels/);
-    await assert.rejects(reply({ answer: "simp", distribution: { simp: 1 } }).decide(ORDER, signal), /no usage.cost/);
+    // An answer that does not say its cost is booked at the conservative estimate, not left free.
+    assert.equal((await reply({ answer: "simp", distribution: { simp: 1 } }).decide(ORDER, signal)).costUsd, JEV_UNREPORTED_COST_USD);
     await assert.rejects(reply({ answer: "simp", distribution: { simp: 0 }, usage: { cost: 0 } }).decide(ORDER, signal), /all zero/);
   });
 

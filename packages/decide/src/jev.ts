@@ -35,6 +35,9 @@ export interface JevOptions {
   fetch?: Fetch;
 }
 
+/** Booked for an answer that does not say its cost (usage.cost): a deliberately high figure for one short decision. */
+export const JEV_UNREPORTED_COST_USD = 0.01;
+
 export class JevClient {
   readonly options: JevOptions;
   readonly host: string;
@@ -82,6 +85,8 @@ export class JevClient {
           headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${this.options.apiKey}` },
           body: JSON.stringify(body),
           signal: joined,
+          // A redirect would send the proof state to a host that was never checked against allowedHosts.
+          redirect: "error",
         });
       } catch (error) {
         const why = joined.aborted ? String(joined.reason instanceof Error ? joined.reason.message : joined.reason) : error instanceof Error ? error.message : String(error);
@@ -112,14 +117,15 @@ export class JevClient {
     const answered = normalize(input.question, body.answer, distribution as Record<string, unknown>);
     const usage = typeof body.usage === "object" && body.usage !== null ? (body.usage as Record<string, unknown>) : {};
     const cost = usage.cost;
-    if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) throw new Error("Jev's answer has no usage.cost: the decision cannot be charged");
+    // Jev charged for the call whether or not it said how much: book a conservative estimate rather than nothing.
+    const charged = typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : JEV_UNREPORTED_COST_USD;
     const promptTokens = usage.prompt_tokens;
     return {
       answer: answered.answer,
       probabilities: answered.probabilities,
       backend: "jev",
       model: typeof body.model === "string" && body.model !== "" ? body.model : this.options.model,
-      costUsd: cost,
+      costUsd: charged,
       ...(typeof promptTokens === "number" && Number.isFinite(promptTokens) ? { inputTokens: promptTokens } : {}),
     };
   }

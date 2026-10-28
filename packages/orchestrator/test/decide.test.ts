@@ -14,6 +14,7 @@ import { fakeJev } from "../../decide/test/fake-jev.ts";
 const ORDER = {
   site: "prove.search.order",
   state: "n : ℕ\n⊢ n + 0 = n",
+  use: "order" as const,
   question: { type: "choice" as const, instructions: "Which first?", options: { simp: "simp", omega: "omega", rfl: "rfl" } },
 };
 

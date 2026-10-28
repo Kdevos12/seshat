@@ -353,7 +353,8 @@ refuses a prompt over 32,000 tokens; `faux` (factory `decide-faux`) is scripted,
 contract has 3 cases. The default backend, the run's own model, is not a registry implementation:
 the orchestrator answers with it when this capability is off, unreachable or refused.
 With `jev` on, short proof states go to a third party; the host profiles say so, and
-[decide.md](decide.md) covers the rest. The request and the answer are guesses from the plan change
+[decide.md](decide.md) covers the rest. The `faux` factory is registered in the production factories
+(it is needed by the tests and by `--decide-backend faux`), but the shipped profiles never list it. The request and the answer are guesses from the plan change
 and have never been made.
 
 For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,

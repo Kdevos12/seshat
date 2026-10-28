@@ -69,10 +69,12 @@ export class Paused extends InterruptedError {}
 export const ORDER = {
   site: "prove.search.order",
   state: "n : ℕ\n⊢ n + 0 = n",
+  use: "order" as const,
   question: { type: "choice" as const, instructions: "Which first?", options: { simp: "simp", omega: "omega", rfl: "rfl" } },
 };
 export const RELEVANCE = {
   site: "conjecture.relevance",
   state: "∀ n : ℕ, n + 0 = n",
+  use: "order" as const,
   question: { type: "score" as const, instructions: "How relevant?", levels: ["low", "medium", "high"] },
 };
