@@ -61,8 +61,8 @@ export function checkRequest(request: DecideRequest, calibrated = false): void {
   const allowed = DECISION_SITES[request.site] ?? [];
   const q = request.question;
   if (!allowed.includes(q.type)) throw new ForbiddenDecisionError(`${request.site} asks ${allowed.join(" or ")}, not a ${q.type}`);
-  if (request.use !== undefined && request.use !== "order" && !calibrated) {
-    throw new ForbiddenDecisionError(`decide is used to order only: a threshold on a probability needs a reliability curve of the site, and ${request.site} has none (plan change J4)`);
+  if (request.use !== "order" && !calibrated) {
+    throw new ForbiddenDecisionError(`decide is used to order only, and the request says so (use: "order"): a threshold on a probability needs a reliability curve of the site, and ${request.site} has none (plan change J4)`);
   }
   if (typeof request.state !== "string" || request.state.trim() === "") throw new DecisionQuestionError("a decision needs a state");
   if (typeof q.instructions !== "string" || q.instructions.trim() === "") throw new DecisionQuestionError("a decision needs instructions");

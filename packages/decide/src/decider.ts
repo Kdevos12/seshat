@@ -92,15 +92,12 @@ export function createDecide(deps: DecideDeps): Decide {
     replayed,
   });
 
-  return {
-    backendFor,
-    async decide(request: DecideRequest): Promise<Decision> {
-      checkRequest(request, deps.calibrated?.(request.site) === true);
-      const requested = backendFor(request.site);
-      if (requested === "off") throw new DecisionOffError(request.site);
-      const key = decisionKey(request);
-      const held = deps.find(key);
-      if (held !== undefined) return decision(held, true);
+  // Questions being answered right now, by key: a second ask of the same question (several provers
+  // starting together) shares the first one's answer instead of paying again and failing to record.
+  const inflight = new Map<string, Promise<Held>>();
+
+  const ask = async (request: DecideRequest, requested: DecisionBackend, key: string): Promise<Held> => {
+    {
       const stop = deps.interrupted();
       if (stop !== undefined) throw stop;
 
@@ -145,7 +142,29 @@ export function createDecide(deps: DecideDeps): Decide {
         ...(answer.toolRunId !== undefined ? { toolRunId: answer.toolRunId } : {}),
       };
       const decisionId = deps.record(draft);
-      return decision({ ...draft, decisionId }, false);
+      return { ...draft, decisionId };
+    }
+  };
+
+  return {
+    backendFor,
+    async decide(request: DecideRequest): Promise<Decision> {
+      checkRequest(request, deps.calibrated?.(request.site) === true);
+      const requested = backendFor(request.site);
+      if (requested === "off") throw new DecisionOffError(request.site);
+      const key = decisionKey(request);
+      const held = deps.find(key);
+      if (held !== undefined) return decision(held, true);
+      const running = inflight.get(key);
+      if (running !== undefined) return decision(await running, true);
+      // No await between the lookup above and this set: one asker per key.
+      const mine = ask(request, requested, key);
+      inflight.set(key, mine);
+      try {
+        return decision(await mine, false);
+      } finally {
+        inflight.delete(key);
+      }
     },
   };
 }

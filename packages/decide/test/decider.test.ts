@@ -39,14 +39,14 @@ describe("decide with the run's model", () => {
 
   it("answers a yes or no with a boolean and the weight of yes and no", async () => {
     const { decide } = rig({ llm: scriptedLlm([verdict("yes")]) });
-    const d = await decide.decide({ site: "conjecture.relevance", state: "s", question: { type: "noul", instructions: "Relevant?" } });
+    const d = await decide.decide({ site: "conjecture.relevance", state: "s", question: { type: "noul", instructions: "Relevant?" }, use: "order" });
     assert.equal(d.answer, true);
     assert.deepEqual(d.probabilities, { yes: 1, no: 0 });
   });
 });
 
 describe("the forbidden list and the shape of a question", () => {
-  const ask = (site: string, question: DecideQuestion = ORDER.question) => rig({ llm: scriptedLlm([]) }).decide.decide({ site, state: "s", question });
+  const ask = (site: string, question: DecideQuestion = ORDER.question) => rig({ llm: scriptedLlm([]) }).decide.decide({ site, state: "s", question, use: "order" });
 
   it("refuses the fidelity review, anything a tool decides, a status and generation, whatever the configuration", async () => {
     for (const site of ["fidelity.review", "statement.equivalence", "claim.status", "lean.progress", "prover.session", "graph.attempt", "conjecture.relevance.generate"]) {
@@ -56,7 +56,7 @@ describe("the forbidden list and the shape of a question", () => {
     await assert.rejects(ask("lean.progress"), /including whether a step made progress/);
     // Even a site configured for Jev, or for the faux backend, is refused before any backend is asked.
     const jev = rig({ config: { backend: "jev", sites: { "prove.search.order": "faux" } }, external: jevAnswer() });
-    await assert.rejects(jev.decide.decide({ site: "fidelity.review", state: "s", question: ORDER.question }), ForbiddenDecisionError);
+    await assert.rejects(jev.decide.decide({ site: "fidelity.review", state: "s", question: ORDER.question, use: "order" }), ForbiddenDecisionError);
     assert.equal(jev.externals.length, 0);
   });
 
@@ -71,6 +71,30 @@ describe("the forbidden list and the shape of a question", () => {
     assert.equal(d.answer, "simp");
   });
 
+  it("refuses a request that does not say what the answer is for", async () => {
+    const { use: _use, ...bare } = ORDER;
+    await assert.rejects(rig({ llm: scriptedLlm([verdict("simp")]) }).decide.decide(bare as never), /to order only/);
+  });
+
+  it("shares one answer between the same question asked at once: paid once, recorded once", async () => {
+    const r = rig({ config: { backend: "faux" }, external: jevAnswer() });
+    const slow = r.deps.external;
+    r.deps.external = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return slow(...args);
+    };
+    const [a, b, c] = await Promise.all([r.decide.decide(ORDER), r.decide.decide(ORDER), r.decide.decide(ORDER)]);
+    assert.equal(r.externals.length, 1);
+    assert.equal(r.recorded.length, 1);
+    assert.deepEqual([a?.replayed, b?.replayed, c?.replayed], [false, true, true]);
+    assert.deepEqual([b?.costUsd, c?.costUsd], [0, 0]);
+    assert.equal(a?.decisionId, b?.decisionId);
+    // A failed ask is not kept: the next one asks again.
+    const failing = rig({ config: { backend: "faux" }, fail: new Error("boom"), llm: scriptedLlm([verdict("simp"), verdict("simp")]) });
+    await Promise.all([failing.decide.decide(ORDER), failing.decide.decide(ORDER)]);
+    assert.equal(failing.recorded.length, 1);
+  });
+
   it("checks the options and levels", async () => {
     const options = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`o${i}`, "x"]));
     await assert.rejects(ask("prove.search.order", { type: "choice", instructions: "q", options: { a: "x" } }), DecisionQuestionError);
@@ -82,7 +106,7 @@ describe("the forbidden list and the shape of a question", () => {
   it("answers 255 options", async () => {
     const options = Object.fromEntries(Array.from({ length: 255 }, (_, i) => [`o${i}`, "x"]));
     const { decide } = rig({ llm: scriptedLlm([verdict("o254")]) });
-    assert.equal((await decide.decide({ site: "prove.search.order", state: "s", question: { type: "choice", instructions: "q", options } })).answer, "o254");
+    assert.equal((await decide.decide({ site: "prove.search.order", state: "s", question: { type: "choice", instructions: "q", options }, use: "order" })).answer, "o254");
   });
 });
 

@@ -58,7 +58,7 @@ function checkCandidates(candidates: readonly OrderCandidate[]): void {
  * votes or Jev separate more. The site `off`, fewer than two candidates, or a failure of the decision
  * (not an interruption) keep the order given.
  */
-export function decideOrderer(decide: Decide, options: { instructions?: string } = {}): CandidateOrderer {
+export function decideOrderer(decide: Decide, options: { instructions?: string; log?: (text: string) => void } = {}): CandidateOrderer {
   return {
     async order(state, candidates) {
       checkCandidates(candidates);
@@ -77,6 +77,7 @@ export function decideOrderer(decide: Decide, options: { instructions?: string }
       } catch (error) {
         // A pause passes through, and so does a refusal of the forbidden list; any other failure keeps the order the search had.
         if (isInterrupted(error) || error instanceof ForbiddenDecisionError) throw error;
+        options.log?.(`decide: the order of ${candidates.length} candidates was kept, the decision failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500));
         return kept;
       }
       const rank = new Map(ranked.map((c, i) => [c.id, i]));

@@ -21,10 +21,11 @@ export interface DecideRequest {
   state: string;
   question: DecideQuestion;
   /**
-   * What the result is used for. Only `order` until a site has a reliability curve (plan change J4);
-   * `threshold` is refused before that.
+   * What the result is used for, stated by the caller and required (plan change J4). Only `order`
+   * until a site has a reliability curve; `threshold` is refused before that, and so is a request
+   * that does not say.
    */
-  use?: "order" | "threshold";
+  use: "order" | "threshold";
 }
 
 export interface Decision {

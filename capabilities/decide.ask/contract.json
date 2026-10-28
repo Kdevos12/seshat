@@ -7,6 +7,7 @@
       "input": {
         "site": "prove.search.order",
         "state": "n : ℕ\n⊢ n + 0 = n",
+        "use": "order",
         "question": {
           "type": "choice",
           "instructions": "Which candidate should be tried first?",
@@ -50,6 +51,7 @@
       "input": {
         "site": "conjecture.relevance",
         "state": "∀ n : ℕ, n + 0 = n",
+        "use": "order",
         "question": {
           "type": "score",
           "instructions": "How relevant is this conjecture to the problem at hand?",
@@ -77,6 +79,7 @@
       "input": {
         "site": "conjecture.relevance",
         "state": "∀ n : ℕ, n + 0 = n",
+        "use": "order",
         "question": {
           "type": "noul",
           "instructions": "Is the conjecture relevant to the problem at hand?"
