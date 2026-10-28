@@ -14,6 +14,7 @@ export interface Scripted {
   problems: { decomposed: string; refuted: string; stuck: string };
   attempts: string[];
   nodes: { counter: string; obstruction: string; conjecture: string; judgment: string };
+  tasks: { pending: string; ready: string };
   edges: { implies: string; decomposes: string };
   validations: { certified: string; fast: string };
 }
@@ -126,6 +127,17 @@ export function scriptedJournal(options: { narrative?: string } = {}): Scripted 
   node("mystery", undefined, { x: 1 });
   node("mystery", undefined, { x: 2 });
   node("zebra", claims.stuck, { stripes: true });
+  // Kinds the lines write and the account has no section for: counted by name, not dropped (review round 1, I5).
+  node("fingerprint", claims.stuck, { digest: "d1" });
+  node("fingerprint", claims.stuck, { digest: "d2" });
+  node("identification", claims.leaf, { same: "x" });
+  node("drift", claims.leaf, { finding: "the statement drifted" });
+  // The fleet's allocations for the open leaf: induction twice (once on the stronger model), automation once.
+  const allocation = (strategy: string, session: number, extra: Record<string, unknown> = {}) =>
+    node("allocation", claims.leaf, { attemptId: attempts[0] ?? "att_x", prover: "p1", session, strategy, rule: "thompson", width: 1, waited: false, successRate: 0.25, attempts: session, ...extra });
+  allocation("induction", 1);
+  allocation("automation", 2);
+  allocation("induction", 3, { escalated: true, model: "faux/strong", successRate: 0.1 });
 
   // A task that waits.
   const taskId = id("tsk");
@@ -134,6 +146,14 @@ export function scriptedJournal(options: { narrative?: string } = {}): Scripted 
     { taskId, kind: "prove", problemId: problems.decomposed, claimId: claims.leaf, dependsOn: [], acceptance: { type: "claim", claimId: claims.leaf, minStatus: "proved" }, budget: { sessions: 3 }, title: "prove part B" },
     o,
   );
+  // A task that is ready (what would run next) and one that a turn cut (running).
+  const ready = id("tsk");
+  journal.emit(
+    "task.created",
+    { taskId: ready, kind: "prove", problemId: problems.decomposed, claimId: claims.computed, dependsOn: [], acceptance: { type: "claim", claimId: claims.computed, minStatus: "proved" }, budget: { sessions: 3 }, title: "certify part C" },
+    o,
+  );
+  journal.emit("task.status_changed", { taskId: ready, from: "pending", to: "ready", reason: "nothing to wait for" }, o);
 
   const hash = options.narrative === undefined ? undefined : blobs.put(options.narrative);
   journal.emit(
@@ -151,5 +171,5 @@ export function scriptedJournal(options: { narrative?: string } = {}): Scripted 
     },
     o,
   );
-  return { dir, journal, blobs, claims, problems, attempts, nodes, edges: { implies, decomposes }, validations };
+  return { dir, journal, blobs, claims, problems, attempts, nodes, edges: { implies, decomposes }, validations, tasks: { pending: taskId, ready } };
 }

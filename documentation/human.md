@@ -124,10 +124,22 @@ answers later. It has:
      the outcomes, and how the last failed one failed (failure class and detail, or how the session ended);
    - the counterexamples (`counter_model` nodes) and the obstructions (`obstruction` nodes);
    - the conjectures (`conjecture` nodes) with their evidence;
-   - what runs next: the problem's open tasks;
-3. the team's answers so far, and those since the turn before;
+   - what runs next: the problem's `ready` tasks (what the next turn would start), then the problem's other
+     tasks that are not over by status (`running` ones are those a turn cut; they go on when the run
+     resumes), and the fleet's leading strategies for the claim and its parts, read from the fleet's
+     `allocation` nodes: how many sessions each strategy was given, how many on the stronger model, and the
+     success rate the fleet last read. A problem whose claim was certified when the turn ended says `proved`
+     or `refuted` and that it closes when the run resumes; the team is asked to read it as settled;
+3. the team's answers so far, and those since the turn before (for a turn that a crash left open, since its
+   start: an answer given after the crash is news to the turn that follows);
 4. the kinds of record the account has no section for, with how many there are (`unknownKinds` in the
-   JSON): they are in the journal, and a kind that is added later appears here until the account learns it.
+   JSON): fingerprints, identifications, drift findings and the lines' other records are counted here and
+   are in the journal, and a kind that is added later appears here until the account learns it;
+5. for a run that started on the memory of earlier runs (`--memory-from`), a section with counts of what it
+   carried (claims and the statuses that carried, attempts, lessons, nodes, edges, validations that count). The
+   account covers this run's own journal: the inherited claims are not listed as the run's, but a claim of
+   this run that an earlier run proved is shown with the status it carries. If the earlier directory has
+   moved, the section says it could not be read and the account is written without it.
 
 Only what the journal holds is in it. A status is the claim's status as the journal has it; the account
 never calls a claim proved because a model, a node or a person said so.

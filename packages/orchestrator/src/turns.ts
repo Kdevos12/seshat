@@ -177,12 +177,23 @@ export function turnRecords(events: readonly HarnessEvent[]): TurnRecord[] {
   return turns;
 }
 
+/**
+ * The seq after which the team's answers are news for the turn that follows `record`. The team answers while no
+ * process works the run (the journal is locked otherwise), so an answer is news when it came after the turn ended.
+ * A turn that a process left open was closed (as `interrupted`) by the next process, after the answers the team gave
+ * once the first had died, so for it the answers count from its start.
+ */
+export function answersSince(record: TurnRecord | undefined): number {
+  if (record === undefined) return -1;
+  return record.end?.reason === "interrupted" ? record.startedSeq : (record.endedSeq ?? record.startedSeq);
+}
+
 /** The limit of the turn that begins now: a flag of the resumption, else the team's newest steer since the last turn ended, else the turn before's, else the run's. */
 export function nextLimit(events: readonly HarnessEvent[], run: ConsortiumConfig, flag?: TurnLimit): { limit: TurnLimit; source: string } {
   if (flag !== undefined && Object.keys(flag).length > 0) return { limit: flag, source: "a flag of the resumption" };
   const turns = turnRecords(events);
   const last = turns.at(-1);
-  const since = last?.endedSeq ?? last?.startedSeq ?? -1;
+  const since = answersSince(last);
   const steer = latestSteer(events, "turn_limit", since);
   if (steer !== undefined && steer.data.action === "turn_limit") {
     return { limit: steer.data.limit, source: `a steer by ${steer.data.by}` };

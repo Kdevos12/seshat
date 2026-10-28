@@ -2,12 +2,26 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { BlobStore, type EventDataMap, type HarnessEvent, type Json, type Journal, newId, type NodeRow, Projection, readEvents, type TaskRow } from "@seshat/core";
+import {
+  BlobStore,
+  chainOfJournal,
+  type EventDataMap,
+  type HarnessEvent,
+  type Json,
+  type Journal,
+  type MemoryChain,
+  type MemorySummary,
+  newId,
+  type NodeRow,
+  Projection,
+  readEvents,
+  type TaskRow,
+} from "@seshat/core";
 import { referencesIn } from "@seshat/guards";
 import { claimAndParts, hintOf, HINT_KIND, STEER_KIND, steerOf } from "./team.ts";
 import { JUDGMENT_KIND } from "./breakpoints.ts";
 import { type Ledger, messageCost } from "./budget.ts";
-import { nextLimit, type ConsortiumConfig, turnRecords } from "./turns.ts";
+import { answersSince, nextLimit, type ConsortiumConfig, turnRecords } from "./turns.ts";
 import { consortiumOf } from "./consortium.ts";
 
 /**
@@ -17,12 +31,12 @@ import { consortiumOf } from "./consortium.ts";
  * A model may add a narrative, which the account marks as model-written and whose ids must resolve.
  */
 
-/** The records the account reads by kind; any other kind of node is only counted. */
-const READ_KINDS = new Set([
-  "counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND,
-  // Read as part of other things, or only counted by name as known:
-  "identification", "fingerprint", "battery", "drift", "watch", "twin", "twin_work", "alias", "derivation", "derivation_intent", "allocation", "lesson", "source",
-]);
+/**
+ * The kinds of node the account has a section for. Every other kind is counted by name under "Records this account
+ * does not detail" (`unknownKinds` in the JSON): a fingerprint, an identification or a drift finding is in the
+ * journal and in the count, and not silently left out.
+ */
+const READ_KINDS = new Set(["counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND, "allocation"]);
 
 const MAX_PER_LIST = 12;
 const MAX_TREE_NODES = 60;
@@ -87,7 +101,22 @@ export interface ProblemAccount {
   counterexamples: RecordLine[];
   obstructions: RecordLine[];
   conjectures: RecordLine[];
+  /** The fleet's leading strategies for the problem's claims: how many sessions each was given, the most first. */
+  fleet: FleetStrategy[];
+  /** The problem's tasks that are `ready`: what would run next. */
   next: string[];
+  /** The problem's other tasks that are not over, by status (running tasks are the ones a turn cut). */
+  otherOpen: Record<string, number>;
+}
+
+export interface FleetStrategy {
+  strategy: string;
+  /** Sessions the fleet gave this strategy. */
+  sessions: number;
+  /** Of those, the sessions given to the stronger model for a hard decision. */
+  escalated: number;
+  /** The single-agent success rate the fleet read when it last chose the strategy. */
+  successRate?: number;
 }
 
 export interface Account {
@@ -110,8 +139,13 @@ export interface Account {
   problems: ProblemAccount[];
   team: { hints: number; signatures: number; steers: number; since: Array<{ kind: string; by: string; text: string }> };
   nextTurn: { limit: { tokens?: number; usd?: number; minutes?: number }; source: string };
-  /** Kinds of node the account does not read, with how many there are. */
+  /** Kinds of node the account has no section for, with how many there are: they are in the journal. */
   unknownKinds: Record<string, number>;
+  /**
+   * What the run took from the earlier journals it started on (`--memory-from`): counts, since the claims are not the
+   * run's own and are not listed. Absent for a run that started on none. `unreadable` when the earlier directory is gone.
+   */
+  inherited?: Pick<MemorySummary, "claims" | "carried" | "reset" | "attempts" | "lessons" | "nodes" | "edges" | "validations"> | { unreadable: string };
   narrative?: { text: string; hash: string; modelWritten: true };
   narrativeRefused?: string;
 }
@@ -127,6 +161,8 @@ export interface Ending {
 export interface AccountOptions {
   /** Text of a narrative blob. */
   blob?: (hash: string) => string | undefined;
+  /** The earlier journals the run started on, when it did: its claims carry their statuses, and a count of what was carried is in the account. */
+  chain?: MemoryChain | { unreadable: string };
   /** The end of a turn that is not in the events yet. */
   ending?: Ending;
 }
@@ -170,11 +206,14 @@ function recordLine(node: NodeRow): RecordLine {
   return { id: node.node_id, kind: node.kind, ...(node.claim_id !== null ? { claimId: node.claim_id } : {}), text: describe(node) };
 }
 
-function projectionOf(events: readonly HarnessEvent[]): Projection {
+function projectionOf(events: readonly HarnessEvent[], chain?: MemoryChain): Projection {
   const p = Projection.inMemory();
+  if (chain !== undefined) p.attachChain(chain);
   for (const event of events) p.apply(event);
   return p;
 }
+
+const isChain = (chain: AccountOptions["chain"]): chain is MemoryChain => chain !== undefined && !("unreadable" in chain);
 
 /** The turn's events: those up to its `turn.ended`, or all of them while it has none. */
 function eventsOfTurn(events: readonly HarnessEvent[], turn: number): HarnessEvent[] {
@@ -191,7 +230,8 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const events = eventsOfTurn(allEvents, turn);
   const started = events.find((e) => e.type === "run.started");
   if (started === undefined || started.type !== "run.started") throw new Error("the journal has no run.started event");
-  const p = projectionOf(events);
+  const chain = isChain(options.chain) ? options.chain : undefined;
+  const p = projectionOf(events, chain);
   const records = turnRecords(events);
   const record = records.find((r) => r.turn === turn);
   if (record === undefined) throw new Error(`the journal has no turn ${turn}`);
@@ -210,6 +250,11 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const statusChanges = new Map<string, Array<EventDataMap["claim.status_changed"] & { seq: number }>>();
   const stoppedByTurn = new Map<string, number>();
   const attemptClaim = new Map<string, string>();
+  // The validations of the earlier journals were recorded by their actors too.
+  for (const event of chain?.segments.flatMap((segment) => segment.events) ?? []) {
+    if (event.type === "validation.finished") validationActor.set(event.data.validationId, event.actor);
+    else if (event.type === "edge.status_changed" && event.data.to === "human_signed") signedBy.set(event.data.edgeId, event.actor);
+  }
   for (const event of events) {
     if (event.type === "validation.finished") validationActor.set(event.data.validationId, event.actor);
     else if (event.type === "edge.status_changed" && event.data.to === "human_signed") signedBy.set(event.data.edgeId, event.actor);
@@ -220,7 +265,7 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
 
   // The team's answers: what exists, and what came since the turn before.
   const lastBefore = records.filter((r) => r.turn < turn).at(-1);
-  const sinceSeq = lastBefore?.endedSeq ?? -1;
+  const sinceSeq = answersSince(lastBefore);
   const forbidden = p.nodes(STEER_KIND).flatMap((node) => {
     const steer = steerOf(node.data);
     return steer?.action === "forbid_strategy" ? [{ strategy: steer.strategy, claimId: steer.claimId }] : [];
@@ -239,11 +284,15 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const signatures = events.filter((e) => e.type === "edge.status_changed" && e.data.to === "human_signed").length;
 
   const problems: ProblemAccount[] = [];
+  /** Problems whose claim was certified since the turn before ended: the team has not read them as settled yet. */
+  const settledNow: string[] = [];
+  const previousEnd = lastBefore?.endedSeq ?? -1;
   const waitingSet = new Set(end?.waiting ?? []);
   for (const problem of p.problems()) {
     const scope = claimAndParts(p, problem.claim_id);
     const claim = p.claim(problem.claim_id);
     const claimStatus = claim?.status ?? "unknown";
+    if ((claimStatus === "proved" || claimStatus === "refuted") && claim !== undefined && claim.updated_seq > previousEnd) settledNow.push(problem.problem_id);
 
     // How it got there: the claim's status changes in order, with what justified each.
     const history: string[] = [];
@@ -307,18 +356,28 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     const obstructions = about("obstruction");
     const conjectures = about("conjecture");
 
-    // What runs next: the tasks still open, or the sentence that says nothing does.
+    // The fleet's leading strategies: what its `allocation` nodes say it gave sessions to, for the claim and its parts.
+    const fleet = fleetStrategies(scope.flatMap((id) => p.nodes("allocation", id)));
+
+    // What would run next is the problem's `ready` tasks. The others that are not over are said by status: a `running`
+    // task is one the turn cut, which goes on when the run resumes; a `pending` or `blocked` one waits for another.
     const open = p.tasks({ problemId: problem.problem_id }).filter((task) => !["done", "failed", "cancelled"].includes(task.status));
-    const next = problem.finished_seq !== null ? [] : open.slice(0, MAX_PER_LIST).map(taskLine);
-    if (problem.finished_seq === null && next.length === 0) next.push("no task is open: the next turn plans the problem again");
+    const live = problem.finished_seq === null;
+    const next = live ? open.filter((task) => task.status === "ready").slice(0, MAX_PER_LIST).map(taskLine) : [];
+    const otherOpen: Record<string, number> = {};
+    if (live) for (const task of open) if (task.status !== "ready") otherOpen[task.status] = (otherOpen[task.status] ?? 0) + 1;
 
     problems.push({
       problemId: problem.problem_id,
       target: problem.target,
       claimId: problem.claim_id,
-      state: problem.outcome ?? (waitingSet.has(problem.problem_id) || (end === undefined && attemptsOfProblem.length === 0) ? "waiting" : "in progress"),
+      state: problem.outcome ?? (claimStatus === "proved" || claimStatus === "refuted" ? claimStatus : waitingSet.has(problem.problem_id) || (end === undefined && attemptsOfProblem.length === 0) ? "waiting" : "in progress"),
       claimStatus,
-      ...(problem.reason !== null ? { reason: clip(problem.reason, 300) } : {}),
+      ...(problem.reason !== null
+        ? { reason: clip(problem.reason, 300) }
+        : problem.outcome === null && (claimStatus === "proved" || claimStatus === "refuted")
+          ? { reason: `the claim was certified (${claimStatus}); the problem closes when the run resumes` }
+          : {}),
       history: history.slice(-MAX_PER_LIST),
       attempts: attemptsOfProblem.length,
       sessionsStoppedByTurn: turnStopped,
@@ -330,7 +389,9 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
       counterexamples: counterexamples.slice(0, MAX_PER_LIST),
       obstructions: obstructions.slice(0, MAX_PER_LIST),
       conjectures: conjectures.slice(0, MAX_PER_LIST),
+      fleet,
       next,
+      otherOpen,
     });
   }
 
@@ -342,8 +403,14 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const bp = end?.breakpoint;
   if (bp?.kind === "impasse" && bp.problemId !== undefined) asked.push(`Problem ${bp.problemId} is at an impasse: a hint (harness hint --claim), a steer (drop it, forbid a strategy) or a signature may unblock it.`);
   if (bp?.kind === "settled" && bp.problemId !== undefined) asked.push(`Problem ${bp.problemId} is settled: read its claims and their checks below, and sign the edges you accept (harness sign).`);
+  // A claim certified in the last moment of a turn (a candidate held at the limit is certified before the run exits) is settled
+  // whatever ended the turn: the team is asked to read it too.
+  for (const id of settledNow) {
+    if (bp?.kind === "settled" && bp.problemId === id) continue;
+    asked.push(`Problem ${id} is settled (its claim was certified in this turn): read its claims and their checks below, and sign the edges you accept (harness sign).`);
+  }
   if (bp?.kind === "disagreement") asked.push(`Two informal validators disagree (${bp.nodeId ?? "see the judgment"}): decide which reading is right (harness hint, or harness sign on the edge in question).`);
-  if (end !== undefined && ["tokens", "usd", "minutes"].includes(end.reason)) asked.push(`The turn's ${end.reason} limit was reached: set the next turn's limit (harness steer --turn-limit) or resume as it is.`);
+  if (end !== undefined && ["tokens", "usd", "minutes"].includes(end.reason)) asked.push(`The turn's ${end.reason} limit was reached: set the next turn's limit (harness steer --turn-tokens, --turn-usd or --turn-minutes) or resume as it is.`);
   if (end !== undefined && end.waiting.length === 0) asked.push("Nothing waits: the run is over.");
   for (const node of disagreements.slice(0, 3)) if (bp?.nodeId !== node.node_id) asked.push(`Informal validators disagree about ${node.claim_id ?? node.node_id} (${node.node_id}).`);
 
@@ -353,6 +420,7 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   for (const event of events) if (event.type === "node.recorded") kinds.set(event.data.kind, (kinds.get(event.data.kind) ?? 0) + 1);
   for (const [kind, n] of [...kinds].sort(([a], [b]) => (a < b ? -1 : 1))) if (!READ_KINDS.has(kind)) unknownKinds[kind] = n;
 
+  const inherited = options.chain === undefined ? undefined : isChain(options.chain) ? inheritedOf(p) : { unreadable: options.chain.unreadable };
   const total = p.totalSpend();
   const limit = record.limit;
   const next = nextLimit(events, consortium ?? { limit: {}, impasse: { posteriorBelow: 0.1, minAttempts: 8 }, narrative: false });
@@ -389,9 +457,31 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     },
     nextTurn: { limit: next.limit, source: next.source },
     unknownKinds,
+    ...(inherited !== undefined ? { inherited } : {}),
     ...(narrativeText !== undefined && narrativeHash !== undefined ? { narrative: { text: narrativeText, hash: narrativeHash, modelWritten: true as const } } : {}),
     ...(record.end?.narrative?.rejected !== undefined ? { narrativeRefused: record.end.narrative.rejected } : {}),
   };
+}
+
+function inheritedOf(p: Projection): NonNullable<Account["inherited"]> {
+  const { claims, carried, reset, attempts, lessons, nodes, edges, validations } = p.memorySummary();
+  return { claims, carried, reset, attempts, lessons, nodes, edges, validations };
+}
+
+/** The strategies the fleet gave sessions to, from its `allocation` nodes, the most sessions first. */
+function fleetStrategies(nodes: readonly NodeRow[]): FleetStrategy[] {
+  const byStrategy = new Map<string, FleetStrategy>();
+  for (const node of nodes) {
+    const data = object(node.data);
+    const strategy = data?.strategy;
+    if (typeof strategy !== "string" || strategy === "") continue;
+    const entry = byStrategy.get(strategy) ?? { strategy, sessions: 0, escalated: 0 };
+    entry.sessions += 1;
+    if (data?.escalated === true) entry.escalated += 1;
+    if (typeof data?.successRate === "number") entry.successRate = data.successRate;
+    byStrategy.set(strategy, entry);
+  }
+  return [...byStrategy.values()].sort((a, b) => b.sessions - a.sessions || (a.strategy < b.strategy ? -1 : 1)).slice(0, 5);
 }
 
 function taskLine(task: TaskRow): string {
@@ -488,25 +578,57 @@ export function renderAccount(a: Account): string {
     if (x.conjectures.length === 0) lines.push("- None recorded.");
     for (const r of x.conjectures) lines.push(`- \`${r.id}\`${r.claimId !== undefined ? ` on \`${r.claimId}\`` : ""}: ${r.text}`);
     lines.push("", "### What runs next", "");
-    if (x.next.length === 0) lines.push(x.state === "proved" || x.state === "refuted" || x.state === "candidate" || x.state === "unsolved" ? "- Nothing: the problem has its outcome." : "- Nothing is planned.");
-    for (const n of x.next) lines.push(`- ${n}`);
+    const settledOpen = (x.state === "proved" || x.state === "refuted") && x.reason?.includes("closes when the run resumes") === true;
+    const outcomeKnown = ["proved", "refuted", "candidate", "unsolved", "aborted", "error", "skipped"].includes(x.state) && !settledOpen;
+    if (outcomeKnown) lines.push("- Nothing: the problem has its outcome.");
+    else if (settledOpen) lines.push("- Nothing to search: the claim is certified, and the next turn closes the problem.");
+    else if (x.next.length === 0) lines.push("- No task is ready. A resumed turn takes the problem up from the journal, where it left it.");
+    for (const n of x.next) lines.push(`- Ready: ${n}`);
+    const others = Object.entries(x.otherOpen).map(([status, n]) => `${n} ${status}${status === "running" ? " (a turn cut them; they go on when the run resumes)" : ""}`);
+    if (!outcomeKnown && others.length > 0) lines.push(`- Other tasks that are not over: ${others.join(", ")}.`);
+    if (x.fleet.length > 0) {
+      lines.push(`- The fleet's leading strategies: ${x.fleet.map((f) => `\`${f.strategy}\` (${plural(f.sessions, "session")}${f.escalated > 0 ? `, ${f.escalated} on the stronger model` : ""}${f.successRate !== undefined ? `, success rate ${f.successRate}` : ""})`).join("; ")}.`);
+    }
   }
 
   lines.push("", "## The team's answers", "");
   lines.push(`So far: ${plural(a.team.hints, "hint")}, ${plural(a.team.signatures, "signature")}, ${plural(a.team.steers, "steer")}.`);
   for (const s of a.team.since) lines.push(`- Since the turn before: ${s.kind} by ${s.by}: ${s.text}`);
   lines.push("", "Answer with `harness hint <runDir> --claim ID \"text\"`, `harness sign <runDir> EDGE_ID`, `harness steer <runDir> ...`, then `harness resume <runDir>`. Several people may answer before one resumes.");
+  if (a.inherited !== undefined) {
+    lines.push("", "## Memory carried over from earlier runs", "");
+    if ("unreadable" in a.inherited) {
+      lines.push(`The run started on the memory of earlier runs, which could not be read now (${a.inherited.unreadable}). This account covers this run's own journal.`);
+    } else {
+      const i = a.inherited;
+      lines.push(
+        `The run started on the memory of earlier runs: ${plural(i.claims, "claim")} (${Object.keys(i.carried).length === 0 ? "none with a status that carried" : counts(i.carried)}${i.reset > 0 ? `; ${i.reset} reset to open in another Lean environment` : ""}), ` +
+          `${plural(i.attempts, "attempt")}, ${plural(i.lessons, "lesson")}, ${plural(i.nodes, "node")}, ${plural(i.edges, "edge")}, ${i.validations.carried} validations that count and ${i.validations.notCarried} that do not. ` +
+          `They are counted here and not listed: this account covers this run's own journal, and none of the earlier team's hints and steers apply to it.`,
+      );
+    }
+  }
   if (Object.keys(a.unknownKinds).length > 0) {
-    lines.push("", "## Records this account does not read", "", `The journal holds records of kinds this account has no section for: ${counts(a.unknownKinds)}. They are in the journal.`);
+    lines.push("", "## Records this account does not detail", "", `The journal holds records of kinds this account has no section for: ${counts(a.unknownKinds)}. They are in the journal (fingerprints, identifications, drift findings and the lines' other records are among them).`);
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** The earlier journals a run started on, read again; or why they cannot be (a directory that moved). */
+function chainOption(journalPath: string): Pick<AccountOptions, "chain"> {
+  try {
+    const chain = chainOfJournal(journalPath);
+    return chain === undefined ? {} : { chain };
+  } catch (error) {
+    return { chain: { unreadable: error instanceof Error ? error.message.slice(0, 200) : String(error) } };
+  }
 }
 
 /** Writes `turns/<n>/report.md` and `report.json` in a run directory, from its journal alone. */
 export function writeAccount(dir: string, turn: number): Account {
   const events = readEvents(join(dir, "journal.jsonl"));
   const blobs = new BlobStore(join(dir, "blobs"));
-  const account = buildAccount(events, turn, { blob: (hash) => blobs.get(hash) });
+  const account = buildAccount(events, turn, { blob: (hash) => blobs.get(hash), ...chainOption(join(dir, "journal.jsonl")) });
   const out = join(dir, "turns", String(turn));
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "report.json"), `${JSON.stringify(account, null, 2)}\n`);
@@ -632,8 +754,8 @@ export async function turnNarrative(o: {
   log?: (message: string) => void;
 }): Promise<{ hash?: string; rejected?: string }> {
   const events = readEvents(o.journal.log.path);
-  const account = buildAccount(events, o.turn, { ending: o.ending });
-  const p = projectionOf(events);
+  const account = buildAccount(events, o.turn, { ending: o.ending, ...(o.journal.chain !== undefined ? { chain: o.journal.chain } : {}) });
+  const p = projectionOf(events, o.journal.chain);
   const system =
     `You write a short narrative of one turn of a mathematical research run for the research team, from the account you are given and nothing else. ` +
     `At most ${NARRATIVE_WORDS} words, plain prose. Every sentence that speaks of a claim, edge, node, attempt, problem, validation or task cites the id the account gives it as [cite: ID]. ` +
