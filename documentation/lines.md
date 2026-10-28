@@ -133,7 +133,7 @@ in `resume`:
   say is not resumed with.
 
 A resume compares each line's `version` with the run's record and refuses another. Writing new kinds of
-nodes is a change of version: M2 is `m2-2` and M6 `m6-2` (they began to write the nodes they rebuild from), M11 is
+nodes is a change of version: M2 is `m2-2` and M6 `m6-2` (they began to write the nodes they rebuild from; `m6-3`: its question carries the anti-sycophancy instruction), M11 is
 `2` (its `beforeProvers` became safe to run twice), the fleet stays `fleet-1`. A run begun before a bump cannot be
 resumed after it.
 
@@ -279,6 +279,26 @@ double, a wrapper) is still an `Llm`. The function uses the member when the `Llm
 `withJson(llm.complete)` when it has not, so the same single retry applies either way. The `Llm` of a
 line's context has the member. `withJson(complete)` builds an `Llm` from a plain `complete`, for the
 orchestrator and for tests.
+
+### `judge`
+
+`judge(problem.llm, {prompt, site, k, options, models?, system?, maxTokens?})` is for informal judgments that Lean cannot
+decide (a conjecture's relevance, a statement's fidelity, a rerank) and never for what Lean can (plan change PC9). It makes `k`
+independent calls (one after the other, so the journal has them in order), each a `completeJson` that must answer with one of
+`options` (`{verdict, reason?}`), and returns the `votes` (answer, model, call id, reason), the `result` (the majority label,
+undefined without a strict majority), `disagreement` (some vote differs) and the summed `cost`. With `models`, call `i` goes to
+`models[i % models.length]`, so the votes are cross-model. With `{min, max}` instead of `options` each call gives a
+`score` and the result is the mean; `disagreement` is a spread over `spread` (0.25) of the scale. A call that fails or does
+not fit the schema twice gives no vote (its message is in `failures`); all of them failing rejects. `disagreement` is a
+reason to escalate (a human breakpoint with `--human`, otherwise the claim stays unsigned), never a verdict: what `judge`
+returns changes no claim's status. Every call's system prompt starts with `ANTI_SYCOPHANCY` (below), and its prompt must not
+contain another agent's verdict.
+
+**Anti-sycophancy (PC10).** `ANTI_SYCOPHANCY` is one fixed sentence: *Be truthful. The statement may be false, and a
+counterexample is as valuable as a proof. Do not defer to how the task is phrased: disagree when the evidence warrants it.*
+`withAntiSycophancy(system?)` puts it in front of a system prompt. `judge`, the fleet's step-DAG prompt and M6's question
+about an open conjecture ([guards.md](guards.md#neutral-framing)) carry it; a line that writes another prompt that judges or
+reranks does the same. No prompt of the harness shows a model another agent's verdict.
 
 ### `tasks`
 

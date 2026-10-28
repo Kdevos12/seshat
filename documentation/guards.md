@@ -53,6 +53,15 @@ conjecture: it may be true, or false as formalized... Look for a proof and for a
 equal care.* It tells the model that `lean_check` accepts only a proof, and to say in its notes, with
 the witness, if it comes to believe the statement is false.
 
+The question ends with one fixed instruction, `ANTI_SYCOPHANCY` of `@seshat/lines` (plan change PC10): *Be
+truthful. The statement may be false, and a counterexample is as valuable as a proof. Do not defer to how the
+task is phrased: disagree when the evidence warrants it.* A plain instruction of this kind cut sycophancy on
+every model the source measured, and a dynamic gate did worse on the smaller one. It is the same sentence in
+every prompt of the harness that judges or reranks (`judge`, and the step-DAG prompt of the fleet: [lines.md](lines.md#judge)),
+and no prompt shows a model another agent's verdict, which is what spreads sycophancy from one agent to
+another; where a prior on an agent's reliability is wanted, it is the track record of its Lean-checked results
+in the journal. The wording of the question changed, so M6 is `m6-3`.
+
 - A problem whose category says it is solved gets nothing by default. `framingAll` gives it the
   question anyway, in the wording for a known statement ("a proof is expected, but a formalization
   can be wrong"), for experiments. The committed bench (575 solved problems) is such a bench, so
