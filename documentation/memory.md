@@ -289,6 +289,13 @@ seed, the problem, the prover, the session and the line), and records both lists
 (`included`, `withheld`). The briefing and the other hooks of the session read `session.drawn`, so what
 the line shows is what the journal says it showed; they cannot draw, since the attempt has started. An
 item drawn twice in one session keeps its first outcome. A session with no draw records neither list.
+A resumed run draws what the run that was not cut would have drawn: the stream is keyed by the seed (or
+the run's id), the problem, the prover, the session and the line, all of which a resumed process recreates,
+and an item's uses are the `attempt.started` records of the journal, which the cut session had written.
+The random numbers do not depend on the order in which provers run; the use count does. With
+`--concurrency` above 1, or several provers on a problem, the session at which an item reaches `nNew`
+uses (and so passes from `pNew` to `p`) depends on how the sessions interleaved, which the journal
+records but a second run need not repeat.
 
 ```ts
 beforeSession: async (session) => {

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Draw } from "@seshat/memory";
 import type { Line, LineHooks } from "@seshat/lines";
-import { check, demoRun, ofType, say } from "./m0-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { nth } from "./resume-helpers.ts";
 
 /** The responses of `n` sessions that check a file with a hole and end. */
 const sessionsOf = (n: number) => Array.from({ length: n }, () => [check("sorry"), say("notes")]).flat();
@@ -125,5 +126,16 @@ describe("a line's draw of unverified items", () => {
     const started = ofType(plain.events, "attempt.started")[0]?.data;
     assert.equal(started?.included, undefined);
     assert.equal(started?.withheld, undefined);
+  });
+
+  it("is the same in a run that was cut and resumed as in the run that was not cut", async () => {
+    const stateless = (): Line => ({ ...drawing([]), resume: "stateless" });
+    const whole = await demoRun({ lines: { M5: stateless() }, config: { lines: ["M5"], sessions: 6, seed: "resume-seed" }, responses: sessionsOf(6) });
+    const listsOf = (events: typeof whole.events) => ofType(events, "attempt.started").map((e) => [e.data.iteration, e.data.included, e.data.withheld]);
+    for (const at of [2, 4, 6]) {
+      const cut = killedAt(whole.dir, nth(whole.events, "attempt.started", at));
+      const resumed = await demoResume({ dir: cut, bench: whole.bench, lines: { M5: stateless() }, responses: sessionsOf(7 - at) });
+      assert.deepEqual(listsOf(resumed.events), listsOf(whole.events), `cut before session ${at}`);
+    }
   });
 });
