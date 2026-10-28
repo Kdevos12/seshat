@@ -69,7 +69,8 @@ export interface Line {
    * line works from the start of every problem. With the ladder on (the line M12 with its `ladder` option), a line of
    * rung 1 or more gets its hooks for a problem only once the ladder has moved that problem up to its rung; with the
    * ladder off, every line works from the start and the rung says nothing. Rungs are counted over the enabled lines: a
-   * rung no enabled line has does not exist.
+   * rung no enabled line has does not exist. The rungs are compressed to indexes: the sorted distinct values of the enabled lines
+   * are rungs 1, 2, ..., so a line alone on `rung: 3` is rung 1, and `ladder.escalated` names the index.
    */
   rung?: number;
   hooks: LineHooks;

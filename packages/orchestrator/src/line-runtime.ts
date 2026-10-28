@@ -408,7 +408,10 @@ export class ProblemLines {
         continue;
       }
       const hook = entry.line.hooks.beforeProvers;
-      if (hook === undefined || held.begun) continue;
+      // A line of a higher rung starts when the problem moves up, which can be after the provers began: a cut between the
+      // `ladder.escalated` event and its `beforeProvers` leaves it active and not started, so it is started again here
+      // (its `beforeProvers` must be safe to call twice, as every line's is on resume).
+      if (hook === undefined || (held.begun && !((entry.line.rung ?? 0) > 0))) continue;
       if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) continue;
       await call(id, "beforeProvers", () => hook(this.context(entry)));
       if (this.p.workbench.candidate !== undefined) this.log(`line ${id} settled the problem before the provers`);

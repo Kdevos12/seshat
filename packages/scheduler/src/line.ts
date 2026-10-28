@@ -136,6 +136,10 @@ const clip = (text: string, n: number): string => {
  * - **Inner provers.** The work on a task is a few model calls, each answered by a proof that goes through `validate`; the
  *   hole's claim changes status only if Lean accepts it. When all the holes of a checked decomposition are accepted, the graph
  *   derives the parent, and the composed proof goes through `validate` like any other (`realize`).
+ * - **Simplify early, generate late** (saturation provers' rule). In every step the scheduler first simplifies and only then generates:
+ *   it registers the new sketches and closes the holes that known facts cover (forward subsumption), sweeps the open holes against
+ *   the facts proved since (backward subsumption), and propagates what is derived, and only after that makes tasks and chooses
+ *   among them, so that no inner session is spent on a claim a known fact already closes.
  * - **Subsumption.** A new claim that `lean.meta` finds to be an instance of a known fact, and an open claim that a new fact
  *   covers, get an `instance_of` edge that Lean checks; a claim closes through a checked edge only.
  * - **Briefing.** The lemmas the scheduler proved reach the outer prover's next briefing with their names.
@@ -150,11 +154,9 @@ export function createM12Line(): Line {
     try {
       await run();
     } catch (error) {
+      // An interruption (a turn that ended, a process that is stopping) is never a failure of this step: it goes on to the orchestrator.
+      if (isInterrupted(error)) throw error;
       if (problem.signal.aborted) return;
-      if (isInterrupted(error)) {
-        problem.log(`${what} was interrupted`);
-        return;
-      }
       problem.log(`${what} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -199,7 +201,8 @@ export function createM12Line(): Line {
         if (problem.memory.claim(claimId)?.status !== "open") continue;
         const mine = tasks.filter((task) => task.claimId === claimId);
         if (mine.some((task) => task.status !== "done" && task.status !== "failed" && task.status !== "cancelled")) continue;
-        if (mine.length >= s.rounds || tasks.length >= s.maxInnerTasks) continue;
+        // PC4 item 1: the cap is per outer session, that is per sketch: the tasks of this sketch's holes, not of every sketch the problem has had.
+        if (mine.length >= s.rounds || tasks.filter((task) => task.claimId !== undefined && record.holes.includes(task.claimId)).length >= s.maxInnerTasks) continue;
         const last = mine.at(-1);
         const proposed = problem.tasks.propose({
           kind: "prove",

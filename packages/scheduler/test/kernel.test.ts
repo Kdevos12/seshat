@@ -21,20 +21,30 @@ test("the cycle takes the oldest on its age picks and the lightest on the others
   assert.equal(g.select(), undefined);
 });
 
-test("fairness: a heavy old clause is given within one cycle however many light ones keep arriving", () => {
-  const g = new GivenClause<Clause>({ age: 1, weight: 4 });
+/** A heavy old clause against a stream of two light new ones per step, from a given position in the cycle; the step that gives it, or -1. */
+function givenAt(ratio: { age: number; weight: number }, start: number, steps: number): number {
+  const g = new GivenClause<Clause>(ratio, start);
   g.add(c("heavy", 0, 1000));
   let n = 1;
-  let given = -1;
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < steps; step++) {
     g.add(c(`light${n}`, n, 1));
-    n += 1;
-    g.add(c(`light${n}`, n, 1));
-    n += 1;
-    const p = g.select();
-    if (p?.clause.id === "heavy") given = step;
+    g.add(c(`light${n + 1}`, n + 1, 1));
+    n += 2;
+    if (g.select()?.clause.id === "heavy") return step;
   }
-  assert.ok(given >= 0 && given < 5, "the age pick reaches it within a cycle");
+  return -1;
+}
+
+test("fairness: a heavy old clause is given within one cycle wherever in the cycle the loop stands, and only the age pick can give it", () => {
+  const ratio = { age: 1, weight: 4 };
+  for (let start = 0; start < 5; start++) {
+    const at = givenAt(ratio, start, 5);
+    assert.ok(at >= 0 && at < 5, `from pick ${start}: given at step ${at}`);
+    // The first pick of a cycle that starts after the age pick is a weight pick, which the light clauses win: the heavy one waits for the age pick.
+    if (start > 0) assert.equal(at, 5 - start, `from pick ${start} the weight picks come first`);
+  }
+  // With the age pick disabled the heavy clause starves, however long the stream.
+  assert.equal(givenAt({ age: 0, weight: 5 }, 1, 200), -1);
 });
 
 test("a restart at the same pick count continues the cycle; ties follow the seeded source", () => {

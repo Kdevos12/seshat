@@ -59,3 +59,23 @@ test("a claim with no way is unreachable", () => {
   assert.equal(pn.of("r").pn, Infinity);
   assert.equal(pn.mostProving("r"), undefined);
 });
+
+test("the numbers of a claim do not depend on the order the claims are asked for, below a cycle too", () => {
+  // The cycle a -> b -> e -> d -> a. Asked from a, the numbers of e and d are computed with a on the path; asked from e they are not.
+  const claims = [{ id: "a", prove: 5 }, { id: "b" }, { id: "e" }, { id: "d" }];
+  const groups = [
+    { parent: "a", parts: ["b"] },
+    { parent: "b", parts: ["e"] },
+    { parent: "e", parts: ["d"] },
+    { parent: "d", parts: ["a"] },
+  ];
+  const ids = ["a", "b", "e", "d"];
+  const orders = [ids, [...ids].reverse(), ["e", "a", "d", "b"], ["d", "b", "a", "e"]];
+  const answers = orders.map((order) => {
+    const pn = new ProofNumbers(claims, groups);
+    for (const id of order) pn.of(id);
+    return JSON.stringify(ids.map((id) => pn.of(id)));
+  });
+  assert.equal(new Set(answers).size, 1, answers.join("\n"));
+  assert.equal(new ProofNumbers(claims, groups).of("e").pn, 5);
+});

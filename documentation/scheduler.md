@@ -57,9 +57,20 @@ leaves that settles a claim, `dpn` the least that shows every known way to it fa
 `o1..ok`, `pn = min pn(o)` and `dpn = sum dpn(o)`; for a decomposition `pn = sum pn(part)` and
 `dpn = min dpn(part)`. A settled claim has `pn = 0`; a refuted or dead one has `pn = Infinity`. A
 claim shared by several parents counts in each parent's sum (an overestimate that is accepted) and a
-cycle is cut where it closes. The scheduler asks, for each ready task, how much the problem's `pn`
-falls if the task succeeds, and among tasks of equal weight the one that advances the problem most
-goes first.
+cycle is cut where it closes. The scheduler asks `mostProving` for the leaf under the problem's claim that advances it most for its
+price: at each claim it follows the cheapest option, and in a decomposition the unsettled part with
+the least disproof number (the one that fails soonest). The task on that leaf is given **weight 0**,
+so it wins every weight pick outright; the age picks still reach the other tasks, so none starves.
+(The code does not compute how much `pn` falls if each task succeeds; `mostProving` stands for it.)
+A node whose subtree cut a cycle is not memoized, so `of(x)` does not depend on the order of the queries.
+
+## Simplify early, generate late
+
+Each scheduling step follows the saturation provers' rule: it **simplifies before it generates**. It first
+registers the sketches the sessions ended with, closes the new holes that a known fact covers (forward
+subsumption), sweeps the open holes against the facts proved since (backward subsumption) and
+propagates what that derives. Only then does it make tasks for the holes still open and choose among
+them. A claim a known fact closes costs no inner session.
 
 ## Named holes become claims
 
@@ -85,7 +96,7 @@ A split sketch gives:
 Each unproved hole gets a `prove` task, proposed by `line:M12` through the task API: acceptance
 "the hole's claim is at least `computed`", budget `{sessions: innerSessions}` (default 8), and
 `parentTaskId` set to the previous task on the same hole when it is a retry. The options
-`maxInnerTasks` (default 8: tasks for one problem), `rounds` (a hole's tasks in all, default 2) and
+`maxInnerTasks` (default 8: tasks for the holes of one sketch, that is per outer session, as PC4 item 1 asks; a later sketch's holes get their own), `rounds` (a hole's tasks in all, default 2) and
 `stepTasks` (tasks worked between two outer sessions, default 2) bound the work. Tasks are
 `ready` when proposed; the orchestrator moves them `running` when the line starts one and `done` or
 `failed` when it ends, with the reason the line gives.
@@ -120,10 +131,9 @@ Each pair tried is an `m12_subsumption` node (instance, general, edge, checked).
 
 The ladder is a rule of the run, kept in the orchestrator and the journal; the scheduler supplies
 the measure of progress. Rung 0 is the provers and the lines that work from the start. A line says
-it belongs to a higher rung with `Line.rung` (1, 2, ...). A rung counts **only if its line is on**:
-a rung with no enabled line is skipped, and a line on a rung above the problem's is idle: the
+it belongs to a higher rung with `Line.rung` (1, 2, ...). A rung counts **only if its line is on**. Rung numbers are compressed: the rungs of a run are the sorted distinct `Line.rung` values of the enabled lines, as indexes 1, 2, ... (a line alone on `rung: 3` is rung 1), and `from` and `to` of `ladder.escalated` are these indexes, not `Line.rung`. A line on a rung above the problem's is idle: the
 orchestrator gives it no `beforeProvers`, briefing, session or tool until the problem reaches the
-rung, when it starts the line with `beforeProvers` (or `resumeProblem`).
+rung, when it starts the line with `beforeProvers` (or `resumeProblem`). A cut between the event and the line's start leaves the line active and not started, so a resumed run calls the `beforeProvers` of every active rung line again, even though the provers had begun: it must be safe to call twice (a line that keeps state records it once).
 
 A problem moves up when the dollars spent **since its last Lean progress** reach a fraction of the
 problem's budget: the option `fractions` (default `[0.3, 0.6]`, one for each move).
@@ -137,7 +147,7 @@ moves up. The marks are nodes, so a resumed run reads them back and decides the 
 The option `ladder: false` turns the rule off: every enabled line then starts at once, as without M12.
 
 The report ([m0-loop.md](m0-loop.md)) adds a table **Problem / Solving rung / Dollars per rung**:
-for each problem, the rung at which it was solved (none if it was not) and what each rung cost,
+for each problem, the rung at which it was solved (only for a certified `proved` or `refuted`; none otherwise, a candidate included) and what each rung cost,
 read from the journal alone. A session's cost is counted at the rung in force when it ended, and a
 one-shot call at the rung of its own event; the dollars per rung add up to the problem's cost.
 
@@ -167,7 +177,7 @@ is written when the session ends and registered in a second step (`registered: t
 between the two loses nothing: the registration is idempotent (claims are `ensureClaim`ed, the edge is
 looked up before it is made).
 
-`packages/orchestrator/test/resume-m12.test.ts` cuts a whole M12 run (a sketch with two holes, both
+`packages/orchestrator/test/resume-m12.test.ts` also cuts a run across the ladder's move at every event with a stateful rung-1 line (it fails if the line is not started again) and runs M12 in turns of 1, 1500 and 3000 tokens (a sample), and `resume-adopted.test.ts` pins the recovery of a line's other claims when the problem's candidate was adopted. It cuts a whole M12 run (a sketch with two holes, both
 proved, the parent settled) after **every event of its journal except the last** (every cut but the last: 69 cuts at the time of writing) and resumes
 each: the run ends, the journal is sound, and for every cut at which no session was in flight the
 problem has the outcome, the attempts, the cost and the claims, edges, tasks and statuses of the run
