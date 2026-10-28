@@ -11,7 +11,7 @@ import { type Json, newId, readEvents } from "@seshat/core";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
-import { hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
+import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
@@ -319,6 +319,7 @@ async function run(): Promise<number> {
     dir,
     models: builtinModels(),
     registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+    leanEnvironment: (options) => hostLeanEnv({ host, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
     signal: controller.signal,
     log: (line) => console.error(line),
     runId,

@@ -198,7 +198,7 @@ carry none.
 interface Provenance {
   modelId: string;        // the prover model as configured, PROVIDER/ID
   promptVersion: string;  // the provers' PROMPT_VERSION
-  mathlibRev: string;     // the bench's revision, until the Lean environment's hash stands in for it
+  mathlibRev: string;     // the bench's revision, which stands in for Mathlib's (see "Limits" under Memory across runs)
   harnessVersion: string; // the code revision of the run
   budgetClass: string;    // tiny, small, medium, large, huge or unbounded, from the dollars per problem
   createdAt: string;      // ISO 8601
@@ -337,10 +337,18 @@ Chains nest: a run started on a run that was itself started on another reads bot
 checked against the hash its successor pinned. Blobs are read through to the earlier runs' directories
 (the newest first); the new run writes only its own.
 
-**What carries.** Verified facts carry only under the same Lean environment: the bench's revision and the
-Lean toolchain, or the environment's hash once a run records one (Task 21). The comparison is per journal
-of the chain, against the environment of the run that reads it, and an environment that is unknown on
-either side is not equal. Under the same environment a claim keeps the status the earlier journal gave
+**What carries.** Verified facts carry only under the same Lean environment. A run is in the environment
+it is pinned to ([lean-env.md](lean-env.md)): `run.started`'s `config.leanEnv` records its name and hash,
+and two runs are in the same environment exactly when both hashes are strings and equal (`env:HASH`). A
+record whose hash is null (the environment was not resolved) is in none that can be compared: it never
+equals another, itself included. A journal that recorded no environment (a run before Task 21, or a host
+that names none) is identified by the bench's revision and the Lean toolchain (`bench:REV|lean:TOOLCHAIN`),
+which never equals a hash, and an unknown revision or toolchain is incomparable too. So two environments
+with the same bench and toolchain but different packages (`base` and `extended`) do not carry in either
+direction. The comparison is per journal of the chain, against the environment of the run that reads it.
+The reading run's environment is resolved before the chain is read (`RunOptions.leanEnvironment`, which
+the command line fills from the host's lock with `hostLeanEnv`, without building the registry), and the run
+is refused when the registry it then builds is pinned to another. Under the same environment a claim keeps the status the earlier journal gave
 it, its validations count, and its `lean_checked` edges propagate. Under another, the earlier statuses
 count for nothing: its claims are `open` and its edges `proposed`, the status it recorded stays visible as
 `earlierStatus`, and its validations are not validations here, so nothing can cite them. The proofs it
@@ -363,8 +371,7 @@ revision differs from the last journal of the chain. The report has a section on
 memory: its claims, how many statuses carried or were reset, its attempts, lessons, nodes, edges,
 validations and epochs. `--resume` reads the chain from the run's own journal.
 
-Not done: the Lean environment's hash of Task 21 is not an input yet (the revision and the toolchain
-stand in for it), a chain is read in full at every open, and nothing has run against a real Lean or model.
+Not done: a chain is read in full at every open, and nothing has run against a real Lean or model.
 
 ## Reference files
 

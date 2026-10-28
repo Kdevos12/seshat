@@ -57,20 +57,28 @@ export interface MemoryChain {
 
 /**
  * The Lean environment of a run, as a text that is equal for two runs exactly when verified facts may
- * carry from one to the other: the bench's revision and the Lean toolchain (the bench's `source`), and,
- * when a run records one, the environment's hash. A bench whose revision or toolchain is unknown has
- * none that can be compared.
+ * carry from one to the other.
+ *
+ * A run that records the Lean environment it was pinned to (`run.started`'s `config.leanEnv`, Task 21:
+ * `{name, hash}`) is identified by its hash alone: `env:<hash>`. A record whose hash is null (the
+ * environment was not resolved) has none that can be compared, so it never equals anything, itself
+ * included. A run that recorded no environment (an older journal, or a host that names none) is
+ * identified by the bench's revision and the Lean toolchain (the bench's `source`), which never equals
+ * a hash. A bench whose revision or toolchain is unknown has none that can be compared.
  */
-export function environmentId(source: { rev?: unknown; lean?: unknown }, hash?: unknown): string | undefined {
-  if (typeof hash === "string" && hash !== "") return `env:${hash}`;
+export function environmentId(source: { rev?: unknown; lean?: unknown }, leanEnv?: { hash?: unknown } | null): string | undefined {
+  if (leanEnv !== undefined && leanEnv !== null) {
+    return typeof leanEnv.hash === "string" && leanEnv.hash !== "" ? `env:${leanEnv.hash}` : undefined;
+  }
   const known = (v: unknown): v is string => typeof v === "string" && v !== "" && v !== "unknown";
   return known(source.rev) && known(source.lean) ? `bench:${source.rev}|lean:${source.lean}` : undefined;
 }
 
 /** The environment a run's recorded configuration (`run.started`'s `config`) is in. */
 export function environmentOf(config: unknown): string | undefined {
-  const c = config as { environment?: { hash?: unknown } | null; bench?: { source?: { rev?: unknown; lean?: unknown } | null } | null } | null | undefined;
-  return environmentId(c?.bench?.source ?? {}, c?.environment?.hash);
+  const c = config as { leanEnv?: unknown; bench?: { source?: { rev?: unknown; lean?: unknown } | null } | null } | null | undefined;
+  const recorded = typeof c?.leanEnv === "object" && c.leanEnv !== null ? (c.leanEnv as { hash?: unknown }) : undefined;
+  return environmentId(c?.bench?.source ?? {}, recorded);
 }
 
 /** The first event of a journal file, if it has a whole one: how a run finds what it was started on. */

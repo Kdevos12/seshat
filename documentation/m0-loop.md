@@ -401,7 +401,7 @@ Options of `harness run`:
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
-| `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the bench's revision and Lean toolchain). A resume reads the chain from its own journal. Not with `--resume`. |
+| `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
 `harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]` continues a run whose

@@ -6,7 +6,11 @@ import { describe, it } from "node:test";
 import type { BenchIndex } from "@seshat/bench";
 import { BlobStore, environmentId, isProvenance, Journal, loadMemoryChain, readEvents } from "@seshat/core";
 import { MemoryStore } from "@seshat/memory";
-import { PROMPT_VERSION, renderRunReport, RunSetupError } from "../src/index.ts";
+import { leanCheckImplementation, loadCatalog, Registry, type HostProfile, type LeanEnvPin } from "@seshat/registry";
+import { hostLeanEnv, openRegistry, PROMPT_VERSION, renderRunReport, REPO_ROOT, RunSetupError, type RunOptions } from "../src/index.ts";
+import { loadEnvSpec, resolveEnvironment, writeEnvironment, type Fetcher } from "@seshat/lean-env";
+import type { LeanChecker } from "@seshat/core";
+import { writeFileSync } from "node:fs";
 import { certifier, nth } from "./resume-helpers.ts";
 import { check, demoBench, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 
@@ -189,6 +193,82 @@ describe("a run started on an earlier run's memory (--memory-from)", () => {
       demoResume({ dir: cut2, bench: a.bench, responses: [] }),
       (error: unknown) => error instanceof RunSetupError && /not the one this run was started on/.test(error.message),
     );
+  });
+});
+
+/** The registry of the demo runs, on a host whose Lean environment is `pin` (Task 21 records it in every run). */
+const pinnedTo = (pin: LeanEnvPin) => (lean: LeanChecker): RunOptions["registry"] => {
+  const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
+  const host: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] } } };
+  return (journal, blobs) => new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean) }, journal, blobs, leanEnv: pin });
+};
+const pin = (name: string, hash: string | null): LeanEnvPin => ({ name, hash, dir: "/nonexistent", status: hash === null ? "unresolved" : "resolved", built: false });
+const resolvedTo = (p: LeanEnvPin): RunOptions["leanEnvironment"] => () => ({ name: p.name, hash: p.hash });
+
+describe("a run on earlier memory in another Lean environment (Task 21's hash)", () => {
+  const BASE = pin("base", "a".repeat(64));
+  const EXTENDED = pin("extended", "b".repeat(64));
+
+  async function twice(earlierPin: LeanEnvPin, readingPin: LeanEnvPin) {
+    const shared = demoBench();
+    const bench = benchIn(ENV_A, shared);
+    const a = await demoRun({ bench, certifier: certifier().certifier, registry: pinnedTo(earlierPin), responses: [check("exact trivial_proof")] });
+    assert.equal(a.result.problems[0]?.outcome, "proved");
+    assert.deepEqual((ofType(a.events, "run.started")[0]?.data.config as { leanEnv?: unknown }).leanEnv, { name: earlierPin.name, hash: earlierPin.hash });
+    const b = await demoRun({
+      bench, memoryFrom: a.dir, registry: pinnedTo(readingPin), leanEnvironment: resolvedTo(readingPin), responses: [check("sorry"), say("notes")], config: { sessions: 1 },
+    });
+    return { a, b };
+  }
+
+  it("carries the statuses when the hashes are the same", async () => {
+    const { b } = await twice(BASE, BASE);
+    assert.equal(b.result.report.memory?.sameEnvironment, true);
+    assert.deepEqual(b.result.report.memory?.taken?.carried, { proved: 1 });
+  });
+
+  it("carries nothing between base and extended with the same bench revision and toolchain, in both directions", async () => {
+    for (const [from, to] of [[BASE, EXTENDED], [EXTENDED, BASE]] as const) {
+      const { b } = await twice(from, to);
+      assert.equal(b.result.report.memory?.sameEnvironment, false);
+      assert.deepEqual([b.result.report.memory?.taken?.carried, b.result.report.memory?.taken?.reset], [{}, 1]);
+      assert.equal(b.result.problems[0]?.outcome, "unsolved");
+    }
+  });
+
+  it("carries nothing when the reading run's environment is not resolved, or the earlier one was not", async () => {
+    const unresolved = pin("base", null);
+    assert.equal((await twice(BASE, unresolved)).b.result.report.memory?.sameEnvironment, false);
+    assert.equal((await twice(unresolved, BASE)).b.result.report.memory?.sameEnvironment, false);
+  });
+
+  it("refuses a registry pinned to another environment than the one the memory was read for, and leaves no directory", async () => {
+    const shared = demoBench();
+    const bench = benchIn(ENV_A, shared);
+    const a = await demoRun({ bench, registry: pinnedTo(BASE), responses: [check("sorry"), say("notes")], config: { sessions: 1 } });
+    const dir = join(mkdtempSync(join(tmpdir(), "mh-chain-env-")), "run");
+    await assert.rejects(
+      demoRun({ bench, dir, memoryFrom: a.dir, registry: pinnedTo(EXTENDED), leanEnvironment: resolvedTo(BASE), responses: [] }),
+      (error: unknown) => error instanceof RunSetupError && /pinned to another Lean environment than the one the memory of earlier runs was read for/.test(error.message),
+    );
+    await assert.rejects(demoRun({ bench, dir, memoryFrom: a.dir, registry: pinnedTo(BASE), responses: [] }), RunSetupError, "a pinned registry without the environment resolved first");
+    assert.throws(() => readdirSync(dir), /ENOENT/);
+  });
+
+  it("resolves the host's environment from the lock without building a registry, to the hash the registry pins", async () => {
+    const FC = "https://github.com/google-deepmind/formal-conjectures";
+    const toml = `toolchain = "leanprover/lean4:v4.27.0"\n[base]\nname = "formal_conjectures"\ngit = "${FC}"\nrev = "bench-v1-lean4.27.0"\nlean_libs = ["FormalConjectures"]\n`;
+    const fetch: Fetcher = async (_source, file) =>
+      file === "lean-toolchain" ? "leanprover/lean4:v4.27.0\n" : JSON.stringify({ packages: [{ name: "mathlib", type: "git", url: "https://github.com/leanprover-community/mathlib4", rev: "a".repeat(40), inputRev: "v4.27.0" }] });
+    const root = mkdtempSync(join(tmpdir(), "mh-chain-envroot-"));
+    writeFileSync(join(root, "base.toml"), toml);
+    const spec = loadEnvSpec("base", root);
+    const { lock } = await resolveEnvironment(spec, { fetch });
+    assert.ok(lock);
+    writeEnvironment(spec, lock, join(root, "base"));
+    assert.deepEqual(hostLeanEnv({ host: "local", envRoot: root, env: {} }), { name: "base", hash: lock.hash });
+    assert.equal(openRegistry({ host: "local", envRoot: root, env: {} }).leanEnv?.hash, lock.hash);
+    assert.deepEqual(hostLeanEnv({ host: "local", envRoot: root, env: { LEAN_ENV: "typo" } }), { name: "typo", hash: null });
   });
 });
 
