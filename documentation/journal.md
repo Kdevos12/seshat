@@ -172,10 +172,12 @@ anywhere else is corruption, and the journal refuses to open.
 - an edge has an unknown kind or status, no target, several targets when it is not a
   `decomposes_into`, a target twice, itself as a target, or a `link` on a kind no lemma checks;
 - an edge status change's `from` is not the edge's current status, or `to` is the same;
+- an edge is added with the status `human_signed`, or changes to it, and its actor is not `human:NAME` (a signature is a person's);
 - an edge becomes `lean_checked` (when it is added or later) without a link lemma and a valid
   validation of a claim whose statement is the link's ([trust.md](trust.md#edges));
 - a node kind is not a lowercase word (`[a-z][a-z0-9_]*`, at most 32 characters), or is `hint` or `steer`
-  and its actor is not `human:NAME` (the research team's answers are a person's, [human.md](human.md));
+  and its actor is not `human:NAME` (the research team's answers are a person's, [human.md](human.md)); a `node.updated`
+  names a `hint` or a `steer` (nobody edits one, whoever asks: a person who changes their mind writes a new one);
 - a site is not made of dot-separated lowercase words (`graph.attempt`);
 - an attempt is charged after it finished, or for an amount that is not a non-negative number;
 - a task event comes from another actor than the orchestrator, or breaks a rule of the ledger

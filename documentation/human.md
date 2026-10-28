@@ -165,8 +165,24 @@ judge:
 
 The journal's invariants hold for these events like any others: `turn.*` is the orchestrator's alone, a
 `hint` or `steer` node is accepted only from an actor `human:NAME` (so no line or model can write one in
-the team's name), and a status change still needs its validation. What a person writes is a hint or a steer: both are text and
+the team's name), nobody can edit one afterwards (`node.updated` of a hint or a steer is refused for every
+actor, `human:NAME` included: a person who changes their mind writes a new hint), an edge reaches
+`human_signed` only through an event of `human:NAME`, and a status change still needs its validation. What a person writes is a hint or a steer: both are text and
 numbers the harness reads back with a check, and an answer that does not parse is ignored.
+
+### Whose answers they are
+
+The names are self-asserted: `--as NAME`, `SESHAT_USER` or the login name, with nothing to prove who typed
+them. The journal's hash chain makes an answer tamper-evident, not signed. The harness keeps the team's
+answers to the run they were given to: a run that starts on an earlier run's memory (`--memory-from`)
+inherits its claims, attempts, lessons and edges, and none of its hints and steers (they are left out when
+the earlier journals are replayed), so an old drop or an old forbidden strategy never applies to a new run
+that happens to reuse a claim's id, and old hints are not shown to the new run's sessions. The earlier
+run's turns are not counted either: the new run's first turn is turn 1.
+
+`harness steer` writes one node for each flag it is given, one after the other. It is not atomic: if the
+second write is refused, the first stays; the command prints each steer as it writes it, so the lines it printed say which were written. A second person who answers
+at the same moment finds the journal locked and runs the command again.
 
 ## The files
 

@@ -196,7 +196,7 @@ describe("MemoryStore edges and nodes", () => {
     const edge = memory.addEdge({ kind: "equiv", from: c, to: [b], link: cb.link });
     assert.deepEqual(memory.equivalents(a), [a, b], "a proposed edge does not count");
     memory.setEdgeStatus(edge.edgeId, "lean_checked", { reason: "link lemma checked", validationId: cb.validationId });
-    memory.addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
+    memory.withActor("human:test").addEdge({ kind: "equiv", from: a, to: d, status: "human_signed" });
     const ae = await checkedLink(memory, journal, ": P_a → P_e");
     memory.addEdge({ kind: "implies", from: a, to: e, status: "lean_checked", ...ae });
     assert.deepEqual(memory.equivalents(a), [a, b, c]);
@@ -235,7 +235,7 @@ describe("MemoryStore edges and nodes", () => {
     const c = (await memory.ensureClaim({ statement: ": C", origin: "test" })).claimId;
     const parts = memory.addEdge({ kind: "decomposes_into", from: a, to: [b, c] });
     const uses = memory.addEdge({ kind: "uses", from: b, to: c, status: "computed" });
-    const signed = memory.addEdge({ kind: "special_case_of", from: c, to: a, status: "human_signed" });
+    const signed = memory.withActor("human:test").addEdge({ kind: "special_case_of", from: c, to: a, status: "human_signed" });
     assert.deepEqual(parts.to, [b, c]);
     assert.deepEqual(memory.edges({ to: c }).map((x) => x.edgeId), [parts.edgeId, uses.edgeId]);
     assert.deepEqual(memory.edges({ minStatus: "computed" }).map((x) => x.edgeId), [uses.edgeId, signed.edgeId]);

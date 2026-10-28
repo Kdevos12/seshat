@@ -467,7 +467,7 @@ export function renderAccount(a: Account): string {
     lines.push("", "### Claims proved, computed and refuted", "");
     if (x.claims.length === 0) lines.push("- None.");
     for (const c of x.claims) lines.push(`- \`${c.id}\` **${c.status}**: ${c.statement}. Checked by ${c.checkedBy}.`);
-    for (const s of x.signed) lines.push(`- Signed by ${s.by}: edge \`${s.edgeId}\` (${s.kind}) from \`${s.from}\` to ${s.to.map((t) => `\`${t}\``).join(", ")}. A signature does not propagate and changes no claim's status.`);
+    for (const s of x.signed) lines.push(`- ${s.by.startsWith("human:") ? `Signed by ${s.by}` : `Marked human_signed by ${s.by}, which is not a person (the journal refuses that now)`}: edge \`${s.edgeId}\` (${s.kind}) from \`${s.from}\` to ${s.to.map((t) => `\`${t}\``).join(", ")}. A signature does not propagate and changes no claim's status.`);
     lines.push("", "### Decomposition", "");
     if (x.tree.length <= 1) lines.push("- The claim has not been decomposed.");
     else for (const n of x.tree) lines.push(`${"  ".repeat(n.depth)}- \`${n.id}\` ${n.status}${n.leaf ? " (leaf)" : ""}: ${n.statement}`);

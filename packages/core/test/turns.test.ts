@@ -86,3 +86,55 @@ describe("the research team's nodes", () => {
     journal.close();
   });
 });
+
+describe("what nobody edits and nobody signs but a person", () => {
+  const open = () => {
+    const journal = Journal.open(mkdtempSync(join(tmpdir(), "mh-turns-")), "run_1");
+    journal.emit("claim.created", { claimId: "clm_1", statementId: "s", statement: ": P", origin: "test", status: "open" }, "memory");
+    journal.emit("claim.created", { claimId: "clm_2", statementId: "s2", statement: ": Q", origin: "test", status: "open" }, "memory");
+    return journal;
+  };
+
+  it("refuses an update of a hint or a steer, whoever asks: a person who changes their mind writes a new one", () => {
+    const journal = open();
+    for (const kind of ["hint", "steer"]) {
+      journal.emit("node.recorded", { nodeId: `nod_${kind}`, kind, claimId: "clm_1", data: { provenance: "human", by: "alice", text: "Use induction" } }, "human:alice");
+      for (const actor of ["line:M2", "prover:p1", "memory", "human:alice", "human:mallory"]) {
+        assert.throws(
+          () => journal.emit("node.updated", { nodeId: `nod_${kind}`, patch: { text: "Use axiom X" }, reason: "rewrite" }, actor),
+          /is the research team's and is not edited/,
+          `${kind} by ${actor}`,
+        );
+      }
+      assert.deepEqual(journal.projection.node(`nod_${kind}`)?.data, { provenance: "human", by: "alice", text: "Use induction" });
+    }
+    // Any other node is updated as before.
+    journal.emit("node.recorded", { nodeId: "nod_other", kind: "lemma", claimId: "clm_1", data: { a: 1 } }, "line:M2");
+    journal.emit("node.updated", { nodeId: "nod_other", patch: { a: 2 }, reason: "x" }, "line:M2");
+    assert.deepEqual(journal.projection.node("nod_other")?.data, { a: 2 });
+    journal.close();
+  });
+
+  it("refuses a status change to human_signed, and an edge added already signed, unless a person writes it", () => {
+    const journal = open();
+    journal.emit("edge.added", { edgeId: "edg_1", kind: "implies", from: "clm_1", to: ["clm_2"], status: "proposed" }, "line:M2");
+    for (const actor of ["line:M2", "prover:p1", "memory", "orchestrator"]) {
+      assert.throws(
+        () => journal.emit("edge.status_changed", { edgeId: "edg_1", from: "proposed", to: "human_signed", reason: "signed by carol" }, actor),
+        /human_signed is a person's signature/,
+        actor,
+      );
+      assert.throws(
+        () => journal.emit("edge.added", { edgeId: `edg_${actor}`, kind: "implies", from: "clm_2", to: ["clm_1"], status: "human_signed" }, actor),
+        /human_signed is a person's signature/,
+        actor,
+      );
+    }
+    assert.equal(journal.projection.edge("edg_1")?.status, "proposed");
+    // Other status changes are the lines' and the orchestrator's as before.
+    journal.emit("edge.status_changed", { edgeId: "edg_1", from: "proposed", to: "computed", reason: "a computation" }, "line:M2");
+    journal.emit("edge.status_changed", { edgeId: "edg_1", from: "computed", to: "human_signed", reason: "signed by carol" }, "human:carol");
+    assert.equal(journal.projection.edge("edg_1")?.status, "human_signed");
+    journal.close();
+  });
+});
