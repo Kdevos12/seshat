@@ -120,6 +120,13 @@ describe("failures that all come from a weaker configuration", () => {
     assert.equal(onlyWeakerFailures([attempt()], { order: [], budgetClass: "medium" }), false);
   });
 
+  it("does not hold for a failure of a family the run does not rank, which may be the stronger one of an order nobody stated", () => {
+    assert.equal(onlyWeakerFailures([attempt({ modelId: "prov/unlisted-9" })], RANKING), false);
+    assert.equal(onlyWeakerFailures([attempt(), attempt({ modelId: "prov/unlisted-9" })], RANKING), false);
+    // M1 still reads such a failure as coming from a smaller model (compareClass): only the routing needs the stated order.
+    assert.equal(compareClass(RANKING, classOf("prov/unlisted-9"), classOf("prov/large-2")).relation, "weaker");
+  });
+
   it("counts a failure of the same model under a smaller budget as weaker", () => {
     assert.equal(onlyWeakerFailures([attempt({ modelId: "prov/large-2", budgetClass: "small" })], RANKING), true);
     assert.equal(onlyWeakerFailures([attempt({ modelId: "prov/large-2", budgetClass: "large" })], RANKING), false);

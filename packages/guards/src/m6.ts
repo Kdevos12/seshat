@@ -84,7 +84,7 @@ const OWN_TITLES = ["The question", "Course change"];
 /**
  * Sections whose text is the model's own: the fleet's "Step plan" quotes an informal argument the model wrote
  * ("we show that ..."), which says nothing about how the harness frames the statement. The wording the harness
- * wrote around it is checked by the fleet's own tests; the scan would only note the model's proof as a drift.
+ * wrote around it is checked by a test that runs `framingProblems` on it (orchestrator/test/soft-memory.test.ts); the scan would only note the model's proof as a drift.
  */
 const MODEL_TEXT_TITLES = ["Step plan"];
 

@@ -5,7 +5,7 @@ import type { Attempt } from "./store.ts";
  * The configurations a run knows, for the comparisons of the soft failure memory (plan change PE3,
  * documentation/fleet.md, "Soft failure memory"): the models it is given, weakest first, and the
  * budget class it runs under. A model is weaker or stronger by its place in `order`, which the run
- * states (the fleet's `ranking` option, or its `models` then `escalateTo`); a budget class by its
+ * states (the fleet's `ranking` option, or the run's model then its `escalateTo`); a budget class by its
  * size.
  */
 export interface ModelRanking {
@@ -86,7 +86,12 @@ export function onlyWeakerFailures(attempts: readonly Pick<Attempt, "model" | "p
   if (strongest === undefined) return false;
   const failures = attempts.filter((attempt) => isVerdict(attempt) && attempt.outcome !== "valid");
   if (failures.length === 0) return false;
-  return failures.every((attempt) => compareClass(ranking, attemptClass(attempt, ranking.budgetClass), strongest).relation === "weaker");
+  // A failure of a family the run does not rank is not known to be weaker (it may be the stronger model of an unstated order),
+  // so it never makes the claim "only weaker": the route is acted on only for an order the run stated.
+  return failures.every((attempt) => {
+    const used = attemptClass(attempt, ranking.budgetClass);
+    return familyRank(ranking, used.family) >= 0 && compareClass(ranking, used, strongest).relation === "weaker";
+  });
 }
 
 /** The words for a difference, as they follow "with": `a smaller model`, `a larger budget`, `another configuration`. */

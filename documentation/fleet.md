@@ -132,7 +132,11 @@ constraints) and every failure of the claim (this attempt included) ran under a 
 the strongest one configured, the router records `retry_stronger` instead ([ledger.md](ledger.md#routing-decisions)),
 and the prover's next session is given the strongest model: the allocation says `routed: "retry_stronger"`.
 A claim is thus tried with the model it has not been tried with before it is tried with other constraints.
-A failure from the strongest configuration, or none, leaves the `branch`. A session that was cut is not a
+A failure from the strongest configuration, or none, leaves the `branch`. So does a failure of a model the run
+does not rank: the routing acts only on an order the run stated (a `ranking`, or an `escalateTo` above the run's
+model). With `--model small` and `models` listing `big`, no `ranking` and no `escalateTo`, nothing says `big` is not
+the stronger one, so a stalled claim whose sessions ran on `big` keeps its `branch` and is not sent back to `small`
+(M1's advice still calls such a line "with a smaller model": set `ranking`). A session that was cut is not a
 failure of its configuration. The next session takes the decision only if it is about that prover's last
 attempt, and the escalation, which has its own caps, overrides it.
 

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssistantMessage, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { type HarnessEvent, Journal } from "@seshat/core";
-import type { AllocationData } from "@seshat/fleet";
+import { type AllocationData, dagSection, type StepState } from "@seshat/fleet";
+import { framingProblems } from "@seshat/guards";
 import { DISCRETE } from "@seshat/bench";
 import { ANTI_SYCOPHANCY } from "@seshat/lines";
 import { TaskLedger } from "@seshat/scheduler";
@@ -187,6 +188,17 @@ describe("informal-first sessions (nl_first)", () => {
     assert.deepEqual(ofType(events, "attempt.started").map((e) => e.data.settings?.mode), ["nl_first", "nl_first"]);
   });
 
+  it("words the harness's part of the Step plan so that the framing scan finds nothing in it (the scan skips the section for the model's own text)", () => {
+    // A DAG whose own text is neutral: whatever the scan would find is then the harness's wording.
+    const recorded = {
+      nodeId: "nod_1",
+      claims: { s1: "clm_1", s2: "clm_2" },
+      dag: { proof: "Zero is neutral for addition.", steps: [{ id: "s1", statement: "Zero is a right identity.", dependsOn: [] }, { id: "s2", statement: "The theorem is an instance.", dependsOn: ["s1"] }] },
+    };
+    const stateSets: Array<{ [id: string]: StepState } | undefined> = [undefined, { s1: "closed", s2: "closed" }, { s1: "closed", s2: "error" }, { s1: "hole", s2: "missing" }];
+    for (const states of stateSets) assert.deepEqual(framingProblems(dagSection(recorded, states).text), [], JSON.stringify(states));
+  });
+
   it("does not note the model's own argument in the Step plan as a non-neutral framing on an open conjecture", async () => {
     const proving = { proof: "We show that n + 0 = n and prove that the statement holds.", steps: [{ id: "s1", statement: "Zero is a right identity.", dependsOn: [] }] };
     const prompts: string[] = [];
@@ -287,6 +299,19 @@ describe("routing a stalled claim to a stronger model (retry_stronger)", () => {
     });
     assert.deepEqual(rows(events).map((row) => row[0]), ["retry_fresh", "branch"]);
     assert.ok(allocations(events).every((a) => a.routed === undefined), "no session was sent to a model by a retry_stronger");
+  });
+
+  it("does not send a claim to the run's model when the failures ran on a model of `models` that nobody ranked above it", async () => {
+    // --model small (the run's), models [big]: no ranking, no escalateTo. The order is [small]; `big` is unranked, and its failures
+    // are not "weaker than small" for lack of a stated order, so the branch stays and the next session stays on `big`.
+    const { events } = await demoRun({
+      extraModels: ["big"],
+      config: { lines: ["M1", "M6", "fleet"], sessions: 2, ...seed(7, { strategies: false, models: ["faux/big"] }) },
+      responses: loop,
+    });
+    assert.deepEqual(ofType(events, "attempt.started").map((e) => e.data.model), ["faux/big", "faux/big"]);
+    assert.deepEqual(rows(events).map((row) => row[0]), ["retry_fresh", "branch"]);
+    assert.ok(allocations(events).every((a) => a.routed === undefined));
   });
 
   it("is a Router decision of the claim's attempts alone: a unit check of the three cases", () => {
