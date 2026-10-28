@@ -86,7 +86,8 @@ turn is `harness resume`, which the ledger already has ([ledger.md](ledger.md#re
 resumption knows about turns, and so a run in three turns reaches the same outcome as one that is not
 interrupted (the test says what was sampled). A process that ended in the middle of a turn without writing
 `turn.ended` (a kill, a usage limit) is closed by the next one: `turn.ended` with the reason `interrupted`,
-then the next turn.
+then the next turn. The team may answer between the crash and that resume (the journal is free once the process
+is gone): a steer given then is read for the next turn's limit, though the `interrupted` end is written after it.
 
 Because every turn after the first is a resumption, a consortium run starts only with lines that can be
 resumed ([lines.md](lines.md#resuming-a-run-with-lines)): `harness run --human` or `--turn-usd 2` with a
@@ -103,9 +104,11 @@ decides and a model does not:
 
 | Breakpoint | When |
 |---|---|
-| `impasse` | Every open task of a problem is blocked; or, after `--impasse-attempts` finished attempts (default 8), the mean of the problem's success posterior is below `--impasse-posterior` (default 0.1). The posterior is Beta(1 + accepted, 1 + failed) over the problem's attempts whose outcome is `valid` or `invalid`; the attempts that were cut, aborted or errored say nothing about the proof. Also when a problem ends `unsolved` |
+| `impasse` | Every open task of a problem is blocked; or, after `--impasse-attempts` finished attempts (default 8), the mean of the problem's success posterior is at or below `--impasse-posterior` (default 0.1). The posterior is Beta(1 + accepted, 1 + failed) over the problem's attempts whose outcome is `valid` or `invalid`; the attempts that were cut, aborted or errored say nothing about the proof. An attempt that is accepted ends the problem, so a problem that is still searched has no accepted attempt and its mean after n failed attempts is 1/(2 + n): exactly 0.1 at 8. The boundary is included, so the defaults fire at the 8th failed attempt, as "8 attempts" says (a test pins it). Also when a problem ends `unsolved` |
 | `settled` | A problem ends `proved` or `refuted`: a certified result is worth a person's eyes before the run goes on |
 | `disagreement` | A `judgment` node with `data.disagreement: true` is recorded: two informal validators did not agree (plan change PC9). The node is the lines' to write; the harness only reads it |
+
+The defaults (8 attempts, 0.1) are not tuned. They are a first guess that says "eight failures in a row and no sign of progress"; nothing in the repository measured them against runs, and a team that finds the run stops too early or too late changes `--impasse-attempts` and `--impasse-posterior`. The `disagreement` breakpoint has no producer yet: the node it reads is described in [lines.md](lines.md#the-judgment-node), and the breakpoint is tested with a line written for the test.
 
 A breakpoint fires once for what it saw. `turn.ended.breakpoint` records it and the next turn reads that
 back: a problem reported at an impasse is not an impasse again until it has made as many new finished
@@ -171,6 +174,16 @@ account says so. The call is a `model_call.finished` of the orchestrator at the 
 written before `turn.ended`, so the turn counts what it cost. It needs a model, so it is written and
 tested with the faux provider; it has not run with a real one.
 
+Three things about it are on purpose. It is a model call made after the limit (the turn's other calls are
+refused there), with its own allowance of $0.25 that `--turn-usd` does not bound: the turn counts what it cost,
+but it can end a turn over the dollar limit. Its markdown is not trusted: it was written from an account that
+holds problem statements and hints, so HTML, images, links and URLs are removed from what is stored and shown
+(`[cite: ID]` stays). And "say a claim is proved only when the account says so" is checked as well as asked: a
+clause of the narrative that says a claim or problem it cites is proved or refuted while the journal has another
+status (`open`, `computed`, `proved_informal`...) makes the narrative be asked again, once, and then be left out,
+with the reason in `turn.ended.narrative.rejected`. The check reads plain statements and skips hedged ones
+("not yet proved", "if it were proved"); it is not a check of what the prose means.
+
 ## The team's answers
 
 Each answer is written to the journal under the person's name as actor (`human:NAME`; `--as NAME`, else
@@ -180,7 +193,7 @@ last line a crash cut (resume first).
 
 | Command | Writes | Effect |
 |---|---|---|
-| `harness hint RUN_DIR --claim ID "text"` | A `hint` node on the claim, `provenance: "human"` | The next sessions on that claim, and on its decomposition's parts, are shown it in their briefing under "Hints from the team", said to be a suggestion and not a fact or a proof |
+| `harness hint RUN_DIR --claim ID "text"` | A `hint` node on the claim, `provenance: "human"` | The next sessions on that claim, and on its decomposition's parts, are shown it in their briefing under "Hints from the team", said to be a suggestion and not a fact or a proof. When a line's `contextPacket` replaces the prompt (M4), the hints and what the team asks are added to the packet's tail in every request, never to its frozen prefix, so a packet does not drop them and the cache is not broken |
 | `harness sign RUN_DIR EDGE_ID [--note TEXT]` | `edge.status_changed` to `human_signed` | The edge's status. It is below `lean_checked`, so no rule follows it: nothing is derived from it and no claim moves. It never lowers a status, so an edge that is already `human_signed` or `lean_checked` is refused |
 | `harness steer RUN_DIR --focus CLAIM` | A `steer` node | The problems whose claim is (or decomposes from) it go first when the run resumes, and its sessions are told it was asked |
 | `harness steer RUN_DIR --drop CLAIM` | A `steer` node | When the run resumes, the problem of that claim ends `aborted` (reason `dropped by NAME after turn N`) and its tasks are cancelled. The claim's status is not touched: dropping is not a verdict |
@@ -201,7 +214,10 @@ judge:
   like any other, and only the certifier's kernel replay makes a claim `proved` or `refuted`;
 - a signature is a status of an edge, and `human_signed` does not propagate ([trust.md](trust.md#edges));
 - a steer is a record. The one thing it does to a problem is to end it `aborted` (drop), which is an
-  outcome of the problem and not a status of the claim.
+  outcome of the problem and not a status of the claim;
+- `forbid` binds the provers' checks only (`teamVeto` runs in `lean_check`). A proof a line submits through
+  `validate` (M2's composed proofs, the refutation side's tries) is not vetoed: it is checked by Lean and the
+  certifier like any other, and a strategy the team ruled out for the provers may still be tried there.
 
 The journal's invariants hold for these events like any others: `turn.*` is the orchestrator's alone, a
 `hint` or `steer` node is accepted only from an actor `human:NAME` (so no line or model can write one in

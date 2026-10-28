@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import type { Line } from "@seshat/lines";
-import { buildReport } from "../src/index.ts";
+import { buildReport, steerCommand } from "../src/index.ts";
 import { assertSound, certifier, nth } from "./resume-helpers.ts";
 import { certifyingRegistry, check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { consortium, ended, TWO_PROBLEM_IDS, TWO_PROBLEMS } from "./turns-helpers.ts";
@@ -23,7 +23,7 @@ describe("breakpoints", () => {
     const turn = ended(run.events);
     assert.equal(turn.data.reason, "impasse");
     assert.deepEqual(turn.data.breakpoint, { kind: "impasse", problemId: TWO_PROBLEM_IDS[0] });
-    assert.match(turn.data.detail, /2 finished attempts and its success posterior is 0\.250, below 0\.5/);
+    assert.match(turn.data.detail, /2 finished attempts and its success posterior is 0\.250, at or below 0\.5/);
     // No limit was given: only the breakpoint ended the turn. Two sessions, four responses; none after the breakpoint.
     assert.deepEqual(ofType(run.events, "turn.started")[0]?.data.limit, {});
     assert.equal(ofType(run.events, "attempt.finished").length, 2);
@@ -42,6 +42,18 @@ describe("breakpoints", () => {
     assert.equal(next.faux.state.callCount, 4);
     assert.equal(ofType(next.events, "run.finished").length, 0);
     assertSound(next.events);
+  });
+
+  it("fire at the 8th failed attempt with the defaults (8 attempts, a posterior of 0.1), not at the 9th", async () => {
+    const run = await demoRun({ config: { sessions: 12, consortium: consortium() }, responses: failing(12) });
+    const turn = ended(run.events);
+    assert.equal(turn.data.reason, "impasse");
+    assert.equal(ofType(run.events, "attempt.finished").length, 8, "the 8th attempt strikes the breakpoint; no 9th begins");
+    assert.match(turn.data.detail, /has 8 finished attempts and its success posterior is 0\.100, at or below 0\.1/);
+    // One attempt fewer is not an impasse yet.
+    const seven = await demoRun({ config: { sessions: 7, consortium: consortium() }, responses: failing(7) });
+    assert.notEqual(ended(seven.events).data.breakpoint?.kind, "impasse", "7 failed attempts: posterior 0.111");
+    assert.equal(ofType(seven.events, "attempt.finished").length, 7);
   });
 
   it("end the turn when a problem is settled, once, and the next turn goes on to the other problems", async () => {
@@ -102,6 +114,20 @@ describe("breakpoints", () => {
 });
 
 describe("a pause", () => {
+  it("reads a steer given after a crash and before the resume: the next turn's limit is the team's, not the one carried over", async () => {
+    const whole = await demoRun({ config: { sessions: 3, consortium: consortium({ tokens: 5000 }) }, responses: [check("bad"), say("NOTES"), check("exact trivial_proof")] });
+    // The process died in the middle of turn 1 (no turn.ended). The team answers afterwards.
+    const dir = killedAt(whole.dir, nth(whole.events, "attempt.started", 2));
+    assert.equal(steerCommand(dir, { limit: { tokens: 7777 }, as: "alice", out: () => undefined }), 0);
+    const resumed = await demoResume({ dir, bench: whole.bench, responses: [check("exact trivial_proof")] });
+    const second = ofType(resumed.events, "turn.started")[1];
+    assert.deepEqual([second?.data.limit, second?.data.source], [{ tokens: 7777 }, "a steer by alice"]);
+    assert.equal(ofType(resumed.events, "turn.ended")[0]?.data.reason, "interrupted");
+    // A steer that came before the first turn ended is the first turn's: the next one carries that turn's limit over.
+    const carried = await demoResume({ dir: killedAt(whole.dir, nth(whole.events, "attempt.started", 2)), bench: whole.bench, responses: [check("exact trivial_proof")] });
+    assert.deepEqual([ofType(carried.events, "turn.started")[1]?.data.limit, ofType(carried.events, "turn.started")[1]?.data.source], [{ tokens: 5000 }, "carried over from turn 1"]);
+  });
+
   it("is closed by the next process if the one before ended without closing its turn", async () => {
     // No limit and no breakpoint: the turn ends with the run. Cut the journal in the middle of the turn, as a kill does.
     const whole = await demoRun({ config: { sessions: 3, consortium: consortium() }, responses: [check("bad"), say("NOTES"), check("exact trivial_proof")] });

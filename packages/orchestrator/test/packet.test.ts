@@ -5,10 +5,11 @@ import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { FrozenPacket, Line, PacketRequest } from "@seshat/lines";
 import { readEvents, type HarnessEvent } from "@seshat/core";
-import { buildReport, checkConfig, DEFAULT_CONFIG } from "../src/index.ts";
+import { buildReport, checkConfig, DEFAULT_CONFIG, hintCommand, steerCommand } from "../src/index.ts";
 import { composePacket, NEW_SINCE_HEADING, packetFault } from "../src/packet.ts";
 import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { nth } from "./resume-helpers.ts";
+import { consortium } from "./turns-helpers.ts";
 
 type Message = TranscriptContext["messages"][number];
 
@@ -186,6 +187,46 @@ describe("the frozen packet prefix in a session", () => {
     const { events } = await demoRun({ lines: { M4: broken }, config: { lines: ["M4"] }, responses: [check("exact trivial_proof")] });
     assert.match(ofType(events, "attempt.finished")[0]?.data.error ?? "", /^line M4 failed in contextPacket: a \{ prefix, tail \} answer needs two strings$/);
   });
+});
+
+describe("the team's answers and a line's packet (review round 1)", () => {
+  const packetLine = (frozen: boolean): Line => ({
+    id: "M4",
+    title: "packet",
+    requires: [],
+    resume: "stateless",
+    hooks: { contextPacket: async (_s, r) => (frozen ? { prefix: "THE PREFIX", tail: `Request ${r.request}.` } : `PACKET ${r.request}`) },
+  });
+
+  for (const frozen of [false, true]) {
+    it(`reach the session when a line's ${frozen ? "frozen " : "string "}packet replaces the prompt: in the tail, never in the frozen prefix`, async () => {
+      const first = await demoRun({ lines: { M4: packetLine(frozen) }, config: { lines: ["M4"], sessions: 3, consortium: consortium({ tokens: 1 }) }, responses: [check("bad")] });
+      const claimId = ofType(first.events, "problem.registered")[0]?.data.claimId as string;
+      hintCommand(first.dir, { claimId, text: "Try strong induction on n.", as: "alice", out: () => undefined });
+      steerCommand(first.dir, { forbid: "automation", as: "alice", out: () => undefined });
+      const requests: TranscriptContext[] = [];
+      await demoResume({
+        dir: first.dir,
+        bench: first.bench,
+        lines: { M4: packetLine(frozen) },
+        turns: { limit: { tokens: 1e12 } },
+        responses: [(context) => (requests.push(context), check("bad")), (context) => (requests.push(context), check("exact trivial_proof"))],
+      });
+      assert.ok(requests.length >= 2);
+      for (const context of requests) {
+        const texts = userTexts(context);
+        const all = texts.join("\n");
+        assert.match(all, /# Hints from the team\n.*suggestions, not facts and not proofs[\s\S]*- alice: Try strong induction on n\./);
+        assert.match(all, /# What the team asks\nThe team rules out these strategies for this work: automation\./);
+        if (frozen) {
+          assert.equal(texts[0], "THE PREFIX", "the frozen prefix is the line's alone, so the cache is not broken");
+          assert.match(texts[1] ?? "", /^Request \d+\.\n\n# Hints from the team/);
+        } else {
+          assert.match(texts[0] ?? "", /^PACKET \d+\n\n# Hints from the team/);
+        }
+      }
+    });
+  }
 });
 
 describe("the cache in the cost and the report", () => {

@@ -68,8 +68,9 @@ export function impasseOf(p: Projection, problem: ProblemRow, settings: ImpasseS
     return `every open task of ${problem.target} is blocked (${[...new Set(open.flatMap((task) => task.blocked_by ?? []))].join(", ")})`;
   }
   const { mean, attempts } = posteriorMean(p, problem.problem_id, afterSeq);
-  if (attempts >= settings.minAttempts && mean < settings.posteriorBelow) {
-    return `${problem.target} has ${attempts} finished attempts and its success posterior is ${mean.toFixed(3)}, below ${settings.posteriorBelow}`;
+  // "After 8 attempts, a posterior below 0.1": Beta(1, 1 + 8) has mean 1/10, so the boundary is included and the default fires at the 8th.
+  if (attempts >= settings.minAttempts && mean <= settings.posteriorBelow) {
+    return `${problem.target} has ${attempts} finished attempts and its success posterior is ${mean.toFixed(3)}, at or below ${settings.posteriorBelow}`;
   }
   return undefined;
 }

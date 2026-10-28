@@ -63,7 +63,9 @@ Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tok
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
 two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer
 record a person's answer in the journal (it changes no claim's status); resume (or run --resume) starts the next turn.
---turn-narrative adds a short model-written narrative to the account. A turn limit cannot go with --ablation.`;
+--turn-narrative adds a short model-written narrative to the account (one more model call, made after the limit,
+with a budget of its own of $0.25 that --turn-usd does not bound; its markdown is reduced to plain text, every id
+it cites must exist, and a status it states must be the journal's). A turn limit cannot go with --ablation.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,

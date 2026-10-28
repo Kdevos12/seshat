@@ -426,7 +426,8 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const next = nextLimit(events, consortium ?? { limit: {}, impasse: { posteriorBelow: 0.1, minAttempts: 8 }, narrative: false });
   const turnSpend = record.end?.spent.turn;
   const narrativeHash = record.end?.narrative?.hash;
-  const narrativeText = narrativeHash !== undefined ? options.blob?.(narrativeHash) : undefined;
+  const narrativeRaw = narrativeHash !== undefined ? options.blob?.(narrativeHash) : undefined;
+  const narrativeText = narrativeRaw !== undefined ? plainNarrative(narrativeRaw) : undefined;
   const last = events.at(-1);
   return {
     version: 1,
@@ -709,6 +710,50 @@ export function narrativeCall(o: {
   };
 }
 
+/**
+ * A narrative as plain text. A model wrote it from an account that holds problem statements, hints and tool
+ * output, so its markdown is not trusted: HTML, images, links and bare URLs are removed (the text of a link
+ * stays), and headings become plain lines. `[cite: ID]` markers are kept.
+ */
+export function plainNarrative(text: string): string {
+  return text
+    .replace(/<[^>\n]*>/g, "")
+    .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")
+    .replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, "$1")
+    .replace(/\[([^\]\n]+)\]\[[^\]\n]*\]/g, "$1")
+    .replace(/^\s*\[[^\]\n]+\]:\s*\S+.*$/gm, "")
+    .replace(/\b(?:https?|ftp):\/\/\S+/gi, "[link removed]")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "");
+}
+
+const CLAIMS_PROVED = /\b(proved|proven|proves)\b/i;
+const CLAIMS_REFUTED = /\b(refuted|refutes|disproved|disproves)\b/i;
+/** Words that make a sentence a hope, a doubt, a plan or a negation rather than a claim that something was settled. */
+const HEDGING = /\b(not|no|never|yet|unless|if|until|once|would|could|might|may|should|whether|to prove|to refute|attempt\w*|try|tries|tried|aim\w*|hope\w*|cannot|unproved|unrefuted|still|remains?)\b|n't/i;
+
+/**
+ * Says of a narrative what the journal does not bear out: a clause that says a claim (or a problem) it cites
+ * is proved or refuted while the journal has another status. "Say a claim is proved only when the account gives that
+ * status" is thereby checked, not only asked. A clause that hedges or negates ("not yet proved", "if it is
+ * proved") is not read as a claim. It is a check of the plain statements a narrative makes, not of its meaning.
+ */
+export function unsupportedInNarrative(p: Projection, narrative: string): string[] {
+  const bad: string[] = [];
+  for (const clause of narrative.split(/(?<=[.!?])\s+|\n+|;/)) {
+    const wants = CLAIMS_REFUTED.test(clause) ? "refuted" : CLAIMS_PROVED.test(clause) ? "proved" : undefined;
+    if (wants === undefined || HEDGING.test(clause)) continue;
+    const ids = [
+      ...referencesIn(clause).flatMap((r) => (r.kind === "marker" && r.text !== "" ? [r.text.trim()] : [])),
+      ...[...clause.matchAll(BARE_ID)].map((m) => m[0]),
+    ];
+    for (const id of new Set(ids)) {
+      const have = p.claim(id)?.status ?? p.problem(id)?.outcome ?? (p.problem(id) !== undefined ? "unfinished" : undefined);
+      if (have !== undefined && have !== wants) bad.push(`${id} is ${have} in the journal, and the narrative says ${wants}`);
+    }
+  }
+  return bad;
+}
+
 /** Whether an id names something in the journal: a claim, edge, node, problem, attempt, validation or task. */
 export function idResolves(p: Projection, id: string): boolean {
   const text = id.trim();
@@ -770,6 +815,13 @@ export async function turnNarrative(o: {
       continue;
     }
     const unresolved = unresolvedInNarrative(p, text);
+    const unsupported = unsupportedInNarrative(p, text);
+    if (unresolved.length === 0 && unsupported.length > 0) {
+      feedback = `\n\nYour last narrative said what the journal does not hold: ${unsupported.slice(0, 5).join("; ")}. Say a claim is proved or refuted only when the account gives that status.`;
+      o.log?.(`the turn's narrative stated ${unsupported.length} status(es) the journal does not hold: ${tries === 0 ? "asking again" : "it is left out"}`);
+      if (tries === 1) return { rejected: `it said ${unsupported.slice(0, 5).join("; ")}` };
+      continue;
+    }
     if (unresolved.length === 0) return { hash: o.keep(text) };
     feedback = `\n\nYour last narrative cited ${unresolved.slice(0, 8).join(", ")}, which name nothing in this journal. Cite only ids that appear in the account, as [cite: ID], and no literature.`;
     o.log?.(`the turn's narrative cited ${unresolved.length} id(s) that do not exist: ${tries === 0 ? "asking again" : "it is left out"}`);

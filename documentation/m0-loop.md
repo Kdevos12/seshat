@@ -458,7 +458,8 @@ provers' sessions, the sites of the lines' one-shot calls), each with its share 
 given by the bench, and novelty, since the bench's problems are solved ones.
 
 A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
-interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`).
+interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`). The next
+turn of a consortium run, after the run paused by itself, is not an interruption and is not in that count.
 
 A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
 waits for the team says it is paused after turn N and where the account is, instead of "has not finished".

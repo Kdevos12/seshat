@@ -438,4 +438,6 @@ What each rebuilds, from what it journaled:
   outcome are the problem's whole.
 
 The report says that the run was resumed, how many sessions, tool runs and tasks the interruptions
-cut, and how many cut last lines it found.
+cut, and how many cut last lines it found. A resumption that follows a turn the run ended by itself (a limit or a
+breakpoint of a consortium run, [human.md](human.md#turns)) is the next turn and not an interruption: it is not
+counted there, and the tasks it finds `running` were left so by design.
