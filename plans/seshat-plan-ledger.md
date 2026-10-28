@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 01:50 UTC. `main` at a2f9c29, 1276 tests.
+Updated 2026-10-28 02:25 UTC. `main` at 52efd50, 1360 tests.
 
 ## Tasks
 
@@ -33,7 +33,7 @@ Updated 2026-10-28 01:50 UTC. `main` at a2f9c29, 1276 tests.
 | 20 | `decide`, optional Jev backend | main | not started (after 15, 19) | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
-| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | in review | `task/t23` |
+| 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | not started (after 10) | |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
@@ -47,7 +47,7 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## Order
 
-- Main team (Ruling 27): T4, T7, T15, T16, T21 and T24 merged; T23 in review and T17 in flight; then T19,
+- Main team (Ruling 27): T4, T7, T15, T16, T21, T23 and T24 merged; T17 in flight; then T19,
   T20, T10, T25, T13, T18, T22, T14, T26 and the final review. At most three agents at once,
   because the account's usage limits bind.
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
@@ -92,6 +92,15 @@ Notes from the main team, newest last. Read them at the start of each session.
   run with it is resumed (`Line.resume`), and a registered line that declares nothing makes `harness run
   --resume` refuse: Tasks 6, 9 and 11 must declare theirs. Use `completeJson(llm, request)` from
   `@seshat/lines` for schema-checked JSON. Details under "Interface changes".
+- 2026-10-28: Tasks 21, 23 and 24 are merged (`main` at `52efd50`). Pull. Task 24: `contextPacket` may
+  answer `{ prefix, tail }`; compile Task 11's packet through it (on Anthropic the prefix may not be
+  cached at its end until pi-ai marks a block-level breakpoint; unmeasured). Task 23: the memory store
+  has `stamp` (provenance on every learned, unverified record you write: pass it), `draw` for the
+  randomized inclusion of unverified items (record `included` and `withheld` through
+  `SessionContext.draw`), `itemEffect` for a lesson's causal effect, epochs and probation; memory
+  across runs is `--memory-from`. No shipped line calls `draw` yet: Tasks 9 and 11 are the first.
+  Task 21: a line may give the Lean environment (`Line.leanEnv`); M17 does. Details under "Interface
+  changes".
 
 ## Interface changes
 
@@ -167,6 +176,24 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   server; the package names in `extended.toml` and `base.toml` are from memory. Known limit: the hash
   states the lock, not what Lake built. For Task 23: `sameLeanEnvironment`, `leanEnvOfConfig` and
   `leanEnvironmentHash` are meant for its environment check.
+- Task 23, merged in `52efd50`: `packages/core`: `run.started.memoryFrom` (the earlier journal, its last
+  hash and a relative path), the event `memory.epoch_opened` (orchestrator-only, journal-checked), the
+  optional `provenance` on `attempt.started`, `lesson.recorded` and `node.recorded`, `included` and
+  `withheld` on `attempt.started`, `Journal.open` option `memory` and `Journal.chain`, `Projection`
+  methods for the chain, the epochs and item uses (`PROJECTION_VERSION` 6; rows gain `earlier_status`
+  and `carried`), `BlobStore(dir, readFrom?)`, `chain.ts`, `provenance.ts`, `random.ts`;
+  `packages/memory`: `MemoryStore.stamp`, `epoch`, `openEpochIfChanged`, `weightOf`, `draw`,
+  `itemUses`, `itemEffect`, `storedProofs`, `Claim` and `Edge` `earlierStatus`; `packages/lines`:
+  `SessionContext.draw` and `drawn`; `packages/orchestrator`: `RunOptions.memoryFrom`,
+  `RunOptions.leanEnvironment` (the CLI fills it from the host's lock), `RunConfig.seed`,
+  `RunReport.memory`, `--memory-from`, `--draw-seed`. Verified facts carry only under the same Lean
+  environment (Task 21's hash; bench revision and toolchain for a run without one); under another, a
+  claim's earlier status counts for nothing until a stored proof passes `validate` again. The hash
+  chain is an unkeyed SHA-256: `--memory-from` is for the user's own runs. Pages:
+  [memory.md](../documentation/memory.md), [journal.md](../documentation/journal.md),
+  [trust.md](../documentation/trust.md). Known limits: the fleet's posteriors ignore epochs until
+  Task 19; the Mathlib epoch trigger is the bench revision; nodes of every kind carry in every
+  environment; reading the chain costs about 14 microseconds per event on every open (no snapshot).
 
 ## Log
 
@@ -447,3 +474,6 @@ Task 21: fix round 1 done by the implementer (d49c877: imports and probe only wi
 Task 21: merged: main brought into task/t21 (44dd01e, 1274/1274; one conflict in journal.md), merged into main a2f9c29 (1276/1276), pushed; not run against a real Lean, Lake or GitHub; deferred to the final review: M1 lock vs on-disk lakefile hardening, M3 probe lets server_error through, test temp directories never removed
 Task 23: committed in four commits (head a9fd1bc), main (Task 24) merged in cb8989e, 1257/1257; the two failures seen earlier were the controller emptying the shared test temp directory during the run; review dispatched on ab4bda3..a9fd1bc
 Task 17: implementer dispatched (worktree wt/t17, branch task/t17 from main a2f9c29; brief task-17-brief.md; own TMPDIR per agent)
+Task 23: review round 1: spec met, no Critical; Important I1 (Task 21's environment hash not an input), I2 (trust limit of the unkeyed hash chain undocumented), I3 (chain refusals untested), minors M1-M9; fix round done (merge of main ba280db, fixes 21894cd to fe074dd, 1358/1358)
+Task 23: scoped re-review of fix round 1: approved, no Critical or Important; notes N1 (resume checks leanEnv only when the recorded config has the key), N2, N3 (a non-string relative path in a hand-edited journal throws a TypeError instead of a MemoryChainError) deferred to the final review
+Task 23: merged: task/t23 pushed (fe074dd), merged into main 52efd50 (--no-ff; 1360/1360), pushed; not run against a real Lean or model; deferred to the final review: N1-N3, no draw call by a shipped line yet, chain read cost without snapshot
