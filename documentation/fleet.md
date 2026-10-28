@@ -293,6 +293,8 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `directives` | null | `true` for the built-in directives, or an object from label to sentence |
 | `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
 | `dagSteps` | 8 | the most steps in an informal-first session's DAG |
+| `coldStart` | false | add capped pseudo-counts from a `fleet.cold_start` decision ([decide.md](decide.md)) to the strategies' posteriors |
+| `coldStartWeight` | 2 | the total weight of those pseudo-counts, from 0 to 4; evidence outweighs it after a few attempts |
 
 ## Resuming
 
