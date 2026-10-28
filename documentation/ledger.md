@@ -123,7 +123,7 @@ allowed throws, and nothing is written.
 
 A line never gets a `TaskLedger`. It proposes through its context (`TaskApi` in
 [lines.md](lines.md)), and `propose` makes the task the problem's, `pending`, proposed by the line and
-owned by it, unless the orchestrator assigns it to someone else. A proposal names no status and no
+owned by it, unless the orchestrator assigns it to someone else. A line may also ask for a new owner for a task that has not started (`TaskApi.assign`, which commits `task.assigned` or refuses with a reason), and the fleet does for the tasks the scheduler proposes ([fleet.md](fleet.md#owners-of-scheduled-tasks)). A proposal names no status and no
 owner. Its dependencies and parent must be tasks of the same problem, and a problem takes at most
 200 proposed tasks (the option `maxProposed`), so that a line that proposes without end is stopped
 with a reason it can read. What the journal refuses (a claim that does not exist, a criterion of the
@@ -409,6 +409,15 @@ start. The certifier may therefore have been asked twice for one candidate, once
 but the journal never holds two answers for it. A certifier that is asked again after a cut call is
 the one case where a candidate is certified by two processes; the tests count the requests.
 
+### Scheduled tasks
+
+The line M12 ([scheduler.md](scheduler.md)) is the only one that runs the tasks it proposes. Between
+sessions the orchestrator starts the task the line chose (`task.status_changed` to `running`, with the
+line's reason), and ends it `done` or `failed` by what the line answers and the task's criterion. A
+cut leaves the task `running`; `interrupt` makes it `ready`, and the line's `resumeProblem` makes
+its own state again. `ladder.escalated` ([journal.md](journal.md)) is not a task event, but it is written by the
+orchestrator in the same places, from the same spend.
+
 ### Lines
 
 A line says in `resume` whether a run with it can be resumed ([lines.md](lines.md#resuming-a-run-with-lines)):
@@ -416,7 +425,7 @@ A line says in `resume` whether a run with it can be resumed ([lines.md](lines.m
 state in the process and has a `resumeProblem` hook that rebuilds it from the journal and the memory
 when a problem is taken up), or `{refuse: reason}`. A line that says nothing is refused, and so is a
 `rebuild` line without the hook. The repository's lines: M1 and M11 are stateless (M11 keeps its findings in the memory
-and skips, on a second call of `beforeProvers`, what the memory shows done: [models.md](models.md#resuming)); M2, M6 and
+and skips, on a second call of `beforeProvers`, what the memory shows done: [models.md](models.md#resuming)); M2, M6, M12 and
 the fleet rebuild. A run with a line that is refused cannot be resumed, and the command says which line and why.
 
 What each rebuilds, from what it journaled:
@@ -434,6 +443,7 @@ What each rebuilds, from what it journaled:
   the problem's finished attempts, restores which framings it already noted, the last check of the
   prover, and the notices it had not delivered: one that went to a session the interruption cut is
   delivered again, to the session that follows.
+- **M12** reads its `m12_sketch`, `m12_session` and `m12_subsumption` nodes and the tasks it proposed ([scheduler.md](scheduler.md#resuming)): a sketch recorded and not yet registered is registered, a hole without a task gets one, and the `ladder_progress` nodes give the ladder its marks.
 - **The fleet** reads the `allocation` nodes: the strategy a prover stuck to (`last`), the claims
   worked, and which provers have ended, so that the gate does not hold a place for them. The draws
   are the seeded source's, so the same strategies are drawn.

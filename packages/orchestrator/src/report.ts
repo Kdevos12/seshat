@@ -21,6 +21,12 @@ export interface ProblemLine {
   attempts: number;
   usd: number;
   durationMs: number;
+  /**
+   * The escalation ladder (documentation/scheduler.md, "The ladder"): the rung that was on when the
+   * problem ended and the dollars spent at each rung. Present for a run with the M12 line or a
+   * `ladder.escalated` event; `solvedAtRung` is only for a certified outcome (`proved` or `refuted`): absent for a candidate, which the certifier has not confirmed, and for a problem with none.
+   */
+  ladder?: { endedAtRung: number; solvedAtRung?: number; usdByRung: Record<string, number> };
 }
 
 /** What a run did, read from its journal alone. */
@@ -227,6 +233,72 @@ function percentile(sorted: readonly number[], q: number): number | undefined {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 }
 
+/**
+ * The dollars of each problem by ladder rung, from the events alone. A problem is at rung 0 until a
+ * `ladder.escalated` event moves it. A session's cost counts at the rung of its `attempt.finished` (or
+ * of its charges, when it never finished) and a one-shot call at the rung of its own event; a session
+ * is a problem's through the task it works for.
+ */
+export function rungSpend(events: readonly HarnessEvent[]): Map<string, { endedAtRung: number; usdByRung: Record<string, number> }> {
+  const out = new Map<string, { endedAtRung: number; usdByRung: Record<string, number> }>();
+  const rungs = new Map<string, number>();
+  const taskProblem = new Map<string, string>();
+  const attemptProblem = new Map<string, string>();
+  const unfinished = new Map<string, Array<{ problemId: string; usd: number; rung: number }>>();
+  const entry = (problemId: string) => {
+    const found = out.get(problemId) ?? { endedAtRung: 0, usdByRung: {} };
+    out.set(problemId, found);
+    return found;
+  };
+  const add = (problemId: string, rung: number, usd: number) => {
+    const e = entry(problemId);
+    e.usdByRung[String(rung)] = (e.usdByRung[String(rung)] ?? 0) + usd;
+  };
+  for (const event of events) {
+    switch (event.type) {
+      case "problem.registered":
+        entry(event.data.problemId);
+        break;
+      case "task.created":
+        if (event.data.problemId !== undefined) taskProblem.set(event.data.taskId, event.data.problemId);
+        break;
+      case "attempt.started": {
+        const problemId = event.data.taskId === undefined ? undefined : taskProblem.get(event.data.taskId);
+        if (problemId !== undefined) attemptProblem.set(event.data.attemptId, problemId);
+        break;
+      }
+      case "ladder.escalated":
+        rungs.set(event.data.problemId, event.data.to);
+        entry(event.data.problemId).endedAtRung = event.data.to;
+        break;
+      case "attempt.charged": {
+        const problemId = attemptProblem.get(event.data.attemptId);
+        if (problemId === undefined) break;
+        const list = unfinished.get(event.data.attemptId) ?? [];
+        list.push({ problemId, usd: event.data.usd, rung: rungs.get(problemId) ?? 0 });
+        unfinished.set(event.data.attemptId, list);
+        break;
+      }
+      case "attempt.finished": {
+        unfinished.delete(event.data.attemptId);
+        const problemId = attemptProblem.get(event.data.attemptId);
+        if (problemId !== undefined) add(problemId, rungs.get(problemId) ?? 0, event.data.usd);
+        break;
+      }
+      case "model_call.finished": {
+        const problemId = event.data.problemId ?? (event.data.attemptId === undefined ? undefined : attemptProblem.get(event.data.attemptId));
+        // A call made by a session is in the session's totals already.
+        if (problemId !== undefined && event.data.attemptId === undefined) add(problemId, rungs.get(problemId) ?? 0, event.data.usd);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  for (const charges of unfinished.values()) for (const c of charges) add(c.problemId, c.rung, c.usd);
+  return out;
+}
+
 export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const started = events.find((e) => e.type === "run.started")?.data as EventDataMap["run.started"] | undefined;
   if (started === undefined) throw new Error("the journal has no run.started event");
@@ -245,6 +317,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const turnsStarted = events.filter((e) => e.type === "turn.started").length;
   const lastTurnEnd = turnEnds.at(-1);
   const targets = new Map<string, string>();
+  const rungLines = rungSpend(events);
+  const rungsOn = events.some((e) => e.type === "ladder.escalated") || (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.some((l) => l.id === "M12") === true;
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
@@ -280,6 +354,17 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
           attempts: d.attempts,
           usd: d.usd,
           durationMs: d.durationMs,
+          ...(rungsOn
+            ? {
+                ladder: {
+                  endedAtRung: rungLines.get(d.problemId)?.endedAtRung ?? 0,
+                  ...(d.outcome === "proved" || d.outcome === "refuted" || d.outcome === "candidate"
+                    ? { solvedAtRung: rungLines.get(d.problemId)?.endedAtRung ?? 0 }
+                    : {}),
+                  usdByRung: rungLines.get(d.problemId)?.usdByRung ?? {},
+                },
+              }
+            : {}),
         });
         count(outcomes, d.outcome);
         break;
@@ -527,6 +612,25 @@ export function renderRunReport(report: RunReport): string {
       (p) =>
         `| ${cell(p.target)} | ${p.outcome} | ${p.attempts} | ${money(p.usd)} | ${Math.round(p.durationMs / 1000)} s | ${cell((p.reason ?? "").slice(0, 200))} |`,
     ),
+    ...(report.problems.some((p) => p.ladder !== undefined)
+      ? [
+          "",
+          "| Problem | Solving rung | Dollars per rung |",
+          "|---|---|---|",
+          ...report.problems.flatMap((p) =>
+            p.ladder === undefined
+              ? []
+              : [
+                  `| ${cell(p.target)} | ${p.ladder.solvedAtRung ?? "none"} | ${
+                    Object.entries(p.ladder.usdByRung)
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([rung, usd]) => `rung ${rung} ${money(usd)}`)
+                      .join(", ") || "none"
+                  } |`,
+                ],
+          ),
+        ]
+      : []),
   ];
   return `${lines.join("\n")}\n`;
 }

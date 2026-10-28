@@ -455,6 +455,28 @@ export interface EventDataMap {
     nodeId?: string;
   };
   /**
+   * A problem moves up the escalation ladder (documentation/scheduler.md, "The ladder"; PE4 of
+   * `plans/plan-change-memory-evolution.md`): a fraction `threshold` of its budget was spent since the last Lean
+   * progress, and a higher rung has its line on. Written by the orchestrator only, which checks the
+   * arithmetic: `sinceProgressUsd` is at least `threshold` times `budgetUsd`, and `from` is the rung the
+   * problem is on. The event changes no status.
+   */
+  "ladder.escalated": {
+    problemId: string;
+    /** The rung the problem leaves, and the one it enters. A rung whose line is off is skipped. */
+    from: number;
+    to: number;
+    /** The lines that make the new rung, such as `M18`. */
+    lines: string[];
+    /** The fraction of the problem's budget that triggered the move. */
+    threshold: number;
+    /** Dollars spent on the problem since its last Lean progress, and the problem's whole budget. */
+    sinceProgressUsd: number;
+    budgetUsd: number;
+    /** What the last progress was (a proved subclaim, fewer holes), or that there was none. */
+    reason: string;
+  };
+  /**
    * A decision of the `decide` capability (documentation/decide.md): a typed choice, score or yes/no
    * about a short state, used to order work and never to change a status. Written by the orchestrator
    * only, so that no line forges or hides one; the journal refuses a site that may not use decide.
@@ -537,6 +559,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "task.assigned",
   "task.status_changed",
   "task.routed",
+  "ladder.escalated",
   "memory.epoch_opened",
   "decision.made",
 ];

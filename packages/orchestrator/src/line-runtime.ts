@@ -27,7 +27,8 @@ import type {
 import type { DecideConfig } from "@seshat/decide";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
-import { routingInfo, type TaskLedger, taskInfo } from "@seshat/scheduler";
+import { isInterrupted } from "@seshat/lines";
+import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
 import { lineLlm } from "./llm.ts";
@@ -215,9 +216,35 @@ export class ProblemLines {
   /** The random source of each (session, line): one stream, so that two draws of a session do not repeat each other. */
   private readonly streams = new Map<string, RandomSource>();
 
+  /** Schedule steps and ladder checks run one at a time: a step works a task to its end while the provers wait. */
+  private chain: Promise<void> = Promise.resolve();
+  /** The rungs of the problem's ladder, when the ladder is on (line M12 with its `ladder` option and a line with a rung). */
+  private readonly rungs: Rung[];
+  private readonly fractions: number[];
+  /** The Lean progress the ladder last saw, and the problem's spend then. Read from the memory the first time it is needed. */
+  private mark: { progress: Progress; atUsd: number } | undefined;
+
   constructor(run: RunLines, options: ProblemLinesOptions) {
     this.run = run;
     this.p = options;
+    const m12 = run.o.lines.find((entry) => entry.line.id === "M12");
+    const on = m12 !== undefined && m12.options.ladder === true;
+    this.rungs = on ? rungsOf(run.o.lines.map((entry) => entry.line)) : [];
+    const given = m12?.options.fractions;
+    this.fractions = Array.isArray(given) && given.every((f) => typeof f === "number" && f > 0 && f <= 1) && given.length > 0 ? (given as number[]) : [...DEFAULT_FRACTIONS];
+  }
+
+  /** The rung the problem is on: 0 until the ladder moves it up (the journal says). */
+  get rung(): number {
+    return this.rungs.length === 0 ? 0 : this.run.o.journal.projection.ladderRung(this.p.problemId);
+  }
+
+  /** Whether a line works on this problem now: with the ladder on, a line of a rung waits for the problem to reach it. */
+  private active(entry: EnabledLine): boolean {
+    const wanted = entry.line.rung;
+    if (this.rungs.length === 0 || wanted === undefined || wanted <= 0) return true;
+    const index = this.rungs.findIndex((rung) => rung.lines.includes(entry.line.id));
+    return index >= 0 && index < this.rung;
   }
 
   /** The strategy labels `lean_check` offers; none when no enabled line gives any. */
@@ -228,7 +255,7 @@ export class ProblemLines {
   private with<K extends keyof LineHooks>(hook: K): Array<{ entry: EnabledLine; hook: NonNullable<LineHooks[K]> }> {
     return this.run.o.lines.flatMap((entry) => {
       const fn = entry.line.hooks[hook];
-      return fn === undefined ? [] : [{ entry, hook: fn as NonNullable<LineHooks[K]> }];
+      return fn === undefined || !this.active(entry) ? [] : [{ entry, hook: fn as NonNullable<LineHooks[K]> }];
     });
   }
 
@@ -287,6 +314,7 @@ export class ProblemLines {
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
       options: entry.options,
+      ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
     };
     if (signal === undefined) this.contexts.set(id, context);
@@ -373,13 +401,17 @@ export class ProblemLines {
   async resumeProblem(held: ResumedProblem): Promise<void> {
     for (const entry of this.run.o.lines) {
       const id = entry.line.id;
+      if (!this.active(entry)) continue;
       const rebuild = entry.line.resume === "rebuild" ? entry.line.hooks.resumeProblem : undefined;
       if (rebuild !== undefined) {
         await call(id, "resumeProblem", () => rebuild(this.context(entry), held));
         continue;
       }
       const hook = entry.line.hooks.beforeProvers;
-      if (hook === undefined || held.begun) continue;
+      // A line of a higher rung starts when the problem moves up, which can be after the provers began: a cut between the
+      // `ladder.escalated` event and its `beforeProvers` leaves it active and not started, so it is started again here
+      // (its `beforeProvers` must be safe to call twice, as every line's is on resume).
+      if (hook === undefined || (held.begun && !((entry.line.rung ?? 0) > 0))) continue;
       if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) continue;
       await call(id, "beforeProvers", () => hook(this.context(entry)));
       if (this.p.workbench.candidate !== undefined) this.log(`line ${id} settled the problem before the provers`);
@@ -392,6 +424,8 @@ export class ProblemLines {
    * here, so that a wrong one is that line's failure.
    */
   async beforeSession(info: SessionInfo): Promise<SessionPlan> {
+    // Between two sessions the scheduling line works its ready tasks (documentation/lines.md, "Scheduling"), and the ladder looks at the problem.
+    await this.step();
     const plan: SessionPlan = {};
     let chosen: { line: LineId; name: string } | undefined;
     try {
@@ -439,7 +473,7 @@ export class ProblemLines {
    */
   async openSession(info: SessionInfo, taken: readonly string[]): Promise<OpenedSession> {
     let sections: Briefing[] = [];
-    for (const entry of this.run.o.lines) {
+    for (const entry of this.run.o.lines.filter((e) => this.active(e))) {
       const id = entry.line.id;
       const one = entry.line.hooks.briefing;
       if (one !== undefined) {
@@ -554,9 +588,131 @@ export class ProblemLines {
 
   /** The lines' `afterProblem`, with the run's signal: the problem's own may be aborted by now. */
   async afterProblem(end: ProblemEnd): Promise<void> {
+    // The tasks that are still ready are worked now, with what the problem's budget has left, before the lines close the problem.
+    await this.step(true);
     const signal = this.run.o.signal ?? new AbortController().signal;
     for (const { entry, hook } of this.with("afterProblem")) {
       await call(entry.line.id, "afterProblem", () => hook(this.context(entry, signal), end));
+    }
+  }
+
+
+  /** Runs `work` after the work already queued: the problem's schedule steps and ladder checks never overlap. */
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.chain.then(work);
+    this.chain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  /**
+   * One schedule step: the tasks the scheduling line proposed are worked, as many as its `stepTasks` option allows (all of them, when the problem's provers are over). For each: the lines that assign owners do (the fleet), the scheduling line chooses, the
+   * orchestrator starts the task, the line does the work, and the task ends by what the line answers and its criterion.
+   * A task whose work was interrupted stays `running`; the resumed run makes it `ready` again.
+   */
+  async step(drain = false): Promise<void> {
+    const entry = this.run.o.lines.find((e) => e.line.hooks.schedule !== undefined && this.active(e));
+    if (entry === undefined && this.rungs.length === 0) return;
+    await this.serial(async () => {
+      if (entry !== undefined) {
+        const per = typeof entry.options.stepTasks === "number" ? Math.max(1, Math.floor(entry.options.stepTasks)) : 1;
+        await this.runTasks(entry, drain ? Number.POSITIVE_INFINITY : per);
+      }
+      await this.checkLadder();
+    });
+  }
+
+  private async runTasks(entry: EnabledLine, count: number): Promise<void> {
+    const id = entry.line.id;
+    const tasks = this.run.o.tasks;
+    const schedule = entry.line.hooks.schedule as NonNullable<LineHooks["schedule"]>;
+    for (let n = 0; n < count; n++) {
+      if (this.p.workbench.candidate !== undefined || this.p.signal.aborted) return;
+      tasks.promote(this.p.problemId);
+      const context = this.context(entry);
+      const ready = context.tasks.ready().filter((task) => task.proposedBy !== undefined);
+      for (const { entry: other, hook } of this.with("assignOwners")) await call(other.line.id, "assignOwners", () => hook(this.context(other), ready));
+      const choice = await call(id, "schedule", () => schedule(context, context.tasks.ready().filter((task) => task.proposedBy !== undefined)));
+      if (choice === undefined) return;
+      const row = tasks.get(choice.taskId);
+      if (row === undefined || row.status !== "ready" || row.problem_id !== this.p.problemId) {
+        throw new LineError(id, "schedule", `${choice.taskId} is not a ready task of this problem`);
+      }
+      tasks.start(choice.taskId, `scheduled by line ${id}: ${choice.reason}`);
+      this.log(`task ${choice.taskId} starts: ${choice.reason}`);
+      let end;
+      try {
+        end = await call(id, "schedule", () => choice.run(tasks.get(choice.taskId)?.owner ?? `line:${id}`));
+      } catch (error) {
+        // A process that ended, or a turn that ended, leaves the task running; the resumption gives it back.
+        if (isInterrupted(error) || (error instanceof LineError && isInterrupted(error.cause))) throw error;
+        tasks.fail(choice.taskId, `line ${id} failed: ${messageOf(error)}`);
+        tasks.promote(this.p.problemId);
+        throw error;
+      }
+      if (end.ended === "done" && tasks.completeIfHolds(choice.taskId, end.reason)) {
+        // done
+      } else if (end.ended === "done") {
+        tasks.fail(choice.taskId, `${end.reason}, but the task's criterion does not hold`);
+      } else if (this.p.signal.aborted) {
+        tasks.cancel(choice.taskId, `the problem ended: ${end.reason}`);
+      } else {
+        tasks.fail(choice.taskId, end.reason);
+      }
+      tasks.promote(this.p.problemId);
+      await this.checkLadder();
+    }
+  }
+
+  /** The ladder's progress mark: the last Lean progress and what the problem had spent then, from the memory. */
+  private markOf(): { progress: Progress; atUsd: number } {
+    if (this.mark !== undefined) return this.mark;
+    const nodes = this.run.o.memory.nodes("ladder_progress", { claimId: this.p.claimId }).filter((node) => (node.data as { problemId?: string }).problemId === this.p.problemId);
+    const last = nodes.at(-1)?.data as { proved?: number; holes?: number | null; atUsd?: number } | undefined;
+    this.mark =
+      last === undefined
+        ? { progress: NO_PROGRESS, atUsd: 0 }
+        : { progress: { proved: last.proved ?? 0, holes: typeof last.holes === "number" ? last.holes : undefined }, atUsd: last.atUsd ?? 0 };
+    return this.mark;
+  }
+
+  /**
+   * Moves the problem up its ladder when a fraction of its budget has been spent since the last Lean progress (PE4). Lean
+   * progress is a new proved subclaim, or fewer open holes in the best healthy sketch; it moves the mark. The move is
+   * the orchestrator's own: the journal refuses `ladder.escalated` unless the spend reaches the threshold it names.
+   */
+  private async checkLadder(): Promise<void> {
+    if (this.rungs.length === 0 || this.p.workbench.candidate !== undefined || this.p.signal.aborted) return;
+    const memory = this.run.o.memory;
+    const mark = this.markOf();
+    const now = progressOf(memory, this.p.problemId, this.p.claimId);
+    const spent = this.p.ledger.usd;
+    const why = progressed(mark.progress, now);
+    if (why !== undefined) {
+      this.mark = { progress: { proved: Math.max(now.proved, mark.progress.proved), holes: now.holes === undefined ? mark.progress.holes : mark.progress.holes === undefined ? now.holes : Math.min(now.holes, mark.progress.holes) }, atUsd: spent };
+      memory.recordNode({ kind: "ladder_progress", claimId: this.p.claimId, data: { problemId: this.p.problemId, proved: this.mark.progress.proved, holes: this.mark.progress.holes ?? null, atUsd: spent, why } });
+      this.log(`Lean progress: ${why}`);
+      return;
+    }
+    const budget = this.p.ledger.limitUsd;
+    if (budget === undefined) return;
+    const due = ladderDue(this.rungs, this.fractions, { rung: this.rung, sinceProgressUsd: spent - mark.atUsd, budgetUsd: budget });
+    if (due === undefined) return;
+    const reason = `${(spent - mark.atUsd).toFixed(4)} of ${budget} dollars spent without Lean progress (${mark.progress.proved} subclaim(s) proved${mark.progress.holes === undefined ? ", no healthy sketch" : `, ${mark.progress.holes} open hole(s) in the best healthy sketch`})`;
+    this.run.o.journal.emit(
+      "ladder.escalated",
+      { problemId: this.p.problemId, from: due.from, to: due.to, lines: due.lines, threshold: due.threshold, sinceProgressUsd: spent - mark.atUsd, budgetUsd: budget, reason },
+      "orchestrator",
+    );
+    this.log(`rung ${due.from} to ${due.to}: ${reason}; the lines ${due.lines.join(", ")} start`);
+    // The lines of the new rung start on the problem as they would have at its beginning.
+    for (const entry of this.run.o.lines) {
+      if (!due.lines.includes(entry.line.id)) continue;
+      const hook = entry.line.hooks.beforeProvers;
+      if (hook === undefined || this.p.workbench.candidate !== undefined || this.p.signal.aborted) continue;
+      await call(entry.line.id, "beforeProvers", () => hook(this.context(entry)));
     }
   }
 
@@ -629,6 +785,15 @@ function taskApi(tasks: TaskLedger, journal: Journal, who: { problemId: string; 
       const result = tasks.propose(who, proposal);
       if (result.accepted) tasks.promote(problemId);
       return result;
+    },
+    assign: (taskId, owner, reason) => {
+      if (projection().task(taskId)?.problem_id !== problemId) return { assigned: false, reason: `${taskId} is not a task of this problem` };
+      try {
+        tasks.assign(taskId, owner, reason);
+        return { assigned: true };
+      } catch (error) {
+        return { assigned: false, reason: messageOf(error) };
+      }
     },
   };
 }
