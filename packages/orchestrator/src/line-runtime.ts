@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import type { BlobStore, Journal, Submission } from "@seshat/core";
+import { type BlobStore, hash32, type Journal, type RandomSource, seeded, type Submission } from "@seshat/core";
 import type {
   AttemptAnnotation,
   Briefing,
@@ -24,7 +24,7 @@ import type {
   TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
-import type { MemoryStore } from "@seshat/memory";
+import type { Draw, DrawItem, DrawOptions, MemoryStore } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { routingInfo, type TaskLedger, taskInfo } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
@@ -72,6 +72,8 @@ export interface RunLinesOptions {
   log: (line: string) => void;
   /** The run's stop signal. */
   signal?: AbortSignal;
+  /** Seeds the draws of unverified items (`SessionContext.draw`). Default: the run's id, so that each run draws differently. */
+  seed?: string | number;
 }
 
 export interface ProblemLinesOptions {
@@ -131,6 +133,9 @@ export interface SessionInfo {
   regions: Submission;
   strategy?: string;
   subgoal?: string;
+  /** The unverified items the lines' draws included and withheld, once `beforeSession` has run. */
+  included?: string[];
+  withheld?: string[];
 }
 
 /** What the lines decided for a session about to start, merged in `LINE_ORDER`. */
@@ -143,6 +148,9 @@ export interface SessionPlan {
   model?: { name: string; model: Model<Api> };
   strategy?: string;
   subgoal?: string;
+  /** The unverified items the lines drew into the session and the ones the draws withheld; recorded on `attempt.started`. */
+  included?: string[];
+  withheld?: string[];
 }
 
 /** The lines' part in a session that starts: briefing sections, tools, and the in-session hooks. */
@@ -170,6 +178,10 @@ export class ProblemLines {
   private readonly run: RunLines;
   private readonly p: ProblemLinesOptions;
   private readonly contexts = new Map<LineId, ProblemContext>();
+  /** What the draws of each session that is being decided have included and withheld, by attempt. */
+  private readonly draws = new Map<string, { included: string[]; withheld: string[] }>();
+  /** The random source of each (session, line): one stream, so that two draws of a session do not repeat each other. */
+  private readonly streams = new Map<string, RandomSource>();
 
   constructor(run: RunLines, options: ProblemLinesOptions) {
     this.run = run;
@@ -233,7 +245,10 @@ export class ProblemLines {
     return context;
   }
 
-  private sessionContext(entry: EnabledLine, info: SessionInfo): SessionContext {
+  /** `deciding`: the session has not started, so a draw can still be recorded on its `attempt.started`. */
+  private sessionContext(entry: EnabledLine, info: SessionInfo, deciding = false): SessionContext {
+    const drawn = (): { included: string[]; withheld: string[] } =>
+      deciding ? (this.draws.get(info.attemptId) ?? { included: [], withheld: [] }) : { included: info.included ?? [], withheld: info.withheld ?? [] };
     return {
       ...this.context(entry),
       prover: info.prover,
@@ -244,6 +259,44 @@ export class ProblemLines {
       regions: info.regions,
       ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
       ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
+      draw: (items, options) => {
+        if (!deciding) {
+          throw new Error(`line ${entry.line.id}: the attempt ${info.attemptId} has started and its draw is recorded on attempt.started: draw the unverified items in beforeSession`);
+        }
+        return this.draw(entry.line.id, info, items, options);
+      },
+      get drawn() {
+        const { included, withheld } = drawn();
+        return { included: [...included], withheld: [...withheld] };
+      },
+    };
+  }
+
+  /**
+   * A line's draw for a session about to start: the unverified items it selected, drawn with
+   * `MemoryStore.draw` from the run's seeded source, and noted for `attempt.started`. The stream is
+   * seeded by the run's seed, the problem, the prover, the session and the line, so the same run draws
+   * the same. An item already drawn for this session keeps its first outcome.
+   */
+  private draw(line: LineId, info: SessionInfo, items: readonly (string | DrawItem)[], options?: Partial<DrawOptions>): Draw {
+    const noted = this.draws.get(info.attemptId) ?? { included: [], withheld: [] };
+    this.draws.set(info.attemptId, noted);
+    const decided = (id: string) => noted.included.includes(id) || noted.withheld.includes(id);
+    const fresh = items.filter((item) => !decided(typeof item === "string" ? item : item.id));
+    const key = `${this.run.o.seed ?? this.run.o.runId}:draw:${this.p.problemId}:${info.prover}:${info.session}:${line}`;
+    let random = this.streams.get(key);
+    if (random === undefined) {
+      random = seeded(hash32(key));
+      this.streams.set(key, random);
+    }
+    const drawn = this.run.o.memory.draw(fresh, random, options);
+    noted.included.push(...drawn.included);
+    noted.withheld.push(...drawn.withheld);
+    const ids = items.map((item) => (typeof item === "string" ? item : item.id));
+    return {
+      ...drawn,
+      included: ids.filter((id) => noted.included.includes(id)),
+      withheld: ids.filter((id) => noted.withheld.includes(id)),
     };
   }
 
@@ -291,27 +344,37 @@ export class ProblemLines {
   async beforeSession(info: SessionInfo): Promise<SessionPlan> {
     const plan: SessionPlan = {};
     let chosen: { line: LineId; name: string } | undefined;
-    for (const { entry, hook } of this.with("beforeSession")) {
-      const id = entry.line.id;
-      const decision = await call(id, "beforeSession", () => hook(this.sessionContext(entry, info)));
-      if (decision === undefined) continue;
-      if (decision.stop !== undefined) {
-        this.log(`${info.prover} stops before session ${info.session}: line ${id}: ${decision.stop}`);
-        return { stop: `line ${id}: ${decision.stop}` };
+    try {
+      for (const { entry, hook } of this.with("beforeSession")) {
+        const id = entry.line.id;
+        const decision = await call(id, "beforeSession", () => hook(this.sessionContext(entry, info, true)));
+        if (decision === undefined) continue;
+        if (decision.stop !== undefined) {
+          this.log(`${info.prover} stops before session ${info.session}: line ${id}: ${decision.stop}`);
+          return { stop: `line ${id}: ${decision.stop}` };
+        }
+        if (decision.skip !== undefined) {
+          this.log(`${info.prover} skips session ${info.session}: line ${id}: ${decision.skip}`);
+          return { skip: `line ${id}: ${decision.skip}` };
+        }
+        if (decision.model !== undefined) chosen = { line: id, name: decision.model };
+        if (decision.strategy !== undefined) plan.strategy = decision.strategy;
+        if (decision.subgoal !== undefined) plan.subgoal = decision.subgoal;
       }
-      if (decision.skip !== undefined) {
-        this.log(`${info.prover} skips session ${info.session}: line ${id}: ${decision.skip}`);
-        return { skip: `line ${id}: ${decision.skip}` };
+      if (chosen !== undefined) {
+        const { line, name } = chosen;
+        plan.model = { name, model: await call(line, "beforeSession", () => this.run.resolveModel(name)) };
       }
-      if (decision.model !== undefined) chosen = { line: id, name: decision.model };
-      if (decision.strategy !== undefined) plan.strategy = decision.strategy;
-      if (decision.subgoal !== undefined) plan.subgoal = decision.subgoal;
+      // What the draws decided is recorded on the attempt, which the prover starts next.
+      const drawn = this.draws.get(info.attemptId);
+      if (drawn !== undefined && drawn.included.length + drawn.withheld.length > 0) {
+        plan.included = [...drawn.included];
+        plan.withheld = [...drawn.withheld];
+      }
+      return plan;
+    } finally {
+      this.draws.delete(info.attemptId);
     }
-    if (chosen !== undefined) {
-      const { line, name } = chosen;
-      plan.model = { name, model: await call(line, "beforeSession", () => this.run.resolveModel(name)) };
-    }
-    return plan;
   }
 
   /**

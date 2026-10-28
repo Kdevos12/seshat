@@ -94,6 +94,18 @@ what the interrupted process was about to write: it writes a status change that 
 a validation already in the journal justifies it, and a candidate is certified by the same
 certifier as any other, unless the journal holds the certifier's answer for it.
 
+## Memory across runs
+
+A run can start on the memory of an earlier one (`--memory-from`, [memory.md](memory.md#memory-across-runs)).
+What carries from it is claims' statuses, edges' statuses and validations, only from journals recorded in
+the same Lean environment (the same hash; an unresolved or unrecorded environment is never the same), and
+only as far as the earlier directory is trusted: the journal's hash chain is an unkeyed SHA-256, the pin
+detects a change after a run started on it and not a forgery made before, and inherited events are replayed
+without the journal's invariants. `--memory-from` is for your own runs. What never depends on the earlier
+directory: a problem is `proved` or `refuted` only by this run's own certification, and the real re-check
+of an earlier proof is the stored proof sent through `validate` in the new run. A status that came from
+another environment counts for nothing, and the journal refuses to cite its validations.
+
 ## Edges
 
 Edges between claims have their own statuses:

@@ -14,7 +14,7 @@ import type {
   TokenCost,
   ValidationReport,
 } from "@seshat/core";
-import type { MemoryStore, StatementIdentity } from "@seshat/memory";
+import type { Draw, DrawItem, DrawOptions, MemoryStore, StatementIdentity } from "@seshat/memory";
 import type { JsonSchema, Registry } from "@seshat/registry";
 import type { LineId } from "./ids.ts";
 
@@ -272,6 +272,18 @@ export interface SessionContext extends ProblemContext {
   /** The strategy and subgoal `beforeSession` declared, recorded on `attempt.started`. */
   strategy?: string;
   subgoal?: string;
+  /**
+   * Randomized inclusion of unverified items (documentation/memory.md, "Randomized inclusion"). In
+   * `beforeSession`, a line that selected unverified items for the session (lessons, schema hints,
+   * inspiration examples, library hint sections) passes their ids here and shows only the ones
+   * `included`. The orchestrator draws from the run's seeded source, and records `included` and
+   * `withheld` on `attempt.started`. A claim (the goal, a verified fact) is never drawn: it comes back in
+   * `fixed`. An id drawn twice in one session keeps its first outcome. Later hooks of the session
+   * (`briefing`...) read `drawn`; they cannot draw, since the attempt has started.
+   */
+  draw: (items: readonly (string | DrawItem)[], options?: Partial<DrawOptions>) => Draw;
+  /** What the session's draws included and withheld so far (all of them, in the hooks after `beforeSession`). */
+  readonly drawn: { readonly included: readonly string[]; readonly withheld: readonly string[] };
 }
 
 export interface Briefing {

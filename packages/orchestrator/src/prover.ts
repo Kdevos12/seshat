@@ -1,6 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
 import type { FailureClass } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
@@ -48,6 +48,11 @@ export interface ProverOptions {
   onEnd?: (result: ProverResult) => void;
   /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
   onAttemptEnd?: (attempt: { attemptId: string; outcome: AttemptOutcome; failureClass?: FailureClass }) => void;
+  /**
+   * The provenance stamp of a record this prover writes, for the model of the session: the attempt
+   * and the lesson carry it (documentation/memory.md, "Provenance and epochs"). Absent: no stamp.
+   */
+  stamp?: (modelId: string) => Provenance;
   /** Runs a session. Default: `runSession`; a test replaces it to make the harness fail in the middle of one. */
   session?: (options: SessionOptions) => Promise<SessionResult>;
 }
@@ -125,6 +130,8 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         ...(plan.model !== undefined ? { model: plan.model.name } : {}),
         ...(plan.strategy !== undefined ? { strategy: plan.strategy } : {}),
         ...(plan.subgoal !== undefined ? { subgoal: plan.subgoal } : {}),
+        ...(plan.included !== undefined ? { included: plan.included } : {}),
+        ...(plan.withheld !== undefined ? { withheld: plan.withheld } : {}),
       };
       // The problem may have ended while the lines decided.
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
@@ -143,6 +150,9 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
         ...(o.taskId !== undefined ? { taskId: o.taskId } : {}),
         ...(info.strategy !== undefined ? { strategy: info.strategy } : {}),
         ...(info.subgoal !== undefined ? { subgoal: info.subgoal } : {}),
+        ...(o.stamp !== undefined ? { provenance: o.stamp(info.model) } : {}),
+        ...(info.included !== undefined ? { included: info.included } : {}),
+        ...(info.withheld !== undefined ? { withheld: info.withheld } : {}),
       },
       actor,
     );
@@ -212,7 +222,11 @@ async function proveLoop(o: ProverOptions): Promise<ProverResult> {
     }
     if (result.notes !== undefined) {
       notes = clipNotes(result.notes, o.notesChars);
-      journal.emit("lesson.recorded", { attemptId, claimId: workbench.claimId, text: notes }, actor);
+      journal.emit(
+        "lesson.recorded",
+        { attemptId, claimId: workbench.claimId, text: notes, ...(o.stamp !== undefined ? { provenance: o.stamp(info.model) } : {}) },
+        actor,
+      );
     }
     const outcome = outcomeOf(result);
     const failure =

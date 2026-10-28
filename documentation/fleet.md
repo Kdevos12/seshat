@@ -17,6 +17,10 @@ attempts in the memory, and the typed lines of M1's "already tried" section. The
 length of a run, which prover works on which subgoal with which strategy and which provers wait for
 a place. That is the policy's own state; nothing a prover wrote goes through it.
 
+The fleet's posteriors read the attempts of the memory at full weight. After a run that starts on earlier
+journals (`--memory-from`) and a model upgrade, those include the earlier attempts without the probation
+weight of the epoch; the discount is Task 19's (PE3, [memory.md](memory.md#memory-across-runs)).
+
 ## What it decides
 
 Before each session of a prover, the `beforeSession` hook decides three things, in this order:

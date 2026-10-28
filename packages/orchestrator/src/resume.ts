@@ -130,6 +130,7 @@ function configOf(recorded: unknown): RunConfig {
           ),
         }
       : {}),
+    ...(typeof r.seed === "string" || typeof r.seed === "number" ? { seed: r.seed } : {}),
   };
 }
 

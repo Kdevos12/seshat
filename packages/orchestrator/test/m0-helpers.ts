@@ -214,6 +214,10 @@ export async function demoRun(options: {
   /** A bench the run shares with another run (a resumption of it). Default: a new one from `file` and `filter`. */
   bench?: { checkout: string; index: BenchIndex };
   codeRev?: string;
+  /** The directory of an earlier run to start on (`harness run --memory-from`). */
+  memoryFrom?: string;
+  /** The Lean environment the registry is pinned to, as the CLI resolves it before the registry is built. */
+  leanEnvironment?: RunOptions["leanEnvironment"];
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
@@ -234,6 +238,8 @@ export async function demoRun(options: {
     ...(options.log !== undefined ? { log: options.log } : {}),
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
+    ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
+    ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }
