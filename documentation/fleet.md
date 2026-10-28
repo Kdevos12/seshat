@@ -175,7 +175,9 @@ a verdict, and only Lean, through `validate`, ever changes a claim's status.
 
 1. **The DAG.** The first informal-first session of a claim asks the model for the argument as a `completeJson`
    (site `fleet.dag`, the model of the session): `proof`, `steps` (`id`, `statement`, `dependsOn`), and a `doubt`
-   when the model thinks the statement false. Provers that ask at once share the call.
+   when the model thinks the statement false. Provers that ask at once share the call. If the consortium turn is over
+   when the call is made ([human.md](human.md#turns)), nothing is recorded: not a failed try, no allocation; the
+   prover gives its place back and its session does not start, and the next turn asks again.
 2. **The check.** The harness checks the shape (`checkStepDag`): at most `dagSteps` steps, ids that are short
    lowercase names and unique, every dependency a step, **acyclic**, **no forward reference** (a step is listed
    after the ones it uses), and **every step but the last used** by a later one. A DAG that does not check is sent

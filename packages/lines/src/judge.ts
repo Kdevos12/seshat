@@ -1,5 +1,6 @@
 import type { TokenCost } from "@seshat/core";
 import type { JsonSchema } from "@seshat/registry";
+import { isInterrupted } from "./interrupted.ts";
 import { completeJson } from "./json.ts";
 import type { Llm } from "./line.ts";
 
@@ -124,6 +125,8 @@ async function ask<V>(llm: Llm, request: JudgeRequest, schema: JsonSchema, read:
       const { value, reason } = read(answer.value);
       votes.push({ value, model: answer.model, modelCallId: answer.modelCallId, ...(reason !== undefined ? { reason } : {}) });
     } catch (error) {
+      // An interruption (the consortium turn is over) is not a failed call: nothing more is asked, and no partial judgment is returned.
+      if (isInterrupted(error)) throw error;
       failures.push(error instanceof Error ? error.message : String(error));
     }
   }
