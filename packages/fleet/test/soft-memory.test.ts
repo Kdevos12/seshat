@@ -199,11 +199,14 @@ describe("the discount of earlier runs", () => {
 });
 
 describe("which model ranks as stronger", () => {
-  it("is the ranking given, else the models then the escalation model, with the run's model first", () => {
+  it("is the ranking given, else the run's model and the escalation model; the order of `models` is never a ranking", () => {
     assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS }), ["a/run"]);
-    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, models: ["a/mid", "a/low"], escalateTo: "a/top" }), ["a/run", "a/mid", "a/low", "a/top"]);
-    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, models: ["a/run", "a/mid"], escalateTo: "a/top" }), ["a/run", "a/mid", "a/top"]);
-    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, ranking: ["a/small", "a/run", "a/big"] }), ["a/small", "a/run", "a/big"]);
+    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, escalateTo: "a/top" }), ["a/run", "a/top"]);
+    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, escalateTo: "a/run" }), ["a/run"]);
+    // `models: [big, small]` lists what to choose among: it says nothing of which is stronger, so no model of it is "the strongest".
+    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, models: ["a/big", "a/small"] }), ["a/run"]);
+    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, models: ["a/mid", "a/low"], escalateTo: "a/top" }), ["a/run", "a/top"]);
+    assert.deepEqual(modelOrderOf("a/run", { ...FLEET_OPTIONS, models: ["a/big", "a/small"], ranking: ["a/small", "a/run", "a/big"] }), ["a/small", "a/run", "a/big"]);
   });
 });
 
@@ -381,5 +384,55 @@ describe("what Lean said of each step", () => {
   it("reads the warning 'declaration uses sorry' as a hole when the report lists no sorry", () => {
     const states = stepStates(dag, report([{ severity: "warning", line: 8, text: "declaration uses 'sorry'" }], []));
     assert.equal(states.s3, "hole");
+  });
+});
+
+describe("informal-first sessions in a fleet", () => {
+  const dag = { proof: "p", steps: [{ id: "s1", statement: "claim one", dependsOn: [] }, { id: "s2", statement: "claim two", dependsOn: ["s1"] }] };
+  /** The context of a session that can call a model: `answer` is what the DAG call does. */
+  const withLlm = (world: Awaited<ReturnType<typeof setup>>, prover: string, answer: () => Promise<unknown>): SessionContext =>
+    ({
+      ...world.context(prover, 1),
+      target: { theorem: "t", statement: "(n : ℕ) : n + 0 = n" },
+      budget: { exhausted: false },
+      llm: { complete: async () => { throw new Error("not used"); }, completeJson: answer },
+    }) as unknown as SessionContext;
+
+  it("never gives two provers the same strategy on a subgoal while one waits for its DAG", async () => {
+    let collisions = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const world = await setup({ epsilon: 0, stick: false, seed, modes: ["nl_first"] });
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => (release = resolve));
+      // Both provers draw `nl_first`; the model call of the DAG takes as long as the test lets it.
+      const answer = async () => {
+        await released;
+        return { value: dag, text: "", cost: {}, model: "faux/prover", modelCallId: "m", modelCallIds: ["m"] };
+      };
+      const first = world.hooks.beforeSession?.(withLlm(world, "p1", answer));
+      const second = world.hooks.beforeSession?.(withLlm(world, "p2", answer));
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      assert.ok(a?.strategy !== undefined && b?.strategy !== undefined);
+      if (a.strategy === b.strategy) collisions += 1;
+    }
+    assert.equal(collisions, 0, "two provers were told the same strategy");
+  });
+
+  it("records the mode that ran and the mode that was drawn when the DAG cannot be written, and counts the arm that ran", async () => {
+    const world = await setup({ epsilon: 0, strategies: false, seed: 3, modes: ["nl_first"] });
+    const decision = await world.hooks.beforeSession?.(withLlm(world, "p1", async () => { throw new Error("the model errs"); }));
+    assert.deepEqual(decision?.settings, { mode: "standard", drawnMode: "nl_first" });
+    const [record] = allocations(world.memory, world.claimId);
+    assert.deepEqual(record?.data.settings, { mode: "standard", drawnMode: "nl_first" });
+    assert.match(record?.data.dagNote ?? "", /could not be written: the model errs/);
+    // The outcome of such a session is counted for `standard`, the arm that ran, and not for `nl_first`.
+    world.put("a1", { mode: "standard", drawnMode: "nl_first" }, "valid");
+    world.put("a2", { mode: "nl_first" }, "invalid");
+    const modes = settingsConfigOf({ modes: ["standard", "nl_first"] });
+    const attempts = world.memory.attempts(world.claimId);
+    let standard = 0;
+    for (let k = 0; k < 40; k++) if (sampleSettings(seeded(100 + k), modes, attempts, 0.5).settings.mode === "standard") standard += 1;
+    assert.ok(standard >= 30, `standard drawn ${standard} of 40`);
   });
 });

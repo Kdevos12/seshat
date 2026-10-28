@@ -85,6 +85,7 @@ async function resumedAtEachBoundary(o: {
       bench: whole.bench,
       responses: observed(trace, o.script().slice(consumed(prefix))),
       ...(o.options?.lines !== undefined ? { lines: o.options.lines } : {}),
+      ...(o.options?.extraModels !== undefined ? { extraModels: o.options.extraModels } : {}),
       ...(o.lean !== undefined ? { lean: o.lean() } : {}),
       ...(o.certifier !== undefined ? { certifier: o.certifier() } : {}),
     });
@@ -132,6 +133,7 @@ async function resumedAtEveryEvent(o: {
       bench: whole.bench,
       responses: [...o.script().slice(consumed(whole.events.slice(0, cut))), ...tail],
       ...(o.options?.lines !== undefined ? { lines: o.options.lines } : {}),
+      ...(o.options?.extraModels !== undefined ? { extraModels: o.options.extraModels } : {}),
       ...(o.options?.lean !== undefined ? { lean: o.options.lean } : {}),
     });
     resumedRuns += 1;
@@ -607,6 +609,48 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
     assert.ok(runs > 10, `${runs} cuts`);
   });
 
+  describe("retry_stronger", () => {
+    // M6 stops the first session as a strategy loop; with the strong model ranked above the run's, the routing is
+    // `retry_stronger` and the second session goes to it.
+    const loop = [check("omega"), check("linarith"), check("simp"), check("simp\nomega"), check("exact trivial_proof")];
+    const config = { lines: ["M1", "M6", "fleet"], sessions: 2, lineOptions: { fleet: { seed: 7, epsilon: 0, widen: false, strategies: false, ranking: ["faux/prover", "faux/strong"] } } as never };
+    const routes = (events: HarnessEvent[]) => ofType(events, "task.routed").map((e) => [e.data.action, e.data.signal.value]);
+
+    it("sends the session after the routing to the strongest model, whether the run was cut before or after the routing", async () => {
+      const { whole } = await resumedAtEachBoundary({
+        config,
+        script: () => [...loop],
+        boundaries: 2,
+        options: { extraModels: ["strong"] },
+        same: (whole, resumed, where) => {
+          assert.deepEqual(routes(resumed), routes(whole), `${where}: the same routing decisions`);
+          assert.deepEqual(decided(resumed), decided(whole), `${where}: the same decisions`);
+        },
+      });
+      assert.deepEqual(routes(whole.events), [["retry_fresh", "unsolved_goals"], ["retry_stronger", "strategy_loop"]]);
+      assert.deepEqual(ofType(whole.events, "attempt.started").map((e) => e.data.model), ["faux/prover", "faux/strong"]);
+    });
+
+    it("resumes a run cut at every event, and a session that follows a retry_stronger always goes to the strongest model", async () => {
+      const runs = await resumedAtEveryEvent({
+        config,
+        script: () => [...loop],
+        outcomes: ["candidate", "unsolved"],
+        options: { extraModels: ["strong"] },
+        // A cut after `attempt.finished` and before the routing decisions loses them (documentation/ledger.md, "Routing
+        // decisions"): the next session then runs on the model it would have had without the routing, so the cost differs.
+        repeatsCost: true,
+        check: (resumed, where) => {
+          // The attempt that starts after a retry_stronger decision of the journal goes to the strongest model.
+          const at = resumed.findIndex((e) => e.type === "task.routed" && e.data.action === "retry_stronger");
+          const next = at < 0 ? undefined : resumed.slice(at).find((e) => e.type === "attempt.started");
+          if (next !== undefined && next.type === "attempt.started") assert.equal(next.data.model, "faux/strong", `${where}: the session after the decision goes to the strong model`);
+        },
+      });
+      assert.ok(runs > 20, `${runs} cuts`);
+    });
+  });
+
   describe("informal-first", () => {
     const dag = {
       proof: "By the definition of addition.",
@@ -638,6 +682,45 @@ describe("the soft failure memory in a resumed run (sampled settings, exploratio
         },
       });
       assert.deepEqual(steps(whole.events).dags, 1);
+    });
+
+    describe("with both modes drawn", () => {
+      // `standard` and `nl_first` compete: the mode of each session is drawn by Thompson sampling over the claim's attempts.
+      const mixed = { lines: ["M1", "fleet"], sessions: 6, lineOptions: { fleet: { seed: 5, epsilon: 0, strategies: false, modes: ["standard", "nl_first"] } } as never };
+      const modes = (events: HarnessEvent[]) => ofType(events, "attempt.started").map((e) => e.data.settings?.mode);
+
+      it("draws the same modes, writes the DAG once and tells the same plans, wherever the run was cut between sessions", async () => {
+        const { whole } = await resumedAtEachBoundary({
+          config: mixed,
+          script: () => Array.from({ length: 24 }, () => router),
+          boundaries: 6,
+          same: (whole, resumed, where) => {
+            assert.deepEqual(modes(resumed), modes(whole), `${where}: the same modes`);
+            assert.deepEqual(steps(resumed), steps(whole), `${where}: one DAG, its claims and edges, the same states`);
+            assert.deepEqual(decided(resumed), decided(whole), `${where}: the same decisions`);
+          },
+        });
+        // Both arms were drawn, so the cuts fell on both kinds of session.
+        assert.ok(modes(whole.events).includes("standard") && modes(whole.events).includes("nl_first"), modes(whole.events).join(","));
+        assert.equal(steps(whole.events).dags, 1);
+      });
+
+      it("resumes a run cut at a sample of its events (every fourth), with at most one DAG and its two edges", async () => {
+        const runs = await resumedAtEveryEvent({
+          config: mixed,
+          script: () => Array.from({ length: 24 }, () => router),
+          outcomes: ["unsolved"],
+          every: 4,
+          // A cut after the DAG call was paid and before it was recorded asks for the DAG again.
+          repeatsCost: true,
+          sameBetweenSessions: (whole, resumed, where) => assert.deepEqual(modes(resumed), modes(whole), `${where}: the same modes`),
+          check: (resumed, where) => {
+            assert.ok(steps(resumed).dags <= 1, `${where}: at most one DAG`);
+            assert.ok(steps(resumed).edges === 0 || steps(resumed).edges === 2, `${where}: its two edges, or none`);
+          },
+        });
+        assert.ok(runs > 10, `${runs} cuts`);
+      });
     });
 
     it("resumes a run cut at a sample of its events, and never records the DAG twice, nor its edges", async () => {

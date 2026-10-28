@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import type { BenchIndex } from "@seshat/bench";
-import { BlobStore, environmentId, isProvenance, Journal, loadMemoryChain, readEvents } from "@seshat/core";
+import { BlobStore, environmentId, isProvenance, Journal, loadMemoryChain, promptMajor, readEvents } from "@seshat/core";
 import { MemoryStore } from "@seshat/memory";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile, type LeanEnvPin } from "@seshat/registry";
 import { hostLeanEnv, openRegistry, PROMPT_VERSION, renderRunReport, REPO_ROOT, writeReport, RunSetupError, type RunOptions } from "../src/index.ts";
@@ -339,8 +339,8 @@ describe("the epochs a run on earlier memory opens", () => {
 
   it("opens an epoch on a change of the prompts' major version, and not on a minor one", async () => {
     const major = await modelsAt(crafted("faux/prover", "m0-1", "rev-a"));
-    assert.deepEqual(ofType(major.events, "memory.epoch_opened").map((e) => e.data.changes), [[{ field: "promptMajor", from: "m0-1", to: PROMPT_VERSION }]]);
-    const minor = await modelsAt(crafted("faux/prover", `${PROMPT_VERSION}.1`, "rev-a"));
+    assert.deepEqual(ofType(major.events, "memory.epoch_opened").map((e) => e.data.changes), [[{ field: "promptMajor", from: "m0-1", to: promptMajor(PROMPT_VERSION) }]]);
+    const minor = await modelsAt(crafted("faux/prover", `${promptMajor(PROMPT_VERSION)}.9`, "rev-a"));
     assert.deepEqual(ofType(minor.events, "memory.epoch_opened"), []);
   });
 

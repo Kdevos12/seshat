@@ -116,10 +116,15 @@ draws what it would have drawn without the floor. `epsilon: 0` turns it off.
 **Grouping by configuration.** M1's "already tried" section groups the attempts by strategy and by
 configuration class (the model family and the budget class of the attempt's provenance stamp), and a line from
 another class says so: `induction: 3 attempts, unsolved goals (with a smaller model)`. A model is weaker or
-stronger by its place in the run's ranking (the option `ranking`, weakest first; otherwise `models` then
-`escalateTo`, with the run's model first); a model the run does not rank counts as weaker than any it does
-(a model that is no longer configured is taken for an older one); in one family the smaller budget class
-is the weaker. The session's own configuration comes first. The same rule is `compareClass` of
+stronger by its place in the run's ranking (the option `ranking`, weakest first; otherwise the run's model, then
+`escalateTo`). The order of the option `models` is not read as a ranking: it lists what to choose among, and
+only `ranking` says which is stronger. A model the run does not rank counts as weaker than any it does (a
+model that is no longer configured is taken for an older one). That default is safe for trust (it only changes
+the words of an advice and which model a `retry_stronger` goes to) and right for the usual case, a run on a
+better model than the earlier one; it is wrong when a run moves to a weaker model or sideways to another one:
+it then reads the earlier, larger model's failures as "(with a smaller model)" and invites trying again what
+a larger model failed. Set `ranking` (all the models, weakest first) when a run moves to a weaker or different
+model. In one family the smaller budget class is the weaker. The session's own configuration comes first. The same rule is `compareClass` of
 `@seshat/memory`.
 
 **`retry_stronger`.** When a guard's finding would route a claim to `branch` (open an alternative under other
@@ -171,14 +176,16 @@ a verdict, and only Lean, through `validate`, ever changes a claim's status.
    lowercase names and unique, every dependency a step, **acyclic**, **no forward reference** (a step is listed
    after the ones it uses), and **every step but the last used** by a later one. A DAG that does not check is sent
    back once with what was wrong. Two tries that fail leave a `step_dag_failure` node and the session runs as a
-   standard one; the allocation says why (`dagNote`) and the attempt records `mode: standard`. After
+   standard one; the allocation says why (`dagNote`). The attempt records `mode: standard`, the mode that ran,
+   which is the arm its outcome counts for, and `drawnMode: nl_first`, the mode that was drawn. After
    `MAX_DAG_TRIES` (2) failed tries on a claim no more are paid for.
 3. **The record.** A checked DAG is a `step_dag` node of the claim (learned, so stamped), each step is an
    `informal` claim of origin `line:fleet`, and the `decomposes_into` edges (each step from the steps it uses, the
    target from the last step) are proposals. The claims stay `open`. The node is written last, so a process that
    ends in the middle leaves no half-recorded DAG; the claims and edges are safe to write again.
 4. **The session.** The briefing section "Step plan" gives the argument, the steps, and what Lean said of each
-   after the session before; the prover writes one lemma `aux_<id>` for each step, in its aux region, and closes
+   after the session before (not the model's `doubt` about the statement: that is the verdict of another call,
+   which no prompt shows a prover, PC10; it stays in the node for the report); the prover writes one lemma `aux_<id>` for each step, in its aux region, and closes
    the theorem from them. The allocation names the DAG node.
 5. **Lean's errors go to the step they are in.** After the session, a `step_status` node records for each step
    `closed`, `error`, `hole` (a `sorry`) or `missing` (no lemma), from the position of Lean's messages in the last
@@ -194,7 +201,8 @@ The mode competes like any other setting: if sessions in this mode prove more, T
 A subgoal is the session's `subgoal`, or the claim when it has none. Two provers working at once on
 a subgoal are never told the same strategy: the draw leaves out the strategies the others are on.
 Provers on different subgoals are independent. The Ralph loop that runs a strategy on a subgoal is
-then one at a time.
+then one at a time. The prover takes its place (its strategy) as soon as the strategy is drawn, before the
+informal-first DAG is awaited, so a prover that decides while another waits for its DAG sees the strategy as taken.
 
 ## Width
 
@@ -259,7 +267,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 |---|---|---|
 | `strategies` | true | tell each session a strategy |
 | `stick` | true | keep a strategy while Lean gets further with it |
-| `models` | `[]` | `PROVIDER/ID` models to choose among; empty: the run's model |
+| `models` | `[]` | `PROVIDER/ID` models to choose among; empty: the run's model. The order says nothing about strength: `ranking` does |
 | `escalateTo` | null | the stronger model for hard decisions; null: no escalation |
 | `seed` | null | seeds the draws; null: the run's id |
 | `widen` | true | keep the provers at work on a subgoal to its width |
@@ -273,7 +281,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `partialCredit` | 0.5 | what the deepest failure is worth to a choice, against 1 for a proof |
 | `gamma` | 0.8 | the discount of an earlier run's evidence, per run on the problem |
 | `epsilon` | 0.1 | the share of sessions whose strategy is drawn uniformly (the exploration floor) |
-| `ranking` | null | models weakest first, `PROVIDER/ID`; null: `models`, then `escalateTo`, with the run's model first |
+| `ranking` | null | models weakest first, `PROVIDER/ID`, the only statement of which is stronger; null: the run's model, then `escalateTo` |
 | `temperature` | null | a number, a list to learn over, or `{"min": 0.2, "max": 1}`; null: the run's own |
 | `thinking` | null | thinking levels to learn over, such as `["low","high"]`; null: the run's own |
 | `directives` | null | `true` for the built-in directives, or an object from label to sentence |
@@ -342,7 +350,9 @@ other's, beside the typed summaries of the memory.
   tested for its order and its caps, not for how much it speeds a real run up. In particular the
   step DAGs are written by a faux model, so whether a real model writes DAGs that check, and whether the
   informal-first mode proves more than the standard one, is not known; the temperature and thinking levels
-  are checked to reach the provider's request, not for what they do to its answers.
+  are checked to reach the provider's request, not for what they do to its answers. Some providers reject or
+  ignore a temperature when reasoning is on; a temperature together with a thinking level is untested here, and
+  `settingsProblem` checks only the range.
 - The numbers (the width thresholds, 2 attempts, 4 and 8 provers, the escalation after 3 attempts
   under 0.25, a partial credit of 0.5, gamma 0.8, epsilon 0.1) are a first guess to set on the bench.
 - `retry_stronger` arises only from a guard's `branch` signal (M6's loops), the one route to a branch there is;

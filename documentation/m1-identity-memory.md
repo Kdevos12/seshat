@@ -182,7 +182,10 @@ they ran under (the model family and budget class of the attempt's provenance st
 other than the session's says so: `induction: 3 attempts, unsolved goals (with a smaller model)`, or `a larger model`, `a smaller
 budget`, `another model`. A failure of a smaller model is soft evidence about this session's model. Lines of the session's own
 configuration come first. The rule that compares two configurations is in [fleet.md](fleet.md#soft-failure-memory). Without a
-ranking (a context an older caller builds) the section is as before. M1 is `m1-2` for this.
+ranking (a context an older caller builds) the section is as before. M1 is `m1-2` for this. A model the run
+does not rank counts as weaker, so a run that moves to a weaker or different model than an earlier one should
+set the fleet's `ranking` option (all the models, weakest first); otherwise the earlier, larger model's failures
+read "(with a smaller model)". The order of the fleet's `models` is not a ranking.
 
 An accepted attempt shows as a count, never as its proof. On a claim another problem proved, the
 section tells the second problem's provers that a strategy worked, and they still prove it

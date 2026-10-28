@@ -33,8 +33,8 @@ flowchart TB
 
   bench["Bench<br/>575 Lean problems"]:::built
   fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run"]:::built
-  dag["Informal-first sessions (nl_first)<br/>step DAG checked by the harness,<br/>one lemma per step"]:::wait
-  judge["judge: k independent calls<br/>majority, disagreement flag,<br/>anti-sycophancy instruction"]:::wait
+  dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
+  judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built

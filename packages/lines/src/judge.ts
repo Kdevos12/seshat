@@ -7,8 +7,8 @@ import type { Llm } from "./line.ts";
  * The one instruction that every prompt which judges or reranks carries, and that a prover's prompt
  * for an open conjecture carries too (plan change PC10): a plain "be truthful, disagree when
  * warranted" instruction cut sycophancy on every model the source measured, and a dynamic gate did worse
- * on the smaller one. It is fixed text: no line words it its own way, and the guards' framing check
- * (documentation/guards.md) looks for this sentence. No prompt of the harness shows a model another
+ * on the smaller one. It is fixed text: no line words it its own way, and the guards' framing
+ * (documentation/guards.md) appends this sentence to M6's question. No prompt of the harness shows a model another
  * agent's verdict, which is what spreads sycophancy from one agent to another; where a prior on how
  * reliable an agent is wanted, it is the track record of its Lean-checked results in the journal.
  */
