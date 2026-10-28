@@ -194,6 +194,26 @@ describe("effect posteriors", () => {
     assert.equal(shouldDeactivate(memory.itemEffect("flat"), { minObservations: 5 }), false, "no difference: it stays");
   });
 
+  it("counts the observations of an item with their probation weight, so old evidence does not satisfy the minimum", async () => {
+    const { memory, journal } = open({ ...context, modelId: "prov/model-6" });
+    const { claimId } = await memory.ensureClaim({ statement: ": True", origin: "t" });
+    // Epoch 0: 20 attempts that were shown the item and failed, 20 that were denied it and succeeded.
+    many(journal, claimId, 20, "invalid", { included: ["old"] });
+    many(journal, claimId, 20, "valid", { withheld: ["old"] });
+    const rule = { minObservations: 10 };
+    assert.equal(shouldDeactivate(memory.itemEffect("old"), rule), true, "in the current epoch 20 observations are 20");
+    memory.withActor("orchestrator").openEpochIfChanged({ ...context, modelId: "prov/model-5" });
+    const probation = memory.itemEffect("old");
+    assert.equal(probation.with.attempts, 20, "the attempts are still 20");
+    assert.ok(Math.abs(probation.with.failures - 5) < 1e-9, "and weigh 5");
+    assert.equal(shouldDeactivate(probation, rule), false, "20 old attempts are 5 observations: below the minimum of 10");
+    assert.equal(shouldDeactivate(probation, { minObservations: 5 }), true);
+    // New outcomes of the current epoch make up the minimum.
+    many(journal, claimId, 5, "invalid", { included: ["old"] });
+    many(journal, claimId, 5, "valid", { withheld: ["old"] });
+    assert.equal(shouldDeactivate(memory.itemEffect("old"), rule), true);
+  });
+
   it("put an item of an older epoch in probation: its old outcomes weigh k each epoch since, new outcomes in full", async () => {
     const { memory, journal } = open({ ...context, modelId: "prov/model-6" });
     const { claimId } = await memory.ensureClaim({ statement: ": True", origin: "t" });

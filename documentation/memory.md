@@ -315,7 +315,10 @@ older epoch regains weight only through new outcomes. `pNegative` is P(effect < 
 rate with the item is below the rate without it: the integral of one posterior against the other, exact
 up to the integration and deterministic. `shouldDeactivate(effect, {minObservations, threshold?})` is
 M5's rule: deactivate when P(effect < 0) is above the threshold (0.9) after at least `minObservations`
-attempts on each side. `pNew`, `nNew`, `p`, the threshold and the minimum are options of the caller.
+observations on each side. An observation counts with the probation weight of its epoch (the arm's
+`successes + failures`), so evidence from before an epoch opened does not satisfy the minimum until
+outcomes of the current epoch make it up; in the current epoch an observation is an attempt. `pNew`, `nNew`,
+`p`, the threshold and the minimum are options of the caller.
 
 The presence counter that this replaces stays where it is, for comparison. The causal rule is measured
 against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
