@@ -313,16 +313,33 @@ the promise that makes provers who ask for a DAG at once share a call; it is onl
 ended after the DAG call was paid and before the DAG was recorded asks for it again on resuming, and pays for the
 call twice (the same as any call of a line made between two sessions).
 
+## Owners of scheduled tasks
+
+When the line M12 proposes tasks (a `prove` task for each hole of a sketch), the fleet chooses who
+they are attributed to (Ruling 29). Its hook `assignOwners` takes the `ready` tasks that a line
+proposed and that have no prover for an owner, and gives each a prover through `TaskApi.assign`
+([lines.md](lines.md#tasks)). The workers are the problem's provers, named by the owners of their own
+`prove` tasks. `chooseOwner` (`owners.ts`) keeps the workers with the least load (the line-given tasks
+they hold that are `ready`, `blocked` or `running`) and draws among them by Thompson sampling from each
+one's posterior over the line-given tasks it ended (`workerPosterior`: `done` against `failed`, flat
+until it has worked). The draw is seeded by `seed:owner:problem:place`, with `place` the task's place
+among the problem's proposed tasks, so the same seed gives the same owners; the fleet's `seed` option
+is used when set, else the run's seed. A refusal by the orchestrator is logged. The choice is
+accounting for now: M12's inner prover is the line's own, and the owner says whom the work is booked
+to. The fleet's version is `fleet-3`.
+
 ## The hooks it uses
 
 `beforeSession` (the decision above), `briefing` (the section "Strategy for this session", worded to
 ask for no demonstration: M6's framing check finds nothing in it), `briefingSections` (the directive and the
 step plan), `afterAttempt` (the strategy the prover was on is free for the others, and the states of the
-steps of an informal-first session are recorded), `afterProver` (the prover is no longer ahead of anyone, and the
+steps of an informal-first session are recorded), `assignOwners` (above), `afterProver` (the prover is no longer ahead of anyone, and the
 waiting provers look again) and `afterProblem` (the policy's state of the problem is dropped). The
 line API got `afterProver` for this and for M6 ([lines.md](lines.md)).
 
 ## Tests and what is not done
+
+`packages/fleet/test/owners.test.ts` covers `chooseOwner` (load first, then the draw, the seed) and the hook on stub contexts: it assigns only line-proposed ready tasks that no prover owns, logs refusals, and leaves a task alone when the problem has no prover task.
 
 `packages/fleet/test` covers the pieces: the seeded source and the Beta and Gamma draws, the
 posteriors on scripted attempts, Thompson choices with a seeded source (a strong arm wins most

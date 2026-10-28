@@ -220,7 +220,7 @@ Applying an event is idempotent: an event at or below the last applied seq is sk
 event is applied in one transaction. When a journal is opened, a projection that lags is caught
 up. A projection that is ahead of the journal, or whose last hash differs from the journal's
 event at that seq, belongs to another journal: it is deleted and rebuilt. So is a projection
-written by another version of the tables: `PROJECTION_VERSION` (now 7) is kept in SQLite's
+written by another version of the tables: `PROJECTION_VERSION` (now 8) is kept in SQLite's
 `user_version`.
 
 A run that starts on earlier journals (`Journal.open(dir, run, {memory})`, which a journal that has
