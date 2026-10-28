@@ -18,8 +18,9 @@ consistency before anything is built ([documentation/lean-env.md](documentation/
 one with more packages than the bench's.
 The provers can also be given SageMath, an external program installed with Docker or pip
 ([documentation/compute.md](documentation/compute.md)). A run can start on the memory of an earlier
-one (`--memory-from`), its learned records are stamped with where they come from and drawn at random
-into briefings ([documentation/memory.md](documentation/memory.md)). Nothing has run against a real
+one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
+draw the unverified items a briefing shows at random and measure their effect; no line calls the draw yet
+([documentation/memory.md](documentation/memory.md)). Nothing has run against a real
 Lean or a real model yet.
 
 ## How research flows
@@ -69,7 +70,7 @@ flowchart TB
     prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::wait
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
     earlier["Memory carried over<br/>from an earlier run,<br/>pinned by its last hash"]:::built
-    learned["Learned records<br/>stamped, unverified,<br/>drawn at random"]:::built
+    learned["Stamps, epochs and draw<br/>of unverified records<br/>(no line calls it yet)"]:::built
   end
 
   bench -->|problems| orchestrator
@@ -109,7 +110,7 @@ flowchart TB
   journal --> projection
   earlier -->|"replayed before<br/>the run's journal"| projection
   projection --> learned
-  learned -->|"draws, effect<br/>posteriors"| provers
+  learned -.->|"lines draw: Tasks<br/>9, 11 and 18"| provers
   projection --> tried
   tried -->|"already tried,<br/>in every session"| provers
   tried -->|"verdicts"| fleet
