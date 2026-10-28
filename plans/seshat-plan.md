@@ -46,6 +46,14 @@ of variants; offline prompt optimization; an entrenchment probe; decision note
 `research/evolution-memoire-continue.md`), approved by the user: Tasks 23 to 26 are new, Tasks 9,
 10, 11, 14, 18 and 19 name it, its rules are Global Constraint 16, and the memory that outlives a
 run, which it assumes, is Ruling 28. The main team's order is Ruling 27's.
+(8) 2026-10-28: the plan change [plan-change-polya-costs.md](plan-change-polya-costs.md) (PD1 to PD8:
+a price table and calendar in the host profile, cache accounting and `reasoning_content` safety;
+an append-only transcript as a packet mode; an off-peak option; algebra tools without a `polyrith`
+assumption; the CEGIS rule; an external bench from the equational-theories challenge; installable
+packs; a k-NN for the battery order, conditional; decision matrix `research/matrice-polya-couts.md`),
+approved by the user: Tasks 27 and 28 are new (Ruling 30), and Tasks 6, 13, 14, 17, 19, 21 and 24
+name the changes that amend them. The tasks it amends that are already merged (17, 19, 21, 24) are
+not re-opened: Task 28 builds what concerns them. The main team's order is Ruling 30's.
 
 ## Global Constraints
 
@@ -395,6 +403,15 @@ call (battery tactics, library lemmas tried by `apply`, aesop rules) through an 
 orderer, so that Task 20 can plug `decide` in; a model's own ranking of the tactics it proposed
 stays as it is.
 
+Amended by PD4 item 1 of `plans/plan-change-polya-costs.md`: the documentation states that `grind`
+carries a commutative-ring module that normalizes by a Gröbner basis (the Lean reference, section on
+the algebraic solver), so polynomial identities with hypotheses are one of its jobs; and the
+battery's tactic list is read from the host (what the host's Lean has), with no assumption that
+`polyrith` exists: whether it is still in the pinned Mathlib is read from the host. Amended by PD8
+(conditional): a k-NN over cheap goal features may order the battery as a second injectable orderer,
+but only if Task 14's real data show a gap against a best-in-hindsight oracle; it is built there,
+not here.
+
 Deliverables in `@seshat/classical` and new capabilities:
 
 1. A Lean tactic battery: for a goal (the target, or each named `sorry` of a sketch), Lean snippets
@@ -668,6 +685,17 @@ Amended by J3 item 1 of `plans/plan-change-jev.md`: the conjecture pool's releva
 (PC4 item 2) goes through Task 20's `decide` when that task is built (a Score per conjecture on its
 statement alone), else through `judge`.
 
+Amended by PD5 of `plans/plan-change-polya-costs.md`, the CEGIS rule, for lines `M8`, `M14` and
+`M16`: the counterexamples already found for a claim form a set that is part of the proposer's input,
+and a new candidate is run against that whole set before anything else is spent on it (a candidate
+that fails a known counterexample is dropped without a model-priced check); in `M16` the set also
+goes into the sampled prompt next to the scored programs. Every counterexample in the set was
+produced by a checker (a fingerprint run, `plausible`, a finite model through Task 7) and is recorded
+with its source; a model's claim of a counterexample stays out until a checker confirms it. It is a
+rule of the three lines, not a new line; its counter (candidates dropped by the set, tokens saved
+against a baseline without it) is in Task 14's table. Tests: a scripted proposer that repeats a
+refuted candidate is stopped by the set; an unconfirmed claim stays out of the set.
+
 Deliverables in `@seshat/induction` and `@seshat/repair`:
 
 1. Data (M8): small cases and invariant tables as `datatable` nodes with the code that produced
@@ -725,6 +753,31 @@ part of the bench and measured on another; and, over time, the number of distinc
 and sources among proofs, the share of budget spent on strategies never tried on that claim group,
 and the share of proofs that reuse a library lemma or a schema. Line `M18` (Task 25) joins the
 cumulative configs after `M12`; Task 26 stays outside ablation runs.
+
+Amended by `plans/plan-change-polya-costs.md`. PD2: this task adds Task 24's option `packetMode`
+(`"prefix_tail"`, the default and today's behaviour, or `"append_only"`: the first request carries
+the compiled packet, later requests append the new tool results and model output as they come, and
+the packet is recompiled only at a session boundary, the "new since the session started" list going
+into the next session's prefix) and adds to PE5's measurement the comparison of the two modes:
+dollars per solve and solve rate on the same seeds and budget, on a model family that caches output
+boundaries; the context-rot side of the trade is read from the solve rate and the mean context size,
+so the mode wins only if it does not lose on solves, and it is removed if it loses. Tests with a faux
+provider that reports cache hits by longest common prefix: dollars and hit ratio differ between the
+two modes on a scripted session, and the history is byte-identical across requests in `append_only`.
+PD5: the CEGIS counter of Task 13 (candidates dropped by the counterexample set, tokens saved
+against a baseline without it) joins the table. PD1 item 2: the report's cache ratio and dollars
+saved (Task 28) are read per rung and per line in the ablation table; they are checked on the first
+real run before any conclusion of the PD2 comparison is used. PD6: a `bench-ext` source that reads
+the equational-theories challenge's data and Lean judge (the SAIR Foundation's benchmark dataset and
+`stage2-judge` package) to measure the battery, the fingerprints and Mace4 and Vampire on
+implication problems, and reports the share closed without a model per step of plan §15's order;
+after Tasks 6 and 7 merge; the dataset's licence is not stated, so check it before copying any row
+into the repository (read from a local cache otherwise, never vendor it); no submission to the
+challenge is planned; tests: a converter on three hand-written rows in the dataset's shape, nothing
+downloads in tests. PD8, conditional: after the real data, if the Beta posteriors per domain leave a
+gap against an oracle that picks the best tactic per goal in hindsight, a k-NN over cheap goal
+features (head symbol, size, the domains the router fired) is added as an orderer for Task 6's
+battery (the injectable orderer of J3) and measured at equal CPU; otherwise it is not built.
 
 Deliverables:
 
@@ -827,6 +880,13 @@ run with the faux model and the simulated Lean; a turn limit refused by `harness
 
 Not in this task: sending the account to the team's chat and taking their answers from it.
 
+Amended by PD3 of `plans/plan-change-polya-costs.md`, an off-peak option: `--offpeak` (and
+`RunConfig.offpeak`) starts a turn or a session only when the host's pricing calendar (PD1) says
+off-peak, and otherwise waits (a `turn.deferred` event with the next start); `--offpeak-max-wait
+MINUTES` bounds the wait, after which the work runs anyway; the report says how much was run
+off-peak. Default off. Task 17 is merged and the calendar did not exist then, so Task 28 builds it,
+after the price table.
+
 ### Task 18: Line M15: diversity archive and schemas
 
 Where it fits: PC13 of `plans/plan-change-thinking-modes.md` (ProofEvolve, no training), after Tasks 9 and 10. Read
@@ -868,6 +928,13 @@ Task 15's table, taken before `branch` when every failure of a claim comes from 
 weaker than the strongest one configured. Tests: grouping by config class, the discount
 arithmetic, the floor's share over a seeded run, the routing case.
 
+Amended by PD1 item 4 of `plans/plan-change-polya-costs.md`: the adapter marks a sampled setting as
+ignored by the model family (temperature and the penalties in thinking mode), and the fleet spends no
+Thompson arm on an ignored setting. The settings that act are the thinking switch (on or off) and the
+effort level (the provider's `high` and `max`), both discrete and learned as before; where a family
+ignores temperature, diversity comes from the other levers PC6 lists (premise count, rendering,
+diversity directive). Task 19 is merged, so Task 28 builds this.
+
 ### Task 20: The `decide` capability, with an optional Jev backend
 
 Where it fits: J2 to J4 of `plans/plan-change-jev.md`, the user's requirement of 2026-10-16
@@ -898,6 +965,17 @@ tool run's recorded version, one environment per run; `LEAN_ENV` in host profile
 `documentation/lean-env.md` and the README diagram); line `M17` (LC3), the same line with an
 extended environment against `base` at equal budget, measured in Task 14. The bench stays at
 v4.27.0: moving it is the user's call.
+
+Amended by PD4 item 2 of `plans/plan-change-polya-costs.md`: the library set gets one optional entry,
+`GroebnerTactic` (github.com/WuProver/GroebnerTactic, arXiv 2604.13514): tactics `gb_solve`,
+`idealeq` and `add_gb_hyp`, with SageMath or SymPy computing and Lean checking certificates in the
+kernel (remainder, ideal and radical membership, ideal equality). The resolver's entry records its
+limits: lexicographic order only, polynomial rings over the rationals, an external CAS required, and
+the Lean and Mathlib version it builds against, pinned by the resolver. It is offered to Task 6's
+battery only when the host has the package, and its success is a `validate` submission like any
+tactic. Task 21 is merged: the entry is a small follow-up of the main team, built with Task 28 or
+after it (no other task depends on it). Tests: the battery omits a tactic the host lacks; the
+resolver entry resolves against a recorded fixture; no Lean needed.
 
 ### Task 22: The `LibraryBuilder` and the review status of definitions
 
@@ -979,6 +1057,14 @@ provider: the prefix identical across a session's requests, the tail changing, t
 the cached tokens in the report. Docs: `lines.md` and `m0-loop.md`. Measured in Task 14 once M4
 exists; not run against a real provider here.
 
+Amended by `plans/plan-change-polya-costs.md`. PD1 items 1 to 3: the dollars in this task's report
+come from the host's price table with cache-hit, cache-miss and output prices, the report gives the
+cache ratio `cacheRead / (cacheRead + miss)` and the dollars saved against a no-cache price, and
+any code that rewrites or compiles a session's message history (this packet, a line's
+`transformContext`) keeps and sends back the reasoning field of assistant messages that belong to a
+tool-call loop. Task 24 is merged: Task 28 builds these. PD2: the option `packetMode` (`prefix_tail`,
+today's behaviour and the default, or `append_only`) and its measurement are in Task 14.
+
 ### Task 25: Line M18: a curriculum of variants
 
 Where it fits: PE7 of `plans/plan-change-memory-evolution.md`, rung 1 of Task 10's ladder (PE4):
@@ -1011,6 +1097,78 @@ journal's code, the tests or the bench's indexes, and its prompts carry the prov
 small simulated bench: the Pareto set, the acceptance rule, the refusal to write anything but prompt
 files. Docs: `documentation/prompts.md`. Not run against a real model here.
 
+### Task 27: Installable packs: tools and skills
+
+Where it fits: PD7 of `plans/plan-change-polya-costs.md`, the user's requirement that Seshat stay
+modular, with skills and tools that can be installed. Main team; after Task 11 (the collaborator's),
+so that the tool namespaces and the context compiler it builds on are merged; additive on the shared
+registry, and it touches nothing of the collaborator's packages. Read first: §PD7, Global Constraint
+16 and 10, `documentation/capabilities.md` and `trust.md`.
+
+Deliverables:
+
+1. A pack is a directory with `pack.json`: name, version, the capabilities it adds (each with its
+   manifest), the skills it adds (name, description, file), the host requirements, and a declared
+   trust class. A pack can never write a claim's status: a capability's output is `computed` at most
+   (Ruling 13), and the manifest says so.
+2. `harness add <path|git url>` validates the manifest and the contract tests the pack carries,
+   writes the pack under the registry's pack directory, and records a `pack.installed` event (name,
+   version, content hash) in the journal; `harness packs` lists the installed packs and `harness
+   remove` removes one. A pack's tools join level 2 (`tool_search` or `codemode`) and never the
+   level-1 declared set, because a changed declared set breaks the prompt cache; a pack that wants
+   level 1 takes effect at the next session.
+3. Skills from a pack count under Global Constraint 16 (at most 3 loaded in full, the others listed
+   by name and description) and are human-written; nothing writes a skill from outcomes.
+4. The pack's content hash is part of the run's recorded environment, like Task 21's lock hash, so a
+   run is reproducible with the same packs.
+5. Docs: `documentation/packs.md`, `capabilities.md`, `architecture.md` and the README diagram (the
+   registry node gains the packs).
+
+Tests: a manifest with an invalid contract is refused; install, list and remove round-trip through
+the journal; a pack's tool is not in the declared level-1 set; a pack that claims a status write is
+refused; the 3-skill rule holds. Nothing downloads in tests (a git url is tested against a local
+repository).
+
+### Task 28: Provider-aware cost accounting (PD1)
+
+Where it fits: PD1 and PD3 of `plans/plan-change-polya-costs.md`. High priority, before the first real
+run: `--turn-usd`, `problemUsd` and every ablation compare dollars, and the cost fields in a
+provider's own integration can be out of date against its pricing page. Main team; built right after
+the tasks in flight (Ruling 30), ahead of Task 14. It exists so that Tasks 17, 19 and 24, already
+merged, are not re-opened: it builds what their amendments name. Read first: §PD1 and §PD3,
+`documentation/models.md`, `m0-loop.md` (spend and the report), `fleet.md` and `lines.md`
+(`contextPacket`).
+
+Deliverables:
+
+1. PD1 item 1: a `pricing` section in `config/hosts/*.json` per model: dollars per million tokens
+   for cache-hit input, cache-miss input and output, plus an optional off-peak calendar (UTC windows,
+   weekdays, multiplier). The orchestrator computes `attempt.charged` dollars from this table when it
+   is present, and from pi-ai's own numbers otherwise. Prices and the provider's model identifiers
+   live in host configuration, which is data, never in code or in this repository's prose. Additive:
+   no table, today's behaviour.
+2. PD1 item 2: the report gives, per session, per line and per rung (PE4), the share `cacheRead /
+   (cacheRead + miss)` and the dollars saved against a no-cache price (Task 24 already reports cached
+   input tokens).
+3. PD1 item 3: any code that rewrites or compiles a session's message history (Task 24's packet, a
+   line's `transformContext`) keeps the reasoning field of assistant messages that belong to a
+   tool-call loop and sends it back in every later request. Tested against a fake OpenAI-compatible
+   server that answers 400 when it is missing; the test fails today if a line rebuilds history
+   without it, and the line is fixed.
+4. PD1 item 4: Task 19's ignored settings (see its amendment): the adapter marks a setting ignored by
+   the model family, and the fleet spends no arm on it.
+5. PD3: `--offpeak`, `--offpeak-max-wait MINUTES` and `RunConfig.offpeak` (see Task 17's amendment),
+   using the pricing calendar of item 1; `turn.deferred` event; the report says how much was run
+   off-peak. With no pricing table, the option is rejected with a message.
+6. Docs: `models.md`, `m0-loop.md`, `human.md` (the option), `fleet.md`, `lines.md`.
+
+Tests: pricing from a host table with the calendar at a peak and at an off-peak instant (injected
+clock); the ratio and savings in the report from a faux provider that reports cache tokens; the 400
+test above; an ignored-setting case in the fleet; with the injected clock, a turn started at a peak
+instant deferred to the next window, the wait bound, and the option rejected without a table. The
+prices are first estimates from the provider's pages: they are checked on the first real run, before
+any conclusion of Task 14's comparison of packet modes is used. Not run against a real provider here.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
@@ -1021,5 +1179,13 @@ files. Docs: `documentation/prompts.md`. Not run against a real model here.
   conjectures and theory exploration. Not expanded until the core is ready.
 - One native tool per major method of Polya's "How to Solve It" (the user, 2026-10-20): the
   long-term target of the tool library. New tools wait until the core is ready.
+- Sums of squares (a certificate checked by `nlinarith` or `positivity`), Wu's method and structure
+  transfer (the user, 2026-10-28, PD of `plans/plan-change-polya-costs.md`): they belong with the
+  reformulation family of Polya tools above, after the core is ready. Not adopted at all: the area
+  method (no Lean port; the bench has no geometry), theory morphisms in MMT (a second ecosystem;
+  homology detection is suspended), VF2 (NP-complete; anti-unification and MAC/FAC already serve),
+  lean-egg (deprecated by its authors in favour of `grind`), a learned model router, step-wise
+  allocation by a trained policy, LLMLingua and a semantic cache (trained, or unsafe for exact
+  mathematical statements; the exact goal cache is the one we use).
 - Homology detection and the abductive engine (Task 12, lines `M7` and `M9`): suspended by the user
   on 2026-10-20 (Ruling 20). The notes stay; nothing is built.
