@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Journal, readEvents, verifyChain, type EventDataMap } from "@seshat/core";
-import { loadPack, PackError, packIntact, type LoadedPack, type PackRecord } from "./packs.ts";
+import { countTree, loadPack, PackError, packIntact, type LoadedPack, type PackRecord } from "./packs.ts";
 
 /**
  * The pack directory (documentation/packs.md): `installed/<name>/` holds the files of each installed pack,
@@ -15,6 +15,7 @@ export const PACK_ACTOR = "orchestrator";
 export class PackStoreError extends Error {}
 
 export interface InstalledPack extends PackRecord {
+  level1Accepted?: boolean | undefined;
   trust: EventDataMap["pack.installed"]["trust"];
   capabilities: string[];
   skills: string[];
@@ -64,7 +65,7 @@ export function loadInstalledPacks(packsDir: string): LoadedPack[] {
     }
     const pack = loadPack(record.dir);
     if (pack.hash !== record.hash) throw new PackError([`pack ${record.name}: its content hash is not the recorded one`]);
-    loaded.push(pack);
+    loaded.push(record.level1Accepted === true ? { ...pack, level1Granted: true } : pack);
   }
   return loaded;
 }
@@ -77,6 +78,8 @@ export interface InstallOptions {
   allowPrograms?: boolean;
   /** Capability ids that are taken: the repository's own catalog. */
   reserved?: ReadonlySet<string>;
+  /** Honours the pack's own `level1` request from the next session; without it the request is only recorded. */
+  level1?: boolean;
   /** Install over a pack of the same name (an upgrade): the journal records the removal and the install. */
   replace?: boolean;
   /** Where git clones go wrong in a test, or from. Default: the `git` program. */
@@ -90,17 +93,43 @@ export function isGitUrl(source: string): boolean {
   return GIT_URL.test(source) || (source.endsWith(".git") && !existsSync(source));
 }
 
+/** The url without the user and password in it; a url that carries a password is refused, because the journal keeps `source` for good. */
+export function redactUrl(source: string): string {
+  if (!/^[a-z]+:\/\//i.test(source)) return source;
+  let url: URL;
+  try {
+    url = new URL(source);
+  } catch {
+    throw new PackStoreError(`${source.replace(/\/\/[^@/]*@/, "//***@")}: not a valid url`);
+  }
+  if (url.password !== "") throw new PackStoreError("the git url carries a password: put credentials in git's credential helper, not in the url, which the journal would keep");
+  url.username = "";
+  return url.toString();
+}
+
 function gitClone(url: string, into: string): void {
   try {
-    // Cloning runs no code of the repository: no hook comes with a clone, and no submodule is fetched.
-    execFileSync("git", ["clone", "--quiet", "--depth", "1", "--no-tags", "--", url, into], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: "file:https:ssh:git" },
-      timeout: 120_000,
-    });
+    // Cloning runs no code of the repository: no hook, no template, no submodule, no LFS filter, no fsmonitor, and only the
+    // protocols a pack is fetched over; the user's and the system's git configuration is not read.
+    execFileSync(
+      "git",
+      [
+        "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+        "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always",
+        "-c", "protocol.git.allow=always", "-c", "protocol.file.allow=always",
+        "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false",
+        "-c", "submodule.recurse=false", "-c", "clone.recurseSubmodules=false",
+        "clone", "--quiet", "--depth", "1", "--no-tags", "--no-recurse-submodules", "--template=", "--", url, into,
+      ],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+        timeout: 120_000,
+      },
+    );
   } catch (error) {
     const stderr = (error as { stderr?: Buffer }).stderr?.toString("utf8").trim();
-    throw new PackStoreError(`cannot clone ${url}: ${stderr || (error as Error).message}`);
+    throw new PackStoreError(`cannot clone ${redactUrl(url)}: ${stderr || (error as Error).message}`.replace(/\/\/[^@/\s]*@/g, "//"));
   }
 }
 
@@ -114,11 +143,15 @@ export function installPack(packsDir: string, source: string, options: InstallOp
   const stage = mkdtempSync(join(root, "staging", "pack-"));
   try {
     if (isGitUrl(source)) {
+      redactUrl(source); // refuses a url with a password before anything is fetched
       (options.clone ?? gitClone)(source, stage);
       rmSync(join(stage, ".git"), { recursive: true, force: true });
     } else {
       const from = resolve(source);
       if (!existsSync(from) || !statSync(from).isDirectory()) throw new PackStoreError(`${source}: not a directory or a git url`);
+      const found: string[] = [];
+      countTree(from, found);
+      if (found.length > 0) throw new PackError(found);
       cpSync(from, stage, { recursive: true, filter: (path) => !/(^|[\\/])\.git$/.test(path) });
     }
     const pack = loadPack(stage);
@@ -152,6 +185,9 @@ export function installPack(packsDir: string, source: string, options: InstallOp
     }
 
     const dest = installedDir(root, name);
+    if (same === undefined && existsSync(dest)) {
+      throw new PackStoreError(`${dest} exists but the journal has no install of ${name} (a leftover): move or delete that directory, then add the pack again`);
+    }
     mkdirSync(join(root, "installed"), { recursive: true });
     const journal = Journal.open(journalDir(root), "packs");
     try {
@@ -171,7 +207,10 @@ export function installPack(packsDir: string, source: string, options: InstallOp
             capabilities: pack.capabilities.map((c) => c.manifest.id).sort(),
             skills: pack.skills.map((s) => s.name),
             programs: pack.programs,
-            source: isGitUrl(source) ? source : resolve(source),
+            source: isGitUrl(source) ? redactUrl(source) : resolve(source),
+            acceptedPrograms: pack.programs.length > 0,
+            level1Accepted: options.level1 === true && (pack.manifest.level1 ?? []).length > 0,
+            env: pack.manifest.requires?.env ?? [],
           },
           PACK_ACTOR,
         );

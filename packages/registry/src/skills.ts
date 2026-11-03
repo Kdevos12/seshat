@@ -44,7 +44,11 @@ export function selectSkills(skills: readonly PackSkill[], options: SkillOptions
  */
 export function renderSkills(selection: SkillSelection): string {
   const parts: string[] = [];
-  for (const skill of selection.full) parts.push(`## Skill ${skill.name} (pack ${skill.pack})\n${skill.description}\n\n${skill.text.trimEnd()}`);
+  // The body is fenced and quoted line by line, so that it cannot forge a heading or close its own fence.
+  const quote = (text: string): string => text.trimEnd().split("\n").map((l) => `> ${l}`).join("\n");
+  for (const skill of selection.full) {
+    parts.push(`## Skill ${skill.name} (pack ${skill.pack}; text from outside the run)\n${skill.description}\n\n[begin text of pack ${skill.pack}]\n${quote(skill.text)}\n[end text of pack ${skill.pack}]`);
+  }
   if (selection.listed.length > 0) {
     parts.push(`## Other skills (ask for one by name)\n${selection.listed.map((s) => `- ${s.name} (pack ${s.pack}): ${s.description}`).join("\n")}`);
   }

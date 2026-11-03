@@ -563,8 +563,14 @@ export interface EventDataMap {
     skills: string[];
     /** The programs (stdio commands) and servers (URLs) the pack's tools would reach when a run calls them. */
     programs: string[];
-    /** Where the pack came from: a directory, or a git url. */
+    /** Where the pack came from: a directory, or a git url without credentials. */
     source: string;
+    /** The owner accepted that the pack's tools start its programs and reach its servers (`--allow-programs`). */
+    acceptedPrograms?: boolean;
+    /** The owner accepted that the pack's own `level1` request is honoured from the next session (`--level1`). */
+    level1Accepted?: boolean;
+    /** The environment variables the pack's tools may read (its `requires.env`). */
+    env?: string[];
   };
   /** A pack was removed (`harness remove`). The journal keeps the install: nothing is deleted from it. */
   "pack.removed": {

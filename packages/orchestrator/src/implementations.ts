@@ -60,6 +60,19 @@ export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "
   packsDir?: string;
 }
 
+/**
+ * The packs whose tools do not take the id of a capability of the catalog. A release of the harness may add a capability a
+ * pack already had: that pack is left out with a warning (the registry would refuse to open at all), and `harness remove` clears it.
+ */
+function usablePacks(packs: ReturnType<typeof loadInstalledPacks>, catalog: ReturnType<typeof loadCatalog>): ReturnType<typeof loadInstalledPacks> {
+  return packs.filter((pack) => {
+    const taken = pack.capabilities.find((c) => catalog.capabilities.has(c.manifest.id));
+    if (taken === undefined) return true;
+    console.error(`warning: pack ${pack.manifest.name} is not used: ${taken.manifest.id} is now a capability of the harness; run harness remove ${pack.manifest.name}`);
+    return false;
+  });
+}
+
 /** The pack directory: the option, `SESHAT_PACKS_DIR`, then `packs/` of this repository. */
 export function packsDirectory(explicit?: string): string {
   return explicit ?? (process.env.SESHAT_PACKS_DIR || `${REPO_ROOT}packs`);
@@ -120,12 +133,13 @@ export function openRegistry(options: OpenRegistryOptions = {}): Registry {
   const profile = loadHostProfile(hostProfilePath(config, name));
   const found = leanEnvPin(profile, { ...(leanEnv !== undefined ? { override: leanEnv } : {}), ...(envRoot !== undefined ? { envRoot } : {}), ...(env !== undefined ? { env } : {}) });
   const source = env ?? process.env;
+  const catalog = loadCatalog(catalogDir ?? `${REPO_ROOT}capabilities`);
   // The profiles read LEAN_PROJECT_DIR; a built environment is its default.
   const projectEnv = found?.projectDir !== undefined && (source.LEAN_PROJECT_DIR ?? "") === "" ? { ...source, LEAN_PROJECT_DIR: found.projectDir } : env;
   return new Registry({
     ...rest,
-    catalog: loadCatalog(catalogDir ?? `${REPO_ROOT}capabilities`),
-    packs: rest.packs ?? loadInstalledPacks(packsDirectory(packsDir)),
+    catalog,
+    packs: rest.packs ?? usablePacks(loadInstalledPacks(packsDirectory(packsDir)), catalog),
     host: profile,
     factories: factories ?? FACTORIES,
     ...(found !== undefined ? { leanEnv: found.pin } : {}),
