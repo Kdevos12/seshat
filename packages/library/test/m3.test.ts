@@ -9,7 +9,7 @@ import { renderRunReport, writeReport } from "../../orchestrator/src/index.ts";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { allLemmas, candidates, createM3, libraryReport, M3, M3_OPTIONS, SECTION_ITEM, usableLemmas } from "../src/index.ts";
+import { allLemmas, candidates, createM3, libraryReport, M3, M3_OPTIONS, renderHit, SECTION_ITEM, usableLemmas } from "../src/index.ts";
 
 // The simulated model's types, as the orchestrator's test helper gives them (this package does not depend on the model library).
 type Step = Parameters<typeof demoRun>[0]["responses"][number];
@@ -221,5 +221,19 @@ describe("the line M3 in a run", () => {
     const report = writeReport(dir);
     assert.deepEqual(report.library?.lemmas, { total: 1, byDomain: { "msc:11": 1 } });
     assert.match(renderRunReport(report), /Library: 1 lemma\(s\) \(msc:11 1\); candidates: 1 promoted, 0 duplicate, 1 trivial, 1 not proved alone, 0 pending\. 0 of 1 accepted proof\(s\) \(0%\) use a library lemma\./);
+  });
+
+  it("never calls a lemma proved that the certifier has not replayed: it is labelled, and left out of the exported files unless asked", { timeout: 30000 }, async () => {
+    const { dir, events } = await demoRun({ lines: { M3 }, lean: lean(), config: { lines: ["M3"], sessions: 1 }, responses: [check("exact trivial_proof", ADD)] });
+    const claimId = (ofType(events, "node.recorded").find((e) => e.data.kind === "library_lemma")?.data.data as { claimId: string }).claimId;
+    assert.deepEqual(ofType(events, "claim.status_changed").filter((e) => e.data.claimId === claimId).map((e) => e.data.to), ["computed"]);
+    const out = mkdtempSync(join(tmpdir(), "mh-lean-"));
+    const said: string[] = [];
+    assert.deepEqual(libraryExportCommand(dir, { out, print: (l) => said.push(l) }), [], "a computed lemma is not written by default");
+    assert.match(said[0] ?? "", /only lemmas the certifier replayed are, unless --include-computed/);
+    const [path] = libraryExportCommand(dir, { out, includeComputed: true, print: () => undefined });
+    assert.match(readFileSync(path as string, "utf8"), /\(computed: accepted by Lean's check, NOT replayed by the certifier\)/);
+    assert.match(renderHit({ entry: { id: "x", name: "aux_lib_x", source: "library", label: "library", signature: ": True", gloss: "", claimStatus: "computed" } } as never, ""), /status: accepted by Lean's check, not yet replayed by the certifier/);
+    assert.match(renderHit({ entry: { id: "x", name: "aux_lib_x", source: "library", label: "library", signature: ": True", gloss: "", claimStatus: "proved" } } as never, ""), /status: proved \(replayed by the certifier\)/);
   });
 });

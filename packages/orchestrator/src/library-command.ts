@@ -10,6 +10,8 @@ import { openForAnswers } from "./team.ts";
 export interface LibraryExportOptions {
   /** The directory the files are written under; default `lean/` of the repository, so `lean/SeshatLib/<Domain>.lean`. */
   out?: string | undefined;
+  /** Also write the lemmas the certifier has not replayed (marked as such). Default: only the proved ones. */
+  includeComputed?: boolean | undefined;
 }
 
 /**
@@ -22,7 +24,7 @@ export function libraryExportCommand(dir: string, o: LibraryExportOptions & { pr
   const journal = openForAnswers(resolve(dir));
   try {
     const memory = new MemoryStore({ journal, blobs: new BlobStore(join(resolve(dir), "blobs")) });
-    const files = libraryFiles(memory);
+    const files = libraryFiles(memory, { includeComputed: o.includeComputed === true });
     const written: string[] = [];
     for (const [path, text] of files) {
       const target = join(root, path);
@@ -31,7 +33,7 @@ export function libraryExportCommand(dir: string, o: LibraryExportOptions & { pr
       written.push(target);
       o.print(`wrote ${target}`);
     }
-    if (written.length === 0) o.print("the run's library holds no lemma that can be offered: no file written");
+    if (written.length === 0) o.print("the run's library holds no lemma to write (only lemmas the certifier replayed are, unless --include-computed): no file written");
     else o.print("These files are generated and have not been compiled by Lean here: a Lean host compiles them (documentation/library.md).");
     return written;
   } finally {

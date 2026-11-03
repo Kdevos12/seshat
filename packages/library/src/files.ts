@@ -22,7 +22,7 @@ function provenance(l: LibraryLemma): string {
   return comment(
     [
       `Library lemma ${l.name}, from ${l.source.name} of problem ${l.source.problemId} (attempt ${l.source.attemptId}).`,
-      `Claim ${l.claimId} (${l.claimStatus}), statement ${l.statementId}.`,
+      `Claim ${l.claimId} (${l.claimStatus}${l.claimStatus === "proved" ? "" : ": accepted by Lean's check, NOT replayed by the certifier"}), statement ${l.statementId}.`,
       `${l.mathlibRev !== undefined ? `Mathlib revision ${l.mathlibRev}` : "Mathlib revision unknown"}${l.leanEnv !== undefined ? `, Lean environment ${l.leanEnv.name}${l.leanEnv.hash !== null ? `@${l.leanEnv.hash.slice(0, 12)}` : ""}` : ""}${l.promotedAt !== undefined ? `, promoted ${l.promotedAt}` : ""}.`,
     ].join("\n    "),
   );
@@ -53,10 +53,15 @@ export function renderLibraryFile(module: string, lemmas: readonly LibraryLemma[
   ].join("\n");
 }
 
-/** The library as files, by relative path (`SeshatLib/Msc11.lean`): the usable lemmas of the memory, grouped by domain. */
-export function libraryFiles(memory: MemoryStore): Map<string, string> {
+/**
+ * The library as files, by relative path (`SeshatLib/Msc11.lean`): the lemmas of the memory grouped by domain. Only a lemma
+ * whose claim the certifier replayed (`proved`) is written, unless `includeComputed` asks for the ones the fast check accepted
+ * too, each marked as not replayed.
+ */
+export function libraryFiles(memory: MemoryStore, options: { includeComputed?: boolean } = {}): Map<string, string> {
   const byModule = new Map<string, LibraryLemma[]>();
   for (const lemma of usableLemmas(memory)) {
+    if (lemma.claimStatus !== "proved" && options.includeComputed !== true) continue;
     const module = moduleName(lemma.domain);
     byModule.set(module, [...(byModule.get(module) ?? []), lemma]);
   }

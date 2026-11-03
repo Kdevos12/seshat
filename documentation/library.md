@@ -32,7 +32,7 @@ candidates are judged, in order, each by three criteria; the first one it fails 
 A candidate that passes all three is **promoted**: a `library_lemma` node on the lemma's claim. The claim is `computed`
 after `validate` and `proved` when the certifier replays it (it is a line's submission for another claim, certified
 when the problem ends like any: [lines.md](lines.md#validate)). The library never raises a status itself, and a lemma's
-standing is its claim's: a lemma is offered only while its claim is `computed` or `proved`. A claim an earlier run
+standing is its claim's: a lemma is offered only while its claim is `computed` or `proved`, and its status line says which (`computed` is the fast check; only `proved` is the certifier's replay, and only `proved` lemmas are written to `lean/SeshatLib` unless `harness library export --include-computed`, which marks the others). A claim an earlier run
 established under another Lean environment is `open` again here ([memory.md](memory.md#memory-across-runs)), so
 the library of an earlier run is not offered in a different environment, and a lemma that no longer compiles
 ([below](#compiled-again-when-mathlib-changes)) is not offered either. A promotion stops at `maxPerProblem` (10)
