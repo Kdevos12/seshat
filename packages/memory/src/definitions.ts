@@ -75,7 +75,9 @@ export function mentionsDeclaration(text: string, name: string): boolean {
   const last = name.split(".").pop() as string;
   if (last === "") return false;
   const escaped = last.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\p{L}\\p{N}_'!?])${escaped}(?![\\p{L}\\p{N}_'!?])`, "u").test(maskCommentsAndStrings(text));
+  // An identifier starts at a letter or underscore and may end in `!` or `?`: a `!` or `?` before a name is an operator (`!f x` is
+  // `not (f x)`), so only letters, digits, underscore and the prime bound a name on the left, and `!`, `?` and the prime on the right.
+  return new RegExp(`(?<![\\p{L}\\p{N}_'])${escaped}(?![\\p{L}\\p{N}_'!?])`, "u").test(maskCommentsAndStrings(text));
 }
 
 /** What is wrong with a definition's name: nothing, when it is a dotted Lean name whose last component is long enough to be told from a variable. */
@@ -88,7 +90,13 @@ export function definitionNameProblem(name: string): string | undefined {
 /** Reasons a review is not accepted from this signature, besides who may sign (the store checks that). */
 export function reviewProblem(by: ReviewBy): string | undefined {
   if (by.kind === "human") return by.name.trim() === "" ? "a human review names the person" : undefined;
-  const checkers = new Set(by.checkers.map((c) => c.trim()).filter((c) => c !== ""));
-  if (checkers.size < 2) return "a faithfulness check needs at least two distinct checkers";
+  // Checkers are `family:model`, and the families differ (Global Constraint 16): two models of one family are not a cross-model check.
+  const families = new Set<string>();
+  for (const c of by.checkers) {
+    const m = /^([A-Za-z0-9_.-]+):(\S+)$/.exec(c.trim());
+    if (m === null) return `the checker ${JSON.stringify(c)} is not written family:model`;
+    families.add((m[1] as string).toLowerCase());
+  }
+  if (families.size < 2) return "a faithfulness check needs checkers from at least two distinct model families";
   return undefined;
 }

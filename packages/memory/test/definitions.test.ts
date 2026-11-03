@@ -45,8 +45,14 @@ describe("the review status of definitions (LC5)", () => {
     assert.equal((await memory.ensureClaim({ statement: STATEMENT, origin: "test" })).created, true);
     const other = open();
     other.recordDefinition({ ...INPUT, name: "SeshatLib.Foo.divMul" });
-    other.reviewDefinition("SeshatLib.Foo.divMul", { by: { kind: "faithfulness", checkers: ["family-a/x", "family-b/y"], verdict: "faithful" } });
+    other.reviewDefinition("SeshatLib.Foo.divMul", { by: { kind: "faithfulness", checkers: ["family-a:x", "family-b:y"], verdict: "faithful" } });
     assert.equal(other.definition("SeshatLib.Foo.divMul")?.status, "reviewed");
+  });
+
+  it("wants checkers written family:model from distinct families", () => {
+    const memory = open();
+    memory.recordDefinition(INPUT);
+    assert.throws(() => memory.reviewDefinition(INPUT.name, { by: { kind: "faithfulness", checkers: ["x", "y"], verdict: "faithful" } }), /family:model/);
   });
 
   it("refuses a review by a view, by one checker or by an unnamed person, and a second review", () => {
@@ -57,7 +63,7 @@ describe("the review status of definitions (LC5)", () => {
     assert.throws(() => view.withActor("human:ana"), /cannot write as/);
     assert.throws(() => view.reviewDefinition(name, { by: { kind: "human", name: "ana" } }), /view/);
     assert.throws(() => view.recordDefinition({ ...INPUT, name: "SeshatLib.Foo.other" }), /view/);
-    assert.throws(() => memory.reviewDefinition(name, { by: { kind: "faithfulness", checkers: ["a", "a"], verdict: "faithful" } }), /two distinct/);
+    assert.throws(() => memory.reviewDefinition(name, { by: { kind: "faithfulness", checkers: ["a:x", "a:y"], verdict: "faithful" } }), /two distinct model families/);
     assert.throws(() => memory.reviewDefinition(name, { by: { kind: "human", name: " " } }), /names the person/);
     memory.reviewDefinition(name, { by: { kind: "human", name: "ana" } });
     assert.throws(() => memory.reviewDefinition(name, { by: { kind: "human", name: "ana" } }), /is reviewed/);
@@ -109,5 +115,12 @@ describe("mentionsDeclaration", () => {
     assert.equal(mentionsDeclaration("x = my_mulDiv 1 2", "A.Foo.mulDiv"), false);
     assert.equal(mentionsDeclaration("/- mulDiv -/ x = 1", "A.Foo.mulDiv"), false);
     assert.equal(mentionsDeclaration("x = (mulDiv)", "A.Foo.mulDiv"), true);
+  });
+
+  it("sees a name after an operator that Lean does not read into the name (review C2)", () => {
+    for (const text of ["!isGood n = true", "!(isGood n) = false", "a && !isGood b = true", "?isGood n", "¬isGood n", "f <| isGood n", "x.isGood", "«isGood» n", "isGood! n"]) {
+      assert.equal(mentionsDeclaration(text, "SeshatLib.X.isGood"), text !== "isGood! n", text);
+    }
+    assert.equal(mentionsDeclaration("!isGoodish n", "SeshatLib.X.isGood"), false);
   });
 });
