@@ -1,0 +1,49 @@
+{
+  "capability": "prove.search",
+  "cases": [
+    {
+      "name": "a goal in one step",
+      "purpose": "a proposed tactic closes it; the script is that tactic.",
+      "input": {
+        "statement": "(n : ℕ) : n + 0 = n",
+        "tactics": [
+          "simp"
+        ],
+        "nodes": 10,
+        "alpha": 0
+      },
+      "expect": [
+        {
+          "path": "solved",
+          "equals": true
+        },
+        {
+          "path": "script.0",
+          "equals": "simp"
+        }
+      ]
+    },
+    {
+      "name": "a goal in two steps",
+      "purpose": "intro then a decision procedure.",
+      "input": {
+        "statement": ": ∀ n : ℕ, n + 0 = n",
+        "tactics": [
+          "intro n"
+        ],
+        "nodes": 30,
+        "alpha": 0.5
+      },
+      "expect": [
+        {
+          "path": "solved",
+          "equals": true
+        },
+        {
+          "path": "script.0",
+          "equals": "intro n"
+        }
+      ]
+    }
+  ]
+}

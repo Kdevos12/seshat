@@ -1,0 +1,125 @@
+{
+  "id": "smt.z3",
+  "version": 1,
+  "title": "Decide an SMT-LIB script with z3",
+  "when": [
+    "checking whether a goal over integers, reals and uninterpreted functions follows from hypotheses, by refuting its negation",
+    "getting an unsat core: the hypotheses a proof needs, to hand to grind, aesop or hammer"
+  ],
+  "whenNot": [
+    "proving the theorem: unsat is evidence that Lean has not checked, and only a Lean proof settles a claim",
+    "goals outside the fragment (sets, sums, casts): translate what you can, or use the Lean battery"
+  ],
+  "exposure": "deferred",
+  "produces": [],
+  "timeoutMs": 60000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "status"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "smtlib"
+    ],
+    "properties": {
+      "smtlib": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200000,
+        "description": "An SMT-LIB 2 script ending with (check-sat); with (set-option :produce-unsat-cores true), (assert (! F :named n)) and (get-unsat-core) the answer carries the core"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "z3's time limit in seconds, 30 when not given"
+      },
+      "model": {
+        "type": "boolean",
+        "description": "Print the model when the answer is sat"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "status",
+      "exitCode",
+      "elapsedMs"
+    ],
+    "properties": {
+      "status": {
+        "enum": [
+          "sat",
+          "unsat",
+          "unknown",
+          "timeout",
+          "error"
+        ],
+        "description": "Read from the first line of z3's output, never from its prose"
+      },
+      "core": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "For unsat: the names of the assertions in the unsat core"
+      },
+      "model": {
+        "type": "string"
+      },
+      "exitCode": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "elapsedMs": {
+        "type": "number",
+        "minimum": 0
+      },
+      "detail": {
+        "type": "string",
+        "description": "For error: z3's error line"
+      }
+    },
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "title": "x > 0 and x < 0 is unsatisfiable",
+      "input": {
+        "smtlib": "(set-option :produce-unsat-cores true)\n(declare-const x Int)\n(assert (! (> x 0) :named a))\n(assert (! (< x 0) :named b))\n(check-sat)\n(get-unsat-core)\n"
+      },
+      "output": {
+        "status": "unsat",
+        "core": [
+          "a",
+          "b"
+        ],
+        "exitCode": 0,
+        "elapsedMs": 12
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "process",
+      "version": "z3-solver-5.3.3.0+process-1",
+      "kind": "inproc",
+      "factory": "z3",
+      "description": "z3 as a process (`z3 -in -smt2 -T:N`, the script on standard input), from PyPI's z3-solver or the system's z3. The command is a setting (Z3_COMMAND).",
+      "environment": {
+        "z3": "5.3.3.0 (PyPI z3-solver)"
+      },
+      "settings": {
+        "command": "z3"
+      }
+    }
+  ],
+  "description": {
+    "$file": "description.md"
+  }
+}
