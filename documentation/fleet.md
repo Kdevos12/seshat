@@ -161,6 +161,16 @@ Thompson sampling picks the value with the highest draw; a value nothing is know
 it is tried. The draws are in the allocation (`settingDraws`). The settings come from their own stream
 (`key:settings`).
 
+**Settings the model family ignores.** The host profile says which sampled settings a model's family ignores
+(`models.PROVIDER/ID.ignores`: `always`, and `thinking` for the ones ignored whenever the request thinks, that is
+at any level but `off`; [m0-loop.md](m0-loop.md#prices)). When it says so for the session's model, the thinking
+level is drawn first, and a temperature that the family ignores at that level is not sampled: no value, no draw, no
+Thompson arm, and nothing is learned over it. The settings record `ignored: ["temperature"]` instead, so that the
+journal shows why the session sent none. The settings that act on such a family are the thinking switch and the effort
+level, both discrete and learned as before; the diversity there comes from the other levers (the diversity
+directive, the premise count, the rendering). A host that says nothing ignores nothing, and the draws are the ones a
+run without the table makes. The line reads the answer through `ProblemContext.ignoresSetting`.
+
 The settings are in the `settings` of the session's `attempt.started`, and they act: the orchestrator sends the
 temperature with each request of the session, and runs it at the thinking level (the run's own otherwise). Lines
 that sample are merged key by key, in the order of the lines; a temperature outside 0 to 2 or an unknown thinking

@@ -323,6 +323,9 @@ export class ProblemLines {
       options: entry.options,
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
+      ...(o.prices?.describesIgnores === true
+        ? { ignoresSetting: (model: string, setting: string, thinking?: string) => o.prices?.ignores(model, setting, thinking ?? o.thinkingLevel) ?? false }
+        : {}),
     };
     if (signal === undefined) this.contexts.set(id, context);
     return context;

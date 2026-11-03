@@ -104,3 +104,27 @@ describe("prices from the host table", () => {
     assert.equal(ofType(none.events, "attempt.charged").every((c) => c.data.offPeakUsd === undefined), true);
   });
 });
+
+describe("the fleet and the settings a model family ignores", () => {
+  it("sends no temperature to a model the host says ignores it while thinking, and says so on the attempt", async () => {
+    const models = { "faux/prover": { ignores: { thinking: ["temperature"] } } };
+    const { events } = await demoRun({
+      registry: pricedRegistry(models),
+      config: { lines: ["M1", "fleet"], sessions: 1, lineOptions: { fleet: { seed: 3, epsilon: 0, temperature: [0.3, 0.9], thinking: ["high"] } } as never },
+      responses: [check("exact trivial_proof")],
+    });
+    const settings = ofType(events, "attempt.started")[0]?.data.settings;
+    assert.equal(settings?.thinking, "high");
+    assert.equal(settings?.temperature, undefined);
+    assert.deepEqual(settings?.ignored, ["temperature"]);
+  });
+
+  it("samples the temperature as before when the host says nothing", async () => {
+    const { events } = await demoRun({
+      config: { lines: ["M1", "fleet"], sessions: 1, lineOptions: { fleet: { seed: 3, epsilon: 0, temperature: [0.3, 0.9], thinking: ["high"] } } as never },
+      responses: [check("exact trivial_proof")],
+    });
+    const settings = ofType(events, "attempt.started")[0]?.data.settings;
+    assert.ok(settings?.temperature === 0.3 || settings?.temperature === 0.9);
+  });
+});
