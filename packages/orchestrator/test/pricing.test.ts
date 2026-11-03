@@ -5,7 +5,7 @@ import { PriceBook } from "../src/prices.ts";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { buildReport, renderRunReport, RunSetupError } from "../src/index.ts";
 import { messageCost } from "../src/budget.ts";
-import { check, demoRun, ofType, pricedRegistry } from "./m0-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, pricedRegistry } from "./m0-helpers.ts";
 
 // Made-up numbers: peak 01:00-04:00 and 06:00-10:00 UTC on weekdays, half price otherwise, one holiday.
 const CALENDAR: PricingCalendar = {
@@ -157,5 +157,18 @@ describe("a model that no price covers", () => {
     const cost = messageCost(model, message, new PriceBook({ "p/m": { pricing: { cacheHit: 0, cacheMiss: 1, output: 1 } } }, () => 0));
     assert.ok(Math.abs(cost.usd - 0.002) < 1e-12, "the table is the price");
     assert.ok(Math.abs((cost.unchargedUsd ?? 0) - 0.498) < 1e-12);
+  });
+});
+
+describe("correcting a price while a run is interrupted", () => {
+  it("does not make the run unresumable: the resumption warns and charges the new prices from then on", async () => {
+    const withPrice = (cacheMiss: number) => pricedRegistry({ "faux/prover": { pricing: { cacheHit: 0.1, cacheMiss, output: 8 } } });
+    const first = await demoRun({ responses: [check("bad"), check("exact trivial_proof")], registry: withPrice(2), config: { sessions: 2 } });
+    assert.equal(typeof (first.events[0]?.data as { config: { prices?: unknown } }).config.prices, "string", "the run records its prices' hash");
+    const dir = killedAt(first.dir, (event) => event.type === "attempt.charged");
+    const lines: string[] = [];
+    const resumed = await demoResume({ dir, bench: first.bench, responses: [check("exact trivial_proof")], registry: withPrice(4), log: (line) => lines.push(line) });
+    assert.ok(lines.some((line) => /warning: the host's prices are not the ones this run began with \(they were changed\)/.test(line)), lines.join("\n"));
+    assert.equal(resumed.result.problems[0]?.outcome, "candidate");
   });
 });

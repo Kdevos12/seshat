@@ -147,7 +147,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
 - `models`, at the top of the profile, says what the host knows of the run's language models, by `provider/id`:
   their `pricing` (dollars per million tokens for cache-hit input, cache-miss input and output, with an optional
   off-peak calendar) and the settings their family `ignores`. A model with no entry is charged at pi-ai's numbers
-  ([m0-loop.md](m0-loop.md#prices)).
+  ([m0-loop.md](m0-loop.md#prices)). The prices are not in `registry.hash`; the ignored settings are.
 - `optional: true` says the host offers the capability but the harness can do without it, such as a
   public site that a host without outbound access cannot reach. `harness health` prints an
   implementation of it that does not answer as `warn` and does not fail on it, also when the
