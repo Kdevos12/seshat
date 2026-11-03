@@ -1,6 +1,8 @@
 import type { LeanChecker } from "@seshat/core";
 import { type HostTactics, isUnknownTactic, probeSnippet, TACTICS } from "./tactics.ts";
 
+const IMPORT_FAILURE = /unknown module prefix|bad import|object file .* does not exist|unknown package|failed to read file|invalid import/iu;
+
 /** What a probe of the host's Lean found. */
 export interface HostProbe extends HostTactics {
   /** The `needs` that were asked about and found missing. */
@@ -28,8 +30,9 @@ export async function probeHost(checker: LeanChecker, options: { header?: string
   asked.forEach((t, i) => {
     const r = results[i];
     const needs = t.needs as string;
-    if (r === undefined || r.status === "server_error" || r.status === "repl_error") {
-      unreachable = r?.error ?? "Lean did not answer";
+    if (r === undefined || r.status === "server_error" || r.status === "repl_error" || r.status === "timeout" || r.messages.some((m) => m.severity === "error" && IMPORT_FAILURE.test(m.text))) {
+      // Nothing was learned about the tactic: a timeout or a failed import says nothing about its syntax.
+      unreachable = r?.error ?? (r?.status === "timeout" ? "the probe timed out" : r === undefined ? "Lean did not answer" : (r.messages.find((m) => IMPORT_FAILURE.test(m.text))?.text ?? "Lean could not elaborate the probe").slice(0, 200));
     } else if (isUnknownTactic(r)) {
       if (!missing.includes(needs)) missing.push(needs);
     } else {

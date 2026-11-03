@@ -118,7 +118,8 @@ export interface FirstOrderOutcome {
   settled: boolean;
   evidence: Evidence[];
   outside?: string;
-  nodeId: string;
+  /** Absent when the stage was cut short by an abort: nothing is recorded, so that a resumed run does it again. */
+  nodeId?: string;
 }
 
 /** The premises of a cutoff that lie in the fragment, each translated alone so that one outside does not drop the rest. */
@@ -159,6 +160,8 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
   assertLeanSafe(goal.statement, "the statement");
   const data: FirstOrderRunData = { statement: goal.statement, cutoffs: [], missing: [], evidence: [], union: [], reconstruction: [] };
   const finish = (settled: boolean): FirstOrderOutcome => {
+    // An abort that cut the stage short leaves no record: `ran()` would take the goal for done.
+    if (!settled && ctx.signal.aborted) return { settled, evidence: data.evidence, ...(data.outside !== undefined ? { outside: data.outside } : {}) };
     const node = ctx.memory.recordNode({ kind: FIRST_ORDER_RUN, claimId: goal.claimId, data: data as never });
     return { settled, evidence: data.evidence, ...(data.outside !== undefined ? { outside: data.outside } : {}), nodeId: node.nodeId };
   };

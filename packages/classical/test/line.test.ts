@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal } from "@seshat/core";
-import type { Line, ProblemContext, SessionContext, ValidateRequest, ValidateResult } from "@seshat/lines";
+import { InterruptedError, isInterrupted, type Line, type ProblemContext, type SessionContext, type ValidateRequest, type ValidateResult } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
 import { CapabilityError, type Registry } from "@seshat/registry";
 import { BATTERY_RUN, createM10, describeTried, FIRST_ORDER_RUN, M10, M10_DEFAULTS, type M10Services, readOptions, type Solvers, subgoalsOf } from "../src/index.ts";
@@ -135,6 +135,50 @@ describe("beforeProvers", () => {
     assert.match(logs.join("\n"), /the header of subgoal .* is refused/);
     assert.equal(memory.nodes(BATTERY_RUN, { claimId: sub.claimId }).length, 0);
     assert.ok(!lean.calls.some((c) => c.code.includes("#eval")), "nothing of it reached Lean");
+  });
+
+  it("leaves no record when an abort cut the stages short, so that a resumed run does the goal (review M4)", async () => {
+    const cut = new AbortController();
+    const first = await problemOf({ script: { omega: { delayMs: 400 }, simp: { delayMs: 400 }, linarith: { delayMs: 400 }, norm_num: { delayMs: 400 } }, options: { firstOrder: true } });
+    (first.problem as { signal: AbortSignal }).signal = cut.signal;
+    const running = hook(M10, "beforeProvers")(first.problem);
+    setTimeout(() => cut.abort(), 50);
+    await running;
+    assert.equal(first.memory.nodes(BATTERY_RUN, { claimId: first.claimId }).length, 0, "no battery_run for a cut run");
+    assert.equal(first.memory.nodes(FIRST_ORDER_RUN, { claimId: first.claimId }).length, 0);
+    const again = await problemOf({ memory: first.memory, script: { omega: { ok: true } } });
+    await hook(M10, "beforeProvers")(again.problem);
+    assert.deepEqual(again.requests.map((r) => r.proof), ["omega"], "the resumed run works the goal");
+  });
+
+  it("passes an interruption of validate through and records nothing (review M4)", async () => {
+    const { problem, memory, claimId } = await problemOf({
+      script: { omega: { ok: true } },
+      validate: () => {
+        throw new InterruptedError("the run was stopped");
+      },
+    });
+    await assert.rejects(hook(M10, "beforeProvers")(problem), (e: unknown) => isInterrupted(e));
+    assert.equal(memory.nodes(BATTERY_RUN, { claimId }).length, 0);
+  });
+
+  it("asks the host's Lean again after a probe that learned nothing, and keeps an answer (review M3)", async () => {
+    const probes = (lean: ScriptedLean) => lean.calls.filter((c) => c.code.includes("(0 : Nat) = 0")).length;
+    const another = async (first: Awaited<ReturnType<typeof problemOf>>) => {
+      const { claimId } = await first.memory.ensureClaim({ statement: "(a : ℕ) : a + 0 = a", header: "import Mathlib", origin: "bench:test" });
+      return { ...first.problem, claimId } as ProblemContext;
+    };
+    const silent = await problemOf({ options: { probe: true }, script: { hammer: { timeout: true }, canonical: { timeout: true }, polyrith: { timeout: true }, bv_decide: { timeout: true } } });
+    await hook(M10, "beforeProvers")(silent.problem);
+    const afterFirst = probes(silent.lean);
+    assert.ok(afterFirst > 0);
+    await hook(M10, "beforeProvers")(await another(silent));
+    assert.ok(probes(silent.lean) > afterFirst, "a probe that timed out is repeated at the next goal");
+    const answered = await problemOf({ options: { probe: true }, script: { hammer: { unknown: true }, canonical: { unknown: true }, polyrith: { unknown: true }, bv_decide: { unknown: true } } });
+    await hook(M10, "beforeProvers")(answered.problem);
+    const once = probes(answered.lean);
+    await hook(M10, "beforeProvers")(await another(answered));
+    assert.equal(probes(answered.lean), once, "an answer is kept for the header");
   });
 
   it("does not run twice on a goal it has a record of (a resumed run)", async () => {

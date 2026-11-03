@@ -56,6 +56,18 @@
         "maximum": 500,
         "description": "The most tactics to try, 60 when not given"
       },
+      "maxDepth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 40,
+        "description": "The deepest state expanded, 12 when not given"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 280,
+        "description": "Seconds the whole search may take, 180 when not given; a tactic gets at most 20 s of it"
+      },
       "alpha": {
         "enum": [
           0,

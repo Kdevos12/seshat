@@ -99,11 +99,21 @@ export async function runBattery(options: BatteryOptions): Promise<BatteryResult
         else outcome = "failed";
         record = { tactic: spec.name, domain: options.domain, outcome, timeMs: used > 0 ? used : Date.now() - started, ...(outcome === "success" && spec.suggests && text !== undefined ? { suggestion: text } : {}) };
       } catch (error) {
-        if (!stop.signal.aborted) throw error;
+        if (!stop.signal.aborted) {
+          // A checker that throws stops the other workers; they would go on checking in the background.
+          stop.abort();
+          throw error;
+        }
         record = { tactic: spec.name, domain: options.domain, outcome: "aborted", timeMs: Date.now() - started };
       }
       reservedMs -= timeoutSec * 1000;
       spentMs += record.timeMs;
+      // One success per run: a later one (the abort raced the answer) is recorded as aborted, so that the
+      // journal, and the posteriors read from it, do not depend on the timing.
+      if (record.outcome === "success" && winner !== undefined) {
+        const { suggestion: _dropped, ...rest } = record;
+        record = { ...rest, outcome: "aborted" };
+      }
       tries.push(record);
       if (record.outcome === "success" && winner === undefined) {
         winner = { tactic: spec.name, proof: record.suggestion ?? spec.script };
