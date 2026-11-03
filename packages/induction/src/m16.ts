@@ -1,5 +1,5 @@
 import { hash32, hashJson, seeded, type Json } from "@seshat/core";
-import { type Briefing, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem } from "@seshat/lines";
+import { type Briefing, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem, type TaskEnd, type TaskInfo } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { sageThroughRegistry } from "@seshat/models";
 import { fillTemplate, makeScorer, runSearch, type Scored, type SearchOptions, type SearchSpec } from "./evolve.ts";
@@ -89,8 +89,6 @@ interface Done {
  * template, and submitted through `validate`: a score settles nothing. The line is on rung 2 of the ladder.
  */
 export function createM16(): Line {
-  const done = new Map<string, Done[]>();
-  const keyOf = (p: ProblemContext): string => `${p.runId}/${p.problemId}`;
 
   async function search(problem: ProblemContext, s: Settings, claimId: string, specNode: { key: string; spec: SearchSpec }): Promise<Done> {
     const memory = problem.memory.withActor(ACTOR);
@@ -153,28 +151,56 @@ export function createM16(): Line {
     return `${result.verdict}${result.reasons.length > 0 ? ` (${result.reasons[0]})` : ""}`;
   }
 
-  async function run(problem: ProblemContext, _held?: ResumedProblem): Promise<void> {
+  /** The claims that carry a search: the problem's own, and the claim of each search task a line made. */
+  function searchClaims(problem: ProblemContext): string[] {
+    const claims = new Set<string>([problem.claimId]);
+    for (const t of problem.tasks.list({ kinds: ["search"] })) if (t.claimId !== undefined && t.status !== "failed" && t.status !== "cancelled") claims.add(t.claimId);
+    return [...claims].filter((id) => problem.memory.nodes(SEARCH_SPEC_KIND, { claimId: id }).length > 0);
+  }
+
+  /** The ledger's `search` task of each claim that carries a scoring program: proposed once, whichever process asks (a resumed run finds it). */
+  async function propose(problem: ProblemContext, _held?: ResumedProblem): Promise<void> {
+    for (const claimId of searchClaims(problem)) {
+      if (problem.tasks.list({ kinds: ["search"], claimId }).some((t) => t.proposedBy === "line:M16")) continue;
+      const proposed = problem.tasks.propose({ kind: "search", claimId, acceptance: { type: "claim", claimId, minStatus: "computed" }, title: "program search for a witness" });
+      if (!proposed.accepted) problem.log(`M16: the search task was refused: ${proposed.reason}`);
+    }
+  }
+
+  /** Works one search task: every specification of its claim, in order. An interruption passes through and leaves the task running. */
+  async function work(problem: ProblemContext, task: TaskInfo): Promise<TaskEnd> {
     const s = readM16Options(problem.options);
     const memory = problem.memory.withActor(ACTOR);
-    const claims = new Set<string>([problem.claimId]);
-    for (const t of problem.tasks.list({ kinds: ["search"] })) if (t.claimId !== undefined && t.status !== "done" && t.status !== "failed" && t.status !== "cancelled") claims.add(t.claimId);
+    const claimId = task.claimId ?? problem.claimId;
     const results: Done[] = [];
-    done.set(keyOf(problem), results);
-    for (const claimId of claims) {
-      for (const node of memory.nodes(SEARCH_SPEC_KIND, { claimId })) {
-        const data = node.data as { key?: string; spec?: unknown };
-        if (typeof data.key !== "string" || !isSpec(data.spec)) {
-          problem.log(`M16: a search_spec node of ${claimId} is not a search specification`);
-          continue;
-        }
-        try {
-          results.push(await search(problem, s, claimId, { key: data.key, spec: data.spec }));
-        } catch (error) {
-          if (isInterrupted(error) || problem.signal.aborted) throw error;
-          problem.log(`M16: the search failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
+    let ran = 0;
+    let failure: string | undefined;
+    for (const node of memory.nodes(SEARCH_SPEC_KIND, { claimId })) {
+      const data = node.data as { key?: string; spec?: unknown };
+      if (typeof data.key !== "string" || !isSpec(data.spec)) {
+        problem.log(`M16: a search_spec node of ${claimId} is not a search specification`);
+        continue;
+      }
+      try {
+        results.push(await search(problem, s, claimId, { key: data.key, spec: data.spec }));
+        ran++;
+      } catch (error) {
+        if (isInterrupted(error) || problem.signal.aborted) throw error;
+        failure = error instanceof Error ? error.message : String(error);
+        problem.log(`M16: the search failed: ${failure}`);
       }
     }
+    if (failure !== undefined) return { ended: "failed", reason: `the search failed: ${failure}` };
+    if (ran === 0) return { ended: "failed", reason: "the claim carries no search specification" };
+    const last = results.at(-1);
+    return { ended: "done", reason: last?.best !== undefined ? `best score ${last.best.score}${last.reached ? ", target reached" : ""}${last.verdict !== undefined ? `; Lean: ${last.verdict}` : ""}` : "no valid program" };
+  }
+
+  /** What the searches of this problem found, read from the memory (so a resumed process has it too). */
+  function found(problem: ProblemContext): Done[] {
+    const out: Done[] = [];
+    for (const claimId of searchClaims(problem)) for (const n of problem.memory.nodes(SEARCH_RESULT_KIND, { claimId })) out.push((n.data as unknown as { done: Done }).done);
+    return out;
   }
 
   return {
@@ -188,10 +214,11 @@ export function createM16(): Line {
     // The search is a function of the spec and the seed, and the model's answers are `reuse`d: a resumed process runs it again at no cost.
     resume: "rebuild",
     hooks: {
-      beforeProvers: (problem) => run(problem),
-      resumeProblem: (problem, held) => run(problem, held),
+      beforeProvers: (problem) => propose(problem),
+      resumeProblem: (problem, held) => propose(problem, held),
+      runTask: (problem, task) => work(problem, task),
       briefing: async (session): Promise<Briefing | undefined> => {
-        const results = done.get(keyOf(session)) ?? [];
+        const results = found(session);
         const lines = results.flatMap((r) =>
           r.best === undefined
             ? []

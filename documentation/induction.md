@@ -264,9 +264,14 @@ when the target score is reached (or the spec has no target). The verdict, the b
 `search_result` node, written once; the provers' briefing says what the search found and that a score proves nothing.
 
 The line is on rung 2 of the escalation ladder (`rung: 2`; with the ladder of line M12 on, it works a problem only
-after the ladder moves it up that far), declares `resume: "rebuild"`, and works the search in `beforeProvers`. It does
-not move the ledger's tasks: the orchestrator does not yet give a line that is not the scheduler a hook to work the tasks it
-did not propose, so the `search` task stays as it was and the search is run for its claim at the start. Sage scoring
+after the ladder moves it up that far) and declares `resume: "rebuild"`. In `beforeProvers` (and `resumeProblem`) it proposes
+one ledger task of kind `search` for each claim that carries a `search_spec` (the problem's own, and the claim of each
+`search` task another line made), unless it already proposed one; the acceptance criterion is that the claim is at least
+`computed`. The search itself is the line's `runTask` (Task 25's hook), which needs a scheduling line (M12) in the run: the
+orchestrator starts the task, calls `runTask`, and ends the task `done` (the reason says the best score and Lean's
+verdict) or `failed` (a search that threw, or a claim with no specification). An interruption passes through and leaves the task
+`running`; the resumed run makes it ready again and the search is run again from the journal (model calls `reuse`d, a
+finished search read from its `search_result` node). The briefing reads those nodes, so a resumed process has it too. Sage scoring
 ran against a stand-in only.
 
 ## Tests, and what has not run

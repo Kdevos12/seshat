@@ -61,7 +61,7 @@ const respond: FauxResponseFactory = (context) => {
   if (/Round \d+\. Propose/.test(text)) return say(JSON.stringify(hypotheses));
   if (/How useful would this statement be as a lemma/.test(text)) return say(JSON.stringify({ score: 0.9 }));
   if (/Write version \d+/.test(text)) return say(JSON.stringify({ program: programs++ === 0 ? "(n) => Array.from({length: n}, (_, i) => 5 + i)" : "(n) => Array.from({length: n}, (_, i) => 9 - i)" }));
-  return check("exact trivial_proof");
+  return check("exact bad");
 };
 
 describe("the lines M8, M16, M13 and M14 in a run", () => {
@@ -70,12 +70,13 @@ describe("the lines M8, M16, M13 and M14 in a run", () => {
       file: FILE,
       lines: { ...LINES, M16: declaring },
       config: {
-        lines: ["M8", "M16", "M13", "M14"],
+        lines: ["M12", "M8", "M16", "M13", "M14"],
         sessions: 1,
         lineOptions: {
           M8: { rounds: 1, classical: false, identify: false, triviality: false, testCases: 0, maxNumber: 60 },
           M16: { samples: 1, rounds: 4, callMs: 200, totalMs: 5000 },
           M13: { maxSize: 4 },
+          M12: { ladder: false },
         },
       },
       responses: Array.from({ length: 60 }, () => respond),
@@ -92,6 +93,11 @@ describe("the lines M8, M16, M13 and M14 in a run", () => {
     assert.equal(m16[0]?.data.statement, "(w : List ℕ) (h : w = [9, 8, 7, 6]) : w.sum = 30");
     const m16Checks = ofType(events, "validation.finished").filter((e) => e.data.claimId === m16[0]?.data.claimId);
     assert.ok(m16Checks.length >= 1, "the witness was submitted to Lean");
+    // The search was the ledger's task, proposed by M16 and worked through runTask: it started and ended there.
+    const task = ofType(events, "task.created").find((e) => e.data.kind === "search");
+    assert.equal(task?.data.proposedBy, "line:M16");
+    const moves = ofType(events, "task.status_changed").filter((e) => e.data.taskId === task?.data.taskId).map((e) => e.data.to);
+    assert.ok(moves.includes("running") && moves.some((m) => m === "done" || m === "failed"), moves.join(","));
     // M13: laws of the numbers are open claims too.
     assert.ok(byOrigin("line:M13").length >= 2);
     // M14: the hypothesis the table refuted was mended by an exception-barring, an open claim with a premise.
