@@ -299,6 +299,8 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   uncut run); `@seshat/context` depends on `@seshat/classical`. `contextPacket` replaces the opening
   message; the other lines' briefing sections are kept in the prefix as screened "Notes from other
   lines".
+- Task 14, on `task/t14` (not merged): `packages/core`: the optional `toolTokens` on `attempt.finished` (the tokens of the tool definitions the session sent), documented in `journal.md`; `packages/orchestrator` (shared): `RunConfig.packetMode` (`prefix_tail` by default, `append_only`, `recompiled`), recorded in `run.started`, read back by a resume, `--packet-mode`, documented in `lines.md`; the `ablate`, `chunks` and `probe` commands, `run --probe-every`, `--sequence` and `--tag`, and `report` reading `probe/probe.json`; `packages/bench`: the optional `sequences` and `tags` of the index (an index without them still reads, `sequencesOf` computes), and the `harness-bench` commands `sequences`, `tags` and `ext`, documented in `bench.md`. All additive: a run, an index and a journal without them behave as before.
+
 
 ## Log
 
