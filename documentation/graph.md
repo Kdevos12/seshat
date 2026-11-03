@@ -414,6 +414,7 @@ try is spent), and the earlier failures the side's prompt quotes.
 | Validations | `validator` | Every proof the line submits: link lemmas, the negation, composed proofs. |
 | `derivation` nodes | `line:M2` | Each composed proof, as above. |
 | `twin` nodes | `line:M2` | The end of each twin, as above. |
+| `obstruction` nodes | `line:M2` | A `nogood` when the refutation side spent its calls and Lean accepted none of its proofs of the negation ([memory.md](memory.md#obstructions)). |
 | `twin_work`, `alias`, `derivation_intent` nodes | `line:M2` | What a resumed run rebuilds the line's state from ([Resuming](#resuming)). |
 
 ## Measured

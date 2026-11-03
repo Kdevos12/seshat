@@ -372,7 +372,7 @@ const INHERITED_SKIPPED: readonly string[] = [
  * person who changes their mind writes a new one), and a run that starts on earlier journals does not
  * take them: a team's answers belong to the run they were given to (documentation/human.md).
  */
-export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer"];
+export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer", "lesson_decision"];
 
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);

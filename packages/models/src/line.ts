@@ -297,6 +297,8 @@ async function refute(problem: ProblemContext, options: M11Options, battery: Bat
       ...(witness !== undefined ? { witness } : {}),
     });
     if (known === undefined) problem.log(`M11: the statement fails on ${describeCounterModel(object)}`);
+    // The counter-model is also a typed obstruction, so that "already tried" says why the statement is not worth proving (PC3; once per detail).
+    problem.memory.recordObstruction({ claimId: problem.claimId, reason: "counterexample", detail: `the statement fails on ${describeCounterModel(object)}` });
     if (!options.refute) return;
     const attempts = await submitRefutation(problem.validate, { claimId: problem.claimId, statement, object });
     problem.memory.updateNode(node.nodeId, { refutation: attempts }, "the negation was submitted through validate");
