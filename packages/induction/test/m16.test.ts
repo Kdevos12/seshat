@@ -142,6 +142,27 @@ describe("the line M16", () => {
     return found;
   };
 
+  /** A ledger stand-in: `propose` makes a ready task proposed by M16, `list` filters. */
+  function ledger(initial: TaskInfo[]) {
+    const all = [...initial];
+    return {
+      all,
+      list: (q: { kinds?: string[]; claimId?: string } = {}) => all.filter((t) => (q.kinds === undefined || q.kinds.includes(t.kind)) && (q.claimId === undefined || t.claimId === q.claimId)),
+      propose: (p: { kind: string; claimId?: string }) => {
+        all.push({ taskId: `t${all.length + 1}`, kind: p.kind, status: "ready", claimId: p.claimId, dependsOn: [], proposedBy: "line:M16" } as unknown as TaskInfo);
+        return { accepted: true, taskId: `t${all.length}` };
+      },
+    };
+  }
+
+  /** What the orchestrator does: the line proposes in beforeProvers, then works each ready task it proposed through runTask. */
+  async function go(line: Line, problem: ProblemContext) {
+    await hook(line, "beforeProvers")(problem);
+    const ends = [];
+    for (const t of (problem.tasks as unknown as ReturnType<typeof ledger>).all.filter((x) => x.proposedBy === "line:M16" && x.status === "ready")) ends.push(await hook(line, "runTask")(problem, t, "p1"));
+    return ends;
+  }
+
   async function setup(script: unknown[], options: Record<string, unknown> = {}, specs: SearchSpec[] = [spec], tasks: TaskInfo[] = []) {
     const memory = openMemory("orchestrator-test");
     const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
@@ -152,7 +173,7 @@ describe("the line M16", () => {
     const problem = {
       line: "M16", runId: "r", problemId: "p", claimId, memory, llm, log: (t: string) => logs.push(t), signal: new AbortController().signal,
       budget: { exhausted: false, usd: 0, limitUsd: undefined },
-      tasks: { list: () => tasks },
+      tasks: ledger(tasks),
       validate: async (request: ValidateRequest): Promise<ValidateResult> => (requests.push(request), { verdict: "valid", status: "computed", reasons: [] }),
       options: { ...M16_OPTIONS, samples: 1, rounds: 8, callMs: 150, totalMs: 4000, ...options },
     } as unknown as ProblemContext;
@@ -164,7 +185,10 @@ describe("the line M16", () => {
   it("improves a toy score with a faux model and submits the witness to Lean, as a claim derived from the target", async () => {
     const line = createM16();
     const { problem, memory, claimId, requests, llm } = await setup(script);
-    await hook(line, "beforeProvers")(problem);
+    const ends = await go(line, problem);
+    assert.equal(ends.length, 1);
+    assert.equal(ends[0]?.ended, "done");
+    assert.match(ends[0]?.reason ?? "", /best score 30, target reached; Lean: valid/);
     const results = memory.nodes(SEARCH_RESULT_KIND, { claimId });
     assert.equal(results.length, 1);
     const done = (results[0]?.data as unknown as { done: { best: { score: number }; reached: boolean; witness: number[]; verdict: string } }).done;
@@ -187,7 +211,7 @@ describe("the line M16", () => {
   it("does not submit a witness below the target, and says so to the provers", async () => {
     const line = createM16();
     const { problem, requests } = await setup([{ program: "(n) => [5, 6, 7, 8]" }], { rounds: 2 });
-    await hook(line, "beforeProvers")(problem);
+    await go(line, problem);
     assert.equal(requests.length, 0);
     const text = (await hook(line, "briefing")({ ...problem } as unknown as SessionContext))?.text ?? "";
     assert.match(text, /not checked by Lean/);
@@ -196,9 +220,13 @@ describe("the line M16", () => {
   it("is not run twice when the process resumes, and asks the model nothing", async () => {
     const line = createM16();
     const { problem, memory, claimId, requests, llm } = await setup(script);
-    await hook(line, "beforeProvers")(problem);
+    await go(line, problem);
     const calls = llm.requests.length;
     await hook(line, "resumeProblem")(problem, {} as never);
+    const ledgerOf = problem.tasks as unknown as ReturnType<typeof ledger>;
+    assert.equal(ledgerOf.all.length, 1, "the resumed process finds the task and proposes none");
+    const again = await hook(line, "runTask")(problem, ledgerOf.all[0] as TaskInfo, "p1");
+    assert.equal(again.ended, "done");
     assert.equal(llm.requests.length, calls);
     assert.equal(requests.length, 1);
     assert.equal(memory.nodes(SEARCH_RESULT_KIND, { claimId }).length, 1);
@@ -218,17 +246,27 @@ describe("the line M16", () => {
       options: { ...M16_OPTIONS, samples: 1, callMs: 150, totalMs: 4000 },
     };
     const task = { taskId: "t1", kind: "search", status: "ready", claimId: other, dependsOn: [] } as unknown as TaskInfo;
-    const broke = { ...base, budget: { exhausted: true, usd: 9, limitUsd: 9 }, tasks: { list: () => [task] } } as unknown as ProblemContext;
-    await hook(line, "beforeProvers")(broke);
+    const broke = { ...base, budget: { exhausted: true, usd: 9, limitUsd: 9 }, tasks: ledger([task]) } as unknown as ProblemContext;
+    const ends = await go(line, broke);
+    assert.equal(ends.length, 1);
     assert.equal(llm.requests.length, 0, "no model call with an exhausted budget");
     const node = memory.nodes(SEARCH_RESULT_KIND, { claimId: other });
     assert.equal(node.length, 1, "the task's claim was searched");
     // Without the task, the claim is not the problem's: nothing to search.
     const line2 = createM16();
-    const untasked = { ...base, budget: { exhausted: false, usd: 0, limitUsd: undefined }, tasks: { list: () => [] } } as unknown as ProblemContext;
+    const untasked = { ...base, budget: { exhausted: false, usd: 0, limitUsd: undefined }, tasks: ledger([]) } as unknown as ProblemContext;
     const logs: string[] = [];
-    await hook(line2, "beforeProvers")({ ...untasked, log: (t: string) => logs.push(t) } as ProblemContext);
+    await go(line2, { ...untasked, log: (t: string) => logs.push(t) } as ProblemContext);
     assert.equal(memory.nodes(SEARCH_RESULT_KIND, { claimId }).length, 0);
+  });
+
+  it("lets an interruption through, leaving the task for the resumed process", async () => {
+    const { InterruptedError } = await import("@seshat/lines");
+    const line = createM16();
+    const { problem } = await setup([() => { throw new InterruptedError("turn over"); }]);
+    await hook(line, "beforeProvers")(problem);
+    const task = (problem.tasks as unknown as ReturnType<typeof ledger>).all[0] as TaskInfo;
+    await assert.rejects(hook(line, "runTask")(problem, task, "p1"), /./);
   });
 
   it("checks its options and declares how it resumes and where it sits on the ladder", () => {
