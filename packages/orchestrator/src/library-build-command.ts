@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { BlobStore, Journal } from "@seshat/core";
 import { LakeCertifier } from "@seshat/lean-local";
 import {
+  activeRuns,
   adoptBuild,
   type AgentSettings,
   type BuildPlan,
@@ -17,6 +18,7 @@ import {
 } from "@seshat/library-builder";
 import { MemoryStore } from "@seshat/memory";
 import { REPO_ROOT } from "./implementations.ts";
+import { DEFAULT_LIBRARY_REGISTRY, openDefinitionRegistry } from "./library-registry.ts";
 
 export const DEFAULT_LIBRARY_BUILDER_CONFIG = join(REPO_ROOT, "config", "library-builder.json");
 
@@ -89,6 +91,10 @@ export interface LibraryBuildIo {
   /** Land the files of an accepted build in this checkout (default: not). */
   adoptInto?: string | undefined;
   approvedBy?: string | undefined;
+  /** The registry of definitions an accepted build is added to. Default: library/registry. */
+  registry?: string | undefined;
+  /** The directory whose subdirectories are runs: adopting refuses while one is being written. Default: runs. */
+  runsDir?: string | undefined;
   print: (line: string) => void;
   signal?: AbortSignal;
   /** Overrides, for the tests. */
@@ -122,9 +128,22 @@ export async function libraryBuildCommand(specFile: string, io: LibraryBuildIo):
   try {
     const memory = new MemoryStore({ journal, blobs: new BlobStore(join(dir, "blobs")), actor: "orchestrator" });
     recordBuild(memory, result);
+    // The definitions of an accepted build go to the registry a run starts from, unreviewed.
+    if (result.status === "accepted") {
+      const registry = openDefinitionRegistry(io.registry ?? DEFAULT_LIBRARY_REGISTRY);
+      try {
+        recordBuild(registry.memory, result);
+      } catch (error) {
+        // A definition that is already in the registry is never recorded again, and its files are not adopted over it.
+        io.print(`the registry refuses the build: ${error instanceof Error ? error.message : String(error)}; nothing is adopted`);
+        return 1;
+      } finally {
+        registry.journal.close();
+      }
+    }
     report(result, dir, io.print);
     if (io.adoptInto !== undefined && result.status === "accepted") {
-      const written = adoptBuild(result, { root: resolve(io.adoptInto), runActive: () => false, ...(io.approvedBy !== undefined ? { approvedBy: io.approvedBy } : {}) });
+      const written = adoptBuild(result, { root: resolve(io.adoptInto), runActive: () => activeRuns(resolve(io.runsDir ?? "runs")).length > 0, ...(io.approvedBy !== undefined ? { approvedBy: io.approvedBy } : {}) });
       io.print(`adopted ${written.length} file(s) into ${resolve(io.adoptInto)}; run harness lean-env resolve for the environment that lists the library: its hash changes, and the next run is in it`);
     }
   } finally {

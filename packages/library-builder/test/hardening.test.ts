@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { spawnRunner, type CommandRunner } from "@seshat/lean-env";
-import { changesFrom, gateEnvironment, gateRunner, type LibraryBuildResult } from "../src/index.ts";
+import { BlobStore, Journal } from "@seshat/core";
+import { HASH_SKIPPED_DIRS, HASH_SKIPPED_FILE, hashDirectory, spawnRunner, type CommandRunner } from "@seshat/lean-env";
+import { MemoryStore } from "@seshat/memory";
+import { activeRuns, adoptBuild, BUILD_KIND, type Change, changesFrom, diffViolations, gateEnvironment, gateRunner, type LibraryBuildResult, recordBuild, UNHASHED_SEGMENTS } from "../src/index.ts";
 import { fakeRunner, harness, SPEC } from "./fixtures.ts";
 
 const OPTIONS = { budget: { seconds: 60 }, timeoutSec: 60 };
@@ -116,5 +118,76 @@ describe("file sizes and names (review I6, M)", () => {
     const result = await h.builder("odd_name").build(SPEC, OPTIONS);
     assert.equal(failedRule(result), "diff");
     assert.match(result.reason, /has a character outside/);
+  });
+});
+
+describe("what is adopted is what is hashed, and adoption is all or nothing (review I4, M5)", () => {
+  it("refuses the paths the environment hash leaves out, and keeps its own list aligned with hashDirectory", () => {
+    for (const dir of HASH_SKIPPED_DIRS) assert.ok(UNHASHED_SEGMENTS.has(dir), dir);
+    assert.ok(UNHASHED_SEGMENTS.has(HASH_SKIPPED_FILE));
+    const add = (path: string): Change => ({ status: "A", path, content: Buffer.from("import Mathlib\n"), executable: false });
+    for (const path of ["lean/SeshatLib/Combinatorics/build/X.lean", "lean/SeshatLib/Combinatorics/node_modules/X.lean"]) {
+      assert.match(diffViolations([add(path), add("lean/SeshatLib/Combinatorics/Basic.lean")], SPEC, "lean").join(";"), /environment hash does not cover/, path);
+    }
+    const port = { ...SPEC, job: "port" as const, domain: "Ports", port: { name: "Foo", git: "g", rev: "r", libs: ["Foo"] } };
+    assert.match(diffViolations([add("lean/ports/Foo/lake-manifest.json"), add("lean/ports/Foo/Foo.lean")], port, "lean").join(";"), /lake-manifest\.json/);
+  });
+
+  it("changes the environment hash of the local package when a build is adopted", async () => {
+    const h = harness();
+    const result = await h.builder("good").build(SPEC, OPTIONS);
+    assert.equal(result.status, "accepted", result.reason);
+    const root = mkdtempSync(join(tmpdir(), "mh-lb-hash-"));
+    mkdirSync(join(root, "lean/SeshatLib"), { recursive: true });
+    writeFileSync(join(root, "lean/SeshatLib/Base.lean"), "import Mathlib\n");
+    const before = hashDirectory(join(root, "lean/SeshatLib"));
+    adoptBuild(result, { root, runActive: () => false });
+    // Every adopted file is under the hashed tree.
+    assert.notEqual(hashDirectory(join(root, "lean/SeshatLib")), before);
+  });
+
+  it("leaves nothing behind when a file cannot be written", async () => {
+    const h = harness();
+    const result = await h.builder("good").build(SPEC, OPTIONS);
+    const root = mkdtempSync(join(tmpdir(), "mh-lb-atomic-"));
+    const two = { ...result, files: [...result.files, { path: "lean/SeshatLib/Combinatorics/Second.lean", content: "import Mathlib\n" }] };
+    // The second file's parent is a regular file, so writing it fails after the first was put in place.
+    mkdirSync(join(root, "lean/SeshatLib"), { recursive: true });
+    writeFileSync(join(root, "lean/SeshatLib/Combinatorics"), "in the way");
+    assert.throws(() => adoptBuild(two, { root, runActive: () => false }));
+    const sibling = { ...result, files: [{ path: "lean/SeshatLib/A.lean", content: "import Mathlib\n" }, { path: "lean/SeshatLib/Combinatorics/Second.lean", content: "x" }] };
+    assert.throws(() => adoptBuild(sibling, { root, runActive: () => false }));
+    assert.equal(existsSync(join(root, "lean/SeshatLib/A.lean")), false, "the first file was taken back");
+  });
+
+  it("refuses a field name too short for the claim guard to match, rather than half-guarding it", async () => {
+    const h = harness();
+    const result = await h.builder("short_field").build(SPEC, OPTIONS);
+    assert.equal(result.status, "rejected");
+    assert.match(result.reason, /shorter than three characters/);
+  });
+
+  it("writes nothing when one definition of a build cannot be recorded", async () => {
+    const h = harness();
+    const result = await h.builder("good").build(SPEC, OPTIONS);
+    const dir = mkdtempSync(join(tmpdir(), "mh-lb-rec-"));
+    const journal = Journal.open(dir, "run_rec");
+    const memory = new MemoryStore({ journal, blobs: new BlobStore(join(dir, "blobs")) });
+    const first = result.definitions[0] as NonNullable<(typeof result.definitions)[number]>;
+    const doubled = { ...result, definitions: [first, { ...first }] };
+    assert.throws(() => recordBuild(memory, doubled), /appears twice/);
+    assert.equal(memory.nodes(BUILD_KIND).length, 0);
+    assert.equal(memory.definitions().length, 0);
+    journal.close();
+  });
+
+  it("finds a run whose lock holds a live pid", () => {
+    const runs = mkdtempSync(join(tmpdir(), "mh-lb-runs-"));
+    mkdirSync(join(runs, "a"));
+    mkdirSync(join(runs, "b"));
+    writeFileSync(join(runs, "a/journal.jsonl.lock"), String(process.pid));
+    writeFileSync(join(runs, "b/journal.jsonl.lock"), "2147483646");
+    assert.deepEqual(activeRuns(runs), [join(runs, "a")]);
+    assert.deepEqual(activeRuns(join(runs, "missing")), []);
   });
 });

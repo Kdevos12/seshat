@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Json } from "@seshat/core";
-import type { MemoryNode, MemoryStore } from "@seshat/memory";
+import { definitionNameProblem, type MemoryNode, type MemoryStore } from "@seshat/memory";
 import type { LibraryBuildResult } from "./builder.ts";
 
 /** The node kinds of the library builder. This package owns them and the shape of their `data`. */
@@ -19,6 +19,18 @@ const sha = (text: string): string => `sha256:${createHash("sha256").update(text
  */
 export function recordBuild(memory: MemoryStore, result: LibraryBuildResult, options: { envHash?: string | null } = {}): { node: MemoryNode; definitions: string[] } {
   const p = result.provenance;
+  // Nothing is written until every definition can be: a build is never half recorded (review M5).
+  if (result.status === "accepted") {
+    const seen = new Set<string>();
+    for (const d of result.definitions) {
+      const problem = definitionNameProblem(d.name);
+      const existing = memory.definition(d.name);
+      if (problem !== undefined) throw new Error(`recordBuild: ${problem}`);
+      if (seen.has(d.name)) throw new Error(`recordBuild: the definition ${d.name} appears twice in ${result.buildId}`);
+      if (existing !== undefined && existing.status !== "deprecated") throw new Error(`recordBuild: ${d.name} is already ${existing.status}; a definition is never edited in place`);
+      seen.add(d.name);
+    }
+  }
   const prompt = p.prompt !== undefined ? memory.blobs.put(p.prompt) : undefined;
   const diff = result.diff !== "" ? memory.blobs.put(result.diff) : undefined;
   const data = {
@@ -91,12 +103,54 @@ export function adoptBuild(result: LibraryBuildResult, options: AdoptOptions): s
     if (!target.startsWith(`${options.root}/`) || f.path.includes("..")) throw new Error(`adoptBuild: ${f.path} leaves ${options.root}`);
     if (existsSync(target) && readFileSync(target, "utf8") !== f.content) throw new Error(`adoptBuild: ${target} exists with other content; a file is never edited in place`);
   }
+  // All or none: each file is written to a temporary name and renamed, and an error removes what this call already put in place.
   const written: string[] = [];
-  for (const { f, target } of targets) {
-    if (existsSync(target)) continue;
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, f.content);
-    written.push(target);
+  try {
+    for (const { f, target } of targets) {
+      if (existsSync(target)) continue;
+      mkdirSync(dirname(target), { recursive: true });
+      const temporary = `${target}.adopting-${process.pid}`;
+      writeFileSync(temporary, f.content, { flag: "wx" });
+      renameSync(temporary, target);
+      written.push(target);
+    }
+  } catch (error) {
+    for (const target of written) rmSync(target, { force: true });
+    for (const { target } of targets) rmSync(`${target}.adopting-${process.pid}`, { force: true });
+    throw error;
   }
   return written;
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * The run directories under `runsDir` that a live process is writing: a `journal.jsonl.lock` holding the pid of a process that exists
+ * (the lock a journal keeps while it is open, as `readSegment` of the memory chain reads it). A run that is going is pinned to one
+ * environment from its start to its end, so `adoptBuild` refuses while one is.
+ */
+export function activeRuns(runsDir: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(runsDir);
+  } catch {
+    return [];
+  }
+  const active: string[] = [];
+  for (const name of names.sort()) {
+    try {
+      const pid = Number.parseInt(readFileSync(join(runsDir, name, "journal.jsonl.lock"), "utf8"), 10);
+      if (Number.isInteger(pid) && alive(pid)) active.push(join(runsDir, name));
+    } catch {
+      // no lock: not a run that is going
+    }
+  }
+  return active;
 }

@@ -93,7 +93,13 @@ export interface DiffLimits {
 export const DEFAULT_LIMITS: DiffLimits = { maxFiles: 40, maxBytesPerFile: 512 * 1024 };
 
 /** The non-Lean files a port may add. `lakefile.lean` is code and is a `.lean` file: the gate treats it as code that runs, not as a Lean source. */
-const PORT_FILES = /(?:^|\/)(?:lakefile\.toml|lean-toolchain|lake-manifest\.json|LICENSE|README\.md)$/;
+const PORT_FILES = /(?:^|\/)(?:lakefile\.toml|lean-toolchain|LICENSE|README\.md)$/;
+
+/**
+ * What the environment hash of a local package leaves out (`hashDirectory` in lean-env): a file under such a directory, or a manifest, would be built
+ * and used without being in the hash, so two different libraries would share one environment version. The gate refuses them, so what is adopted is what is hashed.
+ */
+export const UNHASHED_SEGMENTS: ReadonlySet<string> = new Set([".lake", ".git", "node_modules", "build", "lake-manifest.json"]);
 
 /** Whether a relative path is confined: no `..`, no absolute or backslash path, no `.git`, no hidden segment. */
 export function pathProblem(path: string): string | undefined {
@@ -101,6 +107,7 @@ export function pathProblem(path: string): string | undefined {
   const parts = path.split("/");
   if (parts.some((p) => p === "" || p === "." || p === "..")) return "has an empty, . or .. segment";
   if (parts.some((p) => p.startsWith("."))) return "has a hidden segment";
+  if (parts.some((p) => UNHASHED_SEGMENTS.has(p))) return "has a segment the environment hash does not cover (build, node_modules, lake-manifest.json)";
   // Plain ASCII names only: no look-alike letters, no control or bidirectional characters, no spaces.
   if (parts.some((p) => !/^[A-Za-z0-9_][A-Za-z0-9_.\-]*$/.test(p))) return "has a character outside A-Z a-z 0-9 _ . -";
   return undefined;

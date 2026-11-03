@@ -96,8 +96,9 @@ keys of the agent's environment, the base commit, the prompt and the diff (as bl
 gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. An accepted build also records each
 new definition as a `lean_definition` node, `unreviewed` ([below](#review-status-of-definitions)). Gaps are `library_gap` nodes. A build
 never creates a claim and never changes a claim's status: the only things that change a status are `validate` and the certifier
-([trust.md](trust.md)). `harness library build` writes the record to a journal directory of its own (`--out`, default `runs/library-ID`); a run can
-start on it with `--memory-from` like on any earlier journal.
+([trust.md](trust.md)). `harness library build` writes the record to a journal directory of its own (`--out`, default `runs/library-ID`). That journal has no run in it, so it is
+not something `--memory-from` can start on. The definitions of an accepted build also go to the **registry** (`--registry DIR`, default `library/registry`), a journal of
+its own that `harness library review|deprecate` change and `harness run` reads at its start (see "Review status of definitions").
 
 ## Gaps and the triggers
 
@@ -118,9 +119,18 @@ caller ([Not done](#not-done)).
 `adoptBuild` writes the accepted files into a checkout, adding files only (a file that exists with other content is an error). The hash of a local
 package such as `lean/SeshatLib` is the hash of its files ([lean-env.md](lean-env.md#the-environment-hash)), so the next `harness lean-env resolve` of an environment that lists
 it gives another hash, and a run started afterwards runs in that environment. A run that is going keeps its own. Results of earlier runs are
-tied to the earlier hash and stay replayable (`--memory-from` carries verified facts only under the same hash).
+tied to the earlier hash and stay replayable (`--memory-from` carries verified facts only under the same hash). `--adopt` refuses while a run is going: a run's
+journal keeps a `journal.jsonl.lock` with the process id while it is open, and a live pid in one under `--runs DIR` (default `runs`) stops the adoption (a run elsewhere is not seen). What is
+adopted is what the environment hash covers: the diff refuses paths through `build`, `node_modules`, `.lake`, `.git` and a `lake-manifest.json` (the directories and the file `hashDirectory` skips), and the files
+land all or none (each is written under a temporary name and renamed; an error takes back what was put in place).
 
 ## Review status of definitions
+
+The path from a build to a run: `harness library build` adds the definitions of an accepted build to the registry (`library/registry`), unreviewed, and refuses the build
+(nothing is adopted) when a name is already in it. `harness run` copies the registry into the run's journal at its start (`--library-registry DIR`; by default `library/registry` when it exists; a
+resume keeps what the run began with), with each definition's status, so that run's `ensureClaim` refuses a statement over an unreviewed or deprecated one.
+`harness library definitions` lists it, `harness library review NAME --as PERSON [--note TEXT]` signs one as faithful, `harness library deprecate NAME --reason TEXT [--as PERSON]` drops one.
+Limits: a name that is not in the registry is not guarded (a module adopted without a build here, or a registry that is not passed to the run), and an instance of an unreviewed class is not a name.
 
 New definitions are `unreviewed` (plan change LC5). A proof may use one, because the kernel checks the proof. A **claim statement** may not:
 `ensureClaim` refuses a formal statement or header that mentions an unreviewed or deprecated definition, so no line can state a conjecture about a
@@ -157,6 +167,7 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.
 - The fresh build starts from `lake exe cache get`; whether it serves the new modules is not known.
+- The gate's `lake build` and certifier run behind the sandbox command of the agent's settings, or unsandboxed when the person says so (`unsandboxed: true`); no sandbox is shipped, so nothing here has been run behind one.
 - The sandbox commands are the person's; none is shipped. Network isolation of the agent and of `lake build` exists only as far as that command provides it.
 
 ## Not done

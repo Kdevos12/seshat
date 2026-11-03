@@ -104,7 +104,7 @@ switch (scenario) {
     put(`${DIR}/Basic.lean`, good("\ninstance : Inhabited Nat := ⟨0⟩\n"));
     break;
   case "own_structure":
-    put(`${DIR}/Basic.lean`, good("\nstructure Pt where\n  xCoord : Nat\n  yCoord : Nat\n\ninstance : Inhabited Pt := ⟨⟨0, 0⟩⟩\n\ninductive Shape where\n  | circle\n  | square\n"));
+    put(`${DIR}/Basic.lean`, good("\nstructure Point where\n  xCoord : Nat\n  yCoord : Nat\n\ninstance : Inhabited Point := ⟨⟨0, 0⟩⟩\n\ninductive Shape where\n  | circle\n  | square\n"));
     break;
   case "buildfail":
     put(`${DIR}/Basic.lean`, good("\n-- BUILDFAIL\n"));
@@ -147,6 +147,9 @@ switch (scenario) {
   case "odd_name":
     put(`${DIR}/Basic.lean`, good());
     put(`${DIR}/Bаsic.lean`, "import Mathlib\n");
+    break;
+  case "short_field":
+    put(`${DIR}/Basic.lean`, good("\nstructure Pt where\n  x : Nat\n"));
     break;
   case "nothing":
     break;

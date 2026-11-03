@@ -135,7 +135,12 @@ export class CodingAgentBuilder implements LibraryBuilder {
       if (agentRun.code === null) return result("failed", `the agent did not start: ${agentRun.output.trim().split("\n").pop() ?? ""}`);
       // The exit code is not a verdict: an agent that exits 1 after writing good files is judged by its files, and one that exits 0 by the same.
 
-      const changes = changesFrom(work, known, (o.limits ?? DEFAULT_LIMITS).maxBytesPerFile);
+      let changes;
+      try {
+        changes = changesFrom(work, known, (o.limits ?? DEFAULT_LIMITS).maxBytesPerFile);
+      } catch (error) {
+        return result("failed", `the agent's directory could not be read: ${error instanceof Error ? error.message : String(error)}`);
+      }
       const gate = await runGate({
         spec,
         changes,

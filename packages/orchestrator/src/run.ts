@@ -26,6 +26,7 @@ import {
 import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
+import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
@@ -169,6 +170,11 @@ export interface RunOptions {
    * Ignored by a resume, which reads what the run was started on from its own journal.
    */
   memoryFrom?: string;
+  /**
+   * The registry of the library's definitions (documentation/library-builder.md, "Review status of definitions"): the run copies them into
+   * its own journal at its start, with their review status, so that `ensureClaim` refuses a statement over a definition nobody reviewed. Ignored by a resume.
+   */
+  libraryRegistry?: string;
   /** What a consortium run takes from the process that works it, not from its recorded configuration. */
   turns?: TurnProcess;
   /**
@@ -693,9 +699,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   let runLines: RunLines | undefined;
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
-  if (enabled.lines.length > 0 || journal.chain !== undefined) {
+  const libraryDefinitions = resume === undefined && o.libraryRegistry !== undefined ? registryDefinitions(o.libraryRegistry) : [];
+  if (enabled.lines.length > 0 || journal.chain !== undefined || libraryDefinitions.length > 0) {
     memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
     if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
+    if (libraryDefinitions.length > 0) log(`the run starts with ${seedDefinitions(memory, libraryDefinitions).length} definition(s) of the library registry`);
   }
   if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });

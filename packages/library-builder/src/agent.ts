@@ -173,4 +173,12 @@ export const spawnAgent: AgentRunner = (argv, { cwd, env, stdin, timeoutMs, sign
     };
     child.on("error", (error) => done(null, error.message));
     child.on("close", (code) => done(timedOut || aborted ? null : code));
+    // A descendant that left the process group keeps the pipes open and `close` never comes: a second after the program exits, or is killed, the pipes are cut.
+    child.on("exit", (code) => {
+      setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        done(timedOut || aborted ? null : code);
+      }, 1000).unref();
+    });
   });
