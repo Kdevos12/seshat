@@ -496,6 +496,15 @@ provers' sessions, the sites of the lines' one-shot calls), each with its share 
 ([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
 
+The prompt cache has its own paragraph and table (`cache` in `report.json`): the share of input tokens read from the
+cache, `cacheRead / (cacheRead + miss)` (a cache write counts as a miss), and the dollars it saved against reading the
+same tokens at the cache-miss price, in all, by line (the lines' one-shot calls under the line's id, the provers'
+sessions under `prover`), by ladder rung when the run had a ladder ([scheduler.md](scheduler.md#the-ladder)), and per
+session. The figures use the host's prices when it states them ([Prices](#prices)), and pi-ai's otherwise. An
+`Off-peak` paragraph (`offPeak`) gives the dollars charged at the off-peak rate and, for a run with `--offpeak`, the
+waits ([human.md](human.md#off-peak)). The cache numbers are first estimates: checked on the first real run, before any
+conclusion of the packet-mode comparison is used.
+
 A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
 interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`). The next
 turn of a consortium run, after the run paused by itself, is not an interruption and is not in that count.

@@ -12,6 +12,7 @@ import {
 } from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
 import { type Redundancy, redundancy } from "@seshat/memory";
+import { type CacheReport, cacheReport } from "./cache-report.ts";
 
 export interface ProblemLine {
   problemId: string;
@@ -56,6 +57,17 @@ export interface RunReport {
   outputTokens: number;
   /** Of `inputTokens`, the ones the provider read from its prompt cache (pi-ai's `cacheRead`). */
   cachedInputTokens: number;
+  /**
+   * The prompt cache (documentation/m0-loop.md, "Prices"): per session, per line and, when the run had a ladder, per
+   * rung, the share of input tokens read from the cache and the dollars it saved against a price with no cache. Absent
+   * when nothing was charged.
+   */
+  cache?: CacheReport;
+  /**
+   * What the host's off-peak rate and `--offpeak` did: the dollars charged at the off-peak rate, and the waits for
+   * off-peak hours (`turn.deferred`). Absent when there was neither.
+   */
+  offPeak?: OffPeakLine;
   /** Dollars per problem with a proof: a candidate, or a certified proof or refutation; undefined when there is none. */
   usdPerProof?: number;
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
@@ -89,6 +101,17 @@ export interface RunReport {
    * credited to them.
    */
   memory?: MemoryLine;
+}
+
+/** Off-peak spend and waits (documentation/human.md, "Off-peak"). */
+export interface OffPeakLine {
+  /** Dollars charged at the off-peak rate, and the share of the run's dollars they are. */
+  usd: number;
+  share: number;
+  /** Waits for off-peak hours, how many ran anyway at a peak price because the wait limit came first, and the minutes waited in all. */
+  deferred: number;
+  ranAnyway: number;
+  waitedMinutes: number;
 }
 
 /** The earlier memory a run started on (documentation/memory.md, "Memory across runs"). */
@@ -338,6 +361,10 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   // carries no `cachedInputTokens`: the charges are the only record of them. A finished total, when
   // it has one, is the sum of the same charges, so the larger of the two is the attempt's figure.
   const cachedCharged = new Map<string, number>();
+  // The same for the dollars charged at the off-peak rate, and the waits for off-peak hours.
+  const offPeakCharged = new Map<string, number>();
+  let offPeakUsd = 0;
+  const waits = { deferred: 0, ranAnyway: 0, waitedMinutes: 0 };
 
   for (const event of events) {
     switch (event.type) {
@@ -378,6 +405,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         sum.cachedInputTokens += d.cachedInputTokens ?? 0;
         charges.set(d.attemptId, sum);
         cachedCharged.set(d.attemptId, (cachedCharged.get(d.attemptId) ?? 0) + (d.cachedInputTokens ?? 0));
+        offPeakCharged.set(d.attemptId, (offPeakCharged.get(d.attemptId) ?? 0) + (d.offPeakUsd ?? 0));
         break;
       }
       case "attempt.finished": {
@@ -392,6 +420,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
         cachedInputTokens += Math.max(d.cachedInputTokens ?? 0, cachedCharged.get(d.attemptId) ?? 0);
+        offPeakUsd += Math.max(d.offPeakUsd ?? 0, offPeakCharged.get(d.attemptId) ?? 0);
         break;
       }
       case "model_call.finished": {
@@ -403,6 +432,14 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
         cachedInputTokens += d.cachedInputTokens ?? 0;
+        offPeakUsd += d.offPeakUsd ?? 0;
+        break;
+      }
+      case "turn.deferred": {
+        const d = event.data;
+        waits.deferred += 1;
+        if (d.bounded) waits.ranAnyway += 1;
+        waits.waitedMinutes += (Date.parse(d.until) - Date.parse(d.from)) / 60_000;
         break;
       }
       case "tool_run.started": {
@@ -438,12 +475,14 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     outputTokens += sum.outputTokens;
     cachedInputTokens += sum.cachedInputTokens;
   }
+  for (const [attemptId, value] of offPeakCharged) if (charges.has(attemptId)) offPeakUsd += value;
   const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
   const lines = (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : []));
   const redundant = redundancy(events);
+  const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
   return {
     runId: started.runId,
@@ -485,6 +524,10 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     inputTokens,
     outputTokens,
     cachedInputTokens,
+    ...(cache !== undefined ? { cache } : {}),
+    ...(offPeakUsd > 0 || waits.deferred > 0
+      ? { offPeak: { usd: offPeakUsd, share: usd > 0 ? offPeakUsd / usd : 0, ...waits } }
+      : {}),
     ...(proofs > 0 ? { usdPerProof: usd / proofs } : {}),
     attempts,
     leanChecks: {
@@ -503,6 +546,36 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     sites: siteSpend(events),
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
   };
+}
+
+function percent(ratio: number | undefined): string {
+  return ratio === undefined ? "n/a" : `${(ratio * 100).toFixed(0)}%`;
+}
+
+/** The cache ratio and the dollars it saved: in all, by line, by rung, and per session in a table. */
+function cacheParagraph(cache: CacheReport): string[] {
+  const part = (key: string, s: CacheReport["total"]) => `${key} ${percent(s.ratio)} (saved ${money(s.savedUsd)})`;
+  return [
+    `Prompt cache: ${percent(cache.total.ratio)} of the input read from the cache, which saved ${money(cache.total.savedUsd)} against a price with no cache.` +
+      ` By line: ${Object.entries(cache.byLine).map(([k, s]) => part(k, s)).join("; ")}.` +
+      `${cache.byRung !== undefined ? ` By rung: ${Object.entries(cache.byRung).map(([k, s]) => part(k, s)).join("; ")}.` : ""}`,
+    ...(cache.sessions.length > 0
+      ? [
+          "",
+          "| Session (attempt) | Responses | Input tokens | Cached | Ratio | Saved |",
+          "|---|---|---|---|---|---|",
+          ...cache.sessions.map((s) => `| ${s.attemptId} | ${s.calls} | ${s.inputTokens} | ${s.cachedInputTokens} | ${percent(s.ratio)} | ${money(s.savedUsd)} |`),
+          "",
+        ]
+      : []),
+  ];
+}
+
+function offPeakParagraph(o: OffPeakLine): string {
+  return (
+    `Off-peak: ${money(o.usd)} of the run's dollars (${(o.share * 100).toFixed(0)}%) were charged at the off-peak rate.` +
+    `${o.deferred > 0 ? ` The run waited ${o.deferred} time(s) for off-peak hours, ${o.waitedMinutes.toFixed(0)} minutes in all, and ran at a peak price ${o.ranAnyway} time(s) because the wait limit came first.` : ""}`
+  );
 }
 
 function counts(map: Record<string, number>): string {
@@ -578,6 +651,8 @@ export function renderRunReport(report: RunReport): string {
       `${report.usdPerProof !== undefined ? `, ${money(report.usdPerProof)} per problem with a proof or a refutation` : ""}. ` +
       `Tokens: ${report.inputTokens} in, ${report.outputTokens} out.` +
       `${report.cachedInputTokens > 0 ? ` Cached input: ${report.cachedInputTokens} of the ${report.inputTokens} (${((report.cachedInputTokens / report.inputTokens) * 100).toFixed(0)}%).` : ""}`,
+    ...(report.cache !== undefined ? cacheParagraph(report.cache) : []),
+    ...(report.offPeak !== undefined ? [offPeakParagraph(report.offPeak)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +
