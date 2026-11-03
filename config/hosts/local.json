@@ -76,6 +76,38 @@
         }
       }
     },
+    "prove.auto": {
+      "use": ["battery"],
+      "settings": {
+        "battery": {
+          "url": "${env:LEAN_SERVER_API_URL:-http://localhost:8000}",
+          "apiKey": "${env:LEAN_SERVER_API_KEY:-}",
+          "packages": "${env:M10_PACKAGES:-}"
+        }
+      }
+    },
+    "prove.search": {
+      "use": ["pantograph"],
+      "settings": {
+        "pantograph": {
+          "command": "${env:PANTOGRAPH_REPL:-repl}",
+          "cwd": "${env:LEAN_PROJECT_DIR:-}",
+          "env": {
+            "LEAN_PATH": "${env:LEAN_PATH:-}"
+          }
+        }
+      }
+    },
+    "smt.z3": {
+      "use": ["process"],
+      "optional": true,
+      "settings": { "process": { "command": "${env:Z3_COMMAND:-z3}" } }
+    },
+    "atp.vampire": {
+      "use": ["process"],
+      "optional": true,
+      "settings": { "process": { "command": "${env:VAMPIRE_COMMAND:-vampire}" } }
+    },
     "oeis.search": {
       "use": ["site"],
       "optional": true,

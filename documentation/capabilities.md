@@ -153,7 +153,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation of it that does not answer as `warn` and does not fail on it, also when the
   capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
   implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
-  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, and no other capability.
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire` and `decide.ask`, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -368,6 +368,36 @@ shows them as `warn` and still exits with 0. The contracts need a host that reac
 `pnpm test` runs the same cases against a local server that answers from files written by hand.
 [models.md](models.md#the-services-as-capabilities) covers the requests, the settings, the failures
 and the tests.
+
+## `smt.z3` and `atp.vampire`
+
+z3 on an SMT-LIB 2 script, and Vampire on a TPTP problem, as processes (factories `z3` and `vampire`;
+the commands are settings, `Z3_COMMAND` and `VAMPIRE_COMMAND`). Both are `deferred` (level 2),
+`optional` in the profiles, and produce no status: an `unsat` or `Theorem` answer is evidence that
+Lean has not checked. The status is read from the first line of z3's output, and from Vampire's SZS
+status line together with its exit code (a `Theorem` with a failing exit code is an `error`), never
+from the prose. A program that is not installed makes the capability `unavailable`. Both processes
+lead their own process group, which is killed at the time limit.
+Because a model may write the input, it is screened before a process starts: an SMT-LIB script may only
+declare, assert and ask (`set-logic`, `set-option` of the produce-* options, `declare-*`, `define-*`,
+`assert`, `check-sat`, `get-unsat-core`, `get-model`, `get-value`, `push`, `pop`, `set-info`), so no output
+channel, trace file, `echo` or `include`; a TPTP problem may not `include`. A refused input is answered
+with `status: error` (`result: error`) and `detail: refused: ...`, and no program starts. The program runs
+in a new empty directory (removed afterwards) with `PATH` and `LANG` and a `HOME` that is that directory,
+with `-memory:` (z3) or `-m` (Vampire) from the setting `memoryMb` (default 2048) and, where `prlimit`
+exists, an address-space limit of twice that. The page for them is
+[classical.md](classical.md#translation-to-smt-lib-and-tptp). z3 (PyPI's `z3-solver` 5.3.3.0) ran
+through the translator in the tests; Vampire has not run: no binary was available, so its contract
+(2 cases) and its proof parsing are written from its documentation.
+
+## `prove.auto` and `prove.search`
+
+Two tools for the provers, both `deferred` and proving nothing for the harness (a prover puts what they
+return in its own file and checks it with `lean_check`). `prove.auto` (factory `prove-auto`) runs the
+battery of [classical.md](classical.md#the-battery) on a goal the model states, through `lean.check`;
+it returns the tactic that closed it and the router's domains. `prove.search` (factory `prove-search`)
+is the goal-level best-first search of [classical.md](classical.md#provesearch) through `lean.goals`:
+it returns the list of tactics, one per line. Neither has run against a real Lean.
 
 ## Contract tests
 
