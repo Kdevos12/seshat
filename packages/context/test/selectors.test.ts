@@ -112,9 +112,10 @@ describe("the screen and the budget", () => {
     assert.equal(screenLean("x".repeat(50), 10)?.length, 10);
   });
 
-  it("counts a token as 3.5 characters, rounded up", () => {
+  it("bounds a text's tokens from above: a third of a token for ASCII, one and a half for the rest", () => {
     assert.equal(estimateTokens(""), 0);
-    assert.equal(estimateTokens("1234567"), 2);
-    assert.equal(estimateTokens("12345678"), 3);
+    assert.equal(estimateTokens("123456"), 2);
+    assert.equal(estimateTokens("1234567"), 3);
+    assert.equal(estimateTokens("∀ℕ"), 3);
   });
 });

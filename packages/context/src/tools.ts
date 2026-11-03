@@ -8,7 +8,7 @@ import { imports } from "./access.ts";
 import type { CitableIds } from "./ids.ts";
 import { parsePattern } from "./pattern.ts";
 import type { Rendering } from "./render.ts";
-import { screenLean } from "./screen.ts";
+import { ident, moduleName, screenLean } from "./screen.ts";
 
 /** A node with more neighbours than this answers `expand` with its relation kinds and their counts first (PC5 item 4). */
 export const HUB = 50;
@@ -36,11 +36,6 @@ export const MAX_DEPTH = 4;
 export const MAX_ANCHORS = 6;
 export const MAX_FROM = 10;
 export const MAX_ANSWER_CHARS = 12000;
-
-const IDENT = /^[\p{L}\p{N}_.'!?«»]+$/u;
-const MODULE = /^[\p{L}\p{N}_.]+$/u;
-/** A name, label or module that comes from an export or a library: only identifier characters pass. */
-const ident = (text: string | undefined, re: RegExp = IDENT): string => (text !== undefined && text.length <= 200 && re.test(text) ? text : "(name not shown)");
 
 /** The lines of a proof text that the strict screen accepts; the others (comments, instructions) are replaced. */
 export function cleanText(text: string, maxLines = 60): string {
@@ -116,7 +111,7 @@ function expandPremise(env: ToolEnv, name: string, key: string): string {
   const out = [`${name} [${ident(e.label)}] ${ident(e.name)}`, `statement: ${screenLean(e.signature, 800) ?? "(it did not pass the screen and is not shown)"}`];
   const gloss = prose(e.gloss, 200);
   if (gloss !== undefined) out.push(gloss);
-  if (e.module !== undefined) out.push(imports(env.header, e.module) ? `module: ${ident(e.module, MODULE)} (already imported)` : `needs: import ${ident(e.module, MODULE)}`);
+  if (e.module !== undefined) out.push(imports(env.header, e.module) ? `module: ${moduleName(e.module)} (already imported)` : `needs: import ${moduleName(e.module)}`);
   if (e.claimStatus !== undefined) out.push(e.claimStatus === "proved" ? "status: proved (replayed by the certifier)" : "status: accepted by Lean's check, not yet replayed by the certifier");
   if (e.text !== undefined) out.push("Paste this into your auxiliary region, then use it by name:", "```lean", cleanText(e.text), "```");
   const local = e.source === "local" ? env.localText(e.name) : undefined;

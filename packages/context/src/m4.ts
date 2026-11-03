@@ -25,7 +25,7 @@ import {
   type SessionCheck,
   type SessionContext,
 } from "@seshat/lines";
-import { type MemoryStore, renderObstructions, renderTried } from "@seshat/memory";
+import { type MemoryStore, renderObstructions, renderTried, screenProse } from "@seshat/memory";
 import { type Selector, SELECTORS, type DeclarationFlags, retrievePremises, type Premise } from "./premises.ts";
 import { selectFacts, type Fact } from "./facts.ts";
 import { CitableIds } from "./ids.ts";
@@ -51,8 +51,11 @@ export interface PacketRecord {
   prefixTokens: number;
   tailTokens: number;
   budget: number;
+  /** The tokens the prefix could use (`tokens` times `prefixShare`), and whether the goal alone was above it. */
+  prefixBudget: number;
+  overBudget: boolean;
   /** What each section kept. */
-  shown: { facts: number; edges: number; premises: number; tried: number; lessons: number };
+  shown: { facts: number; edges: number; premises: number; tried: number; lessons: number; notes: number };
   /** The concept queries and names the extraction gave (empty without it). */
   queries: string[];
   names: string[];
@@ -165,10 +168,16 @@ interface SessionState {
   last?: Last;
   /** The facts known when the prefix was compiled, for the `newSince` list. */
   started: boolean;
+  /** The standing of each claim the prefix shows, when it froze, and the library lemmas it offers. */
+  /** The packet's record, written with the first request once the tail's size is known. */
+  record?: PacketRecord;
+  frozen?: { claims: Map<string, string>; library: string[]; facts: string[] };
 }
 
 const sessionKey = (s: Pick<SessionContext, "attemptId">) => s.attemptId;
-const carryKey = (s: Pick<ProblemContext, "problemId"> & { prover?: string }) => `${s.problemId}\u0000${s.prover ?? ""}`;
+/** The node `afterAttempt` records so that the next session of a prover starts from the journal, not from this process (resume "stateless"). */
+export const CARRY_KIND = "context_carry";
+const CARRY_FEEDBACK_CHARS = 4000;
 
 /** The raw feedback of a check for a model: the errors, the holes' goals and other messages, as Lean wrote them. */
 export function rawFeedback(check: Pick<SessionCheck["report"], "verdict" | "messages" | "sorries" | "reasons">): string {
@@ -177,6 +186,22 @@ export function rawFeedback(check: Pick<SessionCheck["report"], "verdict" | "mes
   for (const r of check.reasons) lines.push(`- ${r}`);
   for (const m of check.messages) if (m.severity !== "trace") lines.push(`${m.severity} at line ${m.pos.line}: ${m.text.trim()}`);
   return lines.join("\n");
+}
+
+/** The titles of the briefing sections that M4 replaces with its own sections or that the harness adds to every packet. */
+const OWN_SECTIONS = new Set(["Already tried", "Library", "Lessons", "Classical tools, tried before any model (line M10)", "Hints from the team", "What the team asks"]);
+
+/** The briefing sections of the other lines, taken from the opening message (the packet replaces it): `# Title` after the last check. */
+export function otherLines(opening: string | undefined): Array<{ title: string; text: string }> {
+  if (opening === undefined) return [];
+  const marker = opening.indexOf("# What Lean said about the file as it is");
+  if (marker < 0) return [];
+  const parts = opening.slice(marker).split("\n\n# ").slice(1);
+  return parts.flatMap((p) => {
+    const nl = p.indexOf("\n");
+    const title = (nl < 0 ? p : p.slice(0, nl)).trim();
+    return OWN_SECTIONS.has(title) || title === "" ? [] : [{ title, text: nl < 0 ? "" : p.slice(nl + 1) }];
+  });
 }
 
 function holesOf(report: SessionCheck["report"]): string[] {
@@ -212,11 +237,22 @@ function proofExamples(memory: MemoryStore, exclude: ReadonlySet<string>): Proof
  */
 export function createM4(deps: M4Deps = {}): Line {
   const sessions = new Map<string, SessionState>();
-  const carry = new Map<string, Last>();
-  const exported = new Map<string, Promise<{ entries: Entry[]; flags: Map<string, DeclarationFlags> }>>();
+  /** What the prover's previous session left, read from the journal: the same in a process that was cut and resumed as in one that was not. */
+  function carryOf(session: Pick<SessionContext, "memory" | "claimId" | "prover">): Last | undefined {
+    const nodes = session.memory.nodes(CARRY_KIND, { claimId: session.claimId }).filter((n) => (n.data as { prover?: unknown }).prover === session.prover);
+    const data = nodes[nodes.length - 1]?.data as { aux?: unknown; proof?: unknown; holes?: unknown; feedback?: unknown } | undefined;
+    if (data === undefined || typeof data.aux !== "string" || typeof data.proof !== "string") return undefined;
+    return {
+      aux: data.aux,
+      proof: data.proof,
+      holes: Array.isArray(data.holes) ? data.holes.filter((h): h is string => typeof h === "string") : undefined,
+      feedback: typeof data.feedback === "string" ? data.feedback : undefined,
+    };
+  }
+  const exported = new Map<string, Promise<{ entries: Entry[]; extra: Entry[]; mathlib: Entry[]; flags: Map<string, DeclarationFlags> }>>();
 
-  async function declared(problem: ProblemContext): Promise<{ entries: Entry[]; flags: Map<string, DeclarationFlags> }> {
-    const none = { entries: [] as Entry[], flags: new Map<string, DeclarationFlags>() };
+  async function declared(problem: ProblemContext): Promise<{ entries: Entry[]; extra: Entry[]; mathlib: Entry[]; flags: Map<string, DeclarationFlags> }> {
+    const none = { entries: [] as Entry[], extra: [] as Entry[], mathlib: [] as Entry[], flags: new Map<string, DeclarationFlags>() };
     if (deps.declarations === undefined) return none;
     const env = problem.registry.leanEnv;
     const key = env?.hash ?? "none";
@@ -229,7 +265,7 @@ export function createM4(deps: M4Deps = {}): Line {
           flags.set(e.id, { ...(d.kind !== undefined ? { kind: d.kind } : {}), ...(d.simp !== undefined ? { simp: d.simp } : {}) });
           return e;
         });
-        return { entries, flags };
+        return { entries, extra: entries.filter((e) => e.source === "extra"), mathlib: entries.filter((e) => e.source === "mathlib"), flags };
       });
       exported.set(key, pending);
       pending.catch(() => exported.delete(key));
@@ -275,7 +311,7 @@ export function createM4(deps: M4Deps = {}): Line {
   }
 
   async function collect(session: SessionContext, o: Options): Promise<Collected> {
-    const sketch = carry.get(carryKey(session));
+    const sketch = carryOf(session);
     const { queries, names } = o.extractQueries && !o.naive ? await extract(session, o, sketch) : { queries: [], names: [] };
     const library = usableLemmas(session.memory);
     const dec = await declared(session);
@@ -283,8 +319,8 @@ export function createM4(deps: M4Deps = {}): Line {
     const tiers: Partial<Record<Source, Entry[]>> = {
       local: localEntries(prefix),
       library: library.map(libraryEntry),
-      extra: dec.entries.filter((e) => e.source === "extra"),
-      mathlib: dec.entries.filter((e) => e.source === "mathlib"),
+      extra: dec.extra,
+      mathlib: dec.mathlib,
     };
     const failed = session.memory.attempts(session.claimId, { includeEquivalents: true }).filter((a) => a.outcome === "invalid").length;
     const factOptions = {
@@ -356,6 +392,12 @@ export function createM4(deps: M4Deps = {}): Line {
     return lines.flatMap((l) => screenLean(l, 400) ?? []);
   }
 
+  /** One fact for the `newSince` list: its standing and its statement, screened; the same text at the freeze and later. */
+  const factText = (status: string, statement: string): string[] => {
+    const s = screenLean(statement, 200);
+    return s === undefined ? [] : [`[${status === "proved" ? "proved" : status === "computed" ? "computed, not replayed" : status}] ${s}`];
+  };
+
   function factTexts(session: SessionContext, o: Options, state: SessionState): string[] {
     const library = new Set(usableLemmas(session.memory).map((l) => l.claimId));
     const failed = session.memory.attempts(session.claimId, { includeEquivalents: true }).filter((a) => a.outcome === "invalid").length;
@@ -368,10 +410,10 @@ export function createM4(deps: M4Deps = {}): Line {
       limit: o.maxFacts * 4,
       exclude: library,
     });
-    return facts.flatMap((f) => screenLean(f.statement, 200) ?? []);
+    return facts.flatMap((f) => factText(f.status, f.statement));
   }
 
-  function compile(session: SessionContext, o: Options, state: SessionState): string {
+  function compile(session: SessionContext, o: Options, state: SessionState, opening: string | undefined): string {
     const c = state.collected;
     const included = new Set(session.drawn.included);
     const lessons = c.lessons.filter((l) => included.has(l.nodeId));
@@ -391,12 +433,18 @@ export function createM4(deps: M4Deps = {}): Line {
       premises,
       header: importHeader(session.target.source),
       tried: triedLines(session, o),
-      lessons: lessons.map((l) => ({ nodeId: l.nodeId, scope: l.scope === "global" ? "all problems" : l.scope === "domain" ? l.scopeKey : "this problem", text: l.text })),
+      lessons: lessons.map((l) => ({ nodeId: l.nodeId, scope: l.scope === "global" ? "all problems" : l.scope === "domain" ? (screenProse(l.scopeKey, { max: 60 }).ok ? l.scopeKey : "a domain") : "this problem", text: l.text })),
+      notes: otherLines(opening),
       ids: state.ids,
       budget,
       options: { gloss: o.gloss, badges: o.badges, rendering: renderingOf(o), graphEdges },
     });
     state.prefix = rendered.text;
+    state.frozen = {
+      claims: new Map(rendered.claimIds.map((id) => [id, session.memory.claim(id)?.status ?? "open"] as [string, string])),
+      library: rendered.libraryNames.filter((k) => premises.some((p) => p.entry.id === k && p.entry.source === "library")),
+      facts: c.facts.filter((f) => rendered.claimIds.includes(f.claimId)).flatMap((f) => factText(f.status, f.statement)),
+    };
     const record: PacketRecord = {
       attemptId: session.attemptId,
       naive: false,
@@ -404,18 +452,38 @@ export function createM4(deps: M4Deps = {}): Line {
       prefixTokens: rendered.shown.tokens,
       tailTokens: 0,
       budget: o.tokens,
-      shown: { facts: rendered.shown.facts, edges: rendered.shown.edges, premises: rendered.shown.premises, tried: rendered.shown.tried, lessons: rendered.shown.lessons },
+      prefixBudget: budget,
+      overBudget: rendered.overBudget,
+      shown: { facts: rendered.shown.facts, edges: rendered.shown.edges, premises: rendered.shown.premises, tried: rendered.shown.tried, lessons: rendered.shown.lessons, notes: rendered.shown.notes },
       queries: c.queries,
       names: c.names,
       included: [...session.drawn.included],
       withheld: [...session.drawn.withheld],
     };
-    session.memory.recordNode({ kind: PACKET_KIND, claimId: session.claimId, data: record as unknown as Json });
+    state.record = record;
+    if (rendered.overBudget) session.log(`context: the goal alone is above the packet budget (${rendered.shown.tokens} of ${record.prefixBudget} tokens); nothing else was shown`);
     return rendered.text;
   }
 
+  /** What the prefix says that the projection has since withdrawn: a claim whose status fell, a library lemma that is no longer usable. */
+  function withdrawnOf(session: SessionContext, state: SessionState): string[] {
+    const frozen = state.frozen;
+    if (frozen === undefined) return [];
+    const out: string[] = [];
+    for (const [id, then] of frozen.claims) {
+      const now = session.memory.claim(id)?.status ?? "retracted";
+      if (now === then || (then === "computed" && now === "proved")) continue;
+      out.push(`${state.ids.name("C", id)}: shown as ${then}, now ${now}`);
+    }
+    if (frozen.library.length > 0) {
+      const usable = new Set(usableLemmas(session.memory).map((l) => l.name));
+      for (const name of frozen.library) if (!usable.has(name)) out.push(`${state.ids.name("L", name)}: a library lemma that is no longer usable`);
+    }
+    return out;
+  }
+
   function tailOf(session: SessionContext, request: PacketRequest, o: Options, state: SessionState): string {
-    const last = state.last ?? carry.get(carryKey(session));
+    const last = state.last ?? carryOf(session);
     const fromTranscript = request.transcript.findLast((e) => e.role === "tool" && e.tool === "lean_check");
     const entry = request.transcript[request.transcript.length - 1];
     // The tools' answers to the model's last turn (after its last assistant message), without lean_check's, which is the feedback.
@@ -424,6 +492,7 @@ export function createM4(deps: M4Deps = {}): Line {
     const instruction = request.request > 1 && entry?.role === "user" ? entry.text.trim().slice(0, 600) : undefined;
     const limit = session.budget.limitUsd;
     const budgetLeft = limit === undefined ? undefined : `Budget left: ${Math.max(0, limit - session.budget.usd).toFixed(2)} of ${limit.toFixed(2)} USD.`;
+    const withdrawn = withdrawnOf(session, state);
     return renderTail({
       session: session.session,
       sessions: session.sessions,
@@ -435,6 +504,7 @@ export function createM4(deps: M4Deps = {}): Line {
       ...(toolResults.length > 0 ? { toolResults } : {}),
       ...(instruction !== undefined ? { instruction } : {}),
       ...(budgetLeft !== undefined ? { budgetLeft } : {}),
+      ...(withdrawn.length > 0 ? { withdrawn } : {}),
       budget: Math.max(300, o.tokens - Math.floor(o.tokens * o.prefixShare)),
     });
   }
@@ -450,7 +520,10 @@ export function createM4(deps: M4Deps = {}): Line {
     if (lemmas.length > 0) lines.push("", "Lemmas:", ...lemmas);
     const tried = triedLines(session, o);
     if (tried.length > 0) lines.push("", "Tried:", ...tried);
-    const advice = c.lessons.filter((l) => included.has(l.nodeId)).map((l) => l.text);
+    const advice = c.lessons.filter((l) => included.has(l.nodeId)).flatMap((l) => {
+      const r = screenProse(l.text, { max: 240 });
+      return r.ok ? [r.text] : [];
+    });
     if (advice.length > 0) lines.push("", "Lessons:", ...advice);
     lines.push("", tailOf(session, request, o, state));
     return lines.join("\n");
@@ -480,7 +553,7 @@ export function createM4(deps: M4Deps = {}): Line {
     requires: [],
     options: M4_OPTIONS,
     version: "m4-1",
-    // What M4 reads it reads from the memory (claims, edges, lessons, attempts) and from the session's own checks: a session is compiled from scratch, and a resumed process starts a new one.
+    // What M4 reads it reads from the memory (claims, edges, lessons, attempts, and the `context_carry` node each attempt leaves): a session is compiled from the journal alone, so a resumed process makes the packet an uncut one would.
     resume: "stateless",
     hooks: {
       beforeSession: async (session) => {
@@ -507,30 +580,38 @@ export function createM4(deps: M4Deps = {}): Line {
       contextPacket: async (session, request) => {
         const o = optionsOf(session.options);
         const state = stateOf(session);
-        if (o.naive) return naive(session, request, o, state);
-        const prefix = request.prefix ?? state.prefix ?? compile(session, o, state);
+        if (o.naive) {
+          const text = naive(session, request, o, state);
+          if (!state.started) {
+            state.started = true;
+            session.memory.recordNode({ kind: PACKET_KIND, claimId: session.claimId, data: { attemptId: session.attemptId, naive: true, model: session.model, prefixTokens: 0, tailTokens: estimateTokens(text), budget: o.tokens, prefixBudget: 0, overBudget: false, shown: { facts: 0, edges: 0, premises: 0, tried: 0, lessons: 0, notes: 0 }, queries: [], names: [], included: [...session.drawn.included], withheld: [...session.drawn.withheld] } satisfies PacketRecord as unknown as Json });
+          }
+          return text;
+        }
+        const prefix = request.prefix ?? state.prefix ?? compile(session, o, state, request.transcript[0]?.text);
         const tail = tailOf(session, request, o, state);
+        if (state.record !== undefined) {
+          session.memory.recordNode({ kind: PACKET_KIND, claimId: session.claimId, data: { ...state.record, tailTokens: estimateTokens(tail) } as unknown as Json });
+          delete state.record;
+        }
         const packet: FrozenPacket = {
           prefix,
           tail,
-          ...(o.newSince > 0 ? { facts: factTexts(session, o, state), newSince: o.newSince } : {}),
+          ...(o.newSince > 0 ? { facts: request.request === 1 || state.frozen === undefined ? (state.frozen?.facts ?? []) : [...state.frozen.facts, ...factTexts(session, o, state)], newSince: o.newSince } : {}),
         };
         return packet;
       },
       afterAttempt: async (problem, attempt: FinishedAttempt) => {
         sessions.delete(attempt.attemptId);
         if (attempt.submission !== undefined && attempt.report !== undefined) {
-          carry.set(carryKey({ problemId: problem.problemId, prover: attempt.prover }), {
-            aux: attempt.submission.aux,
-            proof: attempt.submission.proof,
-            holes: holesOf(attempt.report),
-            feedback: rawFeedback(attempt.report),
+          const holes = holesOf(attempt.report);
+          problem.memory.recordNode({
+            kind: CARRY_KIND,
+            claimId: problem.claimId,
+            data: { prover: attempt.prover, session: attempt.session, aux: attempt.submission.aux, proof: attempt.submission.proof, holes, feedback: rawFeedback(attempt.report).slice(0, CARRY_FEEDBACK_CHARS) },
           });
         }
         return undefined;
-      },
-      afterProblem: async (problem) => {
-        for (const key of [...carry.keys()]) if (key.startsWith(`${problem.problemId}\u0000`)) carry.delete(key);
       },
     },
   };

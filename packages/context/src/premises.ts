@@ -53,9 +53,16 @@ export interface PremiseInput {
 const textOf = (e: Entry) => e.signature;
 
 /** The channels of one source, by name: functions from a query to scores in [0, 1], for `compareChannels` and for the ranking. */
+const built = new WeakMap<readonly Entry[], { tier: Tier; index: SymbolIndex }>();
+
 export function tierChannels(entries: readonly Entry[], ranking: Ranking = { mode: "bm25", bm25Weight: 0.7 }): Record<"bm25" | "mepo" | "sine", (query: string) => Scores> {
-  const tier = new Tier(entries);
-  const index = new SymbolIndex(entries.map((e) => ({ id: e.id, text: textOf(e) })));
+  // The indexes of a source are built once for the array that holds it (the export of an environment is one array): a session reuses them.
+  let b = built.get(entries);
+  if (b === undefined) {
+    b = { tier: new Tier(entries), index: new SymbolIndex(entries.map((e) => ({ id: e.id, text: textOf(e) }))) };
+    built.set(entries, b);
+  }
+  const { tier, index } = b;
   return {
     bm25: (q) => normalize(toScores(tier.search(q, ranking, entries.length).map((h) => ({ id: h.entry.id, score: h.score })))),
     mepo: (q) => mepo(index, q, { limit: entries.length }),

@@ -139,6 +139,9 @@ flowchart TB
   provers -->|"outcomes:<br/>strategy, failure class"| m5
   m4 -->|"packet in place<br/>of the history"| provers
   provers -->|"expand, graph_query"| m4
+  m4 -->|"queries: one model call"| llm
+  m3 -.->|"library lemmas"| m4
+  m5 -.->|"lessons"| m4
   m4 -->|"packet records"| journal
   m5 -->|"lessons, counters,<br/>deactivations"| journal
   m5 -->|"drawn lessons<br/>in the briefing"| provers
