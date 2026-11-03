@@ -8,7 +8,7 @@ capped share of the budget, and what is learned from them reaches the sessions t
 `harness run --lines M1,M12,M18` (it requires M12, which owns the ladder and the schedule step).
 
 **No published evidence says this pays without updating weights.** The line is an experiment: it is
-removed if it does not beat the ladder without it at equal budget (the ablation of Task 14). It is
+removed if it does not beat the ladder without it at equal budget (the ablation of Task 14: the `ladder` experiment of `harness ablate`). It is
 on rung 1 only so that problems that the cheap stack solves never pay for it.
 
 ## What it does

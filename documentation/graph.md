@@ -335,7 +335,7 @@ cap cut the result.
 `renderConnection(connection, style, {edges?, name?})` writes a connection as `chains` (one arrow chain per line, `A
 -implies[lean_checked]-> B <-uses[proposed]- C`), `merged` (the edges grouped by head and relation, `A -implies[...]-> B,
 C`) or a markdown `table`; `renderSubgraphAs(subgraph, "merged" | "table")` writes a typed query's result the same way.
-Which one is shortest and best for a model is an A/B on the bench (Task 14); nothing has measured it yet.
+Which one is shortest and best for a model is an A/B on the bench (`harness ablate --experiment renderings`, per model); nothing has measured it on a real model yet.
 
 ## The line
 

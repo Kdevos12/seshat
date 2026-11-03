@@ -163,7 +163,7 @@ provider's own `confidence` measures the concentration of the distribution, not 
 `ForbiddenDecisionError`, and the manifest accepts only `order`. The distribution a `Decision` carries
 is plain data, so a caller that thresholds it anyway is a matter for review, not for the type. The curve will come from the journal: a decision is labeled by the Lean
 outcome (did the chosen or top-ranked candidate lead to a proved subgoal within the problem), and
-`harness ablate` (Task 14) will print the per-site table and the ECE. `decision.made` holds what
+`harness ablate` (Task 14) prints the per-site table and the ECE ([ablate.md](ablate.md#reliability-of-decisions-j4)). `decision.made` holds what
 that needs. `createDecide` takes an optional `calibrated(site)`, false everywhere today, for the
 task that builds the curve.
 
@@ -196,7 +196,7 @@ so in the progress log (`log`, passed by the caller; the fleet passes the sessio
 
 - Not run against a real Jev, OpenRouter or TypeSafe: no network and no key here. Everything is
   tested with a fake server, the faux backend and pi-ai's faux provider.
-- The ablation line `D1` (J5) belongs to Task 14, and so do the reliability table and the ECE.
+- The ablation line `D1` (J5), the reliability table and the ECE are Task 14's: `harness ablate --experiment decide` runs one arm per site asked of Jev against the model, with the agreement between the two ([ablate.md](ablate.md#experiments)). It has not run against a real Jev: only a faux Jev answers in tests.
 - Task 6's orderer and Task 13's relevance score are not built, so `prove.search.order` and
   `conjecture.relevance` have no caller in the harness; the cold start is the only one that does.
 - The `llm` backend with one vote has a one-hot distribution; a verbalized probability is not asked
