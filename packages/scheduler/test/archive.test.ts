@@ -5,7 +5,7 @@ import { BlobStore, type Json, type ProvenanceContext } from "@seshat/core";
 import type { ProblemContext, SessionContext } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
 import { proposeEdge } from "../../graph/src/index.ts";
-import { claim, link, prove, toyAnswer, world, type World } from "../../graph/test/helpers.ts";
+import { certify, claim, link, prove, toyAnswer, world, type World } from "../../graph/test/helpers.ts";
 import {
   cellKey, cellPosteriors, checkedDecompositions, dataOf, entropy, keepSchema, M15_HINT_KIND, M15_PICK_KIND, type HintData, type PickData, pickCell,
   readArchive, regionOf, retireWorn, settle, SKETCH_KIND, skeletonOf, type SketchEntry, type SketchRecord, m15Settings, M15_OPTIONS,
@@ -60,6 +60,24 @@ describe("the archive of a claim's decompositions", () => {
       assert.ok(Math.abs((member?.rho ?? 0) - 2 / 3) < 1e-9, `${member?.rho}`);
       await prove(w, parts[1] as string);
       assert.equal(readArchive(w.memory, root).members[0]?.rho, 1);
+    } finally {
+      w.close();
+    }
+  });
+
+  it("counts computed leaves in the fitness but calls a decomposition certified only when the kernel proved every leaf", async () => {
+    const w = world(toyAnswer);
+    try {
+      const { root, parts } = await decomposed(w, "(n : ℕ) : 0 + n = n", "(n : ℕ) : n + 0 = 0 + n");
+      await link(w, "decomposes_into", root, ...parts);
+      await prove(w, parts[0] as string);
+      await prove(w, parts[1] as string);
+      const [fast] = readArchive(w.memory, root).members;
+      assert.deepEqual([fast?.rho, fast?.certified], [1, false], "computed leaves close the fitness but are not certified");
+      certify(w, parts[0] as string);
+      assert.equal(readArchive(w.memory, root).members[0]?.certified, false, "one leaf certified is not enough");
+      certify(w, parts[1] as string);
+      assert.deepEqual([readArchive(w.memory, root).members[0]?.rho, readArchive(w.memory, root).members[0]?.certified], [1, true]);
     } finally {
       w.close();
     }
@@ -355,13 +373,15 @@ describe("keeping schemas", () => {
     assert.ok(typeof s !== "string", String(s));
     return s;
   };
-  const rest = (k: number) => ({ names: ["aux_a", "aux_b"], family: "rewriting", region: "2p:=", supports: [{ problemId: `p${k}`, claimId: `c${k}`, edgeId: `e${k}` }], gloss: "g" });
+  let real = "";
+  const rest = (k: number) => ({ names: ["aux_a", "aux_b"], family: "rewriting", region: "2p:=", supports: [{ problemId: `p${k}`, claimId: real, edgeId: `e${k}` }], gloss: "g" });
 
   it("adds a support to a schema that covers a new decomposition, generalizes two of the same shape, and stamps what it stores", async () => {
     const w = world(toyAnswer);
     try {
       const memory = lineMemory(w);
-      const problem = problemOf(memory, await claim(w, ROOT));
+      real = await claim(w, ROOT);
+      const problem = problemOf(memory, real);
       const a = input("(n : ℕ) : n + 0 = n", ["(n : ℕ) : 0 + n = n", "(n : ℕ) : n + 0 = 0 + n"]);
       assert.equal(keepSchema(problem, a, rest(1), 0.3), 1);
       assert.equal(keepSchema(problem, a, rest(2), 0.3), 0, "the same shape is another support");

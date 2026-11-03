@@ -62,7 +62,7 @@ describe("line M15", () => {
     assert.equal(LINE_ORDER[LINE_ORDER.indexOf("M3") + 1], "M15");
   });
 
-  it("keeps the decompositions of a solved problem, makes a schema of the closed one, and never touches a claim's status", { timeout: 60000 }, async () => {
+  it("keeps the decompositions of a solved problem, makes a schema only of one the kernel closed, and never touches a claim's status", { timeout: 60000 }, async () => {
     const { events, result } = await run({ problems: 1 });
     assert.deepEqual(result.problems.map((p) => p.outcome), ["proved"]);
     const picks = nodes(events, M15_PICK_KIND);
@@ -71,17 +71,24 @@ describe("line M15", () => {
     assert.equal(nodes(events, M15_ARCHIVE_KIND).length, 1);
     const cells = (snapshot?.data.data as { cells: Array<{ key: string; rho: number; closed: number; leaves: number }> }).cells;
     assert.deepEqual(cells.map((c) => [c.key, c.rho, c.closed, c.leaves]), [["1|rewriting|2p:=", 1, 2, 2]]);
-    const [schema] = nodes(events, SCHEMA_KIND);
-    assert.equal(nodes(events, SCHEMA_KIND).length, 1);
-    assert.match(String((schema?.data.data as { name: string }).name), /^schema_rewriting_\d{6}$/);
-    // Picks, hints and schemas are learned from outcomes and carry the run's stamp; the snapshot is a reading of Lean's verdicts.
-    for (const e of [...picks, ...(schema !== undefined ? [schema] : [])]) assert.ok(e.data.provenance !== undefined, `${e.data.kind} is stamped`);
+    // The holes were closed by the fast check; the certifier runs after the line's last hook, so no schema yet: a later problem (or run) makes it.
+    assert.equal(nodes(events, SCHEMA_KIND).length, 0, "a decomposition whose holes are only computed is no schema");
+    for (const e of picks) assert.ok(e.data.provenance !== undefined, `${e.data.kind} is stamped`);
     assert.equal(snapshot?.data.provenance, undefined);
-    // The pick was settled: the session's sketch closed more than the elite, or not.
     assert.ok(picks.every((e) => ["improved", "not_improved", "void", undefined].includes((e.data.data as unknown as PickData).outcome)));
     const mine = events.filter((e) => e.actor === "line:M15");
     assert.ok(mine.length > 0);
     for (const e of mine) assert.ok(["node.recorded", "node.updated", "tool_run.started", "tool_run.finished"].includes(e.type), `line:M15 emitted ${e.type}`);
+  });
+
+  it("makes the schema of the first problem when the second begins, once the certifier has proved its holes", { timeout: 60000 }, async () => {
+    const { events } = await run({ problems: 2 });
+    const [schema] = nodes(events, SCHEMA_KIND);
+    assert.equal(nodes(events, SCHEMA_KIND).length, 1);
+    assert.match(String((schema?.data.data as { name: string }).name), /^schema_rewriting_\d{6}$/);
+    assert.ok(schema?.data.provenance !== undefined, "a schema is stamped");
+    const firstEnd = events.findIndex((e) => e.type === "problem.finished");
+    assert.ok(events.indexOf(schema as never) > firstEnd, "made after the first problem ended and its holes were certified");
   });
 
   it("offers the schema of the first problem to the second: shown or withheld by the draw, as recorded, instantiated and confirmed by lean.meta", { timeout: 120000 }, async () => {

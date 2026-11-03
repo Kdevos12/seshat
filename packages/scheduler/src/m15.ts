@@ -150,18 +150,20 @@ const nodesOf = <T>(memory: MemoryStore, kind: string, problemId: string, claimI
     .map((n) => ({ nodeId: n.nodeId, epoch: n.epoch, data: asRecord<T & { problemId: string }>(n.data) }))
     .filter((n) => n.data.problemId === problemId);
 
-function sketchRecords(problem: ProblemContext): SketchRecord[] {
-  return problem.memory
-    .nodes(SKETCH_KIND, { claimId: problem.claimId })
+function sketchRecordsOf(memory: MemoryStore, problemId: string, claimId: string): SketchRecord[] {
+  return memory
+    .nodes(SKETCH_KIND, { claimId })
     .map((n) => asRecord<SketchRecord>(n.data))
-    .filter((r) => r.problemId === problem.problemId);
+    .filter((r) => r.problemId === problemId);
 }
 
-/** The sketches of the problem that became a checked decomposition, with their main proofs. */
-function sketchEntries(problem: ProblemContext): SketchEntry[] {
-  return sketchRecords(problem).flatMap((r): SketchEntry[] => {
+const sketchRecords = (problem: ProblemContext): SketchRecord[] => sketchRecordsOf(problem.memory, problem.problemId, problem.claimId);
+
+/** The sketches of a problem that became a checked decomposition, with their main proofs. */
+function sketchEntriesOf(memory: MemoryStore, problemId: string, claimId: string): SketchEntry[] {
+  return sketchRecordsOf(memory, problemId, claimId).flatMap((r): SketchEntry[] => {
     if (!r.healthy || !r.registered || r.edgeId === undefined) return [];
-    const blob = problem.memory.blobs.get(r.submission);
+    const blob = memory.blobs.get(r.submission);
     if (blob === undefined) return [];
     try {
       return [{ attemptId: r.attemptId, edgeId: r.edgeId, names: r.names, mainProof: (JSON.parse(blob) as { proof: string }).proof }];
@@ -171,7 +173,7 @@ function sketchEntries(problem: ProblemContext): SketchEntry[] {
   });
 }
 
-const archiveOf = (problem: ProblemContext): Archive => readArchive(problem.memory, problem.claimId, sketchEntries(problem));
+const archiveOf = (problem: ProblemContext): Archive => readArchive(problem.memory, problem.claimId, sketchEntriesOf(problem.memory, problem.problemId, problem.claimId));
 
 const clip = (text: string, n: number): string => {
   const t = text.replace(/\s+/g, " ").trim();
@@ -342,11 +344,11 @@ export function keepSchema(problem: ProblemContext, skeleton: Skeleton, rest: Pa
     const general = generalize(skeletonFrom(old.data), skeleton, minSpecificity);
     if (general === undefined) continue;
     const data = dataOf(general, { ...rest, names: old.data.names, supports: [...old.data.supports, ...rest.supports] });
-    memory.recordNode({ kind: SCHEMA_KIND, claimId: problem.claimId, data: { ...data, generalizes: [old.nodeId] } as unknown as Json, learned: true });
+    memory.recordNode({ kind: SCHEMA_KIND, claimId: rest.supports[0]?.claimId ?? problem.claimId, data: { ...data, generalizes: [old.nodeId] } as unknown as Json, learned: true });
     memory.updateNode(old.nodeId, { state: "superseded" } as unknown as Json, "generalized by a schema that covers it and a new decomposition");
     return 1;
   }
-  memory.recordNode({ kind: SCHEMA_KIND, claimId: problem.claimId, data: dataOf(skeleton, rest) as unknown as Json, learned: true });
+  memory.recordNode({ kind: SCHEMA_KIND, claimId: rest.supports[0]?.claimId ?? problem.claimId, data: dataOf(skeleton, rest) as unknown as Json, learned: true });
   return 1;
 }
 
@@ -505,14 +507,32 @@ export function createM15Line(): Line {
 
   // -- the schemas of a finished problem -----------------------------------------------------------------------------
 
-  /** Keeps each closed decomposition of the problem as a schema, or as one more support of a schema that covers it or that it generalizes. */
-  function extract(problem: ProblemContext, archive: Archive, s: M15Settings): number {
+  /**
+   * Keeps each decomposition the kernel closed as a schema, or as one more support of a schema that covers it or that it generalizes. It
+   * reads the snapshots of the problems that have ended, not the current problem alone: the certifier runs after `afterProblem`, so a
+   * decomposition is certified only by the time a later session (or the end of a later problem) looks again. Only a decomposition all
+   * of whose leaves are closed at the certified level (`proved`) is kept; a leaf the fast check accepted (`computed`) is not enough.
+   */
+  function extract(problem: ProblemContext, s: M15Settings): number {
+    const memory = problem.memory;
+    let made = 0;
+    for (const snap of memory.nodes(M15_ARCHIVE_KIND)) {
+      const claimId = snap.claimId;
+      const snapshot = asRecord<ArchiveSnapshot>(snap.data);
+      if (claimId === undefined || memory.claim(claimId) === undefined) continue;
+      const archive = readArchive(memory, claimId, sketchEntriesOf(memory, snapshot.problemId, claimId));
+      made += extractFrom(problem, snapshot.problemId, claimId, archive, s);
+    }
+    return made;
+  }
+
+  function extractFrom(problem: ProblemContext, problemId: string, claimId: string, archive: Archive, s: M15Settings): number {
     const memory = problem.memory;
     let made = 0;
     for (const m of archive.members) {
-      if (m.rho < 1 || m.depth !== 1 || m.names === undefined || m.mainProof === undefined) continue;
+      if (!m.certified || m.depth !== 1 || m.names === undefined || m.mainProof === undefined) continue;
       if (allSchemas(memory).some((x) => x.data.supports.some((sup) => sup.edgeId === m.edgeId))) continue;
-      const record = sketchRecords(problem).find((r) => r.edgeId === m.edgeId);
+      const record = sketchRecordsOf(memory, problemId, claimId).find((r) => r.edgeId === m.edgeId);
       const stored = record === undefined ? undefined : memory.blobs.get(record.submission);
       if (stored === undefined) continue;
       const reading = readSketch(JSON.parse(stored) as { aux: string; proof: string });
@@ -528,7 +548,7 @@ export function createM15Line(): Line {
         problem.log(`archive: no schema from ${m.edgeId}: ${skeleton}`);
         continue;
       }
-      const support = { problemId: problem.problemId, claimId: m.claimId, edgeId: m.edgeId };
+      const support = { problemId, claimId: m.claimId, edgeId: m.edgeId };
       const rest = { names: m.names, family: m.family, region: m.region, gloss: `A decomposition into ${m.parts.length} part${m.parts.length === 1 ? "" : "s"} that closed (${m.family}).` };
       made += keepSchema(problem, skeleton, { ...rest, supports: [support] }, s.minSpecificity);
     }
@@ -562,6 +582,10 @@ export function createM15Line(): Line {
       beforeSession: async (session) => {
         const s = m15Settings(session.options);
         settle(session, false);
+        if (s.extract) {
+          const made = extract(session, s);
+          if (made > 0) session.log(`archive: ${made} schema${made === 1 ? "" : "s"} made from decompositions the kernel closed`);
+        }
         retireWorn(session, s);
         if (s.cells) {
           const archive = archiveOf(session);
@@ -589,7 +613,7 @@ export function createM15Line(): Line {
         const archive = archiveOf(problem);
         snapshot(problem, archive);
         if (s.extract) {
-          const made = extract(problem, archive, s);
+          const made = extract(problem, s);
           if (made > 0) problem.log(`archive: ${made} schema${made === 1 ? "" : "s"} made from closed decompositions`);
         }
       },

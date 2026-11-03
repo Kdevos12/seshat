@@ -9,7 +9,9 @@ import { headOf } from "./terms.ts";
  * is read from the memory, so a resumed run has the archive it had.
  *
  * - **Fitness** ρ is the share of the DAG's leaves that are closed: a leaf is closed when its proved-modulo label (Task 5's ATMS)
- *   has the empty environment, that is when the claim is `computed` or `proved`, or the graph derives it through checked edges. A
+ *   has the empty environment, that is when the claim is `computed` or `proved`, or the graph derives it through checked edges. It
+ *   guides the search, so a Lean check by the fast path counts; `certified` says whether the same holds at the certified level, which
+ *   is what a schema needs (only the kernel's verdicts make a decomposition a shape worth reusing). A
  *   decomposition whose edge Lean has not checked is not in the archive: its parts say nothing about the claim.
  * - **Cells** are keyed by the depth of the DAG (1, 2, 3+), the dominant tactic family of the main proof, and a region: how many
  *   parts and the main symbol of the claim (`3p:=`).
@@ -28,6 +30,8 @@ export interface Member {
   closed: number;
   leaves: number;
   rho: number;
+  /** Whether every leaf is closed at the certified level (`proved`, or derived from proved claims): `computed` leaves do not count. */
+  certified: boolean;
   /** Levels of decomposition in the DAG: 1 for a decomposition whose parts are not decomposed. */
   depth: number;
   family: string;
@@ -133,14 +137,17 @@ export function readArchive(memory: MemoryStore, claimId: string, sketches: read
   state.sync();
   const atms = new Atms(state).refresh();
   const settled = (id: string): boolean => atms.settled(id);
+  const kernel = new Atms(state, { level: "certified" }).refresh();
+  const certifiedSettled = (id: string): boolean => kernel.settled(id);
   const members: Member[] = [];
   for (const edge of checkedDecompositions(memory, claimId)) {
     const c = closureOf(memory, settled, edge, []);
+    const k = closureOf(memory, certifiedSettled, edge, []);
     const sketch = sketches.find((s) => s.edgeId === edge.edgeId);
     const family = sketch === undefined ? "other" : classifyStrategy({ proof: sketch.mainProof });
     const region = regionOf(edge.to.length, root.statement);
     members.push({
-      edgeId: edge.edgeId, claimId, parts: [...edge.to], closed: c.closed, leaves: c.leaves, rho: c.leaves === 0 ? 0 : c.closed / c.leaves,
+      edgeId: edge.edgeId, claimId, parts: [...edge.to], closed: c.closed, leaves: c.leaves, rho: c.leaves === 0 ? 0 : c.closed / c.leaves, certified: k.leaves > 0 && k.closed === k.leaves,
       depth: c.depth, family, region, key: cellKey(depthBin(c.depth), family, region), createdSeq: edge.createdSeq,
       ...(sketch !== undefined ? { attemptId: sketch.attemptId, names: sketch.names, mainProof: sketch.mainProof } : {}),
     });
