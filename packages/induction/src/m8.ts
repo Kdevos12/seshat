@@ -194,7 +194,15 @@ export function createM8(hooks: M8Hooks = {}): Line {
       // A resumed problem keeps the pool it already made: the model rounds are not paid again (their prompts carry what was
       // proved by then, so `reuse` would miss) and the pool does not grow with each resume.
       if (rebuildPool(problem, work)) return;
-      if (s.rounds > 0) await models(problem, s, table, target.statement, header, candidates, hooks);
+      if (s.rounds > 0) {
+        // The classical candidates are free and already in `candidates`: a model round that fails (the budget, Lean) does not lose them.
+        try {
+          await models(problem, s, table, target.statement, header, candidates, hooks);
+        } catch (error) {
+          if (isInterrupted(error) || problem.signal.aborted) throw error;
+          problem.log(`M8: the model rounds stopped: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       await pool(problem, s, header, candidates, work);
     } catch (error) {
       // An interruption is the run pausing, not a failure; the resumed process runs this again.
@@ -348,6 +356,12 @@ export function createM8(hooks: M8Hooks = {}): Line {
     const known = new Set(earlier.map((c) => c.statement));
     let total = earlier.length;
     for (const c of picked) {
+      // Every candidate is screened here, whatever made it: a column's Lean term and a Dalmatian bound included.
+      const problemText = statementProblem(c.statement);
+      if (problemText !== undefined) {
+        problem.log(`M8: a ${c.source} conjecture was not kept: ${problemText}`);
+        continue;
+      }
       if (!known.has(c.statement)) {
         if (total >= s.conjectures) continue;
         total++;
@@ -356,6 +370,7 @@ export function createM8(hooks: M8Hooks = {}): Line {
       try {
         claimId = (await memory.ensureClaim({ statement: c.statement, ...(header !== "" ? { header } : {}), origin: ACTOR, kind: "formal", parentId: problem.claimId, gloss: c.informal })).claimId;
       } catch (error) {
+        if (isInterrupted(error) || problem.signal.aborted) throw error;
         problem.log(`M8: ${c.source} conjecture refused: ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
@@ -391,6 +406,10 @@ export function createM8(hooks: M8Hooks = {}): Line {
     hooks: {
       beforeProvers: (problem) => run(problem),
       resumeProblem: (problem, held) => run(problem, held),
+      // The state of a problem that is over is not kept for the life of the process.
+      afterProblem: async (problem) => {
+        works.delete(keyOf(problem));
+      },
       briefing: async (session): Promise<Briefing | undefined> => {
         const work = works.get(keyOf(session));
         if (work === undefined) return undefined;

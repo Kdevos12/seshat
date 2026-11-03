@@ -194,6 +194,13 @@ the pool would grow with every resume. The classical step (free, deduplicated) s
 holds for a target are also capped at `conjectures` in all: a pool made after a crash, before its node was written, counts
 what the earlier process left.
 
+Smaller guards: every candidate of the pool goes through the strict screen (`statementProblem`) whatever made it (a Dalmatian
+bound, a column's Lean term, a model); a model round that fails, the budget included, leaves the classical candidates already
+found to be pooled; an interruption at a claim write passes through instead of being logged as a refusal; a M16 witness is
+rebuilt with the seed the program was scored with; the per-problem state of M8, M13 and M14 is dropped in `afterProblem`; the
+theory exploration stops collecting equations past `max(2000, 50 * maxLaws)`; and the sandbox child reads a thrown value's
+`message` only when it is text.
+
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
 true, `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.

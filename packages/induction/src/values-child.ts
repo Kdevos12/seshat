@@ -20,7 +20,9 @@ interface Request {
 /** What a thrown value says, in one line. It never throws, whatever the value is. */
 function messageOf(error: unknown): string {
   try {
-    const text = String((error as { message?: unknown } | null)?.message ?? error);
+    // Only a string is read: String() on an object of the hostile context would run its toString outside the time limit.
+    const message = typeof error === "object" && error !== null ? (error as { message?: unknown }).message : error;
+    const text = typeof message === "string" ? message : typeof message === "number" || typeof message === "boolean" ? String(message) : "(a thrown value that is not text)";
     return text.replace(/\s+/g, " ").slice(0, 200);
   } catch {
     return "(the thrown value cannot be read)";

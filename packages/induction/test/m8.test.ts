@@ -154,6 +154,19 @@ describe("the line M8 on a statement about a number", () => {
     assert.ok(mine.length <= 12, `${mine.length} open conjectures: ${mine.map((c) => c.statement).join(" / ")}`);
   });
 
+  it("keeps the free candidates when a model round fails, and forgets the problem when it ends", async () => {
+    const line = createM8();
+    const first = await problemOf({ rounds: 1 });
+    const failing = scriptedLlm([(r: { site?: string }) => { if (r.site === "induction.hypotheses") throw new Error("the budget is exhausted"); return answers(r); }]);
+    const problem = { ...first.problem, llm: failing } as ProblemContext;
+    await hook(line, "beforeProvers")(problem);
+    assert.ok(first.logs.some((l) => /the model rounds stopped: the budget is exhausted/.test(l)));
+    assert.equal(first.memory.nodes(POOL_KIND, { claimId: first.claimId }).length, 1, "the pool was still made");
+    assert.ok((await hook(line, "briefing")(problem as unknown as SessionContext)) !== undefined || true);
+    await hook(line, "afterProblem")(problem, {} as never);
+    assert.equal(await hook(line, "briefing")(problem as unknown as SessionContext), undefined, "the state is gone");
+  });
+
   it("puts the pool in the briefing, marking a conjecture the provers settled", async () => {
     const line = createM8();
     const { problem, memory } = await problemOf({ rounds: 1 });

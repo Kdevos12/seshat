@@ -1,5 +1,5 @@
 import { type Json } from "@seshat/core";
-import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader } from "@seshat/induction";
+import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader, statementProblem } from "@seshat/induction";
 import { type Briefing, type FinishedAttempt, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { classifyFailure, type FailureClass, type MemoryStore } from "@seshat/memory";
 import { recognizeStatement } from "@seshat/models";
@@ -123,7 +123,11 @@ export function createM14(): Line {
         problem.log(`M14: ${refuted.hypothesis} has no repair: ${found.reason}`);
         continue;
       }
-      const option = found.options[0] as RepairOption;
+      // The statement was built from text read back from memory (a model's hypothesis): it goes through the strict screen again,
+      // and one that fails is repaired informally.
+      const first = found.options[0] as RepairOption;
+      const { statement: built, ...rest } = first;
+      const option: RepairOption = built !== undefined && statementProblem(built) === undefined ? first : rest;
       let claimId: string;
       try {
         if (option.statement !== undefined) {
@@ -180,6 +184,9 @@ export function createM14(): Line {
     hooks: {
       beforeProvers: (problem) => run(problem),
       resumeProblem: (problem, held) => run(problem, held),
+      afterProblem: async (problem) => {
+        works.delete(keyOf(problem));
+      },
 
       afterAttempt: async (problem, attempt) => {
         const s = readM14Options(problem.options);

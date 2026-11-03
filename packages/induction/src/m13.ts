@@ -157,6 +157,7 @@ export function createM13(hooks: M13Hooks = {}): Line {
         try {
           claimId = (await memory.ensureClaim({ statement: claim, ...(target.header !== undefined ? { header: target.header } : {}), origin: ACTOR, kind: "formal", parentId: problem.claimId, gloss: `holds on ${e.points} test points` })).claimId;
         } catch (error) {
+          if (isInterrupted(error) || problem.signal.aborted) throw error;
           problem.log(`M13: a law was refused: ${error instanceof Error ? error.message : String(error)}`);
           continue;
         }
@@ -186,6 +187,9 @@ export function createM13(hooks: M13Hooks = {}): Line {
     hooks: {
       beforeProvers: (problem) => run(problem),
       resumeProblem: (problem, held) => run(problem, held),
+      afterProblem: async (problem) => {
+        found.delete(keyOf(problem));
+      },
       briefing: async (session): Promise<Briefing | undefined> => {
         const laws = found.get(keyOf(session));
         if (laws === undefined || laws.length === 0) return undefined;
