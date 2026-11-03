@@ -80,7 +80,7 @@ describe("measureRun on a scripted journal", () => {
     near(m.novelStrategy.totalUsd, 0.7);
     const earlier = scriptedRun({ problems: [{ id: "p1", outcome: "unsolved", path: "A.lean", attempts: [{ strategy: "induction", usd: 0.05 }] }] });
     const later = measureRun(run.events, { earlier: earlier.events });
-    near(later.novelStrategy.usd, 0.2 + 0.3, "induction on A.lean is known from the earlier journal");
+    near(later.novelStrategy.usd, 0.2 + 0.3);
   });
 });
 
