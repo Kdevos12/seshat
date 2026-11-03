@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-10-28 15:30 UTC. `main` at c8bb412, 1656 tests.
+Updated 2026-11-03 06:00 UTC. `main` at f84d92a, 1828 tests.
 
 ## Tasks
 
@@ -23,7 +23,7 @@ Updated 2026-10-28 15:30 UTC. `main` at c8bb412, 1656 tests.
 | 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | merged in `c8bb412` (faux model, simulated Lean and a faux `lean.meta` only; the link lemma proof never met a real Lean) | `task/t10` | |
 | 11 | M4: context compiler, `expand`, `graph_query` | collaborator | not started (after 9) | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
-| 13 | M8, M13, M14, M16: induction, exploration, repairs | main | implementing | `task/t13` | |
+| 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
@@ -35,10 +35,10 @@ Updated 2026-10-28 15:30 UTC. `main` at c8bb412, 1656 tests.
 | 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
-| 25 | M18: curriculum of variants | main | implementing | `task/t25` | |
+| 25 | M18: curriculum of variants | main | merged | `task/t25` | `f6363b6` |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
 | 27 | Installable packs: tools and skills (PD7) | main | not started (after 11) | |
-| 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | not started (next after 25 and 13, ahead of 14) | |
+| 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
@@ -273,6 +273,14 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   rung with `Line.rung` and its `beforeProvers` must be safe to call twice (it is called again on
   resume). Page: [scheduler.md](../documentation/scheduler.md). Not run against a real Lean or model;
   the price model and the 0.3 and 0.6 fractions are untuned; a refuted hole through M12 is untested.
+- Tasks 25, 28 and 13, merged 2026-11-03 (`f6363b6`, `0ad9cdf`, `f84d92a`): additive. Task 25: the
+  hook `LineHooks.runTask` (a line works a ledger task it proposed) and line `M18` after `M12` in
+  `LINE_ORDER`. Task 28: `TokenCost.savedUsd`, `offPeakUsd` and `unchargedUsd`, the event
+  `turn.deferred`, `HostProfile.models` (price table, calendar, ignored settings, outside the registry
+  hash), `ProblemContext.ignoresSetting`, `SessionOptions.rewriteHistory`, the options `--offpeak` and
+  `--offpeak-max-wait`. Task 13: the package `@seshat/induction`, the per-claim `counterexample` nodes
+  with a checker source (`admitCounterexample`, `cegisCounter`), and lines `M8`, `M13`, `M14`, `M16` in
+  `LINE_ORDER`.
 
 ## Log
 
@@ -578,3 +586,9 @@ Task 10: implementer done (4 commits incl. the merge of main, 1646/1646); review
 Task 10: merged: task/t10 merged into main c8bb412 (--no-ff; 1656/1656), pushed; not run against a real Lean or model; deferred to the final review: a refuted hole through M12 is untested, the price model and the 0.3/0.6 fractions are untuned, the commit history of M7 note
 Task 25: implementer dispatched (worktree wt/t25, branch task/t25 from main c8bb412)
 Task 13: implementer dispatched (worktree wt/t13, branch task/t13 from main c8bb412)
+Task 25: review round 1 (spec met, no Critical; Important I1: the cap could be overshot by the last call, fixed by reserving the dearest call; Minor M2 briefing wording, M3 untested non-implied variant, M4 pending record, M6 unbudgeted cap, M7 docs wording fixed; M5 failure-path cost read from the problem-wide ledger, recorded)
+Task 25: merged: task/t25 merged into main f6363b6 (--no-ff; 1674/1674), pushed; not run against a real model; deferred to the final review: cheap closers are guesses, a failed JSON call's cost is read from the problem-wide spend
+Task 28: implementer done (5 commits, 1699/1699); review round 1: no Critical; Important I1 (a dollar cap with a zero-priced model never fires: now visible as unchargedUsd, refusal when a run or turn dollar limit is set and the run model has no price), I2 (the off-peak refusal came after the run was written), I3 (prices in the registry hash made interrupted runs unresumable: now a recorded hash and a warning); Minor fixed or documented
+Task 28: merged: task/t28 merged into main 0ad9cdf (--no-ff; 1708/1708), pushed; not run against a real provider; deferred to the final review: charges are priced at the response instant, prices in shipped host configs are absent until the first real run
+Task 13: implementer done (6 commits, 1760/1760); review round 1: no Critical; Important I1 (the CEGIS counterexample set of PD5 was missing), I2 (M8 resume re-spent and grew the pool), I3 (one bad Sage candidate aborted the M16 search), I4 (Lakatos repair used the target's binder name); nine Minor, seven fixed
+Task 13: merged: task/t13 merged into main f84d92a (--no-ff; 1828/1828), pushed; not run against a real Lean, model, Sage or OEIS; deferred to the final review: N5 (M16 acceptance when spec.statement is set), N8 (a table of about 19.7k magmas is very large), the counterexample sources fingerprint, plausible and finite_model have no caller yet, M16 counts any Lean-rejected witness as a counterexample
