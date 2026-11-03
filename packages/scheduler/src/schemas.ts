@@ -1,6 +1,6 @@
 import { hash32, maskCommentsAndStrings, forbiddenTokensIn } from "@seshat/core";
 import { parseSignature } from "@seshat/graph";
-import type { LeanMeta } from "@seshat/lean-meta";
+import { type LeanMeta, LeanMetaError } from "@seshat/lean-meta";
 import type { SchemaData } from "@seshat/library";
 import {
   abstractNames, antiUnify, type Bindings, binderNames, fillNodes, matchNodes, newAuContext, type Node, parseNodes, renderNodes, renumber, specificity, varsOf,
@@ -233,14 +233,17 @@ export function generalStatement(skeleton: Skeleton): string {
     .join(" ");
 }
 
-/** Whether `lean.meta` says the goal is an instance of the schema's conclusion; a refusal or no answer is "no", with the reason. */
-export async function confirm(meta: LeanMeta, skeleton: Skeleton, goal: string, header: string, signal?: AbortSignal): Promise<{ ok: boolean; why?: string }> {
+/**
+ * Whether `lean.meta` says the goal is an instance of the schema's conclusion. A refusal by Lean is a definite "no"; no answer (the
+ * server is down, the call timed out) is "no" too, but `retry` says it may be different next time.
+ */
+export async function confirm(meta: LeanMeta, skeleton: Skeleton, goal: string, header: string, signal?: AbortSignal): Promise<{ ok: boolean; why?: string; retry?: boolean }> {
   try {
     const answer = await meta.instances(goal, [{ name: "schema", statement: generalStatement(skeleton) }], { header, ...(signal !== undefined ? { signal } : {}) });
     return answer.instanceOf.includes("schema") ? { ok: true } : { ok: false, why: "lean.meta: the goal is not an instance of the schema's conclusion" };
   } catch (error) {
     if (signal?.aborted === true) throw error;
-    return { ok: false, why: `lean.meta: ${error instanceof Error ? error.message : String(error)}` };
+    return { ok: false, why: `lean.meta: ${error instanceof Error ? error.message : String(error)}`, retry: !(error instanceof LeanMetaError && error.kind === "rejected") };
   }
 }
 

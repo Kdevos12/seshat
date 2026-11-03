@@ -12,6 +12,7 @@ import {
 } from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
 import { type LessonReport, lessonReport, renderLessonReport } from "@seshat/lessons";
+import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/scheduler";
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
@@ -112,6 +113,11 @@ export interface RunReport {
    * that were drawn each lesson, with it and without it. Absent when the run recorded none.
    */
   lessons?: LessonReport;
+  /**
+   * The archive of decompositions and the schemas (line M15, documentation/archive.md): the cells filled, the diversity of mechanisms,
+   * how the picks of a cell fared, and the schema hints with and without the draw. Absent when the run recorded none.
+   */
+  archive?: ArchiveReport;
   /**
    * What the run took from the earlier journals it started on (`--memory-from`); absent for a run that
    * started on none. The problems' outcomes above are the run's own certifications: nothing here is
@@ -512,6 +518,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const redundant = redundancy(events);
   const library = libraryReport(events);
   const lessons = lessonReport(events);
+  const archive = archiveReport(events);
   const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
   return {
@@ -578,6 +585,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
     ...(library !== undefined ? { library } : {}),
     ...(lessons !== undefined ? { lessons } : {}),
+    ...(archive !== undefined ? { archive } : {}),
   };
 }
 
@@ -724,6 +732,7 @@ export function renderRunReport(report: RunReport): string {
       : []),
     ...(report.library !== undefined ? [renderLibraryReport(report.library)] : []),
     ...(report.lessons !== undefined ? [renderLessonReport(report.lessons)] : []),
+    ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
