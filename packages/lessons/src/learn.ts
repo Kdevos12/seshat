@@ -3,7 +3,7 @@ import { completeJson, isInterrupted, type FinishedAttempt, type ProblemContext 
 import { type Attempt, classifyStrategy, isStrategy, type MemoryStore, normalizeDetail, screenProse } from "@seshat/memory";
 import { allLessons, LESSON_KIND, type LessonData, type LessonRecord, type LessonScope, MAX_SUPPORT } from "./records.ts";
 
-/** How global promotion works: `human` stages it in a run with `--human` and applies it otherwise. */
+/** How global promotion works: `staged` (and its alias `human`) waits for the team; `direct` applies it, except in a consortium run; `off` makes none. */
 export type GlobalPromotion = "human" | "staged" | "direct" | "off";
 
 export interface LearnOptions {
@@ -94,9 +94,12 @@ export function addLesson(memory: MemoryStore, draft: LessonDraft): { lesson: Le
   return { lesson: undefined, nodeId: node.nodeId, created: true };
 }
 
-/** Whether a promotion to the global scope waits for the team in this run. */
+/**
+ * Whether a promotion to the global scope waits for the team. It always does, unless the run asked for `direct` and is not a
+ * consortium run: `human` is the same as `staged`, and nothing becomes global without a person's approval by default.
+ */
 export function stagesGlobal(mode: GlobalPromotion, human: boolean | undefined): boolean {
-  return mode === "staged" || (mode === "human" && human === true);
+  return mode !== "direct" || human === true;
 }
 
 /**
@@ -270,17 +273,21 @@ export async function learnConstraints(problem: ProblemContext, o: LearnOptions)
     if (!r.created) continue;
     added += 1;
     known.add(key);
-    if (cross) {
-      // The claim-scope lessons of the same failure are covered by the wider one: they stay in the journal and stop being shown.
-      const widened: string[] = [];
-      for (const l of allLessons(problem.memory)) {
-        if (l.type === "constraint" && l.scope === "claim" && l.group === g.group && l.active) {
-          problem.memory.updateNode(l.nodeId, { active: false, deactivated: { rule: "widened", reason: "the same failure recurs on other claims: a global constraint covers it" } }, "widened");
-          widened.push(l.nodeId);
-        }
-      }
-      if (widened.length > 0) problem.memory.updateNode(r.nodeId, { widenedFrom: widened }, "widened from claim lessons");
+  }
+  retireWidened(problem);
+  return { added, distilled: used };
+}
+
+/**
+ * The claim-scope constraints of a failure that a global constraint now covers stop being shown, once the global one is active: not
+ * while it waits for the team, and not if the team rejected it, so that a rejection leaves the failure covered by what it was.
+ */
+export function retireWidened(problem: ProblemContext): void {
+  const lessons = allLessons(problem.memory);
+  const covered = new Set(lessons.filter((l) => l.type === "constraint" && l.scope === "global" && l.state === "active" && l.group !== undefined).map((l) => l.group));
+  for (const l of lessons) {
+    if (l.type === "constraint" && l.scope === "claim" && l.state === "active" && l.group !== undefined && covered.has(l.group)) {
+      problem.memory.updateNode(l.nodeId, { active: false, deactivated: { rule: "widened", reason: "the same failure recurs on other claims: a global constraint covers it" } }, "widened");
     }
   }
-  return { added, distilled: used };
 }

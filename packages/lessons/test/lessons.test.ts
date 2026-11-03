@@ -7,7 +7,7 @@ import {
 } from "../src/index.ts";
 import { attempt, finished, open, problem } from "./helpers.ts";
 
-const learn: LearnOptions = { globalPromotion: "human", globalMinDomains: 2, globalMinClaims: 3, minAttempts: 3, distill: true, maxDistill: 2 };
+const learn: LearnOptions = { globalPromotion: "staged", globalMinDomains: 2, globalMinClaims: 3, minAttempts: 3, distill: true, maxDistill: 2 };
 const select: SelectOptions = { deactivation: "effect", minObservations: 5, threshold: 0.9, maxLessons: 3 };
 
 async function claims(memory: ReturnType<typeof open>["memory"], n: number): Promise<string[]> {
@@ -69,21 +69,21 @@ describe("strategy lessons from accepted proofs", () => {
     assert.equal(allLessons(memory).length, 1);
   });
 
-  it("widen to a global lesson in enough domains and claims, staged for the team under --human and direct otherwise", async () => {
-    for (const human of [true, false]) {
+  it("widen to a global lesson in enough domains and claims, staged for the team unless the run asks for direct and is not a consortium run", async () => {
+    for (const [mode, human, pending] of [["staged", true, true], ["staged", false, true], ["human", false, true], ["direct", true, true], ["direct", false, false]] as const) {
       const { memory } = open();
       const ids = await claims(memory, 3);
       const domains = ["msc:11", "msc:5", "msc:11"];
       for (const [k, id] of ids.entries()) {
         const { context } = problem(memory, { claimId: id, domain: [domains[k] as string], human });
-        learnStrategy(context, finished(`att_${k}`), "cases", learn);
+        learnStrategy(context, finished(`att_${k}`), "cases", { ...learn, globalPromotion: mode });
         const globals = allLessons(memory).filter((l) => l.scope === "global");
         assert.equal(globals.length, k === 2 ? 1 : 0, "the third claim in the second domain reaches the thresholds");
       }
       const global = allLessons(memory).find((l) => l.scope === "global");
-      assert.equal(global?.state, human ? "pending" : "active");
+      assert.equal(global?.state, pending ? "pending" : "active", `${mode}, human ${human}`);
       assert.deepEqual([global?.domains.sort(), global?.claims.length, global?.widenedFrom?.length], [["msc:11", "msc:5"], 3, 2]);
-      assert.equal(stagedLessons(memory).length, human ? 1 : 0);
+      assert.equal(stagedLessons(memory).length, pending ? 1 : 0);
     }
     // `off` makes no global lesson, `staged` stages even without --human.
     for (const [mode, expect] of [["off", 0], ["staged", 1]] as const) {
@@ -99,10 +99,10 @@ describe("strategy lessons from accepted proofs", () => {
 
 describe("constraints from failures that recur", () => {
   async function failing(n: number, perClaim: number[], failure = { class: "unsolved_goals", detail: "unsolved goals at case succ" }) {
-    const { memory, journal } = open();
+    const { memory, journal, root } = open();
     const ids = await claims(memory, n);
     for (const [k, id] of ids.entries()) for (let j = 0; j < (perClaim[k] ?? 0); j++) attempt(journal, id, { outcome: "invalid", failure });
-    return { memory, journal, ids };
+    return { memory, journal, ids, root };
   }
 
   it("group the failed attempts by class and normalized detail over every claim", async () => {
@@ -133,7 +133,7 @@ describe("constraints from failures that recur", () => {
     const { context, logs } = problem(memory, { claimId: ids[0] as string, answers: [] });
     assert.deepEqual(await learnConstraints(context, learn), { added: 1, distilled: 1 });
     const [l] = allLessons(memory);
-    assert.deepEqual([l?.origin, l?.state], ["outcome", "active"]);
+    assert.deepEqual([l?.origin, l?.state], ["outcome", "pending"]);
     assert.match(l?.text ?? "", /^The check rejected 4 attempts on 2 claim\(s\) the same way \(unsolved goals: unsolved goals at case succ\); check for it before you submit\.$/);
     assert.ok(logs.some((t) => /the model could not put a recurring failure in a line, a template does/.test(t)));
 
@@ -145,7 +145,7 @@ describe("constraints from failures that recur", () => {
     const few = await failing(2, [1, 1]);
     assert.deepEqual(await learnConstraints(problem(few.memory, { claimId: few.ids[0] as string }).context, learn), { added: 0, distilled: 0 });
 
-    const { memory, journal, ids } = await failing(2, [3, 0]);
+    const { memory, journal, ids, root } = await failing(2, [3, 0]);
     const { context } = problem(memory, { claimId: ids[0] as string });
     await learnConstraints(context, { ...learn, distill: false });
     const [one] = allLessons(memory);
@@ -154,10 +154,14 @@ describe("constraints from failures that recur", () => {
     // The failure shows on the other claim too: a global constraint covers it, and the claim lesson stops being shown.
     attempt(journal, ids[1] as string, { outcome: "invalid", failure: { class: "unsolved_goals", detail: "unsolved goals at case succ" } });
     await learnConstraints(context, { ...learn, distill: false });
+    // The global one waits for the team: the claim lesson is shown until it is approved, and if it is rejected, for good.
+    assert.deepEqual(allLessons(memory).map((l) => [l.scope, l.state]), [["claim", "active"], ["global", "pending"]]);
+    const globalId = allLessons(memory)[1]?.nodeId as string;
+    root.withActor("human:ada").recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: globalId, decision: "approve", by: "ada" }) as unknown as Json });
+    await learnConstraints(context, { ...learn, distill: false });
     const all = allLessons(memory);
     assert.deepEqual(all.map((l) => [l.scope, l.state]), [["claim", "deactivated"], ["global", "active"]]);
     assert.equal(all[0]?.deactivated?.rule, "widened");
-    assert.deepEqual(all[1]?.widenedFrom, [all[0]?.nodeId]);
   });
 });
 
@@ -336,7 +340,7 @@ describe("counters and deactivation", () => {
 
 describe("staged promotion", () => {
   it("keeps a global lesson pending until a person approves it, and drops one they reject", async () => {
-    const { memory } = open();
+    const { memory, root } = open();
     const pending = addLesson(memory, draft("p1", { pending: true })).nodeId;
     const rejected = addLesson(memory, draft("p2", { pending: true })).nodeId;
     const still = addLesson(memory, draft("p3", { pending: true })).nodeId;
@@ -344,10 +348,13 @@ describe("staged promotion", () => {
     const { context } = problem(memory, { claimId: c as string });
     assert.deepEqual(selectLessons(context, { maxLessons: 5 }), [], "nothing pending is offered");
     assert.deepEqual(stagedLessons(memory).map((l) => l.nodeId), [pending, rejected, still]);
-    memory.recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: pending, decision: "approve", by: "ada" }) as unknown as Json });
-    memory.recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: rejected, decision: "reject", by: "ada", note: "too vague" }) as unknown as Json });
-    // A node of that kind that is not a person's is not a decision.
-    memory.recordNode({ kind: DECISION_KIND, data: { lessonId: still, decision: "approve", by: "x", provenance: "line" } });
+    // The journal accepts a decision only from a person (`human:NAME`): a line cannot forge an approval, whatever the data says.
+    assert.throws(() => memory.recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: still, decision: "approve", by: "ada" }) as unknown as Json }), /is the research team's, written by human:NAME, not by line:M5/);
+    const person = root.withActor("human:ada");
+    person.recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: pending, decision: "approve", by: "ada" }) as unknown as Json });
+    person.recordNode({ kind: DECISION_KIND, data: decisionData({ lessonId: rejected, decision: "reject", by: "ada", note: "too vague" }) as unknown as Json });
+    // A decision node whose data does not say it is a person's is still not one.
+    person.recordNode({ kind: DECISION_KIND, data: { lessonId: still, decision: "approve", by: "x", provenance: "line" } });
     const states = Object.fromEntries(allLessons(memory).map((l) => [l.key, l.state]));
     assert.deepEqual(states, { p1: "active", p2: "rejected", p3: "pending" });
     assert.deepEqual(selectLessons(context, { maxLessons: 5 }).map((l) => l.nodeId), [pending]);

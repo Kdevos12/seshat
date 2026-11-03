@@ -23,8 +23,8 @@ export const M5_OPTIONS = {
   /** Put a constraint in a line with one model call (the site `lessons.distill`); a template is the fallback. */
   distill: true,
   maxDistill: 2,
-  /** `human` stages a promotion to the global scope in a run with `--human`; `staged` always; `direct` never; `off` makes no global lesson. */
-  globalPromotion: "human",
+  /** `staged` (alias `human`): a promotion to the global scope waits for the team's approval. `direct`: applied at once, except in a consortium run. `off`: no global lesson. */
+  globalPromotion: "staged",
   globalMinDomains: 2,
   globalMinClaims: 3,
   /** The lessons replace the prose notes the model writes for the next session (documentation/m0-loop.md, "Notes"). */
@@ -39,7 +39,7 @@ function optionsOf(raw: Readonly<Record<string, Json>>): Options {
 
 function learnOf(o: Options): LearnOptions {
   return {
-    globalPromotion: (["human", "staged", "direct", "off"].includes(o.globalPromotion) ? o.globalPromotion : "human") as GlobalPromotion,
+    globalPromotion: (["human", "staged", "direct", "off"].includes(o.globalPromotion) ? o.globalPromotion : "staged") as GlobalPromotion,
     globalMinDomains: o.globalMinDomains,
     globalMinClaims: o.globalMinClaims,
     minAttempts: o.minAttempts,

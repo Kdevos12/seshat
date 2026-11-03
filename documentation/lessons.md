@@ -89,12 +89,14 @@ Two measures run side by side.
 `deactivation: "presence"` uses the presence rule instead: harmful outweighs useful after `minObservations` in all. A deactivated lesson
 stays in the journal with the rule and the reason, and is never shown again; nothing reactivates it.
 
-## Staged promotion (`--human`)
+## Staged promotion
 
-A lesson for the global scope changes what every later problem sees. In a consortium run (`--human`, or a turn limit; the line reads
-`ProblemContext.human`) it is recorded `pending` and shown to nobody until the team answers (PE6 item 4). `globalPromotion` says how:
-`human` (the default) stages in a consortium run and applies directly otherwise, `staged` always stages, `direct` never stages, `off`
-makes no global lesson.
+A lesson for the global scope changes what every later problem sees, so by default it is recorded `pending` and shown to nobody until a
+person answers (PE6 item 4), in every run, `--human` or not: the answer is given with the commands below to a run that no process
+holds, and takes effect when a run starts on its memory. `globalPromotion` says how: `staged` (the default; `human` is the same),
+`direct` (applied at once, except in a consortium run, `ProblemContext.human`, where it is staged all the same) or `off` (no global
+lesson). A claim-scope constraint that a global one covers stops being shown only once the global one is active, so a rejection leaves
+the failure covered by what it was.
 
 ```
 harness lessons pending RUN_DIR            # the lessons that wait, with their ids
@@ -102,8 +104,9 @@ harness lessons approve RUN_DIR ID [--as NAME] [--note TEXT]
 harness lessons reject RUN_DIR ID [--as NAME] [--note TEXT]
 ```
 
-Like `harness hint`, they write to the journal of a run no process holds, under the person's name: a `lesson_decision` node with
-`provenance: "human"`. The next session after the run resumes sees an approved lesson (a draw may still withhold it, and its effect
+Like `harness hint`, they write to the journal of a run no process holds, under the person's name: a `lesson_decision` node, a kind that the
+journal accepts only from an actor `human:NAME` (so no line can forge an approval, whatever its data says), like a hint or a steer. A decision is
+therefore not carried by `--memory-from`: a global lesson an earlier run's team approved waits for approval again. The next session after the run resumes sees an approved lesson (a draw may still withhold it, and its effect
 is judged like any other); a rejected lesson stays in the journal and is never shown. Only a pending lesson can be answered. No answer
 changes a claim's status.
 
@@ -124,7 +127,7 @@ show how far presence and effect disagree.
 | `fromSuccess`, `fromFailures` | true, true | Learn strategy lessons and constraints. |
 | `minAttempts` | 3 | Attempts of a recurring failure. |
 | `distill`, `maxDistill` | true, 2 | The model call that puts a failure in a line, and its cap per problem. |
-| `globalPromotion` | `human` | `human`, `staged`, `direct` or `off`. |
+| `globalPromotion` | `staged` | `staged` (or `human`), `direct` or `off`. |
 | `globalMinDomains`, `globalMinClaims` | 2, 3 | What widens a strategy lesson to the global scope. |
 | `replaceNotes` | true | The model's notes are not passed to its next session. |
 

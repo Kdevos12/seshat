@@ -203,7 +203,7 @@ The problem's context (`ProblemContext`):
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
 
-`ProblemContext.human` is true in a consortium run (`--human` or a turn limit): a line that would change what every later problem sees stages it for the team (M5's global lessons, [lessons.md](lessons.md#staged-promotion---human)). `ProblemContext.ranking` is the run's models, weakest first, and its budget class (`ModelRanking` of `@seshat/memory`): what a line needs to
+`ProblemContext.human` is true in a consortium run (`--human` or a turn limit): a line that would change what every later problem sees never does it directly there (M5's global lessons, [lessons.md](lessons.md#staged-promotion)). `ProblemContext.ranking` is the run's models, weakest first, and its budget class (`ModelRanking` of `@seshat/memory`): what a line needs to
 say that one configuration was weaker than another. A session's context (`SessionContext`) adds the prover, the session's number and the most it may
 have, its attempt id (recorded only after `beforeSession`; a skipped session's id is never
 recorded), its model, the prover's regions as the session starts, and the strategy and subgoal
