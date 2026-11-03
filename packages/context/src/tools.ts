@@ -30,6 +30,27 @@ export interface ToolEnv {
   graphEdges: number;
 }
 
+/** The bounds of what a model may ask of `graph_query`, and the most characters of any answer. */
+export const MAX_LIMIT = 50;
+export const MAX_DEPTH = 4;
+export const MAX_ANCHORS = 6;
+export const MAX_FROM = 10;
+export const MAX_ANSWER_CHARS = 12000;
+
+const IDENT = /^[\p{L}\p{N}_.'!?«»]+$/u;
+const MODULE = /^[\p{L}\p{N}_.]+$/u;
+/** A name, label or module that comes from an export or a library: only identifier characters pass. */
+const ident = (text: string | undefined, re: RegExp = IDENT): string => (text !== undefined && text.length <= 200 && re.test(text) ? text : "(name not shown)");
+
+/** The lines of a proof text that the strict screen accepts; the others (comments, instructions) are replaced. */
+export function cleanText(text: string, maxLines = 60): string {
+  const lines = text.split("\n").slice(0, maxLines);
+  const out = lines.map((l) => (l.trim() === "" ? "" : (screenLean(l, 240) === undefined ? "(line not shown)" : l.replace(/\s+$/, ""))));
+  return out.join("\n") + (text.split("\n").length > maxLines ? "\n(more lines not shown)" : "");
+}
+
+const bounded = (text: string): string => (text.length > MAX_ANSWER_CHARS ? `${text.slice(0, MAX_ANSWER_CHARS)}\n(the answer was cut at ${MAX_ANSWER_CHARS} characters)` : text);
+
 const prose = (text: string | undefined, max: number): string | undefined => {
   if (text === undefined) return undefined;
   const r = screenProse(text, { max });
@@ -92,14 +113,14 @@ function expandClaim(env: ToolEnv, name: string, claimId: string, kind: string |
 function expandPremise(env: ToolEnv, name: string, key: string): string {
   const e = env.entries.get(key);
   if (e === undefined) throw unknown(env, name);
-  const out = [`${name} [${e.label}] ${e.name}`, `statement: ${screenLean(e.signature, 800) ?? "(it did not pass the screen and is not shown)"}`];
+  const out = [`${name} [${ident(e.label)}] ${ident(e.name)}`, `statement: ${screenLean(e.signature, 800) ?? "(it did not pass the screen and is not shown)"}`];
   const gloss = prose(e.gloss, 200);
   if (gloss !== undefined) out.push(gloss);
-  if (e.module !== undefined) out.push(imports(env.header, e.module) ? `module: ${e.module} (already imported)` : `needs: import ${e.module}`);
+  if (e.module !== undefined) out.push(imports(env.header, e.module) ? `module: ${ident(e.module, MODULE)} (already imported)` : `needs: import ${ident(e.module, MODULE)}`);
   if (e.claimStatus !== undefined) out.push(e.claimStatus === "proved" ? "status: proved (replayed by the certifier)" : "status: accepted by Lean's check, not yet replayed by the certifier");
-  if (e.text !== undefined) out.push("Paste this into your auxiliary region, then use it by name:", "```lean", e.text, "```");
+  if (e.text !== undefined) out.push("Paste this into your auxiliary region, then use it by name:", "```lean", cleanText(e.text), "```");
   const local = e.source === "local" ? env.localText(e.name) : undefined;
-  if (local !== undefined) out.push("As written in the file:", "```lean", local, "```");
+  if (local !== undefined) out.push("As written in the file:", "```lean", cleanText(local), "```");
   return out.join("\n");
 }
 
@@ -108,7 +129,7 @@ function expandLesson(env: ToolEnv, name: string, nodeId: string): string {
   if (l === undefined) throw unknown(env, name);
   const text = prose(l.text, 240) ?? "(the text did not pass the screen and is not shown)";
   return [
-    `${name} (${l.scope}${l.scope === "global" ? "" : `: ${l.scopeKey}`}) ${text}`,
+    `${name} (${l.scope}${l.scope === "global" ? "" : `: ${prose(l.scopeKey, 60) ?? "?"}`}) ${text}`,
     `type: ${l.type}; learned from ${l.support.length} attempt${l.support.length === 1 ? "" : "s"} on ${l.claims.length} claim${l.claims.length === 1 ? "" : "s"}.`,
     "Advice from the outcomes of earlier attempts. It is not proved and may be wrong for this problem.",
   ].join("\n");
@@ -156,10 +177,11 @@ export function expandTool(env: ToolEnv): LineTool {
 function names(env: ToolEnv, value: unknown, what: string): string[] {
   const list = typeof value === "string" ? [value] : Array.isArray(value) && value.every((v) => typeof v === "string") ? (value as string[]) : undefined;
   if (list === undefined || list.length === 0) throw new Error(`${what} must be an id or a list of ids`);
+  const most = what === "anchors" ? MAX_ANCHORS : MAX_FROM;
+  if (list.length > most) throw new Error(`${what} takes at most ${most} ids`);
   return list.map((n) => {
     const key = env.ids.resolve(n);
     if (key !== undefined && env.ids.kindOf(n) === "C") return key;
-    if (key === undefined && env.memory.claim(n) !== undefined) return n;
     throw unknown(env, n);
   });
 }
@@ -181,7 +203,7 @@ function patternSearch(env: ToolEnv, pattern: string, limit: number): string {
   for (const c of claims) lines.push(`${env.ids.name("C", c.claimId)} [${c.status}] ${screenLean(c.statement, 200) ?? "(not shown)"}`);
   for (const e of entries) {
     env.entries.set(e.id, e);
-    lines.push(`${env.ids.name("L", e.id)} [${e.label}] ${e.name} ${screenLean(e.signature, 200) ?? "(not shown)"}`);
+    lines.push(`${env.ids.name("L", e.id)} [${ident(e.label)}${e.claimStatus !== undefined ? `, ${e.claimStatus}` : ""}] ${ident(e.name)} ${screenLean(e.signature, 200) ?? "(not shown)"}`);
   }
   return lines.join("\n");
 }
@@ -212,7 +234,13 @@ export function graphQueryTool(env: ToolEnv): LineTool {
       additionalProperties: false,
     },
     run: async (args: JsonObject) => {
-      const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.floor(args.limit) : 10;
+      const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.min(MAX_LIMIT, Math.floor(args.limit)) : 10;
+      const depth = typeof args.depth === "number" && args.depth >= 1 ? Math.min(MAX_DEPTH, Math.floor(args.depth)) : undefined;
+      return bounded(await answer(args, limit, depth));
+    },
+  };
+
+  async function answer(args: JsonObject, limit: number, depth: number | undefined): Promise<string> {
       if (typeof args.pattern === "string") return patternSearch(env, args.pattern, limit);
       const style = styleOf(args.style, env.rendering);
       const shared = {
@@ -221,14 +249,13 @@ export function graphQueryTool(env: ToolEnv): LineTool {
         ...(Array.isArray(args.claimStatuses) ? { claimStatuses: args.claimStatuses as never } : {}),
       };
       if (args.anchors !== undefined) {
-        const found = connect(env.memory, { anchors: names(env, args.anchors, "anchors"), ...shared, ...(typeof args.depth === "number" ? { depth: args.depth } : {}) }, env.ids);
+        const found = connect(env.memory, { anchors: names(env, args.anchors, "anchors"), ...shared, ...(depth !== undefined ? { depth } : {}) }, env.ids);
         return renderConnection({ ...found, claims: found.claims.map(clean) }, style === "list" ? "chains" : (style satisfies PathStyle), { edges: env.graphEdges, name: (id) => env.ids.name("C", id) });
       }
       const from = args.from === undefined ? [env.goalId] : names(env, args.from, "from");
-      const query = parseGraphQuery({ ...args, from }, env.goalId);
+      const query = parseGraphQuery({ ...args, from, ...(depth !== undefined ? { depth } : { depth: undefined }) } as never, env.goalId);
       const found = graphQuery(env.memory, query, env.ids);
       const capped = { ...found, claims: found.claims.map(clean), edges: found.edges.slice(0, env.graphEdges), truncated: found.truncated || found.edges.length > env.graphEdges };
       return style === "list" ? renderSubgraph(capped) : renderSubgraphAs(capped, style, { name: (id) => env.ids.name("C", id) });
-    },
-  };
+  }
 }
