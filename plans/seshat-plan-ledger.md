@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 22:30 UTC. `main` at 3f16b4c, 2238 tests.
+Updated 2026-11-04 02:00 UTC. `main` at 77f9e6e, 2332 tests.
 
 ## Tasks
 
@@ -24,7 +24,7 @@ Updated 2026-11-03 22:30 UTC. `main` at 3f16b4c, 2238 tests.
 | 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | merged | `task/t11` | `544f704` |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
-| 14 | Integration, `harness ablate`, entrenchment probe | main | implementing | `task/t14` | |
+| 14 | Integration, `harness ablate`, entrenchment probe | main | merged | `task/t14` | `77f9e6e` |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
@@ -36,7 +36,7 @@ Updated 2026-11-03 22:30 UTC. `main` at 3f16b4c, 2238 tests.
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | merged | `task/t25` | `f6363b6` |
-| 26 | `harness optimize-prompts` | main | not started (after 14) | |
+| 26 | `harness optimize-prompts` | main | implementing | `task/t26` | |
 | 27 | Installable packs: tools and skills (PD7) | main | merged | `task/t27` | `50f0792` |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
@@ -310,7 +310,7 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `hashDirectory`'s skip list is exported from `lean-env`, `RunOptions.libraryRegistry`, review status
   of definitions in `@seshat/memory` (`ensureClaim` refuses a statement that mentions an unreviewed
   definition).
-- Task 14, on `task/t14` (not merged): `packages/core`: the optional `toolTokens` on `attempt.finished` (the tokens of the tool definitions the session sent), documented in `journal.md`; `packages/orchestrator` (shared): `RunConfig.packetMode` (`prefix_tail` by default, `append_only`, `recompiled`), recorded in `run.started`, read back by a resume, `--packet-mode`, documented in `lines.md`; the `ablate`, `chunks` and `probe` commands, `run --probe-every`, `--sequence` and `--tag`, and `report` reading `probe/probe.json`; `packages/bench`: the optional `sequences` and `tags` of the index (an index without them still reads, `sequencesOf` computes), and the `harness-bench` commands `sequences`, `tags` and `ext`, documented in `bench.md`. All additive: a run, an index and a journal without them behave as before.
+- Task 14, merged 2026-11-03 (`77f9e6e`): `packages/core`: the optional `toolTokens` on `attempt.finished` (the tokens of the tool definitions the session sent), documented in `journal.md`; `packages/orchestrator` (shared): `RunConfig.packetMode` (`prefix_tail` by default, `append_only`, `recompiled`), recorded in `run.started`, read back by a resume, `--packet-mode`, documented in `lines.md`; the `ablate`, `chunks` and `probe` commands, `run --probe-every`, `--sequence` and `--tag`, and `report` reading `probe/probe.json`; `packages/bench`: the optional `sequences` and `tags` of the index (an index without them still reads, `sequencesOf` computes), and the `harness-bench` commands `sequences`, `tags` and `ext`, documented in `bench.md`. All additive: a run, an index and a journal without them behave as before.
 
 
 ## Log
@@ -637,3 +637,6 @@ Task 18: merged: task/t18 merged into main f37801e (--no-ff; 2154/2154), pushed;
 Task 22: implementer done (3 commits, 2122/2122); review round 1: Critical C1 (declarations behind open-in and set_option-in were never certified or recorded; decide +native passed), C2 (a statement using !isGood escaped the unreviewed-definition guard), C3 (the gate built with the harness's whole environment and ran a port's meta code before any approver); Important I1 to I6 (definitions never reached a run, instances and constructors unseen, test lemmas elaborated in the agent's environment, adoption hash gaps, unscreened port files, process handling); minors mostly fixed
 Task 22: merged: task/t22 merged into main 3f16b4c (--no-ff; 2238/2238), pushed; nothing real has run (fake agent, fake lake, fake certifier, no sandbox shipped); deferred to the final review: a second independent review of the fixes (security-sensitive), instances of an unreviewed class are not caught by the name check, no overall budget across gaps, network isolation only as far as the sandbox gives it
 Task 14: implementer dispatched (worktree wt/t14 from main f37801e)
+Task 14: implementer done (11 commits, 2229/2229); review round 1: no Critical; Important I1 (run --probe-every was parsed and ignored), I2 (the difficulty split was chosen on the reference arm's own outcomes), I3 (chunk curves degenerate on real journals: provers stop at first success), I4 (a cut-off ablation lost everything and could not resume), I5 (saved tables carried no simulated or not-run label), I6 (compareArms compared arms that had not finished the same problems); nine Minor, seven fixed
+Task 14: merged: task/t14 merged into main 77f9e6e (--no-ff; 2332/2332), pushed; nothing ran against a real model, Lean or Jev; deferred to the final review: K>1 chunk curves need a fixed-attempt measurement run that is not built, candidate still counts as solved (Certified printed beside it), M12, M3 and M15 do not act in the all-lines test (no second demo problem needing a decomposition), the bench-ext row shape is an assumption and the dataset licence is unverified, the probe alarm has little power at 20 problems, no analogy or induction annotations file committed
+Task 26: implementer dispatched (worktree wt/t26 from main 77f9e6e)
