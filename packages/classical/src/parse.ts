@@ -100,6 +100,8 @@ const INFIX: Readonly<Record<string, { bp: number; right: boolean }>> = {
 class Reader {
   readonly tokens: Token[];
   pos = 0;
+  /** How deep the expression being read is nested. */
+  depth = 0;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -142,7 +144,21 @@ function startsArgument(token: Token | undefined): boolean {
   return token.v === "(" || token.v === "↑";
 }
 
+/** The deepest nesting of parentheses, negations and quantifiers the reader accepts; a hostile goal must not overflow the stack. */
+export const MAX_DEPTH = 150;
+/** The longest statement the reader accepts, in characters (the conjectures of the harness are far shorter). */
+export const MAX_STATEMENT = 4000;
+
 function parseExpr(r: Reader, minBp: number): Term {
+  if (++r.depth > MAX_DEPTH) throw new Unreadable("the statement is nested too deeply");
+  try {
+    return parseExprAt(r, minBp);
+  } finally {
+    r.depth--;
+  }
+}
+
+function parseExprAt(r: Reader, minBp: number): Term {
   let left = parsePrefix(r);
   for (;;) {
     const token = r.peek();
@@ -327,6 +343,7 @@ const TYPE_SORT = /^Type(?:\*| _| [\p{L}\p{N}_]+)?$/u;
 
 /** Reads a statement in signature form. Throws `Unreadable` with the reason when it cannot. */
 export function parseStatement(statement: string): Statement {
+  if (statement.length > MAX_STATEMENT) throw new Unreadable(`the statement has ${statement.length} characters; the reader takes at most ${MAX_STATEMENT}`);
   const { binders: text, type } = splitSignature(statement);
   const sorts = new Set<string>(BUILTIN_SORTS);
   const binders: Binder[] = [];

@@ -185,14 +185,12 @@ export const DOMAIN_TACTICS: Readonly<Record<Domain, readonly string[]>> = {
  * reason: a goal the router cannot read still gets the whole battery.
  */
 export function routeStatement(statementText: string): Route {
-  let statement: Statement;
   try {
-    statement = parseStatement(statementText);
+    return routeFeatures(featuresOf(parseStatement(statementText)));
   } catch (error) {
-    if (!(error instanceof Unreadable)) throw error;
+    if (!(error instanceof Unreadable) && !(error instanceof RangeError)) throw error;
     return { domains: ["general"], tactics: [...DOMAIN_TACTICS.general], unreadable: error.message };
   }
-  return routeFeatures(featuresOf(statement));
 }
 
 export function routeFeatures(f: Features): Route {
