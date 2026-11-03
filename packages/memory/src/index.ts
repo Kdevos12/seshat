@@ -1,5 +1,6 @@
 export * from "./beta.ts";
 export * from "./classes.ts";
+export * from "./definitions.ts";
 export * from "./draw.ts";
 export * from "./effect.ts";
 export * from "./epochs.ts";

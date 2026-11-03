@@ -26,6 +26,16 @@ import {
   stampProvenance,
   type ValidationRow,
 } from "@seshat/core";
+import {
+  type Definition,
+  DEFINITION_KIND,
+  type DefinitionData,
+  type DefinitionInput,
+  definitionNameProblem,
+  mentionsDeclaration,
+  type ReviewBy,
+  reviewProblem,
+} from "./definitions.ts";
 import { type Draw, type DrawItem, type DrawOptions, drawItems } from "./draw.ts";
 import { armOf, effectOf, type ItemEffect } from "./effect.ts";
 import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epochs.ts";
@@ -326,6 +336,14 @@ export class MemoryStore {
       const problem = signatureMessage(input.statement);
       if (problem !== undefined) throw new Error(`ensureClaim: ${problem}`);
     }
+    if (input.kind !== "informal") {
+      const unreviewed = this.unreviewedIn(`${input.header ?? ""}\n${input.statement}`);
+      if (unreviewed.length > 0) {
+        throw new Error(
+          `ensureClaim: the statement or header uses ${unreviewed.map((d) => `${d.name} (${d.status})`).join(", ")}: a claim statement may use only reviewed definitions (documentation/library-builder.md, "Review status")`,
+        );
+      }
+    }
     const context: StatementContext = {
       ...(input.header !== undefined ? { header: input.header } : {}),
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
@@ -394,6 +412,7 @@ export class MemoryStore {
   }
 
   recordNode(input: NodeInput): MemoryNode {
+    if (input.kind === DEFINITION_KIND) throw new Error(`recordNode: nodes of kind ${DEFINITION_KIND} are written by recordDefinition only`);
     const nodeId = newId("nod");
     this.#journal.emit(
       "node.recorded",
@@ -548,6 +567,7 @@ export class MemoryStore {
 
   /** Applies a JSON merge patch (RFC 7386) to a node's data. */
   updateNode(nodeId: string, patch: Json, reason: string): MemoryNode {
+    if (this.node(nodeId)?.kind === DEFINITION_KIND) throw new Error(`updateNode: a ${DEFINITION_KIND} node changes only through reviewDefinition and deprecateDefinition`);
     this.#journal.emit("node.updated", { nodeId, patch, reason }, this.actor);
     return this.node(nodeId) as MemoryNode;
   }
@@ -727,6 +747,88 @@ export class MemoryStore {
       });
   }
 
+  /**
+   * Records a definition that the library builder added, `unreviewed` (plan change LC5). A proof may use it; a claim
+   * statement may not, until `reviewDefinition`. Only the root store records one (a view made for a line throws), and
+   * a name that is already `unreviewed` or `reviewed` is refused: a definition is not edited in place, so the
+   * replacement of one found wrong has another name, or comes after `deprecateDefinition` in a new environment version.
+   */
+  recordDefinition(input: DefinitionInput): Definition {
+    if (this.#view) throw new Error(`recordDefinition: the store of actor ${this.actor} is a view; only the root store records definitions`);
+    const problem = definitionNameProblem(input.name);
+    if (problem !== undefined) throw new Error(`recordDefinition: ${problem}`);
+    const existing = this.definition(input.name);
+    if (existing !== undefined && existing.status !== "deprecated") {
+      throw new Error(`recordDefinition: ${input.name} is already ${existing.status}; a definition is never edited in place (deprecate it in a new environment version first)`);
+    }
+    const data: DefinitionData = {
+      name: input.name,
+      keyword: input.keyword,
+      ...(input.module !== undefined ? { module: input.module } : {}),
+      buildId: input.buildId,
+      testLemmas: [...input.testLemmas],
+      status: "unreviewed",
+      ...(input.envHash !== undefined ? { envHash: input.envHash } : {}),
+    };
+    const nodeId = newId("nod");
+    this.#journal.emit("node.recorded", { nodeId, kind: DEFINITION_KIND, data: data as unknown as Json }, this.actor);
+    return this.definition(input.name) as Definition;
+  }
+
+  /** The definitions recorded, in the order they were recorded: a name that was deprecated and recorded again appears twice. */
+  definitions(): Definition[] {
+    return this.#journal.projection.nodes(DEFINITION_KIND).map((row) => toDefinition(toNode(row)));
+  }
+
+  /** The current record of a definition: the last one recorded under the name. */
+  definition(name: string): Definition | undefined {
+    return this.definitions().filter((d) => d.name === name).pop();
+  }
+
+  /** The definitions, not `reviewed`, that a piece of Lean text mentions (see `mentionsDeclaration`). */
+  unreviewedIn(text: string): Definition[] {
+    const latest = new Map<string, Definition>();
+    for (const d of this.definitions()) latest.set(d.name, d);
+    return [...latest.values()].filter((d) => d.status !== "reviewed" && mentionsDeclaration(text, d.name));
+  }
+
+  /**
+   * Signs a definition `reviewed`. Its test lemmas were proved by the gate that recorded it, and this adds what the gate cannot:
+   * either a person (the journal records `human:NAME`) or a faithfulness check by at least two checkers, which the orchestrator
+   * runs (recorded as `orchestrator`). Only the root store does it: a view made for a line is refused, so a line cannot review
+   * the definitions its own claims would then use. It changes no claim status.
+   */
+  reviewDefinition(name: string, options: { by: ReviewBy; note?: string }): Definition {
+    if (this.#view) throw new Error(`reviewDefinition: the store of actor ${this.actor} is a view; only the root store reviews`);
+    const problem = reviewProblem(options.by);
+    if (problem !== undefined) throw new Error(`reviewDefinition: ${problem}`);
+    const current = this.definition(name);
+    if (current === undefined) throw new Error(`reviewDefinition: unknown definition ${name}`);
+    if (current.status !== "unreviewed") throw new Error(`reviewDefinition: ${name} is ${current.status}`);
+    if (current.testLemmas.length === 0) throw new Error(`reviewDefinition: ${name} has no proved test lemma`);
+    const actor = options.by.kind === "human" ? `human:${options.by.name.trim()}` : "orchestrator";
+    const review = { by: options.by, actor, at: (this.#now?.() ?? new Date()).toISOString() };
+    this.#journal.emit("node.updated", { nodeId: current.nodeId, patch: { status: "reviewed", review } as unknown as Json, reason: options.note ?? `reviewed by ${options.by.kind}` }, actor);
+    return this.definition(name) as Definition;
+  }
+
+  /**
+   * Marks a definition found wrong `deprecated`, with a reason, in the new environment version that drops it. Nothing of its
+   * text is edited, so results that used it replay under the environment they were made in. It is no longer reviewed, so a
+   * new claim statement cannot use it. Only the root store does it, as `orchestrator` or, with `by`, as that person.
+   */
+  deprecateDefinition(name: string, options: { reason: string; envHash?: string | null; by?: string }): Definition {
+    if (this.#view) throw new Error(`deprecateDefinition: the store of actor ${this.actor} is a view; only the root store deprecates`);
+    if (options.reason.trim() === "") throw new Error(`deprecateDefinition: ${name} is deprecated only with a reason`);
+    const current = this.definition(name);
+    if (current === undefined) throw new Error(`deprecateDefinition: unknown definition ${name}`);
+    if (current.status === "deprecated") return current;
+    const actor = options.by !== undefined ? `human:${options.by}` : "orchestrator";
+    const deprecated = { reason: options.reason, ...(options.envHash !== undefined ? { envHash: options.envHash } : {}), actor, at: (this.#now?.() ?? new Date()).toISOString() };
+    this.#journal.emit("node.updated", { nodeId: current.nodeId, patch: { status: "deprecated", deprecated } as unknown as Json, reason: options.reason }, actor);
+    return this.definition(name) as Definition;
+  }
+
   /** The nodes of a kind (of one claim, if given), in the order they were recorded. */
   nodes(kind: string, options: { claimId?: string } = {}): MemoryNode[] {
     return this.#journal.projection.nodes(kind, options.claimId).map(toNode);
@@ -806,6 +908,22 @@ function toEdge(row: EdgeRow): Edge {
     createdSeq: row.created_seq,
     updatedSeq: row.updated_seq,
   });
+}
+
+function toDefinition(node: MemoryNode): Definition {
+  const d = node.data as DefinitionData;
+  return {
+    nodeId: node.nodeId,
+    name: d.name,
+    keyword: d.keyword,
+    ...(d.module !== undefined ? { module: d.module } : {}),
+    buildId: d.buildId,
+    testLemmas: [...d.testLemmas],
+    status: d.status,
+    ...(d.envHash !== undefined ? { envHash: d.envHash } : {}),
+    ...(d.review !== undefined ? { review: d.review } : {}),
+    ...(d.deprecated !== undefined ? { deprecated: d.deprecated } : {}),
+  };
 }
 
 function toNode(row: NodeRow): MemoryNode {
