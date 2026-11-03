@@ -1,8 +1,14 @@
 /**
- * @seshat/library, a skeleton. The growing lemma library: promotion, deduplication, index and
- * search (line M3).
- *
- * The package exists with its dependencies, so that the task that implements it adds code without
- * touching the lockfile (documentation/lines.md, "Adding a line").
+ * @seshat/library: the growing lemma library (line M3). Documented in documentation/library.md.
  */
-export {};
+export * from "./bm25.ts";
+export * from "./files.ts";
+export * from "./hybrid.ts";
+export * from "./lemmas.ts";
+export * from "./m3.ts";
+export * from "./promote.ts";
+export * from "./recheck.ts";
+export * from "./records.ts";
+export * from "./search.ts";
+export * from "./triviality.ts";
+export * from "./usage.ts";
