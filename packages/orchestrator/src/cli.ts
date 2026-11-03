@@ -20,6 +20,7 @@ import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
+import { PACKET_MODES, type PacketMode } from "./session.ts";
 import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
@@ -31,7 +32,7 @@ const usage = `usage:
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
-              [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
+              [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
@@ -62,6 +63,9 @@ models: the providers pi-ai knows and whether their credentials are set; with PR
 lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
 Lean), show says where each one stands. harness lean-env --help has the details.
+--packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
+(the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
+never rewritten) or recompiled (the measurement arm of the frozen prefix).
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
@@ -109,6 +113,7 @@ const { positionals, values } = parseArgs({
     "context-tokens": { type: "string" },
     "notes-chars": { type: "string" },
     "cache-retention": { type: "string" },
+    "packet-mode": { type: "string" },
     "budget-usd": { type: "string" },
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
@@ -467,6 +472,10 @@ async function run(): Promise<number> {
   if (cacheRetention !== undefined && !isCacheRetention(cacheRetention)) {
     throw new UsageError(`--cache-retention must be one of ${CACHE_RETENTIONS.join(", ")}`);
   }
+  const packetMode = values["packet-mode"];
+  if (packetMode !== undefined && !(PACKET_MODES as readonly string[]).includes(packetMode)) {
+    throw new UsageError(`--packet-mode must be one of ${PACKET_MODES.join(", ")}`);
+  }
   const lines = selectLines();
   const options = lineOptions(values["line-option"] ?? []);
   const decide = decideFlags();
@@ -482,6 +491,7 @@ async function run(): Promise<number> {
     },
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
     ...(cacheRetention !== undefined ? { cacheRetention } : {}),
+    ...(packetMode !== undefined ? { packetMode: packetMode as PacketMode } : {}),
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
@@ -548,7 +558,7 @@ function finished(result: RunResult, dir: string): number {
 
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
-  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "budget-usd", "run-budget-usd", "concurrency",
+  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
   "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;

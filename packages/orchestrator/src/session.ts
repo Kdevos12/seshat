@@ -33,6 +33,17 @@ export const ABORT_SOLVED = "solved";
 export const ABORT_BUDGET = "budget";
 export const ABORT_STOPPED = "stopped";
 
+/**
+ * How a session's requests are built from a line's context packet (plan change PD2, documentation/lines.md):
+ * `prefix_tail` (the default) sends the prefix frozen at the first request and a tail compiled again for each request;
+ * `append_only` sends the compiled packet on the first request and, after it, the session's own messages as they come,
+ * without compiling the packet again; `recompiled` is the measurement arm of PE5, a prefix and tail compiled again
+ * for each request, the prefix included, so that nothing of it is frozen.
+ */
+export type PacketMode = "prefix_tail" | "append_only" | "recompiled";
+
+export const PACKET_MODES: readonly PacketMode[] = ["prefix_tail", "append_only", "recompiled"];
+
 export interface SessionOptions {
   models: Models;
   model: Model<Api>;
@@ -89,6 +100,8 @@ export interface SessionOptions {
    * tool-call loop and that the rewrite dropped (`keepReasoning`).
    */
   rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
+  /** How the requests are built from a line's context packet; absent: `prefix_tail`. */
+  packetMode?: PacketMode;
 }
 
 export interface SessionResult {
@@ -140,6 +153,9 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let declared: string | undefined;
   // The prefix of the context packet, frozen at the session's first request that answers one.
   let frozen: FrozenState | undefined;
+  // In `append_only`: the message the first compiled packet made, and how many of the history's messages it stands for.
+  let opening: { message: AgentMessage; replaces: number } | undefined;
+  const mode = o.packetMode ?? "prefix_tail";
 
   const leanCheck: AgentTool<ReturnType<typeof checkParameters>, { summary: string }> = {
     name: "lean_check",
@@ -228,19 +244,32 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const temperature = o.temperature;
   const rebuild = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     requests += 1;
+    // `append_only`: after the first compiled packet the history is the session's own, never rewritten, so that each
+    // request starts with every byte of the one before it (documentation/lines.md, "Packet modes").
+    if (opening !== undefined) return [...messages.filter((m) => m.role === "system"), opening.message, ...messages.slice(opening.replaces)];
     try {
       const answer = packet === undefined ? undefined : await packet(requests, messages, frozen?.prefix);
       if (answer === undefined) return messages;
       const system = messages.filter((m) => m.role === "system");
       const team = (o.teamSections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
-      if (typeof answer === "string") return [...system, { role: "user", content: `${answer}${team}`, timestamp: Date.now() }];
-      const composed = composePacket(answer, frozen);
-      frozen = composed.state;
-      const { prefix } = composed.texts;
-      const tail = `${composed.texts.tail}${composed.texts.tail === "" ? team.replace(/^\n\n/, "") : team}`;
-      // Providers refuse an empty text block: an empty prefix or tail is left out.
-      const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
-      return [...system, { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() }];
+      let built: AgentMessage;
+      if (typeof answer === "string") built = { role: "user", content: `${answer}${team}`, timestamp: Date.now() };
+      else {
+        const composed = composePacket(answer, mode === "recompiled" ? undefined : frozen);
+        if (mode !== "recompiled") frozen = composed.state;
+        const { prefix } = composed.texts;
+        const tail = `${composed.texts.tail}${composed.texts.tail === "" ? team.replace(/^\n\n/, "") : team}`;
+        // Providers refuse an empty text block: an empty prefix or tail is left out.
+        const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
+        built = { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() };
+      }
+      if (mode === "append_only") {
+        // The packet stands for the opening prompt, the history's first user message; what follows it is kept as it comes.
+        const first = messages.findIndex((m) => m.role === "user");
+        opening = { message: built, replaces: first < 0 ? messages.length : first + 1 };
+        return [...system, built, ...messages.slice(opening.replaces)];
+      }
+      return [...system, built];
     } catch (error) {
       lineFailed(error);
       agent.abort();
