@@ -149,6 +149,13 @@ describe("bench-ext", () => {
     assert.throws(() => convertRows('{"equation1":"x = y","equation2":"x = y","answer":true}'), /no id/);
     assert.throws(() => equationToLean("x ◇ y"), /not an equation/);
     assert.throws(() => equationToLean("x = y; rm"), /variables/);
+    assert.throws(() => equationToLean("x = x) * (y"), /unbalanced|not a term/);
+    assert.throws(() => equationToLean("(x = y"), /unbalanced|not a term/);
+    assert.throws(() => equationToLean("x * = y"), /not a term/);
+    assert.throws(() => equationToLean("x = sorry"), /keyword/);
+    assert.throws(() => equationToLean("G = x"), /keyword|own parts/);
+    assert.throws(() => convertRows('{"id":"a/b\\n","equation1":"x = y","equation2":"x = y","answer":true}'), /an id is 1 to 64/);
+    assert.deepEqual(equationToLean("x = (y * (x * z)) * y").variables, ["x", "y", "z"]);
     assert.equal(toProblem({ id: "u", equation1: "x = y", equation2: "y = x", answer: true }).source, "bench-ext");
   });
 
@@ -178,10 +185,15 @@ describe("bench-ext", () => {
     make("b", "line:M10", true);
     make("c", "prover:p1");
     make("d", undefined);
+    // A proof of the negation and a certification are not the step that closed a problem.
+    const neg = newId("clm");
+    journal.emit("claim.created", { claimId: neg, statementId: "sneg", statement: ": True", origin: "bench:ext", status: "open", kind: "formal" }, "memory");
+    journal.emit("problem.registered", { problemId: "e", claimId: neg, target: "e", source: { repo: "r", rev: "x", path: "p" }, domain: [] }, "orchestrator");
+    journal.emit("validation.finished", { validationId: newId("val"), claimId: neg, method: "repl", verdict: "valid", reasons: [], axioms: [], submissionHash: "h", negation: true }, "line:M11");
     journal.close();
     const { readEvents } = await import("@seshat/core");
     const report = closedByStep(readEvents(join(dir, "journal.jsonl")));
-    assert.deepEqual(report.byStep, { subsumption: 0, fingerprint: 0, battery: 1, atp_smt: 1, model: 1, unsolved: 1 });
-    assert.equal(report.withoutModel, 0.5);
+    assert.deepEqual(report.byStep, { subsumption: 0, fingerprint: 0, battery: 1, atp_smt: 1, model: 1, unsolved: 2 });
+    assert.equal(report.withoutModel, 0.4);
   });
 });
