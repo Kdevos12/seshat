@@ -86,3 +86,8 @@ A memory that grows can start to hurt: agents copy what they retrieve, and a sto
 - **Over time.** `overTime` gives, for a series of runs, the distinct strategies and sources among proofs, the share of the budget on strategies never tried on that claim group, and the share of proofs that reuse a library lemma or schema.
 
 Nothing here has run against a real model: the sign test and the verified-only memory are tested on scripted journals.
+
+## Reading the verdicts and the difficulty split
+
+- **Paired, over the problems both arms finished.** An arm that stops early (the run budget, Lean down, Ctrl-C) has fewer problems; a verdict between arms that did not finish the same problems is `not comparable`, and the numbers given are over the problems in common. Otherwise the verdict is paired: the problems only this arm solved against the problems only the other solved, with the exact one-sided sign test. A difference whose p is above 0.1 is marked `indicative only`: with 20 problems a gap of one is not evidence.
+- **The difficulty split has a basis outside the comparison.** Easy is what M0 solved (or a pilot run given with `--pilot RUN_DIR`), hard is the rest. Splitting by the outcome of an arm that is compared would make that arm solve every easy problem and no hard one by construction, and every other arm look worse on easy and better on hard, whatever the truth. M0's own row has no split for that reason; a table without M0 and without a pilot is not split.
