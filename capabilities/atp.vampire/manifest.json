@@ -1,0 +1,110 @@
+{
+  "id": "atp.vampire",
+  "version": 1,
+  "title": "Prove a TPTP problem with Vampire",
+  "when": [
+    "a goal with a first-order encoding (algebra, equational laws, orders) that the Lean battery did not close",
+    "finding which premises a proof needs, to hand to grind, aesop or hammer"
+  ],
+  "whenNot": [
+    "proving the theorem: a Theorem answer is evidence that Lean has not checked (a variable-naming subtlety of Prover9 once gave a wrong announcement in the Equational Theories Project)",
+    "higher-order or dependently typed goals: the translation loses them"
+  ],
+  "exposure": "deferred",
+  "produces": [],
+  "timeoutMs": 60000,
+  "timeoutField": "timeoutSec",
+  "summary": [
+    "szs",
+    "result"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "tptp"
+    ],
+    "properties": {
+      "tptp": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500000,
+        "description": "A TPTP problem (tff or fof) with a conjecture; the axioms' names come back in `used`"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "Vampire's time limit in seconds, 30 when not given"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "szs",
+      "result",
+      "used",
+      "exitCode",
+      "elapsedMs"
+    ],
+    "properties": {
+      "szs": {
+        "type": "string",
+        "description": "The SZS status line's status (Theorem, CounterSatisfiable, Timeout, GaveUp...), or none"
+      },
+      "result": {
+        "enum": [
+          "theorem",
+          "countermodel",
+          "unknown",
+          "timeout",
+          "error"
+        ],
+        "description": "From the SZS status and the exit code, never from the prose; a Theorem with a nonzero exit code is an error"
+      },
+      "used": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "The axioms the proof uses, from its file(...) annotations"
+      },
+      "exitCode": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "elapsedMs": {
+        "type": "number",
+        "minimum": 0
+      },
+      "proof": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "implementations": [
+    {
+      "id": "process",
+      "version": "vampire-5+process-1",
+      "kind": "inproc",
+      "factory": "vampire",
+      "description": "Vampire as a process (`vampire --input_syntax tptp --proof tptp -t N`, the problem on standard input). The command is a setting (VAMPIRE_COMMAND). Not run: no Vampire binary where this was written.",
+      "environment": {
+        "vampire": "5.x, not pinned until run"
+      },
+      "settings": {
+        "command": "vampire"
+      }
+    }
+  ],
+  "description": {
+    "$file": "description.md"
+  }
+}

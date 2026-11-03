@@ -1,0 +1,173 @@
+{
+  "id": "prove.auto",
+  "version": 1,
+  "title": "Try Lean's classical tactics on a goal",
+  "when": [
+    "a goal that may be closed by a decision procedure or a normalizer: arithmetic, an identity, an inequality, a finite check",
+    "before writing a long proof of a subgoal: see whether omega, linarith, ring, simp, aesop, grind or a hammer closes it"
+  ],
+  "whenNot": [
+    "the whole problem: the harness already ran this on the target and the subgoals before you started, and says what failed",
+    "a goal you cannot state in signature form"
+  ],
+  "exposure": "direct",
+  "produces": [],
+  "timeoutMs": 120000,
+  "timeoutField": "cpuBudgetSec",
+  "summary": [
+    "solved",
+    "tactic"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "statement"
+    ],
+    "properties": {
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000,
+        "description": "The goal in signature form: the binders, then : and the proposition, e.g. (n m : ℕ) (h : n < m) : n + 1 ≤ m"
+      },
+      "header": {
+        "type": "string",
+        "maxLength": 20000,
+        "description": "The imports, opens and definitions the statement needs; import Mathlib when not given"
+      },
+      "cpuBudgetSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "Lean time for all tries together, 30 when not given"
+      },
+      "tactics": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string"
+        },
+        "description": "Only these tactics, by name"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "solved",
+      "domains",
+      "tries",
+      "cpuMs",
+      "skipped"
+    ],
+    "properties": {
+      "solved": {
+        "type": "boolean"
+      },
+      "tactic": {
+        "type": "string",
+        "description": "The tactic that closed the goal"
+      },
+      "proof": {
+        "type": "string",
+        "description": "The text to put after `by`: Lean's own suggestion when the tactic printed one"
+      },
+      "domains": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Where the router put the goal: presburger, linear_real, polynomial_identity, ..."
+      },
+      "tries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "tactic",
+            "outcome",
+            "timeMs"
+          ],
+          "properties": {
+            "tactic": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "success",
+                "failed",
+                "timeout",
+                "error",
+                "aborted"
+              ]
+            },
+            "timeMs": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "cpuMs": {
+        "type": "number"
+      },
+      "skipped": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Tactics not tried because the budget ran out or another succeeded"
+      }
+    },
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "title": "a Presburger goal",
+      "input": {
+        "statement": "(n m : ℕ) (h : n < m) : n + 1 ≤ m"
+      },
+      "output": {
+        "solved": true,
+        "tactic": "omega",
+        "proof": "omega",
+        "domains": [
+          "presburger"
+        ],
+        "tries": [
+          {
+            "tactic": "omega",
+            "outcome": "success",
+            "timeMs": 40
+          }
+        ],
+        "cpuMs": 40,
+        "skipped": [
+          "simp"
+        ]
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "battery",
+      "version": "battery-1",
+      "kind": "inproc",
+      "factory": "prove-auto",
+      "description": "The battery of @seshat/classical over a Lean checker built from the host's Kimina settings: the router names the goal's domain, the tactics the host's Lean has (read by a probe; `packages` names those the profile promises) run in parallel in the order of the router's prior, and the first success stops the rest. Not run against a real Lean.",
+      "environment": {
+        "lean": "v4.27.0",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7"
+      },
+      "settings": {
+        "url": "http://localhost:8000",
+        "apiKey": "",
+        "packages": ""
+      }
+    }
+  ],
+  "description": {
+    "$file": "description.md"
+  }
+}
