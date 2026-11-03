@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import { seeded } from "@seshat/core";
 import type { Line, ProblemContext, SessionContext, TaskInfo, ValidateRequest, ValidateResult } from "@seshat/lines";
 import {
+  admitCounterexample,
   buildPrompt,
+  cegisCounter,
   createM16,
   declareSearch,
   fillTemplate,
@@ -11,6 +13,7 @@ import {
   M16_OPTIONS,
   makeScorer,
   ProgramDatabase,
+  readCounterexamples,
   readM16Options,
   SEARCH_PROGRAM_KIND,
   SEARCH_RESULT_KIND,
@@ -218,6 +221,29 @@ describe("the line M16", () => {
     assert.ok(llm.requests.every((r) => r.site === "search.program" && r.reuse === true));
     const briefing = await hook(line, "briefing")({ ...problem } as unknown as SessionContext);
     assert.match(briefing?.text ?? "", /score 30.*\[9,8,7,6\].*valid.*A score proves nothing/s);
+  });
+
+  it("shows Lean's refuted witnesses in the prompt and drops a program that builds one before scoring it (PD5)", async () => {
+    const line = createM16();
+    const { problem, memory, claimId, llm } = await setup([{ program: "(n) => [1, 1, 1, 1]" }, { program: "(n) => [9, 8, 7, 6]" }, { program: "(n) => [9, 8, 7, 5]" }], { rounds: 3 });
+    assert.deepEqual(admitCounterexample(memory, claimId, { object: [9, 8, 7, 6], id: "[9,8,7,6]", source: "lean_decide", refutes: "an earlier witness" }), { admitted: true, created: true });
+    await go(line, problem);
+    const prompts = llm.requests.map((r) => r.prompt);
+    assert.ok(prompts.length >= 2 && prompts.every((t) => /already refuted for this task.*\[9,8,7,6\]/s.test(t)));
+    const scored = memory.nodes(SEARCH_PROGRAM_KIND, { claimId }).map((n) => (n.data as { code: string }).code);
+    assert.ok(!scored.includes("(n) => [9, 8, 7, 6]"), "the refuted witness was not scored");
+    assert.ok(scored.includes("(n) => [9, 8, 7, 5]"));
+    const counter = cegisCounter(memory, claimId);
+    assert.deepEqual([counter.dropped, counter.byLine["line:M16"]], [1, 1]);
+  });
+
+  it("keeps the witness Lean rejected, so that the next search for the claim starts from it", async () => {
+    const line = createM16();
+    const { problem, memory, claimId } = await setup(script);
+    (problem as { validate: unknown }).validate = async () => ({ verdict: "invalid", status: "open", reasons: ["decide failed"] });
+    await go(line, problem);
+    const set = readCounterexamples(memory, claimId);
+    assert.deepEqual(set.map((c) => [c.object, c.source]), [[[9, 8, 7, 6], "lean_decide"]]);
   });
 
   it("does not submit a witness below the target, and says so to the provers", async () => {

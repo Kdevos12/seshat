@@ -54,6 +54,8 @@ export interface LakatosInput {
   statement?: string;
   /** The name the statement gives the object, which the columns' Lean terms write as `n`. */
   variable?: string;
+  /** Rows of the table that a checker showed to refute this conjecture although its verdict says otherwise (the counterexample set, PD5): the concept must bar them too. */
+  alsoRefuted?: readonly number[];
   /** The most atoms in a concept. Default 2. */
   maxAtoms?: number;
   /** The fewest share of the objects where the conjecture held that a monster-barring may keep. Default 0.5. */
@@ -152,8 +154,9 @@ const combos = <T>(items: readonly T[], size: number): T[][] => (size === 1 ? it
 export function lakatosRepair(input: LakatosInput): LakatosResult {
   const { table, verdicts } = input;
   if (verdicts.length !== table.rows.length) throw new RangeError(`the verdicts (${verdicts.length}) are not one for each object of the table (${table.rows.length})`);
-  const cex = [...verdicts].flatMap((v, i) => (v === "0" ? [i] : []));
-  const held = [...verdicts].flatMap((v, i) => (v === "1" ? [i] : []));
+  const extra = new Set(input.alsoRefuted ?? []);
+  const cex = [...verdicts].flatMap((v, i) => (v === "0" || extra.has(i) ? [i] : []));
+  const held = [...verdicts].flatMap((v, i) => (v === "1" && !extra.has(i) ? [i] : []));
   if (cex.length === 0) return { counterexamples: 0, held: held.length, options: [], reason: "the conjecture has no counterexample in the table" };
   if (held.length === 0) return { counterexamples: cex.length, held: 0, options: [], reason: "the conjecture holds on no object of the table: there is nothing to keep" };
   const columns = cellsOf(table);

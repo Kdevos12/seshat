@@ -169,12 +169,13 @@ export class ProgramDatabase {
 }
 
 /** The prompt of a round: the task, then the programs drawn, as versions in order of score, and the request for the next one. */
-export function buildPrompt(spec: SearchSpec, shown: readonly Scored[], round: number): string {
+export function buildPrompt(spec: SearchSpec, shown: readonly Scored[], round: number, refuted = ""): string {
   const versions = shown.map((p, i) => `// version ${i}: score ${p.score}\n${p.code}`).join("\n\n");
   return (
     `Task: ${spec.description}\n` +
     `A program is a JavaScript function expression: ${spec.signature}. A scoring program rates what it returns; higher is better${spec.target !== undefined ? `, and ${spec.target} is the score to reach` : ""}.\n\n` +
     `Programs so far, from the worse to the better:\n\n${versions}\n\n` +
+    (refuted !== "" ? `${refuted}\n\n` : "") +
     `Write version ${shown.length}, a program that scores higher than all of them. You may change or combine the ideas above. (round ${round})`
   );
 }
@@ -254,13 +255,15 @@ export async function runSearch(
   options: SearchOptions,
   scorer: Scorer,
   random: RandomSource,
-  hooks: { events?: Partial<SearchEvents>; shouldStop?: () => boolean; signal?: AbortSignal; model?: string } = {},
+  hooks: { events?: Partial<SearchEvents>; shouldStop?: () => boolean; signal?: AbortSignal; model?: string; counterexamples?: string; screen?: (code: string) => Promise<boolean> } = {},
 ): Promise<SearchResult> {
   const db = new ProgramDatabase(options.islands, options);
   let evaluated = 0;
   let globalBest = -Infinity;
   const reached = (): boolean => spec.target !== undefined && (db.best()?.score ?? -Infinity) >= spec.target;
   const consider = async (code: string, round: number, island: number): Promise<void> => {
+    // PD5: a sampled program meets the known counterexamples before it is scored; one that fails is dropped, not scored.
+    if (round > 0 && hooks.screen !== undefined && (await hooks.screen(code))) return;
     const evaluation = await scorer(code, hooks.signal);
     evaluated++;
     const isBest = evaluation.ok && evaluation.score > globalBest;
@@ -281,7 +284,7 @@ export async function runSearch(
       if (hooks.shouldStop?.() === true) return { best: db.best(), rounds: round - 1, evaluated, reached: reached(), stoppedBy: "budget" };
       const answer = await completeJson<{ program: string }>(llm, {
         system: withAntiSycophancy("You write short JavaScript programs for a search. Your answer is read by a program."),
-        prompt: `${buildPrompt(spec, drawn.programs, round)}${options.samples > 1 ? ` (draft ${k + 1} of ${options.samples})` : ""}`,
+        prompt: `${buildPrompt(spec, drawn.programs, round, hooks.counterexamples ?? "")}${options.samples > 1 ? ` (draft ${k + 1} of ${options.samples})` : ""}`,
         schema: PROGRAM_SCHEMA as never,
         site: "search.program",
         reuse: true,

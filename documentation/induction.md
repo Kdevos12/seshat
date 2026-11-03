@@ -287,6 +287,35 @@ verdict) or `failed` (a search that threw, or a claim with no specification). An
 finished search read from its `search_result` node). The briefing reads those nodes, so a resumed process has it too. Sage scoring
 ran against a stand-in only.
 
+## The counterexample set (the CEGIS rule, PD5)
+
+Lines M8, M14 and M16 share one rule (`cegis.ts`, plan change PD5). The counterexamples found so far for a claim are a set,
+kept in the memory as `counterexample` nodes: the object (a number, a magma), its name, what it refuted, and the checker that
+produced it. The sources are `table_run` (a program run on a table object), `fingerprint`, `plausible`, `finite_model` (Task 7)
+and `lean_decide` (a Lean `decide` of a test lemma, or Lean rejecting a witness). `admitCounterexample` takes only one of those
+names: a model's own claim of a counterexample is refused with the reason, leaves the set as it was, and a node that names no
+checker is not read back. The set is the proposer's input and the first thing a candidate meets.
+
+- **M8.** Before each round the set goes into the `proposeHypotheses` prompt ("objects already shown to refute earlier
+  candidates, each confirmed by a checker"). Every proposed hypothesis is then run on the set's objects alone (`screenBySet`, a
+  sandbox run) before the table, the step DAG, the formalization, the Lean test lemma and the triviality probe. One that fails a
+  known object is dropped. A table run adds up to three counterexamples of each refuted hypothesis (`table_run`); a failed test
+  lemma adds its case (`lean_decide`). Objects found by other checkers, beyond the table (`plausible`, `fingerprint`,
+  `finite_model`), enter through `admitCounterexample` and stop a candidate the table alone would have let through.
+- **M14.** The Lakatos search takes the set's counterexamples of the refuted hypothesis (those in its table) as objects the
+  concept must bar too (`alsoRefuted`). The repair the verdicts alone would have chosen, when the set rules it out, is a candidate
+  dropped before its step DAG is asked for.
+- **M16.** A witness Lean rejected is recorded (`lean_decide`). The next search for the claim shows those outputs in the sampled
+  prompt next to the scored programs, and a sampled program that builds one is dropped before it is scored (seeds are not).
+
+The counter for Task 14's table is `cegisCounter(memory, claimId?)`: candidates dropped (by line and by source) and the tokens
+saved against a baseline without the set. Each drop is a `cegis_drop` node, written once for a (line, candidate), so a resume
+does not count twice. The tokens are an estimate, and it is only credited when the baseline would have spent: for M8 a dropped
+candidate that the table alone would have let through (the table catches the rest for free, so those drops save nothing),
+costed as the step DAG and the formalization of an informal hypothesis (`2 * (350 + a quarter of the characters of the
+hypothesis and the target)`; a hypothesis that came with its Lean statement saves no priced step); for M14 an informal repair's
+step DAG; for M16 nothing priced (the saving is a scoring run). The estimate has not been calibrated against a real model.
+
 ## Tests, and what has not run
 
 `packages/induction/test` has `recurrence.test.ts` (Berlekamp-Massey on Fibonacci and a sum of powers;

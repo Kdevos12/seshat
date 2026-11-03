@@ -2,6 +2,7 @@ import { hash32, hashJson, seeded, type Json } from "@seshat/core";
 import { type Briefing, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem, type TaskEnd, type TaskInfo } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { sageThroughRegistry } from "@seshat/models";
+import { admitCounterexample, cegisCounter, describeCounterexamples, readCounterexamples, recordDrop } from "./cegis.ts";
 import { fillTemplate, makeScorer, runSearch, type Scored, type SearchOptions, type SearchSpec } from "./evolve.ts";
 import { optionReader } from "./options.ts";
 import { runValues } from "./sandbox.ts";
@@ -100,8 +101,25 @@ export function createM16(): Line {
     const scorer = makeScorer(spec, { ...s.limits, seed: hash32(specNode.key) }, sage);
     const recorded = new Set(memory.nodes(SEARCH_PROGRAM_KIND, { claimId }).map((n) => (n.data as { code?: string }).code));
     let written = recorded.size;
+    // PD5: the witnesses Lean refuted for this claim are the set. They go into the prompt, and a program that builds one is not scored.
+    const set = readCounterexamples(memory, claimId);
+    const witnessInput = spec.witnessInput ?? (spec.inputs[spec.inputs.length - 1] as Json);
+    const known = new Set(set.map((c) => JSON.stringify(c.object)));
     const result = await runSearch(problem.llm, spec, s, scorer, random, {
       signal: problem.signal,
+      ...(set.length > 0 ? { counterexamples: describeCounterexamples(set, 12, true) } : {}),
+      ...(set.length > 0
+        ? {
+            screen: async (code: string): Promise<boolean> => {
+              const built = await runValues(code, [witnessInput], { ...s.limits, seed: hash32(specNode.key) }, problem.signal);
+              const value = built.values[0];
+              if (value === undefined || !known.has(JSON.stringify(value))) return false;
+              const by = set.find((c) => JSON.stringify(c.object) === JSON.stringify(value)) as (typeof set)[number];
+              recordDrop(memory, claimId, { line: ACTOR, candidate: hashJson({ key: specNode.key, code } as unknown as Json).slice(0, 16), by, tokensSaved: 0 });
+              return true;
+            },
+          }
+        : {}),
       shouldStop: () => problem.budget.exhausted,
       events: {
         program: (e) => {
@@ -121,9 +139,15 @@ export function createM16(): Line {
       const built = await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal);
       const witness = built.values[0];
       if (witness !== undefined) out.witness = witness;
-      if (s.submit && witness !== undefined && (spec.target === undefined || result.reached)) out.verdict = await submit(problem, memory, claimId, spec, witness, out);
+      if (s.submit && witness !== undefined && (spec.target === undefined || result.reached)) {
+        out.verdict = await submit(problem, memory, claimId, spec, witness, out);
+        // A witness Lean rejected is a counterexample a checker produced: the next search for this claim meets it.
+        if (out.verdict.startsWith("invalid")) admitCounterexample(memory, claimId, { object: witness, id: JSON.stringify(witness).slice(0, 80), source: "lean_decide", refutes: `the witness of "${spec.description.slice(0, 60)}"` });
+      }
     }
     memory.recordNode({ kind: SEARCH_RESULT_KIND, claimId, data: { key: specNode.key, done: out } as unknown as Json });
+    const counter = cegisCounter(memory, claimId);
+    if (counter.dropped > 0) out.note += `; ${counter.dropped} program(s) dropped by the counterexample set`;
     problem.log(`M16: ${out.note}${out.best !== undefined ? `; best score ${out.best.score}` : "; no valid program"}${out.verdict !== undefined ? `; Lean: ${out.verdict}` : ""}`);
     return out;
   }

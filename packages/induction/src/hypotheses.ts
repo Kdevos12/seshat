@@ -78,14 +78,17 @@ export interface ProposeInput {
   known?: readonly string[];
   /** The round, from 1: it is in the prompt, so that a resumed process asking the same round finds its answer in the journal. */
   round: number;
+  /** The claim's counterexample set as text (`describeCounterexamples`): objects a checker showed to refute earlier candidates (PD5). */
+  counterexamples?: string;
   model?: string;
 }
 
 /** Asks the model for hypotheses (site `induction.hypotheses`). Their programs and statements are checked here, not trusted. */
 export async function proposeHypotheses(llm: Llm, input: ProposeInput): Promise<{ hypotheses: Hypothesis[]; refused: string[]; modelCallIds: readonly string[] }> {
   const known = input.known?.length ? `\n\nFacts already established (you may build on them, do not restate them):\n${input.known.map((k) => `- ${k}`).join("\n")}` : "";
+  const refuted = input.counterexamples !== undefined && input.counterexamples !== "" ? `\n\n${input.counterexamples}` : "";
   const prompt =
-    `Target: ${input.target}\n\nData:\n${describeTable(input.table)}${known}\n\n` +
+    `Target: ${input.target}\n\nData:\n${describeTable(input.table)}${known}${refuted}\n\n` +
     `Round ${input.round}. Propose up to ${input.count} hypotheses about these objects that could help settle the target, at different levels of abstraction ` +
     `(${LEVELS.join(", ")}). Each must be executable: a JavaScript function expression of one object (as the columns' code receives it) returning true or false. ` +
     "Give the Lean statement when you can. Do not commit to one approach; a hypothesis may be false, and it will be run on every object.";
