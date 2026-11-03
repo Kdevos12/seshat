@@ -70,6 +70,8 @@ export interface LoadedPack {
   skills: PackSkill[];
   /** The programs and servers the pack's tools would reach when a run calls them. */
   programs: string[];
+  /** The owner accepted, at install, that the pack's `level1` request is honoured (`harness add --level1`). */
+  level1Granted?: boolean;
 }
 
 /** The part of a pack that a run records: enough to reproduce the run with the same packs. */
@@ -131,7 +133,7 @@ export function readTree(root: string, problems: string[]): Map<string, Buffer> 
   let total = 0;
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir).sort()) {
-      if (dir === root && entry === ".git") continue;
+      if (entry === ".git") continue;
       const path = join(dir, entry);
       const info = lstatSync(path);
       const rel = relative(root, path).split(sep).join("/");
@@ -157,6 +159,30 @@ export function readTree(root: string, problems: string[]): Map<string, Buffer> 
   };
   walk(root);
   return files;
+}
+
+/** The size limits, checked on a source directory by looking, before anything is copied; `.git` is not counted. */
+export function countTree(root: string, problems: string[]): void {
+  let files = 0;
+  let bytes = 0;
+  const walk = (dir: string): boolean => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === ".git") continue;
+      const info = lstatSync(join(dir, entry));
+      if (info.isDirectory()) {
+        if (!walk(join(dir, entry))) return false;
+        continue;
+      }
+      files += 1;
+      bytes += info.size;
+      if (files > MAX_FILES || bytes > MAX_PACK_BYTES) {
+        problems.push(`${root}: more than ${MAX_FILES} files or ${MAX_PACK_BYTES} bytes: a pack is small, and nothing was copied`);
+        return false;
+      }
+    }
+    return true;
+  };
+  walk(root);
 }
 
 /** sha256 over the sorted paths and the sha256 of each file: the pack's identity. */
@@ -198,6 +224,8 @@ export function loadPack(dir: string): LoadedPack {
     ]);
   }
   const manifest = raw as PackManifest;
+  const described = manifest.description === undefined ? undefined : screenPackText(manifest.description, 300);
+  if (described !== undefined) problems.push(`pack ${manifest.name}: description: ${described}`);
   const at = `pack ${manifest.name}:`;
 
   // Capabilities: the repository's own loader checks manifests, schemas and contracts; the pack's rules come on top.
@@ -252,6 +280,9 @@ export function loadPack(dir: string): LoadedPack {
     }
     if (!/\.(md|txt)$/.test(spec.file)) problems.push(`${at} skill ${spec.name}: ${spec.file} must be a .md or .txt file`);
     if (bytes.length > MAX_SKILL_BYTES) problems.push(`${at} skill ${spec.name}: ${spec.file} is larger than ${MAX_SKILL_BYTES} bytes`);
+    const bad = screenPackText(spec.description, 300);
+    if (bad !== undefined) problems.push(`${at} skill ${spec.name}: its description: ${bad}`);
+    if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(bytes.toString("utf8"))) problems.push(`${at} skill ${spec.name}: ${spec.file} holds control characters`);
     skills.push({ ...spec, pack: manifest.name, text: bytes.toString("utf8") });
   }
 
@@ -276,6 +307,52 @@ export function envProblems(pack: PackManifest, id: string, implId: string, serv
   return [...names]
     .filter((n) => !allowed.has(n))
     .map((n) => `pack ${pack.name}: ${id}/${implId} reads \${env:${n}}, which pack.json requires.env does not name: a pack gets only the variables it declares`);
+}
+
+const INSTRUCTION = /\b(?:ignore|disregard|override|forget|pretend)\b|\bprevious instructions?\b|\bsystem prompt\b|\byou are now\b|\bdo not (?:tell|mention)\b/i;
+
+/**
+ * The screen for text a pack's author wrote and a model will read (descriptions, `when`, schema descriptions, skill
+ * descriptions): one line, no control characters, no link, no markup that could pose as a heading or a tag, and no
+ * instruction aimed at the model (Global Constraint 16). Returns the reason, or undefined.
+ */
+export function screenPackText(text: string, max: number): string | undefined {
+  if (text.length > max) return `it is longer than ${max} characters`;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(text)) return "it holds control characters";
+  if (/https?:|www\./i.test(text)) return "it holds a link";
+  if (/`|<|>|^\s*#|\n\s*#/.test(text)) return "it holds markup (a fence, a tag or a heading)";
+  if (INSTRUCTION.test(text)) return "it reads as an instruction to the model";
+  return undefined;
+}
+
+function schemaTexts(schema: unknown, path: string, out: Array<[string, string]>): void {
+  if (Array.isArray(schema)) schema.forEach((s, i) => schemaTexts(s, `${path}[${i}]`, out));
+  else if (isPlainObject(schema)) {
+    for (const [k, v] of Object.entries(schema)) {
+      if (k === "description" && typeof v === "string") out.push([`${path}.description`, v]);
+      else if (k === "properties" && isPlainObject(v)) for (const [name, sub] of Object.entries(v)) schemaTexts(sub, `${path}.${name}`, out);
+      else if (k === "items" || k === "anyOf" || k === "additionalProperties") schemaTexts(v, `${path}.${k}`, out);
+    }
+  }
+}
+
+/** Every free text of a capability that reaches a model: its definition (the prompt prefix at level 1) and the tool index. */
+function screenCapability(pack: PackManifest, m: Capability["manifest"]): string[] {
+  const texts: Array<[string, string, number]> = [
+    ["title", m.title, 80],
+    ["description", m.description, 1500],
+    ...m.when.map((w, i): [string, string, number] => [`when[${i}]`, w, 300]),
+    ...m.whenNot.map((w, i): [string, string, number] => [`whenNot[${i}]`, w, 300]),
+  ];
+  const nested: Array<[string, string]> = [];
+  schemaTexts(m.input, "input", nested);
+  schemaTexts(m.output, "output", nested);
+  for (const [where, text] of nested) texts.push([where, text, 300]);
+  return texts.flatMap(([where, text, max]) => {
+    const reason = screenPackText(text, max);
+    return reason === undefined ? [] : [`pack ${pack.name}: ${m.id}: ${where}: ${reason}`];
+  });
 }
 
 /** What a pack's capability may be: level 2, MCP, `computed` at most, with contract cases of its own. */
@@ -304,6 +381,7 @@ function capabilityRules(pack: PackManifest, capability: Capability): string[] {
   for (const impl of m.implementations) {
     if (impl.kind !== "mcp") problems.push(`${at} implementation ${impl.id} is ${impl.kind}: a pack carries MCP servers, never code that runs inside the harness`);
   }
+  problems.push(...screenCapability(pack, m));
   if (capability.contract.length === 0) problems.push(`${at} the pack carries no contract case for it`);
   return problems;
 }

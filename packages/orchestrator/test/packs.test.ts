@@ -26,8 +26,11 @@ describe("a pack's tool in a session", () => {
     const factories = { kimina: () => ({ invoke: async () => ({}) }) };
     const plain = new Registry({ catalog, host, factories, packs: [loadPack(writePack())] });
     assert.deepEqual(checkTools(plain, ["pack_adder.padd"]), ["pack_adder.padd is not a direct capability (its exposure is deferred)"]);
-    const asked = new Registry({ catalog, host, factories, packs: [loadPack(writePack({ manifest: { level1: ["pack_adder.padd"] } }))] });
-    assert.deepEqual(checkTools(asked, ["pack_adder.padd"]), [], "from the session after the install");
+    const requested = loadPack(writePack({ manifest: { level1: ["pack_adder.padd"] } }));
+    const own = new Registry({ catalog, host, factories, packs: [requested] });
+    assert.deepEqual(checkTools(own, ["pack_adder.padd"]), ["pack_adder.padd is not a direct capability (its exposure is deferred)"], "a pack's own request grants nothing");
+    const asked = new Registry({ catalog, host, factories, packs: [{ ...requested, level1Granted: true }] });
+    assert.deepEqual(checkTools(asked, ["pack_adder.padd"]), [], "from the session after the owner's install with --level1");
     // the declared set a registry without the pack builds is the one it always was
     assert.deepEqual(checkTools(new Registry({ catalog, host, factories }), ["pack_adder.padd"]), ["unknown capability pack_adder.padd"]);
   });

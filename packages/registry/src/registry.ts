@@ -218,11 +218,12 @@ export class Registry {
   }
 
   /**
-   * Whether a pack asked for the capability to be in the level-1 declared set. A registry is built for one
+   * Whether a pack asked for the capability to be in the level-1 declared set and the owner granted it at install
+   * (`harness add --level1`): a pack's own request grants nothing. A registry is built for one
    * session and its packs never change, so a request is honoured exactly from the session after the install.
    */
   level1Requested(id: string): boolean {
-    return this.packs.some((p) => p.manifest.level1?.includes(id) === true);
+    return this.packs.some((p) => p.level1Granted === true && p.manifest.level1?.includes(id) === true);
   }
 
   /** Loads `<catalogDir>/*` and `<configDir>/hosts/<host>.json`. */

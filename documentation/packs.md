@@ -60,13 +60,14 @@ Loading a pack reports every problem together (`PackError`). A pack is refused w
   `proved` or `refuted`), or belongs to an `evidence` pack and produces anything;
 - a capability has an in-process implementation: a pack carries **MCP servers**, never code that runs
   inside the harness;
+- a text a model will read (the pack's description, a tool's title, description, `when`, `whenNot` and schema descriptions, a skill's description) is too long, or holds a control character, a link, markup (a fence, a tag, a heading) or a sentence aimed at the model ("ignore...", "system prompt"). The caps are 300 characters, 80 for a title and 1500 for a description (Global Constraint 16: text from outside never becomes part of a prompt unscreened);
 - a file is a symbolic link, a skill's file lies outside the pack, or the pack has more than 500 files
   or 8 MiB.
 
 ## Installing
 
 ```
-harness add PATH|GIT_URL [--allow-programs] [--replace] [--packs-dir DIR]
+harness add PATH|GIT_URL [--allow-programs] [--level1] [--replace] [--packs-dir DIR]
 harness packs [--packs-dir DIR]
 harness remove NAME [--packs-dir DIR]
 ```
@@ -75,7 +76,7 @@ The pack directory is `--packs-dir`, `SESHAT_PACKS_DIR`, or `packs/` of the repo
 versioned). `harness add`:
 
 1. copies a directory, or clones a git url (`https`, `ssh`, `git`, `file`, `git@host:path`; a clone
-   runs no code of the repository, takes no submodule and keeps no `.git`) into a staging directory;
+   runs no code of the repository: no hook, template, submodule, LFS filter or fsmonitor, only the https, ssh, git and file protocols, and neither the user's nor the system's git configuration; it keeps no `.git`. A url that carries a password is refused, and a user name is dropped from the `source` the journal keeps. A local directory is counted, against the 500-file and 8 MiB limits, before it is copied) into a staging directory;
 2. loads and checks the staged copy ([above](#what-a-pack-may-be));
 3. refuses a capability id that the repository's catalog or another installed pack already has, a skill
    name another pack has, and a name that is installed (unless `--replace`, which journals the
@@ -84,8 +85,9 @@ versioned). `harness add`:
    programs (stdio) and reach the servers (http) its manifests list, **when a run calls them**. The
    refusal prints them. Installing starts none of them, and a test checks that a program of a pack is
    not started by `harness add`;
-5. moves the staged copy to `installed/<name>/` and records `pack.installed` (name, version, content
-   hash, trust class, capabilities, skills, programs, source) in `journal/`, a journal of its own
+5. refuses a leftover `installed/<name>` directory that the journal does not know, with the way out;
+6. moves the staged copy to `installed/<name>/` and records `pack.installed` (name, version, content
+   hash, trust class, capabilities, skills, programs, source, and what the owner accepted: `acceptedPrograms`, `level1Accepted`, the `env` names) in `journal/`, a journal of its own
    ([journal.md](journal.md)). The orchestrator is the only actor that writes the pack events.
 
 `harness packs` lists the installed packs from the journal (a fold of `pack.installed` and
@@ -95,6 +97,8 @@ missing. `harness remove` writes `pack.removed` and deletes the files; the journ
 The contract cases a pack carries are **validated, not run**, on install: running one would start the
 pack's program, which `harness add` never does. `harness contract ID` runs them against a host, once
 the person has read the pack.
+
+**Content hash.** Any `.git` entry, at any depth, is left out of the hash and of the copy; file modes are not part of the hash (a command that depends on the executable bit is a command the owner read at install).
 
 **Integrity.** The pack journal is hash-chained: `installedPacks` verifies the chain and refuses an edited one. (Like any journal, a chain that is cut at its end still verifies.) The content hash is a sha256 over the sorted paths and file hashes of the pack. A pack
 whose files differ from the hash its install recorded is listed as changed on disk and refused when a
@@ -113,7 +117,7 @@ never in it:
   and `searchTools(registry, query)` finds them by a plain count of words. These are what `tool_search`
   and `codemode` read. (The tool-search tool itself belongs to the context compiler, Task 11; it reads
   this index.)
-- A pack that wants level 1 names the tool in `level1`. A registry is built for one session from the
+- A pack that wants level 1 names the tool in `level1`. That request grants nothing: the owner grants it with `harness add --level1` (recorded as `level1Accepted` in the journal), because a level-1 tool's description is part of the prompt prefix. A registry is built for one session from the
   packs installed before it, and never changes, so the request takes effect in the session **after**
   the install: `checkTools` accepts the tool for `--tool` only then, and a running session's declared
   set is the one it began with.
@@ -126,7 +130,7 @@ session; the others are listed by name and description.
 
 `selectSkills(skills, { full, maxFull })` takes the names to load in full (default: none), refuses more
 than `maxFull` (0 to 3, default 3), and `renderSkills` writes the full ones and the list, each skill
-with its pack. A skill is advice from outside the run: it is not a lesson and not part of a system
+with its pack. The body is fenced as "text from outside the run" and quoted line by line, so that it cannot forge a heading or close its fence. A skill is advice from outside the run: it is not a lesson and not part of a system
 prompt, and nothing in the loop calls these functions yet (the context compiler and the briefing are
 their readers).
 
@@ -147,6 +151,10 @@ packs, so a registry without packs keeps the hash it always had. A run records t
 | Replace a repository capability | Its id is refused. |
 | Read the harness's credentials | A pack's manifest may read `${env:NAME}` only for the names in its `requires.env`, which the install prints (the load refuses any other, and the registry interpolates a pack's manifest with only those variables). A stdio server also gets only the environment that programs need ([capabilities.md](capabilities.md#implementations)). The `--allow-programs` summary lists each command, URL, header name and `env` name of every tool. A variable a pack declares is one the owner chooses to hand over: read the list. |
 | Put itself in the declared set of a running session | The registry's packs are fixed when it is built. |
+
+## Left out on purpose
+
+A pack whose tool ids a later release of the harness takes is left out with a warning by `openRegistry`, and `harness remove` clears it. A git clone has no size cap of its own besides the 120 second limit (the file and byte limits apply to what it fetched, before the copy is accepted). Tail truncation of the pack journal is not detectable by its chain.
 
 ## What is simulated or has not run
 

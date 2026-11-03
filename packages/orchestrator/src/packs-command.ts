@@ -14,16 +14,22 @@ export interface PacksIo {
   out: (line: string) => void;
 }
 
-export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolean | undefined; replace?: boolean | undefined }): number {
+export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolean | undefined; replace?: boolean | undefined; level1?: boolean | undefined }): number {
   const dir = packsDirectory(o.dir);
   const reserved = new Set(loadCatalog(o.catalogDir ?? `${REPO_ROOT}capabilities`).capabilities.keys());
   try {
-    const { pack, replaced } = installPack(dir, source, { reserved, allowPrograms: o.allowPrograms === true, replace: o.replace === true });
+    const { pack, replaced } = installPack(dir, source, { reserved, allowPrograms: o.allowPrograms === true, replace: o.replace === true, level1: o.level1 === true });
     const m = pack.manifest;
     if (replaced !== undefined) o.out(`replaced ${replaced.name} ${replaced.version}`);
     o.out(`installed ${m.name} ${m.version} (trust ${m.trust}, hash ${pack.hash.slice(0, 12)}) in ${pack.dir}`);
     o.out(`  tools (level 2, found through tool search): ${pack.capabilities.map((c) => c.manifest.id).join(", ") || "none"}`);
-    if ((m.level1 ?? []).length > 0) o.out(`  asks for level 1: ${(m.level1 ?? []).join(", ")}; honoured from the next session`);
+    if ((m.level1 ?? []).length > 0) {
+      o.out(
+        o.level1 === true
+          ? `  asks for level 1: ${(m.level1 ?? []).join(", ")}; you accepted it with --level1, honoured from the next session`
+          : `  asks for level 1: ${(m.level1 ?? []).join(", ")}; not granted (a pack's request grants nothing): add it again with --replace --level1 to accept`,
+      );
+    }
     o.out(`  environment variables its tools may read: ${(m.requires?.env ?? []).join(", ") || "none"}`);
     o.out(`  skills (listed by name; at most 3 are loaded in full): ${pack.skills.map((s) => s.name).join(", ") || "none"}`);
     for (const missing of missingRequirements(pack)) o.out(`  warning: missing ${missing}`);
