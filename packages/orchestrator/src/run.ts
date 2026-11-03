@@ -21,6 +21,7 @@ import {
   type ProvenanceContext,
   type Reference,
   SKETCH_POLICY,
+  sha256Hex,
   stampProvenance,
 } from "@seshat/core";
 import { modelOrderOf } from "@seshat/fleet";
@@ -38,6 +39,7 @@ import { type ProblemLines, RunLines } from "./line-runtime.ts";
 import { LINES } from "./lines.ts";
 import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
+import { promptTarget, screenPrompt } from "./prompt-screen.ts";
 import { createProverTasks, endProverTask } from "./prover-tasks.ts";
 import { type ProverResult, type ProverResume, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
@@ -120,6 +122,12 @@ export interface RunConfig {
    * model. Absent: the run's model everywhere. With `jev`, proof states go to a third party.
    */
   decide?: DecideSettings;
+  /**
+   * A candidate prompt to measure instead of the merged one (`harness optimize-prompts`, documentation/prompts.md): the text of the
+   * prover's system prompt with its placeholders. It passes the strict screen at the start of the run, is recorded in `run.started`, and
+   * stamps what the run learns with a prompt version of its own. Absent: the merged prompt, and a run that records what it always did.
+   */
+  prompts?: { proverSystem?: string };
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -272,6 +280,9 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
   }
   problems.push(...checkDecideSettings(config.decide));
+  if (config.prompts?.proverSystem !== undefined) {
+    problems.push(...screenPrompt(config.prompts.proverSystem, promptTarget("prover.system")).map((reason) => `prompts.proverSystem: ${reason}`));
+  }
   return problems;
 }
 
@@ -391,11 +402,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (refusals.length > 0) throw new RunSetupError(`a consortium run (--human or a turn limit) is resumed after each turn, and it cannot be: ${refusals.join("; ")}`);
   }
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
-  const promptRecord = { version: PROMPT_VERSION, hash: promptHash(config.notesChars, config.tools.map(toolName)) };
+  const proverTemplate = config.prompts?.proverSystem;
+  const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
+  const promptRecord = { version: promptVersion, hash: promptHash(config.notesChars, config.tools.map(toolName), proverTemplate) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
-    promptVersion: PROMPT_VERSION,
+    promptVersion,
     mathlibRev: o.index.source.rev,
     harnessVersion: o.codeRev ?? "unknown",
     budgetClass: budgetClassOf(config.budget.problemUsd),
@@ -586,6 +599,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only when given, so that a run without it records what it always did.
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+      ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
@@ -1066,6 +1080,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 notesChars: config.notesChars,
                 ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
                 ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+                ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
                 prices,
                 ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
                 ledger,
