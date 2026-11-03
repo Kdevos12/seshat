@@ -227,3 +227,42 @@ export function foreignInstances(scans: readonly FileScan[]): string[] {
   }
   return found;
 }
+
+/**
+ * The screen of a file a port adds that is not a Lean source (review I5). `lakefile.lean` is code Lake runs, so it is always
+ * meta. `lean-toolchain` must be one toolchain name. `lake-manifest.json` must be JSON that fetches nothing. `lakefile.toml` may
+ * declare libraries only: a dependency, an executable, a script, a target or an argument for the compiler or the linker is meta.
+ * Meta is refused unless a person is named. `LICENSE` and `README.md` are text and are not read.
+ */
+export function screenSupportFile(path: string, text: string): { meta: string[]; problems: string[] } {
+  const meta: string[] = [];
+  const problems: string[] = [];
+  const base = path.split("/").pop() as string;
+  if (base === "lakefile.lean") meta.push("lakefile.lean (code that Lake runs)");
+  else if (base === "lean-toolchain") {
+    if (!/^leanprover\/lean4:[A-Za-z0-9._-]+\s*$/.test(text)) problems.push(`${path} is not one toolchain name`);
+  } else if (base === "lake-manifest.json") {
+    try {
+      const manifest = JSON.parse(text) as { packages?: unknown };
+      if (Array.isArray(manifest.packages) && manifest.packages.length > 0) meta.push("lake-manifest.json (packages to fetch)");
+    } catch {
+      problems.push(`${path} is not JSON`);
+    }
+  } else if (base === "lakefile.toml") {
+    const sections = new Set(["lean_lib"]);
+    const keys = new Set(["name", "version", "defaultTargets", "roots", "globs", "srcDir", "libName", "keywords", "description", "homepage", "license", "readmeFile", "leanOptions", "testDriver", "lintDriver"]);
+    for (const raw of text.split("\n")) {
+      const line = raw.replace(/#.*$/, "").trim();
+      if (line === "") continue;
+      const section = /^\[\[?\s*([A-Za-z_.]+)\s*\]\]?$/.exec(line);
+      if (section !== null) {
+        if (!sections.has(section[1] as string)) meta.push(`lakefile.toml [[${section[1]}]]`);
+        continue;
+      }
+      const key = /^([A-Za-z_][A-Za-z0-9_.]*)\s*=/.exec(line)?.[1];
+      if (key !== undefined && !keys.has(key.split(".")[0] as string)) meta.push(`lakefile.toml key ${key}`);
+      else if (key === undefined && !/^["\]\[,}{A-Za-z0-9_.\s"'-]*$/.test(line)) meta.push("lakefile.toml line it cannot read");
+    }
+  }
+  return { meta: [...new Set(meta)], problems };
+}

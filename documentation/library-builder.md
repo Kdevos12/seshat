@@ -61,7 +61,14 @@ is invalid, and the agent is not started.
    else.** The harness's own keys (the model providers', `JEV_API_KEY`, `LEAN_SERVER_API_KEY`) never reach it unless a person copies one
    into `env`. The config writes `${env:NAME}`, which fails when `NAME` is not set. The journal keeps the names of the keys, not
    their values.
+   The clone keeps no remote (`git remote remove origin`), so the project's path is not something the agent can fetch from.
 4. The agent's exit code is not a verdict. What it left is judged by the files.
+5. **The gate's own commands** (`git`, `lake build`, the plan's `prepare` commands) run through one runner (`gateRunner`). Each gets an allowlisted
+   environment: `PATH`, `LANG`, `LC_ALL`, `ELAN_HOME` (or `$HOME/.elan`), a `HOME` and `TMPDIR` of its own, and the variables the plan's `build.env` names. `git` also gets
+   `GIT_CONFIG_NOSYSTEM`, no global config and a time limit (300 seconds). `lake` and the `prepare` commands compile and run the agent's code, so they run behind the
+   same `sandbox` command as the agent, or, with `unsandboxed: true`, without one; with neither, the build does not start. Every command runs in a process group that
+   is killed at its time limit or on abort. **Seshat cuts no network itself**: that no code reaches the network while the build runs is the sandbox's job (`bwrap --unshare-net`,
+   say), and `lake exe cache get` needs a network of its own, so a sandbox for the build step has to allow it or the cache has to be filled before.
 
 ## The gate
 
@@ -69,8 +76,8 @@ All of it is Seshat's, in order; the first rule that fails ends the build, and e
 
 | Rule | Checks |
 |---|---|
-| `diff` | The changes are read from the files in the agent's directory against the tree it started from, not from the clone's git directory (which the agent can rewrite). Only regular files are **added**, all under `<libRoot>/SeshatLib/<Domain>/` (or the ported package's directory), of a type the job allows (`.lean`; a port may add `lakefile.toml`, `lean-toolchain`, `lake-manifest.json`, `LICENSE`, `README.md`), no hidden segment, not executable, at most 40 files and 512 KiB each. A modified or deleted file, a link, a path outside the directory, or nothing at all is a rejection. |
-| `content` | Valid UTF-8; the validator's own token screen ([validator.md](validator.md)): no `sorry`, `admit`, `axiom`, `native_decide`, `unsafe`; in a `fill` no `elab`, `macro`, `syntax`, `notation`, `#eval`, no `Lean` or `Meta` names, no strings or `«»` names; imports only from the spec's list and the agent's own module. A `port` may contain code that runs while Lean elaborates, but then the result is marked `needsApproval` and `adoptBuild` lands it only for a named person. The scanner reads declarations behind `open X in`, `set_option o v in` and `attribute [a] in`, and `+native` (`decide +native`), `bv_decide` and `ofReduceBool` are refused like `native_decide`. A command it cannot place (any command that is not a declaration and not `namespace`, `section`, `end`, `variable`, `universe`, `open`, `set_option`, `export`, `example`) is refused in a fill and needs approval in a port: the gate fails closed. |
+| `diff` | The changes are read from the files in the agent's directory against the tree it started from, not from the clone's git directory (which the agent can rewrite). Only regular files are **added**, all under `<libRoot>/SeshatLib/<Domain>/` (or the ported package's directory), of a type the job allows (`.lean`; a port may add `lakefile.toml`, `lean-toolchain`, `lake-manifest.json`, `LICENSE`, `README.md`), no hidden segment, not executable, at most 40 files and 512 KiB each (a larger file is never read into memory), names of ASCII letters, digits, `_`, `.` and `-` only. A modified or deleted file, a link, a path outside the directory, or nothing at all is a rejection. |
+| `content` | Valid UTF-8; the validator's own token screen ([validator.md](validator.md)): no `sorry`, `admit`, `axiom`, `native_decide`, `unsafe`; in a `fill` no `elab`, `macro`, `syntax`, `notation`, `#eval`, no `Lean` or `Meta` names, no strings or `«»` names; imports only from the spec's list and the agent's own module. A `port` that contains code which runs while Lean elaborates or Lake runs (`elab`, `macro`, `run_cmd`, `initialize`, `#eval`, `unsafe`, `implemented_by`, `extern`, a command the scanner cannot read, a `lakefile.lean`, a `lakefile.toml` with a dependency, executable, script or compiler argument, a `lake-manifest.json` with packages) is **rejected before any build runs** unless a person is named (`approvedBy`, `harness library build --approve NAME`); with one, the build runs, the name is in the provenance, the result is marked `needsApproval` and `adoptBuild` lands it only for a named person. `lean-toolchain` must be one toolchain name and `lake-manifest.json` must be JSON. The scanner reads declarations behind `open X in`, `set_option o v in` and `attribute [a] in`, and `+native` (`decide +native`), `bv_decide` and `ofReduceBool` are refused like `native_decide`. A command it cannot place (any command that is not a declaration and not `namespace`, `section`, `end`, `variable`, `universe`, `open`, `set_option`, `export`, `example`) is refused in a fill and needs approval in a port: the gate fails closed. |
 | `spec` | Every expected item exists; every test lemma exists once, by name; at most 100 new theorems. A new declaration whose name ends in a name a test lemma's statement uses (`Dom.Nat` for `Nat`) is refused, because the statement is elaborated in the agent's file and the new name would change its meaning (the item and test lemma names are exempt). In a fill an `instance` must mention a type or definition declared in the same build; an instance on existing types only (`Inhabited Nat`) is refused. Constructors and fields of a new inductive type, structure or class are recorded as unreviewed names too. |
 | `build` | A **fresh** checkout of the base commit plus these files (the gate makes its own, from the bytes it read once) builds with `lake build <modules>` after the plan's `prepare` commands (`lake exe cache get`). The agent's own build products are not in it. A command that exits non-zero is a rejection; one that did not run to its end says nothing about the files and makes the build `failed`. |
 | `build_output` | The build printed no `declaration uses 'sorry'`. |
@@ -131,7 +138,7 @@ definition nobody checked ([memory.md](memory.md#definitions-and-their-review-st
 ## Config
 
 `config/library-builder.json` selects the builder (`none` as shipped). For `coding-agent` it holds `agent` (`agent`, `command`, `model`, `env`,
-`sandbox`, `unsandboxed`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`), `certifier` (the `LakeCertifier` settings except `projectDir`),
+`sandbox`, `unsandboxed`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`, `env`), `certifier` (the `LakeCertifier` settings except `projectDir`),
 `budget` and `timeoutSec`. Only the selected section is read and its `${env:NAME}` variables expanded. The model is the config's string, never
 chosen by the harness.
 
@@ -150,7 +157,7 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.
 - The fresh build starts from `lake exe cache get`; whether it serves the new modules is not known.
-- The sandbox commands are the person's; none is shipped.
+- The sandbox commands are the person's; none is shipped. Network isolation of the agent and of `lake build` exists only as far as that command provides it.
 
 ## Not done
 

@@ -5,7 +5,8 @@ import type { LeanCertifier } from "@seshat/core";
 import { type CommandRunner, spawnRunner } from "@seshat/lean-env";
 import { type AgentRunner, type AgentSettings, agentEnvironment, promptHash, renderCommand, renderPrompt, sandboxProblem, spawnAgent } from "./agent.ts";
 import { type BuildOptions, type BuildProvenance, type BuildStatus, type LibraryBuildResult, type LibraryBuilder, newBuildId } from "./builder.ts";
-import { changesFrom, type DiffLimits } from "./diff.ts";
+import { changesFrom, DEFAULT_LIMITS, type DiffLimits } from "./diff.ts";
+import { gateRunner } from "./runner.ts";
 import { type BuildPlan, runGate } from "./gate.ts";
 import { type LibrarySpec, specProblems } from "./spec.ts";
 
@@ -25,7 +26,7 @@ export interface CodingAgentOptions {
   workRoot?: string;
   /** The ref the agent starts from. Default `HEAD`. */
   ref?: string;
-  /** Runs `git` and `lake`. Default: starts the programs. */
+  /** Runs `git` and `lake`, behind `gateRunner` (allowlisted environment, the agent's sandbox). Default: starts the programs. */
   run?: CommandRunner;
   /** Starts the agent. Default: starts the program. */
   agentRunner?: AgentRunner;
@@ -57,7 +58,6 @@ export class CodingAgentBuilder implements LibraryBuilder {
     const o = this.#o;
     const startedAt = new Date().toISOString();
     const buildId = newBuildId();
-    const run = o.run ?? spawnRunner;
     const provenance: BuildProvenance = {
       builder: this.id,
       agent: o.settings.agent,
@@ -89,11 +89,16 @@ export class CodingAgentBuilder implements LibraryBuilder {
 
     const root = mkdtempSync(join(o.workRoot ?? tmpdir(), "seshat-build-"));
     try {
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      const run = gateRunner(o.run ?? spawnRunner, { settings: o.settings, home: join(root, "gate-home"), ...(o.parentEnv !== undefined ? { parentEnv: o.parentEnv } : {}), ...(o.build?.env !== undefined ? { env: o.build.env } : {}) });
+      mkdirSync(join(root, "gate-home"), { recursive: true });
       const git = async (args: readonly string[], cwd: string) => await run("git", [...GIT, ...args], { cwd, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
       const rev = await git(["rev-parse", "--verify", `${o.ref ?? "HEAD"}^{commit}`], o.repo);
       if (rev.code !== 0) return result("failed", `the project ${o.repo} has no commit ${o.ref ?? "HEAD"}: ${rev.output.trim()}`);
       const base = rev.output.trim().split("\n").pop() as string;
       provenance.baseCommit = base;
+      if (options.approvedBy !== undefined) provenance.approvedBy = options.approvedBy;
       const tree = await git(["ls-tree", "-r", "-z", "--full-tree", base], o.repo);
       if (tree.code !== 0) return result("failed", `cannot list the project's tree: ${tree.output.trim()}`);
       const known = new Map<string, string>();
@@ -102,12 +107,11 @@ export class CodingAgentBuilder implements LibraryBuilder {
         if (m !== null) known.set(m[2] as string, m[1] as string);
       }
 
-      // The agent's clone, and a home of its own that holds nothing.
+      // The agent's clone, and a home of its own that holds nothing. The clone keeps no remote: the project's path is not something to fetch from.
       const work = join(root, "agent");
-      const home = join(root, "home");
-      mkdirSync(home, { recursive: true });
       const cloned = await git(["clone", "--quiet", "--local", "--no-hardlinks", o.repo, work], root);
       if (cloned.code === 0) await git(["checkout", "--quiet", "--detach", base], work);
+      if (cloned.code === 0) await git(["remote", "remove", "origin"], work);
       if (cloned.code !== 0 || !existsSync(work)) return result("failed", `cannot clone the project: ${cloned.output.trim()}`);
 
       const prompt = renderPrompt(spec);
@@ -131,12 +135,13 @@ export class CodingAgentBuilder implements LibraryBuilder {
       if (agentRun.code === null) return result("failed", `the agent did not start: ${agentRun.output.trim().split("\n").pop() ?? ""}`);
       // The exit code is not a verdict: an agent that exits 1 after writing good files is judged by its files, and one that exits 0 by the same.
 
-      const changes = changesFrom(work, known);
+      const changes = changesFrom(work, known, (o.limits ?? DEFAULT_LIMITS).maxBytesPerFile);
       const gate = await runGate({
         spec,
         changes,
         repo: o.repo,
         base,
+        ...(options.approvedBy !== undefined ? { approvedBy: options.approvedBy } : {}),
         run,
         certifierFor: o.certifierFor,
         ...(o.build !== undefined ? { build: o.build } : {}),

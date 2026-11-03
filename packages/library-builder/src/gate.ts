@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { CertifyFailedError, STANDARD_AXIOMS, type LeanCertifier } from "@seshat/core";
 import type { CommandRunner } from "@seshat/lean-env";
 import { type Change, DEFAULT_LIMITS, type DiffLimits, diffViolations } from "./diff.ts";
-import { foreignInstances, isDefinition, isProof, referenceFor, scanFile, screenFile, shadowing, type FileScan } from "./source.ts";
+import { foreignInstances, isDefinition, isProof, referenceFor, scanFile, screenFile, screenSupportFile, shadowing, type FileScan } from "./source.ts";
 import type { LibrarySpec } from "./spec.ts";
 
 /** One rule of the gate and what it found. */
@@ -54,6 +54,8 @@ export interface BuildPlan {
   libRoot?: string;
   /** The time limit of each command, in seconds. Default 3600. */
   timeoutSec?: number;
+  /** Environment variables the build commands get besides the allowlisted ones (a cache directory, a proxy): named by the person who configures the plan. */
+  env?: Readonly<Record<string, string>>;
 }
 
 export interface GateOptions {
@@ -63,6 +65,8 @@ export interface GateOptions {
   repo: string;
   base: string;
   run: CommandRunner;
+  /** A person who answered for a port that runs code (while Lean elaborates or Lake runs). Without one, such a port is rejected before any build runs. */
+  approvedBy?: string;
   /** The certifier for a Lean project directory (the fresh checkout's root or its `cwd`). */
   certifierFor: (projectDir: string) => LeanCertifier;
   build?: BuildPlan;
@@ -84,7 +88,7 @@ const SORRY_OUTPUT = /declaration uses ['`‘]?sorry/i;
 function importAllowed(module: string, spec: LibrarySpec): boolean {
   const own = spec.job === "port" && spec.port !== undefined ? spec.port.name : `SeshatLib.${spec.domain}`;
   const allowed = [...spec.imports, own];
-  if (spec.job === "port") allowed.push("Mathlib", "Batteries", "Aesop", "Lean", "Std");
+  if (spec.job === "port") allowed.push("Mathlib", "Batteries", "Aesop", "Lean", "Std", "Lake");
   return allowed.some((a) => module === a || module.startsWith(`${a}.`));
 }
 
@@ -144,6 +148,8 @@ export async function runGate(o: GateOptions): Promise<GateReport> {
   // 2. Content: the validator's token screen, and the imports.
   const problems: string[] = [];
   let needsApproval = false;
+  /** Why a port runs code on the machine; without an approver, the build is refused before it starts. */
+  const runsCode: string[] = [];
   const scans = new Map<string, FileScan>();
   for (const f of lean) {
     const screen = screenFile(f.content);
@@ -155,20 +161,37 @@ export async function runGate(o: GateOptions): Promise<GateReport> {
     if (hard.length < screen.problems.length) needsApproval = true;
     if (screen.meta.length > 0) {
       if (spec.job === "fill") problems.push(`${f.path}: ${screen.meta.join(", ")} is not allowed in a fill`);
-      else needsApproval = true;
+      else runsCode.push(`${f.path}: ${screen.meta.join(", ")}`);
     }
+    if (f.path.endsWith("/lakefile.lean")) runsCode.push(`${f.path}: lakefile.lean (code that Lake runs)`);
     const scan = scanFile(f.content);
     scans.set(f.path, scan);
     // A command the scanner cannot place (a declaration behind a prefix it does not read, a macro, an unknown command) is not guessed at.
     if (scan.unrecognised.length > 0) {
       const names = [...new Set(scan.unrecognised)].slice(0, 6).join(", ");
       if (spec.job === "fill") problems.push(`${f.path}: the gate cannot read the command(s) ${names}; a fill uses declarations only`);
-      else needsApproval = true;
+      else runsCode.push(`${f.path}: the command(s) ${names}, which the gate cannot read`);
     }
     for (const imp of scan.imports) if (!importAllowed(imp, spec)) problems.push(`${f.path}: imports ${imp}, which the spec does not allow`);
   }
+  // The files that are not Lean sources (a port's lakefile.toml, lean-toolchain, lake-manifest.json) are screened too (review I5).
+  for (const f of files.filter((x) => !x.path.endsWith(".lean"))) {
+    const support = screenSupportFile(f.path, f.content);
+    for (const p of support.problems) problems.push(p);
+    for (const m of support.meta) runsCode.push(`${f.path}: ${m}`);
+  }
   if (problems.length > 0) return reject("content", problems.slice(0, 12).join("; "));
-  checks.push({ rule: "content", ok: true, detail: `${lean.length} Lean file(s) pass the token screen${needsApproval ? " (a port with code that runs while Lean elaborates: adoption needs approval)" : ""}` });
+  // Code that runs on the machine while Lean elaborates or Lake runs is never built on the agent's say-so: a person is named first (review C3).
+  const approver = o.approvedBy?.trim() ?? "";
+  if (runsCode.length > 0) {
+    if (approver === "") return reject("content", `the port runs code while Lean elaborates or Lake runs (${runsCode.slice(0, 6).join("; ")}); it is not built unless a person is named (approvedBy)`);
+    needsApproval = true;
+  }
+  checks.push({
+    rule: "content",
+    ok: true,
+    detail: `${lean.length} Lean file(s) pass the token screen${runsCode.length > 0 ? ` (a port that runs code, built because ${approver} answers for it: ${runsCode.slice(0, 3).join("; ")})` : needsApproval ? " (strings or quoted names the scanner reads less exactly: adoption needs approval)" : ""}`,
+  });
 
   // 3. The spec: the items, and the test lemmas by name.
   const proofs = lean.flatMap((f) => (scans.get(f.path) as FileScan).declarations.filter(isProof).map((d) => ({ file: f, scan: scans.get(f.path) as FileScan, d })));

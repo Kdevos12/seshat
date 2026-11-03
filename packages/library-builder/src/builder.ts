@@ -5,6 +5,8 @@ export interface BuildOptions {
   budget: BuildBudget;
   timeoutSec: number;
   signal?: AbortSignal;
+  /** A person who answers for a port that runs code while Lean elaborates or Lake runs; without one the gate refuses such a port before building. */
+  approvedBy?: string;
 }
 
 /**
@@ -25,6 +27,8 @@ export interface BuildProvenance {
   promptHash?: string;
   /** The commit of the project the agent started from. */
   baseCommit?: string;
+  /** The person who answered for a port that runs code, when one was named. */
+  approvedBy?: string;
   /** The end of what the agent printed. */
   agentOutput?: string;
   agentMs?: number;
