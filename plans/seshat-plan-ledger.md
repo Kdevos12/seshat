@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 13:00 UTC. `main` at 1da074d, 1928 tests.
+Updated 2026-11-03 14:30 UTC. `main` at 9e762b7, 2001 tests.
 
 ## Tasks
 
@@ -19,9 +19,9 @@ Updated 2026-11-03 13:00 UTC. `main` at 1da074d, 1928 tests.
 | 6 | M10: battery, domain router, ATP and SMT | main (taken over 2026-11-03) | merged | `task/t6` | `1da074d` |
 | 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
-| 9 | M3 lemma library, M5 lessons | main (taken over 2026-11-03) | not started (after 6) | |
+| 9 | M3 lemma library, M5 lessons | main (taken over 2026-11-03) | merged | `task/t9` | `9e762b7` |
 | 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | merged in `c8bb412` (faux model, simulated Lean and a faux `lean.meta` only; the link lemma proof never met a real Lean) | `task/t10` | |
-| 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | not started (after 9) | |
+| 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | implementing | `task/t11` | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
@@ -287,6 +287,12 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   Beta posteriors built from the journal, SMT-LIB and TPTP translation, `screen.ts` repeating the strict
   screen of `lean.meta`), capabilities `smt.z3`, `atp.vampire`, `prove.auto`, `prove.search`, and line
   `M10` in `LINE_ORDER`; the injectable orderer of J3 for `prove.search`.
+- Task 9, merged 2026-11-03 (`9e762b7`): `@seshat/memory`: `recordObstruction` and `obstructions`
+  (stamped learned records), `screenProse`, the human-only node kind `lesson_decision` in `@seshat/core`
+  (a journal accepts it only from `human:NAME`, so `--memory-from` does not carry approvals: a global
+  lesson approved in one run waits for approval again in the next); `@seshat/lines`: optional
+  `ProblemContext.human`; packages `@seshat/library` and `@seshat/lessons`; lines `M3` and `M5` in
+  `LINE_ORDER`; commands `harness library export` and `harness lessons pending|approve|reject`.
 
 ## Log
 
@@ -600,3 +606,5 @@ Task 13: implementer done (6 commits, 1760/1760); review round 1: no Critical; I
 Task 13: merged: task/t13 merged into main f84d92a (--no-ff; 1828/1828), pushed; not run against a real Lean, model, Sage or OEIS; deferred to the final review: N5 (M16 acceptance when spec.statement is set), N8 (a table of about 19.7k magmas is very large), the counterexample sources fingerprint, plausible and finite_model have no caller yet, M16 counts any Lean-rejected witness as a counterexample
 Task 6: taken over by the main team at the owner's request (the collaborator had pushed nothing); implementer done (2 commits, 1902/1902); review round 1: no Critical; Important I1 to I3 (the SMT translation gave a false unsat for natural-number function results, quantifier scope, and rationals read as reals), I4 (z3 and Vampire ran model text with no sandbox: arbitrary file write), I5 (no strict screen in the package), I6 (deep nesting crashed the router); nine Minor, six fixed
 Task 6: merged: task/t6 merged into main 1da074d (--no-ff; 1928/1928), pushed; not run against a real Lean, Pantograph or Vampire (z3 checked the translation only); deferred to the final review: the strict screen is repeated in classical (to lift into core), a second review of the translation soundness fix, the lean.certify test was flaky once and not reproduced, M5, M7, M9 of round 1
+Task 9: taken over by the main team; implementer done (3 commits, 1886/1886); review round 1: no Critical; Important I1 (computed library lemmas were presented as proved), I2 and I3 (lemma glosses and lesson text unscreened), I4 (lesson ranking by presence counters reinforced itself), I5 (obstruction records without provenance stamps), I6 (the Mathlib recheck failed open); seven Minor, most fixed
+Task 9: merged: task/t9 merged into main 9e762b7 (--no-ff; 2001/2001), pushed; not run against a real Lean or model, the declaration export is a fixture only; deferred to the final review: the library has no total cap and its index is rebuilt per call, the hybrid ranking is not gated by the plan's measure, nothing shows yet that M3 or M5 helps
