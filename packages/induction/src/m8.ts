@@ -191,6 +191,9 @@ export function createM8(hooks: M8Hooks = {}): Line {
 
       const candidates: Candidate[] = [];
       if (s.classical) await classical(problem, s, table, family, candidates, work);
+      // A resumed problem keeps the pool it already made: the model rounds are not paid again (their prompts carry what was
+      // proved by then, so `reuse` would miss) and the pool does not grow with each resume.
+      if (rebuildPool(problem, work)) return;
       if (s.rounds > 0) await models(problem, s, table, target.statement, header, candidates, hooks);
       await pool(problem, s, header, candidates, work);
     } catch (error) {
@@ -198,6 +201,27 @@ export function createM8(hooks: M8Hooks = {}): Line {
       if (isInterrupted(error) || problem.signal.aborted) throw error;
       problem.log(`M8: failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /** Rebuilds the work from the newest pool node of the problem; false when there is none. */
+  function rebuildPool(problem: ProblemContext, work: Work): boolean {
+    const memory = problem.memory.withActor(ACTOR);
+    const nodes = memory.nodes(POOL_KIND, { claimId: problem.claimId });
+    const last = nodes[nodes.length - 1];
+    if (last === undefined) return false;
+    const data = last.data as unknown as { entries?: Array<{ claimId: string; relevance: number; interest: number }>; kept?: string[]; pruned?: unknown[] };
+    const byId = new Map((data.entries ?? []).map((e) => [e.claimId, e]));
+    const entries: PoolEntry[] = [];
+    for (const id of data.kept ?? []) {
+      const claim = memory.claim(id);
+      const saved = byId.get(id);
+      if (claim === undefined || saved === undefined) continue;
+      entries.push(entryOf(memory, id, claim.statement, saved.relevance, saved.interest));
+    }
+    work.entries = entries;
+    work.pruned = data.pruned?.length ?? 0;
+    problem.log(`M8: resumed with the pool of ${data.entries?.length ?? 0} conjectures made before; ${entries.length} kept, no new model call`);
+    return true;
   }
 
   async function classical(problem: ProblemContext, s: Settings, table: DataTable, family: string, out: Candidate[], work: Work): Promise<void> {
@@ -319,7 +343,15 @@ export function createM8(hooks: M8Hooks = {}): Line {
     const picked = [...unique.values()].sort((a, b) => b.interest - a.interest).slice(0, s.conjectures);
     const target = memory.claim(problem.claimId)?.statement ?? "";
     const entries: PoolEntry[] = [];
+    // The open conjectures this line already made for the target count against `conjectures`, whatever the process that made them.
+    const earlier = memory.claims({ statuses: ["open"], kind: "formal" }).filter((c) => c.origin === ACTOR && c.parentId === problem.claimId);
+    const known = new Set(earlier.map((c) => c.statement));
+    let total = earlier.length;
     for (const c of picked) {
+      if (!known.has(c.statement)) {
+        if (total >= s.conjectures) continue;
+        total++;
+      }
       let claimId: string;
       try {
         claimId = (await memory.ensureClaim({ statement: c.statement, ...(header !== "" ? { header } : {}), origin: ACTOR, kind: "formal", parentId: problem.claimId, gloss: c.informal })).claimId;
