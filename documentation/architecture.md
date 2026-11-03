@@ -16,7 +16,9 @@
   claim is `proved` only after certification ([trust.md](trust.md)).
 - **Capabilities** (Lean checking, automated provers, SAT/SMT, computer algebra, search) sit behind
   a registry with manifests and an MCP boundary, so that any tool can be updated or replaced
-  without touching the core.
+  without touching the core. Tools and skills that people write are installed as **packs**
+  (`harness add`): level-2 tools and human-written skills that can never write a claim's status
+  ([packs.md](packs.md)).
 
 ## Packages
 
@@ -28,7 +30,7 @@
 | `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
 | `@seshat/guards` | Line M6: neutral framing, resolved citations, no raw error text, anchored revisions, the drift detectors and the `drift` nodes ([guards.md](guards.md)) | core, lines, memory, registry |
 | `@seshat/fleet` | The fleet line: posteriors per strategy and model, Thompson sampling, adaptive width, escalation and the `allocation` nodes ([fleet.md](fleet.md)) | core, decide, lines, memory, registry |
-| `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
+| `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters, installable packs (manifest, store, skills, tool index; [packs.md](packs.md)) | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
 | `@seshat/lean-env` | Lean environments as data: the environment files (`lean/env/`), a TOML reader for them, the resolver, the lock and the environment hash, the generated lakefile, the build, and line M17 ([lean-env.md](lean-env.md)) | core, lines |
