@@ -8,9 +8,9 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and fourteen lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and fifteen lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals, documented in [documentation/induction.md](documentation/induction.md) and [documentation/repair.md](documentation/repair.md)) are written and tested with a
+counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals; M10: a classical battery, a domain router, z3 and Vampire with reconstruction in Lean, before any model; documented in [documentation/induction.md](documentation/induction.md), [documentation/repair.md](documentation/repair.md) and [documentation/classical.md](documentation/classical.md)) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -71,8 +71,15 @@ flowchart TB
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
-    moretools["ATPs, SAT/SMT,<br/>counterexample search"]:::planned
+    smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
+    vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
+    proveauto["prove_auto<br/>the battery on one goal"]:::wait
+    provesearch["prove_search<br/>goal-level best-first search"]:::wait
+    moretools["SAT, counterexample<br/>search"]:::planned
   end
+
+  m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::wait
+  battery["Tactics in parallel<br/>decide, omega, norm_num, simp,<br/>linarith, grind, aesop, hammer..."]:::wait
 
   subgraph JUDGE["Judge: Lean"]
     fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::wait
@@ -157,6 +164,17 @@ flowchart TB
   m18 -->|"variants as claims,<br/>special_case_of edges, tasks"| journal
   m18 -->|"proved special cases<br/>and proofs in the briefing"| provers
   provers -.-> moretools
+  bench -->|"problems and open<br/>subgoals, when M10 is on"| m10
+  m10 -->|"cheapest tactics first,<br/>stop at the first success"| battery
+  battery -->|"Lean files"| leancheck
+  battery -->|"a success is submitted<br/>through validate"| fast
+  m10 -->|"SMT-LIB, TPTP"| smtz3 & vampire
+  smtz3 & vampire -->|"unsat is evidence,<br/>premises go to grind,<br/>aesop, hammer"| battery
+  m10 -->|"tries, evidence,<br/>posteriors from the journal"| journal
+  m10 -->|"briefing: what was tried"| provers
+  proveauto -->|"the same battery"| battery
+  provesearch -->|"goal states"| leangoals
+  provers --> proveauto & provesearch
   leanmeta -.->|"statement ids"| kg
   provers --> leangoals
   provers --> leanlsp

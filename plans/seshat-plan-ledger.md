@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 11:30 UTC. `main` at da59611, 1828 tests.
+Updated 2026-11-03 13:00 UTC. `main` at 1da074d, 1928 tests.
 
 ## Tasks
 
@@ -16,7 +16,7 @@ Updated 2026-11-03 11:30 UTC. `main` at da59611, 1828 tests.
 | 3 | `lean.meta`, `lean.goals`, Lean identity | main | merged | |
 | 4 | Certifier: `lean.certify`, kernel replay | main | merged (`74d3ab4`); its Lean program never compiled; unavailable until a host sets a sandbox (Ruling 22) | |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
-| 6 | M10: battery, domain router, ATP and SMT | main (taken over 2026-11-03) | not started | |
+| 6 | M10: battery, domain router, ATP and SMT | main (taken over 2026-11-03) | merged | `task/t6` | `1da074d` |
 | 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | main (taken over 2026-11-03) | not started (after 6) | |
@@ -283,6 +283,10 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `--offpeak-max-wait`. Task 13: the package `@seshat/induction`, the per-claim `counterexample` nodes
   with a checker source (`admitCounterexample`, `cegisCounter`), and lines `M8`, `M13`, `M14`, `M16` in
   `LINE_ORDER`.
+- Task 6, merged 2026-11-03 (`1da074d`): `@seshat/classical` (domain router, tactic battery with
+  Beta posteriors built from the journal, SMT-LIB and TPTP translation, `screen.ts` repeating the strict
+  screen of `lean.meta`), capabilities `smt.z3`, `atp.vampire`, `prove.auto`, `prove.search`, and line
+  `M10` in `LINE_ORDER`; the injectable orderer of J3 for `prove.search`.
 
 ## Log
 
@@ -594,3 +598,5 @@ Task 28: implementer done (5 commits, 1699/1699); review round 1: no Critical; I
 Task 28: merged: task/t28 merged into main 0ad9cdf (--no-ff; 1708/1708), pushed; not run against a real provider; deferred to the final review: charges are priced at the response instant, prices in shipped host configs are absent until the first real run
 Task 13: implementer done (6 commits, 1760/1760); review round 1: no Critical; Important I1 (the CEGIS counterexample set of PD5 was missing), I2 (M8 resume re-spent and grew the pool), I3 (one bad Sage candidate aborted the M16 search), I4 (Lakatos repair used the target's binder name); nine Minor, seven fixed
 Task 13: merged: task/t13 merged into main f84d92a (--no-ff; 1828/1828), pushed; not run against a real Lean, model, Sage or OEIS; deferred to the final review: N5 (M16 acceptance when spec.statement is set), N8 (a table of about 19.7k magmas is very large), the counterexample sources fingerprint, plausible and finite_model have no caller yet, M16 counts any Lean-rejected witness as a counterexample
+Task 6: taken over by the main team at the owner's request (the collaborator had pushed nothing); implementer done (2 commits, 1902/1902); review round 1: no Critical; Important I1 to I3 (the SMT translation gave a false unsat for natural-number function results, quantifier scope, and rationals read as reals), I4 (z3 and Vampire ran model text with no sandbox: arbitrary file write), I5 (no strict screen in the package), I6 (deep nesting crashed the router); nine Minor, six fixed
+Task 6: merged: task/t6 merged into main 1da074d (--no-ff; 1928/1928), pushed; not run against a real Lean, Pantograph or Vampire (z3 checked the translation only); deferred to the final review: the strict screen is repeated in classical (to lift into core), a second review of the translation soundness fix, the lean.certify test was flaky once and not reproduced, M5, M7, M9 of round 1

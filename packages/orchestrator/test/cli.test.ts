@@ -219,12 +219,12 @@ describe("harness run --lines", () => {
     });
   });
 
-  it("refuses unknown and planned lines before the model is looked up, and runs M0 for --ablation M0", async () => {
+  it("refuses unknown, planned and suspended lines before the model is looked up, and runs M0 for --ablation M0", async () => {
     const options: Array<[string[], RegExp]> = [
-      [["--lines", "M10,M99"], /^the lines of the run: line M10 \(classical battery per subgoal before any model, domain router, ATP and SMT\) is planned, not implemented yet; unknown line "M99"/m],
-      [["--ablation", "M2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
-      [["--ablation", "M9"], /^the lines of the run: line M10 .* is planned, not implemented yet; .*line M9 \(reranking from our own labels, without training\) is suspended: it is not built, and no run enables it \(documentation\/lines.md\)$/m],
-      [["--lines", "M10", "--line-option", "M10.k=2"], /^the lines of the run: line M10 .* is planned, not implemented yet$/m],
+      [["--lines", "M10,M99"], /^the lines of the run: unknown line "M99"; the lines are M1, M10, M2/m],
+      [["--lines", "M3"], /^the lines of the run: line M3 .* is planned, not implemented yet$/m],
+      [["--ablation", "M9"], /^the lines of the run: .*line M9 \(reranking from our own labels, without training\) is suspended: it is not built, and no run enables it \(documentation\/lines.md\)$/m],
+      [["--lines", "M10", "--line-option", "M10.k=2"], /^the lines of the run: line M10 has no option k; its options are /m],
       // M1 is implemented, with one option.
       [["--lines", "M1", "--line-option", "M1.k=2"], /^the lines of the run: line M1 has no option k; its options are maxLines$/m],
       // No line: the run goes on to the model, which does not exist.
