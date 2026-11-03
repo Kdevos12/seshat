@@ -143,8 +143,10 @@ export function installPack(packsDir: string, source: string, options: InstallOp
     }
     if (problems.length > 0) throw new PackError(problems.map((p) => `pack ${name}: ${p}`));
     if (pack.programs.length > 0 && options.allowPrograms !== true) {
+      const env = pack.manifest.requires?.env ?? [];
       throw new PackStoreError(
         `pack ${name} has tools that would run ${pack.programs.map((p) => JSON.stringify(p)).join(", ")} when a run calls them. ` +
+          (env.length > 0 ? `They may read these variables of your environment: ${env.join(", ")}. ` : "They read no variable of your environment. ") +
           "Installing runs none of it; read the manifests and add the pack again with --allow-programs to accept it",
       );
     }

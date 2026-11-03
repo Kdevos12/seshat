@@ -41,7 +41,7 @@ skills/<name>.md                    the skills, written by people
 | `capabilities` | The ids of the tools the pack adds; they must be the ones `capabilities/` carries, neither more nor fewer. |
 | `level1` | Tools that ask for the level-1 declared set ([below](#levels)). |
 | `skills` | `name`, `description` (at most 300 characters) and `file` (a `.md` or `.txt` file inside the pack, at most 32 KiB). |
-| `requires` | `hosts` the tools are offered on (default: every host), `commands` that must be on the `PATH` and `env` variables the tools read. Reported by `harness add` and `harness packs` as warnings; nothing is installed for the pack. |
+| `requires` | `hosts` the tools are offered on (default: every host), `commands` that must be on the `PATH` and `env`: the only environment variables the pack's manifests may read with `${env:NAME}`. `harness add` prints them, and a manifest that reads any other name is refused at load; at run time the interpolation of a pack's manifest sees only those names. Missing commands and variables are reported as warnings; nothing is installed for the pack. |
 
 Any other field is refused (a `scripts`, `postinstall` or `install` field is how a package
 manager runs code on install; a pack has no such field, and the refusal says so).
@@ -144,7 +144,7 @@ packs, so a registry without packs keeps the hash it always had. A run records t
 | Run code on install | There is no install script; `harness add` copies and reads. |
 | Be changed behind the journal's back | The files are checked against the recorded hash each time a registry is opened. |
 | Replace a repository capability | Its id is refused. |
-| Reach the credentials of the harness | A stdio server gets only the environment that programs need, as for every MCP implementation ([capabilities.md](capabilities.md#implementations)). |
+| Read the harness's credentials | A pack's manifest may read `${env:NAME}` only for the names in its `requires.env`, which the install prints (the load refuses any other, and the registry interpolates a pack's manifest with only those variables). A stdio server also gets only the environment that programs need ([capabilities.md](capabilities.md#implementations)). The `--allow-programs` summary lists each command, URL, header name and `env` name of every tool. A variable a pack declares is one the owner chooses to hand over: read the list. |
 | Put itself in the declared set of a running session | The registry's packs are fixed when it is built. |
 
 ## What is simulated or has not run

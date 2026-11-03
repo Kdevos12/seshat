@@ -414,7 +414,16 @@ export class Registry {
     // A host that changes the transport replaces the server; otherwise its fields replace the manifest's.
     const base = spec.server as unknown as Record<string, Json>;
     const merged = overrides.transport !== undefined && overrides.transport !== base.transport ? overrides : { ...base, ...overrides };
-    const server = interpolate(merged, variables);
+    const pack = this.packOf(capability.manifest.id);
+    let server: Json;
+    if (pack === undefined) {
+      server = interpolate(merged, variables);
+    } else {
+      // The manifest is a stranger's: it sees only the variables its pack declared. The host's own fields are the owner's.
+      const own = Object.fromEntries((pack.manifest.requires?.env ?? []).map((n) => [n, this.env[n]]));
+      const fromPack = overrides.transport !== undefined && overrides.transport !== base.transport ? {} : interpolate(base, { dir: capability.dir, env: own });
+      server = { ...fromPack, ...interpolate(overrides, variables) };
+    }
     const problems = checkServer(server);
     if (problems.length > 0) throw new UnavailableError(problems.join("; "));
     return new McpImplementation(spec, server as unknown as McpServerSpec, this.mcpTransport);
