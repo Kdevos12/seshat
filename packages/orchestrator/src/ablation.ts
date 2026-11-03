@@ -8,6 +8,7 @@ import { ablationLines, isAblationName, type JsonObject, LINE_ORDER, type LineRe
 import { MemoryStore } from "@seshat/memory";
 import { LINES } from "./lines.ts";
 import { type LabeledDecision, labelDecisions, reliability, type SiteReliability } from "./reliability.ts";
+import { type RunLabel, runLabel } from "./run-label.ts";
 import { signTest } from "./probe.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
 import { buildReport, type RunReport } from "./report.ts";
@@ -138,6 +139,8 @@ export interface AblationResult {
   /** The problems the arms were measured on, and the ones the memory was built on when the bench was split. */
   problems: string[];
   buildProblems?: string[];
+  /** Whether the model was simulated and what a real run has still to check; written into the table and the json. */
+  label: RunLabel;
   /** What the difficulty tiers come from: `M0` (its row has no split), a pilot run, or absent when the table has neither. */
   difficultyBasis?: string;
   arms: ArmResult[];
@@ -227,6 +230,8 @@ export interface AblationInput {
   buildProblems?: readonly ProblemEntry[];
   /** Runs one run; default `runBench`. */
   run?: (options: RunOptions) => Promise<RunResult>;
+  /** What a real run has still to check for this table (an experiment's own limits), besides what every table says. */
+  notRun?: readonly string[];
   /** The outcomes of a pilot run, which the difficulty tiers come from. Default: the arm M0 when the table has one (its own row is not split). */
   pilot?: RunMeasures;
   log?: (line: string) => void;
@@ -320,6 +325,7 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
   });
   const result: AblationResult = {
     benchId: input.template.index.benchId,
+    label: runLabel(input.config.model, input.notRun),
     model: input.config.model,
     budget: input.config.budget,
     provers: input.config.provers,

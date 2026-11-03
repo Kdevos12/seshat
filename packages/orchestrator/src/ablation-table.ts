@@ -1,6 +1,7 @@
 import type { AblationResult, ArmResult } from "./ablation.ts";
 import type { CacheStat } from "./cache-report.ts";
 import type { Share } from "./measures.ts";
+import { labelLines, type RunLabel } from "./run-label.ts";
 import { agreement } from "./reliability.ts";
 
 const money = (usd: number | undefined, digits = 3): string => (usd === undefined ? "none" : `$${usd.toFixed(digits)}`);
@@ -24,6 +25,7 @@ export function renderAblation(result: AblationResult): string {
   const out: string[] = [
     "# Ablation",
     "",
+    ...labelLines(result.label),
     `Bench ${result.benchId}; model ${result.model}; ${result.problems.length} problem(s)${result.buildProblems !== undefined ? ` measured on a memory built on ${result.buildProblems.length} others` : ""}; ` +
       `${result.provers} prover(s) of at most ${result.sessions} session(s) and ${money(result.budget.problemUsd, 2)} per problem in every configuration. `,
     "",
@@ -177,7 +179,14 @@ function extras(arms: readonly ArmResult[]): string[] {
   }
   const built = arms.filter((a) => a.build !== undefined);
   if (built.length > 0) {
-    out.push("## Memory built on one part and measured on another", "", ...table(["Configuration", "Build part solved", "Measure part solved", "Build $ per solve", "Measure $ per solve"], built.map((a) => { const b = (a.build as NonNullable<typeof a.build>).measures; return [a.arm.name, `${b.solved}/${b.problems}`, `${a.measures.solved}/${a.measures.problems}`, money(b.usdPerSolve), money(a.measures.usdPerSolve)]; })), "");
+    out.push(
+      "## Memory built on one part and measured on another",
+      "",
+      "The columns above charge an arm only for its measure run. The build run is paid for too: the last column is the arm's whole bill, and a memory line that wins on the measure part but not on the total has not paid for itself.",
+      "",
+      ...table(["Configuration", "Build part solved", "Measure part solved", "Build $", "Measure $", "Total $ per solve (build and measure)"], built.map((a) => { const b = (a.build as NonNullable<typeof a.build>).measures; return [a.arm.name, `${b.solved}/${b.problems}`, `${a.measures.solved}/${a.measures.problems}`, money(b.usd), money(a.measures.usd), money(a.measures.solved + b.solved === 0 ? undefined : (a.measures.usd + b.usd) / (a.measures.solved + b.solved))]; })),
+      "",
+    );
   }
   return out;
 }
@@ -203,7 +212,7 @@ function agreements(arms: readonly ArmResult[]): string[] {
 }
 
 /** The cost-to-first-success curves for K provers in parallel (plan change PE4), as a markdown table. */
-export function renderChunks(title: string, curves: ReadonlyArray<import("./chunks.ts").ChunkCurve>): string {
+export function renderChunks(title: string, curves: ReadonlyArray<import("./chunks.ts").ChunkCurve>, label?: RunLabel): string {
   const rows = curves.map((c) => [
     String(c.k),
     `${c.solved}/${c.problems}`,
@@ -211,5 +220,5 @@ export function renderChunks(title: string, curves: ReadonlyArray<import("./chun
     money(c.usdPerSolve),
     c.budgetShare === undefined ? "n/a" : `${pct(c.budgetShare.median)} / ${pct(c.budgetShare.p80)}`,
   ]);
-  return `${[`# Cost to first success: ${title}`, "", "K provers run side by side on the attempts of one prover; a round is paid for in full. The shares are of the problem's budget; the ladder's fractions are read from them on real runs.", "", ...table(["K", "Solved", "Mean $ to first success", "$ per solve", "Budget share (median / p80)"], rows)].join("\n")}\n`;
+  return `${[`# Cost to first success: ${title}`, "", ...(label !== undefined ? labelLines(label) : []), "K provers run side by side on the attempts of one prover; a round is paid for in full. The shares are of the problem's budget; the ladder's fractions are read from them on real runs.", "", ...table(["K", "Solved", "Mean $ to first success", "$ per solve", "Budget share (median / p80)"], rows)].join("\n")}\n`;
 }

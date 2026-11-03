@@ -62,6 +62,7 @@ describe("harness chunks and the probe in the report", () => {
     const r = await harness(["chunks", dir, "--chunk-k", "1,2"]);
     assert.equal(r.code, 0);
     assert.match(r.stdout, /Cost to first success/);
+    assert.match(r.stdout, /Not run, or not checked/);
     assert.equal((await harness(["chunks", dir, "--chunk-k", "0"])).code, 2);
     assert.equal((await harness(["chunks"])).code, 2);
   });

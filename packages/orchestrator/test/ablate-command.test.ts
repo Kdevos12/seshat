@@ -54,6 +54,8 @@ describe("harness ablate", () => {
     assert.deepEqual(seen.map((o) => o.config.packetMode ?? "naive"), ["prefix_tail", "append_only", "recompiled", "naive"]);
     assert.ok(existsSync(join(dir, "ablation.json")) && existsSync(join(dir, "ablation.md")));
     assert.match(printed.join("\n"), /Not run: The cache ratio/);
+    assert.match(readFileSync(join(dir, "ablation.md"), "utf8"), /The cache ratio is the faux provider's/, "the saved file carries the experiment's own limit");
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "ablation.json"), "utf8")).label.notRun[0], "The cache ratio is the faux provider's; a provider's own cache must be read on the first real run.");
     assert.match(readFileSync(join(dir, "ablation.md"), "utf8"), /^# Ablation/);
   });
 

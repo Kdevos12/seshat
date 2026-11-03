@@ -103,6 +103,10 @@ describe("runAblation on scripted runs", () => {
     assert.deepEqual([m10?.difficulty?.easy.solved, m10?.difficulty?.easy.problems, m10?.difficulty?.hard.solved, m10?.difficulty?.hard.problems], [1, 1, 1, 2]);
     assert.equal(result.arms[0]?.difficulty, undefined, "M0's split would be by construction");
     assert.equal(result.difficultyBasis, "M0");
+    assert.equal(result.label.simulatedModel, true);
+    assert.match(renderAblation(result), /SIMULATED: the model is the faux provider/);
+    assert.match(renderAblation(result), /cache ratio and the dollars saved are the provider's accounting/);
+    assert.equal(JSON.parse(readFileSync(join(result.arms[0]?.dir ?? "", "..", "..", "..", "ablation.json"), "utf8")).label.simulatedModel, true);
     assert.match(renderAblation(result), /M0 has no row here because its split is by construction/);
   });
 
