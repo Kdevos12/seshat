@@ -17,7 +17,7 @@ token, dollar or time limit or at a breakpoint, write an account of where it sta
 steers go into the journal and change no claim's status ([documentation/human.md](documentation/human.md)). The Lean the harness runs against is written
 as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve` checks for
 consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)); line M17 puts a run in
-one with more packages than the bench's.
+one with more packages than the bench's. An optional library builder (off by default) can ask a coding agent for new Lean under `lean/SeshatLib`, behind a gate of Seshat's own; what it writes is `unreviewed` and cannot appear in a claim statement until a person or two checkers review it ([documentation/library-builder.md](documentation/library-builder.md)).
 The provers can also be given SageMath, an external program installed with Docker or pip
 ([documentation/compute.md](documentation/compute.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
@@ -44,6 +44,9 @@ flowchart TB
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
+  libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
+  libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
+  defreview["Definition review<br/>new definitions unreviewed:<br/>not in claim statements"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
   m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::built
   holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers"]:::wait
@@ -187,6 +190,12 @@ flowchart TB
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
   fleet -.->|"cold start:<br/>capped pseudo-counts"| decide
+  libbuilder -->|"every file it wrote"| libgate
+  libgate -->|"new theorems"| certifier
+  libgate -->|"accepted: build record,<br/>definitions unreviewed"| journal
+  libgate -->|"between runs:<br/>a new environment hash"| leanenv
+  journal -->|"unreviewed definitions"| defreview
+  defreview -->|"refuses claim statements<br/>that use them"| identity
   leanenv -->|"lakefile, lock"| envbuild
   leanenv -->|"hash in the version<br/>of every Lean tool run"| journal
   envbuild -->|"the project<br/>Lean runs in"| leancheck

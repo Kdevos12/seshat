@@ -7,15 +7,18 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
-import { type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
+import { BlobStore, type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
 import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
+import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
+import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
+import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
@@ -44,12 +47,17 @@ const usage = `usage:
   harness steer RUN_DIR [--focus CLAIM] [--drop CLAIM] [--forbid STRATEGY [--claim CLAIM]]
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
   harness library export RUN_DIR [--out DIR] [--include-computed]
+  harness library build SPEC_FILE [--config FILE] [--out DIR] [--adopt DIR [--approve NAME]]
+  harness library gaps RUN_DIR
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
 library export: writes the lemma library of a run as lean/SeshatLib/<Domain>.lean (documentation/library.md), generated from
 the journal and not compiled here; --out DIR changes the directory the SeshatLib folder goes under.
+library build: builds one spec (documentation/library-builder.md) with the builder that config/library-builder.json selects (none by
+default: nothing is built), judges it by Seshat's gate, and journals it under --out; --adopt DIR lands an accepted build's files in that
+checkout. Run it between runs. library gaps: the gaps a run recorded that no build closed.
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
 lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
@@ -87,6 +95,9 @@ const { positionals, values } = parseArgs({
     case: { type: "string", multiple: true },
     out: { type: "string" },
     "include-computed": { type: "boolean" },
+    config: { type: "string" },
+    adopt: { type: "string" },
+    approve: { type: "string" },
     bench: { type: "string" },
     checkout: { type: "string" },
     sample: { type: "string" },
@@ -158,7 +169,7 @@ async function main(): Promise<number> {
     if (command === "hint") return hint();
     if (command === "sign") return sign();
     if (command === "steer") return steer();
-    if (command === "library") return libraryCommand();
+    if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
   } catch (error) {
     if (error instanceof UsageError) {
@@ -359,9 +370,28 @@ function decideFlags(): DecideSettings | undefined {
   return settings;
 }
 
-/** `harness library export RUN_DIR [--out DIR] [--include-computed]`. */
-function libraryCommand(): number {
-  if (target !== "export") throw new UsageError("library takes a subcommand: export RUN_DIR");
+/** `harness library export RUN_DIR [--out DIR] [--include-computed]`, `library build SPEC_FILE ...` and `library gaps RUN_DIR`. */
+async function libraryCommand(): Promise<number> {
+  if (target === "build") {
+    if (third === undefined) throw new UsageError("library build needs a spec file");
+    const controller = stoppable();
+    try {
+      return await libraryBuildCommand(third, { config: values.config, out: values.out, adoptInto: values.adopt, approvedBy: values.approve, print: (line) => console.log(line), signal: controller.signal });
+    } catch (error) {
+      if (error instanceof LibraryBuilderConfigError) throw new InputError(error.message);
+      throw error;
+    }
+  }
+  if (target === "gaps") {
+    if (third === undefined) throw new UsageError("library gaps needs a run directory");
+    const journal = openForAnswers(resolve(third));
+    try {
+      return libraryGapsCommand(new MemoryStore({ journal, blobs: new BlobStore(join(resolve(third), "blobs")) }), (line) => console.log(line));
+    } finally {
+      journal.close();
+    }
+  }
+  if (target !== "export") throw new UsageError("library takes a subcommand: export RUN_DIR, build SPEC_FILE or gaps RUN_DIR");
   if (third === undefined) throw new UsageError("library export needs a run directory");
   libraryExportCommand(third, { out: values.out, includeComputed: values["include-computed"], print: (line) => console.log(line) });
   return 0;
