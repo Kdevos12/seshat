@@ -26,6 +26,8 @@ export interface ProcessSpec {
   maxOutputBytes?: number;
   cwd?: string;
   env?: Readonly<Record<string, string>>;
+  /** Pass only `PATH` and `LANG` from the harness's environment (the caller's `env` is added). */
+  minimalEnv?: boolean;
 }
 
 /** What a program needs to start, from the harness's environment; the harness's credentials never reach it. */
@@ -42,7 +44,7 @@ export class NotInstalled extends Error {}
 export function runProcess(spec: ProcessSpec): Promise<ProcessResult> {
   const cap = spec.maxOutputBytes ?? 1 << 20;
   const env: Record<string, string> = {};
-  for (const name of PASSED) {
+  for (const name of spec.minimalEnv === true ? ["PATH", "LANG"] : PASSED) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;
   }

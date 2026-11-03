@@ -377,7 +377,15 @@ the commands are settings, `Z3_COMMAND` and `VAMPIRE_COMMAND`). Both are `deferr
 Lean has not checked. The status is read from the first line of z3's output, and from Vampire's SZS
 status line together with its exit code (a `Theorem` with a failing exit code is an `error`), never
 from the prose. A program that is not installed makes the capability `unavailable`. Both processes
-lead their own process group, which is killed at the time limit. The page for them is
+lead their own process group, which is killed at the time limit.
+Because a model may write the input, it is screened before a process starts: an SMT-LIB script may only
+declare, assert and ask (`set-logic`, `set-option` of the produce-* options, `declare-*`, `define-*`,
+`assert`, `check-sat`, `get-unsat-core`, `get-model`, `get-value`, `push`, `pop`, `set-info`), so no output
+channel, trace file, `echo` or `include`; a TPTP problem may not `include`. A refused input is answered
+with `status: error` (`result: error`) and `detail: refused: ...`, and no program starts. The program runs
+in a new empty directory (removed afterwards) with `PATH` and `LANG` and a `HOME` that is that directory,
+with `-memory:` (z3) or `-m` (Vampire) from the setting `memoryMb` (default 2048) and, where `prlimit`
+exists, an address-space limit of twice that. The page for them is
 [classical.md](classical.md#translation-to-smt-lib-and-tptp). z3 (PyPI's `z3-solver` 5.3.3.0) ran
 through the translator in the tests; Vampire has not run: no binary was available, so its contract
 (2 cases) and its proof parsing are written from its documentation.
