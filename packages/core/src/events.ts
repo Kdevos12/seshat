@@ -44,6 +44,22 @@ export interface TokenCost {
    * when none was, and in journals written before this field.
    */
   cachedInputTokens?: number;
+  /**
+   * Dollars the prompt cache saved on this charge against a price with no cache (the cache reads
+   * at the cache-miss price instead of the cache-hit price). Absent when nothing was read from the
+   * cache, and in journals written before this field.
+   */
+  savedUsd?: number;
+  /**
+   * Of `usd`, the dollars charged at the host's off-peak rate (documentation/m0-loop.md, "Prices").
+   * Absent when none were, which is every charge of a host with no pricing calendar.
+   */
+  offPeakUsd?: number;
+  /**
+   * The dollars by which the cost pi-ai reported for this response exceeds what the host's price table charged: the
+   * table is authoritative (documentation/m0-loop.md, "Prices"), and the report shows how much it left out. Absent otherwise.
+   */
+  unchargedUsd?: number;
 }
 
 /**
@@ -170,6 +186,27 @@ export interface EventDataMap {
     source: string;
     /** The run's spend when the turn began. */
     startSpend: TokenCost;
+  };
+  /**
+   * The run waits for the host's off-peak hours before it starts a turn or a session (`--offpeak`,
+   * documentation/human.md, "Off-peak"). Written by the orchestrator once for each wait, before it
+   * begins. The work starts at `until`, and `bounded` says whether that is the wait limit, not the
+   * start of an off-peak window.
+   */
+  "turn.deferred": {
+    runId: string;
+    /** What waits: a consortium turn (`turn` is the number it will have) or a prover's session. */
+    scope: "turn" | "session";
+    turn?: number;
+    problemId?: string;
+    prover?: string;
+    /** When the wait began, and when the next off-peak window starts, as ISO instants in UTC. */
+    from: string;
+    nextStart: string;
+    /** When the work starts: `nextStart`, or `from` plus the wait limit when that comes first. */
+    until: string;
+    /** True when `--offpeak-max-wait` cut the wait short: the work runs at a peak price. */
+    bounded: boolean;
   };
   /**
    * A turn of a consortium run ended: no session starts and no model call is sent until the team has
@@ -554,6 +591,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "run.resumed",
   "turn.started",
   "turn.ended",
+  "turn.deferred",
   "attempt.charged",
   "task.created",
   "task.assigned",

@@ -114,6 +114,9 @@ function keyOf(value: unknown): string | undefined {
  * highest draw; a value nothing is known of has the flat posterior, so it is tried. A temperature given as a range
  * is drawn uniformly (nothing is learned over a continuum here), and a fixed one is just recorded. The draws come
  * from `random`, which the caller seeds from the run's seed, the problem, the prover and the session.
+ *
+ * `ignored` says whether the session's model family ignores a setting at a thinking level (`undefined`: the run's
+ * own). A temperature it ignores is not sampled and spends no arm: the settings say so under `ignored`.
  */
 export function sampleSettings(
   random: RandomSource,
@@ -121,6 +124,7 @@ export function sampleSettings(
   attempts: readonly Attempt[],
   partial: number,
   weigh?: AttemptWeight,
+  ignored?: (setting: string, thinking: string | undefined) => boolean,
 ): SampledSettings {
   const settings: JsonObject = {};
   const draws: SampledSettings["draws"] = {};
@@ -131,18 +135,34 @@ export function sampleSettings(
     draws[name] = Object.fromEntries(picked.draws.map(([value, draw]) => [value, round(draw)]));
     return values.find((value) => String(value) === picked.choice);
   };
-  const temperature = config.temperature;
-  if (temperature !== undefined) {
+  const sampleThinking = (): void => {
+    if (config.thinking === undefined) return;
+    const value = learn("thinking", config.thinking);
+    if (value !== undefined) settings.thinking = value;
+  };
+  const sampleTemperature = (): void => {
+    const temperature = config.temperature;
+    if (temperature === undefined) return;
+    // A family that ignores the setting at this thinking level gets no value, no draw and no arm: nothing would act on it.
+    if (ignored?.("temperature", typeof settings.thinking === "string" ? settings.thinking : undefined) === true) {
+      settings.ignored = [...(Array.isArray(settings.ignored) ? settings.ignored : []), "temperature"];
+      return;
+    }
     if ("fixed" in temperature) settings.temperature = temperature.fixed;
     else if ("min" in temperature) settings.temperature = Math.round((temperature.min + random() * (temperature.max - temperature.min)) * 100) / 100;
     else {
       const value = learn("temperature", temperature.values);
       if (value !== undefined) settings.temperature = value;
     }
-  }
-  if (config.thinking !== undefined) {
-    const value = learn("thinking", config.thinking);
-    if (value !== undefined) settings.thinking = value;
+  };
+  // Whether a setting acts can depend on the thinking level, so with a host that says what its models ignore the level
+  // is drawn first. Without one, the draws come in the order they always did.
+  if (ignored !== undefined) {
+    sampleThinking();
+    sampleTemperature();
+  } else {
+    sampleTemperature();
+    sampleThinking();
   }
   if (config.directives !== undefined) {
     const value = learn("directive", Object.keys(config.directives));

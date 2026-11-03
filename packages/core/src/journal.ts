@@ -332,6 +332,9 @@ export class Journal {
         }
         return;
       }
+      case "turn.deferred":
+        this.onlyOrchestrator(event.type, actor);
+        return;
       case "turn.ended": {
         this.onlyOrchestrator(event.type, actor);
         const turns = p.turns();

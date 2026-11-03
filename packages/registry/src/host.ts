@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hashJson, type Json } from "@seshat/core";
 import { CatalogError, type Catalog } from "./manifest.ts";
+import { checkModels, MODELS_SCHEMA, type ModelEntry } from "./pricing.ts";
 import { isPlainObject, validate, type JsonSchema } from "./schema.ts";
 
 /** How one host provides a capability. */
@@ -37,6 +38,13 @@ export interface HostProfile {
    * host names none, and its tool runs record the pinned versions of the manifests alone.
    */
   leanEnv?: string;
+  /**
+   * What the host says of the models a run uses, by `provider/id`: their prices in dollars per million
+   * tokens with the off-peak calendar, and the settings their family ignores (documentation/m0-loop.md,
+   * "Prices"). Prices and the provider's identifiers are data here, never code. A model with no entry
+   * is charged at pi-ai's own numbers and ignores no setting.
+   */
+  models?: Record<string, ModelEntry>;
   capabilities: Record<string, CapabilityBinding>;
 }
 
@@ -47,6 +55,7 @@ const PROFILE_SCHEMA: JsonSchema = {
     host: { type: "string", pattern: "^[a-z][a-z0-9-]*$" },
     description: { type: "string" },
     leanEnv: { type: "string", minLength: 1 },
+    models: MODELS_SCHEMA,
     capabilities: {
       type: "object",
       additionalProperties: {
@@ -71,6 +80,7 @@ export function hostProfilePath(configDir: string, host: string): string {
 
 export function parseHostProfile(value: unknown, origin = "host profile"): HostProfile {
   const problems = validate(PROFILE_SCHEMA, value).map((p) => `${origin} ${p}`);
+  if (problems.length === 0) problems.push(...checkModels((value as HostProfile).models ?? {}, origin));
   if (problems.length > 0) throw new CatalogError(problems);
   return value as HostProfile;
 }
@@ -106,8 +116,25 @@ export function checkHostProfile(profile: HostProfile, catalog: Catalog): string
   return problems;
 }
 
+/**
+ * The hash of a profile that goes into the registry's hash. The prices are left out: they are first estimates that the
+ * owner corrects after the first real run, and a correction must not make the runs it interrupted unresumable. They
+ * have a hash of their own (`pricesHash`), which a run records and a resumption compares as a warning. The rest of the
+ * `models` section (the settings a family ignores) changes what a run does, so it stays.
+ */
 export function hostProfileHash(profile: HostProfile): string {
-  return hashJson(profile);
+  if (profile.models === undefined) return hashJson(profile);
+  const models = Object.fromEntries(
+    Object.entries(profile.models).flatMap(([name, entry]) => (entry.ignores === undefined ? [] : [[name, { ignores: entry.ignores }]])),
+  );
+  const { models: _models, ...rest } = profile;
+  return hashJson(Object.keys(models).length === 0 ? rest : { ...rest, models });
+}
+
+/** The hash of the prices a profile gives, or undefined when it gives none. */
+export function pricesHash(profile: HostProfile): string | undefined {
+  const priced = Object.entries(profile.models ?? {}).flatMap(([name, entry]) => (entry.pricing === undefined ? [] : [[name, entry.pricing]]));
+  return priced.length === 0 ? undefined : hashJson(Object.fromEntries(priced));
 }
 
 /** A `${env:NAME}` variable that is not set, found while preparing an implementation. */
