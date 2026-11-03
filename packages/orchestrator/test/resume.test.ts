@@ -27,6 +27,15 @@ describe("the lines a run can be resumed with", () => {
     }
   });
 
+  it("accepts M8, M13, M14 and M16, which rebuild from the journal and the memory", () => {
+    assert.deepEqual(refusals("M1", "M8", "M16", "M13", "M14"), []);
+    for (const id of ["M8", "M13", "M14", "M16"] as const) {
+      assert.equal(LINES[id]?.resume, "rebuild", id);
+      assert.equal(typeof LINES[id]?.hooks.resumeProblem, "function", `${id} gives the hook that rebuilds`);
+    }
+    assert.equal(LINES.M16?.rung, 2);
+  });
+
   it("refuses a line that says it rebuilds and gives no hook, one that says nothing, and one that refuses, each by name", () => {
     const hooks = {};
     const lines = [

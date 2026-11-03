@@ -154,6 +154,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@seshat/library':
         specifier: workspace:*
         version: link:../library
@@ -398,6 +401,9 @@ importers:
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory
+      '@seshat/models':
+        specifier: workspace:*
+        version: link:../models
       '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
