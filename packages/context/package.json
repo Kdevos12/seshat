@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@seshat/classical": "workspace:*",
     "@seshat/core": "workspace:*",
     "@seshat/graph": "workspace:*",
     "@seshat/lessons": "workspace:*",
