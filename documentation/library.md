@@ -146,6 +146,11 @@ characters with no code, no Lean token the validator forbids, no link, no name t
 an instruction. Otherwise the lemma has no docstring and its gloss is "Auxiliary lemma NAME from THEOREM". The screen runs when a lemma
 is promoted and again when an entry is built to be shown, so a journal written before it is covered.
 
+## Definitions that are not reviewed
+
+A statement that mentions a definition added by the library builder and not yet reviewed cannot be a claim, so it cannot be a library lemma either: the
+candidate is settled `unproved` with that reason ([library-builder.md](library-builder.md#review-status-of-definitions)).
+
 ## Measured
 
 The report ([m0-loop.md](m0-loop.md#the-report)) has a paragraph and a `library` object: the lemmas by domain, what the candidates came to
