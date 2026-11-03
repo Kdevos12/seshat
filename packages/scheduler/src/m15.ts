@@ -141,7 +141,8 @@ export interface ArchiveSnapshot {
   problemId: string;
   members: number;
   cells: Array<{ key: string; family: string; depth: string; region: string; rho: number; closed: number; leaves: number; members: number; edgeId: string }>;
-  families: string[];
+  /** The decompositions by the family of their main proof (counts, not one entry each). */
+  families: Record<string, number>;
 }
 
 const nodesOf = <T>(memory: MemoryStore, kind: string, problemId: string, claimId: string): Array<{ nodeId: string; epoch: number; data: T }> =>
@@ -177,6 +178,9 @@ const archiveOf = (problem: ProblemContext): Archive => readArchive(problem.memo
 
 /** A hole's name as a prompt may show it: an `aux_` identifier, nothing a model could use to carry text. */
 export const isHoleName = (name: string): boolean => /^aux_[\p{L}\p{N}_']+$/u.test(name) && name.length <= 64;
+
+/** The most supports a schema keeps; a schema that has this many is well attested. */
+const MAX_SUPPORTS = 200;
 
 const clip = (text: string, n: number): string => {
   const t = text.replace(/\s+/g, " ").trim();
@@ -273,6 +277,11 @@ export function settle(problem: ProblemContext, final: boolean): void {
         if (member === undefined) {
           outcome = "not_improved";
           note = "the sketch is not a decomposition Lean checked";
+        } else if (member.edgeId === data.elite) {
+          // The session's sketch is the decomposition it was told to extend, as it stands: nothing it did made it better.
+          rhoAfter = member.rho;
+          outcome = "not_improved";
+          note = "the sketch is the elite itself";
         } else {
           rhoAfter = member.rho;
           // The replacement rule: a challenger counts when it is better than the elite the session was told to extend; on the fresh arm, when it fills a cell the archive did not have.
@@ -305,7 +314,8 @@ export function settle(problem: ProblemContext, final: boolean): void {
 export function pickCell(session: SessionContext, archive: Archive, s: M15Settings): void {
   const posteriors = cellPosteriors(session.memory);
   const flat: Beta = { alpha: 1, beta: 1 };
-  const arms: Array<[string, Beta]> = [...archive.cells.map((c): [string, Beta] => [c.key, posteriors.get(c.key) ?? flat]), [NEW_CELL, posteriors.get(NEW_CELL) ?? flat]];
+  // A cell whose elite has closed every leaf cannot be improved: it is no arm, so its posterior does not decay on picks that could not succeed.
+  const arms: Array<[string, Beta]> = [...archive.cells.filter((c) => c.elite.rho < 1).map((c): [string, Beta] => [c.key, posteriors.get(c.key) ?? flat]), [NEW_CELL, posteriors.get(NEW_CELL) ?? flat]];
   const chosen = thompson(randomOf(session, s, "cell"), arms)?.choice ?? NEW_CELL;
   const cell = archive.cells.find((c) => c.key === chosen);
   const data: PickData = {
@@ -339,14 +349,14 @@ export function keepSchema(problem: ProblemContext, skeleton: Skeleton, rest: Pa
   const active = usableSchemas(memory).filter((x) => x.data.parts.length === skeleton.parts.length && x.data.region === rest.region);
   for (const old of active) {
     if (covers(skeletonFrom(old.data), skeleton)) {
-      memory.updateNode(old.nodeId, { supports: [...old.data.supports, ...rest.supports] } as unknown as Json, "another decomposition of this shape closed");
+      memory.updateNode(old.nodeId, { supports: [...old.data.supports, ...rest.supports].slice(0, MAX_SUPPORTS) } as unknown as Json, "another decomposition of this shape closed");
       return 0;
     }
   }
   for (const old of active) {
     const general = generalize(skeletonFrom(old.data), skeleton, minSpecificity);
     if (general === undefined) continue;
-    const data = dataOf(general, { ...rest, names: old.data.names, supports: [...old.data.supports, ...rest.supports] });
+    const data = dataOf(general, { ...rest, names: old.data.names, supports: [...old.data.supports, ...rest.supports].slice(0, MAX_SUPPORTS) });
     memory.recordNode({ kind: SCHEMA_KIND, claimId: rest.supports[0]?.claimId ?? problem.claimId, data: { ...data, generalizes: [old.nodeId] } as unknown as Json, learned: true });
     memory.updateNode(old.nodeId, { state: "superseded" } as unknown as Json, "generalized by a schema that covers it and a new decomposition");
     return 1;
@@ -415,13 +425,16 @@ export function createM15Line(): Line {
     for (const fit of fits) {
       if (out.length >= s.hints || asked >= s.candidates) break;
       if (s.confirm) {
-        const key = `${fit.schema.nodeId}|${header}|${goal}`;
+        const key = `${session.runId}|${fit.schema.nodeId}|${header}|${goal}`;
         let answer = confirmed.get(key);
         if (answer === undefined) {
           asked += 1;
           const got = await confirm(meta, skeletonFrom(fit.schema.data), goal, header, session.signal);
           answer = got;
-          if (got.retry !== true) confirmed.set(key, got);
+          if (got.retry !== true) {
+            if (confirmed.size >= 500) confirmed.clear();
+            confirmed.set(key, got);
+          }
         }
         if (!answer.ok) {
           session.log(`archive: schema ${fit.schema.data.name} not used: ${answer.why ?? "not confirmed"}`);
@@ -570,7 +583,7 @@ export function createM15Line(): Line {
       problemId: problem.problemId,
       members: archive.members.length,
       cells: archive.cells.map((c) => ({ key: c.key, family: c.family, depth: c.depth, region: c.region, rho: c.elite.rho, closed: c.elite.closed, leaves: c.elite.leaves, members: c.members, edgeId: c.elite.edgeId })),
-      families: archive.members.map((m) => m.family),
+      families: Object.fromEntries(archive.members.reduce((tally, m) => tally.set(m.family, (tally.get(m.family) ?? 0) + 1), new Map<string, number>())),
     };
     const existing = nodesOf<ArchiveSnapshot>(problem.memory, M15_ARCHIVE_KIND, problem.problemId, problem.claimId)[0];
     if (existing === undefined) problem.memory.recordNode({ kind: M15_ARCHIVE_KIND, claimId: problem.claimId, data: data as unknown as Json });
