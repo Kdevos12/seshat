@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Model, Models, SimpleStreamOptions } from "
 import { type BlobStore, type Journal, newId, SITE } from "@seshat/core";
 import { type LineId, type Llm, type LlmRequest, type LlmResult, withJson } from "@seshat/lines";
 import { type Ledger, messageCost } from "./budget.ts";
+import type { PriceBook } from "./prices.ts";
 import { type Turn, TurnEndedError } from "./turns.ts";
 
 export interface LineLlmOptions {
@@ -21,6 +22,8 @@ export interface LineLlmOptions {
   signal: AbortSignal;
   /** The consortium turn, when the run has them: once it is over, no call is sent (documentation/human.md). */
   turn?: Turn;
+  /** The host's prices; absent: pi-ai's numbers. */
+  prices?: PriceBook;
 }
 
 /**
@@ -79,7 +82,7 @@ export function lineLlm(o: LineLlmOptions): Llm {
       },
       options,
     );
-    const cost = messageCost(model, message);
+    const cost = messageCost(model, message, o.prices);
     o.ledger.charge(cost);
     const outcome = message.stopReason === "error" ? "error" : message.stopReason === "aborted" ? "aborted" : "ok";
     const text = textOf(message);
@@ -101,6 +104,8 @@ export function lineLlm(o: LineLlmOptions): Llm {
         inputTokens: cost.inputTokens,
         outputTokens: cost.outputTokens,
         ...(cost.cachedInputTokens !== undefined ? { cachedInputTokens: cost.cachedInputTokens } : {}),
+        ...(cost.savedUsd !== undefined ? { savedUsd: cost.savedUsd } : {}),
+        ...(cost.offPeakUsd !== undefined ? { offPeakUsd: cost.offPeakUsd } : {}),
       },
       `line:${o.line}`,
     );

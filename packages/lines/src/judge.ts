@@ -87,11 +87,15 @@ const REASON = { type: "string", description: "One sentence: why." } satisfies J
 
 function add(a: TokenCost, b: TokenCost): TokenCost {
   const cached = (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0);
+  const saved = (a.savedUsd ?? 0) + (b.savedUsd ?? 0);
+  const offPeak = (a.offPeakUsd ?? 0) + (b.offPeakUsd ?? 0);
   return {
     usd: a.usd + b.usd,
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     ...(cached > 0 ? { cachedInputTokens: cached } : {}),
+    ...(saved > 0 ? { savedUsd: saved } : {}),
+    ...(offPeak > 0 ? { offPeakUsd: offPeak } : {}),
   };
 }
 

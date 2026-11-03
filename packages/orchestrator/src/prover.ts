@@ -6,6 +6,7 @@ import type { FailureClass } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
+import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { ABORT_BUDGET, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
@@ -34,6 +35,8 @@ export interface ProverOptions {
   notesChars: number;
   /** The prompt cache retention asked of the provider (`SessionOptions.cacheRetention`); absent: its default. */
   cacheRetention?: CacheRetention;
+  /** The host's prices, passed to the session (`SessionOptions.prices`). */
+  prices?: PriceBook;
   /** The problem's ledger. */
   ledger: Ledger;
   /** The problem's signal. */
@@ -234,6 +237,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
         ...(strategies.length > 0 ? { strategies } : {}),
         ...(o.cacheRetention !== undefined ? { cacheRetention: o.cacheRetention } : {}),
+        ...(o.prices !== undefined ? { prices: o.prices } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
@@ -299,6 +303,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
       ...(result.cost.cachedInputTokens !== undefined ? { cachedInputTokens: result.cost.cachedInputTokens } : {}),
+      ...(result.cost.savedUsd !== undefined ? { savedUsd: result.cost.savedUsd } : {}),
+      ...(result.cost.offPeakUsd !== undefined ? { offPeakUsd: result.cost.offPeakUsd } : {}),
       carry: carry(),
     });
     if (o.lines === undefined) {

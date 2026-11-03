@@ -342,6 +342,41 @@ cached sum (the projection keeps none), and a finished total, when there is one,
 charges, so the larger of the two is never too small or counted twice.
 An aborted response is charged for the usage that pi kept.
 
+### Prices
+
+Dollars decide every budget option and every ablation, and the cost fields that ship with a provider's
+integration can be out of date against its pricing page, so a host profile can state the prices itself
+(`models` in `config/hosts/*.json`, [capabilities.md](capabilities.md#host-profiles)). Prices and the provider's
+model identifiers are data in that file, never code and never this repository's prose.
+
+```json
+"models": {
+  "PROVIDER/ID": {
+    "pricing": {
+      "cacheHit": 0.0, "cacheMiss": 0.0, "output": 0.0,
+      "calendar": {
+        "peak": [{ "days": [1, 2, 3, 4, 5], "from": "01:00", "to": "04:00" }],
+        "offPeakMultiplier": 0.5,
+        "offPeakDates": ["2026-01-01"]
+      }
+    },
+    "ignores": { "thinking": ["temperature"] }
+  }
+}
+```
+
+`cacheHit`, `cacheMiss` and `output` are dollars per million tokens (`cacheWrite` too, when the provider
+charges for cache writes; it defaults to the cache-miss price). With a `pricing` entry for the session's model,
+`attempt.charged` and `model_call.finished` dollars are `cacheRead` tokens at the hit price, the other input at the miss
+price and `output` at its price; without one, the cost pi-ai reports or computes, as before. The `calendar`
+is optional: `peak` lists windows in UTC (`from` included, `to` excluded, weekdays 0 = Sunday to 6; a window does not
+cross midnight), every other instant is off-peak and costs `offPeakMultiplier` times as much, and a date in
+`offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
+(`RunOptions.wallClock`, a test's own). A charge also records `savedUsd`, the dollars the cache saved against reading
+those tokens at the miss price, and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
+read by the fleet ([fleet.md](fleet.md#sampled-settings)). The prices are first estimates taken from the provider's
+pages, checked on the first real run; nothing here has run against a real provider.
+
 `--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
 `run.started` only when given) is passed to pi-ai with every request of a session. pi-ai puts the
 option on the request options of every provider and a provider that does not use it ignores it, so
