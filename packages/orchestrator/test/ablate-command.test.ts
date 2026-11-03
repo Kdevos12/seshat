@@ -72,7 +72,7 @@ describe("harness ablate", () => {
     await assert.rejects(ablateCommand({ template, config: { ...base, consortium: consortium({ tokens: 100 }) }, problems, dir, configs: ["M0"], run: fake(seen), print: () => undefined }), /cannot go with an ablation/);
     assert.equal(seen.length, 0);
     await ablateCommand({ template, config: base, problems, dir, configs: ["M0"], run: fake(), print: () => undefined });
-    await assert.rejects(ablateCommand({ template, config: base, problems, dir, configs: ["M0"], run: fake(), print: () => undefined }), /holds an ablation already/);
+    await assert.rejects(ablateCommand({ template, config: base, problems, dir, configs: ["M0"], run: fake(), print: () => undefined }), /holds a finished ablation/);
   });
 });
 

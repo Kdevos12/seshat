@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { ProblemEntry } from "@seshat/bench";
-import { BlobStore, readEvents } from "@seshat/core";
+import { BlobStore, hashJson, type Json, readEvents } from "@seshat/core";
 import { cegisCounter } from "@seshat/induction";
 import { type DecideSettings, checkDecideSettings } from "@seshat/decide";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER, type LineRegistry, resolveLines, SUSPENDED_LINES } from "@seshat/lines";
@@ -10,6 +10,7 @@ import { LINES } from "./lines.ts";
 import { type LabeledDecision, labelDecisions, reliability, type SiteReliability } from "./reliability.ts";
 import { signTest } from "./probe.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
+import { buildReport, type RunReport } from "./report.ts";
 import { checkConfig, RunSetupError, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 import { openForAnswers } from "./team.ts";
 import { ablationRefusal } from "./turns.ts";
@@ -231,6 +232,9 @@ export interface AblationInput {
   log?: (line: string) => void;
 }
 
+/** Written in the directory of an arm when its runs have finished: what a second call of the same ablation recognises. */
+const ARM_DONE = "done.json";
+
 const slug = (name: string): string => name.replace(/[^A-Za-z0-9._-]+/g, "_");
 
 /**
@@ -247,35 +251,64 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
   mkdirSync(join(input.dir, "arms"), { recursive: true });
   const config: RunConfig = { ...input.config, seed: input.config.seed ?? "ablate" };
   const results: ArmResult[] = [];
+  const identity = hashJson({ problems: input.problems.map((p) => p.id), build: input.buildProblems?.map((p) => p.id) ?? null, bench: input.template.index.benchId });
   for (const arm of input.arms) {
     const armDir = join(input.dir, "arms", slug(arm.name));
-    if (existsSync(armDir)) throw new RunSetupError(`${armDir} exists: an ablation writes into a new directory`);
-    log(`ablate: ${arm.name} (${arm.description})`);
     const armRun = armConfig(config, arm);
-    let build: ArmResult["build"];
-    let memoryFrom: string | undefined;
-    if (input.buildProblems !== undefined) {
-      const buildDir = join(armDir, "build");
-      const built = await run({ ...input.template, config: armRun, problems: input.buildProblems, dir: buildDir });
-      build = { dir: buildDir, runId: built.runId, measures: measureRun(readEvents(join(buildDir, "journal.jsonl"))) };
-      memoryFrom = buildDir;
-    }
+    const marker = join(armDir, ARM_DONE);
+    const fingerprint = hashJson({ identity, arm: armRun as unknown as Json });
     const measureDir = join(armDir, "measure");
-    const result = await run({ ...input.template, config: armRun, problems: input.problems, dir: measureDir, ...(memoryFrom !== undefined ? { memoryFrom } : {}) });
+    let finished: { runId: string; stopped?: string } | undefined;
+    if (existsSync(armDir)) {
+      // An arm that finished is taken as it stands, and nothing is spent on it again; a half-written one is set aside, never deleted.
+      const done = existsSync(marker) ? (JSON.parse(readFileSync(marker, "utf8")) as { fingerprint: string; runId: string; stopped?: string }) : undefined;
+      if (done !== undefined && done.fingerprint === fingerprint) {
+        finished = { runId: done.runId, ...(done.stopped !== undefined ? { stopped: done.stopped } : {}) };
+        log(`ablate: ${arm.name} finished in an earlier call: measured again from its journal, nothing spent`);
+      } else if (done !== undefined) {
+        throw new RunSetupError(`${armDir} holds a finished arm made with another configuration, other problems or another bench: an ablation resumes only its own; use a new directory`);
+      } else {
+        let n = 1;
+        while (existsSync(`${armDir}.partial-${n}`)) n += 1;
+        renameSync(armDir, `${armDir}.partial-${n}`);
+        log(`ablate: ${arm.name} was cut off in an earlier call: its directory is set aside as ${basename(armDir)}.partial-${n} and the arm runs again`);
+      }
+    }
+    let build: ArmResult["build"];
+    let report: RunReport | undefined;
+    if (finished === undefined) {
+      log(`ablate: ${arm.name} (${arm.description})`);
+      let memoryFrom: string | undefined;
+      if (input.buildProblems !== undefined) {
+        const buildDir = join(armDir, "build");
+        await run({ ...input.template, config: armRun, problems: input.buildProblems, dir: buildDir });
+        memoryFrom = buildDir;
+      }
+      const result = await run({ ...input.template, config: armRun, problems: input.problems, dir: measureDir, ...(memoryFrom !== undefined ? { memoryFrom } : {}) });
+      finished = { runId: result.runId, ...(result.stopped !== undefined ? { stopped: result.stopped } : {}) };
+      report = result.report;
+      writeFileSync(marker, `${JSON.stringify({ fingerprint, ...finished })}\n`);
+    }
+    const buildDir = join(armDir, "build");
+    if (input.buildProblems !== undefined) {
+      const buildEvents = readEvents(join(buildDir, "journal.jsonl"));
+      build = { dir: buildDir, runId: (buildEvents[0] as { run: string }).run, measures: measureRun(buildEvents) };
+    }
     const events = readEvents(join(measureDir, "journal.jsonl"));
     const cegis = cegisOfRun(measureDir);
-    const measures = measureRun(events, { report: result.report, ...(cegis !== undefined && cegis.dropped > 0 ? { cegis } : {}) });
+    const measures = measureRun(events, { report: report ?? buildReport(events), ...(cegis !== undefined && cegis.dropped > 0 ? { cegis } : {}) });
     const decisions = labelDecisions(events);
     results.push({
       arm,
       dir: measureDir,
-      runId: result.runId,
-      ...(result.stopped !== undefined ? { stopped: result.stopped } : {}),
+      runId: finished.runId,
+      ...(finished.stopped !== undefined ? { stopped: finished.stopped } : {}),
       measures,
       decisions,
       reliability: reliability(decisions),
       ...(build !== undefined ? { build } : {}),
     });
+    writeFileSync(join(input.dir, "ablation.partial.json"), `${JSON.stringify({ done: results.map((r) => ({ arm: r.arm.name, runId: r.runId, solved: r.measures.solved, usd: r.measures.usd })), remaining: input.arms.slice(results.length).map((x) => x.name) }, null, 2)}\n`);
   }
   const m0 = results.find((r) => r.arm.name === "M0");
   const basis = input.pilot ?? m0?.measures;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type ProblemEntry } from "@seshat/bench";
@@ -148,6 +148,51 @@ describe("runAblation on scripted runs", () => {
 
   it("refuses to start when the configuration would not be an ablation", async () => {
     await assert.rejects(runAblation({ template, config: { ...base, consortium: consortium({ usd: 1 }) }, problems, arms: cumulativeArms(["M0"]), dir: tempDir("mh-ablate-run-"), run: fakeRun(specs) }), /cannot go with an ablation/);
+  });
+});
+
+describe("an ablation that is cut off", () => {
+  const problems = ["p1", "p2"].map((id) => ({ id, path: "Bench.lean" }) as unknown as ProblemEntry);
+  const spec: ScriptedSpec = { problems: [{ id: "p1", outcome: "proved", attempts: [{ outcome: "valid", usd: 0.4 }] }, { id: "p2", outcome: "unsolved", attempts: [{ usd: 0.5 }] }] };
+  const template = { index: { benchId: "scripted" }, checkout: "/nowhere", models: {} } as unknown as RunOptions;
+
+  it("keeps the arms that finished, sets the cut one aside and runs only what is left, spending nothing twice", async () => {
+    const dir = tempDir("mh-ablate-resume-");
+    const arms = cumulativeArms(["M0", "M1", "M10", "M2"]);
+    const first: string[] = [];
+    const killAtThird = async (o: RunOptions): Promise<RunResult> => {
+      first.push(o.config.lines?.join("+") ?? "M0");
+      if (first.length === 3) {
+        scriptedRun(spec, o.dir); // a half-written journal of the third arm, then the process dies
+        throw new Error("killed");
+      }
+      return fakeRun({ "*": spec })(o);
+    };
+    await assert.rejects(runAblation({ template, config: base, problems, arms, dir, run: killAtThird }), /killed/);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "ablation.partial.json"), "utf8")).done.map((d: { arm: string }) => d.arm), ["M0", "M1"]);
+    const second: string[] = [];
+    const result = await runAblation({
+      template,
+      config: base,
+      problems,
+      arms,
+      dir,
+      run: async (o) => {
+        second.push(o.config.lines?.join("+") ?? "M0");
+        return fakeRun({ "*": spec })(o);
+      },
+    });
+    assert.deepEqual(second, ["M1+M10", "M1+M10+M2"], "only the third and fourth arms run");
+    assert.deepEqual(result.arms.map((a) => a.arm.name), ["M0", "M1", "M10", "M2"]);
+    assert.ok(existsSync(join(dir, "arms", "M10.partial-1")), "the cut arm is set aside, not deleted");
+    assert.ok(result.arms.every((a) => a.measures.solved === 1));
+  });
+
+  it("refuses a directory whose finished arms were made with other problems", async () => {
+    const dir = tempDir("mh-ablate-resume-");
+    const arms = cumulativeArms(["M0"]);
+    await runAblation({ template, config: base, problems, arms, dir, run: fakeRun({ "*": spec }) });
+    await assert.rejects(runAblation({ template, config: base, problems: problems.slice(0, 1), arms, dir, run: fakeRun({ "*": spec }) }), /another configuration, other problems or another bench/);
   });
 });
 
