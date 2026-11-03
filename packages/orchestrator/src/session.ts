@@ -1,6 +1,7 @@
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type CacheRetention, createAssistantMessageEventStream, StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
+import { estimateTokens } from "@seshat/context";
 import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
@@ -117,6 +118,8 @@ export interface SessionResult {
   /** The strategy the model declared in its last `lean_check` that gave one. */
   declaredStrategy?: string;
   messages: AgentMessage[];
+  /** The size of the tool declarations each request carried, in tokens (an upper bound: `estimateTokens` of their names, descriptions and parameters). */
+  toolTokens?: number;
   error?: string;
 }
 
@@ -360,6 +363,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       submissions,
       ...(declared !== undefined ? { declaredStrategy: declared } : {}),
       messages: agent.state.messages,
+      toolTokens: estimateTokens(JSON.stringify([leanCheck, ...(o.tools ?? [])].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))),
       ...(stop === "error" ? { error: failure ?? last?.errorMessage ?? "the model request failed" } : {}),
     };
   } finally {

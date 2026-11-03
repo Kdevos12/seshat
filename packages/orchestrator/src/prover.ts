@@ -309,6 +309,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
       durationMs: o.lines === undefined ? Math.round(performance.now() - started) : durationMs,
       turns: result.turns,
+      ...(result.toolTokens !== undefined ? { toolTokens: result.toolTokens } : {}),
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
