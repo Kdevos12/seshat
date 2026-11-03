@@ -261,7 +261,7 @@ today leaves no assistant message in the request, so the case does not arise fro
 compiles a session's history and keeps such a message (a mode that keeps the history, `SessionOptions.rewriteHistory`)
 could drop the thinking. The harness therefore passes every request's messages through `keepReasoning`
 (`orchestrator/src/history.ts`): an assistant message with tool calls and no thinking gets back the thinking blocks of
-the message it was made from, matched by tool-call id (else by timestamp); one that matches nothing is left as it is.
+the message it was made from, matched by tool-call id; one that matches nothing is left as it is.
 It is tested against a fake OpenAI-compatible server that answers 400 when the reasoning is missing: with the guard
 removed, a session whose rewrite drops the thinking fails. Not run against a real provider.
 

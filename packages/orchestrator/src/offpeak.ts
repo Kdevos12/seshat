@@ -83,7 +83,7 @@ export class OffPeakGate {
         `${bounded ? ` (the wait limit; the next off-peak window starts at ${new Date(next).toISOString()})` : ` for the window that starts at ${new Date(next).toISOString()}`}`,
     );
     const done = (this.o.sleep ?? sleepFor)(until - now, signal).then(() => {
-      if (bounded) this.acceptedUntil = next;
+      if (bounded && signal?.aborted !== true) this.acceptedUntil = next;
       if (this.waiting?.done === done) this.waiting = undefined;
     });
     this.waiting = { until, done };

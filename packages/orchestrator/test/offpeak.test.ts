@@ -137,4 +137,20 @@ describe("the off-peak option", () => {
     assert.ok(ofType(resumed.events, "turn.deferred").length >= 1);
     assert.equal(second.slept[0], 110 * 60_000);
   });
+
+  it("ends cleanly when the run is stopped during a wait: no session starts", async () => {
+    const controller = new AbortController();
+    const c = clock("2026-11-02T02:10:00Z");
+    const { events, result } = await demoRun({
+      responses: [check("exact trivial_proof")],
+      registry: priced,
+      config: { offpeak: {} },
+      signal: controller.signal,
+      wallClock: c.wallClock,
+      sleep: async () => controller.abort("stopped"),
+    });
+    assert.equal(ofType(events, "turn.deferred").length, 1);
+    assert.equal(ofType(events, "attempt.started").length, 0, "nothing was started after the stop");
+    assert.equal(result.problems[0]?.outcome, "aborted");
+  });
 });

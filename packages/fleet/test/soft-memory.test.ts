@@ -293,6 +293,18 @@ describe("the settings a session is given", () => {
     assert.equal(ignoring.settings.ignored, undefined);
   });
 
+  it("leaves the later draws as they would be without a temperature when it is skipped", () => {
+    const withTemperature = { temperature: { values: [0.3, 0.9] }, thinking: ["low", "high"], directives: { a: "A", b: "B", c: "C" }, modes: ["standard", "nl_first"] as Array<"standard" | "nl_first"> };
+    const { temperature: _t, ...without } = withTemperature;
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const skipped = sampleSettings(seeded(seed), withTemperature, [], 0.5, undefined, (setting) => setting === "temperature");
+      const reference = sampleSettings(seeded(seed), without, [], 0.5, undefined, () => false);
+      assert.equal(skipped.settings.temperature, undefined);
+      assert.deepEqual({ ...skipped.settings, ignored: undefined }, { ...reference.settings, ignored: undefined });
+      assert.deepEqual(skipped.draws, reference.draws);
+    }
+  });
+
   it("decides nothing when no setting is configured, and with the strategies off", async () => {
     const world = await setup({ strategies: false });
     assert.equal(await world.run("p1", 1, "invalid"), undefined);

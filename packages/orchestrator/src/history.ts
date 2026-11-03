@@ -7,7 +7,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
  * tool-call loop"). Code that rewrites or compiles a session's history (the context packet, a line's rewrite) may
  * keep such a message and drop its thinking. `keepReasoning` puts it back: for each assistant message of `rebuilt`
  * that has tool calls and no thinking, it takes the thinking blocks of the message of `original` that made the
- * same tool calls (matched by tool-call id, else by timestamp). A message that matches nothing is left as it is,
+ * same tool calls (matched by tool-call id). A message that matches nothing is left as it is,
  * since the harness cannot invent a reasoning. Messages the rewrite dropped altogether are not brought back: a
  * history without the loop has nothing to send the reasoning of.
  */
@@ -17,7 +17,7 @@ export function keepReasoning(original: readonly AgentMessage[], rebuilt: AgentM
   return rebuilt.map((message) => {
     if (!isToolLoopMessage(message) || thinkingOf(message).length > 0) return message;
     const ids = new Set(toolCallIds(message));
-    const source = loops.find((candidate) => toolCallIds(candidate).some((id) => ids.has(id))) ?? loops.find((candidate) => candidate.timestamp === message.timestamp);
+    const source = loops.find((candidate) => toolCallIds(candidate).some((id) => ids.has(id)));
     const thinking = source === undefined ? [] : thinkingOf(source);
     return thinking.length === 0 ? message : { ...message, content: [...thinking, ...message.content] };
   });
