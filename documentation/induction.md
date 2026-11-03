@@ -187,6 +187,12 @@ Nothing here changes a claim's status. A conjecture stays `open` until a prover 
 `validate`; a recurrence, a bound or a relation is a node about a claim, never a status (Rulings 13, 22, 23).
 The line declares `resume: "rebuild"`: claims, tables, edges and nodes are not written twice when the
 pipeline runs again, and the model calls are `reuse`d, so a resumed process pays for nothing it already has.
+More than that: once a `conjecture_pool` node exists for the problem, a resume rebuilds the pool from it (the kept entries,
+read again with the attempts made since) and skips the model rounds and the pooling. The rounds' prompts carry the claims proved
+so far, so after a resume they would differ from the journaled ones, `reuse` would miss, and the model would be paid again and
+the pool would grow with every resume. The classical step (free, deduplicated) still runs. The open formal claims the line
+holds for a target are also capped at `conjectures` in all: a pool made after a crash, before its node was written, counts
+what the earlier process left.
 
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`

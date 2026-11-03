@@ -128,6 +128,32 @@ describe("the line M8 on a statement about a number", () => {
     assert.equal(readTables(first.memory, first.claimId).length, 1);
   });
 
+  it("does not spend again or grow the pool when it resumes after the proved claims changed", async () => {
+    const line = createM8();
+    const first = await problemOf({ rounds: 2 });
+    await hook(line, "beforeProvers")(first.problem);
+    const requests = first.llm.requests.length;
+    const claims = first.memory.claims().length;
+    // Something was proved in between: the prompts of a rerun would differ, and the model would be paid again.
+    await first.memory.ensureClaim({ statement: "(n : ℕ) : 0 ≤ n * n", origin: "bench:other" });
+    const again = { ...first.problem } as ProblemContext;
+    await hook(line, "resumeProblem")(again, { begun: false, attempts: [], endedProvers: [], modelCalls: {}, workedClaims: [] } as never);
+    assert.equal(first.llm.requests.length, requests, "no model call on resume");
+    assert.equal(first.memory.claims().length, claims + 1, "no conjecture added");
+    assert.equal(first.memory.nodes(POOL_KIND, { claimId: first.claimId }).length, 1);
+    const briefing = await hook(line, "briefing")(first.problem as unknown as SessionContext);
+    assert.match(briefing?.text ?? "", /Conjectures found by testing small cases/);
+  });
+
+  it("keeps the open conjectures it made for a target within the limit, across processes", async () => {
+    const line = createM8();
+    const first = await problemOf({ rounds: 1, conjectures: 10 });
+    for (let i = 0; i < 12; i++) await first.memory.withActor("line:M8").ensureClaim({ statement: `(n : ℕ) : n + ${i} ≥ ${i}`, header: "import Mathlib", origin: "line:M8", kind: "formal", parentId: first.claimId });
+    await hook(line, "beforeProvers")(first.problem);
+    const mine = first.memory.claims({ statuses: ["open"], kind: "formal" }).filter((c) => c.origin === "line:M8" && c.parentId === first.claimId);
+    assert.ok(mine.length <= 12, `${mine.length} open conjectures: ${mine.map((c) => c.statement).join(" / ")}`);
+  });
+
   it("puts the pool in the briefing, marking a conjecture the provers settled", async () => {
     const line = createM8();
     const { problem, memory } = await problemOf({ rounds: 1 });
