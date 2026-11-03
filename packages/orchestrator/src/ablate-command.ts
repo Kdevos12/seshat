@@ -54,7 +54,7 @@ export async function ablateCommand(command: AblateCommand): Promise<AblationRes
     arms,
     dir: command.dir,
     ...(command.run !== undefined ? { run: command.run } : {}),
-    ...(command.reference !== undefined ? { reference: command.reference } : {}),
+    ...(command.pilot !== undefined ? { pilot: command.pilot } : {}),
     ...(command.log !== undefined ? { log: command.log } : {}),
   });
   const text = renderAblation(result);

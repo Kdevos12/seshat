@@ -25,7 +25,7 @@ export function renderAblation(result: AblationResult): string {
     "# Ablation",
     "",
     `Bench ${result.benchId}; model ${result.model}; ${result.problems.length} problem(s)${result.buildProblems !== undefined ? ` measured on a memory built on ${result.buildProblems.length} others` : ""}; ` +
-      `${result.provers} prover(s) of at most ${result.sessions} session(s) and ${money(result.budget.problemUsd, 2)} per problem in every configuration. Reference: ${result.reference}.`,
+      `${result.provers} prover(s) of at most ${result.sessions} session(s) and ${money(result.budget.problemUsd, 2)} per problem in every configuration. `,
     "",
     ...table(
       ["Configuration", "Solved", "Certified", "Per solve ($)", "Tokens per solve", "Redundant", "Mean context", "Tool defs", "Memory", "Subgoals w/o model", "Conjectures w/o model", "CPU ms"],
@@ -55,7 +55,7 @@ export function renderAblation(result: AblationResult): string {
     ...arms.flatMap((a) =>
       a.comparison === undefined
         ? []
-        : [`- ${a.arm.name} against ${a.comparison.against}: ${a.comparison.verdict}: ${a.comparison.reason}.${a.comparison.onlyThis.length + a.comparison.onlyThat.length > 0 ? ` Solved only by ${a.arm.name}: ${a.comparison.onlyThis.length}; only by ${a.comparison.against}: ${a.comparison.onlyThat.length}.` : ""}`],
+        : [`- ${a.arm.name} against ${a.comparison.against}: ${a.comparison.verdict}: ${a.comparison.reason}. Paired over ${a.comparison.common} problems: solved only by ${a.arm.name} ${a.comparison.onlyThis.length}, only by ${a.comparison.against} ${a.comparison.onlyThat.length}.`],
     ),
     "",
     "## Diversity, reuse and novelty",
@@ -68,15 +68,7 @@ export function renderAblation(result: AblationResult): string {
       }),
     ),
     "",
-    "## Difficulty",
-    "",
-    `Easy: the problems ${result.reference} solved; hard: the others.`,
-    "",
-    ...table(
-      ["Configuration", "Easy solved", "Easy $ per solve", "Hard solved", "Hard $ per solve"],
-      arms.map((a) => [a.arm.name, `${a.difficulty.easy.solved}/${a.difficulty.easy.problems}`, money(a.difficulty.easy.usdPerSolve), `${a.difficulty.hard.solved}/${a.difficulty.hard.problems}`, money(a.difficulty.hard.usdPerSolve)]),
-    ),
-    "",
+    ...difficulty(result),
     ...spendBySite(arms),
     ...cache(arms),
     ...decisions(arms),
@@ -84,6 +76,24 @@ export function renderAblation(result: AblationResult): string {
     ...extras(arms),
   ];
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+}
+
+function difficulty(result: AblationResult): string[] {
+  const arms = result.arms;
+  if (result.difficultyBasis === undefined) {
+    return ["## Difficulty", "", "Not split: the table has no arm that no comparison depends on (M0) and no pilot run (`--pilot RUN_DIR`). Splitting by the outcome of an arm under comparison would make that arm solve every easy problem and no hard one by construction.", ""];
+  }
+  return [
+    "## Difficulty",
+    "",
+    `Easy: the problems ${result.difficultyBasis} solved; hard: the others. The basis is outside the comparison, so a split cannot favour an arm by selection${result.difficultyBasis === "M0" ? "; M0 has no row here because its split is by construction" : ""}. One run per arm and few problems: read the counts, not the dollars per solve, of a tier with a handful of problems.`,
+    "",
+    ...table(
+      ["Configuration", "Easy solved", "Easy $ per solve", "Hard solved", "Hard $ per solve"],
+      arms.flatMap((a) => (a.difficulty === undefined ? [] : [[a.arm.name, `${a.difficulty.easy.solved}/${a.difficulty.easy.problems}`, money(a.difficulty.easy.usdPerSolve), `${a.difficulty.hard.solved}/${a.difficulty.hard.problems}`, money(a.difficulty.hard.usdPerSolve)]])),
+    ),
+    "",
+  ];
 }
 
 function spendBySite(arms: readonly ArmResult[]): string[] {

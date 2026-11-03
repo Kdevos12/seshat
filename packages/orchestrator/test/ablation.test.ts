@@ -97,11 +97,25 @@ describe("runAblation on scripted runs", () => {
     assert.equal(result.arms[0]?.comparison, undefined);
   });
 
-  it("splits the problems by the reference arm's outcomes", async () => {
+  it("splits the problems by M0's outcomes, which no comparison depends on, and gives M0 no split of its own", async () => {
     const result = await runAblation({ template, config: base, problems, arms: cumulativeArms(["M0", "M1", "M10"]), dir: tempDir("mh-ablate-run-"), run: fakeRun(specs) });
     const m10 = result.arms[2];
-    assert.deepEqual([m10?.difficulty.easy.solved, m10?.difficulty.easy.problems, m10?.difficulty.hard.solved, m10?.difficulty.hard.problems], [1, 1, 1, 2]);
-    assert.equal(result.arms[0]?.difficulty.hard.solved, 0);
+    assert.deepEqual([m10?.difficulty?.easy.solved, m10?.difficulty?.easy.problems, m10?.difficulty?.hard.solved, m10?.difficulty?.hard.problems], [1, 1, 1, 2]);
+    assert.equal(result.arms[0]?.difficulty, undefined, "M0's split would be by construction");
+    assert.equal(result.difficultyBasis, "M0");
+    assert.match(renderAblation(result), /M0 has no row here because its split is by construction/);
+  });
+
+  it("gives no split when the table has no arm outside the comparison and no pilot, and splits by a pilot when one is given", async () => {
+    const arms = cumulativeArms(["M1", "M10"]);
+    const none = await runAblation({ template, config: base, problems, arms, dir: tempDir("mh-ablate-run-"), run: fakeRun(specs) });
+    assert.equal(none.difficultyBasis, undefined);
+    assert.ok(none.arms.every((a) => a.difficulty === undefined));
+    assert.match(renderAblation(none), /Not split: the table has no arm that no comparison depends on/);
+    const pilot = measureRun(scriptedRun(specs.M0 as ScriptedSpec).events);
+    const piloted = await runAblation({ template, config: base, problems, arms, dir: tempDir("mh-ablate-run-"), run: fakeRun(specs), pilot });
+    assert.equal(piloted.difficultyBasis, "a pilot run");
+    assert.ok(piloted.arms.every((a) => a.difficulty !== undefined), "every arm is split, the first included");
   });
 
   it("renders the table of plan section 6", async () => {
@@ -138,10 +152,33 @@ describe("runAblation on scripted runs", () => {
 });
 
 describe("compareArms", () => {
+  const m = (...problems: Array<[string, "proved" | "unsolved", number]>) =>
+    measureRun(scriptedRun({ problems: problems.map(([id, outcome, usd]) => ({ id, outcome, attempts: [{ outcome: outcome === "proved" ? ("valid" as const) : ("invalid" as const), usd }] })) }).events);
+
   it("calls an arm that solves as many for less a winner, and one that costs more not", () => {
-    const m = (usd: number) => measureRun(scriptedRun({ problems: [{ id: "p1", outcome: "proved", attempts: [{ outcome: "valid", usd }] }] }).events);
-    assert.equal(compareArms("b", m(0.1), { name: "a", measures: m(0.2) }).verdict, "beats");
-    assert.equal(compareArms("b", m(0.3), { name: "a", measures: m(0.2) }).verdict, "does not beat");
+    assert.equal(compareArms("b", m(["p1", "proved", 0.1]), { name: "a", measures: m(["p1", "proved", 0.2]) }).verdict, "beats");
+    assert.equal(compareArms("b", m(["p1", "proved", 0.3]), { name: "a", measures: m(["p1", "proved", 0.2]) }).verdict, "does not beat");
+  });
+
+  it("gives no verdict between arms that did not finish the same problems, and compares on the ones both finished", () => {
+    const whole = m(["p1", "proved", 0.1], ["p2", "unsolved", 0.1], ["p3", "unsolved", 0.1]);
+    const cut = m(["p1", "proved", 0.1]);
+    const c = compareArms("cut", cut, { name: "whole", measures: whole });
+    assert.equal(c.verdict, "not comparable");
+    assert.equal(c.common, 1);
+    assert.match(c.reason, /finished 1 problems and whole 3 \(1 in common\)/);
+  });
+
+  it("reports the pairs and says a difference of one problem is indicative only", () => {
+    const base = m(["p1", "unsolved", 0.1], ["p2", "unsolved", 0.1], ["p3", "unsolved", 0.1]);
+    const one = compareArms("x", m(["p1", "proved", 0.1], ["p2", "unsolved", 0.1], ["p3", "unsolved", 0.1]), { name: "base", measures: base });
+    assert.deepEqual([one.verdict, one.onlyThis, one.onlyThat, one.common], ["beats", ["p1"], [], 3]);
+    assert.match(one.reason, /indicative only/);
+    const ids = Array.from({ length: 8 }, (_, i) => `q${i}`);
+    const strong = compareArms("x", m(...ids.map((id): [string, "proved", number] => [id, "proved", 0.1])), { name: "base", measures: m(...ids.map((id): [string, "unsolved", number] => [id, "unsolved", 0.1])) });
+    assert.equal(strong.verdict, "beats");
+    assert.doesNotMatch(strong.reason, /indicative/);
+    assert.ok(strong.pSolves < 0.01);
   });
 });
 

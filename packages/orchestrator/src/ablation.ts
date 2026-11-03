@@ -8,6 +8,7 @@ import { ablationLines, isAblationName, type JsonObject, LINE_ORDER, type LineRe
 import { MemoryStore } from "@seshat/memory";
 import { LINES } from "./lines.ts";
 import { type LabeledDecision, labelDecisions, reliability, type SiteReliability } from "./reliability.ts";
+import { signTest } from "./probe.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
 import { checkConfig, RunSetupError, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 import { openForAnswers } from "./team.ts";
@@ -100,8 +101,12 @@ export interface Comparison {
   onlyThis: string[];
   onlyThat: string[];
   deltaSolved: number;
-  /** `beats`: more problems solved, or as many and fewer dollars per solve; otherwise `does not beat`. */
-  verdict: "beats" | "does not beat";
+  /** The problems both arms finished, which every number of the comparison is over. */
+  common: number;
+  /** The one-sided sign test of the larger of the two sets of problems in the pairs. */
+  pSolves: number;
+  /** `beats`: more problems solved, or as many and fewer dollars per solve; `not comparable`: the arms did not finish the same problems. */
+  verdict: "beats" | "does not beat" | "not comparable";
   reason: string;
 }
 
@@ -113,8 +118,11 @@ export interface ArmResult {
   measures: RunMeasures;
   decisions: LabeledDecision[];
   reliability: SiteReliability[];
-  /** The tiers by the reference arm's outcomes: `easy` holds the problems the reference solved, `hard` the others. */
-  difficulty: { easy: Tier; hard: Tier };
+  /**
+   * The tiers by an outcome that no arm under comparison decides (`AblationResult.difficultyBasis`): `easy` holds the problems the basis solved,
+   * `hard` the others. Absent for the basis arm itself, whose split is by construction, and when the table has no basis.
+   */
+  difficulty?: { easy: Tier; hard: Tier };
   comparison?: Comparison;
   /** The run on the build part of the bench, when the table splits it. */
   build?: { dir: string; runId: string; measures: RunMeasures };
@@ -129,7 +137,8 @@ export interface AblationResult {
   /** The problems the arms were measured on, and the ones the memory was built on when the bench was split. */
   problems: string[];
   buildProblems?: string[];
-  reference: string;
+  /** What the difficulty tiers come from: `M0` (its row has no split), a pilot run, or absent when the table has neither. */
+  difficultyBasis?: string;
   arms: ArmResult[];
 }
 
@@ -141,33 +150,54 @@ function tier(problems: ReadonlyArray<{ outcome: string; usd: number }>): Tier {
   return { problems: problems.length, solved, usd, ...(solved > 0 ? { usdPerSolve: usd / solved } : {}) };
 }
 
-/** Splits an arm's problems by the reference arm's outcomes. */
-export function splitByDifficulty(arm: RunMeasures, reference: RunMeasures): { easy: Tier; hard: Tier } {
-  const easy = new Set(reference.perProblem.filter((p) => SOLVED.has(p.outcome)).map((p) => p.problemId));
+/**
+ * Splits an arm's problems by the outcomes of a basis that is not one of the arms compared: a split by the outcome of a compared arm would
+ * make that arm solve every easy problem and no hard one by construction, and every other arm look worse on easy and better on hard.
+ */
+export function splitByDifficulty(arm: RunMeasures, basis: RunMeasures): { easy: Tier; hard: Tier } {
+  const easy = new Set(basis.perProblem.filter((p) => SOLVED.has(p.outcome)).map((p) => p.problemId));
   return { easy: tier(arm.perProblem.filter((p) => easy.has(p.problemId))), hard: tier(arm.perProblem.filter((p) => !easy.has(p.problemId))) };
 }
 
-/** Compares an arm with another on the same problems. */
-export function compareArms(name: string, mine: RunMeasures, other: { name: string; measures: RunMeasures }): Comparison {
-  const solved = (m: RunMeasures) => new Set(m.perProblem.filter((p) => SOLVED.has(p.outcome)).map((p) => p.problemId));
-  const a = solved(mine);
-  const b = solved(other.measures);
-  const onlyThis = [...a].filter((id) => !b.has(id)).sort();
-  const onlyThat = [...b].filter((id) => !a.has(id)).sort();
-  const deltaSolved = mine.solved - other.measures.solved;
-  const cheaper = mine.usdPerSolve !== undefined && (other.measures.usdPerSolve === undefined || mine.usdPerSolve < other.measures.usdPerSolve);
-  const beats = deltaSolved > 0 || (deltaSolved === 0 && mine.solved > 0 && cheaper);
-  const dollars = (m: RunMeasures) => (m.usdPerSolve === undefined ? "no solve" : `$${m.usdPerSolve.toFixed(3)} per solve`);
+/**
+ * Compares an arm with another on the problems both finished (an arm that stopped early has fewer). The sets of problems must be the same
+ * for the verdict to be more than "not comparable". Paired: the problems only this arm solved against the ones only the other solved,
+ * with the exact one-sided sign test of the difference; with few problems a difference of one is not evidence, so a verdict whose p is
+ * above `alpha` says it is indicative only.
+ */
+export function compareArms(name: string, mine: RunMeasures, other: { name: string; measures: RunMeasures }, alpha = 0.1): Comparison {
+  const finished = (m: RunMeasures) => new Map(m.perProblem.map((p) => [p.problemId, p]));
+  const a = finished(mine);
+  const b = finished(other.measures);
+  const common = [...a.keys()].filter((id) => b.has(id)).sort();
+  const sameSet = a.size === b.size && common.length === a.size;
+  const isSolved = (m: Map<string, { outcome: string }>, id: string) => SOLVED.has((m.get(id) as { outcome: string }).outcome);
+  const onlyThis = common.filter((id) => isSolved(a, id) && !isSolved(b, id));
+  const onlyThat = common.filter((id) => !isSolved(a, id) && isSolved(b, id));
+  const both = common.filter((id) => isSolved(a, id) && isSolved(b, id)).length;
+  const solvedMine = both + onlyThis.length;
+  const solvedOther = both + onlyThat.length;
+  const spend = (m: Map<string, { usd: number }>) => common.reduce((sum, id) => sum + (m.get(id) as { usd: number }).usd, 0);
+  const perSolve = (usd: number, solved: number) => (solved === 0 ? undefined : usd / solved);
+  const mineUsd = perSolve(spend(a), solvedMine);
+  const otherUsd = perSolve(spend(b), solvedOther);
+  const dollars = (x: number | undefined) => (x === undefined ? "no solve" : `$${x.toFixed(3)} per solve`);
+  const deltaSolved = solvedMine - solvedOther;
+  const cheaper = mineUsd !== undefined && (otherUsd === undefined || mineUsd < otherUsd);
+  const pSolves = signTest(Math.max(onlyThis.length, onlyThat.length), onlyThis.length + onlyThat.length);
+  const base = { against: other.name, common: common.length, onlyThis, onlyThat, deltaSolved, pSolves };
+  if (!sameSet) {
+    return { ...base, verdict: "not comparable", reason: `${name} finished ${a.size} problems and ${other.name} ${b.size} (${common.length} in common): compared on the ${common.length} both finished, ${name} solves ${solvedMine} against ${solvedOther}, but a verdict on unequal sets is not given` };
+  }
+  const beats = deltaSolved > 0 || (deltaSolved === 0 && solvedMine > 0 && cheaper);
+  const noise = deltaSolved !== 0 && !(deltaSolved > 0 && pSolves <= alpha) ? `; indicative only: ${onlyThis.length} against ${onlyThat.length} problems in the pairs, sign test p=${pSolves.toFixed(3)}` : "";
   return {
-    against: other.name,
-    onlyThis,
-    onlyThat,
-    deltaSolved,
+    ...base,
     verdict: beats ? "beats" : "does not beat",
     reason:
-      deltaSolved !== 0
-        ? `${name} solves ${mine.solved} against ${other.measures.solved} (${dollars(mine)} against ${dollars(other.measures)})`
-        : `both solve ${mine.solved}; ${dollars(mine)} against ${dollars(other.measures)}`,
+      (deltaSolved !== 0
+        ? `${name} solves ${solvedMine} against ${solvedOther} of ${common.length} (${dollars(mineUsd)} against ${dollars(otherUsd)})`
+        : `both solve ${solvedMine} of ${common.length}; ${dollars(mineUsd)} against ${dollars(otherUsd)}`) + noise,
   };
 }
 
@@ -196,8 +226,8 @@ export interface AblationInput {
   buildProblems?: readonly ProblemEntry[];
   /** Runs one run; default `runBench`. */
   run?: (options: RunOptions) => Promise<RunResult>;
-  /** The reference arm of the difficulty split; default the first. */
-  reference?: string;
+  /** The outcomes of a pilot run, which the difficulty tiers come from. Default: the arm M0 when the table has one (its own row is not split). */
+  pilot?: RunMeasures;
   log?: (line: string) => void;
 }
 
@@ -244,15 +274,14 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
       measures,
       decisions,
       reliability: reliability(decisions),
-      difficulty: { easy: tier([]), hard: tier([]) },
       ...(build !== undefined ? { build } : {}),
     });
   }
-  const referenceName = input.reference ?? (input.arms[0] as Arm).name;
-  const reference = results.find((r) => r.arm.name === referenceName);
-  if (reference === undefined) throw new RunSetupError(`the reference ${referenceName} is not in the table`);
+  const m0 = results.find((r) => r.arm.name === "M0");
+  const basis = input.pilot ?? m0?.measures;
+  const basisName = input.pilot !== undefined ? "a pilot run" : m0 !== undefined ? "M0" : undefined;
   results.forEach((r, i) => {
-    r.difficulty = splitByDifficulty(r.measures, reference.measures);
+    if (basis !== undefined && !(input.pilot === undefined && r === m0)) r.difficulty = splitByDifficulty(r.measures, basis);
     const against = r.arm.versus !== undefined ? results.find((x) => x.arm.name === r.arm.versus) : results[i - 1];
     if (against !== undefined) r.comparison = compareArms(r.arm.name, r.measures, { name: against.arm.name, measures: against.measures });
   });
@@ -264,7 +293,7 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     sessions: input.config.sessions,
     problems: input.problems.map((p) => p.id),
     ...(input.buildProblems !== undefined ? { buildProblems: input.buildProblems.map((p) => p.id) } : {}),
-    reference: referenceName,
+    ...(basisName !== undefined ? { difficultyBasis: basisName } : {}),
     arms: results,
   };
   writeFileSync(join(input.dir, "ablation.json"), `${JSON.stringify(result, null, 2)}\n`);
