@@ -120,8 +120,11 @@ uses it to decide that a lemma is not trivial, and Task 13 will.
 `lower(goal, premises)` (`translate.ts`) turns a goal, and lemma statements given as premises, into a
 typed problem; `toSmtLib` and `toTptp` write it. The fragment:
 
-- variables of `ℕ` (an integer with a sign assertion `d_n`), `ℤ`, `ℝ` and `ℚ` (both read as reals),
-  `Prop` variables, abstract types `(M : Type*)` with the operations of their instance binders
+- variables of `ℕ` (an integer with a sign assertion `d_n`; a function into `ℕ` has one too, `d_f`), `ℤ` and `ℝ`;
+  `ℚ` is outside, because read as the reals it changes the meaning of every quantifier over it. The sort of
+  every term is tracked: a subtraction truncates exactly when its operands are of `ℕ`, the scope of a
+  quantified `ℕ` ends with the quantifier, and a mix of `ℕ` with `ℤ` (a cast) or a numeral expression next to a
+  `ℕ` (`n + (2 - 3)`) is outside. `Prop` variables, abstract types `(M : Type*)` with the operations of their instance binders
   (`[Mul M]` becomes `mul_M`), and function or predicate variables between those sorts;
 - `+ - * / % ^ neg`: `^` only by a numeral up to 8, real `/` only by a nonzero numeral, integer `/` and
   `%` only by numerals (Euclidean, as Lean's `Int`), truncated subtraction on `ℕ`, `∣` only by a
