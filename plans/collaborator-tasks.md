@@ -132,7 +132,14 @@ measured against whole-proof sessions at equal dollars and removed if it loses) 
 model call through an injectable orderer). If the level-2 namespaces of the digest below come with
 human-written skills, Global Constraint 16 (PE6 of
 [plan-change-memory-evolution.md](plan-change-memory-evolution.md)) bounds them: at most 3 loaded in
-full in a session, the others listed by name and description.
+full in a session, the others listed by name and description. Amended by PD4 item 1 of
+[plan-change-polya-costs.md](plan-change-polya-costs.md): your documentation states that `grind`
+carries a commutative-ring module that normalizes by a Gröbner basis (Lean reference, section on the
+algebraic solver), so polynomial identities with hypotheses are one of its jobs; the battery's tactic
+list is read from the host (what its Lean has) and `polyrith` is not assumed, since whether it is still
+in the pinned Mathlib is read from the host, not guessed. The `polyrith` row of the digest's table
+below is therefore a candidate only when the host has it. The optional `GroebnerTactic` library entry
+of the same change belongs to Task 21 (merged) and is a follow-up of the main team, not yours.
 
 **What exists to build on.**
 
