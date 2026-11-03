@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { Journal, readEvents } from "@seshat/core";
@@ -191,6 +191,14 @@ describe("installing, listing and removing", () => {
     assert.throws(() => loadInstalledPacks(packs), (e: Error) => e instanceof PackError && /not the ones installed/.test(e.message));
   });
 
+  it("refuses a pack journal that was edited", () => {
+    const other = tempDir("mh-packs-");
+    installPack(other, writePack(), { allowPrograms: true });
+    const f2 = join(other, "journal", "journal.jsonl");
+    writeFileSync(f2, readFileSync(f2, "utf8").replace("1.0.0", "9.9.9"));
+    assert.throws(() => installedPacks(other), PackStoreError);
+  });
+
   it("removes nothing that is not installed", () => {
     assert.throws(() => removePack(tempDir("mh-packs-"), "ghost"), /no pack ghost is installed/);
   });
@@ -278,6 +286,21 @@ describe("a registry with packs", () => {
     assert.ok(seen.length > 0, "the transport was asked for");
     assert.doesNotMatch(text, /sk-secret/);
     assert.match(text, /"b":"ok"/, "the variable the pack declared is read");
+  });
+
+  it("checks the pack's files again before it starts a program of the pack", async () => {
+    const marker = join(tempDir(), "ran");
+    const manifest = packCapability();
+    (manifest.implementations as Array<{ server: unknown }>)[0]!.server = {
+      transport: "stdio",
+      command: process.execPath,
+      args: ["-e", `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`],
+    };
+    const dir = writePack({ capabilities: { "math.padd": manifest } });
+    const registry = new Registry({ catalog: base, host: host(), factories: { "js-add": () => ({ invoke: async () => ({ sum: 0 }) }) }, packs: [loadPack(dir)] });
+    appendFileSync(join(dir, "skills", "adding.md"), "changed after the registry was built\n");
+    await assert.rejects(registry.invoke("math.padd", { a: 1, b: 2 }), /not the ones installed.*none of its programs is started/);
+    assert.equal(existsSync(marker), false);
   });
 
   it("remembers what a pack asked for level 1, for the next session", () => {

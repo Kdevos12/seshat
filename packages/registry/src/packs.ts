@@ -325,3 +325,11 @@ export function missingRequirements(pack: LoadedPack, env: Readonly<Record<strin
 export function packRecord(pack: Pick<LoadedPack, "manifest" | "hash">): PackRecord {
   return { name: pack.manifest.name, version: pack.manifest.version, hash: pack.hash };
 }
+
+/** Whether the pack's files are still the ones whose hash it was loaded with. */
+export function packIntact(pack: Pick<LoadedPack, "dir" | "hash">): boolean {
+  if (!existsSync(pack.dir)) return false;
+  const problems: string[] = [];
+  const files = readTree(pack.dir, problems);
+  return problems.length === 0 && treeHash(files) === pack.hash;
+}
