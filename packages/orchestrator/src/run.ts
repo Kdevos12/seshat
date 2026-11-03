@@ -57,6 +57,7 @@ import {
 import { Router } from "./routing.ts";
 import { applyDrops, claimAndParts, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
+import { PriceBook } from "./prices.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
@@ -162,6 +163,11 @@ export interface RunOptions {
   memoryFrom?: string;
   /** What a consortium run takes from the process that works it, not from its recorded configuration. */
   turns?: TurnProcess;
+  /**
+   * Wall-clock time in milliseconds since the epoch, which the host's pricing calendar is read against (the off-peak
+   * rate of a charge, `--offpeak`). Default: `Date.now`; a test sets its own.
+   */
+  wallClock?: () => number;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -296,6 +302,8 @@ export interface ResumeOptions {
   lines?: LineRegistry;
   /** The next turn of a consortium run: its limit, whether a model narrates it, its clock. */
   turns?: TurnProcess;
+  /** Wall-clock time in milliseconds, as `RunOptions.wallClock`. */
+  wallClock?: () => number;
 }
 
 /**
@@ -327,6 +335,7 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
       ...(o.lines !== undefined ? { lines: o.lines } : {}),
       ...(o.turns !== undefined ? { turns: o.turns } : {}),
+      ...(o.wallClock !== undefined ? { wallClock: o.wallClock } : {}),
     },
     recorded,
   );
@@ -599,6 +608,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
+  // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices").
+  const prices = new PriceBook(registry.host.models, o.wallClock);
   // What the team asked for, carried out before any work: a problem whose claim it dropped ends (documentation/human.md).
   const dropped = resume !== undefined ? applyDrops(journal, tasks) : undefined;
   // Consortium mode: the turn this process works. It ends by itself at its limit or at a breakpoint.
@@ -642,6 +653,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       seed: config.seed ?? runId,
       ranking,
       decide: resolveDecideSettings(config.decide),
+      prices,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
     });
@@ -970,6 +982,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 limits: config.limits,
                 notesChars: config.notesChars,
                 ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
+                prices,
                 ledger,
                 signal: controller.signal,
                 transcript,
@@ -1119,7 +1132,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ending: { reason, detail, waiting, ...(paused && end?.breakpoint !== undefined ? { breakpoint: end.breakpoint } : {}) },
           keep: (text) => blobs.put(text),
           log,
-          call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal }),
+          call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal, prices }),
         }).catch((error: unknown) => ({ rejected: messageOf(error) }));
       }
       closeTurn(journal, turn, {

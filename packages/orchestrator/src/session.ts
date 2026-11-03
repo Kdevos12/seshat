@@ -5,6 +5,7 @@ import { messageOf } from "@seshat/registry";
 import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
 import type { SessionHooks } from "./line-runtime.ts";
+import type { PriceBook } from "./prices.ts";
 import { composePacket, type FrozenState } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { WRAP_UP } from "./prompt.ts";
@@ -79,6 +80,8 @@ export interface SessionOptions {
    * request options for every provider, and one that does not use it ignores it.
    */
   cacheRetention?: CacheRetention;
+  /** The host's prices: the session's charges are computed from them when they cover the model (documentation/m0-loop.md, "Prices"). */
+  prices?: PriceBook;
 }
 
 export interface SessionResult {
@@ -277,11 +280,13 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // A request the turn gate refused was never sent: no response, no charge, no zero-cost attempt record.
     if (refusedMessages.has(event.message)) return;
     turns += 1;
-    const charge = messageCost(o.model, event.message);
+    const charge = messageCost(o.model, event.message, o.prices);
     cost.usd += charge.usd;
     cost.inputTokens += charge.inputTokens;
     cost.outputTokens += charge.outputTokens;
     if (charge.cachedInputTokens !== undefined) cost.cachedInputTokens = (cost.cachedInputTokens ?? 0) + charge.cachedInputTokens;
+    if (charge.savedUsd !== undefined) cost.savedUsd = (cost.savedUsd ?? 0) + charge.savedUsd;
+    if (charge.offPeakUsd !== undefined) cost.offPeakUsd = (cost.offPeakUsd ?? 0) + charge.offPeakUsd;
     o.ledger.charge(charge);
     o.onCharge?.(charge);
   });
