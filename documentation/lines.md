@@ -25,7 +25,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences ([models.md](models.md#the-line)) | `@seshat/models` | built, not run against Lean |
 | `M12` | saturation kernel and subgoal scheduler: given-clause loop, weighted proof numbers, subsumption through Lean-checked instances, named holes as claims worked by inner provers, the escalation ladder ([scheduler.md](scheduler.md)) | `@seshat/scheduler` | built, not run against Lean |
 | `M18` | curriculum of variants, rung 1 of the ladder: special cases and weakenings of a hard problem, solved first with a capped share of its budget, their proofs reaching later briefings ([curriculum.md](curriculum.md)) | `@seshat/scheduler` | built, not run against Lean or a model |
-| `M4` | context compiler | `@seshat/context` | planned |
+| `M4` | context compiler: a frozen prefix and a tail per request, premise selection, citable ids, `expand` and `graph_query` ([context.md](context.md)) | `@seshat/context` | built, not run against Lean or a model |
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
 | `M3` | growing lemma library: proved auxiliary lemmas promoted when non-trivial and general, BM25 index, `library_search`, a drawn briefing section ([library.md](library.md)) | `@seshat/library` | built, not run against Lean or a model |

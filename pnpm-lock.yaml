@@ -71,6 +71,9 @@ importers:
 
   packages/context:
     dependencies:
+      '@seshat/classical':
+        specifier: workspace:*
+        version: link:../classical
       '@seshat/core':
         specifier: workspace:*
         version: link:../core

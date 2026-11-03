@@ -219,10 +219,9 @@ describe("harness run --lines", () => {
     });
   });
 
-  it("refuses unknown, planned and suspended lines before the model is looked up, and runs M0 for --ablation M0", async () => {
+  it("refuses unknown and suspended lines (the planned case is in lines.test.ts, where a registry without the line stands in) before the model is looked up, and runs M0 for --ablation M0", async () => {
     const options: Array<[string[], RegExp]> = [
       [["--lines", "M10,M99"], /^the lines of the run: unknown line "M99"; the lines are M1, M10, M2/m],
-      [["--lines", "M4"], /^the lines of the run: line M4 .* is planned, not implemented yet$/m],
       [["--ablation", "M9"], /^the lines of the run: .*line M9 \(reranking from our own labels, without training\) is suspended: it is not built, and no run enables it \(documentation\/lines.md\)$/m],
       [["--lines", "M10", "--line-option", "M10.k=2"], /^the lines of the run: line M10 has no option k; its options are /m],
       // M1 is implemented, with one option.

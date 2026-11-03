@@ -47,7 +47,7 @@ code without touching the lockfile:
 | Package | Will hold | Depends on |
 |---|---|---|
 | `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, decide, fleet, lean-meta, lines, memory, registry |
-| `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, graph, lessons, library, lines, memory, registry |
+| `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, classical, graph, lessons, library, lines, memory, registry |
 | `@seshat/library` | The growing lemma library (M3) | core, lines, memory, registry |
 | `@seshat/lessons` | Lessons with counters (M5) | core, lines, memory, registry |
 | `@seshat/abduction` | The abductive engine and its reranking (M7, M9), suspended and not built ([lines.md](lines.md#suspended-lines)) | core, graph, lean-meta, lines, memory, models, registry |
