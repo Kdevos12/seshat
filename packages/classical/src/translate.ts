@@ -4,8 +4,9 @@ import { parseStatement, type Statement, type Term, Unreadable } from "./parse.t
  * Translation of Lean goals to SMT-LIB and TPTP (plan §15, step 5). The fragment, documented in
  * documentation/classical.md:
  *
- * - variables of `ℕ`, `ℤ`, `ℝ`, `ℚ` (`ℚ` is read as a real, `ℕ` as an integer with a sign
- *   constraint), `Prop` variables, and abstract types `(M : Type*)` with the operations of their
+ * - variables of `ℕ`, `ℤ`, `ℝ` (`ℕ` as an integer with a sign constraint; the sort of every term
+ *   is tracked, so a subtraction truncates exactly when it is on `ℕ`, and a mix of `ℕ` and `ℤ` is a
+ *   cast, which is outside; `ℚ` is outside too), `Prop` variables, and abstract types `(M : Type*)` with the operations of their
  *   instance binders (`[Mul M]`, `[Add M]`) and function or predicate variables between those sorts;
  * - `+ - * / % ^ neg`, with `^` by a numeral up to 8, `/` of reals by a nonzero numeral, `∣` by a
  *   numeral, truncated subtraction on `ℕ`;
@@ -23,20 +24,24 @@ const isUninterpreted = (t: Ty): t is { sort: string } => typeof t === "object";
 const tyKey = (t: Ty): string => (typeof t === "string" ? t : t.sort);
 
 export type IR =
-  | { k: "lit"; v: string; ty: "Int" | "Real" }
-  | { k: "var"; name: string; ty: Ty }
+  | { k: "lit"; v: string; ty: "Int" | "Real"; nat?: boolean }
+  | { k: "var"; name: string; ty: Ty; nat?: boolean }
   | { k: "op"; op: "add" | "sub" | "mul" | "div" | "mod" | "neg" | "pow"; args: IR[]; ty: Ty; nat?: boolean }
-  | { k: "app"; fn: string; args: IR[]; ty: Ty }
-  | { k: "rel"; op: "=" | "≠" | "<" | "≤" | ">" | "≥" | "dvd"; args: IR[] }
-  | { k: "conn"; op: "and" | "or" | "not" | "imp" | "iff"; args: IR[] }
-  | { k: "quant"; q: "all" | "ex"; vars: Array<{ name: string; ty: Ty }>; body: IR }
-  | { k: "bool"; v: boolean };
+  | { k: "app"; fn: string; args: IR[]; ty: Ty; nat?: boolean }
+  | { k: "rel"; op: "=" | "≠" | "<" | "≤" | ">" | "≥" | "dvd"; args: IR[]; nat?: undefined }
+  | { k: "conn"; op: "and" | "or" | "not" | "imp" | "iff"; args: IR[]; nat?: undefined }
+  | { k: "quant"; q: "all" | "ex"; vars: Array<{ name: string; ty: Ty }>; body: IR; nat?: undefined }
+  | { k: "bool"; v: boolean; nat?: undefined };
 
 /** A symbol the problem declares. */
 export interface FunDecl {
   name: string;
   args: Ty[];
   ret: Ty;
+  /** Which arguments are of `ℕ` in Lean (an integer with a sign constraint here). */
+  natArgs?: boolean[];
+  /** The result is of `ℕ`: the problem asserts that it is not negative. */
+  natRet?: boolean;
 }
 
 export interface Assertion {
@@ -63,14 +68,16 @@ export interface PremiseInput {
 
 interface Env {
   vars: Map<string, Ty>;
-  funs: Map<string, { args: Ty[]; ret: Ty }>;
+  funs: Map<string, { args: Ty[]; ret: Ty; natArgs: boolean[]; natRet: boolean }>;
   /** Instance operations on uninterpreted sorts: `add_M`, `mul_M`. */
   ops: Map<string, string>;
-  /** The variables of `ℕ`, whose subtraction truncates. */
+  /** The variables of `ℕ` in scope, whose subtraction truncates. Restored with `vars` when a quantifier ends. */
   nat: Set<string>;
 }
 
-const NUMBER_TY: Readonly<Record<string, Ty>> = { ℕ: "Int", ℤ: "Int", ℝ: "Real", ℚ: "Real" };
+// `ℚ` is not here on purpose: read as the reals it changes the meaning of every quantifier over it
+// (`∃ q : ℚ, q * q = 2` is false, and true over the reals), so a goal that mentions it is outside.
+const NUMBER_TY: Readonly<Record<string, Ty>> = { ℕ: "Int", ℤ: "Int", ℝ: "Real" };
 const OP_FOR_CLASS: Readonly<Record<string, { symbol: string; op: string }>> = { Mul: { symbol: "*", op: "mul" }, Add: { symbol: "+", op: "add" }, Sub: { symbol: "-", op: "sub" }, Div: { symbol: "/", op: "div" } };
 
 /**
@@ -121,14 +128,25 @@ export function lower(goal: string, premises: readonly PremiseInput[] = []): Pro
     } else {
       const ret = tys[tys.length - 1] as Ty;
       const args = tys.slice(0, -1);
-      env.funs.set(name, { args, ret });
-      problem.funs.push({ name, args, ret });
+      const natArgs = parts.slice(0, -1).map((x) => x === "ℕ");
+      const natRet = parts[parts.length - 1] === "ℕ";
+      env.funs.set(name, { args, ret, natArgs, natRet });
+      problem.funs.push({ name, args, ret, natArgs, natRet });
     }
   }
 
   const ctx = { env, problem };
   for (const name of natVars) {
     problem.assertions.push({ name: `d_${name}`, kind: "domain", lean: name, formula: { k: "rel", op: "≥", args: [{ k: "var", name, ty: "Int" }, { k: "lit", v: "0", ty: "Int" }] } });
+  }
+  for (const f of problem.funs) {
+    if (f.natRet !== true) continue;
+    const vars = f.args.map((ty, i) => ({ name: `a${i + 1}`, ty }));
+    const call: IR = { k: "app", fn: f.name, args: vars.map((v) => ({ k: "var", name: v.name, ty: v.ty })), ty: f.ret, nat: true };
+    const positive: IR = { k: "rel", op: "≥", args: [call, { k: "lit", v: "0", ty: "Int" }] };
+    const guards: IR[] = vars.flatMap((v, i) => (f.natArgs?.[i] === true ? [{ k: "rel" as const, op: "≥" as const, args: [{ k: "var" as const, name: v.name, ty: v.ty }, { k: "lit" as const, v: "0", ty: "Int" as const }] }] : []));
+    const body: IR = guards.length === 0 ? positive : { k: "conn", op: "imp", args: [guards.reduce((a, b) => ({ k: "conn", op: "and", args: [a, b] })), positive] };
+    problem.assertions.push({ name: `d_${f.name}`, kind: "domain", lean: f.name, formula: vars.length === 0 ? body : { k: "quant", q: "all", vars, body } });
   }
   let count = 0;
   for (const b of statement.binders) {
@@ -162,7 +180,7 @@ function closePremise(statement: string, problem: Problem): IR {
   }
   const env: Env = { vars: new Map(), funs: new Map(), ops: new Map(), nat: new Set() };
   // The problem's function symbols and operations are the premise's too.
-  for (const f of problem.funs) env.funs.set(f.name, { args: f.args, ret: f.ret });
+  for (const f of problem.funs) env.funs.set(f.name, { args: f.args, ret: f.ret, natArgs: f.natArgs ?? f.args.map(() => false), natRet: f.natRet === true });
   const vars: Array<{ name: string; ty: Ty }> = [];
   const nat: string[] = [];
   const instOps = new Map<string, string>();
@@ -216,12 +234,13 @@ function elab(term: Term, ctx: Ctx, scope: readonly string[]): IR {
       return { k: "bool", v: term.value };
     case "var": {
       const ty = env.vars.get(term.name);
-      if (ty !== undefined) return { k: "var", name: term.name, ty };
+      if (ty !== undefined) return { k: "var", name: term.name, ty, ...(env.nat.has(term.name) ? { nat: true } : {}) };
       if (env.funs.has(term.name)) throw new Outside(`the function ${term.name} used without arguments`);
       throw new Outside(`the name ${term.name}, which is no variable of the statement`);
     }
     case "quant": {
       const saved = new Map(env.vars);
+      const savedNat = new Set(env.nat);
       const vars: Array<{ name: string; ty: Ty }> = [];
       const guards: IR[] = [];
       for (const v of term.vars) {
@@ -230,11 +249,14 @@ function elab(term: Term, ctx: Ctx, scope: readonly string[]): IR {
         env.vars.set(v.name, ty);
         vars.push({ name: v.name, ty });
         if (v.type === "ℕ") env.nat.add(v.name);
+        else env.nat.delete(v.name);
         if (v.type === "ℕ") guards.push({ k: "rel", op: "≥", args: [{ k: "var", name: v.name, ty: "Int" }, { k: "lit", v: "0", ty: "Int" }] });
       }
       let body = prop(elab(term.body, ctx, [...scope, ...vars.map((v) => v.name)]));
       env.vars.clear();
       for (const [k, v] of saved) env.vars.set(k, v);
+      env.nat.clear();
+      for (const n of savedNat) env.nat.add(n);
       if (guards.length > 0) {
         const g = guards.reduce((a, b) => ({ k: "conn", op: "and", args: [a, b] }));
         body = term.q === "∀" ? { k: "conn", op: "imp", args: [g, body] } : { k: "conn", op: "and", args: [g, body] };
@@ -251,8 +273,11 @@ function elabApplication(term: Extract<Term, { k: "app" }>, ctx: Ctx, scope: rea
   if (f === undefined) throw new Outside(`the function ${term.fn}, which is no variable of the statement`);
   if (f.args.length !== term.args.length) throw new Outside(`${term.fn} applied to ${term.args.length} arguments, not ${f.args.length}`);
   const args = term.args.map((a, i) => retag(elab(a, ctx, scope), f.args[i] as Ty));
-  args.forEach((a, i) => sameTy(tyOfIR(a), f.args[i] as Ty, `an argument of ${term.fn}`));
-  return { k: "app", fn: term.fn, args, ty: f.ret };
+  args.forEach((a, i) => {
+    sameTy(tyOfIR(a), f.args[i] as Ty, `an argument of ${term.fn}`);
+    unify(a, f.natArgs[i] === true, `an argument of ${term.fn}`);
+  });
+  return { k: "app", fn: term.fn, args, ty: f.ret, ...(f.natRet ? { nat: true } : {}) };
 }
 
 function tyOfIR(t: IR): Ty {
@@ -270,6 +295,32 @@ function tyOfIR(t: IR): Ty {
 
 function sameTy(a: Ty, b: Ty, what: string): void {
   if (tyKey(a) !== tyKey(b)) throw new Outside(`${what} mixes ${tyKey(a)} and ${tyKey(b)} (casts are outside the fragment)`);
+}
+
+const isLit = (t: IR): boolean => t.k === "lit" || (t.k === "op" && t.op === "neg" && t.args[0]?.k === "lit");
+const constant = (t: IR): boolean => t.k === "lit" || (t.k === "op" && t.args.every(constant));
+
+/**
+ * Whether a term is of `ℕ`, given what it is put next to: a numeral takes the sort of the other
+ * side, and every other mix of `ℕ` with `ℤ` is a cast, which this translation does not make.
+ */
+function unify(t: IR, wantNat: boolean, what: string): void {
+  if (t.nat === true) {
+    if (wantNat) return;
+    throw new Outside(`${what} mixes ℕ with another type (casts are outside the fragment)`);
+  }
+  if (!wantNat) return;
+  if (t.k === "lit" && !t.v.startsWith("-")) return;
+  if (constant(t) && !isLit(t)) throw new Outside(`${what}: a numeral expression of ℕ (its subtraction would truncate)`);
+  throw new Outside(`${what} mixes ℕ with another type (casts are outside the fragment)`);
+}
+
+/** Checks the operands of a binary operator or relation against each other; true when they are of `ℕ`. */
+function unifyPair(a: IR, b: IR, what: string): boolean {
+  const nat = a.nat === true || b.nat === true;
+  unify(a, nat, what);
+  unify(b, nat, what);
+  return nat;
 }
 
 function numeral(t: IR): string | undefined {
@@ -292,6 +343,7 @@ function elabOperator(term: Extract<Term, { k: "app" }>, ctx: Ctx, scope: readon
   if (op === "neg") {
     const ty = tyOfIR(a);
     if (ty === "Prop" || isUninterpreted(ty)) throw new Outside("negation of a non-number");
+    if (a.nat === true) throw new Outside("the negation of a natural number");
     return { k: "op", op: "neg", args: [a], ty };
   }
   if (b === undefined) throw new Outside(`the operator ${op}`);
@@ -300,7 +352,7 @@ function elabOperator(term: Extract<Term, { k: "app" }>, ctx: Ctx, scope: readon
   const left = retag(a, ty);
   const right = retag(b, ty);
   sameTy(tyOfIR(left), tyOfIR(right), `the operator ${op}`);
-  const natural = isNatural(term, ctx);
+  const natural = op === "^" || isUninterpreted(ty) || ty === "Prop" ? false : unifyPair(left, right, `the operator ${op}`);
   switch (op) {
     case "=":
     case "≠":
@@ -334,28 +386,16 @@ function elabOperator(term: Extract<Term, { k: "app" }>, ctx: Ctx, scope: readon
       if ((op === "/" || op === "%") && ty === "Int" && numeral(right) === undefined) throw new Outside("a division of integers by something that is no numeral");
       if (op === "%" && ty === "Real") throw new Outside("modulo over the reals");
       const name = op === "+" ? "add" : op === "-" ? "sub" : op === "*" ? "mul" : op === "/" ? "div" : "mod";
-      return { k: "op", op: name, args: [left, right], ty, ...(op === "-" && natural ? { nat: true } : {}) };
+      return { k: "op", op: name, args: [left, right], ty, ...(natural ? { nat: true } : {}) };
     }
     case "^": {
       const e = numeral(b);
       if (e === undefined || !/^\d+$/u.test(e) || Number(e) > 8) throw new Outside("a power whose exponent is no numeral up to 8");
-      return { k: "op", op: "pow", args: [a, { k: "lit", v: e, ty: "Int" }], ty: tyOfIR(a) };
+      return { k: "op", op: "pow", args: [a, { k: "lit", v: e, ty: "Int" }], ty: tyOfIR(a), ...(a.nat === true ? { nat: true } : {}) };
     }
     default:
       throw new Outside(`the operator ${op}`);
   }
-}
-
-/** Whether a subtraction is on natural numbers: some variable in it is a `ℕ` (recorded by the domain assertion). */
-function isNatural(term: Extract<Term, { k: "app" }>, ctx: Ctx): boolean {
-  if (term.fn !== "-") return false;
-  const names = new Set<string>();
-  const walk = (t: Term): void => {
-    if (t.k === "var") names.add(t.name);
-    else if (t.k === "app") t.args.forEach(walk);
-  };
-  walk(term);
-  return [...names].some((n) => ctx.env.nat.has(n));
 }
 
 // --- SMT-LIB -----------------------------------------------------------------------------------

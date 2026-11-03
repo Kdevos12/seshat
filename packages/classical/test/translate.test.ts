@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { lower, Outside, readVampire, readZ3, runProcess, toSmtLib, toTptp } from "../src/index.ts";
 
@@ -130,5 +130,41 @@ describe("z3 on translated goals", { skip: z3Path() === undefined ? "z3 is not i
   it("agrees with truncated natural subtraction", async () => {
     assert.equal((await run(smt("(a b : ℕ) : a - b ≤ a"))).status, "unsat");
     assert.equal((await run(smt("(a b : ℕ) : a - b + b = a"))).status, "sat");
+  });
+});
+
+describe("the translation is sound: it reads the sort of every term, or refuses", () => {
+  const z3 = (() => {
+    try {
+      execFileSync("z3", ["-version"]);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const answer = (goal: string): string => spawnSync("z3", ["-in"], { input: smt(goal), encoding: "utf8" }).stdout.split("\n")[0] ?? "";
+
+  it("truncates the subtraction of every term of ℕ, function results included (review I1)", () => {
+    const text = smt("(f : ℕ → ℕ) (h : f 3 - f 5 = 0) : f 3 ≤ f 5");
+    assert.match(text, /\(ite \(>= \(f 3\) \(f 5\)\) \(- \(f 3\) \(f 5\)\) 0\)/);
+    assert.match(text, /:named d_f\)/, "a result of ℕ is not negative");
+    assert.throws(() => lower("(f : ℕ → ℕ) (x : ℤ) : f x = f x"), (e: unknown) => e instanceof Outside && /mixes ℕ/.test(e.message));
+    if (z3) {
+      assert.equal(answer("(f : ℕ → ℕ) (h : f 3 - f 5 = 0) : f 3 = f 5"), "sat", "the stronger goal is not provable");
+      assert.equal(answer("(f : ℕ → ℕ) : f 3 ≥ 0"), "unsat");
+    }
+  });
+
+  it("ends the scope of a quantified ℕ with the quantifier (review I2)", () => {
+    const text = smt("(x : ℤ) : (∀ x : ℕ, x ≥ 0) → x - 1 ≥ 0");
+    assert.doesNotMatch(text, /ite/, "the ℤ subtraction after the quantifier does not truncate");
+    if (z3) assert.equal(answer("(x : ℤ) : (∀ x : ℕ, x ≥ 0) → x - 1 ≥ 0"), "sat");
+  });
+
+  it("does not read ℚ as the reals, and does not mix ℕ with ℤ or hide a truncation in a numeral expression (review I3)", () => {
+    for (const goal of [": ∃ q : ℚ, q * q = 2", "(h : ∀ q : ℚ, q * q ≠ 2) : False", "(x : ℚ) : x = x", "(n : ℕ) (z : ℤ) : n + z = z + n", "(n : ℕ) : n + (2 - 3) = n", "(n : ℕ) : n = -1"]) {
+      assert.throws(() => lower(goal), (e: unknown) => e instanceof Outside, goal);
+    }
+    assert.doesNotThrow(() => lower("(n : ℕ) : n - 1 ≤ n"));
   });
 });
