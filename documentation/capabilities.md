@@ -11,6 +11,8 @@ manifest's schemas, and records every call as a tool run in the journal.
 
 ## Layout
 
+(Tools that people install are packs, see [packs.md](packs.md); they use the same layout under `capabilities/`.)
+
 ```
 capabilities/<id>/manifest.json   the contract and the known implementations
 capabilities/<id>/contract.json   golden cases, run before an implementation is trusted
@@ -45,7 +47,8 @@ the orchestrator, by rule (level 0); `direct` is one of the ten or so tools alwa
 model (level 1); `deferred` is found on demand through tool search or code (level 2). `lean.check`
 is `auto`, called by the validator; `compute.sage` is `direct`, given to the provers by
 `harness run --tool` ([m0-loop.md](m0-loop.md#other-tools)), as are the lookups on the OEIS, the
-LMFDB and FindStat. No capability is `deferred` yet.
+LMFDB and FindStat. The capabilities of installed packs ([packs.md](packs.md)) are `deferred`, and only they
+are yet; `toolIndex` and `searchTools` list them.
 
 Loading checks more than the shape: schemas use only the supported keywords, implementation ids
 are unique, every example and every contract input is valid for the schemas, summary and
@@ -206,7 +209,8 @@ scope and releases it when the attempt ends ([m0-loop.md](m0-loop.md#other-tools
 
 ### Hashes, health, descriptions
 
-`registry.hash` covers the catalog (every manifest, files included) and the host profile. It goes
+`registry.hash` covers the catalog (every manifest, files included) and the host profile, and, when
+packs are installed, each pack's name, version and content hash ([packs.md](packs.md)). It goes
 into `run.started`, so a run's journal says which contracts and implementation versions it used.
 
 `registry.health()` reaches every implementation the host lists and asks for its health.
@@ -447,6 +451,7 @@ speed with the old one's is not implemented yet.)
 | `harness run ...` | Runs the M0 loop on bench problems ([m0-loop.md](m0-loop.md#commands)). |
 | `harness run --resume RUN_DIR --checkout DIR` | Continues a run whose process ended without finishing it ([ledger.md](ledger.md#resume)). |
 | `harness report RUN_DIR [--json]` | Prints the report of a run, built from its journal. |
+| `harness add PATH\|GIT_URL [--allow-programs] [--replace]`, `harness packs`, `harness remove NAME` | Installs, lists and removes packs of tools and skills ([packs.md](packs.md)). |
 | `harness lean-env resolve NAME [--find]`, `build NAME`, `show [NAME]` | Resolves, builds and shows the Lean environments of `lean/env/` ([lean-env.md](lean-env.md)). |
 
 Run it as `pnpm harness ...` from the repository.
@@ -462,6 +467,10 @@ Run it as `pnpm harness ...` from the repository.
 3. Add the capability to the host profiles that offer it.
 4. Run `pnpm harness contract <id>` on each host, and `pnpm check`.
 
+A tool someone else wrote is added as a pack instead ([packs.md](packs.md)): the same manifest and
+contract in a directory with a `pack.json`, installed with `harness add`, at level 2 and never writing
+a status.
+
 Not written yet: choosing among implementations by their measured success on similar goals,
-tool search over `deferred` capabilities, and cost and health statistics from the journal's tool
+the tool-search tool over `deferred` capabilities (the index it reads exists: `toolIndex`), and cost and health statistics from the journal's tool
 runs.

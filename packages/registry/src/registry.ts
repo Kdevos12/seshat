@@ -22,6 +22,7 @@ import {
 } from "./implementation.ts";
 import { defaultMcpTransport, McpImplementation, McpToolError } from "./mcp.ts";
 import { getPath } from "./paths.ts";
+import { offeredOn, packIntact, packRecord, type LoadedPack, type PackRecord } from "./packs.ts";
 import { validate } from "./schema.ts";
 
 /** Where tool runs are recorded: a `Journal`, or anything with the same `emit`. */
@@ -74,6 +75,12 @@ export interface RegistryOptions {
    * environment it ran in.
    */
   leanEnv?: LeanEnvPin;
+  /**
+   * The installed packs (documentation/packs.md), loaded and checked by `loadInstalledPacks`. Their
+   * capabilities join the catalog as level-2 tools and are offered on the hosts the packs name; the
+   * set is fixed when the registry is built, so a pack installed later reaches the next session.
+   */
+  packs?: readonly LoadedPack[];
 }
 
 export interface InvokeOptions {
@@ -147,6 +154,8 @@ export class Registry {
   readonly hash: string;
   /** The Lean environment the registry was built for, if the host names one. Fixed for the registry's life. */
   readonly leanEnv: LeanEnvPin | undefined;
+  /** The packs the registry was built with, by name; a run records them (`packRecords`). */
+  readonly packs: readonly LoadedPack[];
   private readonly factories: Readonly<Record<string, ImplementationFactory>>;
   private readonly journal: ToolRunSink | undefined;
   private readonly blobs: BlobSink | undefined;
@@ -155,15 +164,32 @@ export class Registry {
   private readonly instances = new Map<string, Promise<ImplementationInstance>>();
 
   constructor(options: RegistryOptions) {
-    this.catalog = options.catalog;
-    this.host = options.host;
+    const packs = [...(options.packs ?? [])].sort((a, b) => (a.manifest.name < b.manifest.name ? -1 : 1));
+    const packProblems: string[] = [];
+    const capabilities = new Map(options.catalog.capabilities);
+    const bindings: HostProfile["capabilities"] = {};
+    for (const pack of packs) {
+      for (const capability of pack.capabilities) {
+        const id = capability.manifest.id;
+        if (capabilities.has(id)) packProblems.push(`pack ${pack.manifest.name}: ${id} is already a capability`);
+        capabilities.set(id, capability);
+        if (offeredOn(pack, options.host.host)) {
+          // Optional: a pack's tool that does not answer is a warning of `harness health`, never a failure of the host.
+          bindings[id] = { use: capability.manifest.implementations.map((i) => i.id), optional: true };
+        }
+      }
+    }
+    this.packs = packs;
+    this.catalog = packs.length === 0 ? options.catalog : { ...options.catalog, capabilities };
+    // The host's own entries win over the defaults a pack gets.
+    this.host = packs.length === 0 ? options.host : { ...options.host, capabilities: { ...bindings, ...options.host.capabilities } };
     this.factories = options.factories ?? {};
     this.journal = options.journal;
     this.blobs = options.blobs;
     this.env = options.env ?? process.env;
     this.mcpTransport = options.mcpTransport ?? defaultMcpTransport;
     this.leanEnv = options.leanEnv === undefined ? undefined : { ...options.leanEnv };
-    const problems = checkHostProfile(this.host, this.catalog);
+    const problems = [...packProblems, ...checkHostProfile(this.host, this.catalog)];
     for (const [id, binding] of Object.entries(this.host.capabilities)) {
       for (const implId of binding.use) {
         const spec = this.catalog.capabilities.get(id)?.manifest.implementations.find((i) => i.id === implId);
@@ -173,7 +199,31 @@ export class Registry {
       }
     }
     if (problems.length > 0) throw new CatalogError(problems);
-    this.hash = hashJson({ catalog: this.catalog.hash, host: hostProfileHash(this.host) });
+    // Packs go into the hash only when there are some, so that a registry without them keeps the hash it always had.
+    this.hash = hashJson({
+      catalog: options.catalog.hash,
+      host: hostProfileHash(options.host),
+      ...(packs.length > 0 ? { packs: packs.map((p) => packRecord(p)) } : {}),
+    });
+  }
+
+  /** The name, version and content hash of each pack, in name order: what a run records to be reproducible. */
+  packRecords(): PackRecord[] {
+    return this.packs.map((p) => packRecord(p));
+  }
+
+  /** The pack that adds the capability, if one does. */
+  packOf(id: string): LoadedPack | undefined {
+    return this.packs.find((p) => p.capabilities.some((c) => c.manifest.id === id));
+  }
+
+  /**
+   * Whether a pack asked for the capability to be in the level-1 declared set and the owner granted it at install
+   * (`harness add --level1`): a pack's own request grants nothing. A registry is built for one
+   * session and its packs never change, so a request is honoured exactly from the session after the install.
+   */
+  level1Requested(id: string): boolean {
+    return this.packs.some((p) => p.level1Granted === true && p.manifest.level1?.includes(id) === true);
   }
 
   /** Loads `<catalogDir>/*` and `<configDir>/hosts/<host>.json`. */
@@ -365,7 +415,20 @@ export class Registry {
     // A host that changes the transport replaces the server; otherwise its fields replace the manifest's.
     const base = spec.server as unknown as Record<string, Json>;
     const merged = overrides.transport !== undefined && overrides.transport !== base.transport ? overrides : { ...base, ...overrides };
-    const server = interpolate(merged, variables);
+    const pack = this.packOf(capability.manifest.id);
+    // The files may have changed since the registry was built, and a stdio command runs them as they are now.
+    if (pack !== undefined && !packIntact(pack)) {
+      throw new UnavailableError(`pack ${pack.manifest.name}: its files are not the ones installed (hash ${pack.hash.slice(0, 12)}), so none of its programs is started`);
+    }
+    let server: Json;
+    if (pack === undefined) {
+      server = interpolate(merged, variables);
+    } else {
+      // The manifest is a stranger's: it sees only the variables its pack declared. The host's own fields are the owner's.
+      const own = Object.fromEntries((pack.manifest.requires?.env ?? []).map((n) => [n, this.env[n]]));
+      const fromPack = overrides.transport !== undefined && overrides.transport !== base.transport ? {} : interpolate(base, { dir: capability.dir, env: own });
+      server = { ...fromPack, ...interpolate(overrides, variables) };
+    }
     const problems = checkServer(server);
     if (problems.length > 0) throw new UnavailableError(problems.join("; "));
     return new McpImplementation(spec, server as unknown as McpServerSpec, this.mcpTransport);

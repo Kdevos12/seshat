@@ -8,3 +8,4 @@ runs/
 lean/.lake/
 lean/*/.lake/
 lean/env/*/
+packs/

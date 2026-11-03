@@ -12,6 +12,7 @@
     "@seshat/fleet": "workspace:*",
     "@seshat/graph": "workspace:*",
     "@seshat/lean-meta": "workspace:*",
+    "@seshat/library": "workspace:*",
     "@seshat/lines": "workspace:*",
     "@seshat/memory": "workspace:*",
     "@seshat/registry": "workspace:*"

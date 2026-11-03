@@ -548,6 +548,37 @@ export interface EventDataMap {
     toolRunId?: string;
   };
   /**
+   * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
+   * name, version and content hash, what it adds and the programs and servers its tools would run. Written
+   * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
+   * nothing here touches a claim; the hash is what a run records so that it can be reproduced.
+   */
+  "pack.installed": {
+    name: string;
+    version: string;
+    /** sha256 over the pack's manifest and every file it carries. */
+    hash: string;
+    trust: "evidence" | "computed";
+    capabilities: string[];
+    skills: string[];
+    /** The programs (stdio commands) and servers (URLs) the pack's tools would reach when a run calls them. */
+    programs: string[];
+    /** Where the pack came from: a directory, or a git url without credentials. */
+    source: string;
+    /** The owner accepted that the pack's tools start its programs and reach its servers (`--allow-programs`). */
+    acceptedPrograms?: boolean;
+    /** The owner accepted that the pack's own `level1` request is honoured from the next session (`--level1`). */
+    level1Accepted?: boolean;
+    /** The environment variables the pack's tools may read (its `requires.env`). */
+    env?: string[];
+  };
+  /** A pack was removed (`harness remove`). The journal keeps the install: nothing is deleted from it. */
+  "pack.removed": {
+    name: string;
+    version: string;
+    hash: string;
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -600,6 +631,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "ladder.escalated",
   "memory.epoch_opened",
   "decision.made",
+  "pack.installed",
+  "pack.removed",
 ];
 
 export function isEventType(value: unknown): value is EventType {
