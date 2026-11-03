@@ -463,6 +463,17 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
+  // host cannot give is refused here, before `run.started` or `run.resumed` is written.
+  const prices = new PriceBook(registry.host.models, o.wallClock);
+  if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
+    return await abandon(
+      `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
+        "(models in config/hosts, documentation/m0-loop.md, \"Prices\")",
+      undefined,
+      registry,
+    );
+  }
   // The run is pinned to the Lean environment its registry was built for, for its whole life (documentation/lean-env.md).
   const leanEnv = registry.leanEnv;
   if (leanEnv !== undefined && (leanEnv.status === "stale" || leanEnv.status === "unknown")) {
@@ -625,16 +636,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
-  // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices").
-  const prices = new PriceBook(registry.host.models, o.wallClock);
-  if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
-    return await abandon(
-      `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
-        "(models in config/hosts, documentation/m0-loop.md, \"Prices\")",
-      undefined,
-      registry,
-    );
-  }
   const offpeak =
     config.offpeak === undefined
       ? undefined

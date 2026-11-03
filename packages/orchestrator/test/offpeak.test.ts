@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { PricingCalendar } from "@seshat/registry";
 import { buildReport, renderRunReport, RunSetupError } from "../src/index.ts";
-import { check, demoResume, demoRun, killedAt, ofType, pricedRegistry } from "./m0-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, pricedRegistry, tempDir } from "./m0-helpers.ts";
 import { consortium } from "./turns-helpers.ts";
 
 // Made-up numbers: peak 01:00 to 04:00 and 06:00 to 10:00 UTC on weekdays, half price otherwise. 2026-11-02 is a Monday.
@@ -43,6 +45,14 @@ describe("the off-peak option", () => {
       demoRun({ responses: [], config: { offpeak: {} }, registry: pricedRegistry({ "faux/prover": { pricing: PRICING } }) }),
       /a pricing table without a calendar/,
     );
+  });
+
+  it("is refused before anything is written, also in a directory that already exists", async () => {
+    const dir = tempDir("mh-offpeak-");
+    await assert.rejects(demoRun({ responses: [], dir, config: { offpeak: {} } }), /--offpeak needs the host's pricing calendar/);
+    assert.equal(existsSync(join(dir, "config.json")), false, "no configuration was written");
+    const journal = join(dir, "journal.jsonl");
+    assert.equal(existsSync(journal) ? readFileSync(journal, "utf8").trim() : "", "", "no event was written");
   });
 
   it("defers a turn started at a peak instant to the next off-peak window, and the run is charged at the off-peak rate", async () => {
