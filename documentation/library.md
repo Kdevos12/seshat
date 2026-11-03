@@ -120,6 +120,15 @@ other half. The default is BM25 alone, because no judged queries exist yet; Task
 - **The tool `library_search`** (`{query, limit?}`), always offered unless `tool: false`: the same search, for words the
   prover chooses. It is not drawn.
 
+## Schemas
+
+The library also holds **schemas**, the shapes of decompositions that closed (line `M15`, [archive.md](archive.md), [schemas.md](schemas.md)): the node
+kind `library_schema`, its data (`SchemaData`: the skeletons of the conclusion, the parts and the main proof, the family and region, the decompositions
+it was made from, a state) and an index of its own, `SchemaIndex`, a BM25 over the shape of the conclusion, rebuilt from the nodes each time like the
+lemmas'. They are in `packages/library/src/schemas.ts`; the line that makes and shows them is in `@seshat/scheduler`. A schema is learned from an
+outcome and not proved, so unlike a lemma its node carries a provenance stamp ([memory.md](memory.md#provenance-and-epochs)), is shown only
+through the randomized inclusion, and leaves use by its measured effect. Lemma search (`library_search`, the briefing section) does not read schemas.
+
 ## The Lean files
 
 `harness library export RUN_DIR [--out DIR]` writes `SeshatLib/<Domain>.lean` under `lean/` (or `DIR`) from the memory of a

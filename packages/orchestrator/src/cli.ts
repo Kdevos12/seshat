@@ -17,6 +17,7 @@ import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
+import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
@@ -52,9 +53,16 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
+  harness packs [--packs-dir DIR]
+  harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+add: installs a pack (documentation/packs.md): a directory or git repository with a pack.json, tools and skills. The manifest and
+the contract cases it carries are validated, nothing of it is executed, and a pack that could write a claim's status is refused.
+A pack whose tools start programs or reach servers needs --allow-programs; its own level-1 request is honoured (from the next session) only with --level1. Its tools are level 2, never in the declared set
+of a running session. packs lists the installed packs; remove removes one. The directory is --packs-dir, SESHAT_PACKS_DIR or packs/.
 library export: writes the lemma library of a run as lean/SeshatLib/<Domain>.lean (documentation/library.md), generated from
 the journal and not compiled here; --out DIR changes the directory the SeshatLib folder goes under.
 library build: builds one spec (documentation/library-builder.md) with the builder that config/library-builder.json selects (none by
@@ -153,6 +161,10 @@ const { positionals, values } = parseArgs({
     json: { type: "boolean" },
     find: { type: "boolean" },
     "env-dir": { type: "string" },
+    "allow-programs": { type: "boolean" },
+    level1: { type: "boolean" },
+    replace: { type: "boolean" },
+    "packs-dir": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -181,6 +193,15 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "add") {
+      if (target === undefined) throw new UsageError("add needs a directory or a git url");
+      return addCommand(target, { dir: values["packs-dir"], allowPrograms: values["allow-programs"], replace: values.replace, level1: values.level1, out: (l) => console.log(l) });
+    }
+    if (command === "packs") return packsCommand({ dir: values["packs-dir"], out: (l) => console.log(l) });
+    if (command === "remove") {
+      if (target === undefined) throw new UsageError("remove needs the name of a pack");
+      return removeCommand(target, { dir: values["packs-dir"], out: (l) => console.log(l) });
+    }
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(`${error.message}\n\n${usage}`);

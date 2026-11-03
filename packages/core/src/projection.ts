@@ -786,6 +786,10 @@ export class Projection {
           event.seq, d.taskId);
         return;
       }
+      // The installed packs are a fold of these two events (`installedPacks` in @seshat/registry), not a table.
+      case "pack.installed":
+      case "pack.removed":
+        return;
       case "memory.epoch_opened": {
         const d = event.data;
         db.prepare("insert into epochs (epoch, seq, reason, changes_json, provenance_json) values (?, ?, ?, ?, ?)").run(

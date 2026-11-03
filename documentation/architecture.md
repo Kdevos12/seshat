@@ -16,7 +16,9 @@
   claim is `proved` only after certification ([trust.md](trust.md)).
 - **Capabilities** (Lean checking, automated provers, SAT/SMT, computer algebra, search) sit behind
   a registry with manifests and an MCP boundary, so that any tool can be updated or replaced
-  without touching the core.
+  without touching the core. Tools and skills that people write are installed as **packs**
+  (`harness add`): level-2 tools and human-written skills that can never write a claim's status
+  ([packs.md](packs.md)).
 
 ## Packages
 
@@ -28,7 +30,7 @@
 | `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
 | `@seshat/guards` | Line M6: neutral framing, resolved citations, no raw error text, anchored revisions, the drift detectors and the `drift` nodes ([guards.md](guards.md)) | core, lines, memory, registry |
 | `@seshat/fleet` | The fleet line: posteriors per strategy and model, Thompson sampling, adaptive width, escalation and the `allocation` nodes ([fleet.md](fleet.md)) | core, decide, lines, memory, registry |
-| `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
+| `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters, installable packs (manifest, store, skills, tool index; [packs.md](packs.md)) | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
 | `@seshat/lean-env` | Lean environments as data: the environment files (`lean/env/`), a TOML reader for them, the resolver, the lock and the environment hash, the generated lakefile, the build, and line M17 ([lean-env.md](lean-env.md)) | core, lines |
@@ -36,7 +38,7 @@
 | `@seshat/lean-local` | Lean on the host: the certifier, a kernel replay in a fresh process of the bench's Lean project, and its registry factory (`lean.certify`, [certifier.md](certifier.md)) | core, lines, memory, registry |
 | `@seshat/decide` | `decide`: typed choices, scores and yes/no answers that order work, the Jev and faux backends of `decide.ask`, the forbidden list, the orderer for `prove.search`, the cold-start priors ([decide.md](decide.md)) | core, lines, registry |
 | `@seshat/models` | The line M11: small models of the discrete domain, fingerprints, certified refutations, identification (M11); the implementations of `oeis.search`, `lmfdb.query` and `findstat.identify` | core, lines, memory, registry |
-| `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12, and the curriculum of M18, join it | core, fleet, graph, lean-meta, lines, memory, registry |
+| `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12, the curriculum of M18, and the archive, schemas and line M15, join it | core, fleet, graph, lean-meta, library, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, M17, fleet), the M1 line, the `harness` command (and `harness lean-env`) | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 

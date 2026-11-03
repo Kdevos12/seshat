@@ -12,6 +12,7 @@ import {
 } from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
 import { type LessonReport, lessonReport, renderLessonReport } from "@seshat/lessons";
+import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/scheduler";
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
@@ -43,6 +44,8 @@ export interface RunReport {
   lines?: string[];
   /** The Lean environment the run was pinned to (documentation/lean-env.md); absent for a run on a host that names none. */
   leanEnv?: LeanEnvRecord;
+  /** The installed packs the run used, by content hash (documentation/packs.md); absent when none was installed. */
+  packs?: Array<{ name: string; version: string; hash: string }>;
   /** True when the run's last `run.finished` is more recent than its last resumption: a run that was resumed and cut again has not finished. */
   finished: boolean;
   stopped?: string;
@@ -112,6 +115,11 @@ export interface RunReport {
    * that were drawn each lesson, with it and without it. Absent when the run recorded none.
    */
   lessons?: LessonReport;
+  /**
+   * The archive of decompositions and the schemas (line M15, documentation/archive.md): the cells filled, the diversity of mechanisms,
+   * how the picks of a cell fared, and the schema hints with and without the draw. Absent when the run recorded none.
+   */
+  archive?: ArchiveReport;
   /**
    * What the run took from the earlier journals it started on (`--memory-from`); absent for a run that
    * started on none. The problems' outcomes above are the run's own certifications: nothing here is
@@ -512,8 +520,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const redundant = redundancy(events);
   const library = libraryReport(events);
   const lessons = lessonReport(events);
+  const archive = archiveReport(events);
   const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
+  const recordedPacks = (started.config as { packs?: unknown } | null)?.packs;
+  const packs = Array.isArray(recordedPacks) ? (recordedPacks as Array<{ name: string; version: string; hash: string }>) : [];
   return {
     runId: started.runId,
     benchId: started.benchId,
@@ -522,6 +533,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(started.codeRev !== undefined ? { codeRev: started.codeRev } : {}),
     ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
     ...(leanEnv !== undefined ? { leanEnv } : {}),
+    ...(packs.length > 0 ? { packs } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
     ...(crashed.length > 0
@@ -578,6 +590,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
     ...(library !== undefined ? { library } : {}),
     ...(lessons !== undefined ? { lessons } : {}),
+    ...(archive !== undefined ? { archive } : {}),
   };
 }
 
@@ -663,7 +676,8 @@ export function renderRunReport(report: RunReport): string {
       `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
-      `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}`,
+      `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}` +
+      `${report.packs !== undefined ? ` Packs: ${report.packs.map((p) => `${p.name} ${p.version} (${p.hash.slice(0, 12)})`).join(", ")}.` : ""}`,
     report.finished
       ? report.stopped !== undefined
         ? `The run stopped early: ${report.stopped}.`
@@ -724,6 +738,7 @@ export function renderRunReport(report: RunReport): string {
       : []),
     ...(report.library !== undefined ? [renderLibraryReport(report.library)] : []),
     ...(report.lessons !== undefined ? [renderLessonReport(report.lessons)] : []),
+    ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
