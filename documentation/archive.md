@@ -53,10 +53,14 @@ theorem. A statement or proof that fails the strict screen ([schemas.md](schemas
 
 ## Schemas
 
-When a problem ends (`afterProblem`), the line records a snapshot of the archive (`m15_archive`, a reading of Lean's verdicts, not stamped) and keeps each
-closed one-level decomposition of the problem as a **schema**: `skeletonOf` reads it through the strict screen, and `keepSchema` makes it another support
-of a schema that covers it, the generalization of the first schema it can be anti-unified with (which becomes `superseded`), or a schema of its own
-([schemas.md](schemas.md#merging)). The schema node is stamped with the run's provenance (PE1), so it enters probation on a new epoch.
+When a problem ends (`afterProblem`), the line records a snapshot of the archive (`m15_archive`, a reading of Lean's verdicts, not stamped). Schemas are
+made from the snapshots of the problems that have ended, at the start of each later session and at the end of each problem, and only from a
+decomposition **the kernel closed**: every leaf closed at the certified level (`Member.certified`, the ATMS at level `certified`), so a leaf the fast check
+accepted (`computed`) is not enough. The certifier runs after the line's last hook of a problem, which is why a problem's schema appears when a later problem
+escalates (or in a later run that starts on this journal with `--memory-from`), not at its own end. `skeletonOf` reads the decomposition through the strict
+screen, and `keepSchema` makes it another support of a schema that covers it, the generalization of the first schema it can be anti-unified with (which becomes
+`superseded`), or a schema of its own ([schemas.md](schemas.md#merging)). The schema node is stamped with the run's provenance (PE1), so it enters probation on a
+new epoch. Fitness ρ, which guides the picks, still counts a `computed` leaf as closed.
 
 A sketch whose auxiliary region holds anything but its holes gives no schema: its helper lemma is specific to its problem.
 
