@@ -320,6 +320,23 @@ more as it takes to tell it from the ids named before. A name once given never c
 `ShortIds` for as long as the names must stay valid. `parseGraphQuery(args, claimId)` checks the
 arguments of the tool below.
 
+### Connecting claims
+
+`connect(memory, {anchors, kinds?, edgeStatuses?, claimStatuses?, depth?, maxPaths?, perCluster?}, shorts?)` (plan change
+PC5 item 3) returns the paths that link two or more claims, which the context compiler's `graph_query` tool offers as its
+`connect` mode ([context.md](context.md)). For each pair of anchors it finds the simple paths of at most `depth` edges (1 to
+3, the default) by a bidirectional breadth-first search, walking an edge either way; scores each path by the mean
+personalized-PageRank score of its claims, seeded at the anchors; clusters the paths by their sequence of relations and
+directions (`implies> uses<`); and keeps the best `perCluster` (2) of each cluster, the best path of every pair first, at
+most `maxPaths` (12). `Connection.connected` says whether the returned paths join all the anchors, and `unreached` which
+ones they do not. At most `maxEnumerated` (2000) paths are enumerated, so a dense graph cannot blow up; `truncated` says a
+cap cut the result.
+
+`renderConnection(connection, style, {edges?, name?})` writes a connection as `chains` (one arrow chain per line, `A
+-implies[lean_checked]-> B <-uses[proposed]- C`), `merged` (the edges grouped by head and relation, `A -implies[...]-> B,
+C`) or a markdown `table`; `renderSubgraphAs(subgraph, "merged" | "table")` writes a typed query's result the same way.
+Which one is shortest and best for a model is an A/B on the bench (Task 14); nothing has measured it yet.
+
 ## The line
 
 `M2` registers `m2Line` ([lines.md](lines.md)); `createM2Line()` makes another with its own state.

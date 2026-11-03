@@ -13,6 +13,7 @@
 export * from "./atms.ts";
 export * from "./attempt.ts";
 export * from "./compose.ts";
+export * from "./connect.ts";
 export * from "./edge-check.ts";
 export * from "./engine.ts";
 export * from "./failure.ts";
