@@ -1,7 +1,8 @@
 /**
- * @seshat/lessons, a skeleton. Lessons with counters, updated by outcomes (line M5).
- *
- * The package exists with its dependencies, so that the task that implements it adds code without
- * touching the lockfile (documentation/lines.md, "Adding a line").
+ * @seshat/lessons: lessons with counters, updated by outcomes (line M5, documentation/lessons.md).
  */
-export {};
+export * from "./learn.ts";
+export * from "./m5.ts";
+export * from "./records.ts";
+export * from "./report.ts";
+export * from "./select.ts";
