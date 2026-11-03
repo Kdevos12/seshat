@@ -15,13 +15,21 @@ export interface CommandResult {
 export type CommandRunner = (
   command: string,
   args: readonly string[],
-  options: { cwd: string; signal?: AbortSignal; onLine?: (line: string) => void },
+  options: {
+    cwd: string;
+    signal?: AbortSignal;
+    onLine?: (line: string) => void;
+    /** Exactly the environment of the process, when given (default: the process's own). */
+    env?: Readonly<Record<string, string>>;
+    /** Start the program in a process group of its own and kill the whole group on abort: what a program that starts others needs. */
+    group?: boolean;
+  },
 ) => Promise<CommandResult>;
 
 const TAIL_CHARS = 6000;
 
 /** The runner that starts the program, streaming each line it prints to `onLine`. */
-export const spawnRunner: CommandRunner = (command, args, { cwd, signal, onLine }) =>
+export const spawnRunner: CommandRunner = (command, args, { cwd, signal, onLine, env, group }) =>
   new Promise<CommandResult>((resolvePromise) => {
     let tail = "";
     let pending = "";
@@ -34,13 +42,42 @@ export const spawnRunner: CommandRunner = (command, args, { cwd, signal, onLine 
       pending = lines.pop() ?? "";
       for (const line of lines) onLine(line);
     };
-    const child = spawn(command, [...args], { cwd, ...(signal !== undefined ? { signal } : {}), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, [...args], {
+      cwd,
+      ...(env !== undefined ? { env: { ...env } } : {}),
+      ...(signal !== undefined && group !== true ? { signal } : {}),
+      ...(group === true ? { detached: true } : {}),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    // A grouped program is killed with everything it started, by the group's id; the output of a grandchild that outlives it does not hold the result back.
+    let killed = false;
+    const killGroup = () => {
+      killed = true;
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
+    if (group === true && signal !== undefined) {
+      if (signal.aborted) killGroup();
+      else signal.addEventListener("abort", killGroup, { once: true });
+    }
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     child.on("error", (error) => resolvePromise({ code: null, output: `${tail}${error.message}`.slice(-TAIL_CHARS) }));
     child.on("close", (code) => {
+      if (group === true && signal !== undefined) signal.removeEventListener("abort", killGroup);
+      // Whatever the program left running in its group goes with it.
+      if (group === true && !killed && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // nothing left in the group
+        }
+      }
       if (pending !== "") onLine?.(pending);
-      resolvePromise({ code, output: tail });
+      resolvePromise({ code: killed ? null : code, output: tail });
     });
   });
 
