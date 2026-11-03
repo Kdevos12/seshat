@@ -53,6 +53,8 @@ export interface ProverOptions {
    * `running`, as the task of a process that ended does (documentation/human.md).
    */
   turn?: Turn;
+  /** The off-peak option: a session starts after this resolves, which it does at once at an off-peak hour (documentation/human.md, "Off-peak"). */
+  waitOffPeak?: () => Promise<void>;
   /** The prover picks up where an interrupted run left it, instead of starting. */
   resume?: ProverResume;
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
@@ -138,6 +140,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done("budget");
     if (o.turn?.ended !== undefined) return done("turn");
+    if (o.waitOffPeak !== undefined) {
+      await o.waitOffPeak();
+      if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
+      if (o.turn?.ended !== undefined) return done("turn");
+    }
     const attemptId = newId("att");
     let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions };
     let model = o.model;

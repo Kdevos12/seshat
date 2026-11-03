@@ -31,7 +31,7 @@ const usage = `usage:
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
-              [--impasse-posterior X] [--impasse-attempts N]
+              [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
@@ -67,7 +67,11 @@ two informal validators that disagree), write the account turns/N/report.md and 
 record a person's answer in the journal (it changes no claim's status); resume (or run --resume) starts the next turn.
 --turn-narrative adds a short model-written narrative to the account (one more model call, made after the limit,
 with a budget of its own of $0.25 that --turn-usd does not bound; its markdown is reduced to plain text, every id
-it cites must exist, and a status it states must be the journal's). A turn limit cannot go with --ablation.`;
+it cites must exist, and a status it states must be the journal's). A turn limit cannot go with --ablation.
+Off-peak (documentation/human.md): --offpeak starts a turn or a session only when the host's pricing calendar for the
+run's model says its prices are at the off-peak rate, and otherwise waits (a turn.deferred event says until when);
+--offpeak-max-wait MINUTES bounds each wait, after which the work runs anyway. It needs the pricing calendar of the
+model in the host profile and is refused without one. A resumed run keeps the option it began with.`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -108,6 +112,8 @@ const { positionals, values } = parseArgs({
     "turn-usd": { type: "string" },
     "turn-minutes": { type: "string" },
     "turn-narrative": { type: "boolean" },
+    offpeak: { type: "boolean" },
+    "offpeak-max-wait": { type: "string" },
     "impasse-posterior": { type: "string" },
     "impasse-attempts": { type: "string" },
     claim: { type: "string" },
@@ -315,6 +321,17 @@ function consortiumFlags(): ConsortiumConfig | undefined {
   return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative };
 }
 
+/** `--offpeak` and `--offpeak-max-wait MINUTES` (documentation/human.md, "Off-peak"). */
+function offpeakFlags(): RunConfig["offpeak"] {
+  const wait = number("offpeak-max-wait", values["offpeak-max-wait"], undefined);
+  if (values.offpeak !== true) {
+    if (wait !== undefined) throw new UsageError("--offpeak-max-wait goes with --offpeak");
+    return undefined;
+  }
+  if (wait !== undefined && !(wait > 0)) throw new UsageError("--offpeak-max-wait must be a positive number of minutes");
+  return wait === undefined ? {} : { maxWaitMinutes: wait };
+}
+
 /** `--decide-backend`, `--decide-site SITE=BACKEND` and `--decide-votes`: who makes the typed decisions (documentation/decide.md). */
 function decideFlags(): DecideSettings | undefined {
   const backend = values["decide-backend"];
@@ -391,6 +408,7 @@ async function run(): Promise<number> {
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
+  const offpeak = offpeakFlags();
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
@@ -425,6 +443,7 @@ async function run(): Promise<number> {
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
+    ...(offpeak !== undefined ? { offpeak } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
     ...(decide !== undefined ? { decide } : {}),
   };
@@ -486,6 +505,7 @@ function finished(result: RunResult, dir: string): number {
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "budget-usd", "run-budget-usd", "concurrency",
   "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "out",
+  "offpeak", "offpeak-max-wait",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */

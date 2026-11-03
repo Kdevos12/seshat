@@ -57,6 +57,7 @@ import {
 import { Router } from "./routing.ts";
 import { applyDrops, claimAndParts, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
+import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
@@ -95,6 +96,13 @@ export interface RunConfig {
    * and an account for the research team. Absent: an ordinary run, which records what it always did.
    */
   consortium?: ConsortiumConfig;
+  /**
+   * The off-peak option (`harness run --offpeak`, documentation/human.md, "Off-peak"): a turn or a session starts only
+   * when the host's pricing calendar for the run's model says off-peak, and otherwise waits for the next window
+   * (`turn.deferred`). `maxWaitMinutes` bounds each wait, after which the work runs anyway. A host that gives the
+   * model no pricing calendar refuses the run. Absent: no waiting, and a run that records what it always did.
+   */
+  offpeak?: { maxWaitMinutes?: number };
   /**
    * Seeds the draws of unverified memory items (documentation/memory.md, "Randomized inclusion"). A
    * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
@@ -168,6 +176,8 @@ export interface RunOptions {
    * rate of a charge, `--offpeak`). Default: `Date.now`; a test sets its own.
    */
   wallClock?: () => number;
+  /** Waits for the off-peak option; default: a timer that the run's signal cuts short. A test advances its clock here. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -244,6 +254,9 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
+  if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
+    problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
+  }
   problems.push(...checkDecideSettings(config.decide));
   return problems;
 }
@@ -304,6 +317,8 @@ export interface ResumeOptions {
   turns?: TurnProcess;
   /** Wall-clock time in milliseconds, as `RunOptions.wallClock`. */
   wallClock?: () => number;
+  /** As `RunOptions.sleep`. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -336,6 +351,7 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.lines !== undefined ? { lines: o.lines } : {}),
       ...(o.turns !== undefined ? { turns: o.turns } : {}),
       ...(o.wallClock !== undefined ? { wallClock: o.wallClock } : {}),
+      ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
     },
     recorded,
   );
@@ -557,6 +573,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only in a consortium run, for the same reason.
       ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
+      ...(config.offpeak !== undefined ? { offpeak: config.offpeak as Json } : {}),
       // Only when given, so that a run without it records what it always did.
       ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
     };
@@ -610,6 +627,28 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices").
   const prices = new PriceBook(registry.host.models, o.wallClock);
+  if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
+    return await abandon(
+      `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
+        "(models in config/hosts, documentation/m0-loop.md, \"Prices\")",
+      undefined,
+      registry,
+    );
+  }
+  const offpeak =
+    config.offpeak === undefined
+      ? undefined
+      : new OffPeakGate({
+          runId,
+          journal,
+          prices,
+          model: config.model,
+          ...(config.offpeak.maxWaitMinutes !== undefined ? { maxWaitMinutes: config.offpeak.maxWaitMinutes } : {}),
+          ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
+          log,
+        });
+  // A consortium turn starts at an off-peak hour, or after the wait; the turn's own clock begins when it does.
+  if (offpeak !== undefined && config.consortium !== undefined) await offpeak.wait({ scope: "turn", turn: journal.projection.turns().started + 1 }, o.signal);
   // What the team asked for, carried out before any work: a problem whose claim it dropped ends (documentation/human.md).
   const dropped = resume !== undefined ? applyDrops(journal, tasks) : undefined;
   // Consortium mode: the turn this process works. It ends by itself at its limit or at a breakpoint.
@@ -983,6 +1022,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 notesChars: config.notesChars,
                 ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
                 prices,
+                ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
                 ledger,
                 signal: controller.signal,
                 transcript,

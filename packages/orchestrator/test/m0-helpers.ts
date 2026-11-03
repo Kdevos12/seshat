@@ -224,6 +224,8 @@ export async function demoRun(options: {
   turns?: TurnProcess;
   /** Wall-clock milliseconds, for the host's pricing calendar. */
   wallClock?: () => number;
+  /** Waits for the off-peak option. */
+  sleep?: RunOptions["sleep"];
   /** The directory of an earlier run to start on (`harness run --memory-from`). */
   memoryFrom?: string;
   /** The Lean environment the registry is pinned to, as the CLI resolves it before the registry is built. */
@@ -250,6 +252,7 @@ export async function demoRun(options: {
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
     ...(options.wallClock !== undefined ? { wallClock: options.wallClock } : {}),
+    ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
     ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
     ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
   });
@@ -277,6 +280,8 @@ export async function demoResume(options: {
   turns?: TurnProcess;
   /** Wall-clock milliseconds, for the host's pricing calendar. */
   wallClock?: () => number;
+  /** Waits for the off-peak option. */
+  sleep?: RunOptions["sleep"];
 }): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
   const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
@@ -294,6 +299,7 @@ export async function demoResume(options: {
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
     ...(options.wallClock !== undefined ? { wallClock: options.wallClock } : {}),
+    ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
   });
   return { result, events: readEvents(join(options.dir, "journal.jsonl")), faux, lean };
 }

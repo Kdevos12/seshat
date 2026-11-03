@@ -374,7 +374,7 @@ cross midnight), every other instant is off-peak and costs `offPeakMultiplier` t
 `offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
 (`RunOptions.wallClock`, a test's own). A charge also records `savedUsd`, the dollars the cache saved against reading
 those tokens at the miss price, and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
-read by the fleet ([fleet.md](fleet.md#sampled-settings)). The prices are first estimates taken from the provider's
+read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). The prices are first estimates taken from the provider's
 pages, checked on the first real run; nothing here has run against a real provider.
 
 `--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
@@ -418,6 +418,7 @@ pnpm harness models PROVIDER           # the models of a provider, with their pr
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --ablation M2
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --offpeak --offpeak-max-wait 120   # start work in the host's off-peak hours (human.md#off-peak)
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1   # continue a run whose process ended
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
