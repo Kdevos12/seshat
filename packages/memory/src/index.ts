@@ -8,6 +8,7 @@ export * from "./identity.ts";
 export * from "./obstruction.ts";
 export * from "./progress.ts";
 export * from "./redundancy.ts";
+export * from "./screen.ts";
 export * from "./reference.ts";
 export * from "./signature.ts";
 export * from "./store.ts";

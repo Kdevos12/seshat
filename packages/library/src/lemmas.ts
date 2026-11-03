@@ -1,3 +1,4 @@
+import { screenProse } from "@seshat/memory";
 import { importsOf, prepareSketch, readDeclarationHead, SketchError, splitCommands } from "@seshat/core";
 import { signatureProblem } from "@seshat/memory";
 
@@ -108,9 +109,23 @@ export function libraryName(originalName: string, statementId: string): string {
   return `${LIB_PREFIX}${stem}_${idSuffix(statementId)}`;
 }
 
+/** The longest gloss that is kept. */
+export const MAX_GLOSS = 160;
+
+/**
+ * A docstring or comment as a gloss: the prover's own prose (or a bench file's) is not verified, so it is kept only when it
+ * passes the strict screen, on one line and cut short; otherwise there is no gloss (review I2, Global Constraint 16).
+ */
+export function glossOf(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const r = screenProse(text, { max: MAX_GLOSS });
+  return r.ok ? r.text : undefined;
+}
+
 /** The Lean text of a library lemma, ready to paste into the auxiliary region (or to put in a file). */
 export function lemmaText(lemma: { name: string; statement: string; proof: string; doc?: string }): string {
-  const doc = lemma.doc === undefined ? "" : `/-- ${lemma.doc} -/\n`;
+  const safe = lemma.doc === undefined ? undefined : glossOf(lemma.doc);
+  const doc = safe === undefined ? "" : `/-- ${safe} -/\n`;
   const proof = lemma.proof
     .split("\n")
     .map((l) => (l.trim() === "" ? "" : `  ${l}`))

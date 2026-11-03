@@ -3,7 +3,7 @@ import type { LeanEnvPin } from "@seshat/registry";
 import { Bm25Index } from "./bm25.ts";
 import { combine, HashedVectors, type Scores, toScores } from "./hybrid.ts";
 import type { LibraryLemma } from "./records.ts";
-import { lemmaText } from "./lemmas.ts";
+import { glossOf, lemmaText } from "./lemmas.ts";
 
 /**
  * Where a search result comes from, in the order they are ranked (plan change LC2): the declarations of
@@ -52,7 +52,7 @@ export function libraryEntry(lemma: LibraryLemma): Entry {
     source: "library",
     label: "library",
     signature: lemma.statement,
-    gloss: lemma.gloss,
+    gloss: glossOf(lemma.gloss) ?? "",
     text: lemmaText(lemma),
     claimStatus: lemma.claimStatus,
   };
@@ -66,7 +66,7 @@ export function declarationEntry(d: ExportedDeclaration): Entry {
     source: extra ? "extra" : "mathlib",
     label: extra ? (d.package as string) : "Mathlib",
     signature: d.signature,
-    gloss: d.gloss ?? "",
+    gloss: glossOf(d.gloss) ?? "",
     ...(d.module !== undefined ? { module: d.module } : {}),
   };
 }
@@ -99,7 +99,7 @@ export function localEntries(prefix: string): Entry[] {
       source: "local",
       label: "this file",
       signature: command.text.slice(head.nameEnd, end).replace(/\s+/g, " ").trim().slice(0, 300),
-      gloss,
+      gloss: glossOf(gloss) ?? "",
     });
   });
   return out;
