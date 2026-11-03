@@ -162,7 +162,6 @@ describe("runAblation on the simulated stack", () => {
     assert.equal(result.arms.length, 2);
     assert.equal(result.arms[0]?.measures.solved, 1);
     assert.equal(result.arms[1]?.measures.solved, 1);
-    assert.ok(result.arms[1]?.measures.redundancy !== undefined || true);
     assert.match(renderAblation(result), /\| M0 \| 1\/1 \|/);
   });
 });
