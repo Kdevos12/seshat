@@ -28,7 +28,6 @@ and model ids live in host configuration, which is data).
 | PD5 | CEGIS rule: the counterexample set goes back to the proposer | Task 13 (M8, M14), M16 | medium |
 | PD6 | An external bench: the equational-theories data and judge from SAIR | Task 14 (after Tasks 6, 7) | low |
 | PD7 | Installable packs: tools and skills with a manifest, `harness add` | new Task 27 | medium |
-| PD8 | A k-NN over goal features for the battery order, only if data show a gap | Task 14 | conditional |
 
 ## PD1. Provider-aware cost: prices, cache accounting, reasoning content, thinking settings
 
@@ -170,16 +169,11 @@ Tests: a manifest with an invalid contract is refused; install, list and remove 
 journal; a pack's tool is not in the declared level-1 set; a pack that claims a status write is
 refused; the 3-skill rule holds.
 
-## PD8. A k-NN over goal features for the battery order (conditional)
-
-Task 6 orders the battery by Beta posteriors per (domain, tactic). An online k-NN over cheap goal
-features (head symbol, size, which domains the router fired) is allowed (no training by us), but it
-adds nothing before there are real runs. After Task 14's real data: if the posteriors per domain leave
-a gap against an oracle that picks the best tactic per goal in hindsight, add the k-NN as an orderer
-(the injectable orderer of J3) and measure it at equal CPU. Otherwise it is not built.
-
 ## Not adopted (with the reason)
 
+- A k-NN over goal features for the battery order (the former PD8): withdrawn by the user on 2026-11-03
+  ("Go retirer", message cmsg_01Jryd7vSFN5UXiBr35Aon5EMwhRfJuKYuF6WzviB3XMrn). The Beta posteriors per
+  domain stay the battery's order; reopen only with real data that show a gap.
 - Area method (no Lean port; the bench has no geometry), theory morphisms in MMT (a second
   ecosystem; homology detection is suspended, Ruling 20), VF2 (NP-complete; anti-unification and
   MAC/FAC already serve), lean-egg (deprecated by its authors in favour of `grind`).
