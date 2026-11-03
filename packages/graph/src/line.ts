@@ -254,7 +254,7 @@ export function createM2Line(): Line {
           if (work.twinNodeId !== undefined) problem.memory.updateNode(work.twinNodeId, { end, tries }, "the refutation side ended");
           // A refutation side that spent its calls and proved nothing is a dead end the other lines should know (PC3).
           if (end === "exhausted") {
-            problem.memory.recordObstruction({ claimId: problem.claimId, reason: "nogood", detail: `the refutation side made ${tries} model call${tries === 1 ? "" : "s"} to prove the negation and Lean accepted none` });
+            problem.memory.recordObstruction({ claimId: problem.claimId, reason: "nogood", detail: "the refutation side spent its model calls on the negation and Lean accepted none" });
           }
         } catch (error) {
           problem.log(`twin: the end of the refutation side could not be recorded: ${error instanceof Error ? error.message : String(error)}`);

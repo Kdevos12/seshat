@@ -52,4 +52,21 @@ describe("obstruction records (PC3)", () => {
     assert.deepEqual(renderObstructions([], { maxLines: 10 }), []);
     assert.deepEqual(renderObstructions(all, { maxLines: 1 }), []);
   });
+
+  it("are stamped learned records: they carry an epoch, and one from an earlier epoch says so in its line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mh-obstruction-"));
+    const context = { modelId: "p/m5", promptVersion: "m0-1", mathlibRev: "rev-a", harnessVersion: "t", budgetClass: "small" };
+    const journal = Journal.open(dir, "run_1");
+    const memory = new MemoryStore({ journal, blobs: new BlobStore(join(dir, "blobs")), provenance: context });
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test" });
+    const { obstruction } = memory.withActor("line:M2").recordObstruction({ claimId, reason: "nogood", strategy: "induction", detail: "the refutation side found nothing" });
+    assert.equal(memory.node(obstruction.nodeId)?.provenance?.mathlibRev, "rev-a");
+    assert.equal(memory.node(obstruction.nodeId)?.epoch, 0);
+    assert.equal(memory.obstructions(claimId)[0]?.earlier, undefined);
+    assert.equal(describeObstruction(memory.obstructions(claimId)[0] as never), "tried, found nothing (induction): the refutation side found nothing");
+    memory.withActor("orchestrator").openEpochIfChanged({ ...context, mathlibRev: "rev-b" });
+    const [older] = memory.obstructions(claimId);
+    assert.equal(older?.earlier, true);
+    assert.match(describeObstruction(older as never), /^tried, found nothing \(induction\): the refutation side found nothing \[earlier epoch: may be out of date\]$/);
+  });
 });
