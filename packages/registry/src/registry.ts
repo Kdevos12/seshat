@@ -22,7 +22,7 @@ import {
 } from "./implementation.ts";
 import { defaultMcpTransport, McpImplementation, McpToolError } from "./mcp.ts";
 import { getPath } from "./paths.ts";
-import { offeredOn, packRecord, type LoadedPack, type PackRecord } from "./packs.ts";
+import { offeredOn, packIntact, packRecord, type LoadedPack, type PackRecord } from "./packs.ts";
 import { validate } from "./schema.ts";
 
 /** Where tool runs are recorded: a `Journal`, or anything with the same `emit`. */
@@ -415,6 +415,10 @@ export class Registry {
     const base = spec.server as unknown as Record<string, Json>;
     const merged = overrides.transport !== undefined && overrides.transport !== base.transport ? overrides : { ...base, ...overrides };
     const pack = this.packOf(capability.manifest.id);
+    // The files may have changed since the registry was built, and a stdio command runs them as they are now.
+    if (pack !== undefined && !packIntact(pack)) {
+      throw new UnavailableError(`pack ${pack.manifest.name}: its files are not the ones installed (hash ${pack.hash.slice(0, 12)}), so none of its programs is started`);
+    }
     let server: Json;
     if (pack === undefined) {
       server = interpolate(merged, variables);

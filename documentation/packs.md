@@ -95,9 +95,9 @@ The contract cases a pack carries are **validated, not run**, on install: runnin
 pack's program, which `harness add` never does. `harness contract ID` runs them against a host, once
 the person has read the pack.
 
-**Integrity.** The content hash is a sha256 over the sorted paths and file hashes of the pack. A pack
+**Integrity.** The pack journal is hash-chained: `installedPacks` verifies the chain and refuses an edited one. (Like any journal, a chain that is cut at its end still verifies.) The content hash is a sha256 over the sorted paths and file hashes of the pack. A pack
 whose files differ from the hash its install recorded is listed as changed on disk and refused when a
-registry is opened: a run never uses files nobody installed.
+registry is opened, and again just before the registry starts a program of the pack (the first call of its tool), which refuses if the files changed in between: a run never uses files nobody installed.
 
 ## Levels
 

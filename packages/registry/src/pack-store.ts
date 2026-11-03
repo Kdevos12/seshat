@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Journal, readEvents, type EventDataMap } from "@seshat/core";
-import { loadPack, PackError, readTree, treeHash, type LoadedPack, type PackRecord } from "./packs.ts";
+import { Journal, readEvents, verifyChain, type EventDataMap } from "@seshat/core";
+import { loadPack, PackError, packIntact, type LoadedPack, type PackRecord } from "./packs.ts";
 
 /**
  * The pack directory (documentation/packs.md): `installed/<name>/` holds the files of each installed pack,
@@ -33,7 +33,12 @@ export function installedPacks(packsDir: string): InstalledPack[] {
   const file = join(journalDir(packsDir), "journal.jsonl");
   if (!existsSync(file)) return [];
   const current = new Map<string, EventDataMap["pack.installed"]>();
-  for (const event of readEvents(file)) {
+  const events = readEvents(file);
+  const chain = verifyChain(events);
+  if (!chain.ok) {
+    throw new PackStoreError(`the pack journal ${file} is corrupt at seq ${chain.seq}: ${chain.reason}; it was edited, so no pack on it can be trusted`);
+  }
+  for (const event of events) {
     if (event.type === "pack.installed") current.set(event.data.name, event.data);
     else if (event.type === "pack.removed") current.delete(event.data.name);
   }
@@ -45,12 +50,7 @@ export function installedPacks(packsDir: string): InstalledPack[] {
     });
 }
 
-function intact(dir: string, hash: string): boolean {
-  if (!existsSync(dir)) return false;
-  const problems: string[] = [];
-  const files = readTree(dir, problems);
-  return problems.length === 0 && treeHash(files) === hash;
-}
+const intact = (dir: string, hash: string): boolean => packIntact({ dir, hash });
 
 /**
  * The installed packs, loaded again from their files and checked against the hash the journal recorded:
