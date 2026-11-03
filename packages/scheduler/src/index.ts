@@ -15,3 +15,4 @@ export * from "./pricing.ts";
 export * from "./subsume.ts";
 export * from "./ladder.ts";
 export * from "./line.ts";
+export * from "./curriculum.ts";

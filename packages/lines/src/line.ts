@@ -212,6 +212,15 @@ export interface LineHooks {
    */
   schedule?: (problem: ProblemContext, ready: readonly TaskInfo[]) => Promise<ScheduledTask | undefined>;
   /**
+   * The work on a `ready` task that this line proposed, for a line that is not the scheduling line and works its tasks
+   * itself (line M18's variants). The orchestrator calls it in the schedule step, before the scheduling line chooses, for
+   * the first `ready` task such a line proposed: it assigns the owner (the fleet's choice, if the fleet is on), starts the
+   * task, awaits this hook, and ends the task by what it answers, checking its acceptance criterion, as for a
+   * `ScheduledTask`. A hook that throws an interruption leaves its task `running`, as a process that ended does. The
+   * scheduling line itself works its tasks through `schedule`; a task that no line works through either stays `ready`.
+   */
+  runTask?: (problem: ProblemContext, task: TaskInfo, owner: string) => Promise<TaskEnd>;
+  /**
    * Before the scheduling line chooses, for the `ready` tasks that a line proposed (not the provers' own): a
    * line that owns the choice of who works on what (the fleet, Ruling 29) assigns their owners through
    * `problem.tasks.assign`. Every line that gives it is called, in `LINE_ORDER`; the last assignment stands.

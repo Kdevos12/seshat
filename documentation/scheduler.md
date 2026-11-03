@@ -151,8 +151,9 @@ for each problem, the rung at which it was solved (only for a certified `proved`
 read from the journal alone. A session's cost is counted at the rung in force when it ended, and a
 one-shot call at the rung of its own event; the dollars per rung add up to the problem's cost.
 
-Lines on rungs 1 and above (`M18`, `M15`, `M16` in the plan) are not built. The ladder is tested with
-a stand-in line of rung 1.
+Line `M18` ([curriculum.md](curriculum.md)) is the line of rung 1; `M15` and `M16` (rung 2 in the plan) are not built. The ladder is tested
+with a stand-in line of rung 1 and with M18. Dollars that a rung's line spends count in the problem's spend since its last Lean
+progress, so M18's variants hasten the move to the next rung; a proved variant is not Lean progress (it is no subclaim of the target).
 
 ## Owners chosen by the fleet (Ruling 29)
 
@@ -198,4 +199,4 @@ Everything runs with a simulated Lean, a faux model and a faux `lean.meta`. **No
 real Lean or model: the link lemma's proof (`intro h_aux_k ...; refine fun ...`), the tactics that
 close an `instance_of` link lemma, the `lean.meta` instances call, the inner prover's prompt, and the
 price model (the prior of $0.05 a session and the 0.3 and 0.6 fractions are untuned). The lines of
-rungs 1 and above do not exist yet.
+rung 2 do not exist yet.
