@@ -8,7 +8,7 @@ import {
   LEMMA_KIND,
   type LemmaData,
 } from "./records.ts";
-import { importHeader, libraryName, parseAuxRegion } from "./lemmas.ts";
+import { glossOf, importHeader, libraryName, parseAuxRegion } from "./lemmas.ts";
 import type { TrivialityTest } from "./triviality.ts";
 
 /** How the line promotes (the line's options). */
@@ -139,7 +139,8 @@ export async function promoteCandidates(problem: ProblemContext, isTrivial: Triv
       continue;
     }
     const domain = domainOf(problem);
-    const gloss = c.doc ?? `Auxiliary lemma ${c.name.replace(/^aux_/, "")} from ${problem.target.theorem}`;
+    const safeDoc = glossOf(c.doc);
+    const gloss = safeDoc ?? `Auxiliary lemma ${c.name.replace(/^aux_/, "")} from ${problem.target.theorem}`;
     const ensured = await memory.ensureClaim({
       statement: c.statement,
       header: c.header,
@@ -161,7 +162,7 @@ export async function promoteCandidates(problem: ProblemContext, isTrivial: Triv
       claimId: ensured.claimId,
       statement: c.statement,
       proof: c.proof,
-      ...(c.doc !== undefined ? { doc: c.doc } : {}),
+      ...(safeDoc !== undefined ? { doc: safeDoc } : {}),
       header: c.header,
       domain,
       gloss,

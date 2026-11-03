@@ -129,6 +129,14 @@ sent through `lean.check`), and a lemma that does not is a bug in the journal's 
 header imports (`import FormalConjectures.Util.ProblemImports`) keeps that import, so its file compiles only in an
 environment that has it; promoting a lemma to a bare `import Mathlib` header is not done.
 
+### Glosses are screened
+
+A lemma's gloss and the docstring pasted with it come from the prover's own prose (or, for a declaration of the file, the bench's), which
+no check has verified. They are kept only if they pass the strict screen of `@seshat/memory` (`screenProse`): one line of at most 160
+characters with no code, no Lean token the validator forbids, no link, no name that looks like a declaration and nothing that reads as
+an instruction. Otherwise the lemma has no docstring and its gloss is "Auxiliary lemma NAME from THEOREM". The screen runs when a lemma
+is promoted and again when an entry is built to be shown, so a journal written before it is covered.
+
 ## Measured
 
 The report ([m0-loop.md](m0-loop.md#the-report)) has a paragraph and a `library` object: the lemmas by domain, what the candidates came to

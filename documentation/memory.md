@@ -362,6 +362,14 @@ The presence counter that this replaces stays where it is, for comparison. The c
 against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
 real model.
 
+## Screening stored prose
+
+`screenProse(text, {max})` is the strict screen for prose that a mechanism stores and later shows to a prover: a lemma's gloss (M3), a
+lesson's text (M5). It returns the text on one line, cut at a word to `max`, or the reason it was refused: control characters, a link or
+address, code (backticks, `:=`, `--`, comment marks, brackets), a Lean token the validator forbids (`forbiddenTokensIn`), something that
+looks like a declaration name (`Nat.add_comm`, `snake_case`), or a phrase that reads as an instruction. Prose a model or a Lean message
+wrote is unverified (Global Constraint 16); the screen keeps it to plain words.
+
 ## Memory across runs
 
 `harness run --memory-from RUN_DIR` starts a run on the memory of an earlier one: its claims, edges,
