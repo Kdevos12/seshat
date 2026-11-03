@@ -1,5 +1,5 @@
 import { type Json, type RandomSource } from "@seshat/core";
-import { completeJson, type Llm, withAntiSycophancy } from "@seshat/lines";
+import { completeJson, isInterrupted, type Llm, withAntiSycophancy } from "@seshat/lines";
 import { MAX_PROGRAM_LENGTH } from "@seshat/models";
 import { type ProgramLimits, runValues } from "./sandbox.ts";
 import { screenLeanText } from "./screen.ts";
@@ -208,8 +208,16 @@ export function makeScorer(spec: SearchSpec, limits: Partial<ProgramLimits>, sag
     } else if (spec.scoreSage !== undefined) {
       if (sage === undefined) return { ok: false, why: "no SageMath was available for the scoring program" };
       const pairs = JSON.stringify(spec.inputs.map((input, i) => [input, run.values[i]]));
-      const out = await sage(`import json\npairs = json.loads(${JSON.stringify(pairs)})\njson.dumps([(lambda i, x: (${spec.scoreSage}))(i, x) for i, x in pairs])`, signal !== undefined ? { signal } : {});
-      scores = JSON.parse(out.trim().replace(/^'([\s\S]*)'$/, "$1")) as Json[];
+      try {
+        const out = await sage(`import json\npairs = json.loads(${JSON.stringify(pairs)})\njson.dumps([(lambda i, x: (${spec.scoreSage}))(i, x) for i, x in pairs])`, signal !== undefined ? { signal } : {});
+        const parsed = JSON.parse(out.trim().replace(/^'([\s\S]*)'$/, "$1")) as unknown;
+        if (!Array.isArray(parsed)) return { ok: false, why: "the Sage scoring did not give a list" };
+        scores = parsed as Json[];
+      } catch (error) {
+        // A candidate whose output breaks the scoring program is one bad candidate, not the end of the search; only a pause or an abort passes through.
+        if (isInterrupted(error) || signal?.aborted === true) throw error;
+        return { ok: false, why: `the Sage scoring failed: ${error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200)}` };
+      }
     } else return { ok: false, why: "the task declares no scoring program" };
     const signature: number[] = [];
     for (let i = 0; i < scores.length; i++) {

@@ -124,6 +124,18 @@ describe("scoring in the sandbox", () => {
     assert.equal((await makeScorer({ ...noScore, scoreSage: "x" }, limits)("(n) => [1]")).ok, false, "Sage scoring with no Sage");
   });
 
+  it("scores a candidate whose output breaks the Sage scoring as invalid, and lets an interruption through", async () => {
+    const { score: _drop, ...rest } = spec;
+    const broken = async () => { throw new Error("TypeError: unsupported operand"); };
+    const got = await makeScorer({ ...rest, scoreSage: "x + 1" }, limits, broken)("(n) => [9, 8, 7, 6]");
+    assert.equal(got.ok, false);
+    assert.match(got.ok ? "" : got.why, /Sage scoring failed: TypeError/);
+    const garbage = await makeScorer({ ...rest, scoreSage: "x" }, limits, async () => "'not json'")("(n) => [1]");
+    assert.equal(garbage.ok, false);
+    const { InterruptedError } = await import("@seshat/lines");
+    await assert.rejects(makeScorer({ ...rest, scoreSage: "x" }, limits, async () => { throw new InterruptedError("paused"); })("(n) => [1]"), /paused/);
+  });
+
   it("scores through Sage when the task asks for it, with a stand-in for compute.sage", async () => {
     const sage = async (code: string) => {
       assert.match(code, /json\.loads/);
