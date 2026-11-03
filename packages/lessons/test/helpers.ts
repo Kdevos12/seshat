@@ -5,15 +5,15 @@ import { BlobStore, Journal } from "@seshat/core";
 import type { FinishedAttempt, Llm, ProblemContext } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
 
-export function open(): { memory: MemoryStore; journal: Journal } {
+export function open(): { memory: MemoryStore; journal: Journal; root: MemoryStore } {
   const dir = mkdtempSync(join(tmpdir(), "mh-lessons-"));
   const journal = Journal.open(dir, "run_1");
-  const memory = new MemoryStore({
+  const root = new MemoryStore({
     journal,
     blobs: new BlobStore(join(dir, "blobs")),
     provenance: { modelId: "p/m", promptVersion: "m0-1", mathlibRev: "rev-a", harnessVersion: "t", budgetClass: "small" },
-  }).withActor("line:M5");
-  return { memory, journal };
+  });
+  return { memory: root.withActor("line:M5"), journal, root };
 }
 
 let counter = 0;
