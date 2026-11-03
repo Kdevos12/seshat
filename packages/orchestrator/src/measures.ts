@@ -254,9 +254,20 @@ function connected(ix: Index, start: string): Set<string> {
   return seen;
 }
 
+const filesCache = new WeakMap<Index, Map<string, string>>();
+/** The file of each problem by its claim, built once per index. */
+function problemFiles(ix: Index): Map<string, string> {
+  let found = filesCache.get(ix);
+  if (found === undefined) {
+    found = new Map([...ix.problems.values()].map((p) => [p.claimId, p.path]));
+    filesCache.set(ix, found);
+  }
+  return found;
+}
+
 /** The root problem's file of a claim: the claim itself if a problem has it, else the parents'. */
 function groupOf(ix: Index, claimId: string): string | undefined {
-  const byClaim = new Map([...ix.problems.values()].map((p) => [p.claimId, p.path]));
+  const byClaim = problemFiles(ix);
   const seen = new Set<string>();
   for (let at: string | undefined = claimId; at !== undefined && !seen.has(at); at = ix.claims.get(at)?.parentId) {
     seen.add(at);

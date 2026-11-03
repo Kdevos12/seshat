@@ -48,6 +48,7 @@ export function parseRow(raw: unknown, line: number): ExtRow {
   const equation2 = pick(ALIASES.equation2);
   const answer = pick(ANSWERS);
   if (typeof id !== "string" && typeof id !== "number") throw new Error(`row ${line}: no id`);
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(String(id))) throw new Error(`row ${line}: an id is 1 to 64 letters, digits, dots, dashes and underscores`);
   if (typeof equation1 !== "string" || typeof equation2 !== "string") throw new Error(`row ${line}: the two equations are strings`);
   const verdict = typeof answer === "string" ? ({ true: true, false: false } as Record<string, boolean | undefined>)[answer.toLowerCase()] : answer;
   if (typeof verdict !== "boolean") throw new Error(`row ${line}: the answer is true or false`);
@@ -60,8 +61,43 @@ export function equationToLean(equation: string): { body: string; variables: str
   if (sides.length !== 2 || sides.some((s) => s.trim() === "")) throw new Error(`not an equation: ${JSON.stringify(equation)}`);
   const body = equation.replace(/◇/g, "*").replace(/\s+/g, " ").trim();
   if (/[^A-Za-z0-9_*=()\s]/.test(body)) throw new Error(`an equation of a magma uses variables, ◇, parentheses and =: ${JSON.stringify(equation)}`);
+  // Each side is a term: operands joined by *, parentheses balanced and holding a term, no operator left dangling.
+  for (const side of body.split("=")) checkTerm(side, equation);
   const variables = [...new Set(body.match(/\b[A-Za-z][A-Za-z0-9_]*\b/g) ?? [])];
+  const reserved = variables.filter((v) => RESERVED.has(v));
+  if (reserved.length > 0) throw new Error(`a variable cannot be a Lean keyword or the name of the statement's own parts (${reserved.join(", ")}): ${JSON.stringify(equation)}`);
   return { body, variables };
+}
+
+/** Words a variable may not be: Lean's keywords that could change the parse, and the names the generated statement uses. */
+const RESERVED: ReadonlySet<string> = new Set(["G", "Mul", "Type", "Prop", "sorry", "fun", "by", "let", "have", "show", "from", "at", "do", "if", "then", "else", "match", "with", "in", "where", "end", "theorem", "lemma", "def", "instance", "example", "open", "import", "namespace", "section", "variable", "axiom", "forall", "exists", "this", "id"]);
+
+/** A term of a magma: operands (a variable or a parenthesised term) joined by `*`. */
+function checkTerm(term: string, whole: string): void {
+  const tokens = term.match(/[A-Za-z][A-Za-z0-9_]*|[*()]|\S/g) ?? [];
+  let at = 0;
+  const operand = (): void => {
+    const t = tokens[at];
+    if (t === "(") {
+      at += 1;
+      expression();
+      if (tokens[at] !== ")") throw new Error(`unbalanced parentheses: ${JSON.stringify(whole)}`);
+      at += 1;
+    } else if (t !== undefined && /^[A-Za-z]/.test(t)) {
+      at += 1;
+    } else {
+      throw new Error(`not a term of a magma: ${JSON.stringify(whole)}`);
+    }
+  };
+  const expression = (): void => {
+    operand();
+    while (tokens[at] === "*") {
+      at += 1;
+      operand();
+    }
+  };
+  expression();
+  if (at !== tokens.length) throw new Error(`not a term of a magma (parentheses unbalanced or a stray token): ${JSON.stringify(whole)}`);
 }
 
 const forall = (e: { body: string; variables: string[] }): string => (e.variables.length === 0 ? e.body : `∀ ${e.variables.join(" ")} : G, ${e.body}`);
@@ -110,11 +146,12 @@ export interface StepReport {
 export function closedByStep(events: readonly HarnessEvent[]): StepReport {
   const claimOf = new Map<string, string>();
   const firstValid = new Map<string, string>();
+  // The first valid fast check of the claim itself: a proof of the negation, or a certification, is not the step that closed the problem.
   const firstOrder = new Set<string>();
   const nodes = new Map<string, { kind: string; claimId?: string; data: unknown }>();
   for (const e of events) {
     if (e.type === "problem.registered") claimOf.set(e.data.problemId, e.data.claimId);
-    else if (e.type === "validation.finished" && e.data.verdict === "valid" && !firstValid.has(e.data.claimId)) firstValid.set(e.data.claimId, e.actor);
+    else if (e.type === "validation.finished" && e.data.verdict === "valid" && e.data.method === "repl" && e.data.negation !== true && !firstValid.has(e.data.claimId)) firstValid.set(e.data.claimId, e.actor);
     else if (e.type === "node.recorded") nodes.set(e.data.nodeId, { kind: e.data.kind, ...(e.data.claimId !== undefined ? { claimId: e.data.claimId } : {}), data: e.data.data });
   }
   for (const n of nodes.values()) {
