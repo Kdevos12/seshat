@@ -53,7 +53,7 @@ export interface IgnoredSettings {
   thinking?: string[];
 }
 
-const HHMM = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
+const HHMM = "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$";
 const DATE = "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$";
 
 export const MODELS_SCHEMA: JsonSchema = {
@@ -190,7 +190,9 @@ export function priceUsage(
     usage.output * pricing.output;
   return {
     usd: (million / 1e6) * factor,
-    savedUsd: (usage.cacheRead * (pricing.cacheMiss - pricing.cacheHit) * factor) / 1e6,
+    // Net of the premium a provider that charges for cache writes asks over the miss price; negative when the writes cost more than the reads saved.
+    savedUsd:
+      ((usage.cacheRead * (pricing.cacheMiss - pricing.cacheHit) - usage.cacheWrite * ((pricing.cacheWrite ?? pricing.cacheMiss) - pricing.cacheMiss)) * factor) / 1e6,
     offPeak,
   };
 }

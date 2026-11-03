@@ -77,7 +77,7 @@ function sum(a: LlmResult["cost"], b: LlmResult["cost"]): LlmResult["cost"] {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     ...(cached > 0 ? { cachedInputTokens: cached } : {}),
-    ...(saved > 0 ? { savedUsd: saved } : {}),
+    ...(saved !== 0 ? { savedUsd: saved } : {}),
     ...(offPeak > 0 ? { offPeakUsd: offPeak } : {}),
   };
 }
