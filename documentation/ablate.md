@@ -43,7 +43,7 @@ An arm is also a point in an experiment: it can carry line options, a packet mod
 
 ## Chunk curves (PE4)
 
-`chunkCurves` takes the attempts of each prover on each problem and gives, for K in 1, 3, 6 and 10, how many problems a Nexus that runs K provers in parallel would have solved and at what cost. A whole parallel round is paid for, so the cost of K provers is a multiple of K attempts. It reads the journal of a run: nothing is rerun.
+`chunkCurves` takes the attempts of each prover on each problem and gives, for K in 1, 3, 6 and 10, how many problems a Nexus that runs K provers in parallel would have solved and at what cost. A whole parallel round is paid for, so the cost of K provers is a multiple of K attempts. It reads the journal of a run: nothing is rerun. The limit: a real prover stops at its first success, so its journal does not hold the attempts that would have followed it, and re-chunking the attempts that exist puts that success at the end of the last chunk, making every K read alike. `harness chunks` therefore gives K = 1 (exact) from such a journal and refuses K above 1 while any prover stopped at its success, saying so; the curves for K in 3, 6 and 10 need a measurement run with a fixed number of attempts that does not stop (not built).
 
 ## Experiments
 
