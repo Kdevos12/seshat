@@ -1,4 +1,5 @@
 import { M10 } from "@seshat/classical";
+import { M4 } from "@seshat/context";
 import { fleet } from "@seshat/fleet";
 import { M13, M16, M8 } from "@seshat/induction";
 import { M17 } from "@seshat/lean-env";
@@ -17,4 +18,4 @@ import { M1 } from "./m1.ts";
  * implemented is not here: a run that enables it stops before it starts, and says so. The task
  * that implements a line adds it here.
  */
-export const LINES: LineRegistry = { M1, M10, M11, M12: m12Line, M17, M18: m18Line, M2: m2Line, M3, M6, M8, M13, M14, M16, M5, fleet };
+export const LINES: LineRegistry = { M1, M10, M11, M12: m12Line, M17, M18: m18Line, M2: m2Line, M3, M4, M6, M8, M13, M14, M16, M5, fleet };
