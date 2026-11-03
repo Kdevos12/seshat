@@ -176,6 +176,26 @@ store, and edited by nobody (the journal refuses a `node.updated` of a hint or a
 nodes with `disagreement: true` (two informal validators that disagree), `obstruction` and `conjecture`
 (with `evidence`) nodes, and counts the kinds it does not know ([human.md](human.md)).
 
+### Obstructions
+
+An `obstruction` node (plan change PC3) is a typed record of why an approach cannot work on a claim.
+It is written by `memory.recordObstruction({claimId, reason, detail, strategy?})` and read back by
+`memory.obstructions(claimId, {includeEquivalents?})`; the store owns the kind, so that M1, M2, M5, M11
+and the research team's account read one shape.
+
+| Reason | Meaning | Recorded by |
+|---|---|---|
+| `counterexample` | The statement fails on an object (a counter-model, a number). A tool found it; nothing is refuted until the negation passes Lean. | M11, with each counter-model |
+| `refuted_premise` | A premise the approach needs is false. | none yet |
+| `nogood` | An approach that was tried and cannot work (a strategy that failed in a way that recurs, a refutation side that proved nothing). | M2, when its refutation side is exhausted |
+| `statement_mismatch` | The statement is not the one meant. | none yet |
+
+`data` is `{reason, detail, strategy?, source, summary}`: `detail` is one line (white space collapsed, at
+most 300 characters), `source` the actor that wrote it, `summary` the line the account shows. The same
+obstruction (claim, reason, strategy, detail) is recorded once. An obstruction changes no status. M1's
+"already tried" section shows one line per obstruction after its attempts
+([m1-identity-memory.md](m1-identity-memory.md#already-tried)).
+
 ## Queries
 
 | Query | Gives |

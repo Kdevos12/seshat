@@ -187,6 +187,11 @@ does not rank counts as weaker, so a run that moves to a weaker or different mod
 set the fleet's `ranking` option (all the models, weakest first); otherwise the earlier, larger model's failures
 read "(with a smaller model)". The order of the fleet's `models` is not a ranking.
 
+After the attempts the section has one line per typed obstruction of the claim and its equivalents
+([memory.md](memory.md#obstructions)), under a sentence of their own: `counterexample: the statement fails on
+n = 7`, `nogood (induction): the successor case stays open`. They count against `maxLines` as the strategy
+lines do. A claim with obstructions and no attempt has a section of them alone.
+
 An accepted attempt shows as a count, never as its proof. On a claim another problem proved, the
 section tells the second problem's provers that a strategy worked, and they still prove it
 themselves.

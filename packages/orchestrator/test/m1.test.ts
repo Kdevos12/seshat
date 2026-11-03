@@ -180,6 +180,35 @@ describe("M1 in a run", () => {
     assert.equal(result.report.redundancy?.redundant, 0);
   });
 
+  it("adds one line for each obstruction after the attempts (PC3)", async () => {
+    const prompts: string[] = [];
+    const finder: Line = {
+      id: "M11",
+      title: "a stand-in that records obstructions",
+      requires: [],
+      resume: "stateless",
+      hooks: {
+        beforeProvers: async (problem) => {
+          problem.memory.recordObstruction({ claimId: problem.claimId, reason: "counterexample", detail: "the statement fails on n = 7" });
+          problem.memory.recordObstruction({ claimId: problem.claimId, reason: "nogood", strategy: "induction", detail: "the successor case stays open" });
+        },
+      },
+    };
+    await demoRun({
+      lean: lean(),
+      lines: { M1, M11: finder },
+      config: { lines: ["M1", "M11"], sessions: 2 },
+      responses: [
+        (context) => (prompts.push(opening(context)), check(INDUCTION)),
+        say("Induction leaves the successor case."),
+        (context) => (prompts.push(opening(context)), say("Done.")),
+      ],
+    });
+    // Without any attempt yet the section is the obstructions alone; later it follows the attempts.
+    assert.match(prompts[0] ?? "", /# Already tried\nWhy some approaches cannot work here .*:\ncounterexample: the statement fails on n = 7\nnogood \(induction\): the successor case stays open/);
+    assert.match(prompts[1] ?? "", /induction: 1 attempt, unsolved goals at case succ\nWhy some approaches cannot work here/);
+  });
+
   it("drops the section at 0 lines, and labels the attempts all the same", async () => {
     const prompts: string[] = [];
     const { events } = await demoRun({

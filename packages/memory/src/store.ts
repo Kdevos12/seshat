@@ -30,6 +30,7 @@ import { type Draw, type DrawItem, type DrawOptions, drawItems } from "./draw.ts
 import { armOf, effectOf, type ItemEffect } from "./effect.ts";
 import { DEFAULT_PROBATION, describeEpochChanges, probationWeight } from "./epochs.ts";
 import { type StatementContext, type StatementIdentity, TextIdentity } from "./identity.ts";
+import { normalizeDetail, OBSTRUCTION_KIND, type Obstruction, type ObstructionData, type ObstructionInput, isObstructionReason } from "./obstruction.ts";
 import { type ClaimReference, claimReference, claimTheoremName, negationReference } from "./reference.ts";
 import { signatureMessage } from "./signature.ts";
 import { type TriedStrategy, type TriedView, triedStrategies } from "./tried.ts";
@@ -679,6 +680,48 @@ export class MemoryStore {
   node(nodeId: string): MemoryNode | undefined {
     const row = this.#journal.projection.node(nodeId);
     return row === undefined ? undefined : toNode(row);
+  }
+
+  /**
+   * Records why an approach cannot work on a claim (plan change PC3): an `obstruction` node with a reason
+   * (`counterexample`, `refuted_premise`, `nogood`, `statement_mismatch`) and a one-line detail. The same
+   * obstruction (claim, reason, strategy, detail) is recorded once: a second call returns the first.
+   * It changes no status: a counter-model is still a `computed` edge until the negation checks.
+   */
+  recordObstruction(input: ObstructionInput): { obstruction: Obstruction; created: boolean } {
+    if (!isObstructionReason(input.reason)) throw new Error(`an obstruction's reason is counterexample, refuted_premise, nogood or statement_mismatch, not ${JSON.stringify(input.reason)}`);
+    if (this.#journal.projection.claim(input.claimId) === undefined) throw new Error(`no claim ${input.claimId}`);
+    const detail = normalizeDetail(input.detail);
+    if (detail === "") throw new Error("an obstruction needs a detail: what was found");
+    const known = this.obstructions(input.claimId).find((o) => o.reason === input.reason && o.detail === detail && o.strategy === input.strategy);
+    if (known !== undefined) return { obstruction: known, created: false };
+    const data: ObstructionData = {
+      reason: input.reason,
+      detail,
+      ...(input.strategy !== undefined ? { strategy: input.strategy } : {}),
+      source: this.actor,
+      summary: `${input.reason.replace(/_/g, " ")}${input.strategy !== undefined ? ` (${input.strategy})` : ""}: ${detail}`,
+    };
+    const node = this.recordNode({ kind: OBSTRUCTION_KIND, claimId: input.claimId, data: data as unknown as Json });
+    return { obstruction: this.obstructions(input.claimId).find((o) => o.nodeId === node.nodeId) as Obstruction, created: true };
+  }
+
+  /**
+   * The obstructions recorded about a claim (and its equivalents, with `includeEquivalents`), in the order
+   * they were recorded. A node of the kind that is not well formed is left out.
+   */
+  obstructions(claimId: string, options: { includeEquivalents?: boolean } = {}): Obstruction[] {
+    const ids = options.includeEquivalents === true ? this.equivalents(claimId) : [claimId];
+    return ids
+      .flatMap((id) => this.nodes(OBSTRUCTION_KIND, { claimId: id }))
+      .sort((a, b) => a.createdSeq - b.createdSeq)
+      .flatMap((node) => {
+        const d = node.data;
+        if (typeof d !== "object" || d === null || Array.isArray(d)) return [];
+        const { reason, detail, strategy, source } = d as { [key: string]: Json | undefined };
+        if (!isObstructionReason(reason) || typeof detail !== "string" || node.claimId === undefined) return [];
+        return [{ nodeId: node.nodeId, claimId: node.claimId, reason, detail, ...(typeof strategy === "string" ? { strategy } : {}), source: typeof source === "string" ? source : "unknown" }];
+      });
   }
 
   /** The nodes of a kind (of one claim, if given), in the order they were recorded. */

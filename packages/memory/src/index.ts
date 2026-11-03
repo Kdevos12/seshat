@@ -5,6 +5,7 @@ export * from "./effect.ts";
 export * from "./epochs.ts";
 export * from "./failures.ts";
 export * from "./identity.ts";
+export * from "./obstruction.ts";
 export * from "./progress.ts";
 export * from "./redundancy.ts";
 export * from "./reference.ts";
