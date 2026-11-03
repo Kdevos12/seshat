@@ -126,17 +126,23 @@ export interface M10Services {
   selector?: PremiseSelector;
 }
 
-const hostCache = new WeakMap<Registry, Promise<HostProbe | HostTactics>>();
+/** The probe of each registry, by header: an answer is kept, an unreachable Lean is asked again at the next goal. */
+const hostCache = new WeakMap<Registry, Map<string, HostProbe | HostTactics>>();
 
 /** What the host's Lean has: the profile's `packages`, and the probe once per registry. */
 async function hostTactics(problem: ProblemContext, checker: LeanChecker, options: M10Options): Promise<HostTactics> {
   if (!options.probe) return { have: new Set(options.packages) };
-  let cached = hostCache.get(problem.registry);
-  if (cached === undefined) {
-    cached = probeHost(checker, { header: problem.target.sketch.prefix, known: options.packages, signal: problem.signal }).catch(() => ({ have: new Set(options.packages) }));
-    hostCache.set(problem.registry, cached);
+  const header = problem.target.sketch.prefix;
+  let byHeader = hostCache.get(problem.registry);
+  if (byHeader === undefined) {
+    byHeader = new Map();
+    hostCache.set(problem.registry, byHeader);
   }
-  const probed = await cached;
+  let probed = byHeader.get(header);
+  if (probed === undefined) {
+    probed = await probeHost(checker, { header, known: options.packages, signal: problem.signal }).catch((error: unknown): HostProbe => ({ have: new Set(options.packages), missing: [], unreachable: error instanceof Error ? error.message : String(error) }));
+    if (!("unreachable" in probed && probed.unreachable !== undefined) && !problem.signal.aborted) byHeader.set(header, probed);
+  }
   if ("unreachable" in probed && probed.unreachable !== undefined) problem.log(`M10: the host's Lean could not be asked which tactics it has (${probed.unreachable}); only the core tactics are offered`);
   else if ("missing" in probed && probed.missing.length > 0) problem.log(`M10: the host's Lean lacks ${probed.missing.join(", ")}`);
   return probed;
@@ -273,6 +279,8 @@ async function runSearch(problem: ProblemContext, options: M10Options, claim: Cl
     const names = availableTactics({ have: new Set(options.packages) }).map((t) => t.name).filter((n) => !n.endsWith("?"));
     const result = await searchGoal({ statement: problem.target.statement, header: problem.target.sketch.prefix, nodes: options.searchNodes }, { client, orderer, random, signal: problem.signal, tactics: names });
     const submission = result.solved && result.script.length > 0 ? await problem.validate({ claimId: claim.claimId, proof: result.script.join("\n") }) : undefined;
+    // An abort leaves no record, so that a resumed run searches again.
+    if (problem.signal.aborted && !result.solved) return;
     problem.memory.recordNode({
       kind: "search_run",
       claimId: claim.claimId,

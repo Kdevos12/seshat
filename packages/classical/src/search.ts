@@ -37,7 +37,17 @@ export interface SearchInput {
   alpha?: number;
   /** Candidates per expansion that come without a model call. Default 8. */
   fanout?: number;
+  /** The deepest proof state expanded. Default 12. */
+  maxDepth?: number;
+  /** Seconds one tactic may take in Pantograph; a tactic that takes longer counts as an error. Default 20. */
+  tacticTimeoutSec?: number;
+  /** Seconds the whole search may take. Default 180. */
+  timeoutSec?: number;
 }
+
+export const DEFAULT_MAX_DEPTH = 12;
+export const DEFAULT_TACTIC_TIMEOUT_SEC = 20;
+export const DEFAULT_SEARCH_TIMEOUT_SEC = 180;
 
 export interface SearchOptions {
   client: GoalClient;
@@ -109,7 +119,9 @@ export async function searchGoal(input: SearchInput, options: SearchOptions): Pr
   for (const l of input.lemmas ?? []) assertOneLine(l, `the lemma ${JSON.stringify(l.slice(0, 60))}`);
   for (const t of options.tactics) assertOneLine(t, `the tactic ${JSON.stringify(t.slice(0, 60))}`);
   const alpha = input.alpha ?? (ALPHAS[Math.min(Math.floor(options.random() * ALPHAS.length), ALPHAS.length - 1)] as number);
-  const stopped = (): boolean => options.signal?.aborted === true;
+  const deadline = Date.now() + (input.timeoutSec ?? DEFAULT_SEARCH_TIMEOUT_SEC) * 1000;
+  const stopped = (): boolean => options.signal?.aborted === true || Date.now() >= deadline;
+  const maxDepth = input.maxDepth ?? DEFAULT_MAX_DEPTH;
   const trace: TraceStep[] = [];
   const root = await options.client.start(input.statement, input.header, options.signal);
   const frontier: Node[] = [{ state: root.state, goals: root.goals, depth: 0, logScore: 0, script: [] }];
@@ -117,9 +129,10 @@ export async function searchGoal(input: SearchInput, options: SearchOptions): Pr
   const fanout = input.fanout ?? 8;
   if (root.goals.length === 0) return { solved: true, script: [], tried, alpha, trace };
 
-  while (frontier.length > 0 && tried < input.nodes && options.signal?.aborted !== true) {
+  while (frontier.length > 0 && tried < input.nodes && !stopped()) {
     frontier.sort((a, b) => score(b, alpha) - score(a, alpha) || a.depth - b.depth);
     const node = frontier.shift() as Node;
+    if (node.depth >= maxDepth) continue;
     const goal = node.goals[0] as string;
     const free = [
       ...(input.lemmas ?? []).flatMap((l) => [`exact ${l}`, `apply ${l}`]).map((text, i): OrderCandidate => ({ id: `library:${i}`, text, source: "library" })),
@@ -139,7 +152,15 @@ export async function searchGoal(input: SearchInput, options: SearchOptions): Pr
       if (tried >= input.nodes || stopped()) break;
       tried++;
       rank++;
-      const result = await options.client.tactic(node.state, tactic, options.signal);
+      const limit = new AbortController();
+      const timer = setTimeout(() => limit.abort(), Math.min((input.tacticTimeoutSec ?? DEFAULT_TACTIC_TIMEOUT_SEC) * 1000, Math.max(deadline - Date.now(), 1)));
+      const result = await options.client
+        .tactic(node.state, tactic, options.signal === undefined ? limit.signal : AbortSignal.any([options.signal, limit.signal]))
+        .catch((error: unknown) => {
+          if (limit.signal.aborted && options.signal?.aborted !== true) return { error: "the tactic timed out" };
+          throw error;
+        })
+        .finally(() => clearTimeout(timer));
       if ("error" in result) {
         trace.push({ depth: node.depth + 1, tactic, outcome: "error", source });
         continue;

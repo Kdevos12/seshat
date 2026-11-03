@@ -51,7 +51,8 @@ export interface SolveOutcome {
   cpuMs: number;
   domains: string[];
   /** The node that records the run. */
-  nodeId: string;
+  /** Absent when an abort cut the run short: nothing is recorded, so that a resumed run does the goal again. */
+  nodeId?: string;
   budgetExhausted: boolean;
 }
 
@@ -137,7 +138,8 @@ export async function solveGoal(ctx: SolveContext, goal: ClaimGoal): Promise<Sol
     cpuMs,
     budgetSec: ctx.settings.cpuBudgetSec,
   };
-  const node = ctx.memory.recordNode({ kind: BATTERY_RUN, claimId: goal.claimId, data: data as never });
+  const cut = winner === undefined && ctx.signal.aborted;
+  const node = cut ? undefined : ctx.memory.recordNode({ kind: BATTERY_RUN, claimId: goal.claimId, data: data as never });
   return {
     settled: winner !== undefined,
     ...(submission !== undefined ? { submission } : {}),
@@ -145,7 +147,7 @@ export async function solveGoal(ctx: SolveContext, goal: ClaimGoal): Promise<Sol
     tries,
     cpuMs,
     domains: route.domains,
-    nodeId: node.nodeId,
+    ...(node !== undefined ? { nodeId: node.nodeId } : {}),
     budgetExhausted: last?.budgetExhausted ?? false,
   };
 }

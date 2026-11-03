@@ -187,6 +187,8 @@ z3 ran on the translated scripts only.
 
 ## The line
 
+Things the line does when it is cut short or when Lean is not as expected: an abort of the problem (a budget, a stop) leaves no `battery_run`, `first_order_run` or `search_run` node for the goal it cut, so a resumed run does the goal again, and an interruption raised by `validate` passes through the hook; the battery records one `success` per run (a later answer that raced the abort is `aborted`) and aborts its other checks if the checker throws; a probe that timed out, or whose import failed, learned nothing, so the tactics are not believed present and the host is asked again at the next goal (an answer is kept for its header). The line does not enumerate the `sorry`s of a sketch itself: a hole is worked when the scheduler (M12) has made it a claim joined by `decomposes_into`, which is how a subgoal reaches the line.
+
 `M10` (`createM10(services)`; `M10` is the one a run gets) has a `beforeProvers` hook and a briefing,
 and no state of its own: it reads what it did from the memory (`resume: "stateless"`), so a resumed
 run skips every goal that has a `battery_run` or `first_order_run` node and a second run of the hook
@@ -222,7 +224,7 @@ model's proposals, which keep their rank, and the battery's tactics for the goal
 without a model call and are ordered by an injectable `CandidateOrderer`: the posteriors by default, or
 `decide` (plan change J3 item 3, `--line-option M10.orderer=decide`, with the model's own order as the
 fallback). A closed search returns the tactics, one per line; the line submits them through `validate`
-like any other proof. It is off in the line by default, because whether it beats whole-proof sessions
+like any other proof. The search is bounded by nodes (tactics tried), by depth (`maxDepth`, 12), by a time limit for the whole search (`timeoutSec`, 180) and by one for each tactic (20 s; a tactic that takes longer counts as an error); money enters only through the `decide` orderer, which has its own budget. The `prove.search` capability has no journal of its own, so its posterior order is the router's prior. It is off in the line by default, because whether it beats whole-proof sessions
 at equal dollars is to be measured, and it has not run against Pantograph.
 
 ## Tests, and what has not run

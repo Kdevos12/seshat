@@ -153,6 +153,37 @@ describe("the battery", () => {
   });
 });
 
+describe("the battery under failure (review M1, M2)", () => {
+  const base = { goal: GOAL, domain: "presburger", posteriors: new Posteriors(), order: { mode: "mean" as const } };
+
+  it("stops the other checks when the checker throws", async () => {
+    const signals: AbortSignal[] = [];
+    const checker = {
+      implementation: "throwing",
+      version: "0",
+      async check(snippets: readonly { id: string; code: string }[], options: { signal?: AbortSignal } = {}) {
+        if (snippets[0]?.code.includes("by\n  omega")) {
+          await new Promise((r) => setTimeout(r, 10));
+          throw new Error("lean.check is unknown here");
+        }
+        if (options.signal !== undefined) signals.push(options.signal);
+        await new Promise((r) => setTimeout(r, 3000).unref());
+        return [];
+      },
+    };
+    await assert.rejects(runBattery({ ...base, checker: checker as never, tactics: availableTactics({ have: new Set() }), cpuBudgetSec: 60, parallel: 4 }), /unknown here/);
+    assert.ok(signals.length > 0 && signals.every((s) => s.aborted), "the others were told to stop");
+  });
+
+  it("records one success per run, the winner's, even when a second answer raced the abort", async () => {
+    const lean = new ScriptedLean({ omega: { ok: true }, simp: { ok: true }, norm_num: { ok: true }, decide: { ok: true } });
+    const result = await runBattery({ ...base, checker: lean, tactics: tacticsFor({ have: new Set() }, { hammerCutoffs: [] }), cpuBudgetSec: 60, parallel: 4 });
+    assert.equal(result.tries.filter((t) => t.outcome === "success").length, 1);
+    assert.equal(result.tries.filter((t) => t.outcome === "success")[0]?.tactic, result.winner?.tactic);
+    assert.ok(result.tries.length >= 2);
+  });
+});
+
 describe("the host probe", () => {
   it("reads which optional tactics the host's Lean has", async () => {
     const lean = new ScriptedLean({ hammer: { unknown: true }, canonical: { ok: true }, polyrith: { unknown: true }, bv_decide: { ok: true } });
@@ -160,6 +191,23 @@ describe("the host probe", () => {
     assert.deepEqual([...probe.have].sort(), ["bv_decide", "canonical"]);
     assert.deepEqual(probe.missing.sort(), ["hammer", "polyrith"]);
     assert.equal(probe.unreachable, undefined);
+  });
+
+  it("learns nothing from a probe that timed out or whose import failed (review M3)", async () => {
+    const timedOut = await probeHost(new ScriptedLean({ hammer: { timeout: true }, canonical: { timeout: true }, polyrith: { timeout: true }, bv_decide: { timeout: true } }), {});
+    assert.ok(timedOut.unreachable !== undefined);
+    assert.deepEqual(timedOut.missing, []);
+    assert.equal(timedOut.have.size, 0, "a timeout does not make the optional tactics present");
+    const broken = {
+      implementation: "broken",
+      version: "0",
+      async check(snippets: readonly { id: string }[]) {
+        return snippets.map((s) => ({ id: s.id, status: "lean_error" as const, messages: [{ severity: "error" as const, pos: { line: 1, column: 0 }, text: "unknown module prefix 'Mathlib'" }], sorries: [], timeMs: 1 }));
+      },
+    };
+    const noImport = await probeHost(broken as never, {});
+    assert.ok(noImport.unreachable?.includes("unknown module prefix"));
+    assert.equal(noImport.have.size, 0);
   });
 
   it("takes the packages the host profile names as present without asking", async () => {

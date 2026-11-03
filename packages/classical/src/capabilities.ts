@@ -50,10 +50,13 @@ export function proveAutoFactory(makeChecker: (context: FactoryContext) => LeanC
   return (context): ImplementationInstance => {
     const checker = makeChecker(context);
     const known = packagesOf(context);
-    let probe: Promise<HostProbe> | undefined;
-    const host = (header: string, signal: AbortSignal): Promise<HostTactics> => {
-      probe ??= probeHost(checker, { header, known, signal }).catch(() => ({ have: new Set(known), missing: [] as string[] }));
-      return probe;
+    const probes = new Map<string, HostProbe>();
+    const host = async (header: string, signal: AbortSignal): Promise<HostTactics> => {
+      const kept = probes.get(header);
+      if (kept !== undefined) return kept;
+      const probed = await probeHost(checker, { header, known, signal }).catch((): HostProbe => ({ have: new Set(known), missing: [], unreachable: "Lean did not answer" }));
+      if (probed.unreachable === undefined && !signal.aborted) probes.set(header, probed);
+      return probed;
     };
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
@@ -95,6 +98,8 @@ export interface ProveSearchInput {
   tactics?: string[];
   lemmas?: string[];
   nodes?: number;
+  maxDepth?: number;
+  timeoutSec?: number;
   alpha?: number;
   seed?: number;
 }
@@ -112,7 +117,7 @@ export function proveSearchFactory(makeGoals: ImplementationFactory, options: { 
     const orderer = options.orderer ?? posteriorOrderer();
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
-        const { statement, header = DEFAULT_HEADER, tactics, lemmas, nodes = 60, alpha, seed = 1 } = input as unknown as ProveSearchInput;
+        const { statement, header = DEFAULT_HEADER, tactics, lemmas, nodes = 60, maxDepth, timeoutSec, alpha, seed = 1 } = input as unknown as ProveSearchInput;
         assertHeaderSafe(header, "the header");
         const scope = `prove.search:${Math.random().toString(36).slice(2)}`;
         const call = async (body: Record<string, Json>): Promise<Record<string, Json>> =>
@@ -131,7 +136,7 @@ export function proveSearchFactory(makeGoals: ImplementationFactory, options: { 
         try {
           const names = (tactics === undefined ? availableTactics({ have: new Set() }).map((t) => t.name) : []).filter((n) => !n.endsWith("?"));
           const result = await searchGoal(
-            { statement, header, nodes, ...(lemmas !== undefined ? { lemmas } : {}), ...(tactics !== undefined ? { proposals: tactics } : {}), ...(alpha !== undefined ? { alpha } : {}) },
+            { statement, header, nodes, ...(maxDepth !== undefined ? { maxDepth } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), ...(lemmas !== undefined ? { lemmas } : {}), ...(tactics !== undefined ? { proposals: tactics } : {}), ...(alpha !== undefined ? { alpha } : {}) },
             { client, orderer, random: seeded(seed), signal: invoke.signal, tactics: names },
           );
           return { ...result, trace: result.trace.slice(-60) } as unknown as Json;
