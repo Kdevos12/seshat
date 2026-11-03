@@ -6,6 +6,7 @@ import type { FailureClass } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
+import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { ABORT_BUDGET, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
@@ -34,6 +35,8 @@ export interface ProverOptions {
   notesChars: number;
   /** The prompt cache retention asked of the provider (`SessionOptions.cacheRetention`); absent: its default. */
   cacheRetention?: CacheRetention;
+  /** The host's prices, passed to the session (`SessionOptions.prices`). */
+  prices?: PriceBook;
   /** The problem's ledger. */
   ledger: Ledger;
   /** The problem's signal. */
@@ -50,6 +53,8 @@ export interface ProverOptions {
    * `running`, as the task of a process that ended does (documentation/human.md).
    */
   turn?: Turn;
+  /** The off-peak option: a session starts after this resolves, which it does at once at an off-peak hour (documentation/human.md, "Off-peak"). */
+  waitOffPeak?: () => Promise<void>;
   /** The prover picks up where an interrupted run left it, instead of starting. */
   resume?: ProverResume;
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
@@ -135,6 +140,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done("budget");
     if (o.turn?.ended !== undefined) return done("turn");
+    if (o.waitOffPeak !== undefined) {
+      await o.waitOffPeak();
+      if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
+      if (o.turn?.ended !== undefined) return done("turn");
+    }
     const attemptId = newId("att");
     let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions };
     let model = o.model;
@@ -234,6 +244,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(opened?.hooks !== undefined ? { lines: opened.hooks } : {}),
         ...(strategies.length > 0 ? { strategies } : {}),
         ...(o.cacheRetention !== undefined ? { cacheRetention: o.cacheRetention } : {}),
+        ...(o.prices !== undefined ? { prices: o.prices } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
@@ -299,6 +310,9 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
       ...(result.cost.cachedInputTokens !== undefined ? { cachedInputTokens: result.cost.cachedInputTokens } : {}),
+      ...(result.cost.savedUsd !== undefined ? { savedUsd: result.cost.savedUsd } : {}),
+      ...(result.cost.offPeakUsd !== undefined ? { offPeakUsd: result.cost.offPeakUsd } : {}),
+      ...(result.cost.unchargedUsd !== undefined ? { unchargedUsd: result.cost.unchargedUsd } : {}),
       carry: carry(),
     });
     if (o.lines === undefined) {

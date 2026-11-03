@@ -98,6 +98,22 @@ message `harness resume` would give, instead of spending a turn and then being u
 A turn costs a session per cut: a session cut by the turn is a session used (`--sessions`). A run meant to
 take many turns should give its provers more sessions.
 
+## Off-peak
+
+A run that is not urgent can wait for cheap hours (plan change PD3). `harness run --offpeak` (`RunConfig.offpeak`,
+recorded in `run.started`, so a resumed run keeps it) starts a consortium turn, and each prover's session, only when
+the host's pricing calendar for the run's model says the prices are at their off-peak rate ([m0-loop.md](m0-loop.md#prices)).
+At a peak instant it writes a `turn.deferred` event (`scope` `turn` or `session`, `from`, the `nextStart` of the next
+off-peak window, `until`, `bounded`) and waits. The turn's own clock (`--turn-minutes`) begins after the turn's wait, so that wait is not part of the turn. A session's
+wait inside a running turn is: it counts against `--turn-minutes` and can end the turn with nothing done, so a run
+that means to wait for cheap hours is better given a turn limit in tokens or dollars. `--offpeak-max-wait MINUTES` bounds each wait: when it comes first, `until` is `from` plus the
+limit, `bounded` is true, and the work runs at the peak price; the sessions that follow in the same peak do not wait
+again. The calendar is read against the wall clock (`RunOptions.wallClock`; the tests inject a clock and the sleep).
+The option is refused, before anything is written, when the host's profile gives the run's model no pricing table, or a
+table with no calendar. The calendar of the run's model is the one read, whatever other models a line chooses. The
+report says how many dollars were charged at the off-peak rate (the multiplier applies to a charge whether or not
+the option is on), how many waits there were, how many ran anyway and the minutes waited (the planned wait: a wait cut short by a stop counts in full).
+
 ## Breakpoints
 
 With `--human` (and with any turn limit) a turn also ends at a breakpoint, an event that the journal

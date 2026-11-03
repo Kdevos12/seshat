@@ -468,7 +468,15 @@ export function createFleet(env: FleetEnv = {}): Line {
         let dag: string | undefined;
         let dagNote: string | undefined;
         if (samplesSettings(config.settings)) {
-          const sampled = sampleSettings(randomFor(`${key}:settings`), config.settings, attempts, config.partial, weights);
+          const sessionModel = model ?? session.model;
+          const sampled = sampleSettings(
+            randomFor(`${key}:settings`),
+            config.settings,
+            attempts,
+            config.partial,
+            weights,
+            session.ignoresSetting === undefined ? undefined : (setting, thinking) => session.ignoresSetting?.(sessionModel, setting, thinking) ?? false,
+          );
           settings = sampled.settings;
           if (Object.keys(sampled.draws).length > 0) settingDraws = sampled.draws;
           if (settings.mode === "nl_first") {

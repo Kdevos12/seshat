@@ -41,6 +41,7 @@ Event types:
 | `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `codeRev?` |
 | `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
 | `run.resumed` | `runId`, `resumption` (1, 2...), `tornTail?` (`action`, `bytes`, `sha256`), `spent` (`usd`, `inputTokens`, `outputTokens`), `interrupted` (`attempts`, `toolRuns`, `tasks`), `codeRev?` |
+| `turn.deferred` | `runId`, `scope` (`turn` or `session`), `turn?`, `problemId?`, `prover?`, `from`, `nextStart`, `until`, `bounded`: the run waits for off-peak hours before starting this ([human.md](human.md#off-peak)) |
 | `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`): a turn of a consortium run begins ([human.md](human.md)) |
 | `turn.ended` | `runId`, `turn`, `reason` (`tokens`, `usd`, `minutes`, `impasse`, `settled`, `disagreement`, `interrupted`, `finished` or why the run stopped), `detail`, `spent` (`turn` and `run`: `usd`, `inputTokens`, `outputTokens`), `minutes`, `waiting` (problem ids), `breakpoint?` (`kind`, `problemId?`, `nodeId?`), `narrative?` (`hash?`, `rejected?`) |
 | `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
@@ -48,8 +49,8 @@ Event types:
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?`, `settings?`, `exploration?` |
-| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache): one model response of a session |
-| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
+| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache), `savedUsd?` (what that cache saved against the no-cache price), `offPeakUsd?` (the part of `usd` charged at the off-peak rate), `unchargedUsd?` (what pi-ai reported above the host's table): one model response of a session |
+| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?`, `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
 | `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version` (for a Lean tool in a resolved environment, followed by `+env:NAME@` and the first 12 digits of the environment hash), `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text`, `provenance?` |
@@ -58,7 +59,7 @@ Event types:
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
-| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` |
+| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?` |
 | `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
