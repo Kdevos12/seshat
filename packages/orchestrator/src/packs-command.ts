@@ -24,6 +24,7 @@ export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolea
     o.out(`installed ${m.name} ${m.version} (trust ${m.trust}, hash ${pack.hash.slice(0, 12)}) in ${pack.dir}`);
     o.out(`  tools (level 2, found through tool search): ${pack.capabilities.map((c) => c.manifest.id).join(", ") || "none"}`);
     if ((m.level1 ?? []).length > 0) o.out(`  asks for level 1: ${(m.level1 ?? []).join(", ")}; honoured from the next session`);
+    o.out(`  environment variables its tools may read: ${(m.requires?.env ?? []).join(", ") || "none"}`);
     o.out(`  skills (listed by name; at most 3 are loaded in full): ${pack.skills.map((s) => s.name).join(", ") || "none"}`);
     for (const missing of missingRequirements(pack)) o.out(`  warning: missing ${missing}`);
     o.out("  the pack's tests were checked as written; none was run (harness contract ID runs one against a host)");

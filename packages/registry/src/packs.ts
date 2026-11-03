@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CLAIM_STATUSES } from "@seshat/core";
-import { CatalogError, loadCatalog, type Capability, type Catalog } from "./manifest.ts";
+import { CatalogError, loadCatalog, type Capability, type Catalog, type McpServerSpec } from "./manifest.ts";
 import { isPlainObject, validate, type JsonSchema } from "./schema.ts";
 
 /**
@@ -227,7 +227,8 @@ export function loadPack(dir: string): LoadedPack {
       problems.push(...capabilityRules(manifest, capability));
       for (const impl of capability.manifest.implementations) {
         if (impl.kind !== "mcp") continue;
-        programs.push(impl.server.transport === "stdio" ? [impl.server.command, ...(impl.server.args ?? [])].join(" ") : impl.server.url);
+        programs.push(describeServer(impl.server));
+        problems.push(...envProblems(manifest, capability.manifest.id, impl.id, impl.server));
       }
     }
   }
@@ -256,6 +257,25 @@ export function loadPack(dir: string): LoadedPack {
 
   if (problems.length > 0) throw new PackError(problems);
   return { manifest, dir: root, hash: treeHash(files), capabilities, skills, programs };
+}
+
+/** A server as the install confirmation shows it: what it runs or reaches, with the names of the headers and variables it sets. */
+function describeServer(server: McpServerSpec): string {
+  if (server.transport === "stdio") {
+    const env = Object.keys(server.env ?? {});
+    return [server.command, ...(server.args ?? [])].join(" ") + (env.length > 0 ? ` [env: ${env.join(", ")}]` : "");
+  }
+  const headers = Object.keys(server.headers ?? {});
+  return server.url + (headers.length > 0 ? ` [headers: ${headers.join(", ")}]` : "");
+}
+
+/** The harness's environment is not a pack's: it may read `${env:NAME}` only for the names its `requires.env` gives, which the install shows. */
+export function envProblems(pack: PackManifest, id: string, implId: string, server: unknown): string[] {
+  const allowed = new Set(pack.requires?.env ?? []);
+  const names = new Set([...JSON.stringify(server).matchAll(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1] as string));
+  return [...names]
+    .filter((n) => !allowed.has(n))
+    .map((n) => `pack ${pack.name}: ${id}/${implId} reads \${env:${n}}, which pack.json requires.env does not name: a pack gets only the variables it declares`);
 }
 
 /** What a pack's capability may be: level 2, MCP, `computed` at most, with contract cases of its own. */
