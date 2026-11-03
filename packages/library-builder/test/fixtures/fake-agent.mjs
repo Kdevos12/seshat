@@ -76,6 +76,34 @@ switch (scenario) {
     // The test lemma is proved, but it states something else than the spec's lemma does.
     put(`${DIR}/Basic.lean`, good("", "by\n  simp [mulDiv]", "(n : Nat) : mulDiv n 1 = n ∨ n = 0"));
     break;
+  case "prefixed_theorem":
+    // A failing theorem behind `open X in`: a scanner that reads only the start of a command never sees it.
+    put(`${DIR}/Basic.lean`, good("\nopen Nat in\ntheorem extra_fact (n : Nat) : n = n := by\n  rfl -- CERTFAIL\n"));
+    break;
+  case "native_option":
+    put(`${DIR}/Basic.lean`, good("\nset_option maxRecDepth 1000 in\ntheorem two_two : 2 + 2 = 4 := by\n  decide +native\n"));
+    break;
+  case "native_plain":
+    put(`${DIR}/Basic.lean`, good("\ntheorem two_two : 2 + 2 = 4 := by\n  native_decide\n"));
+    break;
+  case "prefixed_def":
+    put(`${DIR}/Basic.lean`, good("\nopen Nat in\ndef helperFn (a : Nat) : Nat := a\n"));
+    break;
+  case "unrecognised":
+    put(`${DIR}/Basic.lean`, good("\nattribute [simp] mulDiv\n"));
+    break;
+  case "hidden_declaration":
+    put(`${DIR}/Basic.lean`, good("\nopen Nat\n  in\ntheorem extra_fact (n : Nat) : n = n := by\n  rfl -- CERTFAIL\n"));
+    break;
+  case "shadow":
+    put(`${DIR}/Basic.lean`, good("\ninductive Nat where\n  | zeroo\n"));
+    break;
+  case "foreign_instance":
+    put(`${DIR}/Basic.lean`, good("\ninstance : Inhabited Nat := ⟨0⟩\n"));
+    break;
+  case "own_structure":
+    put(`${DIR}/Basic.lean`, good("\nstructure Pt where\n  xCoord : Nat\n  yCoord : Nat\n\ninstance : Inhabited Pt := ⟨⟨0, 0⟩⟩\n\ninductive Shape where\n  | circle\n  | square\n"));
+    break;
   case "buildfail":
     put(`${DIR}/Basic.lean`, good("\n-- BUILDFAIL\n"));
     break;

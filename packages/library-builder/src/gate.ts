@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { CertifyFailedError, STANDARD_AXIOMS, type LeanCertifier } from "@seshat/core";
 import type { CommandRunner } from "@seshat/lean-env";
 import { type Change, DEFAULT_LIMITS, type DiffLimits, diffViolations } from "./diff.ts";
-import { isDefinition, isProof, referenceFor, scanFile, screenFile, type FileScan } from "./source.ts";
+import { foreignInstances, isDefinition, isProof, referenceFor, scanFile, screenFile, shadowing, type FileScan } from "./source.ts";
 import type { LibrarySpec } from "./spec.ts";
 
 /** One rule of the gate and what it found. */
@@ -159,6 +159,12 @@ export async function runGate(o: GateOptions): Promise<GateReport> {
     }
     const scan = scanFile(f.content);
     scans.set(f.path, scan);
+    // A command the scanner cannot place (a declaration behind a prefix it does not read, a macro, an unknown command) is not guessed at.
+    if (scan.unrecognised.length > 0) {
+      const names = [...new Set(scan.unrecognised)].slice(0, 6).join(", ");
+      if (spec.job === "fill") problems.push(`${f.path}: the gate cannot read the command(s) ${names}; a fill uses declarations only`);
+      else needsApproval = true;
+    }
     for (const imp of scan.imports) if (!importAllowed(imp, spec)) problems.push(`${f.path}: imports ${imp}, which the spec does not allow`);
   }
   if (problems.length > 0) return reject("content", problems.slice(0, 12).join("; "));
@@ -181,13 +187,23 @@ export async function runGate(o: GateOptions): Promise<GateReport> {
   }
   if (missing.length > 0) return reject("spec", `missing from the new files: ${missing.join(", ")}`);
   if (proofs.length > (o.maxTheorems ?? 100)) return reject("spec", `${proofs.length} new theorems, more than the ${o.maxTheorems ?? 100} the gate certifies`);
-  const definitions: NewDefinition[] = defs.map(({ file, d }) => ({
-    name: d.name,
-    keyword: d.keyword,
-    module: moduleOf(file.path, libRoot),
-    testLemmas: spec.testLemmas.map((t) => t.name),
-  }));
-  checks.push({ rule: "spec", ok: true, detail: `${spec.items.length} item(s) and ${spec.testLemmas.length} test lemma(s) are there; ${definitions.length} new definition(s), ${proofs.length} new theorem(s)` });
+  // Test lemmas are elaborated in the agent's own file, so a new declaration must not change what a name in their statements means (review I3).
+  const allowed = new Set<string>([...spec.items.map((i) => i.expectedName), ...spec.testLemmas.map((t) => t.name)]);
+  const all = lean.flatMap((f) => (scans.get(f.path) as FileScan).declarations);
+  const shadows = shadowing(all, spec.testLemmas.map((t) => t.statement), allowed);
+  if (shadows.length > 0) return reject("spec", shadows.slice(0, 6).join("; "));
+  // An instance on types the build did not declare would change the meaning of statements about existing types (review I2).
+  if (spec.job === "fill") {
+    const foreign = foreignInstances(lean.map((f) => scans.get(f.path) as FileScan));
+    if (foreign.length > 0) return reject("spec", foreign.slice(0, 6).join("; "));
+  }
+  const definitions: NewDefinition[] = defs.flatMap(({ file, d }) => {
+    const module = moduleOf(file.path, libRoot);
+    const testLemmas = spec.testLemmas.map((t) => t.name);
+    // Constructors and fields are names a statement can use as well: they are registered with their type, unreviewed (review I2).
+    return [{ name: d.name, keyword: d.keyword, module, testLemmas }, ...d.members.map((name) => ({ name, keyword: d.keyword === "inductive" ? "constructor" : "field", module, testLemmas }))];
+  });
+  checks.push({ rule: "spec", ok: true, detail: `${spec.items.length} item(s) and ${spec.testLemmas.length} test lemma(s) are there; ${definitions.length} new definition name(s), ${proofs.length} new theorem(s)` });
 
   // 4. A fresh checkout at the base plus these files, built.
   const root = mkdtempSync(join(o.workRoot ?? tmpdir(), "seshat-gate-"));
