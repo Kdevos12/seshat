@@ -26,7 +26,7 @@ export interface GapThresholds {
 
 export const DEFAULT_THRESHOLDS: GapThresholds = { unknownIdentifier: 3, unsolvedSubgoal: 2 };
 
-const UNKNOWN = /unknown (?:identifier|constant) '([^']{1,120})'/g;
+const UNKNOWN = /unknown (?:identifier|constant) '([A-Za-z_][A-Za-z0-9_'.]{0,119})'/g;
 
 /** The identifiers that Lean messages say are unknown. */
 export function unknownIdentifiers(messages: readonly string[]): string[] {

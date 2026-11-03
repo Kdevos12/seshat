@@ -1,3 +1,6 @@
+import { forbiddenTokensIn, scanRegion } from "@seshat/core";
+import { screenProse } from "@seshat/memory";
+
 /**
  * The input of a library build (plan change LC4): what to formalize or port, written by a person or by
  * Seshat, never by the agent. The test lemmas are Seshat's: the gate compares what the agent proved with
@@ -24,6 +27,12 @@ export interface SpecItem {
 }
 
 export interface LibrarySpec {
+  /**
+   * Who wrote the spec: `human:NAME` for a person, which is trusted as written. Anything else (a spec writer's model, a gap's own
+   * words) is unverified text on its way into a prompt and into Lean, so `specProblems` runs it through the strict screen
+   * (Global Constraint 16): prose of one line without code, links or instructions, and Lean statements without the validator's forbidden tokens.
+   */
+  author?: string;
   job: LibraryJob;
   /** The domain directory, `Combinatorics`: the agent may add files only under `lean/SeshatLib/<domain>/`. A Lean identifier. */
   domain: string;
@@ -70,6 +79,20 @@ export function specProblems(spec: LibrarySpec): string[] {
     if (tests.has(t.name)) problems.push(`the test lemma ${t.name} is listed twice`);
     tests.add(t.name);
     if (t.statement.trim() === "") problems.push(`the test lemma ${t.name} has no statement`);
+  }
+  if (spec.author?.startsWith("human:") !== true) {
+    const prose = (what: string, text: string, max: number) => {
+      const screened = screenProse(text, { max });
+      if (!screened.ok) problems.push(`${what} is refused by the screen for unverified text: ${screened.reason}`);
+      else if (screened.text !== text.replace(/\s+/g, " ").trim()) problems.push(`${what} is longer than ${max} characters`);
+    };
+    prose("the reason", spec.reason, 300);
+    for (const item of spec.items) prose(`the informal statement of ${item.expectedName}`, item.informal, 400);
+    for (const t of spec.testLemmas) {
+      const scan = scanRegion(t.statement);
+      for (const p of scan.problems) problems.push(`the test lemma ${t.name}: ${p}`);
+      for (const token of forbiddenTokensIn(scan.masked)) problems.push(`the test lemma ${t.name}: '${token}' is not allowed`);
+    }
   }
   if (spec.job === "fill") {
     if (spec.items.length === 0) problems.push("a fill has no item");

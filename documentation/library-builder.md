@@ -30,6 +30,12 @@ under `lean/SeshatLib/<Domain>/`; `port` brings a package that has no tag for th
 (it names the git address, the rev and the libraries to build). A definition with no test lemma that states something about
 it makes the spec invalid. `harness library build SPEC.json` reads it.
 
+**Who wrote the spec.** A spec has an `author`. `human:NAME` is trusted as written (`harness library build` marks the file's spec `human:cli`:
+whoever runs the command answers for it). Any other author's spec is unverified text on its way into a prompt and into Lean (Global Constraint 16), so
+`specProblems` runs it through the strict screen first: the reason and each informal statement must pass `screenProse` (one line, no code, link or
+instruction, at most 300 and 400 characters), and each test lemma's statement must pass the validator's scanner and token list. A spec that does not
+is invalid, and the agent is not started.
+
 ## What runs
 
 1. The project (`repo`, a git repository whose tree is a Lake project, with the Lean files under `libRoot`, default `lean`)
