@@ -253,6 +253,18 @@ packet compiled again are compared on cost and solve rate, which Task 14 does on
 effect on a real provider's bill has not been measured: the tests read it from pi-ai's faux
 provider, which caches the longest common prefix of a session's requests.
 
+### The reasoning of a tool-call loop
+
+A provider that thinks refuses a request (HTTP 400) in which an assistant message that called tools comes back
+without the reasoning it was answered with (the field is `reasoning_content` in OpenAI-compatible APIs). A packet
+today leaves no assistant message in the request, so the case does not arise from it; but any code that rewrites or
+compiles a session's history and keeps such a message (a mode that keeps the history, `SessionOptions.rewriteHistory`)
+could drop the thinking. The harness therefore passes every request's messages through `keepReasoning`
+(`orchestrator/src/history.ts`): an assistant message with tool calls and no thinking gets back the thinking blocks of
+the message it was made from, matched by tool-call id (else by timestamp); one that matches nothing is left as it is.
+It is tested against a fake OpenAI-compatible server that answers 400 when the reasoning is missing: with the guard
+removed, a session whose rewrite drops the thinking fails. Not run against a real provider.
+
 ### Claims a line states
 
 `memory.ensureClaim` takes a statement in signature form (the binders, then `:` and the type; a

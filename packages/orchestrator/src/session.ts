@@ -6,6 +6,7 @@ import { contextTokens, type Ledger, messageCost } from "./budget.ts";
 import { formatCheck, summarizeCheck } from "./feedback.ts";
 import type { SessionHooks } from "./line-runtime.ts";
 import type { PriceBook } from "./prices.ts";
+import { keepReasoning } from "./history.ts";
 import { composePacket, type FrozenState } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { WRAP_UP } from "./prompt.ts";
@@ -82,6 +83,12 @@ export interface SessionOptions {
   cacheRetention?: CacheRetention;
   /** The host's prices: the session's charges are computed from them when they cover the model (documentation/m0-loop.md, "Prices"). */
   prices?: PriceBook;
+  /**
+   * Rewrites the messages of each request after the context packet is compiled (a mode that keeps or trims the
+   * history). Whatever it returns, the harness puts back the reasoning of the assistant messages that belong to a
+   * tool-call loop and that the rewrite dropped (`keepReasoning`).
+   */
+  rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
 }
 
 export interface SessionResult {
@@ -219,6 +226,27 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
   const temperature = o.temperature;
+  const rebuild = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+    requests += 1;
+    try {
+      const answer = packet === undefined ? undefined : await packet(requests, messages, frozen?.prefix);
+      if (answer === undefined) return messages;
+      const system = messages.filter((m) => m.role === "system");
+      const team = (o.teamSections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
+      if (typeof answer === "string") return [...system, { role: "user", content: `${answer}${team}`, timestamp: Date.now() }];
+      const composed = composePacket(answer, frozen);
+      frozen = composed.state;
+      const { prefix } = composed.texts;
+      const tail = `${composed.texts.tail}${composed.texts.tail === "" ? team.replace(/^\n\n/, "") : team}`;
+      // Providers refuse an empty text block: an empty prefix or tail is left out.
+      const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
+      return [...system, { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() }];
+    } catch (error) {
+      lineFailed(error);
+      agent.abort();
+      return messages;
+    }
+  };
   const agent = new Agent({
     initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
     // The one place where a request is sent: the consortium turn is read here, immediately before the send, so that no
@@ -238,27 +266,18 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // prefix frozen at the first request and that request's tail, in one user message of two
     // texts, so that every request of the session starts with the same bytes. pi wants this hook
     // never to throw: a failure ends the session with an error, and the request is aborted.
-    ...(packet !== undefined
+    ...(packet !== undefined || o.rewriteHistory !== undefined
       ? {
-          transformContext: async (messages: AgentMessage[]) => {
-            requests += 1;
+          // Whatever rebuilds the history, the reasoning of the model's tool-call messages goes back with them
+          // (documentation/lines.md, "The reasoning of a tool-call loop").
+          transformContext: async (original: AgentMessage[]) => {
+            const compiled = await rebuild(original);
             try {
-              const answer = await packet(requests, messages, frozen?.prefix);
-              if (answer === undefined) return messages;
-              const system = messages.filter((m) => m.role === "system");
-              const team = (o.teamSections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
-              if (typeof answer === "string") return [...system, { role: "user", content: `${answer}${team}`, timestamp: Date.now() }];
-              const composed = composePacket(answer, frozen);
-              frozen = composed.state;
-              const { prefix } = composed.texts;
-              const tail = `${composed.texts.tail}${composed.texts.tail === "" ? team.replace(/^\n\n/, "") : team}`;
-              // Providers refuse an empty text block: an empty prefix or tail is left out.
-              const content = [prefix, tail].filter((text) => text !== "").map((text) => ({ type: "text" as const, text }));
-              return [...system, { role: "user", content: content.length > 0 ? content : "", timestamp: Date.now() }];
+              return keepReasoning(original, o.rewriteHistory === undefined ? compiled : await o.rewriteHistory(compiled));
             } catch (error) {
               lineFailed(error);
               agent.abort();
-              return messages;
+              return original;
             }
           },
         }
