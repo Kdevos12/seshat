@@ -1,3 +1,4 @@
+import { assertLeanSafe } from "./screen.ts";
 import type { LeanChecker } from "@seshat/core";
 import { type Goal, snippetFor, succeeded, suggestion, type TacticSpec } from "./tactics.ts";
 import { orderByPosterior, type OrderOptions, type Posteriors, type TryRecord } from "./posterior.ts";
@@ -49,6 +50,7 @@ const MIN_TRY_MS = 1000;
  * registry's. A success is no proof yet: the caller submits it through `validate`.
  */
 export async function runBattery(options: BatteryOptions): Promise<BatteryResult> {
+  assertLeanSafe(options.goal.statement, "the statement");
   const tactics = options.tactics.filter((t) => !options.exclude?.has(t.name));
   const queue = orderByPosterior(tactics, options.domain, options.posteriors, options.order);
   const budgetMs = options.cpuBudgetSec * 1000;

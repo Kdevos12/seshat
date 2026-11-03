@@ -1,3 +1,4 @@
+import { headerProblems, UnsafeText } from "./screen.ts";
 import { type RandomSource } from "@seshat/core";
 import { decideOrderer } from "@seshat/decide";
 import { type Briefing, type JsonObject, LINE_TITLES, type Line, type ProblemContext } from "@seshat/lines";
@@ -159,6 +160,19 @@ function settings(options: M10Options): SolveSettings {
   return { ...DEFAULT_SETTINGS, parallel: options.parallel, cpuBudgetSec: options.cpuBudgetSec, maxSubmissions: options.maxSubmissions, order: options.order, hammerCutoffs: options.hammerCutoffs };
 }
 
+/** Runs a stage; a goal whose text the screen refuses is skipped with a log line, as no stage of it may reach Lean. */
+async function refusing<T>(problem: ProblemContext, label: string, run: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof UnsafeText) {
+      problem.log(`M10: ${label} is skipped: ${error.message}`);
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 async function beforeProvers(problem: ProblemContext, services: M10Services): Promise<void> {
   const options = readOptions(problem.options);
   const checker = services.checker?.(problem) ?? new RegistryLeanChecker(problem.registry, { actor: ACTOR });
@@ -173,6 +187,14 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
   for (const claim of goals) {
     if (problem.signal.aborted) return;
     const header = claim.header ?? problem.target.sketch.prefix;
+    // The target is the bench's; a subgoal's text may come from a model, so its header is screened too.
+    if (claim.claimId !== problem.claimId && claim.header !== undefined) {
+      const refused = headerProblems(claim.header);
+      if (refused.length > 0) {
+        problem.log(`M10: the header of subgoal ${claim.claimId} is refused: ${refused.join("; ")}`);
+        continue;
+      }
+    }
     const goal: ClaimGoal = { claimId: claim.claimId, header, statement: claim.claimId === problem.claimId ? problem.target.statement : claim.statement };
     const label = claim.claimId === problem.claimId ? "the target" : `subgoal ${claim.claimId}`;
     if (!ran(problem.memory, BATTERY_RUN, claim)) {
@@ -186,7 +208,8 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
         signal: problem.signal,
         log: problem.log,
       };
-      const out = await solveGoal(ctx, goal);
+      const out = await refusing(problem, label, () => solveGoal(ctx, goal));
+      if (out === undefined) continue;
       problem.log(
         out.settled
           ? `M10: ${out.winner?.tactic} closed ${label} (domain ${out.domains[0]}, ${Math.round(out.cpuMs)} ms of Lean); the proof passed the fast check`
@@ -200,7 +223,7 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
     if (problem.signal.aborted) return;
     if (options.firstOrder && !ran(problem.memory, FIRST_ORDER_RUN, claim)) {
       const fo: FirstOrderSettings = { cutoffs: options.premiseCutoffs, timeoutSec: options.atpTimeoutSec, reconstructBudgetSec: options.reconstructBudgetSec, parallel: options.parallel, maxSubmissions: options.maxSubmissions };
-      const out = await solveFirstOrder(
+      const out = await refusing(problem, label, () => solveFirstOrder(
         {
           solvers: services.solvers?.(problem) ?? registrySolvers(problem.registry, { actor: ACTOR }),
           checker,
@@ -215,7 +238,8 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
           log: problem.log,
         },
         goal,
-      );
+      ));
+      if (out === undefined) continue;
       problem.log(
         out.settled
           ? `M10: ATP/SMT premises reconstructed in Lean closed ${label}; the proof passed the fast check`
@@ -264,6 +288,10 @@ async function runSearch(problem: ProblemContext, options: M10Options, claim: Cl
     });
     problem.log(`M10: goal-level search tried ${result.tried} tactics (alpha ${result.alpha}) and ${result.solved ? (submission?.verdict === "valid" ? "found a proof that passed the fast check" : "found a script that validate refused") : "found no proof"}`);
   } catch (error) {
+    if (error instanceof UnsafeText) {
+      problem.log(`M10: the goal-level search is skipped: ${error.message}`);
+      return;
+    }
     if (error instanceof LeanMetaError) {
       problem.log(`M10: the goal-level search needs lean.goals: ${error.message}`);
       return;

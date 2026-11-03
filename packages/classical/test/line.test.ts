@@ -127,6 +127,16 @@ describe("beforeProvers", () => {
     assert.ok(memory.nodes(BATTERY_RUN, { claimId: sub.claimId }).length === 1 || requests.length >= 1);
   });
 
+  it("skips a subgoal whose header or statement the screen refuses, and says so (review I5)", async () => {
+    const { problem, memory, claimId, logs, lean } = await problemOf({ script: { omega: { ok: false } }, statement: "(x y : ℝ) (h : x ≤ y) : 2 * x ≤ x + y" });
+    const sub = await memory.ensureClaim({ statement: "(a b : ℕ) (h : a < b) : a + 1 ≤ b", header: "import Mathlib\n#eval IO.println 1", origin: "line:M12", parentId: claimId });
+    memory.addEdge({ kind: "decomposes_into", from: claimId, to: [sub.claimId], origin: "line:M12" } as never);
+    await hook(M10, "beforeProvers")(problem);
+    assert.match(logs.join("\n"), /the header of subgoal .* is refused/);
+    assert.equal(memory.nodes(BATTERY_RUN, { claimId: sub.claimId }).length, 0);
+    assert.ok(!lean.calls.some((c) => c.code.includes("#eval")), "nothing of it reached Lean");
+  });
+
   it("does not run twice on a goal it has a record of (a resumed run)", async () => {
     const memory = openMemory();
     const first = await problemOf({ memory, script: {} });

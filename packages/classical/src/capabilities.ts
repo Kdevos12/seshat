@@ -1,3 +1,4 @@
+import { assertHeaderSafe, assertLeanSafe } from "./screen.ts";
 import { type Json, type LeanChecker, seeded } from "@seshat/core";
 import type { CandidateOrderer } from "@seshat/decide";
 import { type FactoryContext, type ImplementationFactory, type ImplementationInstance, type InvokeContext } from "@seshat/registry";
@@ -57,6 +58,8 @@ export function proveAutoFactory(makeChecker: (context: FactoryContext) => LeanC
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
         const { statement, header = DEFAULT_HEADER, cpuBudgetSec = 30, tactics } = input as unknown as ProveAutoInput;
+        assertHeaderSafe(header, "the header");
+        assertLeanSafe(statement, "the statement");
         const have = await host(header, invoke.signal);
         const route = routeStatement(statement);
         const domain = primaryDomain(route);
@@ -110,6 +113,7 @@ export function proveSearchFactory(makeGoals: ImplementationFactory, options: { 
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
         const { statement, header = DEFAULT_HEADER, tactics, lemmas, nodes = 60, alpha, seed = 1 } = input as unknown as ProveSearchInput;
+        assertHeaderSafe(header, "the header");
         const scope = `prove.search:${Math.random().toString(36).slice(2)}`;
         const call = async (body: Record<string, Json>): Promise<Record<string, Json>> =>
           (await goals.invoke(body as Json, { ...invoke, scope })) as Record<string, Json>;

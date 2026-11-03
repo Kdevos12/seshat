@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { scriptedOrderer } from "@seshat/decide";
 import { seeded } from "@seshat/core";
-import { ALPHAS, type GoalClient, posteriorOrderer, routeGoalText, searchGoal } from "../src/index.ts";
+import { ALPHAS, type GoalClient, posteriorOrderer, routeGoalText, searchGoal, UnsafeText } from "../src/index.ts";
 
 /**
  * A goal-state machine in a table: a state is a list of goals; a tactic maps (goal list, tactic) to
@@ -80,5 +80,23 @@ describe("the goal-level search", () => {
   it("reads a printed goal for the router", () => {
     const r = routeGoalText("n m : ℕ\nh : n < m\n⊢ n + 1 ≤ m");
     assert.equal(r.domains[0], "presburger");
+  });
+});
+
+describe("model-written text is screened before it reaches Pantograph (review I5)", () => {
+  const search = (input: Partial<Parameters<typeof searchGoal>[0]>) => {
+    const client = machine({ g: { simp: [] } }, ["g"]);
+    return searchGoal({ statement: ": True", header: "", nodes: 5, alpha: 0, ...input }, { client, orderer: posteriorOrderer(), random: seeded(1), tactics: ["simp"] });
+  };
+  it("refuses a statement, a tactic or a lemma with a command, a comment or a second line", async () => {
+    await assert.rejects(search({ statement: ": True\n#eval 1" }), UnsafeText);
+    await assert.rejects(search({ statement: ": True -- x" }), UnsafeText);
+    await assert.rejects(search({ proposals: ["simp\nrun_tac skip"] }), /more than one line/);
+    await assert.rejects(search({ proposals: ["simp; #eval 1"] }), UnsafeText);
+    await assert.rejects(search({ lemmas: ["foo\n  exact bar"] }), /more than one line/);
+    await assert.rejects(search({ lemmas: ["foo /- x"] }), UnsafeText);
+  });
+  it("lets an honest search through", async () => {
+    assert.equal((await search({ proposals: ["simp"] })).solved, true);
   });
 });

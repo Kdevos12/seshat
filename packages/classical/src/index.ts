@@ -14,6 +14,7 @@ export * from "./process.ts";
 export * from "./probe.ts";
 export * from "./router.ts";
 export * from "./sandbox.ts";
+export * from "./screen.ts";
 export * from "./search.ts";
 export * from "./solvers.ts";
 export * from "./solve.ts";

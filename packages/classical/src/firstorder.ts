@@ -1,3 +1,4 @@
+import { assertLeanSafe, isIdentifier, UnsafeText } from "./screen.ts";
 import type { LeanChecker, RandomSource } from "@seshat/core";
 import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
@@ -135,6 +136,7 @@ function fragmentPremises(goal: string, chosen: readonly Premise[]): Premise[] {
 
 /** Reconstruction tactics for a set of premises: the premises of the core or proof handed to `grind`, `aesop` and `hammer`. */
 export function reconstructionTactics(premises: readonly string[], host: HostTactics): TacticSpec[] {
+  for (const p of premises) if (!isIdentifier(p)) throw new UnsafeText(`the premise name ${JSON.stringify(p.slice(0, 60))} is refused: it is no Lean identifier`);
   const list = premises.join(", ");
   const specs: TacticSpec[] = [
     { name: `grind [${list}]`, script: `grind [${list}]`, kind: "search", timeoutSec: 30, cost: 2 },
@@ -154,6 +156,7 @@ export function reconstructionTactics(premises: readonly string[], host: HostTac
  * and the evidence stays evidence.
  */
 export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): Promise<FirstOrderOutcome> {
+  assertLeanSafe(goal.statement, "the statement");
   const data: FirstOrderRunData = { statement: goal.statement, cutoffs: [], missing: [], evidence: [], union: [], reconstruction: [] };
   const finish = (settled: boolean): FirstOrderOutcome => {
     const node = ctx.memory.recordNode({ kind: FIRST_ORDER_RUN, claimId: goal.claimId, data: data as never });
