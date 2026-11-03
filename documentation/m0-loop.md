@@ -370,10 +370,10 @@ charges for cache writes; it defaults to the cache-miss price). With a `pricing`
 `attempt.charged` and `model_call.finished` dollars are `cacheRead` tokens at the hit price, the other input at the miss
 price and `output` at its price; without one, the cost pi-ai reports or computes, as before. The `calendar`
 is optional: `peak` lists windows in UTC (`from` included, `to` excluded, weekdays 0 = Sunday to 6; a window does not
-cross midnight), every other instant is off-peak and costs `offPeakMultiplier` times as much, and a date in
+cross midnight; write `24:00` to end one there), every other instant is off-peak and costs `offPeakMultiplier` times as much, and a date in
 `offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
-(`RunOptions.wallClock`, a test's own). A charge also records `savedUsd`, the dollars the cache saved against reading
-those tokens at the miss price, and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
+(`RunOptions.wallClock`, a test's own). It is the instant the response is charged, not the one the request was sent: a long call that crosses a window's edge is priced at the later instant, an approximation of at most the multiplier on one call. A charge also records `savedUsd`, the dollars the cache saved against reading
+those tokens at the miss price, net of the premium a provider that charges for cache writes asks over the miss price (so the saving can be negative), and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
 read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). Correcting a price does not block a run that was interrupted. The prices are left out of the registry's hash (the rest
 of a model's entry, the settings it ignores, stays in it) and have a hash of their own, `prices` in `run.started`.
 `harness resume` against changed prices logs a warning and goes on: the dollars already journaled stand, and the

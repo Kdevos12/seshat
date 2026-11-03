@@ -100,14 +100,15 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
   } else {
     usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
     // pi-ai's table: a cache read costs `cacheRead` per million where a miss costs `input`.
-    savedUsd = (usage.cacheRead * Math.max(0, model.cost.input - model.cost.cacheRead)) / 1e6;
+    // Net of the write premium, as the table's.
+    savedUsd = (usage.cacheRead * (model.cost.input - model.cost.cacheRead) - usage.cacheWrite * (model.cost.cacheWrite - model.cost.input)) / 1e6;
   }
   return {
     usd,
     inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
     outputTokens: usage.output,
     ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
-    ...(savedUsd > 0 ? { savedUsd } : {}),
+    ...(savedUsd !== 0 ? { savedUsd } : {}),
     ...(offPeak && usd > 0 ? { offPeakUsd: usd } : {}),
     // The table wins over a reported cost, so that a corrected price is the price; the difference is kept for the report.
     ...(pricing !== undefined && usage.cost.total > usd + 1e-12 ? { unchargedUsd: usage.cost.total - usd } : {}),

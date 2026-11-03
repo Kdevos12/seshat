@@ -61,6 +61,21 @@ describe("prices from the host table", () => {
     assert.equal(off.offPeak, true);
   });
 
+  it("nets the write premium out of the savings, and may end below zero", () => {
+    const writes = { cacheHit: 0.1, cacheMiss: 2, cacheWrite: 3, output: 0 };
+    const priced = priceUsage(writes, { input: 0, output: 0, cacheRead: 1000, cacheWrite: 4000 }, 0);
+    assert.ok(Math.abs(priced.savedUsd - (1000 * 1.9 - 4000 * 1) / 1e6) < 1e-12);
+    assert.ok(priced.savedUsd < 0);
+  });
+
+  it("takes a window that ends at midnight", () => {
+    const calendar: PricingCalendar = { peak: [{ days: [1], from: "22:00", to: "24:00" }], offPeakMultiplier: 0.5 };
+    assert.equal(isPeak(calendar, at("2026-11-02T23:59:30Z")), true);
+    assert.equal(isPeak(calendar, at("2026-11-03T00:00:00Z")), false);
+    assert.equal(nextOffPeak(calendar, at("2026-11-02T23:00:00Z")), at("2026-11-03T00:00:00Z"));
+    assert.doesNotThrow(() => parseHostProfile({ host: "t", capabilities: {}, models: { "p/m": { pricing: { cacheHit: 1, cacheMiss: 2, output: 3, calendar } } } }));
+  });
+
   it("answers what the host says of a model, and nothing of one it does not describe", () => {
     const book = new PriceBook({ "p/m": { pricing: PRICING, ignores: { always: ["penalties"], thinking: ["temperature"] } } });
     assert.equal(book.ignores("p/m", "temperature", "high"), true);
