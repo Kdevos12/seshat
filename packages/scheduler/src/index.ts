@@ -18,4 +18,6 @@ export * from "./line.ts";
 export * from "./curriculum.ts";
 export * from "./terms.ts";
 export * from "./archive.ts";
+export * from "./archive-report.ts";
 export * from "./schemas.ts";
+export * from "./m15.ts";
