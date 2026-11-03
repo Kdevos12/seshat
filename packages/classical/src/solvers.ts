@@ -1,6 +1,7 @@
 import type { Json } from "@seshat/core";
 import { type FactoryContext, type ImplementationFactory, type ImplementationInstance, type InvokeContext, UnavailableError } from "@seshat/registry";
 import { NotInstalled, runProcess } from "./process.ts";
+import { Refused, runIsolated, screenSmtLib, screenTptp } from "./sandbox.ts";
 
 // --- z3 ----------------------------------------------------------------------------------------
 
@@ -57,14 +58,21 @@ function setting(context: FactoryContext, key: string, fallback: string): string
 export function z3Factory(): ImplementationFactory {
   return (context): ImplementationInstance => {
     const command = setting(context, "command", "z3");
+    const memoryMb = typeof context.settings.memoryMb === "number" ? context.settings.memoryMb : 2048;
     const args = Array.isArray(context.settings.args) ? (context.settings.args as string[]) : ["-in", "-smt2"];
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
         const { smtlib, timeoutSec = 30, model = false } = input as unknown as SmtInput;
+        try {
+          screenSmtLib(smtlib);
+        } catch (error) {
+          if (error instanceof Refused) return { status: "error", detail: `refused: ${error.message}`, exitCode: null, elapsedMs: 0 } as unknown as Json;
+          throw error;
+        }
         const script = model ? `${smtlib.trimEnd()}\n(get-model)\n` : smtlib;
         let result;
         try {
-          result = await runProcess({ command, args: [...args, `-T:${Math.ceil(timeoutSec)}`], stdin: script, timeoutMs: (timeoutSec + 5) * 1000, signal: invoke.signal });
+          result = await runIsolated({ command, args: [...args, `-T:${Math.ceil(timeoutSec)}`, `-memory:${memoryMb}`], stdin: script, timeoutMs: (timeoutSec + 5) * 1000, signal: invoke.signal, memoryMb: memoryMb * 2 });
         } catch (error) {
           if (error instanceof NotInstalled) throw new UnavailableError(error.message);
           throw error;
@@ -136,13 +144,20 @@ export function readVampire(stdout: string, exitCode: number | null, stderr: str
 export function vampireFactory(): ImplementationFactory {
   return (context): ImplementationInstance => {
     const command = setting(context, "command", "vampire");
+    const memoryMb = typeof context.settings.memoryMb === "number" ? context.settings.memoryMb : 2048;
     const args = Array.isArray(context.settings.args) ? (context.settings.args as string[]) : ["--input_syntax", "tptp", "--proof", "tptp"];
     return {
       async invoke(input: Json, invoke: InvokeContext): Promise<Json> {
         const { tptp, timeoutSec = 30 } = input as unknown as AtpInput;
+        try {
+          screenTptp(tptp);
+        } catch (error) {
+          if (error instanceof Refused) return { szs: "none", result: "error", used: [], detail: `refused: ${error.message}`, exitCode: null, elapsedMs: 0 } as unknown as Json;
+          throw error;
+        }
         let result;
         try {
-          result = await runProcess({ command, args: [...args, "-t", String(Math.ceil(timeoutSec))], stdin: tptp, timeoutMs: (timeoutSec + 5) * 1000, signal: invoke.signal });
+          result = await runIsolated({ command, args: [...args, "-t", String(Math.ceil(timeoutSec)), "-m", String(memoryMb)], stdin: tptp, timeoutMs: (timeoutSec + 5) * 1000, signal: invoke.signal, memoryMb: memoryMb * 2 });
         } catch (error) {
           if (error instanceof NotInstalled) throw new UnavailableError(error.message);
           throw error;
