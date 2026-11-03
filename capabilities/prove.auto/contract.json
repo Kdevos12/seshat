@@ -1,0 +1,53 @@
+{
+  "capability": "prove.auto",
+  "cases": [
+    {
+      "name": "a Presburger goal",
+      "purpose": "omega closes a linear goal over the naturals; the router puts it in presburger.",
+      "input": {
+        "statement": "(n m : ℕ) (h : n < m) : n + 1 ≤ m"
+      },
+      "expect": [
+        {
+          "path": "solved",
+          "equals": true
+        },
+        {
+          "path": "domains.0",
+          "equals": "presburger"
+        }
+      ]
+    },
+    {
+      "name": "a polynomial identity",
+      "purpose": "ring (or a tactic after it) closes it.",
+      "input": {
+        "statement": "(x y : ℤ) : (x + y) ^ 2 = x ^ 2 + 2 * x * y + y ^ 2"
+      },
+      "expect": [
+        {
+          "path": "solved",
+          "equals": true
+        },
+        {
+          "path": "domains.0",
+          "equals": "polynomial_identity"
+        }
+      ]
+    },
+    {
+      "name": "a false goal",
+      "purpose": "nothing closes it, and the answer says so.",
+      "input": {
+        "statement": "(n : ℕ) : n + 1 = n",
+        "cpuBudgetSec": 20
+      },
+      "expect": [
+        {
+          "path": "solved",
+          "equals": false
+        }
+      ]
+    }
+  ]
+}

@@ -100,6 +100,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   M13 and M16 as they are built.
 - [repair.md](repair.md): typed repairs from failure classes (the critics of Ireland and Bundy) and the
   Lakatos-style repair of a refuted conjecture (line M14).
+- [classical.md](classical.md): line M10: the domain router, the Lean tactic battery ordered by Beta
+  posteriors, the hammer at several cutoffs, the non-triviality test.
 - [decide.md](decide.md): typed decisions that order work: the sites and the forbidden list, the backends
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.

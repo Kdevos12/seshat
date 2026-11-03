@@ -25,7 +25,7 @@
 | `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
 | `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim, provenance stamps and epochs, randomized inclusion and effect posteriors, memory carried across runs ([memory.md](memory.md)); M1's strategy and failure classifiers, "already tried" and redundancy ([m1-identity-memory.md](m1-identity-memory.md)); how far a check got, the measure of Lean progress that M6 and the fleet share (`progress.ts`) | core |
 | `@seshat/lines` | The line API: line ids and their order, cumulative configs, hooks and their contexts, the checks of a run's lines ([lines.md](lines.md)) | core, memory, registry |
-| `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, lines, memory, registry |
+| `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
 | `@seshat/guards` | Line M6: neutral framing, resolved citations, no raw error text, anchored revisions, the drift detectors and the `drift` nodes ([guards.md](guards.md)) | core, lines, memory, registry |
 | `@seshat/fleet` | The fleet line: posteriors per strategy and model, Thompson sampling, adaptive width, escalation and the `allocation` nodes ([fleet.md](fleet.md)) | core, decide, lines, memory, registry |
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters | core, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
@@ -46,7 +46,7 @@ code without touching the lockfile:
 
 | Package | Will hold | Depends on |
 |---|---|---|
-| `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, lines, memory, registry |
+| `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, decide, fleet, lean-meta, lines, memory, registry |
 | `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, graph, lessons, library, lines, memory, registry |
 | `@seshat/library` | The growing lemma library (M3) | core, lines, memory, registry |
 | `@seshat/lessons` | Lessons with counters (M5) | core, lines, memory, registry |
