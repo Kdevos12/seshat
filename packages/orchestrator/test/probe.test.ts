@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type ProblemEntry } from "@seshat/bench";
 import { Journal, loadMemoryChain, readEvents } from "@seshat/core";
+import { runLabel } from "../src/run-label.ts";
 import { measureRun } from "../src/measures.ts";
 import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
 import { frozenProbeSet, linesOfRun, probeDirOf, runIndexOf, chooseProbeSet, compareProbe, overTime, probeDue, renderProbe, runProbe, signTest, verifiedOnlyMemory } from "../src/probe.ts";
@@ -102,8 +104,8 @@ describe("the alarm", () => {
     const cheaper = measures({ problems: ids.map((id) => p(id, "proved", 0.05)) });
     const v = compareProbe(cheaper, off);
     assert.deepEqual([v.alarm.cost, v.alarm.solves], [false, false]);
-    assert.match(renderProbe({ probeSet: ids, memoryDir: "m", verified: { events: 3, dropped: 2 }, on: cheaper, off, verdict: v }), /No alarm/);
-    assert.match(renderProbe({ probeSet: ids, memoryDir: "m", verified: { events: 3, dropped: 2 }, on: dearer, off, verdict: compareProbe(dearer, off) }), /ALARM/);
+    assert.match(renderProbe({ probeSet: ids, memoryDir: "m", verified: { events: 3, dropped: 2 }, on: cheaper, off, verdict: v, label: runLabel("real/m") }), /No alarm/);
+    assert.match(renderProbe({ probeSet: ids, memoryDir: "m", verified: { events: 3, dropped: 2 }, on: dearer, off, verdict: compareProbe(dearer, off), label: runLabel("real/m") }), /ALARM/);
   });
 });
 
@@ -124,6 +126,10 @@ describe("runProbe", () => {
     assert.deepEqual(seen.map((o) => [o.dir.split("/").at(-1), o.memoryFrom === src ? "memory" : "verified"]), [["on", "memory"], ["off", "verified"]]);
     assert.equal(seen[0]?.config.seed, seen[1]?.config.seed);
     assert.equal(result.verdict.problems, 1);
+    assert.equal(result.label.simulatedModel, true, "faux/prover is the simulation");
+    assert.match(renderProbe(result), /SIMULATED: the model is the faux provider/);
+    assert.match(renderProbe(result), /Not run, or not checked/);
+    assert.equal(JSON.parse(readFileSync(join(dir, "probe.json"), "utf8")).label.simulatedModel, true);
     assert.ok(readEvents(join(dir, "verified", "journal.jsonl")).length > 0);
   });
 });

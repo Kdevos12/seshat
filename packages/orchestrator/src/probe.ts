@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { basename, dirname, join, resolve } from "node:path";
 import { type ProblemEntry, sample } from "@seshat/bench";
 import { EventLog, type EventType, type HarnessEvent, loadMemoryChain, type Json, readEvents } from "@seshat/core";
+import { labelLines, type RunLabel, runLabel } from "./run-label.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
 import { RunSetupError, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 
@@ -187,6 +188,7 @@ export interface ProbeResult {
   on: RunMeasures;
   off: RunMeasures;
   verdict: ProbeVerdict;
+  label: RunLabel;
 }
 
 /** Runs the probe set with the memory of `memoryDir` and with its verified facts alone, and writes `probe.json`. */
@@ -202,7 +204,7 @@ export async function runProbe(input: ProbeInput): Promise<ProbeResult> {
   };
   const on = await arm("on", input.memoryDir);
   const off = await arm("off", verifiedDir);
-  const result: ProbeResult = { probeSet: input.problems.map((p) => p.id), memoryDir: input.memoryDir, verified, on, off, verdict: compareProbe(on, off, input.alpha) };
+  const result: ProbeResult = { probeSet: input.problems.map((p) => p.id), memoryDir: input.memoryDir, verified, on, off, verdict: compareProbe(on, off, input.alpha), label: runLabel(config.model, ["The alarm's power is low at 20 problems: it needs four problems lost to the memory at alpha 0.1, so the absence of an alarm is not a clean bill."]) };
   writeFileSync(join(input.dir, "probe.json"), `${JSON.stringify(result, null, 2)}\n`);
   return result;
 }
@@ -213,6 +215,7 @@ export function renderProbe(result: ProbeResult): string {
   const out = [
     "## Memory probe",
     "",
+    ...labelLines(result.label ?? runLabel("")),
     ...(v.alarm.solves || v.alarm.cost ? [`ALARM: the memory does worse than none beyond noise (alpha ${v.alpha}): ${v.alarm.reasons.join("; ")}.`, ""] : [`No alarm: the memory does not do worse than none beyond noise (alpha ${v.alpha}).`, ""]),
     `${v.problems} probe problem(s), none of which built the memory. Verified-only memory: ${result.verified.events} events kept, ${result.verified.dropped} withheld (attempts, lessons, stamped records, decisions).`,
     "",

@@ -7,6 +7,7 @@ import { renderAblation, renderChunks } from "./ablation-table.ts";
 import { attemptsByProver, chunkCurves } from "./chunks.ts";
 import { allLines, experiment, experimentArms } from "./experiments.ts";
 import { RunSetupError } from "./run.ts";
+import { runLabel } from "./run-label.ts";
 
 /** Splits a bench for an ablation: `build` problems to build the memory on, and the rest to measure on (plan change PE9, item 2). */
 export function splitBench(problems: readonly ProblemEntry[], build: number, seed: string): { build: ProblemEntry[]; measure: ProblemEntry[] } {
@@ -47,6 +48,7 @@ export async function ablateCommand(command: AblateCommand): Promise<AblationRes
   const split = command.split !== undefined ? splitBench(command.problems, command.split, seed) : undefined;
   mkdirSync(command.dir, { recursive: true });
   const result = await runAblation({
+    ...(command.experiment !== undefined ? { notRun: [experiment(command.experiment).notRun] } : {}),
     template: command.template,
     config: command.config,
     problems: split?.measure ?? command.problems,
@@ -72,11 +74,18 @@ export function chunksCommand(dirs: readonly string[], print: (line: string) => 
     if (!existsSync(journal)) throw new RunSetupError(`no journal in ${dir}`);
     const groups = attemptsByProver(readEvents(journal));
     if (groups.length === 0) throw new RunSetupError(`${dir} holds no attempt`);
-    print(renderChunks(dir, chunkCurves(groups.map((g) => g.attempts), options)));
+    print(renderChunks(dir, chunkCurves(groups.map((g) => g.attempts), options), runLabel(modelOf(dir))));
   }
 }
 
 /** Reads a file of problem ids, one per line (the probe set, `--probe-set FILE`). */
 export function readIdList(path: string): string[] {
   return readFileSync(path, "utf8").split("\n").map((l) => l.trim()).filter((l) => l !== "" && !l.startsWith("#"));
+}
+
+/** The model a run was configured with, from its `run.started`. */
+function modelOf(dir: string): string {
+  const first = readEvents(join(dir, "journal.jsonl"))[0];
+  const config = first?.type === "run.started" ? (first.data.config as { model?: unknown } | null) : null;
+  return typeof config?.model === "string" ? config.model : "";
 }

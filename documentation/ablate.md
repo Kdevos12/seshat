@@ -95,3 +95,7 @@ Nothing here has run against a real model: the sign test and the verified-only m
 ## When an ablation is cut off
 
 A full cumulative table is eighteen runs. Each arm writes `done.json` in its directory when its runs have finished, and `ablation.partial.json` lists the arms done and the arms left after each one. Giving the same `--out` again resumes: an arm that finished is measured again from its journal and nothing is spent on it; an arm that was cut off is set aside as `arms/NAME.partial-N` (never deleted) and runs again. A directory whose finished arms were made with other problems, another configuration or another bench is refused. `ablation.json` and `ablation.md` are written when the last arm is done, and a directory that holds them is finished.
+
+## What a saved file says about itself
+
+`ablation.md`, `ablation.json` (field `label`), `probe.json`, the probe's rendering in `harness report` and the chunk curves all carry a label: whether the model was the faux provider (`SIMULATED`: every number is the simulation's), the limit of the experiment that was run (the `Not run` column of the table above), and what every table is silent about otherwise: the cache ratio and the dollars saved are the provider's accounting as recorded and are checked against a real provider on the first real run (PD1 item 2), and a run on a simulated Lean looks like a real one in its journal. The label is computed from the model the run was configured with, so a table copied out of a terminal keeps it.
