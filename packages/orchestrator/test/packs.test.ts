@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { leanCheckImplementation, loadCatalog, loadInstalledPacks, loadPack, Registry, type HostProfile } from "@seshat/registry";
-import { checkTools, openRegistry, REPO_ROOT, RunSetupError, type RunOptions } from "../src/index.ts";
+import { BUILTIN_TOOL_NAMES, checkTools, toolName, openRegistry, REPO_ROOT, RunSetupError, type RunOptions } from "../src/index.ts";
 import { addCommand, packsCommand, removeCommand } from "../src/packs-command.ts";
 import { check, demoRun, ofType, tempDir } from "./m0-helpers.ts";
 import { packCapability, writePack } from "../../registry/test/pack-helpers.ts";
@@ -17,14 +17,19 @@ const registryWith = (dir: string) => (lean: Parameters<typeof leanCheckImplemen
 };
 
 describe("a pack's tool in a session", () => {
+  it("has a model-facing name of its pack's namespace, which no tool of the harness has", () => {
+    assert.equal(toolName("pack_adder.padd"), "pack_adder_padd");
+    assert.ok(BUILTIN_TOOL_NAMES.every((n) => !n.startsWith("pack_")));
+  });
+
   it("is not a level-1 tool: checkTools refuses it unless its pack asked for level 1", () => {
     const factories = { kimina: () => ({ invoke: async () => ({}) }) };
     const plain = new Registry({ catalog, host, factories, packs: [loadPack(writePack())] });
-    assert.deepEqual(checkTools(plain, ["math.padd"]), ["math.padd is not a direct capability (its exposure is deferred)"]);
-    const asked = new Registry({ catalog, host, factories, packs: [loadPack(writePack({ manifest: { level1: ["math.padd"] } }))] });
-    assert.deepEqual(checkTools(asked, ["math.padd"]), [], "from the session after the install");
+    assert.deepEqual(checkTools(plain, ["pack_adder.padd"]), ["pack_adder.padd is not a direct capability (its exposure is deferred)"]);
+    const asked = new Registry({ catalog, host, factories, packs: [loadPack(writePack({ manifest: { level1: ["pack_adder.padd"] } }))] });
+    assert.deepEqual(checkTools(asked, ["pack_adder.padd"]), [], "from the session after the install");
     // the declared set a registry without the pack builds is the one it always was
-    assert.deepEqual(checkTools(new Registry({ catalog, host, factories }), ["math.padd"]), ["unknown capability math.padd"]);
+    assert.deepEqual(checkTools(new Registry({ catalog, host, factories }), ["pack_adder.padd"]), ["unknown capability pack_adder.padd"]);
   });
 });
 
@@ -62,7 +67,7 @@ describe("harness add, packs and remove", () => {
     assert.throws(() => addCommand(source, { dir: packsDir, ...io(lines) }), (e: Error) => e instanceof RunSetupError && /--allow-programs/.test(e.message));
     assert.equal(addCommand(source, { dir: packsDir, allowPrograms: true, ...io(lines) }), 0);
     assert.match(lines.join("\n"), /installed adder 1\.0\.0 \(trust computed, hash [0-9a-f]{12}\)/);
-    assert.match(lines.join("\n"), /tools \(level 2, found through tool search\): math\.padd/);
+    assert.match(lines.join("\n"), /tools \(level 2, found through tool search\): pack_adder\.padd/);
     assert.match(lines.join("\n"), /none was run/);
 
     const listed: string[] = [];
@@ -71,7 +76,7 @@ describe("harness add, packs and remove", () => {
     assert.match(listed.join("\n"), /runs when called: /);
 
     const registry = openRegistry({ host: "local", packsDir });
-    assert.equal(registry.capability("math.padd").manifest.exposure, "deferred");
+    assert.equal(registry.capability("pack_adder.padd").manifest.exposure, "deferred");
     assert.deepEqual(registry.packRecords().map((p) => p.name), ["adder"]);
     assert.equal(openRegistry({ host: "local", packsDir: tempDir() }).packs.length, 0);
 
@@ -88,7 +93,7 @@ describe("harness add, packs and remove", () => {
   it("refuses a pack that takes a capability of the repository, or claims a status write", () => {
     const packsDir = tempDir();
     const clash = writePack({ capabilities: { "lean.check": packCapability({ id: "lean.check" }) } });
-    assert.throws(() => addCommand(clash, { dir: packsDir, allowPrograms: true, ...io([]) }), /lean\.check is a capability of the harness/);
+    assert.throws(() => addCommand(clash, { dir: packsDir, allowPrograms: true, ...io([]) }), /tool ids start with pack_adder\./);
     const writer = writePack({ manifest: { writesClaimStatus: true } });
     assert.throws(() => addCommand(writer, { dir: packsDir, allowPrograms: true, ...io([]) }), RunSetupError);
     assert.equal(existsSync(join(packsDir, "installed", "adder")), false);

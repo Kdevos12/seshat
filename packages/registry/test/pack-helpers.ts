@@ -4,9 +4,9 @@ import { addManifest, FAKE_SERVER, tempDir } from "./helpers.ts";
 
 export const PACK_CASE = { name: "small", input: { a: 1, b: 2 }, expect: [{ path: "sum", equals: 3 }] };
 
-/** The tool of the test pack: `math.padd`, served by the test MCP server (a program of the pack, started only when called). */
+/** The tool of the test pack: `pack_adder.padd`, served by the test MCP server (a program of the pack, started only when called). */
 export function packCapability(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  const base = addManifest({ id: "math.padd", title: "Add, from a pack" });
+  const base = addManifest({ id: "pack_adder.padd", title: "Add, from a pack" });
   const mcp = (base.implementations as Array<Record<string, unknown>>).find((i) => i.kind === "mcp");
   return { ...base, implementations: [mcp], ...overrides };
 }
@@ -23,7 +23,7 @@ export interface TestPack {
 
 /** Writes a pack directory and returns it. */
 export function writePack(pack: TestPack = {}, root = tempDir("mh-pack-")): string {
-  const capabilities = pack.capabilities === null ? {} : (pack.capabilities ?? { "math.padd": packCapability() });
+  const capabilities = pack.capabilities === null ? {} : (pack.capabilities ?? { "pack_adder.padd": packCapability() });
   const skills = pack.skills ?? { "adding.md": "# Adding\nUse the tool to add.\n" };
   const manifest = {
     name: "adder",
