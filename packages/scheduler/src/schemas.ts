@@ -2,6 +2,7 @@ import { hash32, maskCommentsAndStrings, forbiddenTokensIn } from "@seshat/core"
 import { parseSignature } from "@seshat/graph";
 import { type LeanMeta, LeanMetaError } from "@seshat/lean-meta";
 import type { SchemaData } from "@seshat/library";
+import { isInterrupted } from "@seshat/lines";
 import {
   abstractNames, antiUnify, type Bindings, binderNames, fillNodes, matchNodes, newAuContext, type Node, parseNodes, renderNodes, renumber, specificity, varsOf,
 } from "./terms.ts";
@@ -242,7 +243,7 @@ export async function confirm(meta: LeanMeta, skeleton: Skeleton, goal: string, 
     const answer = await meta.instances(goal, [{ name: "schema", statement: generalStatement(skeleton) }], { header, ...(signal !== undefined ? { signal } : {}) });
     return answer.instanceOf.includes("schema") ? { ok: true } : { ok: false, why: "lean.meta: the goal is not an instance of the schema's conclusion" };
   } catch (error) {
-    if (signal?.aborted === true) throw error;
+    if (signal?.aborted === true || isInterrupted(error)) throw error;
     return { ok: false, why: `lean.meta: ${error instanceof Error ? error.message : String(error)}`, retry: !(error instanceof LeanMetaError && error.kind === "rejected") };
   }
 }
