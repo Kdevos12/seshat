@@ -44,7 +44,7 @@ export interface ScriptedSpec {
   /** Decisions of the `decide` capability. */
   decisions?: Array<{ site: string; labels: string[]; answer: string; probabilities: Record<string, number>; claimId?: string; backend?: "llm" | "jev" | "faux"; key?: string; problemId?: string }>;
   /** Nodes, by kind. */
-  nodes?: Array<{ kind: string; claimId?: string; data: Json }>;
+  nodes?: Array<{ kind: string; claimId?: string; data: Json; learned?: boolean }>;
   memoryFrom?: { runId: string; lastHash: string; events: number };
   config?: Record<string, Json>;
 }
@@ -119,7 +119,7 @@ export function scriptedRun(spec: ScriptedSpec, dir = mkdtempSync(join(tmpdir(),
     journal.emit("tool_run.finished", { toolRunId, outcome: "ok", durationMs: run.durationMs }, run.actor);
   }
   for (const n of spec.nodes ?? []) {
-    journal.emit("node.recorded", { nodeId: newId("nod"), kind: n.kind, ...(n.claimId !== undefined ? { claimId: claims[n.claimId] ?? n.claimId } : {}), data: n.data }, "line:test");
+    journal.emit("node.recorded", { nodeId: newId("nod"), kind: n.kind, ...(n.claimId !== undefined ? { claimId: claims[n.claimId] ?? n.claimId } : {}), data: n.data, ...(n.learned === true ? { provenance: { modelId: "faux/prover", promptVersion: "p1", mathlibRev: "x", harnessVersion: "h", budgetClass: "b", createdAt: "2026-11-03T00:00:00.000Z" } } : {}) }, "line:test");
   }
   for (const d of spec.decisions ?? []) {
     const claimId = d.claimId !== undefined ? claims[d.claimId] : undefined;
