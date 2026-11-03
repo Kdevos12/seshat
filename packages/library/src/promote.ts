@@ -1,4 +1,4 @@
-import type { Json } from "@seshat/core";
+import { forbiddenTokensIn, type Json, maskCommentsAndStrings } from "@seshat/core";
 import type { FinishedAttempt, ProblemContext } from "@seshat/lines";
 import {
   CANDIDATE_KIND,
@@ -54,6 +54,13 @@ export function recordCandidates(problem: ProblemContext, attempt: FinishedAttem
   let recorded = 0;
   for (const lemma of lemmas.slice(0, options.maxPerAttempt)) {
     if (known.has(lemma.name)) continue;
+    // A proof the fast check accepted passed the validator's screen; one of a failed attempt may have been refused for a forbidden
+    // token, and the triviality probe would send it to Lean as it is (review M5).
+    const forbidden = forbiddenTokensIn(maskCommentsAndStrings(`${lemma.statement}\n${lemma.proof}`, { strict: true }));
+    if (forbidden.length > 0) {
+      problem.log(`library: ${lemma.name} is not a candidate: it holds a forbidden token (${forbidden.join(", ")})`);
+      continue;
+    }
     const data: CandidateData = {
       status: "pending",
       problemId: problem.problemId,
@@ -116,6 +123,20 @@ export async function promoteCandidates(problem: ProblemContext, isTrivial: Triv
     const statementId = await memory.identity.id(c.statement, { header: c.header });
     const same = memory.claimByStatement(statementId);
     const existing = same === undefined ? undefined : allLemmas(memory).find((l) => l.claimId === same.claimId);
+    if (existing !== undefined && existing.stale === true) {
+      // The old proof no longer compiles under the current revision: a new proof of the same statement replaces it in the same entry.
+      const validation = await problem.validate({ claimId: existing.claimId, proof: c.proof });
+      if (validation.verdict !== "valid") {
+        settle(c.nodeId, "unproved", `a new proof of ${existing.name}, whose proof is stale, was not accepted: ${validation.reasons[0] ?? "invalid"}`);
+        result.unproved += 1;
+        continue;
+      }
+      const rev = stampOf(problem).mathlibRev;
+      memory.updateNode(existing.nodeId, { proof: c.proof, stale: false, ...(rev !== undefined ? { checkedRev: rev, mathlibRev: rev } : {}), source: { problemId: problem.problemId, claimId: problem.claimId, attemptId: c.attemptId, name: c.name } }, "a new proof replaced the stale one");
+      settle(c.nodeId, "promoted", `replaced the stale proof of ${existing.name}`, existing.name);
+      result.promoted += 1;
+      continue;
+    }
     if (existing !== undefined) {
       settle(c.nodeId, "duplicate", `the library has this statement as ${existing.name}`, existing.name);
       result.duplicate += 1;

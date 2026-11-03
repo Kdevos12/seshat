@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { BlobStore, Journal } from "@seshat/core";
 import type { ProblemContext } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
-import { allLemmas, recheckLibrary, usableLemmas } from "../src/index.ts";
+import { allLemmas, CANDIDATE_KIND, candidates, DEFAULT_PROMOTION, promoteCandidates, recheckLibrary, recordCandidates, usableLemmas } from "../src/index.ts";
 import { library } from "./helpers.ts";
 
 describe("compiling the library again when the Mathlib revision changes (PE1)", () => {
@@ -58,5 +58,33 @@ describe("compiling the library again when the Mathlib revision changes (PE1)", 
     const { problem } = await library("rev-b");
     const bare = new MemoryStore({ journal: Journal.open(mkdtempSync(join(tmpdir(), "mh-library-")), "run_2"), blobs: new BlobStore(join(tmpdir(), "mh-none")) });
     assert.equal(await recheckLibrary({ ...problem, memory: bare } as ProblemContext, { maxRecheck: 10 }), undefined);
+  });
+
+  it("replaces the stale proof of a statement with a new one instead of calling it a duplicate", async () => {
+    const { memory, problem } = await library("rev-b");
+    const [good] = allLemmas(memory);
+    memory.updateNode(good?.nodeId as string, { stale: true }, "test");
+    memory.recordNode({
+      kind: CANDIDATE_KIND,
+      claimId: good?.claimId as string,
+      data: { status: "pending", problemId: "p9", claimId: good?.claimId as string, attemptId: "a9", name: "aux_new", statement: good?.statement as string, proof: "simp", header: "import Mathlib" } as never,
+    });
+    const asked: string[] = [];
+    const ctx = { ...problem, problemId: "p9", claimId: good?.claimId, domain: [], target: { theorem: "T" }, validate: async (r: { proof: string }) => (asked.push(r.proof), { verdict: "valid", reasons: [] }) } as unknown as ProblemContext;
+    const result = await promoteCandidates(ctx, async () => ({ trivial: false }), DEFAULT_PROMOTION);
+    assert.deepEqual([result.promoted, result.duplicate], [1, 0]);
+    assert.deepEqual(asked, ["simp"]);
+    const [after] = allLemmas(memory);
+    assert.deepEqual([after?.proof, after?.stale, after?.checkedRev, allLemmas(memory).length], ["simp", false, "rev-b", 2]);
+  });
+
+  it("does not read a candidate with a forbidden token from a failed attempt", async () => {
+    const { memory, problem } = await library("rev-a");
+    const logs: string[] = [];
+    const ctx = { ...problem, problemId: "p9", claimId: "c9", target: { source: "import Mathlib\n" }, log: (t: string) => logs.push(t) } as unknown as ProblemContext;
+    const attempt = { attemptId: "a1", outcome: "invalid", submission: { aux: "theorem aux_x (n : ℕ) : n = n := by\n  native_decide", proof: "simp" } } as never;
+    assert.equal(recordCandidates(ctx, attempt, { ...DEFAULT_PROMOTION, fromFailed: true }), 0);
+    assert.match(logs.join("\n"), /aux_x is not a candidate: it holds a forbidden token \(native_decide\)/);
+    assert.equal(candidates(memory).length, 0);
   });
 });

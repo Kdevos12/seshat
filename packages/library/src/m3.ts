@@ -199,7 +199,9 @@ export function createM3(deps: M3Deps = {}): Line {
         for (const tier of Object.values(await declarationTiers(problem))) {
           for (const e of tier.entries as readonly Entry[]) known.push({ name: e.name, label: e.label });
         }
-        const used = usedNames(`${attempt.submission.aux}\n${attempt.submission.proof}`, known);
+        // A pasted library lemma names itself in its own declaration: that is not a use (review M1).
+        const text = `${attempt.submission.aux}\n${attempt.submission.proof}`.replace(/\b(?:theorem|lemma)\s+aux_lib_[\p{L}\p{N}_']*/gu, "theorem _");
+        const used = usedNames(text, known);
         if (used.length > 0) {
           const data: UseData = { attemptId: attempt.attemptId, claimId: problem.claimId, outcome: attempt.outcome, used: used.map((u) => ({ name: u.name, source: u.label })) };
           problem.memory.recordNode({ kind: USE_KIND, claimId: problem.claimId, data: data as unknown as Json });
