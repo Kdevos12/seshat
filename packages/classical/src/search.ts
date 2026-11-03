@@ -1,3 +1,4 @@
+import { assertLeanSafe, assertOneLine } from "./screen.ts";
 import type { RandomSource } from "@seshat/core";
 import type { CandidateOrderer, OrderCandidate } from "@seshat/decide";
 import { Posteriors } from "./posterior.ts";
@@ -103,6 +104,10 @@ export function routeGoalText(goal: string) {
 
 /** Runs the search. */
 export async function searchGoal(input: SearchInput, options: SearchOptions): Promise<SearchResult> {
+  assertLeanSafe(input.statement, "the statement");
+  for (const t of input.proposals ?? []) assertOneLine(t, `the tactic ${JSON.stringify(t.slice(0, 60))}`);
+  for (const l of input.lemmas ?? []) assertOneLine(l, `the lemma ${JSON.stringify(l.slice(0, 60))}`);
+  for (const t of options.tactics) assertOneLine(t, `the tactic ${JSON.stringify(t.slice(0, 60))}`);
   const alpha = input.alpha ?? (ALPHAS[Math.min(Math.floor(options.random() * ALPHAS.length), ALPHAS.length - 1)] as number);
   const stopped = (): boolean => options.signal?.aborted === true;
   const trace: TraceStep[] = [];

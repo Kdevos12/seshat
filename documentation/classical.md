@@ -95,6 +95,19 @@ tries `hammer@16`, `hammer@64` and `hammer@256`, which is `hammer {aesopPremises
 each cutoff has its own posterior. The configuration syntax is written from the LeanHammer README and
 has not run.
 
+## The screen of text that reaches Lean
+
+Statements, headers, tactics, lemma names and premise names that a model wrote or chose are put into Lean
+files or Pantograph goals, so they pass a strict screen first (`screen.ts`; it is the reading of
+`screenLeanText` of `@seshat/induction`, which depends on this package and so is repeated here): comments
+and strings masked, `forbiddenTokensIn` (`#eval`, `macro_rules`, `IO`...), no `#`, and no `--` or `/-`
+anywhere in the raw text (a `-- x` would swallow what the harness writes after the text on its line).
+`runBattery`, `solveFirstOrder` and `searchGoal` refuse a statement that fails it (`UnsafeText`); the
+tactics and lemmas of a search must also be one line; a header (`prove.auto`, `prove.search`, and the
+header of a subgoal claim, not the bench's own prefix of the target) is screened without its `import`
+lines; a premise name must be a Lean identifier before it is put in `grind [...]`, `aesop (add safe ...)` or
+`hammer [...]`. The line logs a goal it skips for this reason; the capabilities fail the call.
+
 ## `solveGoal`
 
 `solveGoal(ctx, {claimId, header, statement})` is the unit the line and the `prove_auto` tool use:
