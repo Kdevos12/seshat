@@ -203,7 +203,7 @@ theory exploration stops collecting equations past `max(2000, 50 * maxLaws)`; an
 
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
-true, `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.
+true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.
 
 Not run: the model's hypotheses are tested with the faux provider, Lean with a simulated `decide`, Sage
 and the OEIS with stand-ins.

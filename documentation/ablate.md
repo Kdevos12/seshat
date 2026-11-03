@@ -57,7 +57,7 @@ An experiment is a short list of arms that differ by one option, run on the same
 | `queries` | PC5 | extracted queries against the raw statement | the extraction is a model call |
 | `seeds` | PC13 | pattern seeds on and off, split by difficulty in the table | the neighbours need a real Lean |
 | `lessons` | PE2 | lessons deactivated by measured effect against by presence | needs enough problems |
-| `cegis` | PD5 | the induction lines on or off: the counterexample set's counter | tokens saved are an estimate |
+| `cegis` | PD5 | M8 with its counterexample set against `M8.counterexampleSet=false`: only the set differs | tokens saved are an estimate; needs a real model |
 | `lsp` | PC7 | `lean.lsp` as a tool set against M0 | needs a language server |
 | `decide` | J1, J4, J5 (line D1) | the model for every site, then one arm per J3 site asked of Jev | not run against real Jev |
 | `m17` | LC3 | the base Lean environment against the one M17 extends | needs a pinned real environment |

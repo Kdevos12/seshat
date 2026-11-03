@@ -37,6 +37,26 @@ describe("every line in one run", () => {
     assert.ok(m.usd >= 0);
   });
 
+  it("makes the lines that can act on a plain problem act, and says why the others stay quiet", async () => {
+    const pins = await leanEnvPins();
+    const { events, result } = await demoRun({ registry: (l) => registryForPins(pins, l), config: { lines: allLines(), sessions: 2 }, responses: answers(150) });
+    const actors = new Set(events.map((e) => e.actor));
+    // Each of these wrote at least one event of its own.
+    for (const line of ["M10", "M2", "M11", "M8", "M13", "M4", "fleet", "M6", "M5"]) assert.ok(actors.has(`line:${line}`), `line ${line} acted`);
+    const kinds = new Set(ofType(events, "node.recorded").map((e) => e.data.kind));
+    for (const kind of ["battery_run", "fingerprint", "context_packet", "datatable", "watch", "lesson", "allocation"]) assert.ok(kinds.has(kind), `a ${kind} node`);
+    // The others have nothing to do on a problem the battery settles and the first session proves:
+    // M18, M15 and M16 are on rungs above 0 and the ladder never escalated (no stall in Lean progress);
+    assert.equal(ofType(events, "ladder.escalated").length, 0);
+    for (const line of ["M18", "M15", "M16"]) assert.equal(actors.has(`line:${line}`), false, `line ${line} waits for the ladder`);
+    // M12 works named holes of a sketch and the demo proof has none; M3 promotes auxiliary lemmas and the proof has none;
+    // M14 repairs refuted conjectures and none was refuted; M1 acts as the identity of every claim (their `st` ids), not with events of its own.
+    assert.equal(ofType(events, "edge.added").some((e) => e.data.kind === "decomposes_into"), false);
+    assert.equal(kinds.has("library_lemma"), false);
+    assert.ok(ofType(events, "claim.created").every((e) => e.data.statementId.length > 0));
+    assert.ok(result.problems[0] !== undefined);
+  });
+
   it("gives every line the same problem and leaves no line's hook unrun: no ledger task is left running", async () => {
     const pins = await leanEnvPins();
     const { events } = await demoRun({ registry: (l) => registryForPins(pins, l), config: { lines: allLines(), sessions: 2 }, responses: answers(150) });
