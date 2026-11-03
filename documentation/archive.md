@@ -35,11 +35,11 @@ The diversity measure is the entropy, in bits, of the families of the decomposit
 `beforeSession` (for each outer session, once the ladder has moved the problem to rung 2):
 
 1. **Settles** the sessions that have ended: a pick is `improved` when the decomposition that session's sketch became closes a larger share of its leaves
-   than the elite it was told to extend (on the fresh arm, when it fills a cell the archive did not have), `not_improved` when it does not or the sketch is
+   than the elite it was told to extend (on the fresh arm, when it fills a cell the archive did not have), `not_improved` when it does not, when the sketch is the elite's own edge unchanged (the fitness may have risen meanwhile from other work), or when the sketch is
    not a decomposition Lean checked, and `void` when the session ended aborted. A session whose sketch the scheduler has not registered yet waits; at the end
    of the problem a session that did not end is `void`. A session with no sketch is `not_improved`. A session whose proof Lean accepted is `improved`.
 2. **Retires** the schemas whose effect says they hurt ([below](#the-effect-of-a-schema)).
-3. **Picks** by Thompson sampling over the cells of the archive and a **fresh** arm (`new`: a decomposition unlike the archive's). Each arm's posterior is a
+3. **Picks** by Thompson sampling over the cells of the archive whose elite is not yet fully closed (a cell with ρ = 1 cannot be improved, so it is no arm and its posterior does not decay on picks that could not succeed) and a **fresh** arm (`new`: a decomposition unlike the archive's). Each arm's posterior is a
    Beta over the picks that came to an end, `improved` a success and `not_improved` a failure, pooled across the problems of the memory, with each count
    weighted by the probation of its epoch (`weightOf`, [memory.md](memory.md#provenance-and-epochs)): a pick from before a new epoch weighs a quarter, and
    regains its weight only through new picks. The draw comes from the run's seed (or the option `seed`), the problem, the prover and the session, so a
@@ -84,6 +84,12 @@ starts (the budget ended) leaves a hint nobody read, which the report and the ef
 
 Reuse is measured by shape (`reuses`): once a session's sketch is registered, the hint is marked `reused` when the sketch's holes are an instance of the
 schema's parts, whoever suggested the schema and whether or not the session was shown it.
+
+## Bounds
+
+The archive holds every checked `decomposes_into` edge of the problem's claim, so it is as large as the sketches the scheduler registered; it is read again
+at each session. The snapshot stores the families as counts, not one entry per member; a schema keeps at most 200 supports; the answers of `lean.meta`
+to a confirmation are cached per run and schema, at most 500.
 
 ## The effect of a schema
 

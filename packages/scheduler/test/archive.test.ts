@@ -433,3 +433,33 @@ describe("showing a stored schema", () => {
     }
   });
 });
+
+describe("cells that cannot be improved", () => {
+  it("are not picked, and a pick whose sketch is the elite itself is not an improvement", async () => {
+    const w = world(toyAnswer);
+    try {
+      const memory = lineMemory(w);
+      const { root, parts } = await decomposed(w, "(n : ℕ) : 0 + n = n", "(n : ℕ) : n + 0 = 0 + n");
+      const edge = await link(w, "decomposes_into", root, ...parts);
+      await prove(w, parts[0] as string);
+      const open = readArchive(memory, root);
+      const picks = (seed: number, archive = open) => {
+        pickCell(problemOf(memory, root, { seed, attemptId: `att_o${seed}`, session: seed }), archive, m15Settings(M15_OPTIONS));
+        return memory.nodes(M15_PICK_KIND).map((n) => n.data as unknown as PickData).find((d) => d.attemptId === `att_o${seed}`)?.cell;
+      };
+      assert.ok(Array.from({ length: 12 }, (_, k) => picks(k + 1)).includes(open.cells[0]?.key), "an open cell is an arm");
+      await prove(w, parts[1] as string);
+      const closed = readArchive(memory, root);
+      assert.equal(closed.cells[0]?.elite.rho, 1);
+      assert.deepEqual(new Set(Array.from({ length: 12 }, (_, k) => picks(100 + k, closed))), new Set(["new"]), "a closed cell is no arm");
+      // A session whose sketch is the elite's own edge did not improve it, though the fitness rose meanwhile.
+      const attemptId = attempt(w, root, { outcome: "invalid" });
+      const node = memory.recordNode({ kind: M15_PICK_KIND, claimId: root, data: { problemId: "prb_1", attemptId, prover: "p1", session: 1, cell: open.cells[0]?.key, elite: edge, rhoBefore: 0.5, cellsBefore: [open.cells[0]?.key] } as unknown as Json, learned: true }).nodeId;
+      memory.recordNode({ kind: SKETCH_KIND, claimId: root, data: { problemId: "prb_1", attemptId, submission: memory.blobs.put(JSON.stringify({ aux: "", proof: "x" })), names: ["aux_a", "aux_b"], healthy: true, registered: true, holes: parts, edgeId: edge } as unknown as Json });
+      settle(problemOf(memory, root), false);
+      assert.equal((memory.node(node)?.data as unknown as PickData).outcome, "not_improved");
+    } finally {
+      w.close();
+    }
+  });
+});

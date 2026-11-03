@@ -53,9 +53,9 @@ export function archiveReport(events: readonly HarnessEvent[]): ArchiveReport | 
   const families: Record<string, number> = {};
   const labels: string[] = [];
   for (const s of snapshots) {
-    for (const f of s.families) {
-      families[f] = (families[f] ?? 0) + 1;
-      labels.push(f);
+    for (const [f, n] of Object.entries(s.families)) {
+      families[f] = (families[f] ?? 0) + n;
+      for (let k = 0; k < n; k += 1) labels.push(f);
     }
   }
   const best = snapshots.map((s) => Math.max(0, ...s.cells.map((c) => c.rho)));
