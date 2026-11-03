@@ -8,10 +8,13 @@ export function toolName(id: string): string {
   return id.replace(/\./g, "_");
 }
 
+/** Tools a session has besides its capabilities: a capability's tool name never takes one (a pack's all start with `pack_`). */
+export const BUILTIN_TOOL_NAMES: readonly string[] = ["lean_check", "expand", "graph_query", "tool_search"];
+
 /** Problems with the capabilities a run gives its provers besides `lean_check`; empty when they are fine. */
 export function checkTools(registry: Registry, ids: readonly string[]): string[] {
   const problems: string[] = [];
-  const names = new Set(["lean_check"]);
+  const names = new Set(BUILTIN_TOOL_NAMES);
   for (const id of ids) {
     const capability = registry.catalog.capabilities.get(id);
     if (capability === undefined) {

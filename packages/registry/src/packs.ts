@@ -283,6 +283,10 @@ function capabilityRules(pack: PackManifest, capability: Capability): string[] {
   const m = capability.manifest;
   const at = `pack ${pack.name}: ${m.id}:`;
   const problems: string[] = [];
+  const prefix = `pack_${pack.name.replace(/-/g, "_")}.`;
+  if (!m.id.startsWith(prefix)) {
+    problems.push(`${at} a pack's tool ids start with ${prefix} (its name), so that the tool a model calls, ${prefix.replace(".", "_")}NAME, never takes the name of a tool of the harness or of another pack`);
+  }
   if (m.exposure !== "deferred") {
     problems.push(
       `${at} exposure is ${m.exposure}; a pack's tools are level 2 (deferred). A tool that wants the level-1 declared set is named in pack.json "level1" and takes effect in the next session`,

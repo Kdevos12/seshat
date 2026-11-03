@@ -26,7 +26,7 @@ skills/<name>.md                    the skills, written by people
   "description": "Adds numbers.",
   "trust": "computed",
   "writesClaimStatus": false,
-  "capabilities": ["math.padd"],
+  "capabilities": ["pack_adder.padd"],
   "level1": [],
   "skills": [{ "name": "adding", "description": "When and how to add.", "file": "skills/adding.md" }],
   "requires": { "hosts": ["local"], "commands": ["node"], "env": [] }
@@ -54,6 +54,7 @@ Loading a pack reports every problem together (`PackError`). A pack is refused w
 - a capability does not load with the repository's own rules (`loadCatalog`: schemas, examples,
   contract cases that do not validate against the manifest, a case with neither `expect` nor
   `fails`), or carries **no contract case**;
+- a capability's id does not start with `pack_<name>.` (hyphens of the pack's name become `_`): the tool a model calls is then `pack_<name>_<tool>`, which never takes the name of a tool of the harness (`lean_check`, `expand`, `graph_query`, `tool_search`, the capabilities') nor another pack's;
 - a capability's `exposure` is not `deferred` (a pack's tools are level 2);
 - a capability `produces` anything but `computed`, has a `certificate` (the way a result becomes
   `proved` or `refuted`), or belongs to an `evidence` pack and produces anything;
