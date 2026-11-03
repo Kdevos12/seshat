@@ -55,6 +55,8 @@ export const M8_OPTIONS: JsonObject = {
   testCases: 6,
   /** Drop a statement that cheap automation closes. */
   triviality: true,
+  /** The counterexample set (PD5): known counterexamples go in the prompt and every candidate meets them first. Off: the measurement arm without it. */
+  counterexampleSet: true,
   leanTimeoutSec: 30,
   /** Conjectures that go in the briefing. */
   briefTop: 5,
@@ -76,6 +78,7 @@ interface Settings {
   identify: boolean;
   testCases: number;
   triviality: boolean;
+  counterexampleSet: boolean;
   leanTimeoutSec: number;
   briefTop: number;
   columns: ColumnSpec[];
@@ -103,6 +106,7 @@ export function readM8Options(raw: Readonly<JsonObject>): Settings {
     identify: o.flag("identify"),
     testCases: o.integer("testCases", 0, 50),
     triviality: o.flag("triviality"),
+    counterexampleSet: o.flag("counterexampleSet"),
     leanTimeoutSec: o.integer("leanTimeoutSec", 1, 600),
     briefTop: o.integer("briefTop", 0, 20),
     columns,
@@ -294,7 +298,7 @@ export function createM8(hooks: M8Hooks = {}): Line {
       // What the run proved so far feeds the next round.
       for (const c of memory.claims({ statuses: ["proved", "computed"], kind: "formal" })) if (c.parentId === problem.claimId || c.origin === ACTOR) known.push(c.statement);
       // PD5: the counterexamples checkers found so far go into the prompt, and every candidate meets them before it costs anything.
-      const set = readCounterexamples(memory, problem.claimId);
+      const set = s.counterexampleSet ? readCounterexamples(memory, problem.claimId) : [];
       const proposed = await proposeHypotheses(problem.llm, { target: targetStatement, table, count: s.perRound, known: [...new Set(known)].slice(0, 20), round, ...(set.length > 0 ? { counterexamples: describeCounterexamples(set) } : {}) });
       for (const r of proposed.refused) problem.log(`M8: ${r}`);
       const screened = await screenBySet(proposed.hypotheses, set, { totalMs: s.programMs }, problem.signal);

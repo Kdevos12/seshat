@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { buildIndex, DISCRETE, writeIndex } from "./bench.ts";
+import { readFileSync, writeFileSync } from "node:fs";
+import { readEvents } from "@seshat/core";
+import { type Annotations, suggestTags, validateAnnotations } from "./annotations.ts";
+import { buildIndex, DISCRETE, readIndex, sequencesOf, writeIndex } from "./bench.ts";
+import { convertRows, licenceNote, readCache, closedByStep } from "./ext.ts";
 import { scanCheckout } from "./formal-conjectures.ts";
 
 const usage = `usage:
-  harness-bench build --checkout DIR --id BENCH_ID --out FILE [--ams 5,6,8,11,20] [--include-proof-in-file]
-  harness-bench stats --checkout DIR`;
+  harness-bench build --checkout DIR --id BENCH_ID --out FILE [--ams 5,6,8,11,20] [--include-proof-in-file] [--annotations FILE]
+  harness-bench stats --checkout DIR
+  harness-bench sequences --index FILE
+  harness-bench tags (validate|suggest) --index FILE [--annotations FILE]
+  harness-bench ext convert (--cache DIR | --rows FILE) [--out FILE]
+  harness-bench ext steps RUN_DIR`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -15,10 +23,67 @@ const { positionals, values } = parseArgs({
     out: { type: "string" },
     ams: { type: "string" },
     "include-proof-in-file": { type: "boolean", default: false },
+    index: { type: "string" },
+    annotations: { type: "string" },
+    cache: { type: "string" },
+    rows: { type: "string" },
   },
 });
 
 const command = positionals[0];
+
+if (command === "sequences" || command === "tags" || command === "ext") {
+  process.exitCode = other();
+  process.exit();
+}
+
+/** The commands that read an index, an annotations file or a local cache instead of a checkout. */
+function other(): number {
+  try {
+    if (command === "sequences") {
+      if (!values.index) throw new Error("sequences needs --index FILE");
+      for (const s of sequencesOf(readIndex(values.index))) console.log(`${s.id}\t${s.kind}\t${s.problems.length}`);
+      return 0;
+    }
+    if (command === "tags") {
+      const sub = positionals[1];
+      if (!values.index || (sub !== "validate" && sub !== "suggest")) throw new Error("tags takes validate or suggest, and --index FILE");
+      const index = readIndex(values.index);
+      if (sub === "suggest") {
+        for (const s of suggestTags(index.problems)) console.log(`${s.kind}\t${s.problem}${s.with !== undefined ? `\twith ${s.with}` : ""}\t${s.reason}`);
+        return 0;
+      }
+      if (!values.annotations) throw new Error("tags validate needs --annotations FILE");
+      const problems = validateAnnotations(JSON.parse(readFileSync(values.annotations, "utf8")) as Annotations, index.problems);
+      for (const p of problems) console.error(p);
+      console.log(problems.length === 0 ? "annotations are valid" : `${problems.length} problem(s)`);
+      return problems.length === 0 ? 0 : 1;
+    }
+    if (command === "ext") {
+      if (positionals[1] === "convert") {
+        console.error(licenceNote);
+        const problems = values.cache ? readCache(values.cache) : values.rows ? convertRows(readFileSync(values.rows, "utf8")) : undefined;
+        if (problems === undefined) throw new Error("ext convert needs --cache DIR (a local copy of the dataset) or --rows FILE");
+        const text = `${JSON.stringify(problems, null, 1)}\n`;
+        if (values.out) writeFileSync(values.out, text);
+        else process.stdout.write(text);
+        return 0;
+      }
+      if (positionals[1] === "steps" && positionals[2]) {
+        const report = closedByStep(readEvents(`${positionals[2]}/journal.jsonl`));
+        console.log(JSON.stringify(report, null, 1));
+        return 0;
+      }
+      throw new Error("ext takes convert or steps RUN_DIR");
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error(usage);
+    return 2;
+  }
+  return 2;
+}
+
 if (!values.checkout || (command !== "build" && command !== "stats")) {
   console.error(usage);
   process.exit(2);
@@ -54,7 +119,8 @@ if (command === "stats") {
     ...(values.ams ? { ams: values.ams.split(",").map(Number) } : {}),
     includeProofInFile: values["include-proof-in-file"] ?? false,
   };
-  const index = buildIndex(values.checkout, values.id, filter);
+  const annotations = values.annotations ? (JSON.parse(readFileSync(values.annotations, "utf8")) as Annotations) : undefined;
+  const index = buildIndex(values.checkout, values.id, filter, annotations);
   writeIndex(values.out, index);
   console.log(`${index.benchId}: ${index.counts.selected} problems of ${index.counts.theorems} theorems (${index.source.repo}@${index.source.tag ?? index.source.rev.slice(0, 12)}, ${index.source.lean}) -> ${values.out}`);
   for (const error of index.errors.slice(0, 20)) console.error(`unreadable: ${error}`);

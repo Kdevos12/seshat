@@ -362,7 +362,7 @@ outcomes of the current epoch make it up; in the current epoch an observation is
 `p`, the threshold and the minimum are options of the caller.
 
 The presence counter that this replaces stays where it is, for comparison. The causal rule is measured
-against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
+against it in lesson set size and solve rate at equal budget (`harness ablate --experiment lessons`); nothing here has run against a
 real model.
 
 ## Definitions and their review status

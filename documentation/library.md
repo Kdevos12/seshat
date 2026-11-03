@@ -8,7 +8,7 @@ enables it with `harness run --lines M3` and it requires no other line.
 
 Whether it pays on this harness is not known: the share of accepted proofs that use a library lemma is in the
 report ([Measured](#measured)), and the cost on a problem B after solving a neighbouring problem A is measured
-by Task 14 on sequences of related problems. Nothing here has run against a real Lean or model.
+by Task 14 on sequences of related problems (`harness run --sequence ID`, [bench.md](bench.md#sequences); `harness ablate --split N` builds the library on one part of the bench and measures it on another). Nothing here has run against a real Lean or model.
 
 ## Promotion
 

@@ -250,9 +250,27 @@ The frozen prefix is the harness's guarantee that the bytes are the same; the pr
 what pays for it. `--cache-retention none|short|long` asks the provider for that retention on every
 request of a session (pi-ai's `cacheRetention`; [m0-loop.md](m0-loop.md#budgets)). The report gives
 the cached input tokens and the dollars per problem with a proof, so that a frozen prefix and a
-packet compiled again are compared on cost and solve rate, which Task 14 does once M4 exists. The
+packet compiled again are compared on cost and solve rate, which Task 14 does (`harness ablate --experiment packet-mode`, with the `recompiled` mode as the packet compiled again). The
 effect on a real provider's bill has not been measured: the tests read it from pi-ai's faux
 provider, which caches the longest common prefix of a session's requests.
+
+### Packet modes
+
+`--packet-mode` (`RunConfig.packetMode`, recorded in `run.started` when given) chooses how a session's requests are built from the
+packet (plan change PD2). `prefix_tail`, the default, is the behaviour above. `append_only` compiles the packet for the first request
+only, as the opening message, and sends the session's own messages after it as they come: the model's outputs and the tool results,
+never rewritten, so that each request starts with every byte of the one before it and the provider's cache can read the whole
+history, where `prefix_tail` gets hits on the frozen prefix alone. The hook is not called again in the session; what the
+line would have said is new since the session started goes into the next session's prefix, which is compiled afresh. `recompiled` is
+not for use: it is the measurement arm of PE5, a prefix and tail compiled for each request with nothing frozen, so that the frozen
+prefix is compared with a prefix recompiled each time. A line cannot tell which mode it is in; the mode is the session's.
+
+`append_only` trades the cache for the context: a long history is read at each request, and the model sees an old tool result as it was.
+It is kept only if it does not lose solves against `prefix_tail` (`harness ablate`, the `packet-mode` experiment compares dollars per
+solve, the solve rate and the mean context size on the same seeds and budget; [ablate.md](ablate.md)). Nothing here has run against a
+real provider. The tests read the faux provider, which caches the longest common prefix of a session's requests: they check that the
+history is byte-identical across requests in `append_only`, and that dollars and the cache ratio differ between the modes on a
+scripted session.
 
 ### The reasoning of a tool-call loop
 
@@ -461,6 +479,19 @@ above the problem's none of its hooks, and starts it (`beforeProvers`, or `resum
 run) when the problem moves up. Lines with no `rung` are at rung 0. The ladder is on when M12 is
 enabled and its option `ladder` is true; otherwise `rung` says nothing and every enabled line works
 from the start.
+
+## Conflicts between lines, and how a run settles them
+
+Task 14 composes every line in one run (`harness run --lines` with all of them, or `--ablation M17`; the end-to-end test is `all-lines.test.ts`). Lines that could collide are settled as follows.
+
+- **One provider of a seam.** At most one enabled line gives the context packet (M4), the schedule (M12), the Lean environment (M17) or the statement identity (M1); a run that enables two is refused before anything is written. The cumulative configs enable one of each.
+- **Order within a hook** is `LINE_ORDER`, which is plan section 7's order, and the cumulative configs follow it (Ruling 8): M2 is M0 with M1, M10 and M2. Where a line needs another (`requires`: M5 and the fleet need M1; M18 and M15 need M12), the cumulative order always has it first.
+- **Settling before the model.** Section 15's order per subgoal is subsumption (M12), fingerprint and small model (M11), the battery with ATP and SMT (M10), then the model with the context of what was tried. A claim a program settled gets no model attempt, so the lines that feed the model (M4, M3, M5, M15) show their effect on the claims left, not on those. The ablation table's "settled without a model" columns say how many each program took, and its difficulty split separates the easy problems from the hard.
+- **The ladder and the cumulative configs.** With the ladder on (the default of M12), the lines of rung 1 and above (M18; M15 and M16) get no hook for a problem until the ladder moves it up. The row of a cumulative table that adds one of them can therefore only differ on the problems the ladder escalated; the `ladder` experiment sets the ladder against all rungs from the start and against rung 0 alone.
+- **Model calls of lines are the problem's.** A line's own model call (M4's query extraction, M13's and M16's relevance, M14's repairs) is charged to the problem, so a line with calls spends the budget the provers would have had. Every configuration of a table has the same problem budget; "dollars per solve" is the measure that counts that.
+- **M17 and the memory chain.** A claim's status carries over from an earlier run only under the same Lean environment. A run with M17 is in `extended`, so it cannot start on a memory built in `base` without its statuses counting for nothing; `harness ablate --split` builds each arm's memory with the arm's own lines, and the probe's verified-only memory keeps the environment of the run it comes from.
+- **Turns and breakpoints.** A turn limit, `--human` and the narrative change what the models see at a boundary, so they are refused in an ablation run (`ablationRefusal`, [human.md](human.md)), as is `--offpeak`.
+- **The suspended lines.** M7 and M9 are not built (Ruling 20): a run refuses them, and the cumulative configs leave them out.
 
 ## Adding a line
 

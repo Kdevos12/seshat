@@ -61,7 +61,7 @@ import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type Tu
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
-import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
+import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -88,6 +88,11 @@ export interface RunConfig {
   tools: string[];
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
+  /**
+   * How a session's requests are built from a line's context packet (plan change PD2, documentation/lines.md, "Packet modes"):
+   * `prefix_tail` (absent: the default), `append_only`, or `recompiled`, the measurement arm of PE5.
+   */
+  packetMode?: PacketMode;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -253,6 +258,9 @@ export function checkConfig(config: RunConfig): string[] {
   whole("concurrency", config.concurrency, 1);
   if (config.cacheRetention !== undefined && !CACHE_RETENTIONS.includes(config.cacheRetention)) {
     problems.push(`cacheRetention must be one of ${CACHE_RETENTIONS.join(", ")}, got ${String(config.cacheRetention)}`);
+  }
+  if (config.packetMode !== undefined && !PACKET_MODES.includes(config.packetMode)) {
+    problems.push(`packetMode must be one of ${PACKET_MODES.join(", ")}, got ${String(config.packetMode)}`);
   }
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
@@ -577,6 +585,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       concurrency: config.concurrency,
       // Only when given, so that a run without it records what it always did.
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
+      ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
@@ -1056,6 +1065,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 limits: config.limits,
                 notesChars: config.notesChars,
                 ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
+                ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
                 prices,
                 ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
                 ledger,
