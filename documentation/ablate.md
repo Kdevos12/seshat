@@ -30,3 +30,17 @@ One row per configuration. The columns of plan section 6:
 
 "Settled by a program" reads the actor of the validation (`line:M10`, `line:M11`); a claim closed by M12's subsumption is not counted
 here. The shares are of the claims the run made, so a configuration without M12 has no subgoals and says so (`0/0`).
+
+## The configurations and the runner
+
+`cumulativeArms()` gives the configurations of plan section 6: M0 (no line), then each line in the order of section 7 added to the ones before it, without the suspended M7 and M9 (Ruling 20). `runAblation` runs every arm on the same problems, with the same seed, at the same budget (providers, sessions, dollars per problem), each into its own journal under `arms/<name>/measure`. When `buildProblems` is set, each arm first runs on those problems to build its memory and is measured on the others with `memoryFrom`, so the memory never saw the problems it is measured on. `ablationProblems` is called before anything is spent: it calls `ablationRefusal` (turns and breakpoints are refused), refuses off-peak scheduling and duplicate arm names, and checks the lines, the line options and the decide settings. The result is written as `ablation.json`, and `renderAblation` writes `ablation.md`.
+
+An arm is also a point in an experiment: it can carry line options, a packet mode, decide settings, a model and a tool set, and name the arm it is compared against.
+
+## Reliability of decisions (J4)
+
+`labelDecisions` gives each decision the outcome Lean gave it: for `prove.search.order` the answer is right when it names a tactic that closed a goal, for `fleet.cold_start` when it names the strategy of a valid attempt, and for the other sites when the claim came to be settled. `reliability` bins the probability of the answer (ten bins) and gives the expected calibration error per site and backend, and the mean rank of the candidate that succeeded. `agreement` compares two backends on the questions both answered (J5). No threshold on a probability is allowed until its site has a curve.
+
+## Chunk curves (PE4)
+
+`chunkCurves` takes the attempts of each prover on each problem and gives, for K in 1, 3, 6 and 10, how many problems a Nexus that runs K provers in parallel would have solved and at what cost. A whole parallel round is paid for, so the cost of K provers is a multiple of K attempts. It reads the journal of a run: nothing is rerun.

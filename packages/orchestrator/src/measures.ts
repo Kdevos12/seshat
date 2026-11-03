@@ -44,6 +44,8 @@ export interface RunMeasures {
   cache?: { total: CacheStat; byLine: Record<string, CacheStat>; byRung?: Record<string, CacheStat> };
   /** Proofs that use a declaration of each source: the harness library, each extra package, Mathlib (LC2). */
   proofsBySource: Record<string, number>;
+  /** The lesson set at the end of the run (PE2): lessons made, still active, and deactivated by their effect or their presence. Absent without the M5 line. */
+  lessons?: { total: number; active: number; deactivated: number };
   /** The counterexample set's counter (PD5), when the run's memory was read for it. */
   cegis?: CegisCounter;
   /** Each problem's outcome and dollars, for the split by difficulty and the paired comparison of two configurations. */
@@ -380,6 +382,9 @@ export function measureRun(events: readonly HarnessEvent[], options: MeasureOpti
     sites: report.sites,
     ...(cache !== undefined ? { cache: { total: cache.total, byLine: cache.byLine, ...(cache.byRung !== undefined ? { byRung: cache.byRung } : {}) } } : {}),
     proofsBySource: report.library?.bySource ?? bySource,
+    ...(report.lessons !== undefined
+      ? { lessons: { total: report.lessons.total, active: report.lessons.byState.active ?? 0, deactivated: report.lessons.byState.deactivated ?? 0 } }
+      : {}),
     ...(options.cegis !== undefined ? { cegis: options.cegis } : {}),
     perProblem: report.problems.map((p) => ({ problemId: p.problemId, outcome: p.outcome, usd: p.usd })),
   };
