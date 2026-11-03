@@ -110,6 +110,8 @@ export async function libraryBuildCommand(specFile: string, io: LibraryBuildIo):
   } catch (error) {
     throw new LibraryBuilderConfigError(`cannot read the spec ${specFile}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  // A spec file is a person's: the one who runs the command answers for its text.
+  spec = { ...spec, author: spec.author ?? "human:cli" };
   const problems = specProblems(spec);
   if (problems.length > 0) throw new LibraryBuilderConfigError(`the spec ${specFile} is not valid: ${problems.join("; ")}`);
   const made = io.builder !== undefined ? { builder: io.builder, budget: io.budget ?? {}, timeoutSec: io.timeoutSec ?? 60 } : makeLibraryBuilder(loadLibraryBuilderConfig(io.config ?? DEFAULT_LIBRARY_BUILDER_CONFIG));
