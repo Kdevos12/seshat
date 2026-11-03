@@ -69,6 +69,39 @@ Each problem has:
 `sample(problems, n, seed)` takes a deterministic subset: the `n` problems whose hash with the seed
 is smallest.
 
+## Sequences
+
+An index built from Task 14 on also holds `sequences`: lists of related problems, built from the checkout's structure alone, for the lemma library (line M3). A problem solved early leaves lemmas the later ones can use, so a run that works a sequence in order measures what the library gives; `--memory-from` chains runs, and `--split` of `harness ablate` measures a library built on one part of the bench on another.
+
+| Kind | Id | Members, in order |
+|---|---|---|
+| `variants` | `variants:<path>#<stem>` | the problem `<stem>`, then its variants (`<stem>.variants.<name>`) by line |
+| `file` | `file:<path>` | every problem of a file with at least two, by line (they share its definitions) |
+
+A sequence has at least two problems. An index without the field (the committed one predates it) gets them computed (`sequencesOf`). `harness run --sequence ID` (or `harness ablate`) works one in order, with `--concurrency 1` forced, so that an earlier problem is done before a later one starts; `harness-bench sequences --index FILE` lists them.
+
+## Tags: analogy and induction
+
+Problems tagged with an analogy or an induction are the inputs the lines that look for them need (M8 for induction; analogy cards). The tags are written by a person in `bench/annotations.json` and checked; `harness-bench build --annotations FILE` refuses a file that does not fit the bench and puts the tags in the index (`tags`, by problem id, and part of the hash).
+
+```json
+{ "v": 1, "tags": [
+  { "problem": "<bench problem id>", "kind": "induction", "note": "induction on n over the sum, base case trivial", "by": "name" },
+  { "problem": "<bench problem id>", "kind": "analogy", "with": "<bench problem id>", "note": "the same argument with 2 for 1" },
+  { "problem": "<bench problem id>", "kind": "analogy", "withText": "a result outside the bench", "note": "..." } ] }
+```
+
+Rules (`harness-bench tags validate --index FILE --annotations FILE`): the problem is in the bench; the kind is `analogy` or `induction`; the note (at least 10 characters) says why; an analogy names what it is an analogue of with exactly one of `with` (a bench problem other than itself) or `withText`; only an analogy has them; no tag twice; no unknown field. `harness-bench tags suggest --index FILE` only proposes candidates from the shape of the statements (a natural number quantified over a sum, a product, a power or a factorial; two statements of one shape in two files): a suggestion is not a tag. `harness run --tag induction` runs the problems that carry a tag. No annotations file is committed: the tags are the team's to write.
+
+## bench-ext: the equational-theories data
+
+`bench-ext` (plan change PD6) reads the equational-theories challenge's data (the SAIR Foundation's benchmark dataset) and turns each row, an implication between two equations of a magma, into a problem: a Lean statement over `Mul`, as an implication when the answer is true and as a counter-magma `∃ (G : Type) (_ : Mul G), ...` when it is false. It is there to measure the battery, the fingerprints and the first-order tools on implication problems.
+
+- **Nothing downloads, nothing is vendored.** The rows are read from a local cache directory the user fills (`harness-bench ext convert --cache DIR`, `.jsonl` or `.json` files), or from a file of rows (`--rows FILE`). A missing cache is an error that says so. The tests use three hand-written rows.
+- **The licence is not stated** where this was written: the command prints a reminder, and no row may be copied into a repository before the licence is read. The Lean judge package (`stage2-judge`) is Apache 2.0 on Reservoir. No submission to the challenge is planned; its rules are unread.
+- **The row shape is an assumption** from the dataset's description: `id`, `equation1`, `equation2` (written with `◇`), and `answer` (true or false), with the aliases `eq1`, `eq2`, `implies` and `name`. It must be checked against the real files the first time they are read.
+- **The share closed without a model**, per step of plan section 15's order: `harness-bench ext steps RUN_DIR` reads the journal of a run over these problems and gives, for each problem, the first step that closed it (subsumption by M12, fingerprint or small model by M11, battery or ATP and SMT by M10, then the model), and the share closed without a model. The run itself, with Tasks 6 and 7, has not been made.
+
 ## Commands
 
 ```sh
@@ -76,5 +109,5 @@ node packages/bench/src/cli.ts stats --checkout ../formal-conjectures
 node packages/bench/src/cli.ts build --checkout ../formal-conjectures --id fc-bench-v1-discrete --out bench/fc-bench-v1-discrete.json
 ```
 
-`build` also takes `--ams 5,11` and `--include-proof-in-file`. Two API lemmas of the snapshot,
+`build` also takes `--ams 5,11`, `--include-proof-in-file` and `--annotations FILE`. `sequences`, `tags` and `ext` are described above. Two API lemmas of the snapshot,
 proved by pattern matching, cannot be cut into sketches; the commands list them and go on.

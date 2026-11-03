@@ -79,3 +79,19 @@ describe("harness chunks and the probe in the report", () => {
     assert.match(out.stdout, /No alarm/);
   });
 });
+
+describe("choosing problems by sequence or tag", () => {
+  it("refuses an unknown sequence, a bench without the tag, a concurrency above 1 and two ways at once", async () => {
+    const checkout = tempDir("mh-cli-checkout-");
+    const base = ["run", "--checkout", checkout, "--model", "faux/x"];
+    const seq = await harness([...base, "--sequence", "nope"]);
+    assert.equal(seq.code, 2);
+    assert.match(seq.stderr, /no sequence/);
+    const tag = await harness([...base, "--tag", "induction"]);
+    assert.equal(tag.code, 2);
+    assert.match(tag.stderr, /has no problem tagged induction/);
+    assert.match((await harness([...base, "--tag", "magic"])).stderr, /--tag must be one of analogy, induction/);
+    assert.match((await harness([...base, "--sequence", "x", "--concurrency", "3"])).stderr, /--concurrency 1/);
+    assert.match((await harness([...base, "--sequence", "x", "--all"])).stderr, /exactly one of/);
+  });
+});

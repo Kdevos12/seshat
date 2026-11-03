@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
+import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
 import { type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
 import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
@@ -32,7 +32,7 @@ const usage = `usage:
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
-  harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
+  harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
@@ -40,7 +40,7 @@ const usage = `usage:
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
-  harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
+  harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N] [--reference NAME]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
@@ -131,6 +131,8 @@ const { positionals, values } = parseArgs({
     "budget-usd": { type: "string" },
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
+    sequence: { type: "string" },
+    tag: { type: "string" },
     tool: { type: "string", multiple: true },
     lines: { type: "string", multiple: true },
     ablation: { type: "string" },
@@ -303,8 +305,23 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "med
 
 /** The problems a run works on, and how they were chosen. */
 function selectProblems(index: BenchIndex): { problems: ProblemEntry[]; selection: Json } {
-  const ways = [values.sample !== undefined, values.problem !== undefined, values.all === true].filter(Boolean).length;
-  if (ways !== 1) throw new UsageError("choose the problems with exactly one of --sample, --problem and --all");
+  const ways = [values.sample !== undefined, values.problem !== undefined, values.all === true, values.sequence !== undefined, values.tag !== undefined].filter(Boolean).length;
+  if (ways !== 1) throw new UsageError("choose the problems with exactly one of --sample, --problem, --all, --sequence and --tag");
+  if (values.sequence !== undefined) {
+    // A sequence is worked in order, one problem after the other, so that what an earlier one leaves in the library reaches the later ones.
+    if (values.concurrency !== undefined && values.concurrency !== "1") throw new UsageError("--sequence works the problems in order: it runs with --concurrency 1");
+    try {
+      return { problems: sequenceProblems(index.problems, sequencesOf(index), values.sequence), selection: { sequence: values.sequence } };
+    } catch (error) {
+      throw new UsageError(messageOf(error));
+    }
+  }
+  if (values.tag !== undefined) {
+    if (!(TAG_KINDS as readonly string[]).includes(values.tag)) throw new UsageError(`--tag must be one of ${TAG_KINDS.join(", ")}`);
+    const tagged = taggedWith(index.problems, index.tags ?? {}, values.tag as TagKind);
+    if (tagged.length === 0) throw new UsageError(`${index.benchId} has no problem tagged ${values.tag} (harness-bench build --annotations FILE)`);
+    return { problems: tagged, selection: { tag: values.tag } };
+  }
   if (values.seed !== undefined && values.sample === undefined) throw new UsageError("--seed goes with --sample");
   if (values.all) return { problems: index.problems, selection: { all: true } };
   if (values.problem !== undefined) {
@@ -501,7 +518,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     ...(cacheRetention !== undefined ? { cacheRetention } : {}),
     ...(packetMode !== undefined ? { packetMode: packetMode as PacketMode } : {}),
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
-    concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
+    concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
@@ -690,7 +707,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "out",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
