@@ -50,6 +50,15 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/decide':
+        specifier: workspace:*
+        version: link:../decide
+      '@seshat/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@seshat/lean-meta':
+        specifier: workspace:*
+        version: link:../lean-meta
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

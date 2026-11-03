@@ -1,8 +1,12 @@
 /**
- * @seshat/classical, a skeleton. The classical battery per subgoal, the domain router, ATP and SMT
- * with reconstruction (line M10).
- *
- * The package exists with its dependencies, so that the task that implements it adds code without
- * touching the lockfile (documentation/lines.md, "Adding a line").
+ * @seshat/classical: the classical battery per subgoal, the domain router, ATP and SMT with
+ * reconstruction (line M10). Documented in documentation/classical.md.
  */
-export {};
+export * from "./battery.ts";
+export * from "./nontrivial.ts";
+export * from "./parse.ts";
+export * from "./posterior.ts";
+export * from "./probe.ts";
+export * from "./router.ts";
+export * from "./solve.ts";
+export * from "./tactics.ts";
