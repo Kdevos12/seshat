@@ -1,6 +1,7 @@
 import type { AblationResult, ArmResult } from "./ablation.ts";
 import type { CacheStat } from "./cache-report.ts";
 import type { Share } from "./measures.ts";
+import { agreement } from "./reliability.ts";
 
 const money = (usd: number | undefined, digits = 3): string => (usd === undefined ? "none" : `$${usd.toFixed(digits)}`);
 const pct = (x: number | undefined): string => (x === undefined ? "n/a" : `${(x * 100).toFixed(0)}%`);
@@ -79,6 +80,7 @@ export function renderAblation(result: AblationResult): string {
     ...spendBySite(arms),
     ...cache(arms),
     ...decisions(arms),
+    ...agreements(arms),
     ...extras(arms),
   ];
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
@@ -168,4 +170,36 @@ function extras(arms: readonly ArmResult[]): string[] {
     out.push("## Memory built on one part and measured on another", "", ...table(["Configuration", "Build part solved", "Measure part solved", "Build $ per solve", "Measure $ per solve"], built.map((a) => { const b = (a.build as NonNullable<typeof a.build>).measures; return [a.arm.name, `${b.solved}/${b.problems}`, `${a.measures.solved}/${a.measures.problems}`, money(b.usdPerSolve), money(a.measures.usdPerSolve)]; })), "");
   }
   return out;
+}
+
+/** Plan change J5, line D1: where an arm asks another backend, the share of questions it answered as the arm it is set against did. */
+function agreements(arms: readonly ArmResult[]): string[] {
+  const rows: string[][] = [];
+  arms.forEach((a, i) => {
+    if (a.arm.decide === undefined) return;
+    const other = a.arm.versus !== undefined ? arms.find((x) => x.arm.name === a.arm.versus) : arms[i - 1];
+    if (other === undefined) return;
+    for (const r of agreement(a.decisions, other.decisions)) rows.push([a.arm.name, other.arm.name, r.site, String(r.both), pct(r.share)]);
+  });
+  if (rows.length === 0) return [];
+  return [
+    "## Agreement between backends",
+    "",
+    "Of the questions both configurations answered (same site, same state, same question), the share answered alike. Not run against a real Jev: with a faux Jev this shows the plumbing, not the backend.",
+    "",
+    ...table(["Configuration", "Against", "Site", "Questions both answered", "Agree"], rows),
+    "",
+  ];
+}
+
+/** The cost-to-first-success curves for K provers in parallel (plan change PE4), as a markdown table. */
+export function renderChunks(title: string, curves: ReadonlyArray<import("./chunks.ts").ChunkCurve>): string {
+  const rows = curves.map((c) => [
+    String(c.k),
+    `${c.solved}/${c.problems}`,
+    money(c.meanUsdToSuccess),
+    money(c.usdPerSolve),
+    c.budgetShare === undefined ? "n/a" : `${pct(c.budgetShare.median)} / ${pct(c.budgetShare.p80)}`,
+  ]);
+  return `${[`# Cost to first success: ${title}`, "", "K provers run side by side on the attempts of one prover; a round is paid for in full. The shares are of the problem's budget; the ladder's fractions are read from them on real runs.", "", ...table(["K", "Solved", "Mean $ to first success", "$ per solve", "Budget share (median / p80)"], rows)].join("\n")}\n`;
 }

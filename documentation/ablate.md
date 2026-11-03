@@ -44,3 +44,32 @@ An arm is also a point in an experiment: it can carry line options, a packet mod
 ## Chunk curves (PE4)
 
 `chunkCurves` takes the attempts of each prover on each problem and gives, for K in 1, 3, 6 and 10, how many problems a Nexus that runs K provers in parallel would have solved and at what cost. A whole parallel round is paid for, so the cost of K provers is a multiple of K attempts. It reads the journal of a run: nothing is rerun.
+
+## Experiments
+
+An experiment is a short list of arms that differ by one option, run on the same problems at the same budget as the cumulative table (`harness ablate --experiment NAME`, with `--lines` for the lines the arms share, every line by default). Each one is data in `experiments.ts` and says what it cannot tell without a real run.
+
+| Experiment | Amendment | Arms | Not run |
+|---|---|---|---|
+| `ladder` | PE4 | the ladder, every rung from the start (`M12.ladder=false`), rung 0 alone (the lines M18, M15 and M16 left out) | the budgets are simulated |
+| `packet-mode` | PD2, PE5 | `prefix_tail`, `append_only`, `recompiled`, and M4's naive packet | the cache ratio is the faux provider's |
+| `renderings` | PC5 | `list`, `merged`, `table` for each model of `--models` | only real models tell |
+| `queries` | PC5 | extracted queries against the raw statement | the extraction is a model call |
+| `seeds` | PC13 | pattern seeds on and off, split by difficulty in the table | the neighbours need a real Lean |
+| `lessons` | PE2 | lessons deactivated by measured effect against by presence | needs enough problems |
+| `cegis` | PD5 | the induction lines on or off: the counterexample set's counter | tokens saved are an estimate |
+| `lsp` | PC7 | `lean.lsp` as a tool set against M0 | needs a language server |
+| `decide` | J1, J4, J5 (line D1) | the model for every site, then one arm per J3 site asked of Jev | not run against real Jev |
+| `m17` | LC3 | the base Lean environment against the one M17 extends | needs a pinned real environment |
+
+Options are line options, so an experiment's lines must include the line whose option it sets (`packet-mode` needs M4 for the naive arm). The decide experiment's table adds the agreement between each Jev arm and the model arm on the questions both answered.
+
+## The command line
+
+```sh
+harness ablate --checkout DIR --model PROVIDER/ID --sample 20 [--configs M0,M1,M10] [--split 8] --out DIR
+harness ablate --checkout DIR --model PROVIDER/ID --sample 20 --experiment ladder --lines M1,M10,M12,M18,M15
+harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
+```
+
+`--split N` builds each arm's memory on N problems of the sample and measures it on the others. A turn limit, `--human` and `--offpeak` are refused through `ablationRefusal`. `harness chunks` prints the cost-to-first-success curves of finished runs.
