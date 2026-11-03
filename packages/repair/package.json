@@ -12,6 +12,7 @@
     "@seshat/induction": "workspace:*",
     "@seshat/lines": "workspace:*",
     "@seshat/memory": "workspace:*",
+    "@seshat/models": "workspace:*",
     "@seshat/registry": "workspace:*"
   }
 }
