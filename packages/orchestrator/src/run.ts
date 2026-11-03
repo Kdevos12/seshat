@@ -27,7 +27,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
-import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
 import { Ledger } from "./budget.ts";
@@ -574,6 +574,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
+      // The host's prices have a hash of their own, which a resumption compares as a warning (documentation/m0-loop.md, "Prices").
+      ...(pricesHash(registry.host) !== undefined ? { prices: pricesHash(registry.host) as string } : {}),
       prompt: promptRecord,
       policy: policyRecord,
       certifier: certifierRecord,
@@ -625,6 +627,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       }),
     ];
     if (changed.length > 0) return await abandon(`the run cannot be resumed here: ${changed.join("; ")}`, undefined, registry);
+    const recordedPrices = (resume.started.config as { prices?: unknown } | null)?.prices;
+    if ((recordedPrices ?? undefined) !== pricesHash(registry.host)) {
+      log(
+        `warning: the host's prices are not the ones this run began with (${typeof recordedPrices === "string" ? "they were changed" : "the run recorded none"}): ` +
+          "the dollars already journaled stand, the next responses are charged at the new prices",
+      );
+    }
     const resumption = beginResumption(journal, tasks, { runId, ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}) });
     log(`resuming run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
     log(

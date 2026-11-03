@@ -374,7 +374,12 @@ cross midnight), every other instant is off-peak and costs `offPeakMultiplier` t
 `offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
 (`RunOptions.wallClock`, a test's own). A charge also records `savedUsd`, the dollars the cache saved against reading
 those tokens at the miss price, and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
-read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). A model with no price anywhere (no `pricing` entry, and pi-ai's own prices for it are zero, as for a custom endpoint it
+read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). Correcting a price does not block a run that was interrupted. The prices are left out of the registry's hash (the rest
+of a model's entry, the settings it ignores, stays in it) and have a hash of their own, `prices` in `run.started`.
+`harness resume` against changed prices logs a warning and goes on: the dollars already journaled stand, and the
+responses from then on are charged at the new prices.
+
+A model with no price anywhere (no `pricing` entry, and pi-ai's own prices for it are zero, as for a custom endpoint it
 knows nothing of) is charged $0, so no dollar budget can stop it. The run says so in its log at the start; it is
 refused when a dollar cap was asked for on purpose (`--run-budget-usd`, or a turn's usd limit) and the run's model is
 such a model; and the report warns with the number of responses charged $0 (`priceGaps`). The table is authoritative

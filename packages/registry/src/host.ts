@@ -116,8 +116,25 @@ export function checkHostProfile(profile: HostProfile, catalog: Catalog): string
   return problems;
 }
 
+/**
+ * The hash of a profile that goes into the registry's hash. The prices are left out: they are first estimates that the
+ * owner corrects after the first real run, and a correction must not make the runs it interrupted unresumable. They
+ * have a hash of their own (`pricesHash`), which a run records and a resumption compares as a warning. The rest of the
+ * `models` section (the settings a family ignores) changes what a run does, so it stays.
+ */
 export function hostProfileHash(profile: HostProfile): string {
-  return hashJson(profile);
+  if (profile.models === undefined) return hashJson(profile);
+  const models = Object.fromEntries(
+    Object.entries(profile.models).flatMap(([name, entry]) => (entry.ignores === undefined ? [] : [[name, { ignores: entry.ignores }]])),
+  );
+  const { models: _models, ...rest } = profile;
+  return hashJson(Object.keys(models).length === 0 ? rest : { ...rest, models });
+}
+
+/** The hash of the prices a profile gives, or undefined when it gives none. */
+export function pricesHash(profile: HostProfile): string | undefined {
+  const priced = Object.entries(profile.models ?? {}).flatMap(([name, entry]) => (entry.pricing === undefined ? [] : [[name, entry.pricing]]));
+  return priced.length === 0 ? undefined : hashJson(Object.fromEntries(priced));
 }
 
 /** A `${env:NAME}` variable that is not set, found while preparing an implementation. */
