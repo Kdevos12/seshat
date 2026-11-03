@@ -9,6 +9,7 @@ export * from "./m3.ts";
 export * from "./promote.ts";
 export * from "./recheck.ts";
 export * from "./records.ts";
+export * from "./schemas.ts";
 export * from "./search.ts";
 export * from "./triviality.ts";
 export * from "./usage.ts";

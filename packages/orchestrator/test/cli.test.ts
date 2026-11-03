@@ -203,7 +203,7 @@ describe("harness run --lines", () => {
   it("refuses contradictory and malformed line options, with the usage", async () => {
     const options: Array<[string[], RegExp]> = [
       [["--lines", "M1", "--ablation", "M2"], /^choose the lines with --lines or --ablation, not both/],
-      [["--ablation", "M15"], /^--ablation must be M0 or a line \(M1, M10, M2, .*\), got M15/],
+      [["--ablation", "M99"], /^--ablation must be M0 or a line \(M1, M10, M2, .*\), got M99/],
       [["--line-option", "M1:k=1"], /^--line-option takes ID\.KEY=VALUE, got "M1:k=1"/],
       [["--decide-backend", "faux"], /^--decide-backend must be llm or jev, got faux/],
       [["--decide-site", "prove.search.order"], /^--decide-site takes SITE=llm\|jev\|off/],

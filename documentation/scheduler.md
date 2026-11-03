@@ -151,8 +151,8 @@ for each problem, the rung at which it was solved (only for a certified `proved`
 read from the journal alone. A session's cost is counted at the rung in force when it ended, and a
 one-shot call at the rung of its own event; the dollars per rung add up to the problem's cost.
 
-Line `M18` ([curriculum.md](curriculum.md)) is the line of rung 1; `M15` and `M16` (rung 2 in the plan) are not built. The ladder is tested
-with a stand-in line of rung 1 and with M18. Dollars that a rung's line spends count in the problem's spend since its last Lean
+Line `M18` ([curriculum.md](curriculum.md)) is the line of rung 1 and `M15` ([archive.md](archive.md)) a line of rung 2; `M16` (rung 2 in the plan) is not built. The ladder is tested
+with a stand-in line of rung 1, with M18 and with M15. Dollars that a rung's line spends count in the problem's spend since its last Lean
 progress, so M18's variants hasten the move to the next rung; a proved variant is not Lean progress (it is no subclaim of the target).
 
 ## Owners chosen by the fleet (Ruling 29)
