@@ -41,7 +41,7 @@ export function commandArms(command: Pick<AblateCommand, "configs" | "experiment
 
 /** `harness ablate`: runs the arms, writes `ablation.json` and `ablation.md` into the directory, prints the table. */
 export async function ablateCommand(command: AblateCommand): Promise<AblationResult> {
-  if (existsSync(join(command.dir, "ablation.json"))) throw new RunSetupError(`${command.dir} holds an ablation already: an ablation writes into a new directory`);
+  if (existsSync(join(command.dir, "ablation.json"))) throw new RunSetupError(`${command.dir} holds a finished ablation: write into a new directory (an ablation that was cut off is resumed by giving the same directory again)`);
   const arms = commandArms(command);
   const seed = String(command.config.seed ?? "ablate");
   const split = command.split !== undefined ? splitBench(command.problems, command.split, seed) : undefined;
