@@ -12,6 +12,12 @@ following one plan, [plans/seshat-plan.md](plans/seshat-plan.md), by two teams a
 | Main team | the project owner's (Kdevos12) | the plan, its rulings, and every task the collaborator does not own |
 | Collaborator | a collaborator's, since 2026-10-20 | Tasks 6 (line M10), 9 (M3, M5) and 11 (M4), in that order: [plans/collaborator-tasks.md](plans/collaborator-tasks.md) |
 
+Since 2026-11-03 the main team builds Tasks 6, 9 and 11 itself, in that order, on the branches
+`task/t6`, `task/t9` and `task/t11`, because the collaborator had pushed nothing: the owner asked for it.
+If the collaborator returns, they say so in `plans/collaborator-log.md`, and the two teams agree in
+their ledgers on who finishes which task before anyone pushes to a task branch; until then the main
+team owns these three, and the table row above stays as the brief's description.
+
 The repository is the only channel between the teams. What is not pushed does not exist for the
 other team.
 

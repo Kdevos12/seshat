@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 06:00 UTC. `main` at f84d92a, 1828 tests.
+Updated 2026-11-03 11:30 UTC. `main` at da59611, 1828 tests.
 
 ## Tasks
 
@@ -16,12 +16,12 @@ Updated 2026-11-03 06:00 UTC. `main` at f84d92a, 1828 tests.
 | 3 | `lean.meta`, `lean.goals`, Lean identity | main | merged | |
 | 4 | Certifier: `lean.certify`, kernel replay | main | merged (`74d3ab4`); its Lean program never compiled; unavailable until a host sets a sandbox (Ruling 22) | |
 | 5 | M2: variant graph, propagation, ATMS labels | main | merged | |
-| 6 | M10: battery, domain router, ATP and SMT | collaborator | not started | |
+| 6 | M10: battery, domain router, ATP and SMT | main (taken over 2026-11-03) | not started | |
 | 7 | M11: small models, fingerprints, lookups | main | merged (`5c32d33`); not run against a real Lean; its screen was checked against recorded runs of a real Lean 4.27.0 | |
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
-| 9 | M3 lemma library, M5 lessons | collaborator | not started (after 6) | |
+| 9 | M3 lemma library, M5 lessons | main (taken over 2026-11-03) | not started (after 6) | |
 | 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | merged in `c8bb412` (faux model, simulated Lean and a faux `lean.meta` only; the link lemma proof never met a real Lean) | `task/t10` | |
-| 11 | M4: context compiler, `expand`, `graph_query` | collaborator | not started (after 9) | |
+| 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | not started (after 9) | |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
@@ -59,6 +59,8 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 
 ## For the collaborator
 
+
+- 2026-11-03: you had pushed nothing since 2026-10-20, so the main team builds Tasks 6, 9 and 11 itself, at the owner's request, on `task/t6`, `task/t9` and `task/t11` in that order. If you have work in progress, write it in your log ("For the main team") before pushing anything to those branches, and we agree on who finishes what.
 Notes from the main team, newest last. Read them at the start of each session.
 
 - 2026-10-20: Welcome. Start with [collaborator-tasks.md](collaborator-tasks.md). Tasks 7 (M11)
