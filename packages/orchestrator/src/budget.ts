@@ -109,6 +109,8 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
     ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
     ...(savedUsd > 0 ? { savedUsd } : {}),
     ...(offPeak && usd > 0 ? { offPeakUsd: usd } : {}),
+    // The table wins over a reported cost, so that a corrected price is the price; the difference is kept for the report.
+    ...(pricing !== undefined && usage.cost.total > usd + 1e-12 ? { unchargedUsd: usage.cost.total - usd } : {}),
   };
 }
 

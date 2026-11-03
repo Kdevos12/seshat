@@ -64,6 +64,11 @@ export interface RunReport {
    */
   cache?: CacheReport;
   /**
+   * Where the dollars cannot be trusted (documentation/m0-loop.md, "Prices"): responses charged $0 for tokens, which no
+   * dollar budget sees, and the dollars pi-ai reported above the host's price table. Absent when there are none.
+   */
+  priceGaps?: { unpricedResponses: number; unpricedInputTokens: number; unchargedUsd: number };
+  /**
    * What the host's off-peak rate and `--offpeak` did: the dollars charged at the off-peak rate, and the waits for
    * off-peak hours (`turn.deferred`). Absent when there was neither.
    */
@@ -363,6 +368,15 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const cachedCharged = new Map<string, number>();
   // The same for the dollars charged at the off-peak rate, and the waits for off-peak hours.
   const offPeakCharged = new Map<string, number>();
+  // Responses charged $0 for tokens (a model with no price anywhere), and the dollars pi-ai reported above the host's table.
+  const gaps = { unpricedResponses: 0, unpricedInputTokens: 0, unchargedUsd: 0 };
+  const gap = (d: { usd: number; inputTokens: number; unchargedUsd?: number }) => {
+    if (d.usd === 0 && d.inputTokens > 0) {
+      gaps.unpricedResponses += 1;
+      gaps.unpricedInputTokens += d.inputTokens;
+    }
+    gaps.unchargedUsd += d.unchargedUsd ?? 0;
+  };
   let offPeakUsd = 0;
   const waits = { deferred: 0, ranAnyway: 0, waitedMinutes: 0 };
 
@@ -406,6 +420,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         charges.set(d.attemptId, sum);
         cachedCharged.set(d.attemptId, (cachedCharged.get(d.attemptId) ?? 0) + (d.cachedInputTokens ?? 0));
         offPeakCharged.set(d.attemptId, (offPeakCharged.get(d.attemptId) ?? 0) + (d.offPeakUsd ?? 0));
+        gap(d);
         break;
       }
       case "attempt.finished": {
@@ -433,6 +448,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         outputTokens += d.outputTokens;
         cachedInputTokens += d.cachedInputTokens ?? 0;
         offPeakUsd += d.offPeakUsd ?? 0;
+        gap(d);
         break;
       }
       case "turn.deferred": {
@@ -525,6 +541,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     outputTokens,
     cachedInputTokens,
     ...(cache !== undefined ? { cache } : {}),
+    ...(gaps.unpricedResponses > 0 || gaps.unchargedUsd > 0 ? { priceGaps: gaps } : {}),
     ...(offPeakUsd > 0 || waits.deferred > 0
       ? { offPeak: { usd: offPeakUsd, share: usd > 0 ? offPeakUsd / usd : 0, ...waits } }
       : {}),
@@ -569,6 +586,17 @@ function cacheParagraph(cache: CacheReport): string[] {
         ]
       : []),
   ];
+}
+
+function priceGapsParagraph(g: NonNullable<RunReport["priceGaps"]>): string {
+  return [
+    g.unpricedResponses > 0
+      ? `Warning: ${g.unpricedResponses} model response(s) (${g.unpricedInputTokens} input tokens) were charged $0 because their model has no price in the host profile or in pi-ai: no dollar budget saw them.`
+      : "",
+    g.unchargedUsd > 0 ? `The host's price table charged ${money(g.unchargedUsd)} less than the cost pi-ai reported for the same responses.` : "",
+  ]
+    .filter((text) => text !== "")
+    .join(" ");
 }
 
 function offPeakParagraph(o: OffPeakLine): string {
@@ -653,6 +681,7 @@ export function renderRunReport(report: RunReport): string {
       `${report.cachedInputTokens > 0 ? ` Cached input: ${report.cachedInputTokens} of the ${report.inputTokens} (${((report.cachedInputTokens / report.inputTokens) * 100).toFixed(0)}%).` : ""}`,
     ...(report.cache !== undefined ? cacheParagraph(report.cache) : []),
     ...(report.offPeak !== undefined ? [offPeakParagraph(report.offPeak)] : []),
+    ...(report.priceGaps !== undefined ? [priceGapsParagraph(report.priceGaps)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +

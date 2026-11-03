@@ -312,6 +312,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       ...(result.cost.cachedInputTokens !== undefined ? { cachedInputTokens: result.cost.cachedInputTokens } : {}),
       ...(result.cost.savedUsd !== undefined ? { savedUsd: result.cost.savedUsd } : {}),
       ...(result.cost.offPeakUsd !== undefined ? { offPeakUsd: result.cost.offPeakUsd } : {}),
+      ...(result.cost.unchargedUsd !== undefined ? { unchargedUsd: result.cost.unchargedUsd } : {}),
       carry: carry(),
     });
     if (o.lines === undefined) {

@@ -712,6 +712,7 @@ export function narrativeCall(o: {
         ...(cost.cachedInputTokens !== undefined ? { cachedInputTokens: cost.cachedInputTokens } : {}),
         ...(cost.savedUsd !== undefined ? { savedUsd: cost.savedUsd } : {}),
         ...(cost.offPeakUsd !== undefined ? { offPeakUsd: cost.offPeakUsd } : {}),
+        ...(cost.unchargedUsd !== undefined ? { unchargedUsd: cost.unchargedUsd } : {}),
       },
       "orchestrator",
     );

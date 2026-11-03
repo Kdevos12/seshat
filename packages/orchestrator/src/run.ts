@@ -636,6 +636,20 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
+  // A model with no price anywhere is charged $0, and no dollar cap can then stop it: refused when a dollar cap is
+  // given on purpose (--run-budget-usd, a turn's usd), and said in the log otherwise (the default per-problem budget
+  // is always there, and a free local model is legitimate).
+  for (const name of ranking.order) {
+    const slash = name.indexOf("/");
+    const known = slash > 0 ? o.models.getModel(name.slice(0, slash), name.slice(slash + 1)) : undefined;
+    if (known === undefined || !prices.isFree(known)) continue;
+    const capped = config.budget.runUsd !== undefined || config.consortium?.limit.usd !== undefined;
+    const advice = `give it a pricing entry in the host profile's models (documentation/m0-loop.md, "Prices")`;
+    if (capped && name === config.model) {
+      return await abandon(`${name} has no price in host ${registry.host.host} or in pi-ai, so it would be charged $0 and --run-budget-usd or the turn's usd limit could never stop it: ${advice}`, undefined, registry);
+    }
+    log(`warning: ${name} has no price in host ${registry.host.host} or in pi-ai: its responses are charged $0 and no dollar budget sees them; ${advice}`);
+  }
   const offpeak =
     config.offpeak === undefined
       ? undefined

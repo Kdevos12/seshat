@@ -306,6 +306,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     if (charge.cachedInputTokens !== undefined) cost.cachedInputTokens = (cost.cachedInputTokens ?? 0) + charge.cachedInputTokens;
     if (charge.savedUsd !== undefined) cost.savedUsd = (cost.savedUsd ?? 0) + charge.savedUsd;
     if (charge.offPeakUsd !== undefined) cost.offPeakUsd = (cost.offPeakUsd ?? 0) + charge.offPeakUsd;
+    if (charge.unchargedUsd !== undefined) cost.unchargedUsd = (cost.unchargedUsd ?? 0) + charge.unchargedUsd;
     o.ledger.charge(charge);
     o.onCharge?.(charge);
   });

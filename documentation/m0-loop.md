@@ -374,7 +374,14 @@ cross midnight), every other instant is off-peak and costs `offPeakMultiplier` t
 `offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
 (`RunOptions.wallClock`, a test's own). A charge also records `savedUsd`, the dollars the cache saved against reading
 those tokens at the miss price, and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
-read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). The prices are first estimates taken from the provider's
+read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). A model with no price anywhere (no `pricing` entry, and pi-ai's own prices for it are zero, as for a custom endpoint it
+knows nothing of) is charged $0, so no dollar budget can stop it. The run says so in its log at the start; it is
+refused when a dollar cap was asked for on purpose (`--run-budget-usd`, or a turn's usd limit) and the run's model is
+such a model; and the report warns with the number of responses charged $0 (`priceGaps`). The table is authoritative
+over the cost pi-ai reports, so that a corrected price is the price; the dollars pi-ai reported above the table are kept
+on the charge as `unchargedUsd` and shown in the report, so a table that is too low shows.
+
+The prices are first estimates taken from the provider's
 pages, checked on the first real run; nothing here has run against a real provider.
 
 `--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
