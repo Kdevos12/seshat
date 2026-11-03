@@ -1,5 +1,5 @@
 import { type Json } from "@seshat/core";
-import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader, statementProblem } from "@seshat/induction";
+import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader, statementProblem, estimateTokens, STEP_TOKENS, readCounterexamples, recordDrop } from "@seshat/induction";
 import { type Briefing, type FinishedAttempt, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { classifyFailure, type FailureClass, type MemoryStore } from "@seshat/memory";
 import { recognizeStatement } from "@seshat/models";
@@ -118,7 +118,20 @@ export function createM14(): Line {
       // the hypothesis's statement, and a statement that is not a recognized natural-number one gives an informal repair.
       const own = refuted.statement !== undefined ? recognizeStatement(refuted.statement) : undefined;
       const ownVariable = own !== undefined && "statement" in own && own.statement.kind === "nat" ? own.statement.variable : undefined;
-      const found = lakatosRepair({ table, verdicts: refuted.verdicts, informal: refuted.informal, ...(refuted.statement !== undefined && ownVariable !== undefined ? { statement: refuted.statement } : {}), variable: ownVariable ?? "n", minRetained: s.minRetained });
+      const base = { table, verdicts: refuted.verdicts, informal: refuted.informal, ...(refuted.statement !== undefined && ownVariable !== undefined ? { statement: refuted.statement } : {}), variable: ownVariable ?? "n", minRetained: s.minRetained };
+      // PD5: the counterexamples a checker found for this hypothesis are part of the proposer's input; the repair must bar all of them.
+      const known = readCounterexamples(memory, problem.claimId).filter((c) => c.refutes === refuted.hypothesis);
+      const rows = known.flatMap((c) => { const i = table.objectIds.indexOf(c.id); return i >= 0 ? [i] : []; });
+      const found = lakatosRepair({ ...base, alsoRefuted: rows });
+      if (rows.length > 0) {
+        // The repair the verdicts alone would have chosen: if the set rules it out, it is a candidate dropped before its step DAG was asked for.
+        const without = lakatosRepair(base).options[0];
+        if (without !== undefined && found.options[0]?.concept.text !== without.concept.text) {
+          const by = known[0] as (typeof known)[number];
+          recordDrop(memory, problem.claimId, { line: ACTOR, candidate: `repair/${refuted.hypothesis}/${without.concept.text}`, by, tokensSaved: without.statement === undefined ? STEP_TOKENS + estimateTokens(without.informal) : 0 });
+          problem.log(`M14: the repair "${without.concept.text}" of ${refuted.hypothesis} leaves a known counterexample (${by.id}, ${by.source}) in: dropped`);
+        }
+      }
       if (found.options.length === 0) {
         problem.log(`M14: ${refuted.hypothesis} has no repair: ${found.reason}`);
         continue;

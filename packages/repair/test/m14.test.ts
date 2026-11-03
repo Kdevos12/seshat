@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { LeanSnippet, ValidationReport } from "@seshat/core";
-import { buildTable, createM8, M8_OPTIONS, recordTable, REFUTED_HYPOTHESIS_KIND } from "@seshat/induction";
+import { admitCounterexample, buildTable, cegisCounter, createM8, readCounterexamples, M8_OPTIONS, recordTable, REFUTED_HYPOTHESIS_KIND } from "@seshat/induction";
 import type { FinishedAttempt, Line, ProblemContext, SessionContext } from "@seshat/lines";
 import { CapabilityError, type Registry } from "@seshat/registry";
 import { SimulatedDecide } from "../../models/test/simulated-lean.ts";
@@ -82,6 +82,25 @@ describe("the line M14: Lakatos repair of what the table refuted", () => {
     assert.match(claim.statement, /^\(m : ℕ\) \(h : m % 2 = 1\) \(h3 : 3 ≤ m\) \(h_repair : ¬ \(/);
     assert.doesNotMatch(claim.statement.split(":")[0] ?? "", /\bn\b/);
     assert.doesNotMatch(claim.statement.replace(/\(Nat\.divisors m\)/, ""), /\bn\b/);
+  });
+
+  it("bars every counterexample of the set, and counts the repair the verdicts alone would have chosen as dropped (PD5)", async () => {
+    const plain = await afterM8();
+    await hook(createM14(), "beforeProvers")(plain.problem);
+    const [before] = plain.memory.claims().filter((c) => c.origin === "line:M14");
+    const { memory, claimId, problem } = await afterM8();
+    // A checker shows that 2 refutes the hypothesis too (the table's verdict there says nothing).
+    admitCounterexample(memory, claimId, { object: 2, id: "2", source: "plausible", refutes: "odd_prime" });
+    admitCounterexample(memory, claimId, { object: 2, id: "2", source: "model", refutes: "odd_prime" });
+    assert.equal(readCounterexamples(memory, claimId).filter((c) => c.source === "plausible").length, 1);
+    await hook(createM14(), "beforeProvers")(problem);
+    const [after] = memory.claims().filter((c) => c.origin === "line:M14");
+    const counter = cegisCounter(memory, claimId);
+    assert.ok(before !== undefined);
+    assert.equal(after, undefined, "no concept bars 2 and keeps what held: no repair is made");
+    assert.equal(counter.dropped, 1, "the repair the verdicts alone chose was dropped, and counted");
+    assert.ok(counter.tokensSaved === 0, "it had a Lean statement: no model-priced step was skipped");
+    assert.ok(memory.claims().every((c) => c.status === "open"));
   });
 
   it("writes nothing twice when it runs again (resume)", async () => {

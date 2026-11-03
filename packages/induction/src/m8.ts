@@ -2,6 +2,7 @@ import { hashJson, hash32, type Json } from "@seshat/core";
 import { type Briefing, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { type Battery, type IntegerObject, integerBattery, lookupSequence, magmaBattery, type RecognizedStatement, recognizeStatement, recordIdentification, RegistryOeis, sageThroughRegistry } from "@seshat/models";
 import { RegistryLeanChecker } from "@seshat/registry";
+import { admitCounterexample, cegisCounter, describeCounterexamples, readCounterexamples, recordDrop, screenBySet, tokensSavedFor } from "./cegis.ts";
 import { defaultColumns } from "./columns.ts";
 import { type ColumnSpec, type DataTable, buildTable, invariantDependencies, numericColumns, recordTable, readTables } from "./datatable.ts";
 import { dalmatian, boundStatement, type LeanLeaf } from "./dalmatian.ts";
@@ -292,14 +293,25 @@ export function createM8(hooks: M8Hooks = {}): Line {
     for (let round = 1; round <= s.rounds; round++) {
       // What the run proved so far feeds the next round.
       for (const c of memory.claims({ statuses: ["proved", "computed"], kind: "formal" })) if (c.parentId === problem.claimId || c.origin === ACTOR) known.push(c.statement);
-      const proposed = await proposeHypotheses(problem.llm, { target: targetStatement, table, count: s.perRound, known: [...new Set(known)].slice(0, 20), round });
+      // PD5: the counterexamples checkers found so far go into the prompt, and every candidate meets them before it costs anything.
+      const set = readCounterexamples(memory, problem.claimId);
+      const proposed = await proposeHypotheses(problem.llm, { target: targetStatement, table, count: s.perRound, known: [...new Set(known)].slice(0, 20), round, ...(set.length > 0 ? { counterexamples: describeCounterexamples(set) } : {}) });
       for (const r of proposed.refused) problem.log(`M8: ${r}`);
-      const executed = await executeHypotheses(table, proposed.hypotheses, { totalMs: s.programMs }, problem.signal);
+      const screened = await screenBySet(proposed.hypotheses, set, { totalMs: s.programMs }, problem.signal);
+      for (const d of screened.dropped) {
+        // Would the table alone have stopped it? Only a candidate it lets through is a saving in the model-priced steps that follow.
+        const [alone] = await executeHypotheses(table, [d.hypothesis], { totalMs: s.programMs }, problem.signal);
+        const saved = alone !== undefined && alone.counterexamples.length === 0 ? tokensSavedFor(d.hypothesis, targetStatement) : 0;
+        recordDrop(memory, problem.claimId, { line: ACTOR, candidate: `${round}/${d.hypothesis.id}`, by: d.by, tokensSaved: saved });
+        problem.log(`M8: ${d.hypothesis.id} fails the known counterexample ${d.by.id} (${d.by.source}): dropped before any check`);
+      }
+      const executed = await executeHypotheses(table, screened.kept, { totalMs: s.programMs }, problem.signal);
       const properties = table.columns.map((c) => verdicts(table, c.name)).filter((v) => v.some((x) => x !== null));
       for (const e of executed) {
         const h: Hypothesis = e.hypothesis;
         if (e.counterexamples.length > 0) {
           problem.log(`M8: ${h.id} is refuted by ${e.counterexamples.length} object(s) of the table, e.g. ${table.objectIds[e.counterexamples[0] as number]}`);
+          for (const i of e.counterexamples.slice(0, 3)) admitCounterexample(memory, problem.claimId, { object: table.objects[i] as Json, id: table.objectIds[i] as string, source: "table_run", refutes: h.id });
           if (!memory.nodes(REFUTED_HYPOTHESIS_KIND, { claimId: problem.claimId }).some((n) => (n.data as unknown as RefutedHypothesis).hypothesis === h.id && (n.data as unknown as RefutedHypothesis).tableId === table.id)) {
             const verdicts = e.conclusion.map((c, i) => (c === null || (e.premise !== undefined && e.premise[i] !== true) ? "." : c ? "1" : "0")).join("");
             const data: RefutedHypothesis = { hypothesis: h.id, informal: h.informal, ...(h.statement !== undefined ? { statement: h.statement } : {}), tableId: table.id, counterexamples: e.counterexamples.slice(0, 20).map((i) => table.objectIds[i] as string), verdicts };
@@ -331,6 +343,7 @@ export function createM8(hooks: M8Hooks = {}): Line {
           const t = await testLemmas(checker, header, statement, s.testCases, { timeoutSec: s.leanTimeoutSec, signal: problem.signal });
           if (t.result === "failed") {
             problem.log(`M8: the test lemma refutes ${h.id} at case ${t.failedAt}`);
+            if (t.failedAt !== undefined) admitCounterexample(memory, problem.claimId, { object: t.failedAt, id: String(t.failedAt), source: "lean_decide", refutes: h.id });
             continue;
           }
         }
@@ -392,7 +405,8 @@ export function createM8(hooks: M8Hooks = {}): Line {
         data: { key, entries: entries.map((e) => ({ claimId: e.claimId, relevance: e.relevance, interest: e.interest })), kept: pruned.kept.map((e) => e.claimId), pruned: pruned.pruned.map((p) => ({ claimId: p.entry.claimId, reason: p.reason })) } as unknown as Json,
       });
     }
-    problem.log(`M8: ${entries.length} conjectures in the pool, ${pruned.kept.length} kept`);
+    const counter = cegisCounter(memory, problem.claimId);
+    problem.log(`M8: ${entries.length} conjectures in the pool, ${pruned.kept.length} kept${counter.dropped > 0 ? `; the counterexample set dropped ${counter.dropped} candidate(s), about ${counter.tokensSaved} tokens saved` : ""}`);
   }
 
   return {
