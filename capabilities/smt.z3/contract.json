@@ -1,0 +1,53 @@
+{
+  "capability": "smt.z3",
+  "cases": [
+    {
+      "name": "an unsatisfiable script",
+      "purpose": "unsat, with the names of the assertions in the core.",
+      "input": {
+        "smtlib": "(set-option :produce-unsat-cores true)\n(declare-const x Int)\n(assert (! (> x 0) :named a))\n(assert (! (< x 0) :named b))\n(assert (! (> x 5) :named c))\n(check-sat)\n(get-unsat-core)\n"
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "unsat"
+        },
+        {
+          "path": "core",
+          "length": 2
+        }
+      ]
+    },
+    {
+      "name": "a satisfiable script",
+      "purpose": "sat, with a model on request.",
+      "input": {
+        "smtlib": "(declare-const x Int)\n(assert (> x 3))\n(check-sat)\n",
+        "model": true
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "sat"
+        },
+        {
+          "path": "model",
+          "matches": "x"
+        }
+      ]
+    },
+    {
+      "name": "a malformed script",
+      "purpose": "an error, not a verdict.",
+      "input": {
+        "smtlib": "(assert (> x 3))\n(check-sat)\n"
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "error"
+        }
+      ]
+    }
+  ]
+}

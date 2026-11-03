@@ -1,0 +1,179 @@
+{
+  "id": "prove.search",
+  "version": 1,
+  "title": "Search for a proof goal by goal",
+  "when": [
+    "a goal that needs a few steps (intro, cases, a lemma, then a decision procedure) and where you can name candidate tactics or lemmas",
+    "trying many cheap tactics at every step of a proof, without writing the whole proof"
+  ],
+  "whenNot": [
+    "a goal one tactic closes: prove_auto is cheaper",
+    "the final proof: the search returns tactics; put them in your file and check it with lean_check"
+  ],
+  "exposure": "direct",
+  "produces": [],
+  "timeoutMs": 300000,
+  "summary": [
+    "solved",
+    "tried"
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "statement"
+    ],
+    "properties": {
+      "statement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000,
+        "description": "The goal in signature form"
+      },
+      "header": {
+        "type": "string",
+        "maxLength": 20000,
+        "description": "Imports, opens and definitions the statement needs; import Mathlib when not given"
+      },
+      "tactics": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "string"
+        },
+        "description": "Tactics you propose, best first; tried at every state in that order. Their ranking is yours: the search keeps it"
+      },
+      "lemmas": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "string"
+        },
+        "description": "Names of lemmas to try with exact and apply"
+      },
+      "nodes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500,
+        "description": "The most tactics to try, 60 when not given"
+      },
+      "maxDepth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 40,
+        "description": "The deepest state expanded, 12 when not given"
+      },
+      "timeoutSec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 280,
+        "description": "Seconds the whole search may take, 180 when not given; a tactic gets at most 20 s of it"
+      },
+      "alpha": {
+        "enum": [
+          0,
+          0.5,
+          1
+        ],
+        "description": "Length normalisation of the node score (score / depth^alpha); drawn from the seed when not given"
+      },
+      "seed": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Seeds the draw of alpha"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "solved",
+      "script",
+      "tried",
+      "alpha",
+      "trace"
+    ],
+    "properties": {
+      "solved": {
+        "type": "boolean"
+      },
+      "script": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "The tactics, one per line, each acting on the first goal"
+      },
+      "tried": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "alpha": {
+        "type": "number"
+      },
+      "trace": {
+        "type": "array",
+        "description": "The last tactics tried, with how each ended",
+        "items": {
+          "type": "object",
+          "required": [
+            "depth",
+            "tactic",
+            "outcome",
+            "source"
+          ],
+          "properties": {
+            "depth": {
+              "type": "integer"
+            },
+            "tactic": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "closed",
+                "progress",
+                "error",
+                "no progress"
+              ]
+            },
+            "source": {
+              "enum": [
+                "model",
+                "battery",
+                "library"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "implementations": [
+    {
+      "id": "pantograph",
+      "version": "0.3.13+search-1",
+      "kind": "inproc",
+      "factory": "prove-search",
+      "description": "Best-first search over Pantograph's goal states (the implementation of lean.goals, with the same settings), with the battery's tactics and the model's as candidates. Not run against a real Pantograph; measured against whole-proof sessions at equal dollars and removed if it loses (plan change PC6 item 3).",
+      "environment": {
+        "lean": "v4.27.0",
+        "pantograph": "v0.3.13",
+        "project": "google-deepmind/formal-conjectures@7a41db3d761324599812d6ca6cb6a9f311046dc7"
+      },
+      "settings": {
+        "command": "repl",
+        "args": [],
+        "modules": [
+          "Mathlib"
+        ],
+        "env": {}
+      }
+    }
+  ],
+  "description": {
+    "$file": "description.md"
+  }
+}

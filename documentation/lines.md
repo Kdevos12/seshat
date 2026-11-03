@@ -20,7 +20,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | Id | Adds | Package | State |
 |---|---|---|---|
 | `M1` | canonical identity and shared negative memory | `@seshat/memory` (the line is `packages/orchestrator/src/m1.ts`); the Lean identity will come from `@seshat/lean-meta` | built, with the text identity |
-| `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` | planned |
+| `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` ([classical.md](classical.md#the-line)) | built, not run against a real Lean, z3-checked translation only |
 | `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences ([models.md](models.md#the-line)) | `@seshat/models` | built, not run against Lean |
 | `M12` | saturation kernel and subgoal scheduler: given-clause loop, weighted proof numbers, subsumption through Lean-checked instances, named holes as claims worked by inner provers, the escalation ladder ([scheduler.md](scheduler.md)) | `@seshat/scheduler` | built, not run against Lean |
@@ -60,8 +60,7 @@ The plan's ablations are cumulative: each config adds one line to the one before
 every line before it in `LINE_ORDER` but the [suspended](#suspended-lines) ones. `M1` is M0 + M1;
 `M2` is M0 + M1 + M10 + M2; `M8` is every line up to M8 but M7. A suspended line stays in its own
 config, so `--ablation M7` and `--ablation M9` stop and say why. `harness run --ablation M2` runs
-that config, once all its lines are written: today it stops and names M10 as planned, and
-`--lines M1,M2` runs the two that are built.
+that config, once all its lines are written: `--ablation M2` runs M1, M10 and M2 as they are built.
 
 ## A line
 
