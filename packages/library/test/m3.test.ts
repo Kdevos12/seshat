@@ -245,4 +245,28 @@ describe("the line M3 in a run", () => {
     assert.match(lemma.gloss, /^Auxiliary lemma two_mul from /);
     assert.doesNotMatch(JSON.stringify(lemma), /Ignore|already proved/);
   });
+
+  it("does not count a pasted library lemma as used when the proof never calls it", { timeout: 60000 }, async () => {
+    let name = "";
+    const { events } = await demoRun({
+      lines: { M3 },
+      lean: lean(),
+      problems: 2,
+      certifier: certifier().certifier,
+      config: { lines: ["M3"], sessions: 1 },
+      responses: [
+        check("exact trivial_proof", ADD),
+        () => call("library_search", { query: "doubling two mul" }),
+        (context: TranscriptContext) => {
+          name = /aux_lib_two_mul_[0-9a-f]{6}/.exec(lastToolResult(context))?.[0] ?? "";
+          return check("exact trivial_proof", `theorem ${name} (n : ℕ) : 2 * n = n + n := by\n  exact trivial_proof\n`);
+        },
+        say("done"),
+      ],
+    });
+    assert.match(name, /^aux_lib_two_mul_/);
+    const report = libraryReport(events);
+    assert.equal(report?.proofs.total, 2);
+    assert.equal(report?.proofs.withLibrary, 0, "pasting is not using");
+  });
 });

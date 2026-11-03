@@ -131,6 +131,13 @@ sent through `lean.check`), and a lemma that does not is a bug in the journal's 
 header imports (`import FormalConjectures.Util.ProblemImports`) keeps that import, so its file compiles only in an
 environment that has it; promoting a lemma to a bare `import Mathlib` header is not done.
 
+### Measures and re-promotion
+
+A pasted library lemma names itself in its own `theorem` line; that is not a use, so the report's share counts a lemma only when the rest of
+the submission names it. A candidate whose lemma is already in the library with a `stale` proof is not a duplicate: a new proof that
+`validate` accepts replaces the stale one in the same entry. A candidate of a failed attempt (`fromFailed`) that holds a token the validator
+forbids is not read, since nothing has screened it.
+
 ### Glosses are screened
 
 A lemma's gloss and the docstring pasted with it come from the prover's own prose (or, for a declaration of the file, the bench's), which
