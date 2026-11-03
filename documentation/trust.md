@@ -112,6 +112,15 @@ directory: a problem is `proved` or `refuted` only by this run's own certificati
 of an earlier proof is the stored proof sent through `validate` in the new run. A status that came from
 another environment counts for nothing, and the journal refuses to cite its validations.
 
+## Definitions
+
+A definition that a coding agent wrote (the library builder, [library-builder.md](library-builder.md)) is
+`unreviewed`. A proof may use it, because the kernel checks the proof; a claim statement may not until the definition
+is `reviewed`, because Lean cannot say whether a definition means what its name says. Reviewing needs a proved test
+lemma and a person's signature or a faithfulness check by two checkers ([memory.md](memory.md#definitions-and-their-review-status)).
+A wrong definition is deprecated in a new environment version and never edited. Review is not a claim status and
+changes none.
+
 ## Edges
 
 Edges between claims have their own statuses:

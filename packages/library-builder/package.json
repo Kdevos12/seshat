@@ -1,0 +1,15 @@
+{
+  "name": "@seshat/library-builder",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The LibraryBuilder: an optional coding agent that ports packages and fills library gaps in a sandboxed worktree, behind Seshat's own gate (clean build, no sorry, axioms, test lemmas, confined diff).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lean-env": "workspace:*",
+    "@seshat/memory": "workspace:*"
+  }
+}
