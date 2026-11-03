@@ -2,7 +2,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalJson, hashJson, sha256Hex } from "@seshat/core";
+import { type Annotations, tagsByProblem, type TagKind, validateAnnotations } from "./annotations.ts";
 import { type ProblemEntry, scanCheckout } from "./formal-conjectures.ts";
+import { buildSequences, type Sequence } from "./sequences.ts";
 
 export interface BenchFilter {
   categories: string[];
@@ -62,6 +64,10 @@ export interface BenchIndex {
   filter: BenchFilter;
   counts: { theorems: number; selected: number; unreadable: number };
   problems: ProblemEntry[];
+  /** Sequences of related problems, for the lemma library (documentation/bench.md, "Sequences"). Absent in an index built before Task 14: `sequencesOf` computes them. */
+  sequences?: Sequence[];
+  /** The analogy and induction tags of a validated annotations file, by problem id. */
+  tags?: Record<string, TagKind[]>;
   /** sha256 of the canonical JSON of the index without `hash`. */
   hash: string;
 }
@@ -85,9 +91,13 @@ export function describeCheckout(root: string): BenchSource {
   return { repo, rev, ...(tag ? { tag } : {}), lean };
 }
 
-export function buildIndex(root: string, benchId: string, filter: BenchFilter = DISCRETE): BenchIndex & { errors: string[] } {
+export function buildIndex(root: string, benchId: string, filter: BenchFilter = DISCRETE, annotations?: Annotations): BenchIndex & { errors: string[] } {
   const { problems, errors } = scanCheckout(root);
   const selected = select(problems, filter);
+  if (annotations !== undefined) {
+    const wrong = validateAnnotations(annotations, selected);
+    if (wrong.length > 0) throw new Error(`the annotations do not fit the bench: ${wrong.join("; ")}`);
+  }
   const body = {
     v: 1 as const,
     benchId,
@@ -95,13 +105,15 @@ export function buildIndex(root: string, benchId: string, filter: BenchFilter = 
     filter,
     counts: { theorems: problems.length, selected: selected.length, unreadable: errors.length },
     problems: selected,
+    sequences: buildSequences(selected),
+    ...(annotations !== undefined ? { tags: tagsByProblem(annotations) } : {}),
   };
   return { ...body, hash: hashJson(body), errors };
 }
 
 export function writeIndex(path: string, index: BenchIndex): void {
-  const { v, benchId, source, filter, counts, problems, hash } = index;
-  writeFileSync(path, `${JSON.stringify(JSON.parse(canonicalJson({ v, benchId, source, filter, counts, problems, hash })), null, 1)}\n`);
+  const { v, benchId, source, filter, counts, problems, sequences, tags, hash } = index;
+  writeFileSync(path, `${JSON.stringify(JSON.parse(canonicalJson({ v, benchId, source, filter, counts, problems, ...(sequences !== undefined ? { sequences } : {}), ...(tags !== undefined ? { tags } : {}), hash })), null, 1)}\n`);
 }
 
 /** Reads an index and checks its hash, so that a bench cannot change without its id saying so. */
@@ -118,4 +130,9 @@ export function verifyProblemFile(root: string, problem: ProblemEntry, plainSour
   if (sha256Hex(plainSource) !== problem.fileHash) {
     throw new Error(`${problem.path} differs from the indexed file (checkout at another revision?) in ${root}`);
   }
+}
+
+/** The sequences of an index: the ones it holds, or those its problems make. */
+export function sequencesOf(index: BenchIndex): Sequence[] {
+  return index.sequences ?? buildSequences(index.problems);
 }
