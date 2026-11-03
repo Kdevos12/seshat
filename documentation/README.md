@@ -43,6 +43,7 @@ simulated model and a simulated Lean.
 | Line M17: the run's Lean environment is the line's (`extended` by default): registry built for it, the extra packages' imports in every file, a probe of the server, the run refused unless the environment is resolved | `@seshat/lean-env`, `@seshat/lines`, `@seshat/orchestrator` | Done, tested with a simulated Lean; not run against a real Lean, Lake or server |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
 | Typed decisions that order work (`decide`): the run's model by default, Jev by configuration, the forbidden list, the 32k refusal, `decision.made`, the interface for `prove.search`'s orderer, the fleet's cold start (`decide.ask`) | `@seshat/decide`, `capabilities/decide.ask`, `@seshat/core`, `@seshat/orchestrator` | Done, tested with a fake Jev server, the faux backend and a simulated model; never run against a real Jev, OpenRouter or TypeSafe; Task 6's orderer has no caller yet |
+| Installable packs: `pack.json`, tools at level 2 and skills, `harness add\|packs\|remove`, the `pack.installed` journal, the content hash a run records, the three-skill rule | `@seshat/registry`, `@seshat/core`, `@seshat/orchestrator` | Done, tested with temporary directories, a local git repository and the test MCP server; no third-party pack, no contract case run on a host, and no tool-search tool or skill caller reads the index yet |
 | Task ledger: tasks and their transitions, typed routing of failures and drift, model-call sites, `harness run --resume` | `@seshat/core`, `@seshat/scheduler`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean and with a process killed by SIGKILL; a run with M1, M2, M6, M11 or the fleet can be resumed, tested by cutting runs at every event of their journals; never run with a real model or Lean |
 
 None of this has run against a real Lean or a real model yet, because the development environment
@@ -97,6 +98,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   the settings, the tests.
 - [capabilities.md](capabilities.md): the capability registry, manifests, host profiles, MCP,
   scopes, contract tests, the `harness` command.
+- [packs.md](packs.md): installable packs of tools and skills: `pack.json`, what a pack may be, `harness add`,
+  `packs` and `remove`, level 2, the three-skill rule, the content hash a run records.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
   what it offers and refuses.
 - [bench.md](bench.md): the formal-conjectures bench and its index.
