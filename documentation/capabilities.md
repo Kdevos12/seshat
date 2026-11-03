@@ -396,7 +396,7 @@ Two tools for the provers, both `deferred` and proving nothing for the harness (
 return in its own file and checks it with `lean_check`). `prove.auto` (factory `prove-auto`) runs the
 battery of [classical.md](classical.md#the-battery) on a goal the model states, through `lean.check`;
 it returns the tactic that closed it and the router's domains. `prove.search` (factory `prove-search`)
-is the goal-level best-first search of [classical.md](classical.md#prove-search) through `lean.goals`:
+is the goal-level best-first search of [classical.md](classical.md#provesearch) through `lean.goals`:
 it returns the list of tactics, one per line. Neither has run against a real Lean.
 
 ## Contract tests
