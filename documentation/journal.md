@@ -67,6 +67,8 @@ Event types:
 | `ladder.escalated` | `problemId`, `from`, `to`, `lines`, `threshold`, `sinceProgressUsd`, `budgetUsd`, `reason` |
 | `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
 | `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
+| `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `programs`, `source` |
+| `pack.removed` | `name`, `version`, `hash` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a
 theorem's name and its `:=` (`(n : ℕ) : n + 0 = n`). Its `header` holds the imports, `open`s and
@@ -207,6 +209,8 @@ anywhere else is corruption, and the journal refuses to open.
   forbidden list, or a site off the list of [decide.md](decide.md#where-it-may-be-used)) or a question type the
   site does not ask, repeats a question the problem already holds, falls back with no reason, or has a
   distribution that is not over its labels, not from 0 to 1 or not summing to 1, or an answer outside them;
+- a pack event comes from another actor than the orchestrator, or has a name that is not lowercase letters, digits and
+  hyphens, no version, or a hash that is not a sha256 ([packs.md](packs.md)); a pack event touches no claim;
 - a claim status or an edge cites a validation of an earlier run recorded in another Lean environment:
   such a validation counts for nothing here ([memory.md](memory.md#memory-across-runs)).
 
