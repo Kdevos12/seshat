@@ -68,8 +68,10 @@ A library lemma carries no provenance stamp: it is a Lean fact, independent of t
 At the start of each problem (`beforeProvers`) every lemma whose claim is not `open` and whose `checkedRev`
 (its `mathlibRev` before the first check) is not the run's Mathlib revision is compiled again as a file of its own
 through `lean.check`: its imports, then its text. One that no longer compiles is marked `stale` and not offered; the node
-and the claim stay in the journal. Lean not answering leaves it for the next problem. At most `maxRecheck` (50) are
-compiled in a call. The revision is the bench's, the plan's stand-in for Mathlib's: updating the bench checkout makes
+and the claim stay in the journal. The library fails closed: a lemma is offered only once it was compiled under the run's
+revision, so a lemma that Lean did not answer for (an error, a timeout, Lean down: the hook logs it and does not throw), or that
+is past the limit of `maxRecheck` (50) lemmas a call, is withheld until a later call compiles it. With `recheck` off, a lemma
+of another revision is never offered. The revision is the bench's, the plan's stand-in for Mathlib's: updating the bench checkout makes
 every lemma due, whether or not Mathlib changed (the same limit as the epochs: [memory.md](memory.md#memory-across-runs)).
 This is plan change PE1.
 

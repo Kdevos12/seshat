@@ -135,14 +135,25 @@ export function allLemmas(memory: MemoryStore): LibraryLemma[] {
   });
 }
 
-/** Whether a lemma can be offered: its claim passed a Lean check in this run's environment and it still compiles. */
-export function isUsable(lemma: LibraryLemma): boolean {
+/**
+ * Whether a lemma can be offered: its claim passed a Lean check in this run's environment, it still compiles, and (given the
+ * run's Mathlib revision) it was compiled under that revision. A lemma that was not compiled again under a new revision is not
+ * offered: the library fails closed (review I6).
+ */
+export function isUsable(lemma: LibraryLemma, rev?: string): boolean {
+  if (rev !== undefined && (lemma.checkedRev ?? lemma.mathlibRev) !== rev) return false;
   return (lemma.claimStatus === "computed" || lemma.claimStatus === "proved") && lemma.stale !== true;
+}
+
+/** The Mathlib revision the memory's run stamps its records with; undefined for a store with no provenance context. */
+export function currentRevision(memory: MemoryStore): string | undefined {
+  return memory.provenanceContext?.mathlibRev;
 }
 
 /** The lemmas a session can be offered. A claim reset by another Lean environment is `open`, so its lemma is not here. */
 export function usableLemmas(memory: MemoryStore): LibraryLemma[] {
-  return allLemmas(memory).filter(isUsable);
+  const rev = currentRevision(memory);
+  return allLemmas(memory).filter((l) => isUsable(l, rev));
 }
 
 export interface Candidate extends CandidateData {
