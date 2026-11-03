@@ -714,6 +714,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       thinkingLevel: config.thinkingLevel,
       log,
       seed: config.seed ?? runId,
+      ...(config.consortium !== undefined ? { human: true } : {}),
       ranking,
       decide: resolveDecideSettings(config.decide),
       prices,

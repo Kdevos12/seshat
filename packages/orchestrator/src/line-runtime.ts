@@ -85,6 +85,8 @@ export interface RunLinesOptions {
   turn?: Turn;
   /** Seeds the draws of unverified items (`SessionContext.draw`). Default: the run's id, so that each run draws differently. */
   seed?: string | number;
+  /** True in a consortium run; the lines read it as `ProblemContext.human`. */
+  human?: boolean;
   /** The run's models, weakest first, and its budget class; the lines read it as `ProblemContext.ranking`. */
   ranking?: ModelRanking;
   /** The `decide` configuration (documentation/decide.md). Default: the run's model at every site. */
@@ -322,6 +324,7 @@ export class ProblemLines {
       signal: own,
       options: entry.options,
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
+      ...(o.human === true ? { human: true } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
       ...(o.prices?.describesIgnores === true
         ? { ignoresSetting: (model: string, setting: string, thinking?: string) => o.prices?.ignores(model, setting, thinking ?? o.thinkingLevel) ?? false }

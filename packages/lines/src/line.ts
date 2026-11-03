@@ -301,6 +301,12 @@ export interface ProblemContext {
   signal: AbortSignal;
   /** The line's options: its defaults with the run's values over them. */
   options: Readonly<JsonObject>;
+  /**
+   * True in a consortium run (`--human`, or any turn limit): a research team answers the account of each turn
+   * (documentation/human.md). A line that would change what every later run sees (M5's promotion of a lesson to
+   * the global scope) stages the change for the team's approval. Absent: an ordinary run.
+   */
+  human?: boolean;
   /** The run's seed: what a line's draws are seeded with (a number or a text; the run's id when the run was given none). */
   seed?: string | number;
   /**

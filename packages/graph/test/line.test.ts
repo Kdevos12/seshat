@@ -316,6 +316,24 @@ describe("the line M2 in a run", () => {
     assert.deepEqual(ofType(events, "attempt.finished").map((e) => typeof e.data.strategy), ["string", "string"]);
   });
 
+  it("records a dead end as an obstruction when the refutation side proves nothing", { timeout: 30000 }, async () => {
+    const { line, seen } = watched();
+    const router = async (context: TranscriptContext) => {
+      if (isTwin(context)) return say(lean("bad"));
+      const memory = seen.memory as MemoryStore;
+      await until(() => memory.nodes("twin", { claimId: seen.claimId as string }).some((n) => (n.data as { end?: string }).end === "exhausted"), "the refutation side to end");
+      return say("I will stop here.");
+    };
+    const { events } = await demoRun({
+      lines: { M2: line },
+      config: { lines: ["M2"], provers: 1, sessions: 1, lineOptions: { M2: { twinTries: 1 } } },
+      lean: new DemoLean(toyAnswer),
+      responses: Array.from({ length: 4 }, () => router),
+    });
+    assert.deepEqual(nodes(events, "twin").map((n) => [n.checked, n.end, n.tries]), [[true, "exhausted", 1]]);
+    assert.deepEqual(nodes(events, "obstruction").map((n) => [n.reason, n.source, n.summary]), [["nogood", "line:M2", "nogood: the refutation side spent its model calls on the negation and Lean accepted none"]]);
+  });
+
   it("can leave out the twin, the tool and the propagation", { timeout: 30000 }, async () => {
     const openings: string[] = [];
     const { result, events, lean: engine } = await demoRun({

@@ -176,6 +176,29 @@ store, and edited by nobody (the journal refuses a `node.updated` of a hint or a
 nodes with `disagreement: true` (two informal validators that disagree), `obstruction` and `conjecture`
 (with `evidence`) nodes, and counts the kinds it does not know ([human.md](human.md)).
 
+### Obstructions
+
+An `obstruction` node (plan change PC3) is a typed record of why an approach cannot work on a claim.
+It is written by `memory.recordObstruction({claimId, reason, detail, strategy?})` and read back by
+`memory.obstructions(claimId, {includeEquivalents?})`; the store owns the kind, so that M1, M2, M5, M11
+and the research team's account read one shape.
+
+| Reason | Meaning | Recorded by |
+|---|---|---|
+| `counterexample` | The statement fails on an object (a counter-model, a number). A tool found it; nothing is refuted until the negation passes Lean. | M11, with each counter-model |
+| `refuted_premise` | A premise the approach needs is false. | none yet |
+| `nogood` | An approach that was tried and cannot work (a strategy that failed in a way that recurs, a refutation side that proved nothing). | M2, when its refutation side is exhausted |
+| `statement_mismatch` | The statement is not the one meant. | none yet |
+
+`data` is `{reason, detail, strategy?, source, summary}`: `detail` is one line (white space collapsed, at
+most 300 characters), `source` the actor that wrote it, `summary` the line the account shows. The same
+obstruction (claim, reason, strategy, detail) is recorded once. An obstruction changes no status. M1's
+An obstruction is a learned record (Global Constraint 16): when the store has a provenance context it is stamped and has an epoch, so one recorded
+in an earlier epoch is in probation and its line says "[earlier epoch: may be out of date]". A `nogood` is a heuristic, not something Lean evaluated, so
+its line reads "tried, found nothing" and not as a fact.
+"already tried" section shows one line per obstruction after its attempts
+([m1-identity-memory.md](m1-identity-memory.md#already-tried)).
+
 ## Queries
 
 | Query | Gives |
@@ -341,6 +364,14 @@ outcomes of the current epoch make it up; in the current epoch an observation is
 The presence counter that this replaces stays where it is, for comparison. The causal rule is measured
 against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
 real model.
+
+## Screening stored prose
+
+`screenProse(text, {max})` is the strict screen for prose that a mechanism stores and later shows to a prover: a lemma's gloss (M3), a
+lesson's text (M5). It returns the text on one line, cut at a word to `max`, or the reason it was refused: control characters, a link or
+address, code (backticks, `:=`, `--`, comment marks, brackets), a Lean token the validator forbids (`forbiddenTokensIn`), something that
+looks like a declaration name (`Nat.add_comm`, `snake_case`), or a phrase that reads as an instruction. Prose a model or a Lean message
+wrote is unverified (Global Constraint 16); the screen keeps it to plain words.
 
 ## Memory across runs
 

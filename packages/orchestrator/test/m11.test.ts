@@ -153,6 +153,7 @@ describe("line M11 in a run", () => {
       ["line:M11", "battery", undefined],
       ["line:M11", "fingerprint", claimId],
       ["line:M11", "counter_model", claimId],
+      ["line:M11", "obstruction", claimId],
     ]);
     const fingerprint = nodes[1]?.data.data as { battery: string; evaluator: string; counts: { fails: number }; verdicts: string };
     assert.deepEqual([fingerprint.battery, fingerprint.evaluator, fingerprint.verdicts.length], ["magmas:3+4x120@1", "law", 3461]);
@@ -227,13 +228,14 @@ describe("line M11 in a run", () => {
     assert.equal(leanRuns.length, 4);
 
     const nodes = ofType(events, "node.recorded");
-    assert.deepEqual(nodes.map((n) => n.data.kind), ["battery", "fingerprint", "counter_model", "identification"]);
+    assert.deepEqual(nodes.map((n) => n.data.kind), ["battery", "fingerprint", "counter_model", "obstruction", "identification"]);
     const fingerprint = nodes[1]?.data.data as { battery: string; evaluator: string; counts: { holds: number; fails: number; unknown: number } };
     assert.deepEqual([fingerprint.battery, fingerprint.evaluator, fingerprint.counts], ["integers:0..100", "lean", { holds: 75, fails: 26, unknown: 0 }]);
     assert.deepEqual((nodes[2]?.data.data as { object: unknown }).object, { kind: "integer", value: 50 });
 
     // The numbers where it holds start with 0, 1, 2, ... in a row, which says nothing; those where it fails are the even numbers from 50.
-    const identification = nodes[3]?.data.data as { subject: string; strength: string; matches: Array<{ id: string; source: string; offset: number; start: number; next: string[] }> };
+    assert.equal((nodes[3]?.data.data as { reason: string }).reason, "counterexample");
+    const identification = nodes[4]?.data.data as { subject: string; strength: string; matches: Array<{ id: string; source: string; offset: number; start: number; next: string[] }> };
     assert.equal(identification.subject, "the numbers from 0 to 100 where the statement fails");
     assert.equal(identification.strength, "strong");
     assert.deepEqual(identification.matches[0], {

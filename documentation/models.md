@@ -360,7 +360,8 @@ The package writes four kinds of nodes ([memory.md](memory.md#nodes)); other pac
 
 A fingerprint with a `0` is a counter-model, and never a refutation. `recordCounterModel` writes
 the `counter_model` node and a `refuted_by` edge from the claim to it, `computed`: an object was
-found by a tool, and nothing is proved. The refutation is a Lean proof of the claim's negation,
+found by a tool, and nothing is proved. The line also records a `counterexample` obstruction, one line that
+M1's "already tried" shows ([memory.md](memory.md#obstructions)). The refutation is a Lean proof of the claim's negation,
 submitted through `validate({claimId, negation: true, ...})` ([lines.md](lines.md#validate)). The
 validator asks for `¬ (type_of% @claim)`, and `negationProofs` writes the proof from the object:
 
