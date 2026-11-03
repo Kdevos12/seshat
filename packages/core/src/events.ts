@@ -55,6 +55,11 @@ export interface TokenCost {
    * Absent when none were, which is every charge of a host with no pricing calendar.
    */
   offPeakUsd?: number;
+  /**
+   * The dollars by which the cost pi-ai reported for this response exceeds what the host's price table charged: the
+   * table is authoritative (documentation/m0-loop.md, "Prices"), and the report shows how much it left out. Absent otherwise.
+   */
+  unchargedUsd?: number;
 }
 
 /**

@@ -32,6 +32,14 @@ export class PriceBook {
     return this.models[`${model.provider}/${model.id}`]?.pricing;
   }
 
+  /**
+   * Whether charges for the model named `provider/id` come to $0 whatever it does: the host gives it no price, and
+   * pi-ai's own prices for it are zero (a custom endpoint it knows nothing of). Such a model is invisible to every dollar budget.
+   */
+  isFree(model: Pick<Model<Api>, "provider" | "id" | "cost">): boolean {
+    return this.pricingOf(model) === undefined && !(model.cost.input > 0 || model.cost.output > 0);
+  }
+
   /** The calendar of a model `provider/id`, or undefined when the host gives it no prices or no calendar. */
   calendarOf(name: string): PricingCalendar | undefined {
     return this.models[name]?.pricing?.calendar;

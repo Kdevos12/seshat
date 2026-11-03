@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { type HostProfile, isPeak, nextOffPeak, parseHostProfile, type PricingCalendar, priceUsage } from "@seshat/registry";
 import { PriceBook } from "../src/prices.ts";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { buildReport, renderRunReport, RunSetupError } from "../src/index.ts";
+import { messageCost } from "../src/budget.ts";
 import { check, demoRun, ofType, pricedRegistry } from "./m0-helpers.ts";
 
 // Made-up numbers: peak 01:00-04:00 and 06:00-10:00 UTC on weekdays, half price otherwise, one holiday.
@@ -126,5 +129,33 @@ describe("the fleet and the settings a model family ignores", () => {
     });
     const settings = ofType(events, "attempt.started")[0]?.data.settings;
     assert.ok(settings?.temperature === 0.3 || settings?.temperature === 0.9);
+  });
+});
+
+describe("a model that no price covers", () => {
+  it("is refused when a dollar cap is given on purpose, since the cap could never fire", async () => {
+    await assert.rejects(
+      demoRun({ responses: [], pricePerMillion: 0, config: { budget: { problemUsd: 5, runUsd: 10 } } }),
+      (error: unknown) => error instanceof RunSetupError && /no price in host test or in pi-ai, so it would be charged \$0/.test(error.message),
+    );
+  });
+
+  it("is said in the log and in the report when no dollar cap was asked for, and a priced one is not", async () => {
+    const lines: string[] = [];
+    const free = await demoRun({ responses: [check("exact trivial_proof")], pricePerMillion: 0, log: (line) => lines.push(line) });
+    assert.ok(lines.some((line) => /warning: faux\/prover has no price/.test(line)));
+    const report = buildReport(free.events);
+    assert.ok((report.priceGaps?.unpricedResponses ?? 0) > 0);
+    assert.match(renderRunReport(report), /Warning: \d+ model response\(s\) .* were charged \$0/);
+    const tabled = await demoRun({ responses: [check("exact trivial_proof")], pricePerMillion: 0, registry: pricedRegistry({ "faux/prover": { pricing: PRICING } }), config: { budget: { problemUsd: 5, runUsd: 10 } } });
+    assert.equal(buildReport(tabled.events).priceGaps, undefined, "a table prices it");
+  });
+
+  it("charges the table and records what pi-ai reported above it", () => {
+    const model = { provider: "p", id: "m", cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 } } as unknown as Model<"openai-completions">;
+    const message = { usage: { input: 1000, output: 1000, cacheRead: 0, cacheWrite: 0, totalTokens: 2000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } } } as unknown as AssistantMessage;
+    const cost = messageCost(model, message, new PriceBook({ "p/m": { pricing: { cacheHit: 0, cacheMiss: 1, output: 1 } } }, () => 0));
+    assert.ok(Math.abs(cost.usd - 0.002) < 1e-12, "the table is the price");
+    assert.ok(Math.abs((cost.unchargedUsd ?? 0) - 0.498) < 1e-12);
   });
 });
