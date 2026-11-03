@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 17:30 UTC. `main` at 544f704, 2059 tests.
+Updated 2026-11-03 22:30 UTC. `main` at 3f16b4c, 2238 tests.
 
 ## Tasks
 
@@ -24,20 +24,20 @@ Updated 2026-11-03 17:30 UTC. `main` at 544f704, 2059 tests.
 | 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | merged | `task/t11` | `544f704` |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
-| 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
+| 14 | Integration, `harness ablate`, entrenchment probe | main | implementing | `task/t14` | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
-| 18 | M15: diversity archive, schemas | main | implementing | `task/t18` | |
+| 18 | M15: diversity archive, schemas | main | merged | `task/t18` | `f37801e` |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | merged in `b67c84d` (faux model and simulated Lean only; the numbers are first guesses) | `task/t19` |
 | 20 | `decide`, optional Jev backend | main | merged in `62ed6fa` (fake server and faux backend only; Jev's request and response shapes are guessed) | `task/t20` | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
-| 22 | `LibraryBuilder`, review status of definitions | main | implementing | `task/t22` | |
+| 22 | `LibraryBuilder`, review status of definitions | main | merged | `task/t22` | `3f16b4c` |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | merged | `task/t25` | `f6363b6` |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
-| 27 | Installable packs: tools and skills (PD7) | main | implementing | `task/t27` | |
+| 27 | Installable packs: tools and skills (PD7) | main | merged | `task/t27` | `50f0792` |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
@@ -299,6 +299,17 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   uncut run); `@seshat/context` depends on `@seshat/classical`. `contextPacket` replaces the opening
   message; the other lines' briefing sections are kept in the prefix as screened "Notes from other
   lines".
+- Tasks 27, 18 and 22, merged 2026-11-03 (`50f0792`, `f37801e`, `3f16b4c`). Task 27: events
+  `pack.installed` and `pack.removed` in `@seshat/core` (a pack journal), `openRegistry({packsDir})`,
+  `registry.hash` includes pack hashes only when packs exist, `run.started.config.packs`, report field
+  `packs`, commands `harness add|packs|remove` (`--allow-programs`, `--level1`), pack tool names
+  `pack_<name>_<tool>`. Task 18: line `M15` after `M3` in `LINE_ORDER`, `RunReport.archive`, the
+  scheduler depends on `@seshat/library`. Task 22: package `@seshat/library-builder`, the definitions
+  registry `library/registry` copied into each run's journal (`--library-registry`), commands
+  `harness library build|gaps|definitions|review|deprecate`, `CommandRunner` gains `env` and `group`,
+  `hashDirectory`'s skip list is exported from `lean-env`, `RunOptions.libraryRegistry`, review status
+  of definitions in `@seshat/memory` (`ensureClaim` refuses a statement that mentions an unreviewed
+  definition).
 
 ## Log
 
@@ -617,3 +628,10 @@ Task 9: merged: task/t9 merged into main 9e762b7 (--no-ff; 2001/2001), pushed; n
 Task 11: taken over by the main team; implementer done (2 commits, 2047/2047); review round 1: Critical C1 (a model-supplied graph_query pattern compiled to a regex that hung the process: now token-wise with a step counter and caps); Important I1 (carry kept only in process), I2 (the other lines' briefing sections were dropped), I3 and I7 (unscreened library proof text and unbounded tool arguments), I4 (computed shown like proved), I5 (a withdrawn claim stayed in the frozen prefix), I6 (the token budget was not a bound); eight Minor, most fixed
 Task 11: merged: task/t11 merged into main 544f704 (--no-ff; 2059/2059), pushed; not run against a real Lean, model or Mathlib export; deferred to the final review: the tail keeps a 300-token floor, screenLean is weak on string literals, no measurement that the packet beats plain history (Task 14), tree-similarity channel, LeanHammer capability and ATMS labels not built
 Tasks 18, 22 and 27: implementers dispatched (worktrees wt/t18, wt/t22, wt/t27 from main 544f704)
+Task 27: implementer done (3 commits, 2088/2088); review round 1: Critical C1 (a pack could read the harness's environment variables through ${env:NAME} in its server spec); Important I1 (integrity checked once at open), I2 (pack journal chain unverified), I3 (third-party text unscreened, a pack's level-1 request granted itself), I4 (pack tool names not namespaced), I5 (git clone not hardened, credentials in the journaled source); minors fixed or documented
+Task 27: merged: task/t27 merged into main 50f0792 (--no-ff; 2098/2098), pushed; no third-party pack, no https or ssh clone, no network exercised; deferred to the final review: tool_search and codemode do not exist yet so toolIndex has no caller, nothing calls selectSkills in a session, a git clone has no size cap beyond its timeout, file modes are not in the content hash, a truncated pack-journal tail passes the chain check
+Task 18: implementer done (2 commits, 2108/2108); review round 1: no Critical; Important I1 (schemas could come from decompositions closed only by computed leaves), I2 (stored schema text shown unscreened); six Minor fixed or recorded
+Task 18: merged: task/t18 merged into main f37801e (--no-ff; 2154/2154), pushed; not run against a real Lean, model or lean.meta; deferred to the final review: schemas are lexical and shallow, readArchive is not memoised
+Task 22: implementer done (3 commits, 2122/2122); review round 1: Critical C1 (declarations behind open-in and set_option-in were never certified or recorded; decide +native passed), C2 (a statement using !isGood escaped the unreviewed-definition guard), C3 (the gate built with the harness's whole environment and ran a port's meta code before any approver); Important I1 to I6 (definitions never reached a run, instances and constructors unseen, test lemmas elaborated in the agent's environment, adoption hash gaps, unscreened port files, process handling); minors mostly fixed
+Task 22: merged: task/t22 merged into main 3f16b4c (--no-ff; 2238/2238), pushed; nothing real has run (fake agent, fake lake, fake certifier, no sandbox shipped); deferred to the final review: a second independent review of the fixes (security-sensitive), instances of an unreviewed class are not caught by the name check, no overall budget across gaps, network isolation only as far as the sandbox gives it
+Task 14: implementer dispatched (worktree wt/t14 from main f37801e)
