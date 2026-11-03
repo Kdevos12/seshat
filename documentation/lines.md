@@ -28,7 +28,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M4` | context compiler | `@seshat/context` | planned |
 | `M6` | guards against hallucination, and drift detectors | `@seshat/guards` ([guards.md](guards.md)) | built; the near-equivalence and declaration predicates are injected until the Lean meta tool |
 | `fleet` | fleet policy: Thompson sampling on verdicts | `@seshat/fleet` ([fleet.md](fleet.md)) | built; a subgoal is the claim until a line gives sessions another |
-| `M3` | growing lemma library | `@seshat/library` | planned |
+| `M3` | growing lemma library: proved auxiliary lemmas promoted when non-trivial and general, BM25 index, `library_search`, a drawn briefing section ([library.md](library.md)) | `@seshat/library` | built, not run against Lean or a model |
 | `M7` | abductive engine, with direct reranking by a model | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M8` | inductive engine: data tables, classical conjecturing, executable hypotheses, the conjecture pool ([induction.md](induction.md#line-m8)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
 | `M16` | program search for subgoals that carry a computable score (FunSearch-style islands, rung 2 of the ladder) ([induction.md](induction.md#program-search-line-m16)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
@@ -518,7 +518,7 @@ position each real line takes on resuming, and `resume-lines.test.ts` resumes wh
 M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
 M1, M2, M6 and the fleet together at every event.
 
-M1, M2, M11, M12, M18, M6 and the fleet are the lines built. M2 has its own tests
+M1, M2, M11, M12, M18, M3, M6 and the fleet are the lines built (M3: [library.md](library.md#tested-and-not-yet)). M2 has its own tests
 ([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m12.test.ts` and `resume-m12.test.ts` run M12 ([scheduler.md](scheduler.md#tests-and-what-has-not-run)); `m18.test.ts` and `resume-m18.test.ts` run M18 ([curriculum.md](curriculum.md#tests-and-what-has-not-run)). `packages/orchestrator/test/m11.test.ts` runs M11 in
 `runBench` with the simulated model and Lean, a refutation through `validate` and a node and edge of
 each kind it writes included ([models.md](models.md#the-line)). Nothing here has run against a real

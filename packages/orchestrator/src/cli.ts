@@ -14,6 +14,7 @@ import { CapabilityError, CatalogError, messageOf, runContract, type Registry } 
 import { renderHealth } from "./health.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
+import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
@@ -41,9 +42,12 @@ const usage = `usage:
   harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
   harness steer RUN_DIR [--focus CLAIM] [--drop CLAIM] [--forbid STRATEGY [--claim CLAIM]]
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
+  harness library export RUN_DIR [--out DIR]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+library export: writes the lemma library of a run as lean/SeshatLib/<Domain>.lean (documentation/library.md), generated from
+the journal and not compiled here; --out DIR changes the directory the SeshatLib folder goes under.
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
 lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
@@ -151,6 +155,7 @@ async function main(): Promise<number> {
     if (command === "hint") return hint();
     if (command === "sign") return sign();
     if (command === "steer") return steer();
+    if (command === "library") return libraryCommand();
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(`${error.message}\n\n${usage}`);
@@ -348,6 +353,14 @@ function decideFlags(): DecideSettings | undefined {
   const problems = checkDecideSettings(settings);
   if (problems.length > 0) throw new UsageError(problems.join("; "));
   return settings;
+}
+
+/** `harness library export RUN_DIR [--out DIR]`. */
+function libraryCommand(): number {
+  if (target !== "export") throw new UsageError("library takes a subcommand: export RUN_DIR");
+  if (third === undefined) throw new UsageError("library export needs a run directory");
+  libraryExportCommand(third, { out: values.out, print: (line) => console.log(line) });
+  return 0;
 }
 
 /** `harness hint RUN_DIR --claim ID "text"`. */
