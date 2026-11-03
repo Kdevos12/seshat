@@ -193,6 +193,9 @@ and the research team's account read one shape.
 `data` is `{reason, detail, strategy?, source, summary}`: `detail` is one line (white space collapsed, at
 most 300 characters), `source` the actor that wrote it, `summary` the line the account shows. The same
 obstruction (claim, reason, strategy, detail) is recorded once. An obstruction changes no status. M1's
+An obstruction is a learned record (Global Constraint 16): when the store has a provenance context it is stamped and has an epoch, so one recorded
+in an earlier epoch is in probation and its line says "[earlier epoch: may be out of date]". A `nogood` is a heuristic, not something Lean evaluated, so
+its line reads "tried, found nothing" and not as a fact.
 "already tried" section shows one line per obstruction after its attempts
 ([m1-identity-memory.md](m1-identity-memory.md#already-tried)).
 

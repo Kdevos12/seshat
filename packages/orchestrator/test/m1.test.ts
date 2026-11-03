@@ -205,8 +205,8 @@ describe("M1 in a run", () => {
       ],
     });
     // Without any attempt yet the section is the obstructions alone; later it follows the attempts.
-    assert.match(prompts[0] ?? "", /# Already tried\nWhy some approaches cannot work here .*:\ncounterexample: the statement fails on n = 7\nnogood \(induction\): the successor case stays open/);
-    assert.match(prompts[1] ?? "", /induction: 1 attempt, unsolved goals at case succ\nWhy some approaches cannot work here/);
+    assert.match(prompts[0] ?? "", /# Already tried\nWhat the harness's tools found out about this claim:\ncounterexample: the statement fails on n = 7\ntried, found nothing \(induction\): the successor case stays open/);
+    assert.match(prompts[1] ?? "", /induction: 1 attempt, unsolved goals at case succ\nWhat the harness's tools found out about this claim/);
   });
 
   it("drops the section at 0 lines, and labels the attempts all the same", async () => {

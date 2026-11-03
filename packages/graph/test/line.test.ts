@@ -331,7 +331,7 @@ describe("the line M2 in a run", () => {
       responses: Array.from({ length: 4 }, () => router),
     });
     assert.deepEqual(nodes(events, "twin").map((n) => [n.checked, n.end, n.tries]), [[true, "exhausted", 1]]);
-    assert.deepEqual(nodes(events, "obstruction").map((n) => [n.reason, n.source, n.summary]), [["nogood", "line:M2", "nogood: the refutation side made 1 model call to prove the negation and Lean accepted none"]]);
+    assert.deepEqual(nodes(events, "obstruction").map((n) => [n.reason, n.source, n.summary]), [["nogood", "line:M2", "nogood: the refutation side spent its model calls on the negation and Lean accepted none"]]);
   });
 
   it("can leave out the twin, the tool and the propagation", { timeout: 30000 }, async () => {

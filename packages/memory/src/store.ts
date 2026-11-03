@@ -702,7 +702,9 @@ export class MemoryStore {
       source: this.actor,
       summary: `${input.reason.replace(/_/g, " ")}${input.strategy !== undefined ? ` (${input.strategy})` : ""}: ${detail}`,
     };
-    const node = this.recordNode({ kind: OBSTRUCTION_KIND, claimId: input.claimId, data: data as unknown as Json });
+    // An unverified record of what a tool found: stamped with the run's provenance when the store has one, so that it has an epoch
+    // and goes into probation like any learned record (Global Constraint 16).
+    const node = this.recordNode({ kind: OBSTRUCTION_KIND, claimId: input.claimId, data: data as unknown as Json, learned: this.#provenance !== undefined });
     return { obstruction: this.obstructions(input.claimId).find((o) => o.nodeId === node.nodeId) as Obstruction, created: true };
   }
 
@@ -712,6 +714,7 @@ export class MemoryStore {
    */
   obstructions(claimId: string, options: { includeEquivalents?: boolean } = {}): Obstruction[] {
     const ids = options.includeEquivalents === true ? this.equivalents(claimId) : [claimId];
+    const current = this.epoch();
     return ids
       .flatMap((id) => this.nodes(OBSTRUCTION_KIND, { claimId: id }))
       .sort((a, b) => a.createdSeq - b.createdSeq)
@@ -720,7 +723,7 @@ export class MemoryStore {
         if (typeof d !== "object" || d === null || Array.isArray(d)) return [];
         const { reason, detail, strategy, source } = d as { [key: string]: Json | undefined };
         if (!isObstructionReason(reason) || typeof detail !== "string" || node.claimId === undefined) return [];
-        return [{ nodeId: node.nodeId, claimId: node.claimId, reason, detail, ...(typeof strategy === "string" ? { strategy } : {}), source: typeof source === "string" ? source : "unknown" }];
+        return [{ nodeId: node.nodeId, claimId: node.claimId, reason, detail, ...(typeof strategy === "string" ? { strategy } : {}), source: typeof source === "string" ? source : "unknown", ...(node.epoch < current ? { earlier: true } : {}) }];
       });
   }
 
