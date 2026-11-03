@@ -5,7 +5,7 @@ import type { Line, ProblemContext, SessionContext } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { CapabilityError, type Registry } from "@seshat/registry";
 import { SimulatedDecide } from "../../models/test/simulated-lean.ts";
-import { createM8, M8_OPTIONS, POOL_KIND, readM8Options, readTables, RECURRENCE_KIND } from "../src/index.ts";
+import { createM8, M8_OPTIONS, POOL_KIND, readM8Options, REFUTED_HYPOTHESIS_KIND, readTables, RECURRENCE_KIND } from "../src/index.ts";
 import { openMemory, scriptedLlm } from "./helpers.ts";
 
 const TARGET = "(n : ℕ) : n ≤ n * n";
@@ -98,6 +98,12 @@ describe("the line M8 on a statement about a number", () => {
     // The refuted hypothesis never became a claim.
     assert.ok(!claims.some((c) => c.statement.includes("Nat.Prime n")));
     assert.ok(logs.some((l) => /all_prime is refuted/.test(l)));
+    // ...and kept as the material of a repair, with the objects that break it.
+    const refuted = memory.nodes(REFUTED_HYPOTHESIS_KIND, { claimId }).map((n) => n.data as unknown as { hypothesis: string; counterexamples: string[]; verdicts: string });
+    assert.equal(refuted.length, 1);
+    assert.equal(refuted[0]?.hypothesis, "all_prime");
+    assert.ok(refuted[0]?.counterexamples.includes("4"));
+    assert.equal(refuted[0]?.verdicts.length, 61);
     // The informal one went through the step DAG, whose steps are informal claims.
     assert.ok(memory.claims({ kind: "informal" }).length >= 2);
     assert.ok(claims.some((c) => c.statement.includes("Nat.digits")));

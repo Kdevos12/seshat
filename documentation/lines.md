@@ -32,7 +32,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M8` | inductive engine: data tables, classical conjecturing, executable hypotheses, the conjecture pool ([induction.md](induction.md#line-m8)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
 | `M16` | program search for subgoals that carry a computable score (FunSearch-style islands, rung 2 of the ladder) ([induction.md](induction.md#program-search-line-m16)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
 | `M13` | theory exploration and classical conjecturing: QuickSpec-style minimal laws, integer relations ([induction.md](induction.md#theory-exploration-line-m13)) | `@seshat/induction` | built, not run against a real model or Lean |
-| `M14` | typed repairs and Lakatos-style repair | `@seshat/repair` | planned |
+| `M14` | typed repairs and Lakatos-style repair ([repair.md](repair.md)) | `@seshat/repair` | built, not run against a real model or Lean |
 | `M5` | lessons with counters | `@seshat/lessons` | planned |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M17` | extended environment: the run's Lean has more packages than the bench's ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)) | `@seshat/lean-env` | built, not run against Lean |

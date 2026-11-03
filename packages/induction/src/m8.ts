@@ -18,6 +18,18 @@ const ACTOR = "line:M8";
 /** The node kinds the line writes besides the data tables. */
 export const POOL_KIND = "conjecture_pool";
 export const RECURRENCE_KIND = "recurrence";
+/** A hypothesis the table refuted: the material of a Lakatos-style repair (line M14). */
+export const REFUTED_HYPOTHESIS_KIND = "refuted_hypothesis";
+
+/** The data of a `refuted_hypothesis` node. `verdicts` has a character for each object of the table, in order: `1` the conclusion holds where the premise does, `0` it fails there, `.` the premise does not hold or there is no verdict. */
+export interface RefutedHypothesis {
+  hypothesis: string;
+  informal: string;
+  statement?: string;
+  tableId: string;
+  counterexamples: string[];
+  verdicts: string;
+}
 
 /** The options of the line and their defaults (`--line-option M8.rounds=3`). */
 export const M8_OPTIONS: JsonObject = {
@@ -256,6 +268,11 @@ export function createM8(hooks: M8Hooks = {}): Line {
         const h: Hypothesis = e.hypothesis;
         if (e.counterexamples.length > 0) {
           problem.log(`M8: ${h.id} is refuted by ${e.counterexamples.length} object(s) of the table, e.g. ${table.objectIds[e.counterexamples[0] as number]}`);
+          if (!memory.nodes(REFUTED_HYPOTHESIS_KIND, { claimId: problem.claimId }).some((n) => (n.data as unknown as RefutedHypothesis).hypothesis === h.id && (n.data as unknown as RefutedHypothesis).tableId === table.id)) {
+            const verdicts = e.conclusion.map((c, i) => (c === null || (e.premise !== undefined && e.premise[i] !== true) ? "." : c ? "1" : "0")).join("");
+            const data: RefutedHypothesis = { hypothesis: h.id, informal: h.informal, ...(h.statement !== undefined ? { statement: h.statement } : {}), tableId: table.id, counterexamples: e.counterexamples.slice(0, 20).map((i) => table.objectIds[i] as string), verdicts };
+            memory.recordNode({ kind: REFUTED_HYPOTHESIS_KIND, claimId: problem.claimId, data: data as unknown as Json });
+          }
           continue;
         }
         const interest = interestOf({ ...(e.premise !== undefined ? { premise: e.premise } : {}), conclusion: e.conclusion }, seen.map((v) => ({ conclusion: v })), properties, { minSupport: s.minSupport });

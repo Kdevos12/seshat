@@ -179,6 +179,10 @@ the proof length; `prunePool` keeps the best.
    `conjecture.relevance`) or else `judge`, pruned by `prunePool`, and the `briefTop` best go to the
    provers' briefing, re-scored with the attempts made since (the proof rate, the length of the proofs).
 
+A hypothesis the table refutes is dropped from the pool and kept as a `refuted_hypothesis` node (the objects that
+break it and a verdict for every object of the table): it is the material of the Lakatos-style repair of line M14
+([repair.md](repair.md)).
+
 Nothing here changes a claim's status. A conjecture stays `open` until a prover submits a proof through
 `validate`; a recurrence, a bound or a relation is a node about a claim, never a status (Rulings 13, 22, 23).
 The line declares `resume: "rebuild"`: claims, tables, edges and nodes are not written twice when the
