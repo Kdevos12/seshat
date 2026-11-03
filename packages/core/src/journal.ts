@@ -343,6 +343,15 @@ export class Journal {
         if (typeof event.data.reason !== "string" || event.data.reason === "") throw new Error(`turn ${event.data.turn}: a turn ends for a reason`);
         return;
       }
+      case "pack.installed":
+      case "pack.removed": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (typeof d.name !== "string" || !/^[a-z][a-z0-9-]*$/.test(d.name)) throw new Error(`${event.type}: bad pack name ${JSON.stringify(d.name)}`);
+        if (typeof d.version !== "string" || d.version === "") throw new Error(`${event.type}: pack ${d.name} needs a version`);
+        if (typeof d.hash !== "string" || !/^[0-9a-f]{64}$/.test(d.hash)) throw new Error(`${event.type}: pack ${d.name} needs the sha256 of its content`);
+        return;
+      }
       case "memory.epoch_opened": {
         this.onlyOrchestrator(event.type, actor);
         const d = event.data;
