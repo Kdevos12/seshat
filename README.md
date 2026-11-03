@@ -8,9 +8,9 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and thirteen lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and fourteen lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals, documented in [documentation/induction.md](documentation/induction.md) and [documentation/repair.md](documentation/repair.md)) are written and tested with a
+counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals, documented in [documentation/induction.md](documentation/induction.md) and [documentation/repair.md](documentation/repair.md)) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -21,7 +21,7 @@ one with more packages than the bench's.
 The provers can also be given SageMath, an external program installed with Docker or pip
 ([documentation/compute.md](documentation/compute.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
-draw the unverified items a briefing shows at random and measure their effect; no line calls the draw yet
+draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
 ([documentation/memory.md](documentation/memory.md)). Nothing has run against a real
 Lean or a real model yet.
 
@@ -54,6 +54,7 @@ flowchart TB
   m3["Line M3: lemma library<br/>promoted aux lemmas, BM25 search,<br/>library_search"]:::built
   m13["Line M13: theory exploration<br/>minimal laws, integer relations,<br/>candidates for the library"]:::wait
   m16["Line M16: program search<br/>islands of scored programs,<br/>rung 2 of the ladder"]:::wait
+  m5["Line M5: lessons<br/>from accepted proofs and recurring<br/>failures, deactivated by effect"]:::built
   m14["Line M14: repairs<br/>typed critics, Lakatos repair<br/>of refuted conjectures"]:::wait
   sandbox["Sandbox for programs<br/>time and memory limits,<br/>no network, scratch directory"]:::built
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
@@ -88,7 +89,7 @@ flowchart TB
     prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::wait
     compiler["Context compiler<br/>context under<br/>a token budget"]:::planned
     earlier["Memory carried over<br/>from an earlier run,<br/>pinned by its last hash"]:::built
-    learned["Stamps, epochs and draw<br/>of unverified records<br/>(no line calls it yet)"]:::built
+    learned["Stamps, epochs and draw<br/>of unverified records<br/>(lines M3 and M5 draw)"]:::built
   end
 
   bench -->|problems| orchestrator
@@ -127,6 +128,10 @@ flowchart TB
   m8 -->|"open conjectures derived<br/>from the target, tables"| journal
   m8 -->|"pool in the briefing"| provers
   provers -->|"valid attempts:<br/>aux lemmas"| m3
+  provers -->|"outcomes:<br/>strategy, failure class"| m5
+  m5 -->|"lessons, counters,<br/>deactivations"| journal
+  m5 -->|"drawn lessons<br/>in the briefing"| provers
+  m5 -->|"distil a recurring<br/>failure: one model call"| llm
   m3 -->|"triviality probes,<br/>lemma alone"| leancheck
   m3 -->|"lemma claims,<br/>library nodes"| journal
   m3 -->|"briefing, library_search"| provers
@@ -171,7 +176,7 @@ flowchart TB
   journal --> projection
   earlier -->|"replayed before<br/>the run's journal"| projection
   projection --> learned
-  learned -.->|"lines draw: Tasks<br/>9, 11 and 18"| provers
+  learned -.->|"lines draw: M3, M5,<br/>Tasks 11 and 18"| provers
   projection --> tried
   tried -->|"already tried,<br/>in every session"| provers
   tried -->|"verdicts"| fleet

@@ -14,6 +14,7 @@ import { CapabilityError, CatalogError, messageOf, runContract, type Registry } 
 import { renderHealth } from "./health.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
+import { lessonsCommand } from "./lessons-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
@@ -43,6 +44,7 @@ const usage = `usage:
   harness steer RUN_DIR [--focus CLAIM] [--drop CLAIM] [--forbid STRATEGY [--claim CLAIM]]
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
   harness library export RUN_DIR [--out DIR]
+  harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
@@ -156,6 +158,7 @@ async function main(): Promise<number> {
     if (command === "sign") return sign();
     if (command === "steer") return steer();
     if (command === "library") return libraryCommand();
+    if (command === "lessons") return lessons();
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(`${error.message}\n\n${usage}`);
@@ -361,6 +364,13 @@ function libraryCommand(): number {
   if (third === undefined) throw new UsageError("library export needs a run directory");
   libraryExportCommand(third, { out: values.out, print: (line) => console.log(line) });
   return 0;
+}
+
+/** `harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]`. */
+function lessons(): number {
+  if (target !== "pending" && target !== "approve" && target !== "reject") throw new UsageError("lessons takes a subcommand: pending RUN_DIR, approve RUN_DIR ID or reject RUN_DIR ID");
+  if (third === undefined) throw new UsageError(`lessons ${target} needs a run directory`);
+  return lessonsCommand(target, third, { id: positionals[3], as: values.as, note: values.note, out: (l) => console.log(l) });
 }
 
 /** `harness hint RUN_DIR --claim ID "text"`. */

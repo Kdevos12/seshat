@@ -34,7 +34,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M16` | program search for subgoals that carry a computable score (FunSearch-style islands, rung 2 of the ladder) ([induction.md](induction.md#program-search-line-m16)) | `@seshat/induction` | built, not run against a real model, Lean or Sage |
 | `M13` | theory exploration and classical conjecturing: QuickSpec-style minimal laws, integer relations ([induction.md](induction.md#theory-exploration-line-m13)) | `@seshat/induction` | built, not run against a real model or Lean |
 | `M14` | typed repairs and Lakatos-style repair ([repair.md](repair.md)) | `@seshat/repair` | built, not run against a real model or Lean |
-| `M5` | lessons with counters | `@seshat/lessons` | planned |
+| `M5` | lessons with counters: strategy lessons from accepted proofs, constraints from recurring failures, a drawn briefing section, deactivation by effect, global promotion staged under `--human` ([lessons.md](lessons.md)) | `@seshat/lessons` | built, not run against a model |
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M17` | extended environment: the run's Lean has more packages than the bench's ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)) | `@seshat/lean-env` | built, not run against Lean |
 
@@ -203,7 +203,7 @@ The problem's context (`ProblemContext`):
 | `signal` | Aborted when the problem ends: solved, out of budget, or the run stopped. |
 | `options` | The line's options: its defaults with the run's values over them. |
 
-`ProblemContext.ranking` is the run's models, weakest first, and its budget class (`ModelRanking` of `@seshat/memory`): what a line needs to
+`ProblemContext.human` is true in a consortium run (`--human` or a turn limit): a line that would change what every later problem sees stages it for the team (M5's global lessons, [lessons.md](lessons.md#staged-promotion---human)). `ProblemContext.ranking` is the run's models, weakest first, and its budget class (`ModelRanking` of `@seshat/memory`): what a line needs to
 say that one configuration was weaker than another. A session's context (`SessionContext`) adds the prover, the session's number and the most it may
 have, its attempt id (recorded only after `beforeSession`; a skipped session's id is never
 recorded), its model, the prover's regions as the session starts, and the strategy and subgoal
@@ -518,7 +518,7 @@ position each real line takes on resuming, and `resume-lines.test.ts` resumes wh
 M6 and M2 at each boundary between sessions and at every event of their journals, and one run of
 M1, M2, M6 and the fleet together at every event.
 
-M1, M2, M11, M12, M18, M3, M6 and the fleet are the lines built (M3: [library.md](library.md#tested-and-not-yet)). M2 has its own tests
+M1, M2, M11, M12, M18, M3, M5, M6 and the fleet are the lines built (M3: [library.md](library.md#tested-and-not-yet); M5: [lessons.md](lessons.md#tested-and-not-yet)). M2 has its own tests
 ([graph.md](graph.md#tested-and-not-yet)). `packages/orchestrator/test/m12.test.ts` and `resume-m12.test.ts` run M12 ([scheduler.md](scheduler.md#tests-and-what-has-not-run)); `m18.test.ts` and `resume-m18.test.ts` run M18 ([curriculum.md](curriculum.md#tests-and-what-has-not-run)). `packages/orchestrator/test/m11.test.ts` runs M11 in
 `runBench` with the simulated model and Lean, a refutation through `validate` and a node and edge of
 each kind it writes included ([models.md](models.md#the-line)). Nothing here has run against a real
