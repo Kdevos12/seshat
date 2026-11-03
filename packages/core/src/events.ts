@@ -333,6 +333,12 @@ export interface EventDataMap {
     error?: string;
     durationMs: number;
     turns: number;
+    /**
+     * The size of the tool declarations the session sent with every request (`lean_check`, the run's other tools, the tools its lines
+     * opened), as an upper bound in tokens: the "tokens of tool definitions per request" of plan section 6. Absent in journals older
+     * than the field, and for a session that did not start.
+     */
+    toolTokens?: number;
     /** The strategy classified from what the attempt submitted. */
     strategy?: string;
     /** The strategy the model declared in its last `lean_check` that gave one; replaces the one given at the start. */

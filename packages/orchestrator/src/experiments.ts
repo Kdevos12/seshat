@@ -1,0 +1,161 @@
+import { DECISION_SITES } from "@seshat/core";
+import { type AblationName, ablationLines, LINE_ORDER, SUSPENDED_LINES } from "@seshat/lines";
+import type { Arm } from "./ablation.ts";
+import { RunSetupError } from "./run.ts";
+
+/**
+ * The experiments of the amendments (documentation/ablate.md, "Experiments"): each is a short list of arms that differ by one
+ * option, run on the same problems at the same budget as the cumulative table. They are data: `harness ablate --experiment NAME`
+ * builds the arms from here and the runner does the rest.
+ */
+export interface Experiment {
+  name: string;
+  /** The plan change item it measures. */
+  amendment: string;
+  description: string;
+  /** What this experiment cannot say without a real run. */
+  notRun: string;
+  arms: (context: ExperimentContext) => Arm[];
+}
+
+export interface ExperimentContext {
+  /** The lines the arms share: default every line of the cumulative table, in plan order. */
+  lines: string[];
+  /** The models of the renderings experiment, one arm per rendering and model. */
+  models: string[];
+}
+
+/** The lines of the full cumulative configuration. */
+export function allLines(): string[] {
+  return ablationLines(LINE_ORDER.filter((id) => !SUSPENDED_LINES.has(id)).at(-1) as AblationName);
+}
+
+const without = (lines: readonly string[], drop: readonly string[]) => lines.filter((id) => !drop.includes(id));
+const RUNG_LINES = ["M18", "M15", "M16"];
+
+/** The J3 sites, in the order of the registry. */
+export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES);
+
+const arm = (name: string, description: string, lines: string[], rest: Partial<Arm> = {}): Arm => ({ name, description, lines, ...rest });
+
+export const EXPERIMENTS: Experiment[] = [
+  {
+    name: "ladder",
+    amendment: "PE4",
+    description: "The escalation ladder against every rung from the start and against rung 0 alone, split by difficulty.",
+    notRun: "The curves come from simulated budgets; whether the ladder pays needs a real model.",
+    arms: ({ lines }) => [
+      arm("ladder", "the rungs above 0 wait until the ladder moves a problem up", lines, { lineOptions: { M12: { ladder: true } } }),
+      arm("all-rungs", "every line works from the start of every problem", lines, { lineOptions: { M12: { ladder: false } }, versus: "ladder" }),
+      arm("rung-0-only", "the lines of rung 1 and above are left out", without(lines, RUNG_LINES), { versus: "ladder" }),
+    ],
+  },
+  {
+    name: "packet-mode",
+    amendment: "PD2, PE5",
+    description: "A frozen prefix with a tail, an append-only packet, a packet recompiled for every request, and the naive packet.",
+    notRun: "The cache ratio is the faux provider's; a provider's own cache must be read on the first real run.",
+    arms: ({ lines }) => [
+      arm("prefix_tail", "the default: the prefix is frozen, the tail is rebuilt", lines, { packetMode: "prefix_tail" }),
+      arm("append_only", "the opening is frozen; later packets are appended as messages", lines, { packetMode: "append_only", versus: "prefix_tail" }),
+      arm("recompiled", "the whole packet is compiled again for every request", lines, { packetMode: "recompiled", versus: "prefix_tail" }),
+      arm("naive", "M4's naive packet: every item, no ids, no threshold", lines, { lineOptions: { M4: { naive: true } }, versus: "prefix_tail" }),
+    ],
+  },
+  {
+    name: "renderings",
+    amendment: "PC5",
+    description: "The three renderings of the packet's facts (list, merged, table), per model.",
+    notRun: "A rendering that helps one model can hurt another: only real models tell.",
+    arms: ({ lines, models }) =>
+      (models.length > 0 ? models : [undefined]).flatMap((model) =>
+        (["list", "merged", "table"] as const).map((rendering) =>
+          arm(model === undefined ? rendering : `${rendering} (${model})`, `the facts rendered as a ${rendering}`, lines, {
+            lineOptions: { M4: { rendering } },
+            ...(model !== undefined ? { model } : {}),
+            ...(rendering !== "list" ? { versus: model === undefined ? "list" : `list (${model})` } : {}),
+          }),
+        ),
+      ),
+  },
+  {
+    name: "queries",
+    amendment: "PC5",
+    description: "Queries extracted by the model against the raw statement as the query.",
+    notRun: "The extraction call is a model's.",
+    arms: ({ lines }) => [
+      arm("extracted", "the model names what to look up", lines, { lineOptions: { M4: { extractQueries: true } } }),
+      arm("raw", "the statement is the query", lines, { lineOptions: { M4: { extractQueries: false } }, versus: "extracted" }),
+    ],
+  },
+  {
+    name: "seeds",
+    amendment: "PC13",
+    description: "Pattern seeds on and off, split by difficulty.",
+    notRun: "The neighbours come from the TheoremGraph and `lean.meta premises`, which need a real Lean.",
+    arms: ({ lines }) => [
+      arm("seeds-off", "no pattern seeds", lines, { lineOptions: { M4: { seeds: false } } }),
+      arm("seeds-on", "pattern seeds among the premises", lines, { lineOptions: { M4: { seeds: true } }, versus: "seeds-off" }),
+    ],
+  },
+  {
+    name: "lessons",
+    amendment: "PE2",
+    description: "The lesson set deactivated by its measured effect against deactivated by presence.",
+    notRun: "Needs enough problems for a lesson to collect its observations.",
+    arms: ({ lines }) => [
+      arm("effect", "a lesson goes when its measured effect is not positive", lines, { lineOptions: { M5: { deactivation: "effect" } } }),
+      arm("presence", "a lesson goes when it stops being present", lines, { lineOptions: { M5: { deactivation: "presence" } }, versus: "effect" }),
+    ],
+  },
+  {
+    name: "cegis",
+    amendment: "PD5",
+    description: "M8 with its counterexample set against M8 with the set off (`M8.counterexampleSet=false`): only the set differs.",
+    notRun: "The tokens saved are an estimate; the effect is on the candidates M8's model proposes, so it needs a real model.",
+    arms: ({ lines }) => [
+      arm("set-off", "M8 proposes and checks without the counterexample set", lines, { lineOptions: { M8: { counterexampleSet: false } } }),
+      arm("set-on", "the counterexamples found so far go in the prompt and every candidate meets them first", lines, { lineOptions: { M8: { counterexampleSet: true } }, versus: "set-off" }),
+    ],
+  },
+  {
+    name: "lsp",
+    amendment: "PC7",
+    description: "`lean.lsp` as a tool set against M0.",
+    notRun: "Needs a real Lean language server.",
+    arms: () => [arm("M0", "lean_check only", []), arm("M0+lsp", "lean_check and lean.lsp", [], { tools: ["lean.lsp"], versus: "M0" })],
+  },
+  {
+    name: "decide",
+    amendment: "J1, J4, J5 (line D1)",
+    description: "One arm per J3 site whose answer is asked of Jev, against the model, with the agreement between the two.",
+    notRun: "Not run against real Jev: only a faux Jev answers in tests.",
+    arms: ({ lines }) => [
+      arm("llm", "every decision asked of the run's model", lines),
+      ...DECIDE_SITES.map((site) => arm(`jev:${site}`, `${site} asked of Jev`, lines, { decide: { backend: "llm", sites: { [site]: "jev" }, votes: 1 }, versus: "llm" })),
+    ],
+  },
+  {
+    name: "m17",
+    amendment: "LC3",
+    description: "The run with the library environment extended (line M17) against the run without it.",
+    notRun: "Needs a real Lean environment to pin; the registry must be pinned by the caller.",
+    arms: ({ lines }) => [arm("without-M17", "the base Lean environment", without(lines, ["M17"])), arm("with-M17", "the environment extended by M17", [...without(lines, ["M17"]), "M17"], { versus: "without-M17" })],
+  },
+];
+
+export function experimentNames(): string[] {
+  return EXPERIMENTS.map((e) => e.name);
+}
+
+export function experiment(name: string): Experiment {
+  const found = EXPERIMENTS.find((e) => e.name === name);
+  if (found === undefined) throw new RunSetupError(`unknown experiment ${JSON.stringify(name)}; they are ${experimentNames().join(", ")}`);
+  return found;
+}
+
+/** The arms of an experiment. `lines` defaults to every line of the cumulative table. */
+export function experimentArms(name: string, context: Partial<ExperimentContext> = {}): Arm[] {
+  return experiment(name).arms({ lines: context.lines ?? allLines(), models: context.models ?? [] });
+}
+

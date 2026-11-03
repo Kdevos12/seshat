@@ -6,7 +6,7 @@ tried at one line, and searches of Mathlib. It is
 [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) (MIT), an MCP server over Lean's language
 server, at a pinned release. The plan asks for it in PC7: provers that can look at the proof state
 and search for lemmas do better than provers that only see `lean_check`'s verdict. Whether they do
-here is what Task 14 measures, with this tool set against M0 with `lean_check` only.
+here is what Task 14 measures (`harness ablate --experiment lsp`), with this tool set against M0 with `lean_check` only.
 
 **Not run against a real Lean yet.** The development environment has no Lean toolchain. Most of the
 tests run against a stand-in server whose shapes were taken from the real release. Besides them

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample } from "@seshat/bench";
+import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
 import { BlobStore, type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
 import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { MemoryStore } from "@seshat/memory";
@@ -19,12 +19,16 @@ import { leanEnvCommand } from "./lean-env-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
+import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
+import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
-import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
+import { PACKET_MODES, type PacketMode } from "./session.ts";
+import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
@@ -33,14 +37,19 @@ const usage = `usage:
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
-  harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
+  harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
-              [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
+              [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
+  harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
+              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
+              [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
+  harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
+  harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
@@ -59,6 +68,13 @@ const usage = `usage:
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
+(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
+each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
+would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
+probe: reruns a fixed probe set (20 problems by default, none of which built the memory) twice, with the memory of RUN_DIR and with its verified
+facts alone, and rings an alarm when the memory does worse beyond noise (documentation/ablate.md). run --probe-every K does it after every K-th
+run of a memory chain; harness report shows the result.
 add: installs a pack (documentation/packs.md): a directory or git repository with a pack.json, tools and skills. The manifest and
 the contract cases it carries are validated, nothing of it is executed, and a pack that could write a claim's status is refused.
 A pack whose tools start programs or reach servers needs --allow-programs; its own level-1 request is honoured (from the next session) only with --level1. Its tools are level 2, never in the declared set
@@ -76,6 +92,9 @@ models: the providers pi-ai knows and whether their credentials are set; with PR
 lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
 Lean), show says where each one stands. harness lean-env --help has the details.
+--packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
+(the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
+never rewritten) or recompiled (the measurement arm of the frozen prefix).
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
@@ -130,12 +149,25 @@ const { positionals, values } = parseArgs({
     "context-tokens": { type: "string" },
     "notes-chars": { type: "string" },
     "cache-retention": { type: "string" },
+    "packet-mode": { type: "string" },
     "budget-usd": { type: "string" },
     "run-budget-usd": { type: "string" },
     concurrency: { type: "string" },
+    sequence: { type: "string" },
+    tag: { type: "string" },
     tool: { type: "string", multiple: true },
     lines: { type: "string", multiple: true },
     ablation: { type: "string" },
+    configs: { type: "string" },
+    experiment: { type: "string" },
+    models: { type: "string" },
+    split: { type: "string" },
+    "split-by": { type: "string" },
+    pilot: { type: "string" },
+    "chunk-k": { type: "string" },
+    "probe-every": { type: "string" },
+    "probe-size": { type: "string" },
+    "probe-set": { type: "string" },
     "line-option": { type: "string", multiple: true },
     "draw-seed": { type: "string" },
     "decide-backend": { type: "string" },
@@ -187,6 +219,9 @@ async function main(): Promise<number> {
     if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
+    if (command === "ablate") return await ablate();
+    if (command === "chunks") return chunks();
+    if (command === "probe") return await probe();
     if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
     if (command === "hint") return hint();
     if (command === "sign") return sign();
@@ -293,8 +328,23 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "med
 
 /** The problems a run works on, and how they were chosen. */
 function selectProblems(index: BenchIndex): { problems: ProblemEntry[]; selection: Json } {
-  const ways = [values.sample !== undefined, values.problem !== undefined, values.all === true].filter(Boolean).length;
-  if (ways !== 1) throw new UsageError("choose the problems with exactly one of --sample, --problem and --all");
+  const ways = [values.sample !== undefined, values.problem !== undefined, values.all === true, values.sequence !== undefined, values.tag !== undefined].filter(Boolean).length;
+  if (ways !== 1) throw new UsageError("choose the problems with exactly one of --sample, --problem, --all, --sequence and --tag");
+  if (values.sequence !== undefined) {
+    // A sequence is worked in order, one problem after the other, so that what an earlier one leaves in the library reaches the later ones.
+    if (values.concurrency !== undefined && values.concurrency !== "1") throw new UsageError("--sequence works the problems in order: it runs with --concurrency 1");
+    try {
+      return { problems: sequenceProblems(index.problems, sequencesOf(index), values.sequence), selection: { sequence: values.sequence } };
+    } catch (error) {
+      throw new UsageError(messageOf(error));
+    }
+  }
+  if (values.tag !== undefined) {
+    if (!(TAG_KINDS as readonly string[]).includes(values.tag)) throw new UsageError(`--tag must be one of ${TAG_KINDS.join(", ")}`);
+    const tagged = taggedWith(index.problems, index.tags ?? {}, values.tag as TagKind);
+    if (tagged.length === 0) throw new UsageError(`${index.benchId} has no problem tagged ${values.tag} (harness-bench build --annotations FILE)`);
+    return { problems: tagged, selection: { tag: values.tag } };
+  }
   if (values.seed !== undefined && values.sample === undefined) throw new UsageError("--seed goes with --sample");
   if (values.all) return { problems: index.problems, selection: { all: true } };
   if (values.problem !== undefined) {
@@ -496,34 +546,20 @@ function readInput<T>(read: () => T): T {
   }
 }
 
-async function run(): Promise<number> {
-  if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
-  if (values.resume !== undefined) return await resume(values.resume);
-  if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
-  if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID (harness models lists them)");
-  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
-  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
-  const consortium = consortiumFlags();
-  const offpeak = offpeakFlags();
-  const checkout = values.checkout;
-  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
-  const { problems, selection } = selectProblems(index);
-  const source = describeCheckout(checkout);
-  if (source.rev !== index.source.rev) {
-    console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
-  }
+/** The configuration the flags describe, besides the lines, the consortium, the off-peak wait and the typed decisions. */
+function sharedConfig(selection: RunConfig["selection"], model: string, thinking: ThinkingLevel): RunConfig {
   const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
   const cacheRetention = values["cache-retention"];
   if (cacheRetention !== undefined && !isCacheRetention(cacheRetention)) {
     throw new UsageError(`--cache-retention must be one of ${CACHE_RETENTIONS.join(", ")}`);
   }
-  const lines = selectLines();
-  const options = lineOptions(values["line-option"] ?? []);
-  const decide = decideFlags();
-  const config: RunConfig = {
+  const packetMode = values["packet-mode"];
+  if (packetMode !== undefined && !(PACKET_MODES as readonly string[]).includes(packetMode)) {
+    throw new UsageError(`--packet-mode must be one of ${PACKET_MODES.join(", ")}`);
+  }
+  return {
     selection,
-    model: values.model,
+    model,
     thinkingLevel: thinking,
     provers: number("provers", values.provers, DEFAULT_CONFIG.provers),
     sessions: number("sessions", values.sessions, DEFAULT_CONFIG.sessions),
@@ -533,14 +569,41 @@ async function run(): Promise<number> {
     },
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
     ...(cacheRetention !== undefined ? { cacheRetention } : {}),
+    ...(packetMode !== undefined ? { packetMode: packetMode as PacketMode } : {}),
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
-    concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
+    concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
+    ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
+  };
+}
+
+async function run(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
+  if (values.resume !== undefined) return await resume(values.resume);
+  if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID (harness models lists them)");
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const consortium = consortiumFlags();
+  const offpeak = offpeakFlags();
+  if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
+  const checkout = values.checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const { problems, selection } = selectProblems(index);
+  const source = describeCheckout(checkout);
+  if (source.rev !== index.source.rev) {
+    console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
+  }
+  const lines = selectLines();
+  const options = lineOptions(values["line-option"] ?? []);
+  const decide = decideFlags();
+  const config: RunConfig = {
+    ...sharedConfig(selection, values.model, thinking),
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
     ...(offpeak !== undefined ? { offpeak } : {}),
-    ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
     ...(decide !== undefined ? { decide } : {}),
   };
   const host = hostName(values.host);
@@ -564,7 +627,123 @@ async function run(): Promise<number> {
     ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
     ...(values["library-registry"] !== undefined ? { libraryRegistry: resolve(values["library-registry"]) } : registryExists() ? { libraryRegistry: resolve(DEFAULT_LIBRARY_REGISTRY) } : {}),
   });
-  return finished(result, dir);
+  const code = finished(result, dir);
+  const every = values["probe-every"] === undefined ? 0 : Number(values["probe-every"]);
+  if (code === 0 && result.stopped === undefined && probeDue(runIndexOf(values["memory-from"] !== undefined ? resolve(values["memory-from"]) : undefined), every)) {
+    return (await probeRun(dir, index, checkout, config, probeDirOf(dir))) || code;
+  }
+  return code;
+}
+
+/** What every run of a command needs besides its configuration, its problems and its directory. */
+function runTemplate(index: BenchIndex, checkout: string, controller: AbortController): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
+  const host = hostName(values.host);
+  const codeRev = codeRevision();
+  return {
+    index,
+    checkout,
+    models: builtinModels(),
+    registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+    leanEnvironment: (options) => hostLeanEnv({ host, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+    signal: controller.signal,
+    log: (line) => console.error(line),
+    ...(codeRev !== undefined ? { codeRev } : {}),
+  };
+}
+
+/** The probe of a run's memory (PE9): its frozen set, its two runs, the verdict. Written beside the run (`RUN_DIR.probe`), printed. */
+async function probeRun(memoryDir: string, index: BenchIndex, checkout: string, config: RunConfig, out: string): Promise<number> {
+  const size = number("probe-size", values["probe-size"], DEFAULT_PROBE_SIZE);
+  const set = frozenProbeSet(memoryDir, out, index.problems, {
+    size,
+    seed: String(config.seed ?? "probe"),
+    ...(values["probe-set"] !== undefined ? { fixed: readInput(() => readIdList(values["probe-set"] as string)) } : {}),
+  });
+  const result = await runProbe({ memoryDir, template: runTemplate(index, checkout, stoppable()), config, problems: set, dir: out });
+  process.stdout.write(renderProbe(result));
+  return 0;
+}
+
+/** `harness probe RUN_DIR ...`: under the lines the run was started with. */
+async function probe(): Promise<number> {
+  const memoryDir = requireTarget("probe", "a run directory");
+  if (values.checkout === undefined) throw new UsageError("probe needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("probe needs --model PROVIDER/ID");
+  if (!existsSync(values.checkout)) throw new InputError(`no directory ${values.checkout}`);
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const source = readInput(() => linesOfRun(resolve(memoryDir)));
+  const lines = values.lines !== undefined ? selectLines() : source.lines;
+  const options = values["line-option"] !== undefined ? lineOptions(values["line-option"]) : source.lineOptions;
+  const config: RunConfig = { ...sharedConfig({ ids: [] }, values.model, thinking), ...(lines.length > 0 ? { lines } : {}), ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}) };
+  return await probeRun(resolve(memoryDir), index, values.checkout, config, resolve(values.out ?? probeDirOf(memoryDir)));
+}
+
+/** `harness ablate ...` (documentation/ablate.md). */
+async function ablate(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`ablate takes no positional argument, got ${target}`);
+  if (values.checkout === undefined) throw new UsageError("ablate needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("ablate needs --model PROVIDER/ID (harness models lists them)");
+  if (values.ablation !== undefined || values["line-option"] !== undefined || values["memory-from"] !== undefined) {
+    throw new UsageError("ablate chooses the lines itself (--configs, or --experiment with --lines); --ablation, --line-option and --memory-from belong to run");
+  }
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const checkout = values.checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const { problems, selection } = selectProblems(index);
+  const list = (text: string | undefined): string[] | undefined => (text === undefined ? undefined : text.split(",").map((x) => x.trim()).filter((x) => x !== ""));
+  const split = number("split", values.split, undefined);
+  const consortium = consortiumFlags();
+  const offpeak = offpeakFlags();
+  const decide = decideFlags();
+  const config: RunConfig = {
+    ...sharedConfig(selection, values.model, thinking),
+    ...(consortium !== undefined ? { consortium } : {}),
+    ...(offpeak !== undefined ? { offpeak } : {}),
+    ...(decide !== undefined ? { decide } : {}),
+  };
+  const dir = resolve(values.out ?? join("runs", newId("ablation")));
+  await ablateCommand({
+    template: runTemplate(index, checkout, stoppable()),
+    config,
+    problems,
+    dir,
+    ...(list(values.configs) !== undefined ? { configs: list(values.configs) as string[] } : {}),
+    ...(values.experiment !== undefined ? { experiment: values.experiment } : {}),
+    ...(values.lines !== undefined ? { lines: selectLines() } : {}),
+    ...(list(values.models) !== undefined ? { models: list(values.models) as string[] } : {}),
+    ...(split !== undefined ? { split } : {}),
+    ...(values["split-by"] !== undefined ? { splitBy: splitByFlag(values["split-by"]) } : {}),
+    ...(values.pilot !== undefined ? { pilot: pilotMeasures(values.pilot) } : {}),
+    log: (line) => console.error(line),
+    print: (line) => process.stdout.write(`${line}\n`),
+  });
+  console.log(`Ablation directory: ${dir}`);
+  return 0;
+}
+
+/** The outcomes of a finished run, which the difficulty tiers of an ablation come from (`--pilot`). */
+function pilotMeasures(dir: string) {
+  const journal = join(resolve(dir), "journal.jsonl");
+  if (!existsSync(journal)) throw new InputError(`${dir} is not a run directory: it has no journal.jsonl`);
+  return measureRun(readInput(() => readEvents(journal)));
+}
+
+function splitByFlag(value: string): SplitBy {
+  if (!(SPLIT_BY as readonly string[]).includes(value)) throw new UsageError(`--split-by must be one of ${SPLIT_BY.join(", ")}, got ${value}`);
+  return value as SplitBy;
+}
+
+/** `harness chunks RUN_DIR...`. */
+function chunks(): number {
+  const ks = (values["chunk-k"] ?? "").split(",").filter((x) => x !== "").map((x) => Number(x));
+  if (ks.some((k) => !Number.isInteger(k) || k < 1)) throw new UsageError(`--chunk-k takes whole numbers of at least 1, got ${values["chunk-k"]}`);
+  const budget = number("budget-usd", values["budget-usd"], undefined);
+  chunksCommand(positionals.slice(1), (line) => process.stdout.write(`${line}\n`), { ...(ks.length > 0 ? { ks } : {}), ...(budget !== undefined ? { budgetUsd: budget } : {}) });
+  return 0;
 }
 
 /** Ctrl-C stops the run: the problems in progress end as aborted; a second one quits at once. */
@@ -600,8 +779,8 @@ function finished(result: RunResult, dir: string): number {
 
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
-  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "out",
+  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
@@ -679,7 +858,10 @@ function report(): number {
   const events = readInput(() => readEvents(journal));
   if (!events.some((e) => e.type === "run.started")) throw new InputError(`${target}: the run did not start, its journal is empty`);
   const built = buildReport(events);
-  process.stdout.write(values.json ? `${JSON.stringify(built, null, 2)}\n` : renderRunReport(built));
+  const probeFile = join(probeDirOf(target), "probe.json");
+  const probed = existsSync(probeFile) ? readInput(() => JSON.parse(readFileSync(probeFile, "utf8")) as ProbeResult) : undefined;
+  if (values.json) process.stdout.write(`${JSON.stringify(probed === undefined ? built : { ...built, probe: probed.verdict }, null, 2)}\n`);
+  else process.stdout.write(renderRunReport(built) + (probed === undefined ? "" : `\n${renderProbe(probed)}`));
   return 0;
 }
 
