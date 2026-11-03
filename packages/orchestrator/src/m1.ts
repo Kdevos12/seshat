@@ -1,6 +1,6 @@
 import { LINE_TITLES, type Line } from "@seshat/lines";
 import { configClassOf } from "@seshat/core";
-import { classifyFailure, classifyStrategy, premisesOf, renderTried, STRATEGIES, TextIdentity } from "@seshat/memory";
+import { classifyFailure, classifyStrategy, premisesOf, renderObstructions, renderTried, STRATEGIES, TextIdentity } from "@seshat/memory";
 
 /** The most lines of the "already tried" section, when the run does not say (`--line-option M1.maxLines=...`). */
 const MAX_LINES = 12;
@@ -34,7 +34,10 @@ export const M1: Line = {
           ? undefined
           : { current: configClassOf({ modelId: session.model, budgetClass: session.ranking.budgetClass }), ranking: session.ranking };
       const lines = renderTried(session.memory.alreadyTried(session.claimId, view), { maxLines });
-      return lines.length === 0 ? undefined : { title: "Already tried", text: lines.join("\n") };
+      // The typed obstructions (a counter-model, a refuted premise, a dead end) come after the attempts, one line each (PC3).
+      const obstructions = renderObstructions(session.memory.obstructions(session.claimId, { includeEquivalents: true }), { maxLines });
+      const all = [...lines, ...obstructions];
+      return all.length === 0 ? undefined : { title: "Already tried", text: all.join("\n") };
     },
     afterAttempt: async (problem, attempt) => {
       // A session that checked nothing has nothing to classify.
