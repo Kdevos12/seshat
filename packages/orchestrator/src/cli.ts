@@ -19,7 +19,7 @@ import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { ablateCommand, chunksCommand, readIdList } from "./ablate-command.ts";
-import { chooseProbeSet, DEFAULT_PROBE_SIZE, PROBE_DIR, probeDue, problemsBuilt, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
+import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
@@ -533,6 +533,7 @@ async function run(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
   const offpeak = offpeakFlags();
+  if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
@@ -572,7 +573,12 @@ async function run(): Promise<number> {
     ...(codeRev !== undefined ? { codeRev } : {}),
     ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
   });
-  return finished(result, dir);
+  const code = finished(result, dir);
+  const every = values["probe-every"] === undefined ? 0 : Number(values["probe-every"]);
+  if (code === 0 && result.stopped === undefined && probeDue(runIndexOf(values["memory-from"] !== undefined ? resolve(values["memory-from"]) : undefined), every)) {
+    return (await probeRun(dir, index, checkout, config, probeDirOf(dir))) || code;
+  }
+  return code;
 }
 
 /** What every run of a command needs besides its configuration, its problems and its directory. */
@@ -591,21 +597,20 @@ function runTemplate(index: BenchIndex, checkout: string, controller: AbortContr
   };
 }
 
-/** The probe of a run's memory (PE9): its set, its two runs, the verdict. Written to `<dir>/probe`, printed. */
+/** The probe of a run's memory (PE9): its frozen set, its two runs, the verdict. Written beside the run (`RUN_DIR.probe`), printed. */
 async function probeRun(memoryDir: string, index: BenchIndex, checkout: string, config: RunConfig, out: string): Promise<number> {
   const size = number("probe-size", values["probe-size"], DEFAULT_PROBE_SIZE);
-  const set = chooseProbeSet(index.problems, {
+  const set = frozenProbeSet(memoryDir, out, index.problems, {
     size,
     seed: String(config.seed ?? "probe"),
     ...(values["probe-set"] !== undefined ? { fixed: readInput(() => readIdList(values["probe-set"] as string)) } : {}),
-    builtOn: problemsBuilt(memoryDir),
   });
   const result = await runProbe({ memoryDir, template: runTemplate(index, checkout, stoppable()), config, problems: set, dir: out });
   process.stdout.write(renderProbe(result));
   return 0;
 }
 
-/** `harness probe RUN_DIR ...`. */
+/** `harness probe RUN_DIR ...`: under the lines the run was started with. */
 async function probe(): Promise<number> {
   const memoryDir = requireTarget("probe", "a run directory");
   if (values.checkout === undefined) throw new UsageError("probe needs --checkout: a checkout of the bench's repository");
@@ -614,10 +619,11 @@ async function probe(): Promise<number> {
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
-  const lines = selectLines();
-  const options = lineOptions(values["line-option"] ?? []);
+  const source = readInput(() => linesOfRun(resolve(memoryDir)));
+  const lines = values.lines !== undefined ? selectLines() : source.lines;
+  const options = values["line-option"] !== undefined ? lineOptions(values["line-option"]) : source.lineOptions;
   const config: RunConfig = { ...sharedConfig({ ids: [] }, values.model, thinking), ...(lines.length > 0 ? { lines } : {}), ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}) };
-  return await probeRun(resolve(memoryDir), index, values.checkout, config, resolve(values.out ?? join(memoryDir, PROBE_DIR)));
+  return await probeRun(resolve(memoryDir), index, values.checkout, config, resolve(values.out ?? probeDirOf(memoryDir)));
 }
 
 /** `harness ablate ...` (documentation/ablate.md). */
@@ -785,7 +791,7 @@ function report(): number {
   const events = readInput(() => readEvents(journal));
   if (!events.some((e) => e.type === "run.started")) throw new InputError(`${target}: the run did not start, its journal is empty`);
   const built = buildReport(events);
-  const probeFile = join(target, PROBE_DIR, "probe.json");
+  const probeFile = join(probeDirOf(target), "probe.json");
   const probed = existsSync(probeFile) ? readInput(() => JSON.parse(readFileSync(probeFile, "utf8")) as ProbeResult) : undefined;
   if (values.json) process.stdout.write(`${JSON.stringify(probed === undefined ? built : { ...built, probe: probed.verdict }, null, 2)}\n`);
   else process.stdout.write(renderRunReport(built) + (probed === undefined ? "" : `\n${renderProbe(probed)}`));

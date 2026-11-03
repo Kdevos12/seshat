@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { type ProblemEntry, sample } from "@seshat/bench";
 import { EventLog, type EventType, type HarnessEvent, loadMemoryChain, type Json, readEvents } from "@seshat/core";
 import { measureRun, type RunMeasures } from "./measures.ts";
@@ -267,5 +267,40 @@ export function runIndexOf(memoryFrom: string | undefined): number {
   return memoryFrom === undefined ? 1 : loadMemoryChain(memoryFrom, undefined).segments.length + 1;
 }
 
-/** Where `harness report` looks for a run's probe. */
-export const PROBE_DIR = "probe";
+/** Where a run's probe is written: a sibling of the run directory, so that a finished run, which other runs pin, is never added to. */
+export function probeDirOf(runDir: string): string {
+  const full = resolve(runDir);
+  return join(dirname(full), `${basename(full)}.probe`);
+}
+
+/** The file that freezes a probe set the first time one is drawn. */
+export const PROBE_SET_FILE = "set.txt";
+
+/**
+ * The probe set of a memory chain, frozen (PE9: a fixed set): the first probe draws it and writes it to `set.txt` beside its results; a later
+ * probe of the same chain reads the newest `set.txt` among the probes of the chain's runs. A frozen set that names a problem the memory
+ * was built on is refused, never redrawn. `fixed` (`--probe-set FILE`) wins over a drawn set.
+ */
+export function frozenProbeSet(memoryDir: string, out: string, problems: readonly ProblemEntry[], options: { size?: number; seed?: string; fixed?: readonly string[] } = {}): ProblemEntry[] {
+  const built = problemsBuilt(memoryDir);
+  if (options.fixed !== undefined) return chooseProbeSet(problems, { fixed: options.fixed, builtOn: built });
+  const dirs = [out, ...loadMemoryChain(memoryDir, undefined).segments.map((s) => probeDirOf(s.dir))].reverse();
+  for (const dir of dirs) {
+    const file = join(dir, PROBE_SET_FILE);
+    if (!existsSync(file)) continue;
+    const ids = readFileSync(file, "utf8").split("\n").map((l) => l.trim()).filter((l) => l !== "");
+    return chooseProbeSet(problems, { fixed: ids, builtOn: built });
+  }
+  const set = chooseProbeSet(problems, { ...(options.size !== undefined ? { size: options.size } : {}), ...(options.seed !== undefined ? { seed: options.seed } : {}), builtOn: built });
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, PROBE_SET_FILE), `${set.map((p) => p.id).join("\n")}\n`);
+  return set;
+}
+
+/** The lines and options a run was started with, from its `run.started`: the probe tests the memory under them. */
+export function linesOfRun(dir: string): { lines: string[]; lineOptions: Record<string, Record<string, Json>> } {
+  const first = readEvents(join(dir, "journal.jsonl"))[0];
+  const config = first?.type === "run.started" ? (first.data.config as { lines?: Array<{ id: string; options?: Record<string, Json> }> } | null) : null;
+  const lines = config?.lines ?? [];
+  return { lines: lines.map((l) => l.id), lineOptions: Object.fromEntries(lines.filter((l) => l.options !== undefined && Object.keys(l.options).length > 0).map((l) => [l.id, l.options as Record<string, Json>])) };
+}
