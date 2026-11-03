@@ -27,7 +27,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
-import { LEAN_CERTIFY, messageOf, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
 import { Ledger } from "./budget.ts";
@@ -57,6 +57,8 @@ import {
 import { Router } from "./routing.ts";
 import { applyDrops, claimAndParts, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
+import { OffPeakGate } from "./offpeak.ts";
+import { PriceBook } from "./prices.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
@@ -94,6 +96,13 @@ export interface RunConfig {
    * and an account for the research team. Absent: an ordinary run, which records what it always did.
    */
   consortium?: ConsortiumConfig;
+  /**
+   * The off-peak option (`harness run --offpeak`, documentation/human.md, "Off-peak"): a turn or a session starts only
+   * when the host's pricing calendar for the run's model says off-peak, and otherwise waits for the next window
+   * (`turn.deferred`). `maxWaitMinutes` bounds each wait, after which the work runs anyway. A host that gives the
+   * model no pricing calendar refuses the run. Absent: no waiting, and a run that records what it always did.
+   */
+  offpeak?: { maxWaitMinutes?: number };
   /**
    * Seeds the draws of unverified memory items (documentation/memory.md, "Randomized inclusion"). A
    * number or a text repeats the draws; absent: the run's id, so that each run draws differently.
@@ -162,6 +171,13 @@ export interface RunOptions {
   memoryFrom?: string;
   /** What a consortium run takes from the process that works it, not from its recorded configuration. */
   turns?: TurnProcess;
+  /**
+   * Wall-clock time in milliseconds since the epoch, which the host's pricing calendar is read against (the off-peak
+   * rate of a charge, `--offpeak`). Default: `Date.now`; a test sets its own.
+   */
+  wallClock?: () => number;
+  /** Waits for the off-peak option; default: a timer that the run's signal cuts short. A test advances its clock here. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -238,6 +254,9 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
+  if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
+    problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
+  }
   problems.push(...checkDecideSettings(config.decide));
   return problems;
 }
@@ -296,6 +315,10 @@ export interface ResumeOptions {
   lines?: LineRegistry;
   /** The next turn of a consortium run: its limit, whether a model narrates it, its clock. */
   turns?: TurnProcess;
+  /** Wall-clock time in milliseconds, as `RunOptions.wallClock`. */
+  wallClock?: () => number;
+  /** As `RunOptions.sleep`. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -327,6 +350,8 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
       ...(o.lines !== undefined ? { lines: o.lines } : {}),
       ...(o.turns !== undefined ? { turns: o.turns } : {}),
+      ...(o.wallClock !== undefined ? { wallClock: o.wallClock } : {}),
+      ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
     },
     recorded,
   );
@@ -438,6 +463,17 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
+  // host cannot give is refused here, before `run.started` or `run.resumed` is written.
+  const prices = new PriceBook(registry.host.models, o.wallClock);
+  if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
+    return await abandon(
+      `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
+        "(models in config/hosts, documentation/m0-loop.md, \"Prices\")",
+      undefined,
+      registry,
+    );
+  }
   // The run is pinned to the Lean environment its registry was built for, for its whole life (documentation/lean-env.md).
   const leanEnv = registry.leanEnv;
   if (leanEnv !== undefined && (leanEnv.status === "stale" || leanEnv.status === "unknown")) {
@@ -538,6 +574,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
+      // The host's prices have a hash of their own, which a resumption compares as a warning (documentation/m0-loop.md, "Prices").
+      ...(pricesHash(registry.host) !== undefined ? { prices: pricesHash(registry.host) as string } : {}),
       prompt: promptRecord,
       policy: policyRecord,
       certifier: certifierRecord,
@@ -548,6 +586,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only in a consortium run, for the same reason.
       ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
+      ...(config.offpeak !== undefined ? { offpeak: config.offpeak as Json } : {}),
       // Only when given, so that a run without it records what it always did.
       ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
     };
@@ -588,6 +627,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       }),
     ];
     if (changed.length > 0) return await abandon(`the run cannot be resumed here: ${changed.join("; ")}`, undefined, registry);
+    const recordedPrices = (resume.started.config as { prices?: unknown } | null)?.prices;
+    if ((recordedPrices ?? undefined) !== pricesHash(registry.host)) {
+      log(
+        `warning: the host's prices are not the ones this run began with (${typeof recordedPrices === "string" ? "they were changed" : "the run recorded none"}): ` +
+          "the dollars already journaled stand, the next responses are charged at the new prices",
+      );
+    }
     const resumption = beginResumption(journal, tasks, { runId, ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}) });
     log(`resuming run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
     log(
@@ -599,6 +645,34 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (leanEnvNote !== undefined) log(leanEnvNote);
   }
 
+  // A model with no price anywhere is charged $0, and no dollar cap can then stop it: refused when a dollar cap is
+  // given on purpose (--run-budget-usd, a turn's usd), and said in the log otherwise (the default per-problem budget
+  // is always there, and a free local model is legitimate).
+  for (const name of ranking.order) {
+    const slash = name.indexOf("/");
+    const known = slash > 0 ? o.models.getModel(name.slice(0, slash), name.slice(slash + 1)) : undefined;
+    if (known === undefined || !prices.isFree(known)) continue;
+    const capped = config.budget.runUsd !== undefined || config.consortium?.limit.usd !== undefined;
+    const advice = `give it a pricing entry in the host profile's models (documentation/m0-loop.md, "Prices")`;
+    if (capped && name === config.model) {
+      return await abandon(`${name} has no price in host ${registry.host.host} or in pi-ai, so it would be charged $0 and --run-budget-usd or the turn's usd limit could never stop it: ${advice}`, undefined, registry);
+    }
+    log(`warning: ${name} has no price in host ${registry.host.host} or in pi-ai: its responses are charged $0 and no dollar budget sees them; ${advice}`);
+  }
+  const offpeak =
+    config.offpeak === undefined
+      ? undefined
+      : new OffPeakGate({
+          runId,
+          journal,
+          prices,
+          model: config.model,
+          ...(config.offpeak.maxWaitMinutes !== undefined ? { maxWaitMinutes: config.offpeak.maxWaitMinutes } : {}),
+          ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
+          log,
+        });
+  // A consortium turn starts at an off-peak hour, or after the wait; the turn's own clock begins when it does.
+  if (offpeak !== undefined && config.consortium !== undefined) await offpeak.wait({ scope: "turn", turn: journal.projection.turns().started + 1 }, o.signal);
   // What the team asked for, carried out before any work: a problem whose claim it dropped ends (documentation/human.md).
   const dropped = resume !== undefined ? applyDrops(journal, tasks) : undefined;
   // Consortium mode: the turn this process works. It ends by itself at its limit or at a breakpoint.
@@ -642,6 +716,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       seed: config.seed ?? runId,
       ranking,
       decide: resolveDecideSettings(config.decide),
+      prices,
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
     });
@@ -970,6 +1045,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 limits: config.limits,
                 notesChars: config.notesChars,
                 ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
+                prices,
+                ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
                 ledger,
                 signal: controller.signal,
                 transcript,
@@ -1119,7 +1196,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ending: { reason, detail, waiting, ...(paused && end?.breakpoint !== undefined ? { breakpoint: end.breakpoint } : {}) },
           keep: (text) => blobs.put(text),
           log,
-          call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal }),
+          call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal, prices }),
         }).catch((error: unknown) => ({ rejected: messageOf(error) }));
       }
       closeTurn(journal, turn, {

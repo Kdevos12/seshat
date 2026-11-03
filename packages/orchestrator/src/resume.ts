@@ -134,6 +134,9 @@ function configOf(recorded: unknown): RunConfig {
         }
       : {}),
     ...(consortium !== undefined ? { consortium } : {}),
+    ...(typeof r.offpeak === "object" && r.offpeak !== null && !Array.isArray(r.offpeak)
+      ? { offpeak: typeof (r.offpeak as Record<string, unknown>).maxWaitMinutes === "number" ? { maxWaitMinutes: (r.offpeak as { maxWaitMinutes: number }).maxWaitMinutes } : {} }
+      : {}),
     ...(typeof r.seed === "string" || typeof r.seed === "number" ? { seed: r.seed } : {}),
     ...(typeof r.decide === "object" && r.decide !== null && !Array.isArray(r.decide) ? { decide: r.decide as DecideSettings } : {}),
   };

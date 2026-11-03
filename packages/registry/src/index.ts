@@ -6,5 +6,6 @@ export * from "./lean.ts";
 export * from "./manifest.ts";
 export * from "./mcp.ts";
 export * from "./paths.ts";
+export * from "./pricing.ts";
 export * from "./registry.ts";
 export * from "./schema.ts";

@@ -112,6 +112,12 @@ export function demoRegistry(lean: LeanChecker): RunOptions["registry"] {
   return (journal, blobs) => new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean) }, journal, blobs });
 }
 
+/** The registry of a host whose profile also has these `models` (prices, ignored settings): made-up names and numbers in tests. */
+export function pricedRegistry(models: NonNullable<HostProfile["models"]>): (lean: LeanChecker) => RunOptions["registry"] {
+  const priced: HostProfile = { ...host, models };
+  return (lean) => (journal, blobs) => new Registry({ catalog, host: priced, factories: { kimina: () => leanCheckImplementation(lean) }, journal, blobs });
+}
+
 /**
  * The repository's catalog on a host that also lists `lean.certify`, served by `certifier` through
  * the registry as a deployment's would be: each certification is a tool run in the journal.
@@ -216,6 +222,10 @@ export async function demoRun(options: {
   codeRev?: string;
   /** What a consortium run takes from its process: the turn's limit, a narrative, a clock. */
   turns?: TurnProcess;
+  /** Wall-clock milliseconds, for the host's pricing calendar. */
+  wallClock?: () => number;
+  /** Waits for the off-peak option. */
+  sleep?: RunOptions["sleep"];
   /** The directory of an earlier run to start on (`harness run --memory-from`). */
   memoryFrom?: string;
   /** The Lean environment the registry is pinned to, as the CLI resolves it before the registry is built. */
@@ -241,6 +251,8 @@ export async function demoRun(options: {
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
+    ...(options.wallClock !== undefined ? { wallClock: options.wallClock } : {}),
+    ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
     ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
     ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
   });
@@ -266,6 +278,10 @@ export async function demoResume(options: {
   extraModels?: readonly string[];
   codeRev?: string;
   turns?: TurnProcess;
+  /** Wall-clock milliseconds, for the host's pricing calendar. */
+  wallClock?: () => number;
+  /** Waits for the off-peak option. */
+  sleep?: RunOptions["sleep"];
 }): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
   const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
@@ -282,6 +298,8 @@ export async function demoResume(options: {
     ...(options.lines !== undefined ? { lines: options.lines } : {}),
     ...(options.codeRev !== undefined ? { codeRev: options.codeRev } : {}),
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
+    ...(options.wallClock !== undefined ? { wallClock: options.wallClock } : {}),
+    ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
   });
   return { result, events: readEvents(join(options.dir, "journal.jsonl")), faux, lean };
 }

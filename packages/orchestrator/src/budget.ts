@@ -1,5 +1,7 @@
 import type { AttemptRow, TokenCost } from "@seshat/core";
 import { calculateCost, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { priceUsage } from "@seshat/registry";
+import type { PriceBook } from "./prices.ts";
 
 /**
  * Spending of a run, of one problem, or of one session. A charge counts in every ancestor, and a
@@ -77,18 +79,39 @@ export class Ledger {
 }
 
 /**
- * The cost of one model response: the cost the provider reported, or else the one computed from
- * the model's prices (some adapters report no cost). Input tokens include cache reads and writes; the
- * cache reads are also given apart, when there are some, as `cachedInputTokens`.
+ * The cost of one model response. With the host's prices for the model (`prices`), the dollars are the
+ * table's: cache-hit, cache-miss and output tokens at their own prices, times the off-peak multiplier when the
+ * instant is off-peak (documentation/m0-loop.md, "Prices"). Without them, the cost the provider reported, or else the one computed from
+ * pi-ai's prices for the model (some adapters report no cost). Input tokens include cache reads and writes; the
+ * cache reads are also given apart, when there are some, as `cachedInputTokens`, with the dollars they saved
+ * against a price with no cache as `savedUsd`.
  */
-export function messageCost(model: Model<Api>, message: AssistantMessage): TokenCost {
+export function messageCost(model: Model<Api>, message: AssistantMessage, prices?: PriceBook): TokenCost {
   const usage = message.usage;
-  const usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
+  const pricing = prices?.pricingOf(model);
+  let usd: number;
+  let savedUsd: number;
+  let offPeak = false;
+  if (pricing !== undefined) {
+    const priced = priceUsage(pricing, usage, prices?.now() ?? Date.now());
+    usd = priced.usd;
+    savedUsd = priced.savedUsd;
+    offPeak = priced.offPeak;
+  } else {
+    usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
+    // pi-ai's table: a cache read costs `cacheRead` per million where a miss costs `input`.
+    // Net of the write premium, as the table's.
+    savedUsd = (usage.cacheRead * (model.cost.input - model.cost.cacheRead) - usage.cacheWrite * (model.cost.cacheWrite - model.cost.input)) / 1e6;
+  }
   return {
     usd,
     inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
     outputTokens: usage.output,
     ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
+    ...(savedUsd !== 0 ? { savedUsd } : {}),
+    ...(offPeak && usd > 0 ? { offPeakUsd: usd } : {}),
+    // The table wins over a reported cost, so that a corrected price is the price; the difference is kept for the report.
+    ...(pricing !== undefined && usage.cost.total > usd + 1e-12 ? { unchargedUsd: usage.cost.total - usd } : {}),
   };
 }
 

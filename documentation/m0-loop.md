@@ -342,6 +342,53 @@ cached sum (the projection keeps none), and a finished total, when there is one,
 charges, so the larger of the two is never too small or counted twice.
 An aborted response is charged for the usage that pi kept.
 
+### Prices
+
+Dollars decide every budget option and every ablation, and the cost fields that ship with a provider's
+integration can be out of date against its pricing page, so a host profile can state the prices itself
+(`models` in `config/hosts/*.json`, [capabilities.md](capabilities.md#host-profiles)). Prices and the provider's
+model identifiers are data in that file, never code and never this repository's prose.
+
+```json
+"models": {
+  "PROVIDER/ID": {
+    "pricing": {
+      "cacheHit": 0.0, "cacheMiss": 0.0, "output": 0.0,
+      "calendar": {
+        "peak": [{ "days": [1, 2, 3, 4, 5], "from": "01:00", "to": "04:00" }],
+        "offPeakMultiplier": 0.5,
+        "offPeakDates": ["2026-01-01"]
+      }
+    },
+    "ignores": { "thinking": ["temperature"] }
+  }
+}
+```
+
+`cacheHit`, `cacheMiss` and `output` are dollars per million tokens (`cacheWrite` too, when the provider
+charges for cache writes; it defaults to the cache-miss price). With a `pricing` entry for the session's model,
+`attempt.charged` and `model_call.finished` dollars are `cacheRead` tokens at the hit price, the other input at the miss
+price and `output` at its price; without one, the cost pi-ai reports or computes, as before. The `calendar`
+is optional: `peak` lists windows in UTC (`from` included, `to` excluded, weekdays 0 = Sunday to 6; a window does not
+cross midnight; write `24:00` to end one there), every other instant is off-peak and costs `offPeakMultiplier` times as much, and a date in
+`offPeakDates` is off-peak all day. The instant is the wall clock when the response is charged
+(`RunOptions.wallClock`, a test's own). It is the instant the response is charged, not the one the request was sent: a long call that crosses a window's edge is priced at the later instant, an approximation of at most the multiplier on one call. A charge also records `savedUsd`, the dollars the cache saved against reading
+those tokens at the miss price, net of the premium a provider that charges for cache writes asks over the miss price (so the saving can be negative), and `offPeakUsd`, the part of `usd` charged at the off-peak rate. The `ignores` entry is
+read by the fleet ([fleet.md](fleet.md#sampled-settings)), and the calendar by the off-peak option ([human.md](human.md#off-peak)). Correcting a price does not block a run that was interrupted. The prices are left out of the registry's hash (the rest
+of a model's entry, the settings it ignores, stays in it) and have a hash of their own, `prices` in `run.started`.
+`harness resume` against changed prices logs a warning and goes on: the dollars already journaled stand, and the
+responses from then on are charged at the new prices.
+
+A model with no price anywhere (no `pricing` entry, and pi-ai's own prices for it are zero, as for a custom endpoint it
+knows nothing of) is charged $0, so no dollar budget can stop it. The run says so in its log at the start; it is
+refused when a dollar cap was asked for on purpose (`--run-budget-usd`, or a turn's usd limit) and the run's model is
+such a model; and the report warns with the number of responses charged $0 (`priceGaps`). The table is authoritative
+over the cost pi-ai reports, so that a corrected price is the price; the dollars pi-ai reported above the table are kept
+on the charge as `unchargedUsd` and shown in the report, so a table that is too low shows.
+
+The prices are first estimates taken from the provider's
+pages, checked on the first real run; nothing here has run against a real provider.
+
 `--cache-retention none|short|long` (`cacheRetention` in the run's configuration, recorded in
 `run.started` only when given) is passed to pi-ai with every request of a session. pi-ai puts the
 option on the request options of every provider and a provider that does not use it ignores it, so
@@ -383,6 +430,7 @@ pnpm harness models PROVIDER           # the models of a provider, with their pr
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --ablation M2
+pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --offpeak --offpeak-max-wait 120   # start work in the host's off-peak hours (human.md#off-peak)
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1   # continue a run whose process ended
 pnpm harness report runs/RUN_ID        # add --json for the JSON report
 ```
@@ -460,6 +508,15 @@ and how many of those attempts found a proof. It gives the spend by site (`prove
 provers' sessions, the sites of the lines' one-shot calls), each with its share of the total
 ([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
+
+The prompt cache has its own paragraph and table (`cache` in `report.json`): the share of input tokens read from the
+cache, `cacheRead / (cacheRead + miss)` (a cache write counts as a miss), and the dollars it saved against reading the
+same tokens at the cache-miss price, in all, by line (the lines' one-shot calls under the line's id, the provers'
+sessions under `prover`), by ladder rung when the run had a ladder ([scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change)), and per
+session. The figures use the host's prices when it states them ([Prices](#prices)), and pi-ai's otherwise. An
+`Off-peak` paragraph (`offPeak`) gives the dollars charged at the off-peak rate and, for a run with `--offpeak`, the
+waits ([human.md](human.md#off-peak)). The cache numbers are first estimates: checked on the first real run, before any
+conclusion of the packet-mode comparison is used.
 
 A run that was resumed says so: how many times, how many sessions, tool runs and tasks the
 interruptions cut, and how many times the journal's last line was cut (`resumed` in `report.json`). The next

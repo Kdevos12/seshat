@@ -354,6 +354,7 @@ const INHERITED_SKIPPED: readonly string[] = [
   // The turns of an earlier consortium run are not this run's: its first turn is turn 1.
   "turn.started",
   "turn.ended",
+  "turn.deferred",
   "problem.registered",
   "problem.finished",
   "model_call.finished",
@@ -595,6 +596,8 @@ export class Projection {
         return;
       case "turn.ended":
         this.setMeta("turn_ended", String(event.data.turn));
+        return;
+      case "turn.deferred":
         return;
       case "run.resumed": {
         db.prepare("insert into resumptions (seq, resumption, data_json) values (?, ?, ?)").run(

@@ -35,6 +35,7 @@ import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Run
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
 import { lineLlm } from "./llm.ts";
+import type { PriceBook } from "./prices.ts";
 import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { steering } from "./team.ts";
@@ -88,6 +89,8 @@ export interface RunLinesOptions {
   ranking?: ModelRanking;
   /** The `decide` configuration (documentation/decide.md). Default: the run's model at every site. */
   decide?: DecideConfig;
+  /** The host's prices, for the lines' model calls. */
+  prices?: PriceBook;
 }
 
 export interface ProblemLinesOptions {
@@ -282,6 +285,7 @@ export class ProblemLines {
       problemId: this.p.problemId,
       signal: own,
       ...(o.turn !== undefined ? { turn: o.turn } : {}),
+      ...(o.prices !== undefined ? { prices: o.prices } : {}),
     });
     const context: ProblemContext = {
       line: id,
@@ -319,6 +323,9 @@ export class ProblemLines {
       options: entry.options,
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
+      ...(o.prices?.describesIgnores === true
+        ? { ignoresSetting: (model: string, setting: string, thinking?: string) => o.prices?.ignores(model, setting, thinking ?? o.thinkingLevel) ?? false }
+        : {}),
     };
     if (signal === undefined) this.contexts.set(id, context);
     return context;
