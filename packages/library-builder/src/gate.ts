@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CertifyFailedError, STANDARD_AXIOMS, type LeanCertifier } from "@seshat/core";
 import type { CommandRunner } from "@seshat/lean-env";
+import { definitionNameProblem } from "@seshat/memory";
 import { type Change, DEFAULT_LIMITS, type DiffLimits, diffViolations } from "./diff.ts";
 import { foreignInstances, isDefinition, isProof, referenceFor, scanFile, screenFile, screenSupportFile, shadowing, type FileScan } from "./source.ts";
 import type { LibrarySpec } from "./spec.ts";
@@ -220,6 +221,9 @@ export async function runGate(o: GateOptions): Promise<GateReport> {
     const foreign = foreignInstances(lean.map((f) => scans.get(f.path) as FileScan));
     if (foreign.length > 0) return reject("spec", foreign.slice(0, 6).join("; "));
   }
+  // A name that the guard of claim statements cannot match is a name it cannot protect: refused, not recorded half-guarded.
+  const unguardable = [...new Set(all.flatMap((d) => (isDefinition(d) && d.name !== "" ? [d.name, ...d.members] : [])))].filter((n) => definitionNameProblem(n) !== undefined);
+  if (unguardable.length > 0) return reject("spec", `${unguardable.slice(0, 6).join(", ")}: ${definitionNameProblem(unguardable[0] as string)}`);
   const definitions: NewDefinition[] = defs.flatMap(({ file, d }) => {
     const module = moduleOf(file.path, libRoot);
     const testLemmas = spec.testLemmas.map((t) => t.name);

@@ -140,7 +140,7 @@ describe("the coding-agent builder and Seshat's gate", () => {
     const own = await run("own_structure");
     assert.equal(own.result.status, "accepted", own.result.reason);
     const names = own.result.definitions.map((d) => `${d.keyword}:${d.name}`);
-    for (const n of ["field:SeshatLib.Combinatorics.Pt.xCoord", "field:SeshatLib.Combinatorics.Pt.yCoord", "constructor:SeshatLib.Combinatorics.Shape.circle", "constructor:SeshatLib.Combinatorics.Shape.square"]) assert.ok(names.includes(n), n);
+    for (const n of ["field:SeshatLib.Combinatorics.Point.xCoord", "field:SeshatLib.Combinatorics.Point.yCoord", "constructor:SeshatLib.Combinatorics.Shape.circle", "constructor:SeshatLib.Combinatorics.Shape.square"]) assert.ok(names.includes(n), n);
   });
 
   it("rejects work that lacks a test lemma of the spec", async () => {

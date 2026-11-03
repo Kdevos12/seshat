@@ -313,7 +313,10 @@ function parseManifest(text: string, origin: string, problems: string[]): Read["
   return { name: typeof manifest.name === "string" ? manifest.name : undefined, packages };
 }
 
-const SKIPPED = new Set([".lake", ".git", "node_modules", "build"]);
+/** The directories and file `hashDirectory` leaves out: the library builder's diff refuses paths through them. */
+export const HASH_SKIPPED_DIRS: ReadonlySet<string> = new Set([".lake", ".git", "node_modules", "build"]);
+export const HASH_SKIPPED_FILE = "lake-manifest.json";
+const SKIPPED = HASH_SKIPPED_DIRS;
 
 /** A hash of the files of a local package (not its build): their paths and contents. */
 export function hashDirectory(dir: string): string {
@@ -323,7 +326,7 @@ export function hashDirectory(dir: string): string {
       if (SKIPPED.has(name)) continue;
       const path = join(current, name);
       if (statSync(path).isDirectory()) walk(path);
-      else if (name !== "lake-manifest.json") entries.push(`${relative(dir, path).split("\\").join("/")}\0${sha256Hex(readFileSync(path, "utf8"))}`);
+      else if (name !== HASH_SKIPPED_FILE) entries.push(`${relative(dir, path).split("\\").join("/")}\0${sha256Hex(readFileSync(path, "utf8"))}`);
     }
   };
   walk(dir);
