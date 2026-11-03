@@ -101,6 +101,48 @@ describe("the coding-agent builder and Seshat's gate", () => {
     }
   });
 
+  it("sees declarations behind open-in, set_option-in and attributes, and refuses what it cannot read (review C1)", async () => {
+    const prefixed = await run("prefixed_theorem");
+    assert.equal(failedRule(prefixed.result), "certify");
+    assert.match(prefixed.result.reason, /extra_fact was rejected/);
+    const hidden = await run("hidden_declaration");
+    // `open X` and `in` on separate lines: the theorem is still seen and certified.
+    assert.equal(failedRule(hidden.result), "certify");
+    const unknown = await run("unrecognised");
+    assert.equal(failedRule(unknown.result), "content");
+    assert.match(unknown.result.reason, /cannot read the command\(s\) attribute/);
+    assert.equal(unknown.h.commands.length, 0);
+    const def = await run("prefixed_def");
+    assert.equal(def.result.status, "accepted", def.result.reason);
+    assert.ok(def.result.definitions.some((d) => d.name === "SeshatLib.Combinatorics.helperFn"));
+  });
+
+  it("refuses native_decide and decide +native, however the theorem is introduced (review C1)", async () => {
+    for (const scenario of ["native_option", "native_plain"]) {
+      const { result, h } = await run(scenario);
+      assert.equal(failedRule(result), "content", scenario);
+      assert.match(result.reason, /(\+native|native_decide) is not allowed/, scenario);
+      assert.equal(h.commands.length, 0, scenario);
+    }
+  });
+
+  it("refuses a new name that would change what a test lemma's statement means (review I3)", async () => {
+    const { result, h } = await run("shadow");
+    assert.equal(result.status, "rejected");
+    assert.match(result.reason, /would shadow Nat, which a test lemma uses/);
+    assert.equal(h.commands.length, 0);
+  });
+
+  it("refuses an instance on types the build did not declare, and registers constructors and fields as unreviewed names (review I2)", async () => {
+    const foreign = await run("foreign_instance");
+    assert.equal(foreign.result.status, "rejected");
+    assert.match(foreign.result.reason, /the instance \(anonymous\) mentions no type or definition of this build/);
+    const own = await run("own_structure");
+    assert.equal(own.result.status, "accepted", own.result.reason);
+    const names = own.result.definitions.map((d) => `${d.keyword}:${d.name}`);
+    for (const n of ["field:SeshatLib.Combinatorics.Pt.xCoord", "field:SeshatLib.Combinatorics.Pt.yCoord", "constructor:SeshatLib.Combinatorics.Shape.circle", "constructor:SeshatLib.Combinatorics.Shape.square"]) assert.ok(names.includes(n), n);
+  });
+
   it("rejects work that lacks a test lemma of the spec", async () => {
     const { result } = await run("no_test_lemma");
     assert.equal(failedRule(result), "spec");
