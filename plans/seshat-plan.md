@@ -46,11 +46,11 @@ of variants; offline prompt optimization; an entrenchment probe; decision note
 `research/evolution-memoire-continue.md`), approved by the user: Tasks 23 to 26 are new, Tasks 9,
 10, 11, 14, 18 and 19 name it, its rules are Global Constraint 16, and the memory that outlives a
 run, which it assumes, is Ruling 28. The main team's order is Ruling 27's.
-(8) 2026-10-28: the plan change [plan-change-polya-costs.md](plan-change-polya-costs.md) (PD1 to PD8:
+(8) 2026-10-28: the plan change [plan-change-polya-costs.md](plan-change-polya-costs.md) (PD1 to PD7:
 a price table and calendar in the host profile, cache accounting and `reasoning_content` safety;
 an append-only transcript as a packet mode; an off-peak option; algebra tools without a `polyrith`
 assumption; the CEGIS rule; an external bench from the equational-theories challenge; installable
-packs; a k-NN for the battery order, conditional; decision matrix `research/matrice-polya-couts.md`),
+packs; decision matrix `research/matrice-polya-couts.md`),
 approved by the user: Tasks 27 and 28 are new (Ruling 30), and Tasks 6, 13, 14, 17, 19, 21 and 24
 name the changes that amend them. The tasks it amends that are already merged (17, 19, 21, 24) are
 not re-opened: Task 28 builds what concerns them. The main team's order is Ruling 30's.
@@ -407,10 +407,7 @@ Amended by PD4 item 1 of `plans/plan-change-polya-costs.md`: the documentation s
 carries a commutative-ring module that normalizes by a Gröbner basis (the Lean reference, section on
 the algebraic solver), so polynomial identities with hypotheses are one of its jobs; and the
 battery's tactic list is read from the host (what the host's Lean has), with no assumption that
-`polyrith` exists: whether it is still in the pinned Mathlib is read from the host. Amended by PD8
-(ON HOLD, not approved by the owner until the k-NN has been explained to them; build nothing from it): a k-NN over cheap goal features may order the battery as a second injectable orderer,
-but only if Task 14's real data show a gap against a best-in-hindsight oracle; it is built there,
-not here.
+`polyrith` exists: whether it is still in the pinned Mathlib is read from the host.
 
 Deliverables in `@seshat/classical` and new capabilities:
 
@@ -774,10 +771,7 @@ implication problems, and reports the share closed without a model per step of p
 after Tasks 6 and 7 merge; the dataset's licence is not stated, so check it before copying any row
 into the repository (read from a local cache otherwise, never vendor it); no submission to the
 challenge is planned; tests: a converter on three hand-written rows in the dataset's shape, nothing
-downloads in tests. PD8, ON HOLD (not approved by the owner until the k-NN has been explained to them; build nothing from it), conditional: after the real data, if the Beta posteriors per domain leave a
-gap against an oracle that picks the best tactic per goal in hindsight, a k-NN over cheap goal
-features (head symbol, size, the domains the router fired) is added as an orderer for Task 6's
-battery (the injectable orderer of J3) and measured at equal CPU; otherwise it is not built.
+downloads in tests.
 
 Deliverables:
 
