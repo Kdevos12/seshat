@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseStatement, parseTerm, show, Unreadable } from "../src/index.ts";
-import { routeStatement } from "../src/index.ts";
+import { lower, Outside, routeStatement } from "../src/index.ts";
 
 describe("the statement reader", () => {
   it("reads arithmetic with Lean's precedence", () => {
@@ -79,5 +79,19 @@ describe("the domain router", () => {
     assert.deepEqual(r.domains, ["general"]);
     assert.match(r.unreadable ?? "", /big operator/);
     assert.ok(r.tactics.includes("simp") && r.tactics.includes("hammer"));
+  });
+});
+
+describe("hostile goals (review I6)", () => {
+  const hostile = [`(x : ℕ) : ${"(".repeat(15000)}x = x${")".repeat(15000)}`, `(x : ℕ) : ${"¬".repeat(15000)}x = x`, `(x : ℕ) : ${"x + ".repeat(900)}x = x`, `(x : ℕ) : ${"x + ".repeat(5000)}x = x`];
+  it("are unreadable, not a stack overflow", () => {
+    for (const g of hostile) {
+      const r = routeStatement(g);
+      assert.deepEqual(r.domains.length > 0, true);
+      if (g.length > 4000 || g.includes("(((") || g.includes("¬¬¬")) assert.ok(r.unreadable !== undefined, "too deep or too long");
+    }
+  });
+  it("are outside the fragment of the translation", () => {
+    for (const g of hostile) assert.doesNotThrow(() => { try { lower(g); } catch (e) { if (!(e instanceof Outside)) throw e; } });
   });
 });

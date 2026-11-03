@@ -25,6 +25,8 @@ over arithmetic (`+ - * / % ^`, numerals), relations (`= ≠ < ≤ > ≥ ∣`), 
 operator, a bounded quantifier, a lambda or a tuple make it throw `Unreadable` with the reason. The
 router then files the goal as `general` and the translators leave it out.
 
+The reader refuses a statement of more than 4000 characters or nested deeper than 150 levels (`Unreadable`, so the router files it under `general` and the translation says it is outside) instead of overflowing the stack.
+
 ## The domain router
 
 `routeStatement` computes features (the sorts of the variables, whether the goal is closed, whether

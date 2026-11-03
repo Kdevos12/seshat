@@ -89,7 +89,7 @@ export function lower(goal: string, premises: readonly PremiseInput[] = []): Pro
   try {
     statement = parseStatement(goal);
   } catch (error) {
-    if (error instanceof Unreadable) throw new Outside(error.message);
+    if (error instanceof Unreadable || error instanceof RangeError) throw new Outside(error.message);
     throw error;
   }
   const problem: Problem = { sorts: [], consts: [], funs: [], assertions: [] };
