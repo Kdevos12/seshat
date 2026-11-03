@@ -72,7 +72,7 @@ harness ablate --checkout DIR --model PROVIDER/ID --sample 20 --experiment ladde
 harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
 ```
 
-`--split N` builds each arm's memory on N problems of the sample and measures it on the others. A turn limit, `--human` and `--offpeak` are refused through `ablationRefusal`. `harness chunks` prints the cost-to-first-success curves of finished runs.
+`--split N` builds each arm's memory on N problems of the sample and measures it on the others; `--split-by file` or `stem` keeps the files, or a problem with its variants, on one side, so that a library built on a problem is not measured on its own variant (the default `none` is the optimistic split). A turn limit, `--human` and `--offpeak` are refused through `ablationRefusal`. `harness chunks` prints the cost-to-first-success curves of finished runs.
 
 ## The probe (PE9)
 
