@@ -29,9 +29,29 @@ describe("the port job", () => {
     assert.match(result.provenance.prompt ?? "", /Port the Lean package Foo/);
   });
 
+  it("does not build a port that runs code unless a person is named (review C3)", async () => {
+    const h = harness();
+    const refused = await h.builder("port_meta").build(PORT, OPTIONS);
+    assert.equal(refused.status, "rejected");
+    assert.match(refused.reason, /is not built unless a person is named/);
+    assert.equal(h.commands.length, 0, "no build ran");
+    for (const scenario of ["port_lakefile_lean", "port_toml_require", "port_unknown_command"]) {
+      const g = harness();
+      const r = await g.builder(scenario).build(PORT, OPTIONS);
+      assert.equal(r.status, "rejected", scenario);
+      assert.match(r.reason, /is not built unless a person is named/, scenario);
+      assert.equal(g.commands.length, 0, scenario);
+    }
+    const bad = harness();
+    const badToolchain = await bad.builder("port_bad_toolchain").build(PORT, OPTIONS);
+    assert.equal(badToolchain.status, "rejected");
+    assert.match(badToolchain.reason, /lean-toolchain is not one toolchain name/);
+  });
+
   it("flags code that runs while Lean elaborates, and adoption then needs a person", async () => {
     const h = harness();
-    const result = await h.builder("port_meta").build(PORT, OPTIONS);
+    const result = await h.builder("port_meta").build(PORT, { ...OPTIONS, approvedBy: "ana" });
+    assert.equal(result.provenance.approvedBy, "ana");
     assert.equal(result.status, "accepted", result.reason);
     assert.equal(result.needsApproval, true);
     const root = mkdtempSync(join(tmpdir(), "mh-lb-adopt-"));

