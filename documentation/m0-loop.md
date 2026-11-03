@@ -512,7 +512,7 @@ given by the bench, and novelty, since the bench's problems are solved ones.
 The prompt cache has its own paragraph and table (`cache` in `report.json`): the share of input tokens read from the
 cache, `cacheRead / (cacheRead + miss)` (a cache write counts as a miss), and the dollars it saved against reading the
 same tokens at the cache-miss price, in all, by line (the lines' one-shot calls under the line's id, the provers'
-sessions under `prover`), by ladder rung when the run had a ladder ([scheduler.md](scheduler.md#the-ladder)), and per
+sessions under `prover`), by ladder rung when the run had a ladder ([scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change)), and per
 session. The figures use the host's prices when it states them ([Prices](#prices)), and pi-ai's otherwise. An
 `Off-peak` paragraph (`offPeak`) gives the dollars charged at the off-peak rate and, for a run with `--offpeak`, the
 waits ([human.md](human.md#off-peak)). The cache numbers are first estimates: checked on the first real run, before any
