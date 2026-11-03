@@ -24,6 +24,13 @@ describe("the sandbox for programs", () => {
     assert.equal(run.stopped, undefined);
   });
 
+  it("does not run the toString of a thrown object outside the time limit", async () => {
+    const started = Date.now();
+    const run = await runValues("(n) => { if (n === 1) throw { toString() { for (;;); } }; if (n === 2) throw { message: { toString() { for (;;); } } }; return n; }", [1, 2, 3], { callMs: 200, totalMs: 10_000 });
+    assert.ok(Date.now() - started < 5000, "the child was not held until the total time");
+    assert.equal(run.values[2], 3, "the later argument still has its value");
+  });
+
   it("refuses a program that does not compile, an empty one and one over the length limit", async () => {
     assert.match((await runValues("(n) =>", [1])).stopped ?? "", /does not compile/);
     assert.match((await runValues("   ", [1])).stopped ?? "", /empty/);

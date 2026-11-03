@@ -96,6 +96,8 @@ export function explore<V>(structure: Structure<V>, options: ExploreOptions = {}
   const equations: Equation[] = [];
   let kept = 0;
   let capped = false;
+  // Every duplicate term is an equation: the list is cut, smallest first (the terms come by size), instead of growing without bound.
+  const maxEquations = Math.max(2000, maxLaws * 50);
   const consider = (t: XTerm, size: number): void => {
     const fp = fingerprint(t);
     if (fp === undefined) return;
@@ -104,7 +106,7 @@ export function explore<V>(structure: Structure<V>, options: ExploreOptions = {}
       seen.set(fp, t);
       (bySize[size] ??= []).push(t);
       kept++;
-    } else {
+    } else if (equations.length < maxEquations) {
       equations.push({ left: rep, right: t, size: size + termSize(rep), points: structure.points.length });
     }
   };
@@ -113,7 +115,7 @@ export function explore<V>(structure: Structure<V>, options: ExploreOptions = {}
   for (let size = 2; size <= maxSize && !capped; size++) {
     for (const s of structure.symbols.filter((x) => x.arity > 0)) {
       for (const args of argumentLists(bySize, s.arity, size - 1)) {
-        if (kept >= maxTerms) {
+        if (kept >= maxTerms || equations.length >= maxEquations) {
           capped = true;
           break;
         }

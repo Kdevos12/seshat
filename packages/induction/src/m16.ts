@@ -118,7 +118,7 @@ export function createM16(): Line {
     if (best !== undefined) {
       out.best = { code: best.code, score: best.score };
       const input = spec.witnessInput ?? (spec.inputs[spec.inputs.length - 1] as Json);
-      const built = await runValues(best.code, [input], s.limits, problem.signal);
+      const built = await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal);
       const witness = built.values[0];
       if (witness !== undefined) out.witness = witness;
       if (s.submit && witness !== undefined && (spec.target === undefined || result.reached)) out.verdict = await submit(problem, memory, claimId, spec, witness, out);
@@ -140,6 +140,7 @@ export function createM16(): Line {
       try {
         target = (await memory.ensureClaim({ statement: statement.text, ...(header !== undefined ? { header } : {}), origin: ACTOR, kind: "formal", parentId: problem.claimId, gloss: "the witness of a program search" })).claimId;
       } catch (error) {
+        if (isInterrupted(error) || problem.signal.aborted) throw error;
         return `not submitted: ${error instanceof Error ? error.message : String(error)}`;
       }
       if (target !== problem.claimId && !memory.edges({ from: target, kinds: ["derived_from"] }).some((e) => e.to[0] === problem.claimId)) {
