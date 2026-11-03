@@ -254,6 +254,24 @@ packet compiled again are compared on cost and solve rate, which Task 14 does on
 effect on a real provider's bill has not been measured: the tests read it from pi-ai's faux
 provider, which caches the longest common prefix of a session's requests.
 
+### Packet modes
+
+`--packet-mode` (`RunConfig.packetMode`, recorded in `run.started` when given) chooses how a session's requests are built from the
+packet (plan change PD2). `prefix_tail`, the default, is the behaviour above. `append_only` compiles the packet for the first request
+only, as the opening message, and sends the session's own messages after it as they come: the model's outputs and the tool results,
+never rewritten, so that each request starts with every byte of the one before it and the provider's cache can read the whole
+history, where `prefix_tail` gets hits on the frozen prefix alone. The hook is not called again in the session; what the
+line would have said is new since the session started goes into the next session's prefix, which is compiled afresh. `recompiled` is
+not for use: it is the measurement arm of PE5, a prefix and tail compiled for each request with nothing frozen, so that the frozen
+prefix is compared with a prefix recompiled each time. A line cannot tell which mode it is in; the mode is the session's.
+
+`append_only` trades the cache for the context: a long history is read at each request, and the model sees an old tool result as it was.
+It is kept only if it does not lose solves against `prefix_tail` (`harness ablate`, the `packet-mode` experiment compares dollars per
+solve, the solve rate and the mean context size on the same seeds and budget; [ablate.md](ablate.md)). Nothing here has run against a
+real provider. The tests read the faux provider, which caches the longest common prefix of a session's requests: they check that the
+history is byte-identical across requests in `append_only`, and that dollars and the cache ratio differ between the modes on a
+scripted session.
+
 ### The reasoning of a tool-call loop
 
 A provider that thinks refuses a request (HTTP 400) in which an assistant message that called tools comes back
