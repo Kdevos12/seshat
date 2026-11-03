@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-03 14:30 UTC. `main` at 9e762b7, 2001 tests.
+Updated 2026-11-03 17:30 UTC. `main` at 544f704, 2059 tests.
 
 ## Tasks
 
@@ -21,23 +21,23 @@ Updated 2026-11-03 14:30 UTC. `main` at 9e762b7, 2001 tests.
 | 8 | M6 guards and drift detectors, fleet policy | main | merged | |
 | 9 | M3 lemma library, M5 lessons | main (taken over 2026-11-03) | merged | `task/t9` | `9e762b7` |
 | 10 | M12: saturation kernel, subgoal scheduler, escalation ladder, owners chosen by the fleet | main | merged in `c8bb412` (faux model, simulated Lean and a faux `lean.meta` only; the link lemma proof never met a real Lean) | `task/t10` | |
-| 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | implementing | `task/t11` | |
+| 11 | M4: context compiler, `expand`, `graph_query` | main (taken over 2026-11-03) | merged | `task/t11` | `544f704` |
 | 12 | M7, M9: abductive engine | nobody | suspended (Ruling 20) | |
 | 13 | M8, M13, M14, M16: induction, exploration, repairs | main | merged | `task/t13` | `f84d92a` |
 | 14 | Integration, `harness ablate`, entrenchment probe | main | not started (after every line) | |
 | 15 | Task ledger, typed routing, `--resume`, `completeJson` | main | merged (`ab4bda3`); resume tested with the faux model and a simulated Lean only, plus a real SIGKILL of a child process; left for the final review: structure of `run.ts` (M10), routing decisions lost between `attempt.finished` and `task.routed`, `resume-m11.test.ts` does not cover "do not resubmit once the outcome is on record" | |
 | 16 | `lean.lsp` | main | merged (`ec73456`); not run against a real Lean; its server (lean-lsp-mcp 0.31.0) was run with canned lowest layers only | |
 | 17 | Consortium mode | main | merged in `f952eaa` (faux model and simulated Lean only; the narrative is `:::wait`) | `task/t17` |
-| 18 | M15: diversity archive, schemas | main | not started (after 9, 10) | |
+| 18 | M15: diversity archive, schemas | main | implementing | `task/t18` | |
 | 19 | Task 8 follow-up: sampled settings, `judge`, soft failure memory | main | merged in `b67c84d` (faux model and simulated Lean only; the numbers are first guesses) | `task/t19` |
 | 20 | `decide`, optional Jev backend | main | merged in `62ed6fa` (fake server and faux backend only; Jev's request and response shapes are guessed) | `task/t20` | |
 | 21 | Lean environment and resolver, M17 | main | merged in `a2f9c29` (not run against a real Lean, Lake or GitHub) | `task/t21` |
-| 22 | `LibraryBuilder`, review status of definitions | main | not started (after 21, 9) | |
+| 22 | `LibraryBuilder`, review status of definitions | main | implementing | `task/t22` | |
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | merged | `task/t25` | `f6363b6` |
 | 26 | `harness optimize-prompts` | main | not started (after 14) | |
-| 27 | Installable packs: tools and skills (PD7) | main | not started (after 11) | |
+| 27 | Installable packs: tools and skills (PD7) | main | implementing | `task/t27` | |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
@@ -293,6 +293,12 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   lesson approved in one run waits for approval again in the next); `@seshat/lines`: optional
   `ProblemContext.human`; packages `@seshat/library` and `@seshat/lessons`; lines `M3` and `M5` in
   `LINE_ORDER`; commands `harness library export` and `harness lessons pending|approve|reject`.
+- Task 11, merged 2026-11-03 (`544f704`): `@seshat/graph`: the `connect` mode and path renderings
+  (`connect.ts`); `@seshat/context`; capabilities `expand` and `graph_query`; line `M4` in
+  `LINE_ORDER`; the node kind `context_carry` (per claim and prover, so a resumed first tail equals an
+  uncut run); `@seshat/context` depends on `@seshat/classical`. `contextPacket` replaces the opening
+  message; the other lines' briefing sections are kept in the prefix as screened "Notes from other
+  lines".
 
 ## Log
 
@@ -608,3 +614,6 @@ Task 6: taken over by the main team at the owner's request (the collaborator had
 Task 6: merged: task/t6 merged into main 1da074d (--no-ff; 1928/1928), pushed; not run against a real Lean, Pantograph or Vampire (z3 checked the translation only); deferred to the final review: the strict screen is repeated in classical (to lift into core), a second review of the translation soundness fix, the lean.certify test was flaky once and not reproduced, M5, M7, M9 of round 1
 Task 9: taken over by the main team; implementer done (3 commits, 1886/1886); review round 1: no Critical; Important I1 (computed library lemmas were presented as proved), I2 and I3 (lemma glosses and lesson text unscreened), I4 (lesson ranking by presence counters reinforced itself), I5 (obstruction records without provenance stamps), I6 (the Mathlib recheck failed open); seven Minor, most fixed
 Task 9: merged: task/t9 merged into main 9e762b7 (--no-ff; 2001/2001), pushed; not run against a real Lean or model, the declaration export is a fixture only; deferred to the final review: the library has no total cap and its index is rebuilt per call, the hybrid ranking is not gated by the plan's measure, nothing shows yet that M3 or M5 helps
+Task 11: taken over by the main team; implementer done (2 commits, 2047/2047); review round 1: Critical C1 (a model-supplied graph_query pattern compiled to a regex that hung the process: now token-wise with a step counter and caps); Important I1 (carry kept only in process), I2 (the other lines' briefing sections were dropped), I3 and I7 (unscreened library proof text and unbounded tool arguments), I4 (computed shown like proved), I5 (a withdrawn claim stayed in the frozen prefix), I6 (the token budget was not a bound); eight Minor, most fixed
+Task 11: merged: task/t11 merged into main 544f704 (--no-ff; 2059/2059), pushed; not run against a real Lean, model or Mathlib export; deferred to the final review: the tail keeps a 300-token floor, screenLean is weak on string literals, no measurement that the packet beats plain history (Task 14), tree-similarity channel, LeanHammer capability and ATMS labels not built
+Tasks 18, 22 and 27: implementers dispatched (worktrees wt/t18, wt/t22, wt/t27 from main 544f704)
