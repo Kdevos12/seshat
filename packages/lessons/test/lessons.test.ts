@@ -198,7 +198,7 @@ describe("lesson text is screened before it is stored", () => {
 });
 
 describe("which lessons a session is offered", () => {
-  it("are the active ones in scope, best standing first, at most the cap", async () => {
+  it("are the active ones in scope, the most promising first, at most the cap", async () => {
     const { memory } = open();
     const [c, other] = await claims(memory, 2);
     const mk = (key: string, over: Partial<Parameters<typeof addLesson>[1]>, patch: Record<string, Json> = {}) => {
@@ -214,9 +214,56 @@ describe("which lessons a session is offered", () => {
     mk("off", {}, { useful: 9, active: false });
     mk("wait", {}, { useful: 9, pending: true });
     const { context } = problem(memory, { claimId: c as string });
-    assert.deepEqual(selectLessons(context, { maxLessons: 5 }).map((l) => l.nodeId), [d, g, cl]);
-    assert.deepEqual(selectLessons(context, { maxLessons: 2 }).map((l) => l.nodeId), [d, g]);
+    // Nothing is measured yet: all are equally promising, and the newest goes first. The presence counters (g, d have points) do not rank.
+    assert.deepEqual(selectLessons(context, { maxLessons: 5 }).map((l) => l.nodeId), [cl, d, g]);
+    assert.deepEqual(selectLessons(context, { maxLessons: 2 }).map((l) => l.nodeId), [cl, d]);
     assert.deepEqual(selectLessons(context, { maxLessons: 0 }), []);
+  });
+});
+
+describe("selection keeps the counters causal", () => {
+  it("does not let a lesson with many presence points crowd out a new one, and prefers a measured gain over a flat lesson", async () => {
+    const { memory, journal } = open();
+    const [c] = await claims(memory, 1);
+    const popular = addLesson(memory, draft("popular")).nodeId;
+    const helpful = addLesson(memory, draft("helpful")).nodeId;
+    const flat = addLesson(memory, draft("flat")).nodeId;
+    memory.updateNode(popular, { useful: 40 }, "t");
+    const many = (n: number, outcome: "valid" | "invalid", items: { included?: string[]; withheld?: string[] }) => {
+      for (let k = 0; k < n; k++) attempt(journal, c as string, { outcome, ...items });
+    };
+    // `popular` was shown in many accepted attempts, but the attempts denied it succeeded just as often: no effect.
+    many(30, "valid", { included: [popular] });
+    many(30, "valid", { withheld: [popular] });
+    many(30, "valid", { included: [helpful] });
+    many(30, "invalid", { withheld: [helpful] });
+    many(30, "valid", { included: [flat] });
+    many(30, "valid", { withheld: [flat] });
+    const fresh = addLesson(memory, draft("fresh")).nodeId;
+    const { context } = problem(memory, { claimId: c as string });
+    const order = selectLessons(context, { maxLessons: 4 }).map((l) => l.nodeId);
+    assert.deepEqual(order.slice(0, 2), [helpful, fresh], "a measured gain first, then the new lesson, which is offered so that it gathers observations");
+    assert.deepEqual(order.slice(2).sort(), [popular, flat].sort(), "flat lessons are behind, whatever their presence points");
+    assert.deepEqual(selectLessons(context, { maxLessons: 2 }).map((l) => l.nodeId), [helpful, fresh], "the popular lesson does not take a slot");
+  });
+
+  it("offers a lesson again when its evidence is from an older epoch", async () => {
+    const { memory, journal, root } = open();
+    const [c] = await claims(memory, 1);
+    const old = addLesson(memory, draft("old")).nodeId;
+    const young = addLesson(memory, draft("young")).nodeId;
+    for (const id of [old, young]) {
+      for (let k = 0; k < 20; k++) attempt(journal, c as string, { outcome: "valid", included: [id] });
+      for (let k = 0; k < 20; k++) attempt(journal, c as string, { outcome: "invalid", withheld: [id] });
+    }
+    const { context } = problem(memory, { claimId: c as string });
+    const before = selectLessons(context, { maxLessons: 2 }).map((l) => l.nodeId);
+    assert.deepEqual(before, [young, old], "equal evidence: the newest first");
+    root.withActor("orchestrator").openEpoch({ changes: [{ field: "mathlibRev", from: "a", to: "b" }] });
+    for (let k = 0; k < 20; k++) attempt(journal, c as string, { outcome: "valid", included: [young] });
+    for (let k = 0; k < 20; k++) attempt(journal, c as string, { outcome: "invalid", withheld: [young] });
+    const after = selectLessons(context, { maxLessons: 2 }).map((l) => l.nodeId);
+    assert.deepEqual(after, [old, young], "the one whose evidence is in probation weighs less and is explored again");
   });
 });
 

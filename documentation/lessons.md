@@ -58,11 +58,20 @@ back to the template when refused; the template quotes Lean's own detail, so it 
 ## What the provers see
 
 In `beforeSession`, M5 first deactivates the lessons that have worn out, then takes the active lessons in scope (global, the problem's
-domains, the problem's claim and its equivalents), best `useful - harmful` first, at most `maxLessons` (3; SkillsBench found two or
-three skills gain and four or more do not), and **draws** them (`session.draw`, [memory.md](memory.md#randomized-inclusion)): each
+domains, the problem's claim and its equivalents), the most promising first, at most `maxLessons` (3; SkillsBench found two or
+three skills gain and four or more do not; see [Choosing which](#choosing-which)), and **draws** them (`session.draw`, [memory.md](memory.md#randomized-inclusion)): each
 unverified lesson is included with probability 0.5 while it is new and 0.9 once it is established, and the ids drawn and withheld
 are on `attempt.started`. The briefing section "Lessons" lists the lessons the draw included, each with its scope, under a sentence
 that says the advice is not proved and may be wrong. A lesson is never offered as a fact and the goal is never drawn.
+
+### Choosing which
+
+The slots go to the lessons with the best measured effect, not the best presence counters, which credit a lesson for every success it was
+merely shown in and would let the first lessons to succeed crowd out the rest. A lesson's score is its effect (the success rate of the
+attempts that had it minus that of the attempts that were denied it, in its strategy label, each outcome weighed by its epoch's probation)
+plus an exploration bonus `1 / sqrt(w + 1)`, where `w` is the weight of the observations of the arm that had it. A new lesson, or one whose
+evidence is old, has a large bonus and is offered, so that it gathers the observations the deactivation rule needs; the draw then keeps
+the comparison causal. The presence counters are not used to rank.
 
 ## Counters and deactivation
 

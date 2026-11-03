@@ -36,10 +36,7 @@ export function deactivateWorn(problem: ProblemContext, o: SelectOptions): Lesso
     let reason: string | undefined;
     if (o.deactivation === "effect") {
       const rule: DeactivationRule = { minObservations: o.minObservations, threshold: o.threshold };
-      const effect = problem.memory.itemEffect(lesson.nodeId, {
-        ...(lesson.scope === "claim" ? { claimIds: problem.memory.equivalents(lesson.scopeKey) } : {}),
-        ...(lesson.strategy !== undefined ? { strategy: lesson.strategy } : {}),
-      });
+      const effect = problem.memory.itemEffect(lesson.nodeId, effectScope(lesson, problem));
       if (shouldDeactivate(effect, rule)) {
         reason = `P(effect < 0) = ${effect.pNegative.toFixed(2)} with ${effect.with.attempts} attempt(s) that had it (${effect.with.successes.toFixed(1)} accepted) and ${effect.without.attempts} that did not (${effect.without.successes.toFixed(1)} accepted)`;
       }
@@ -54,11 +51,34 @@ export function deactivateWorn(problem: ProblemContext, o: SelectOptions): Lesso
   return out;
 }
 
-/** The lessons a session may be shown: active, in scope, best counters first, at most `maxLessons`. */
+/** The scope the effect of a lesson is measured in: its strategy label, and for a claim lesson its claim group. */
+function effectScope(lesson: LessonRecord, problem: Pick<ProblemContext, "memory">): { claimIds?: readonly string[]; strategy?: string } {
+  return {
+    ...(lesson.scope === "claim" ? { claimIds: problem.memory.equivalents(lesson.scopeKey) } : {}),
+    ...(lesson.strategy !== undefined ? { strategy: lesson.strategy } : {}),
+  };
+}
+
+/**
+ * How promising a lesson is to offer, by its measured effect and not by how often it was present (review I4). The score is the
+ * difference between the success rates with the lesson and without it (the two posteriors of `itemEffect`, whose outcomes already
+ * weigh their epoch's probation), plus an exploration bonus that shrinks with the weight of the observations of the arm that had it.
+ * A new lesson, or one whose evidence is old and in probation, has a large bonus and is offered again, so that it gathers the
+ * observations the deactivation rule needs; a lesson that is shown a great deal and does nothing falls behind.
+ */
+export function lessonScore(lesson: LessonRecord, problem: Pick<ProblemContext, "memory">): number {
+  const effect = problem.memory.itemEffect(lesson.nodeId, effectScope(lesson, problem));
+  const seen = effect.with.successes + effect.with.failures;
+  return effect.difference + 1 / Math.sqrt(seen + 1);
+}
+
+/** The lessons a session may be offered: active, in scope, the most promising first (`lessonScore`), at most `maxLessons`. */
 export function selectLessons(problem: Pick<ProblemContext, "domain" | "claimId" | "memory">, o: Pick<SelectOptions, "maxLessons">): LessonRecord[] {
   return allLessons(problem.memory)
     .filter((l) => l.state === "active" && inScope(l, problem))
-    .sort((a, b) => b.useful - b.harmful - (a.useful - a.harmful) || b.createdSeq - a.createdSeq)
+    .map((l) => ({ l, score: lessonScore(l, problem) }))
+    .sort((a, b) => b.score - a.score || b.l.createdSeq - a.l.createdSeq)
+    .map((x) => x.l)
     .slice(0, Math.max(0, Math.floor(o.maxLessons)));
 }
 
