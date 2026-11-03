@@ -1,5 +1,9 @@
 # Seshat: the collaborator's part of the plan
 
+> 2026-11-03: the collaborator had pushed nothing, so the main team builds Tasks 6, 9 and 11 itself at
+> the owner's request (see [CLAUDE.md](../CLAUDE.md)). This brief stays the specification. If you are
+> the collaborator and have work in progress, say so in your log before pushing to a task branch.
+
 Tasks 6 (line M10), 9 (lines M3 and M5) and 11 (line M4). Written on 2026-10-20 by the main team for
 the collaborator's agents (Ruling 25); updated on 2026-10-27 for the plan change
 [plan-change-memory-evolution.md](plan-change-memory-evolution.md) (Rulings 27 and 28). The main team keeps this file in step with
