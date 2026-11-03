@@ -67,6 +67,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   named holes as claims with inner provers, the escalation ladder, owners and resume.
 - [curriculum.md](curriculum.md): line M18: the curriculum of variants, rung 1 of the ladder: variants of a hard
   problem, the capped share of the budget, the proofs in the briefing, the `runTask` hook, resume.
+- [schemas.md](schemas.md): the schemas of line M15: token trees, anti-unification, matching, instantiation through
+  `lean.meta`, the strict screen and reuse (the archive and the line are in archive.md).
 - [graph.md](graph.md): the graph: variants and edges checked by Lean, the propagation rules and
   composed proofs, the prove/refute twin, labels and nogoods, PageRank and graph queries, the line M2.
 - [library.md](library.md): line M3: promotion of proved auxiliary lemmas, the library as nodes and Lean files, the BM25 search
