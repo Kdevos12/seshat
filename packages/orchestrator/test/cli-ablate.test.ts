@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { promisify } from "node:util";
 import { buildReport } from "../src/index.ts";
-import { compareProbe } from "../src/probe.ts";
+import { compareProbe, probeDirOf } from "../src/probe.ts";
 import { measureRun } from "../src/measures.ts";
 import { scriptedRun } from "./ablate-helpers.ts";
 import { tempDir } from "./m0-helpers.ts";
@@ -71,8 +71,8 @@ describe("harness chunks and the probe in the report", () => {
     const r = scriptedRun({ problems: [{ id: "p1", outcome: "candidate", attempts: [{ usd: 0.1, outcome: "valid" }] }] }, dir);
     void buildReport(r.events);
     const m = measureRun(r.events);
-    mkdirSync(join(dir, "probe"));
-    writeFileSync(join(dir, "probe", "probe.json"), JSON.stringify({ probeSet: ["p1"], memoryDir: "m", verified: { events: 1, dropped: 2 }, on: m, off: m, verdict: compareProbe(m, m) }));
+    mkdirSync(probeDirOf(dir));
+    writeFileSync(join(probeDirOf(dir), "probe.json"), JSON.stringify({ probeSet: ["p1"], memoryDir: "m", verified: { events: 1, dropped: 2 }, on: m, off: m, verdict: compareProbe(m, m) }));
     const out = await harness(["report", dir]);
     assert.equal(out.code, 0);
     assert.match(out.stdout, /## Memory probe/);
@@ -93,5 +93,16 @@ describe("choosing problems by sequence or tag", () => {
     assert.match((await harness([...base, "--tag", "magic"])).stderr, /--tag must be one of analogy, induction/);
     assert.match((await harness([...base, "--sequence", "x", "--concurrency", "3"])).stderr, /--concurrency 1/);
     assert.match((await harness([...base, "--sequence", "x", "--all"])).stderr, /exactly one of/);
+  });
+});
+
+describe("run --probe-every", () => {
+  it("takes a whole number of at least 1, and says so before anything runs", async () => {
+    const checkout = tempDir("mh-cli-checkout-");
+    for (const bad of ["0", "x", "1.5"]) {
+      const r = await harness(["run", "--checkout", checkout, "--model", "a/b", "--all", "--probe-every", bad]);
+      assert.equal(r.code, 2, bad);
+      assert.match(r.stderr, /--probe-every must be a whole number of at least 1/);
+    }
   });
 });

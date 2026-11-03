@@ -5,7 +5,7 @@ import { type ProblemEntry } from "@seshat/bench";
 import { Journal, loadMemoryChain, readEvents } from "@seshat/core";
 import { measureRun } from "../src/measures.ts";
 import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
-import { chooseProbeSet, compareProbe, overTime, probeDue, renderProbe, runProbe, signTest, verifiedOnlyMemory } from "../src/probe.ts";
+import { frozenProbeSet, linesOfRun, probeDirOf, runIndexOf, chooseProbeSet, compareProbe, overTime, probeDue, renderProbe, runProbe, signTest, verifiedOnlyMemory } from "../src/probe.ts";
 import { scriptedRun, type ScriptedSpec } from "./ablate-helpers.ts";
 import { tempDir } from "./m0-helpers.ts";
 
@@ -138,5 +138,36 @@ describe("over time", () => {
     assert.deepEqual(rows.map((r) => r.run), [a, b]);
     assert.equal(rows[1]?.solved, 2);
     assert.ok((rows[1]?.strategies ?? 0) >= (rows[0]?.strategies ?? 0));
+  });
+});
+
+describe("the probe beside the run, frozen and under the run's lines", () => {
+  it("is written beside the run directory, never inside it", () => {
+    assert.equal(probeDirOf("/runs/r1"), "/runs/r1.probe");
+    assert.equal(probeDirOf("/runs/r1/"), "/runs/r1.probe");
+  });
+
+  it("draws the set once and reuses it for the next run of the chain, refusing it if the memory has since been built on it", () => {
+    const first = tempDir("mh-frozen-a-");
+    scriptedRun({ problems: [{ id: "b0", outcome: "unsolved", attempts: [{ usd: 0.1 }] }] }, first);
+    const out1 = probeDirOf(first);
+    const set1 = frozenProbeSet(first, out1, bench, { size: 5, seed: "s" });
+    assert.equal(set1.length, 5);
+    // The next run starts on the first one, whose problems differ: the pool shrinks, the set does not move.
+    const second = tempDir("mh-frozen-b-");
+    scriptedRun({ problems: [{ id: "b1", outcome: "unsolved", attempts: [{ usd: 0.1 }] }] }, second);
+    assert.deepEqual(frozenProbeSet(first, out1, bench, { size: 5, seed: "other" }).map((p) => p.id), set1.map((p) => p.id));
+    const taken = set1[0]?.id as string;
+    const third = tempDir("mh-frozen-c-");
+    scriptedRun({ problems: [{ id: taken, outcome: "unsolved", attempts: [{ usd: 0.1 }] }] }, third);
+    assert.throws(() => frozenProbeSet(third, probeDirOf(third), bench, { fixed: [taken] }), /memory was built on/);
+  });
+
+  it("reads the lines and options a run was started with, and counts a run's place in its chain", () => {
+    const dir = tempDir("mh-lines-");
+    scriptedRun({ lines: ["M1", "M10"], problems: [{ id: "p1", outcome: "unsolved", attempts: [{ usd: 0.1 }] }] }, dir);
+    assert.deepEqual(linesOfRun(dir).lines, ["M1", "M10"]);
+    assert.equal(runIndexOf(undefined), 1);
+    assert.equal(runIndexOf(dir), 2);
   });
 });
