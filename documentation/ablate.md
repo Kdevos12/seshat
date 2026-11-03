@@ -73,3 +73,16 @@ harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
 ```
 
 `--split N` builds each arm's memory on N problems of the sample and measures it on the others. A turn limit, `--human` and `--offpeak` are refused through `ablationRefusal`. `harness chunks` prints the cost-to-first-success curves of finished runs.
+
+## The probe (PE9)
+
+A memory that grows can start to hurt: agents copy what they retrieve, and a stored error propagates. The probe is the guard.
+
+- **The set.** 20 problems by default (`--probe-size N`), drawn by a seed from the bench's problems that built nothing, or a fixed list in a file (`--probe-set FILE`, one id per line). The set is refused if it names a problem the memory was built on.
+- **The two runs.** `harness probe RUN_DIR` runs the set twice from the same seed and budget: with the memory of the run (and the journals it was started on), and with `verifiedOnlyMemory` of it. That memory is the journal re-emitted, with a new hash chain, holding the claims, the Lean validations and tool runs behind them, the edges Lean checked, and the nodes no mechanism learned from outcomes. It withholds the attempts, the lessons, every record that carries a provenance stamp (Global Constraint 16), the decisions, and a claim status Lean did not set. `harness run --probe-every K` does it after every K-th run of a memory chain.
+- **The alarm.** Paired by problem: the memory rings when it solves fewer problems than none, or costs more on more problems and in total, and the gap passes a one-sided exact sign test (alpha 0.1). With 20 problems the test has little power: the alarm needs 4 problems lost to none, so it catches a loud entrenchment, not a quiet one. A missing alarm is not a clean bill.
+- **The report.** `probe/probe.json` in the run directory is shown by `harness report` under "Memory probe", the alarm first.
+- **The split.** `harness ablate --split N` builds each configuration's memory on N problems and measures it on the others, which also corrects an optimistic measurement of M3.
+- **Over time.** `overTime` gives, for a series of runs, the distinct strategies and sources among proofs, the share of the budget on strategies never tried on that claim group, and the share of proofs that reuse a library lemma or schema.
+
+Nothing here has run against a real model: the sign test and the verified-only memory are tested on scripted journals.

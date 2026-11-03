@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -18,11 +18,12 @@ import { lessonsCommand } from "./lessons-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { ablateCommand, chunksCommand } from "./ablate-command.ts";
+import { ablateCommand, chunksCommand, readIdList } from "./ablate-command.ts";
+import { chooseProbeSet, DEFAULT_PROBE_SIZE, PROBE_DIR, probeDue, problemsBuilt, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
-import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunResult, RunSetupError } from "./run.ts";
+import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
@@ -42,6 +43,7 @@ const usage = `usage:
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N] [--reference NAME]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
+  harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
@@ -62,6 +64,9 @@ ablate: runs the cumulative configurations of plan section 6 (M0, then each line
 (documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
 would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
+probe: reruns a fixed probe set (20 problems by default, none of which built the memory) twice, with the memory of RUN_DIR and with its verified
+facts alone, and rings an alarm when the memory does worse beyond noise (documentation/ablate.md). run --probe-every K does it after every K-th
+run of a memory chain; harness report shows the result.
 add: installs a pack (documentation/packs.md): a directory or git repository with a pack.json, tools and skills. The manifest and
 the contract cases it carries are validated, nothing of it is executed, and a pack that could write a claim's status is refused.
 A pack whose tools start programs or reach servers needs --allow-programs; its own level-1 request is honoured (from the next session) only with --level1. Its tools are level 2, never in the declared set
@@ -135,6 +140,9 @@ const { positionals, values } = parseArgs({
     split: { type: "string" },
     reference: { type: "string" },
     "chunk-k": { type: "string" },
+    "probe-every": { type: "string" },
+    "probe-size": { type: "string" },
+    "probe-set": { type: "string" },
     "line-option": { type: "string", multiple: true },
     "draw-seed": { type: "string" },
     "decide-backend": { type: "string" },
@@ -188,6 +196,7 @@ async function main(): Promise<number> {
     if (command === "report") return report();
     if (command === "ablate") return await ablate();
     if (command === "chunks") return chunks();
+    if (command === "probe") return await probe();
     if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
     if (command === "hint") return hint();
     if (command === "sign") return sign();
@@ -549,6 +558,51 @@ async function run(): Promise<number> {
   return finished(result, dir);
 }
 
+/** What every run of a command needs besides its configuration, its problems and its directory. */
+function runTemplate(index: BenchIndex, checkout: string, controller: AbortController): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
+  const host = hostName(values.host);
+  const codeRev = codeRevision();
+  return {
+    index,
+    checkout,
+    models: builtinModels(),
+    registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+    leanEnvironment: (options) => hostLeanEnv({ host, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+    signal: controller.signal,
+    log: (line) => console.error(line),
+    ...(codeRev !== undefined ? { codeRev } : {}),
+  };
+}
+
+/** The probe of a run's memory (PE9): its set, its two runs, the verdict. Written to `<dir>/probe`, printed. */
+async function probeRun(memoryDir: string, index: BenchIndex, checkout: string, config: RunConfig, out: string): Promise<number> {
+  const size = number("probe-size", values["probe-size"], DEFAULT_PROBE_SIZE);
+  const set = chooseProbeSet(index.problems, {
+    size,
+    seed: String(config.seed ?? "probe"),
+    ...(values["probe-set"] !== undefined ? { fixed: readInput(() => readIdList(values["probe-set"] as string)) } : {}),
+    builtOn: problemsBuilt(memoryDir),
+  });
+  const result = await runProbe({ memoryDir, template: runTemplate(index, checkout, stoppable()), config, problems: set, dir: out });
+  process.stdout.write(renderProbe(result));
+  return 0;
+}
+
+/** `harness probe RUN_DIR ...`. */
+async function probe(): Promise<number> {
+  const memoryDir = requireTarget("probe", "a run directory");
+  if (values.checkout === undefined) throw new UsageError("probe needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("probe needs --model PROVIDER/ID");
+  if (!existsSync(values.checkout)) throw new InputError(`no directory ${values.checkout}`);
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const lines = selectLines();
+  const options = lineOptions(values["line-option"] ?? []);
+  const config: RunConfig = { ...sharedConfig({ ids: [] }, values.model, thinking), ...(lines.length > 0 ? { lines } : {}), ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}) };
+  return await probeRun(resolve(memoryDir), index, values.checkout, config, resolve(values.out ?? join(memoryDir, PROBE_DIR)));
+}
+
 /** `harness ablate ...` (documentation/ablate.md). */
 async function ablate(): Promise<number> {
   if (target !== undefined) throw new UsageError(`ablate takes no positional argument, got ${target}`);
@@ -574,21 +628,9 @@ async function ablate(): Promise<number> {
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
   };
-  const host = hostName(values.host);
-  const controller = stoppable();
-  const codeRev = codeRevision();
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
   await ablateCommand({
-    template: {
-      index,
-      checkout,
-      models: builtinModels(),
-      registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
-      leanEnvironment: (options) => hostLeanEnv({ host, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
-      signal: controller.signal,
-      log: (line) => console.error(line),
-      ...(codeRev !== undefined ? { codeRev } : {}),
-    },
+    template: runTemplate(index, checkout, stoppable()),
     config,
     problems,
     dir,
@@ -726,7 +768,10 @@ function report(): number {
   const events = readInput(() => readEvents(journal));
   if (!events.some((e) => e.type === "run.started")) throw new InputError(`${target}: the run did not start, its journal is empty`);
   const built = buildReport(events);
-  process.stdout.write(values.json ? `${JSON.stringify(built, null, 2)}\n` : renderRunReport(built));
+  const probeFile = join(target, PROBE_DIR, "probe.json");
+  const probed = existsSync(probeFile) ? readInput(() => JSON.parse(readFileSync(probeFile, "utf8")) as ProbeResult) : undefined;
+  if (values.json) process.stdout.write(`${JSON.stringify(probed === undefined ? built : { ...built, probe: probed.verdict }, null, 2)}\n`);
+  else process.stdout.write(renderRunReport(built) + (probed === undefined ? "" : `\n${renderProbe(probed)}`));
   return 0;
 }
 
