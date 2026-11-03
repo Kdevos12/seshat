@@ -19,7 +19,7 @@ as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve`
 consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)); line M17 puts a run in
 one with more packages than the bench's.
 The provers can also be given SageMath, an external program installed with Docker or pip
-([documentation/compute.md](documentation/compute.md)). A run can start on the memory of an earlier
+([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2 and human-written skills and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
 draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
 ([documentation/memory.md](documentation/memory.md)). Nothing has run against a real
@@ -77,6 +77,7 @@ flowchart TB
     proveauto["prove_auto<br/>the battery on one goal"]:::wait
     provesearch["prove_search<br/>goal-level best-first search"]:::wait
     moretools["SAT, counterexample<br/>search"]:::planned
+    packs["Installed packs<br/>tools at level 2 and skills,<br/>harness add, never a status"]:::built
   end
 
   m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::wait
@@ -171,6 +172,7 @@ flowchart TB
   m18 -->|"variants as claims,<br/>special_case_of edges, tasks"| journal
   m18 -->|"proved special cases<br/>and proofs in the briefing"| provers
   provers -.-> moretools
+  provers -.->|"tool search"| packs
   bench -->|"problems and open<br/>subgoals, when M10 is on"| m10
   m10 -->|"cheapest tactics first,<br/>stop at the first success"| battery
   battery -->|"Lean files"| leancheck
@@ -285,6 +287,7 @@ pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conje
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --turn-usd 2
 pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and: harness resume runs/RUN_ID --checkout ...
 pnpm harness lean-env resolve base
+pnpm harness add ../some-pack --allow-programs    # then: pnpm harness packs, pnpm harness remove NAME
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool lean.lsp
 ```
 

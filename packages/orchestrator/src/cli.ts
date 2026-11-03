@@ -15,6 +15,7 @@ import { renderHealth } from "./health.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
+import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
@@ -45,9 +46,16 @@ const usage = `usage:
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
   harness library export RUN_DIR [--out DIR] [--include-computed]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness add PATH|GIT_URL [--allow-programs] [--replace] [--packs-dir DIR]
+  harness packs [--packs-dir DIR]
+  harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+add: installs a pack (documentation/packs.md): a directory or git repository with a pack.json, tools and skills. The manifest and
+the contract cases it carries are validated, nothing of it is executed, and a pack that could write a claim's status is refused.
+A pack whose tools start programs or reach servers needs --allow-programs. Its tools are level 2, never in the declared set
+of a running session. packs lists the installed packs; remove removes one. The directory is --packs-dir, SESHAT_PACKS_DIR or packs/.
 library export: writes the lemma library of a run as lean/SeshatLib/<Domain>.lean (documentation/library.md), generated from
 the journal and not compiled here; --out DIR changes the directory the SeshatLib folder goes under.
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
@@ -132,6 +140,9 @@ const { positionals, values } = parseArgs({
     json: { type: "boolean" },
     find: { type: "boolean" },
     "env-dir": { type: "string" },
+    "allow-programs": { type: "boolean" },
+    replace: { type: "boolean" },
+    "packs-dir": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -160,6 +171,15 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "add") {
+      if (target === undefined) throw new UsageError("add needs a directory or a git url");
+      return addCommand(target, { dir: values["packs-dir"], allowPrograms: values["allow-programs"], replace: values.replace, out: (l) => console.log(l) });
+    }
+    if (command === "packs") return packsCommand({ dir: values["packs-dir"], out: (l) => console.log(l) });
+    if (command === "remove") {
+      if (target === undefined) throw new UsageError("remove needs the name of a pack");
+      return removeCommand(target, { dir: values["packs-dir"], out: (l) => console.log(l) });
+    }
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(`${error.message}\n\n${usage}`);
