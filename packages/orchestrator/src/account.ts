@@ -21,6 +21,7 @@ import { referencesIn } from "@seshat/guards";
 import { claimAndParts, hintOf, HINT_KIND, STEER_KIND, steerOf } from "./team.ts";
 import { JUDGMENT_KIND } from "./breakpoints.ts";
 import { type Ledger, messageCost } from "./budget.ts";
+import type { PriceBook } from "./prices.ts";
 import { answersSince, nextLimit, type ConsortiumConfig, turnRecords } from "./turns.ts";
 import { consortiumOf } from "./consortium.ts";
 
@@ -672,6 +673,7 @@ export function narrativeCall(o: {
   thinkingLevel: ThinkingLevel;
   ledger: Ledger;
   signal?: AbortSignal | undefined;
+  prices?: PriceBook | undefined;
 }): NarrativeCall {
   return async (request) => {
     if (o.ledger.exhausted) throw new Error("the narrative's budget is spent");
@@ -688,7 +690,7 @@ export function narrativeCall(o: {
       { systemPrompt: request.system, messages: [{ role: "user", content: request.prompt, timestamp: Date.now() }] },
       options,
     );
-    const cost = messageCost(o.model, message);
+    const cost = messageCost(o.model, message, o.prices);
     o.ledger.charge(cost);
     const answer = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n").trim();
     const outcome = message.stopReason === "error" ? "error" : message.stopReason === "aborted" ? "aborted" : "ok";
@@ -708,6 +710,9 @@ export function narrativeCall(o: {
         inputTokens: cost.inputTokens,
         outputTokens: cost.outputTokens,
         ...(cost.cachedInputTokens !== undefined ? { cachedInputTokens: cost.cachedInputTokens } : {}),
+        ...(cost.savedUsd !== undefined ? { savedUsd: cost.savedUsd } : {}),
+        ...(cost.offPeakUsd !== undefined ? { offPeakUsd: cost.offPeakUsd } : {}),
+        ...(cost.unchargedUsd !== undefined ? { unchargedUsd: cost.unchargedUsd } : {}),
       },
       "orchestrator",
     );

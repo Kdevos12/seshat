@@ -12,7 +12,7 @@ import {
 } from "../src/index.ts";
 
 /** A world over a real journal and one claim, as in hooks.test.ts, with the exploration floor as the test sets it. */
-async function setup(options: JsonObject = {}, fleet = createFleet()) {
+async function setup(options: JsonObject = {}, fleet = createFleet(), ignoresSetting?: SessionContext["ignoresSetting"]) {
   const dir = mkdtempSync(join(tmpdir(), "mh-soft-"));
   const journal = Journal.open(dir, "run_1");
   const memory = new MemoryStore({ journal, blobs: new BlobStore(join(dir, "blobs")) });
@@ -23,7 +23,7 @@ async function setup(options: JsonObject = {}, fleet = createFleet()) {
   const problem = (): ProblemContext =>
     ({ line: "fleet", runId: "run_1", problemId: "prob_1", claimId, memory: memory.withActor("line:fleet"), registry, signal: controller.signal, options: { ...FLEET_OPTIONS, widen: false, ...options } }) as unknown as ProblemContext;
   const context = (prover: string, session: number): SessionContext =>
-    ({ ...problem(), prover, session, sessions: 999, attemptId: `att_${prover}_${session}`, model: "faux/prover", regions: { aux: "", proof: "" } }) as unknown as SessionContext;
+    ({ ...problem(), prover, session, sessions: 999, attemptId: `att_${prover}_${session}`, model: "faux/prover", regions: { aux: "", proof: "" }, ...(ignoresSetting !== undefined ? { ignoresSetting } : {}) }) as unknown as SessionContext;
 
   /** A session as the orchestrator runs it: the decision, the attempt that records it, and its end. */
   async function run(prover: string, number: number, outcome: "valid" | "invalid", failureClass = "unsolved_goals") {
@@ -256,6 +256,53 @@ describe("the settings a session is given", () => {
     }
     assert.ok(Math.min(...temperatures) < 0.4 && Math.max(...temperatures) > 0.8);
     assert.deepEqual([...levels].sort(), ["high", "low"]);
+  });
+
+  it("spends no arm on a setting the model family ignores: no temperature while the model thinks, one while it does not", async () => {
+    // The host says: this family ignores the temperature whenever it thinks (any level but off).
+    const ignores = (_model: string, setting: string, thinking = "medium") => setting === "temperature" && thinking !== "off";
+    const world = await setup({ strategies: false, seed: 9, temperature: [0.3, 0.9], thinking: ["off", "high"] }, createFleet(), ignores);
+    let withTemperature = 0;
+    let without = 0;
+    for (let k = 1; k <= 40; k++) {
+      const settings = (await world.run("p1", k, "invalid"))?.settings ?? {};
+      if (settings.thinking === "high") {
+        assert.equal(settings.temperature, undefined, "a thinking session sends no temperature");
+        assert.deepEqual(settings.ignored, ["temperature"], "the record says why");
+        without += 1;
+      } else {
+        assert.ok(settings.temperature === 0.3 || settings.temperature === 0.9);
+        assert.equal(settings.ignored, undefined);
+        withTemperature += 1;
+      }
+    }
+    assert.ok(withTemperature > 0 && without > 0, `both modes were drawn: ${withTemperature} and ${without}`);
+    // The temperature's arms are learned from the sessions where it acted only.
+    const learned = world.memory.attempts(world.claimId).filter((a) => a.settings?.temperature !== undefined);
+    assert.equal(learned.length, withTemperature);
+    assert.ok(allocations(world.memory, world.claimId).filter((r) => r.data.settings?.thinking === "high").every((r) => r.data.settingDraws?.temperature === undefined));
+  });
+
+  it("keeps its draws as they were when the host ignores nothing", () => {
+    const config = { temperature: { min: 0.2, max: 1 }, thinking: ["low", "high"] };
+    const before = sampleSettings(seeded(4), config, [], 0.5);
+    const none = sampleSettings(seeded(4), config, [], 0.5, undefined, undefined);
+    assert.deepEqual(before, none);
+    const ignoring = sampleSettings(seeded(4), config, [], 0.5, undefined, () => false);
+    assert.equal(typeof ignoring.settings.temperature, "number");
+    assert.equal(ignoring.settings.ignored, undefined);
+  });
+
+  it("leaves the later draws as they would be without a temperature when it is skipped", () => {
+    const withTemperature = { temperature: { values: [0.3, 0.9] }, thinking: ["low", "high"], directives: { a: "A", b: "B", c: "C" }, modes: ["standard", "nl_first"] as Array<"standard" | "nl_first"> };
+    const { temperature: _t, ...without } = withTemperature;
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const skipped = sampleSettings(seeded(seed), withTemperature, [], 0.5, undefined, (setting) => setting === "temperature");
+      const reference = sampleSettings(seeded(seed), without, [], 0.5, undefined, () => false);
+      assert.equal(skipped.settings.temperature, undefined);
+      assert.deepEqual({ ...skipped.settings, ignored: undefined }, { ...reference.settings, ignored: undefined });
+      assert.deepEqual(skipped.draws, reference.draws);
+    }
   });
 
   it("decides nothing when no setting is configured, and with the strategies off", async () => {

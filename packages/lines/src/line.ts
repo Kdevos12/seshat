@@ -309,6 +309,13 @@ export interface ProblemContext {
    * a context an older caller builds.
    */
   ranking?: ModelRanking;
+  /**
+   * Whether the host says the family of `model` (`provider/id`) ignores a sampled setting such as `temperature`
+   * when a request thinks at `thinking` (a level, or `off`; default: the run's level). A line that samples settings
+   * spends no draw and no arm on an ignored one (documentation/fleet.md, "Sampled settings"). Absent in a context an
+   * older caller builds: nothing is ignored.
+   */
+  ignoresSetting?: (model: string, setting: string, thinking?: string) => boolean;
 }
 
 /** The problem's theorem. */
