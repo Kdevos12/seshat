@@ -33,6 +33,8 @@ export interface ProverOptions {
   limits: SessionLimits;
   /** Length limit of the notes passed from one session to the next. */
   notesChars: number;
+  /** A candidate text of the system prompt (`RunConfig.prompts`); absent: the merged prompt. */
+  systemTemplate?: string;
   /** The prompt cache retention asked of the provider (`SessionOptions.cacheRetention`); absent: its default. */
   cacheRetention?: CacheRetention;
   /** How the session's requests are built from a line's context packet (`SessionOptions.packetMode`); absent: `prefix_tail`. */
@@ -129,7 +131,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const actor = `prover:${o.name}`;
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
-  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)));
+  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate);
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;

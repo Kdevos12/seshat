@@ -33,6 +33,8 @@ export interface Arm {
   model?: string;
   /** Direct capabilities besides `lean_check` (the table's, when absent). */
   tools?: string[];
+  /** A candidate prompt in place of the merged one (`harness optimize-prompts` measures its candidates as arms; documentation/prompts.md). */
+  prompts?: RunConfig["prompts"];
   /** The arm this one is compared with. Default: the arm before it in the table. */
   versus?: string;
 }
@@ -52,7 +54,7 @@ export function cumulativeArms(names: readonly string[] = cumulativeNames()): Ar
 
 /** The run configuration of an arm: the table's, with the arm's lines and settings. */
 export function armConfig(base: RunConfig, arm: Arm): RunConfig {
-  const { lines: _lines, lineOptions: _options, packetMode: _mode, decide: _decide, tools: _tools, ...shared } = base;
+  const { lines: _lines, lineOptions: _options, packetMode: _mode, decide: _decide, tools: _tools, prompts: _prompts, ...shared } = base;
   return {
     ...shared,
     ...(arm.model !== undefined ? { model: arm.model } : {}),
@@ -61,6 +63,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
     ...(arm.lineOptions !== undefined && Object.keys(arm.lineOptions).length > 0 ? { lineOptions: arm.lineOptions } : {}),
     ...(arm.packetMode !== undefined ? { packetMode: arm.packetMode } : {}),
     ...(arm.decide !== undefined ? { decide: arm.decide } : {}),
+    ...(arm.prompts !== undefined ? { prompts: arm.prompts } : {}),
   };
 }
 
@@ -146,7 +149,7 @@ export interface AblationResult {
   arms: ArmResult[];
 }
 
-const SOLVED = new Set(["proved", "refuted", "candidate"]);
+export const SOLVED = new Set(["proved", "refuted", "candidate"]);
 
 function tier(problems: ReadonlyArray<{ outcome: string; usd: number }>): Tier {
   const solved = problems.filter((p) => SOLVED.has(p.outcome)).length;
@@ -169,8 +172,8 @@ export function splitByDifficulty(arm: RunMeasures, basis: RunMeasures): { easy:
  * with the exact one-sided sign test of the difference; with few problems a difference of one is not evidence, so a verdict whose p is
  * above `alpha` says it is indicative only.
  */
-export function compareArms(name: string, mine: RunMeasures, other: { name: string; measures: RunMeasures }, alpha = 0.1): Comparison {
-  const finished = (m: RunMeasures) => new Map(m.perProblem.map((p) => [p.problemId, p]));
+export function compareArms(name: string, mine: Pick<RunMeasures, "perProblem">, other: { name: string; measures: Pick<RunMeasures, "perProblem"> }, alpha = 0.1): Comparison {
+  const finished = (m: Pick<RunMeasures, "perProblem">) => new Map(m.perProblem.map((p) => [p.problemId, p]));
   const a = finished(mine);
   const b = finished(other.measures);
   const common = [...a.keys()].filter((id) => b.has(id)).sort();
