@@ -1,0 +1,12 @@
+{
+  "builder": "none",
+  "description": "The LibraryBuilder (plan change LC4, documentation/library-builder.md). `none` builds nothing: gaps are only recorded. To delegate to a coding agent, set builder to coding-agent and fill in agent, repo and certifier as the page describes; the harness's own keys never reach the agent, only the variables named in agent.env.",
+  "coding-agent": {
+    "agent": { "agent": "claude-code", "env": { "ANTHROPIC_API_KEY": "${env:LIBRARY_BUILDER_API_KEY}" }, "sandbox": [] },
+    "repo": "${env:LIBRARY_BUILDER_REPO}",
+    "build": { "cwd": ".", "libRoot": "lean", "prepare": [["lake", "exe", "cache", "get"]], "timeoutSec": 3600 },
+    "certifier": { "unsandboxed": false, "sandbox": [], "lean": "v4.27.0" },
+    "budget": { "usd": 5, "seconds": 3600 },
+    "timeoutSec": 3600
+  }
+}

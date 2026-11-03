@@ -162,13 +162,21 @@ export async function promoteCandidates(problem: ProblemContext, isTrivial: Triv
     const domain = domainOf(problem);
     const safeDoc = glossOf(c.doc);
     const gloss = safeDoc ?? `Auxiliary lemma ${c.name.replace(/^aux_/, "")} from ${problem.target.theorem}`;
-    const ensured = await memory.ensureClaim({
-      statement: c.statement,
-      header: c.header,
-      origin: "line:M3",
-      gloss,
-      domain: problem.domain.length > 0 ? [...problem.domain] : [],
-    });
+    let ensured: Awaited<ReturnType<typeof memory.ensureClaim>>;
+    try {
+      ensured = await memory.ensureClaim({
+        statement: c.statement,
+        header: c.header,
+        origin: "line:M3",
+        gloss,
+        domain: problem.domain.length > 0 ? [...problem.domain] : [],
+      });
+    } catch (error) {
+      // A statement that uses a definition not yet reviewed (plan change LC5) cannot be a claim, so it cannot be a library lemma.
+      settle(c.nodeId, "unproved", `the lemma cannot be a claim: ${error instanceof Error ? error.message : String(error)}`);
+      result.unproved += 1;
+      continue;
+    }
     const validation = await problem.validate({ claimId: ensured.claimId, proof: c.proof });
     if (validation.verdict !== "valid") {
       settle(c.nodeId, "unproved", `the lemma alone was not accepted: ${validation.reasons[0] ?? "invalid"}`);
