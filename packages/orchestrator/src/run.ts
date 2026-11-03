@@ -580,6 +580,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       policy: policyRecord,
       certifier: certifierRecord,
       ...(leanEnvRecorded !== undefined ? { leanEnv: leanEnvRecorded } : {}),
+      // The installed packs, by content hash (documentation/packs.md), so that the run can be reproduced; only when there are some.
+      ...(registry.packs.length > 0 ? { packs: registry.packRecords() as unknown as Json } : {}),
       ...(certifierDown !== undefined ? { certifierUnavailable: certifierDown } : {}),
       // Only with lines, so that an M0 run records what it always did.
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),

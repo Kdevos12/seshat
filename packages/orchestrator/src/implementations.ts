@@ -12,6 +12,7 @@ import {
   hostProfilePath,
   interpolate,
   loadCatalog,
+  loadInstalledPacks,
   loadHostProfile,
   MissingVariableError,
   Registry,
@@ -55,6 +56,13 @@ export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "
   leanEnv?: string;
   /** The directory with the environment files. Default: `lean/env/` of this repository. */
   envRoot?: string;
+  /** The pack directory (documentation/packs.md). Default: `SESHAT_PACKS_DIR`, then `packs/` of this repository. */
+  packsDir?: string;
+}
+
+/** The pack directory: the option, `SESHAT_PACKS_DIR`, then `packs/` of this repository. */
+export function packsDirectory(explicit?: string): string {
+  return explicit ?? (process.env.SESHAT_PACKS_DIR || `${REPO_ROOT}packs`);
 }
 
 export function hostName(explicit?: string): string {
@@ -106,7 +114,7 @@ export function hostLeanEnv(options: Pick<OpenRegistryOptions, "host" | "configD
 
 /** The registry of this repository, for a host. */
 export function openRegistry(options: OpenRegistryOptions = {}): Registry {
-  const { host, catalogDir, configDir, factories, leanEnv, envRoot, env, ...rest } = options;
+  const { host, catalogDir, configDir, factories, leanEnv, envRoot, env, packsDir, ...rest } = options;
   const name = hostName(host);
   const config = configDir ?? `${REPO_ROOT}config`;
   const profile = loadHostProfile(hostProfilePath(config, name));
@@ -117,6 +125,7 @@ export function openRegistry(options: OpenRegistryOptions = {}): Registry {
   return new Registry({
     ...rest,
     catalog: loadCatalog(catalogDir ?? `${REPO_ROOT}capabilities`),
+    packs: rest.packs ?? loadInstalledPacks(packsDirectory(packsDir)),
     host: profile,
     factories: factories ?? FACTORIES,
     ...(found !== undefined ? { leanEnv: found.pin } : {}),

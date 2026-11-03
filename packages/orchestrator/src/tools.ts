@@ -22,7 +22,11 @@ export function checkTools(registry: Registry, ids: readonly string[]): string[]
       problems.push("lean.check is always given, as lean_check");
       continue;
     }
-    if (capability.manifest.exposure !== "direct") problems.push(`${id} is not a direct capability (its exposure is ${capability.manifest.exposure})`);
+    // A pack's tool is level 2 (deferred) unless its pack asked for level 1: the registry of a session is built with the packs
+    // installed before it, so the request takes effect in the session after the install and never changes a running one.
+    if (capability.manifest.exposure !== "direct" && !registry.level1Requested(id)) {
+      problems.push(`${id} is not a direct capability (its exposure is ${capability.manifest.exposure})`);
+    }
     if (!registry.offers(id)) problems.push(`host ${registry.host.host} does not offer ${id}`);
     if (names.has(toolName(id))) problems.push(`${id}: the tool name ${toolName(id)} is taken`);
     names.add(toolName(id));

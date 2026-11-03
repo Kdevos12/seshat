@@ -43,6 +43,8 @@ export interface RunReport {
   lines?: string[];
   /** The Lean environment the run was pinned to (documentation/lean-env.md); absent for a run on a host that names none. */
   leanEnv?: LeanEnvRecord;
+  /** The installed packs the run used, by content hash (documentation/packs.md); absent when none was installed. */
+  packs?: Array<{ name: string; version: string; hash: string }>;
   /** True when the run's last `run.finished` is more recent than its last resumption: a run that was resumed and cut again has not finished. */
   finished: boolean;
   stopped?: string;
@@ -514,6 +516,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const lessons = lessonReport(events);
   const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
+  const recordedPacks = (started.config as { packs?: unknown } | null)?.packs;
+  const packs = Array.isArray(recordedPacks) ? (recordedPacks as Array<{ name: string; version: string; hash: string }>) : [];
   return {
     runId: started.runId,
     benchId: started.benchId,
@@ -522,6 +526,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(started.codeRev !== undefined ? { codeRev: started.codeRev } : {}),
     ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
     ...(leanEnv !== undefined ? { leanEnv } : {}),
+    ...(packs.length > 0 ? { packs } : {}),
     finished: finished !== undefined,
     ...(finished?.stopped !== undefined ? { stopped: finished.stopped } : {}),
     ...(crashed.length > 0
@@ -663,7 +668,8 @@ export function renderRunReport(report: RunReport): string {
       `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
-      `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}`,
+      `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}` +
+      `${report.packs !== undefined ? ` Packs: ${report.packs.map((p) => `${p.name} ${p.version} (${p.hash.slice(0, 12)})`).join(", ")}.` : ""}`,
     report.finished
       ? report.stopped !== undefined
         ? `The run stopped early: ${report.stopped}.`
