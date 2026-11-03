@@ -7,9 +7,10 @@ describe("line M10 in a run", () => {
     const logs: string[] = [];
     const run = await demoRun({ responses: [check("exact trivial_proof")], lean: new DemoLean(() => ({})), config: { lines: ["M10"] }, log: (l) => logs.push(l) });
     assert.match(logs.join("\n"), /M10: \d+ goal\(s\); tactics: /);
-    assert.match(logs.join("\n"), /M10: \w+ closed the target/);
+    assert.match(logs.join("\n"), /M10: \S+ closed the target/);
     const types = run.events.map((e) => e.type);
-    const firstAttempt = types.indexOf("attempt.started");
+    const started = types.indexOf("attempt.started");
+    const firstAttempt = started < 0 ? types.length : started;
     const before = (type: string) => types.slice(0, firstAttempt).filter((t) => t === type).length;
     assert.ok(before("tool_run.started") > 0, "the battery's tries are tool runs, before the prover starts");
     assert.equal(before("validation.finished"), 1, "the success went through validate, once");
