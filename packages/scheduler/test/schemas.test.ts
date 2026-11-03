@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { type SchemaData } from "@seshat/library";
+import { InterruptedError } from "@seshat/lines";
+import type { LeanMeta } from "@seshat/lean-meta";
 import {
-  covers, dataOf, generalize, generalStatement, instantiate, reuses, screenFormal, type Skeleton, skeletonFrom, skeletonOf, textOf,
+  confirm, covers, dataOf, generalize, generalStatement, instantiate, reuses, screenFormal, type Skeleton, skeletonFrom, skeletonOf, textOf,
 } from "../src/index.ts";
 
 const ZERO = {
@@ -137,5 +139,15 @@ describe("reuse", () => {
     assert.deepEqual(reuses(schema, "(n : ℕ) : n + 0 = n", ["(n : ℕ) : 0 + n = n", "(n : ℕ) : n = n"]), { reused: false, matched: 1 });
     assert.equal(reuses(schema, "(n : ℕ) : n + 0 = n", ["(n : ℕ) : 0 + n = n", "(n : ℕ) : n + 0 = 0 + n", "(n : ℕ) : n = n"]).reused, false);
     assert.deepEqual(reuses(schema, "(n : ℕ) : n * 1 = n", ["(n : ℕ) : 0 + n = n"]), { reused: false, matched: 0 });
+  });
+});
+
+describe("confirmation", () => {
+  it("passes an interruption through, and turns any other failure into a no that may be asked again", async () => {
+    const failing = (error: unknown) => ({ instances: async () => { throw error; } }) as unknown as LeanMeta;
+    const schema = sk(ZERO);
+    await assert.rejects(confirm(failing(new InterruptedError("stop")), schema, "(k : ℕ) : k + 0 = k", ""), /stop/);
+    const refused = await confirm(failing(new Error("down")), schema, "(k : ℕ) : k + 0 = k", "");
+    assert.deepEqual([refused.ok, refused.retry], [false, true]);
   });
 });

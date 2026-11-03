@@ -175,6 +175,9 @@ function sketchEntriesOf(memory: MemoryStore, problemId: string, claimId: string
 
 const archiveOf = (problem: ProblemContext): Archive => readArchive(problem.memory, problem.claimId, sketchEntriesOf(problem.memory, problem.problemId, problem.claimId));
 
+/** A hole's name as a prompt may show it: an `aux_` identifier, nothing a model could use to carry text. */
+export const isHoleName = (name: string): boolean => /^aux_[\p{L}\p{N}_']+$/u.test(name) && name.length <= 64;
+
 const clip = (text: string, n: number): string => {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -475,7 +478,7 @@ export function createM15Line(): Line {
       const body = proof !== undefined && screenFormal(proof.proof, 2000) === undefined && proof.aux.trim() === "" ? `closed: Lean accepted\n${indent(dedent(proof.proof))}` : claim.status === "computed" || claim.status === "proved" ? "closed: Lean accepted" : "open: not proved yet";
       holes.push(`lemma ${name} ${claim.statement.trim()}\n${indent(body)}`);
     }
-    if (screenFormal(e.mainProof, 2000) !== undefined) return undefined;
+    if (screenFormal(e.mainProof, 2000) !== undefined || !e.names.every(isHoleName)) return undefined;
     return {
       title: "Decomposition to extend",
       text:
@@ -488,14 +491,20 @@ export function createM15Line(): Line {
     const shown = new Set(session.drawn.included);
     const hints = nodesOf<HintData>(session.memory, M15_HINT_KIND, session.problemId, session.claimId).filter((h) => h.data.attemptId === session.attemptId && h.data.shown && shown.has(h.data.schemaId));
     if (hints.length === 0) return undefined;
+    // Stored text is screened again where it is shown: a node may come from an earlier journal or another writer.
+    const clean = (text: string, limit: number): boolean => screenFormal(text.replace(/\?\d+/g, "x"), limit) === undefined;
     const texts = hints.flatMap(({ data }) => {
       const schema = session.memory.node(data.schemaId);
       if (schema === undefined) return [];
       const d = asRecord<SchemaData>(schema.data);
+      if (!d.names.every(isHoleName) || !clean(d.mainProof, 2000)) return [];
       if (data.instance !== undefined) {
-        const lemmas = data.instance.parts.map((p) => `lemma ${p.name} ${p.statement} := by\n  sorry${p.covered !== undefined ? "\n(an instance of a fact Lean accepted for this problem: prove it from that fact)" : ""}`);
-        return [`A decomposition of this shape closed on another problem. Written for your theorem it is this sketch:\n\n${lemmas.join("\n\n")}\n\nMain proof:\n${indent(dedent(data.instance.mainProof))}`];
+        const i = data.instance;
+        if (!clean(i.mainProof, 2000) || !i.parts.every((p) => isHoleName(p.name) && clean(p.statement, 600))) return [];
+        const lemmas = i.parts.map((p) => `lemma ${p.name} ${p.statement} := by\n  sorry${p.covered !== undefined ? "\n(an instance of a fact Lean accepted for this problem: prove it from that fact)" : ""}`);
+        return [`A decomposition of this shape closed on another problem. Written for your theorem it is this sketch:\n\n${lemmas.join("\n\n")}\n\nMain proof:\n${indent(dedent(i.mainProof))}`];
       }
+      if (!clean(d.conclusion, 600) || !d.parts.every((p) => clean(p, 600)) || !/^[0-9A-Za-z:=]+$|^\d+p:\S{1,8}$/.test(d.region) || !/^[a-z_]+$/.test(d.family)) return [];
       return [`A decomposition of this shape (${d.region}, main proof by ${d.family}) closed on another problem. ?1, ?2... stand for the terms that differ:\n\nTheorem ${d.conclusion}\n${d.parts.map((p, k) => `lemma ${d.names[k] ?? `aux_part_${k + 1}`} ${p}`).join("\n")}\n\nMain proof:\n${indent(dedent(d.mainProof))}`];
     });
     if (texts.length === 0) return undefined;
@@ -530,7 +539,7 @@ export function createM15Line(): Line {
     const memory = problem.memory;
     let made = 0;
     for (const m of archive.members) {
-      if (!m.certified || m.depth !== 1 || m.names === undefined || m.mainProof === undefined) continue;
+      if (!m.certified || m.depth !== 1 || m.names === undefined || m.mainProof === undefined || !m.names.every(isHoleName)) continue;
       if (allSchemas(memory).some((x) => x.data.supports.some((sup) => sup.edgeId === m.edgeId))) continue;
       const record = sketchRecordsOf(memory, problemId, claimId).find((r) => r.edgeId === m.edgeId);
       const stored = record === undefined ? undefined : memory.blobs.get(record.submission);
