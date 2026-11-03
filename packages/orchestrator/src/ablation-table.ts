@@ -211,14 +211,25 @@ function agreements(arms: readonly ArmResult[]): string[] {
   ];
 }
 
-/** The cost-to-first-success curves for K provers in parallel (plan change PE4), as a markdown table. */
-export function renderChunks(title: string, curves: ReadonlyArray<import("./chunks.ts").ChunkCurve>, label?: RunLabel): string {
-  const rows = curves.map((c) => [
+/** The cost-to-first-success curves for K provers in parallel (plan change PE4), as a markdown table, with the K the journal cannot give. */
+export function renderChunks(title: string, analysis: import("./chunks.ts").ChunkAnalysis, label?: RunLabel): string {
+  const rows = analysis.curves.map((c) => [
     String(c.k),
     `${c.solved}/${c.problems}`,
     money(c.meanUsdToSuccess),
     money(c.usdPerSolve),
     c.budgetShare === undefined ? "n/a" : `${pct(c.budgetShare.median)} / ${pct(c.budgetShare.p80)}`,
   ]);
-  return `${[`# Cost to first success: ${title}`, "", ...(label !== undefined ? labelLines(label) : []), "K provers run side by side on the attempts of one prover; a round is paid for in full. The shares are of the problem's budget; the ladder's fractions are read from them on real runs.", "", ...table(["K", "Solved", "Mean $ to first success", "$ per solve", "Budget share (median / p80)"], rows)].join("\n")}\n`;
+  return `${[
+    `# Cost to first success: ${title}`,
+    "",
+    ...(label !== undefined ? labelLines(label) : []),
+    "K provers run side by side on the attempts of one prover; a round is paid for in full. The shares are of the problem's budget; the ladder's fractions are read from them on real runs.",
+    "",
+    ...table(["K", "Solved", "Mean $ to first success", "$ per solve", "Budget share (median / p80)"], rows),
+    "",
+    ...(analysis.refused.length > 0
+      ? [`Not given: ${analysis.refused.map((r) => `K = ${r.k}`).join(", ")}. ${analysis.refused[0]?.reason}. The curves for K above 1 need a measurement run with a fixed number of attempts that does not stop at the first success; a journal of the normal loop gives K = 1 only.`, ""]
+      : []),
+  ].join("\n")}\n`;
 }

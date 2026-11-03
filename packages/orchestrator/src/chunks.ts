@@ -139,3 +139,36 @@ export function attemptsByProver(events: readonly HarnessEvent[]): Array<{ probl
   }
   return [...groups.values()];
 }
+
+/**
+ * Whether the attempts of a prover stop at their first success, as the loop of a real prover does: a success that is the only one and
+ * the last. The protocol needs the attempts that would have followed it; a journal of such a prover does not hold them.
+ */
+export function stoppedAtSuccess(attempts: readonly AttemptCost[]): boolean {
+  const wins = attempts.filter((a) => a.success).length;
+  return wins === 1 && attempts.at(-1)?.success === true;
+}
+
+export interface ChunkAnalysis {
+  curves: ChunkCurve[];
+  /** The K the journal cannot give, and why. */
+  refused: Array<{ k: number; reason: string }>;
+  /** Provers whose attempts stop at the first success, of all provers read. */
+  censored: { stopped: number; of: number };
+}
+
+/**
+ * The curves a journal can honestly give. K = 1 is exact: the cost of the attempts up to the first success. For K above 1 the protocol cuts
+ * the attempts of a prover into chunks that run side by side, and where the first success falls depends on attempts that were never made
+ * when the prover stopped at its success; re-chunking the n attempts that exist puts that success at the end of the last chunk, so every K
+ * would read about the same cost. Those K are refused while any prover stopped at its success, and the way to get them is a measurement
+ * run with a fixed number of attempts that does not stop (not built).
+ */
+export function analyseChunks(problems: ReadonlyArray<readonly AttemptCost[]>, options: { ks?: readonly number[]; budgetUsd?: number } = {}): ChunkAnalysis {
+  const ks = options.ks ?? CHUNK_KS;
+  const stopped = problems.filter(stoppedAtSuccess).length;
+  const censored = { stopped, of: problems.length };
+  const refused = ks.filter((k) => k > 1 && stopped > 0).map((k) => ({ k, reason: `${stopped} of ${problems.length} provers stopped at their first success, so the attempts that would have followed it do not exist and the chunks of K = ${k} cannot be formed` }));
+  const refusedKs = new Set(refused.map((r) => r.k));
+  return { curves: chunkCurves(problems, { ...options, ks: ks.filter((k) => !refusedKs.has(k)) }), refused, censored };
+}

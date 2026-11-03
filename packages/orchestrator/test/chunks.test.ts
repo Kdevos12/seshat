@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { attemptsByProver, CHUNK_KS, chunkCurves, chunkRun } from "../src/chunks.ts";
+import { analyseChunks, attemptsByProver, CHUNK_KS, chunkCurves, chunkRun, stoppedAtSuccess } from "../src/chunks.ts";
+import { renderChunks } from "../src/ablation-table.ts";
 import { scriptedRun } from "./ablate-helpers.ts";
 
 /** 100 attempts of a cent each; the first success is the attempt at `at` (from 1), if any. */
@@ -61,5 +62,36 @@ describe("the chunking protocol", () => {
     });
     const groups = attemptsByProver(run.events);
     assert.deepEqual(groups.map((g) => [g.problemId, g.prover, g.attempts.map((a) => a.success)]), [["p1", "p1", [false, true]], ["p2", "p1", [false]]]);
+  });
+});
+
+describe("chunk curves on journals shaped like real runs", () => {
+  const stops = (before: number): Array<{ usd: number; success: boolean }> => [...Array.from({ length: before }, () => ({ usd: 0.1, success: false })), { usd: 0.1, success: true }];
+  const fixedNoStop = (at: number): Array<{ usd: number; success: boolean }> => Array.from({ length: 12 }, (_, i) => ({ usd: 0.1, success: i === at || i === at + 3 }));
+
+  it("recognises a prover that stopped at its first success", () => {
+    assert.equal(stoppedAtSuccess(stops(4)), true);
+    assert.equal(stoppedAtSuccess(fixedNoStop(2)), false, "a success that is not the last, or several");
+    assert.equal(stoppedAtSuccess([{ usd: 1, success: false }]), false);
+  });
+
+  it("gives K = 1 and refuses K above 1 when the provers stopped at their success, rather than printing curves that all read alike", () => {
+    const a = analyseChunks([stops(5), stops(2), stops(8)]);
+    assert.deepEqual(a.curves.map((c) => c.k), [1]);
+    assert.deepEqual(a.refused.map((r) => r.k), [3, 6, 10]);
+    assert.deepEqual(a.censored, { stopped: 3, of: 3 });
+    assert.match(a.refused[0]?.reason ?? "", /3 of 3 provers stopped at their first success/);
+    // What re-chunking would have printed: the same cost for every K.
+    const naive = chunkCurves([stops(5), stops(2), stops(8)], { ks: [1, 3, 6] });
+    assert.ok(naive.every((c) => Math.abs((c.usdPerSolve ?? 0) - (naive[0]?.usdPerSolve ?? 0)) < 0.35), "the degenerate curves are nearly flat");
+  });
+
+  it("gives every K from provers that did not stop, and says in the rendering what it does not give", () => {
+    const a = analyseChunks([fixedNoStop(1), fixedNoStop(6)], { ks: [1, 3] });
+    assert.deepEqual(a.curves.map((c) => c.k), [1, 3]);
+    assert.deepEqual(a.refused, []);
+    const text = renderChunks("run", analyseChunks([stops(3)]));
+    assert.match(text, /Not given: K = 3, K = 6, K = 10/);
+    assert.match(text, /fixed number of attempts that does not stop/);
   });
 });

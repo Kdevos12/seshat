@@ -4,7 +4,7 @@ import { type ProblemEntry, sample } from "@seshat/bench";
 import { readEvents } from "@seshat/core";
 import { type AblationInput, type AblationResult, type Arm, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
 import { renderAblation, renderChunks } from "./ablation-table.ts";
-import { attemptsByProver, chunkCurves } from "./chunks.ts";
+import { analyseChunks, attemptsByProver } from "./chunks.ts";
 import { allLines, experiment, experimentArms } from "./experiments.ts";
 import { RunSetupError } from "./run.ts";
 import { runLabel } from "./run-label.ts";
@@ -74,7 +74,7 @@ export function chunksCommand(dirs: readonly string[], print: (line: string) => 
     if (!existsSync(journal)) throw new RunSetupError(`no journal in ${dir}`);
     const groups = attemptsByProver(readEvents(journal));
     if (groups.length === 0) throw new RunSetupError(`${dir} holds no attempt`);
-    print(renderChunks(dir, chunkCurves(groups.map((g) => g.attempts), options), runLabel(modelOf(dir))));
+    print(renderChunks(dir, analyseChunks(groups.map((g) => g.attempts), options), runLabel(modelOf(dir))));
   }
 }
 
