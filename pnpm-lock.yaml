@@ -434,6 +434,9 @@ importers:
       '@seshat/lean-meta':
         specifier: workspace:*
         version: link:../lean-meta
+      '@seshat/library':
+        specifier: workspace:*
+        version: link:../library
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

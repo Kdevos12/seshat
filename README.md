@@ -8,9 +8,9 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and fifteen lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and sixteen lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M4: the context compiler, a packet in place of the history, documented in [documentation/context.md](documentation/context.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals; M10: a classical battery, a domain router, z3 and Vampire with reconstruction in Lean, before any model; documented in [documentation/induction.md](documentation/induction.md), [documentation/repair.md](documentation/repair.md) and [documentation/classical.md](documentation/classical.md)) are written and tested with a
+counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M15: an archive of alternative decompositions and the schemas of the closed ones, on its second rung, documented in [documentation/archive.md](documentation/archive.md); M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M4: the context compiler, a packet in place of the history, documented in [documentation/context.md](documentation/context.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals; M10: a classical battery, a domain router, z3 and Vampire with reconstruction in Lean, before any model; documented in [documentation/induction.md](documentation/induction.md), [documentation/repair.md](documentation/repair.md) and [documentation/classical.md](documentation/classical.md)) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -49,6 +49,7 @@ flowchart TB
   holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers"]:::wait
   ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m18["Line M18: variant curriculum<br/>rung 1: special cases of a hard<br/>problem, a capped share of budget"]:::wait
+  m15["Line M15: archive of decompositions<br/>cells, a Thompson pick of the one to extend,<br/>schemas from closed sub-DAGs"]:::wait
   m17["Line M17: extended environment<br/>the run's Lean has more<br/>packages than the bench's"]:::wait
   m8["Line M8: inductive engine<br/>data tables, hypotheses as<br/>programs, conjecture pool"]:::wait
   m3["Line M3: lemma library<br/>promoted aux lemmas, BM25 search,<br/>library_search"]:::built
@@ -171,6 +172,11 @@ flowchart TB
   ladder -->|"rung 1"| m18
   m18 -->|"variants as claims,<br/>special_case_of edges, tasks"| journal
   m18 -->|"proved special cases<br/>and proofs in the briefing"| provers
+  ladder -->|"rung 2"| m15
+  holes -->|"checked decompositions,<br/>their labels"| m15
+  m15 -->|"cell to extend, schema hints<br/>(drawn: some sessions are denied them)"| provers
+  m15 -->|"picks, hints, schemas<br/>(stamped, outcomes)"| journal
+  m15 -.->|"is the goal an instance<br/>of the schema?"| leanmeta
   provers -.-> moretools
   provers -.->|"tool search"| packs
   bench -->|"problems and open<br/>subgoals, when M10 is on"| m10
@@ -265,7 +271,7 @@ where one does badly, and sends hard decisions to a stronger model. It samples e
 (temperature, thinking level, a diversity directive, standard or informal-first mode), discounts old failures per run and keeps
 a floor of exploration, so that a failure of a weaker configuration does not close a door for good
 ([documentation/fleet.md](documentation/fleet.md)). Informal-first sessions and the multi-call `judge` helper
-have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); M18, the first rung, solves easier variants of a hard problem with a capped share of its budget and feeds their proofs to later sessions ([documentation/curriculum.md](documentation/curriculum.md)); both have only run against a simulated model and Lean, and nothing says M18 pays.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
+have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); M18, the first rung, solves easier variants of a hard problem with a capped share of its budget and feeds their proofs to later sessions ([documentation/curriculum.md](documentation/curriculum.md)); M15, the second rung, keeps several decompositions of a problem alive in cells, chooses by Thompson sampling the one a session extends, and shows the schemas of closed decompositions to the sessions of other problems through the randomized inclusion ([documentation/archive.md](documentation/archive.md)); all three have only run against a simulated model and Lean, and nothing says M18 or M15 pays.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
 with the run's own model as the default and the fallback) to order work, never to change a claim's status; with Jev on, short proof states go to a third party, and it has never run against the real service
 ([documentation/decide.md](documentation/decide.md)). The other mechanisms will come as lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
