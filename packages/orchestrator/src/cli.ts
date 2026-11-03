@@ -18,6 +18,7 @@ import { lessonsCommand } from "./lessons-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { ablateCommand, chunksCommand } from "./ablate-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
@@ -38,6 +39,10 @@ const usage = `usage:
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
+  harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all)
+              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N] [--reference NAME]
+              [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
+  harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
@@ -53,6 +58,10 @@ const usage = `usage:
   harness report RUN_DIR [--json]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
+(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
+each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
+would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
 add: installs a pack (documentation/packs.md): a directory or git repository with a pack.json, tools and skills. The manifest and
 the contract cases it carries are validated, nothing of it is executed, and a pack that could write a claim's status is refused.
 A pack whose tools start programs or reach servers needs --allow-programs; its own level-1 request is honoured (from the next session) only with --level1. Its tools are level 2, never in the declared set
@@ -120,6 +129,12 @@ const { positionals, values } = parseArgs({
     tool: { type: "string", multiple: true },
     lines: { type: "string", multiple: true },
     ablation: { type: "string" },
+    configs: { type: "string" },
+    experiment: { type: "string" },
+    models: { type: "string" },
+    split: { type: "string" },
+    reference: { type: "string" },
+    "chunk-k": { type: "string" },
     "line-option": { type: "string", multiple: true },
     "draw-seed": { type: "string" },
     "decide-backend": { type: "string" },
@@ -171,6 +186,8 @@ async function main(): Promise<number> {
     if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
+    if (command === "ablate") return await ablate();
+    if (command === "chunks") return chunks();
     if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
     if (command === "hint") return hint();
     if (command === "sign") return sign();
@@ -450,6 +467,37 @@ function readInput<T>(read: () => T): T {
   }
 }
 
+/** The configuration the flags describe, besides the lines, the consortium, the off-peak wait and the typed decisions. */
+function sharedConfig(selection: RunConfig["selection"], model: string, thinking: ThinkingLevel): RunConfig {
+  const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
+  const cacheRetention = values["cache-retention"];
+  if (cacheRetention !== undefined && !isCacheRetention(cacheRetention)) {
+    throw new UsageError(`--cache-retention must be one of ${CACHE_RETENTIONS.join(", ")}`);
+  }
+  const packetMode = values["packet-mode"];
+  if (packetMode !== undefined && !(PACKET_MODES as readonly string[]).includes(packetMode)) {
+    throw new UsageError(`--packet-mode must be one of ${PACKET_MODES.join(", ")}`);
+  }
+  return {
+    selection,
+    model,
+    thinkingLevel: thinking,
+    provers: number("provers", values.provers, DEFAULT_CONFIG.provers),
+    sessions: number("sessions", values.sessions, DEFAULT_CONFIG.sessions),
+    limits: {
+      turns: number("turns", values.turns, DEFAULT_CONFIG.limits.turns),
+      contextTokens: number("context-tokens", values["context-tokens"], DEFAULT_CONFIG.limits.contextTokens),
+    },
+    notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
+    ...(cacheRetention !== undefined ? { cacheRetention } : {}),
+    ...(packetMode !== undefined ? { packetMode: packetMode as PacketMode } : {}),
+    budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
+    concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
+    tools: [...new Set(values.tool ?? [])],
+    ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
+  };
+}
+
 async function run(): Promise<number> {
   if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
   if (values.resume !== undefined) return await resume(values.resume);
@@ -467,39 +515,15 @@ async function run(): Promise<number> {
   if (source.rev !== index.source.rev) {
     console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
   }
-  const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
-  const cacheRetention = values["cache-retention"];
-  if (cacheRetention !== undefined && !isCacheRetention(cacheRetention)) {
-    throw new UsageError(`--cache-retention must be one of ${CACHE_RETENTIONS.join(", ")}`);
-  }
-  const packetMode = values["packet-mode"];
-  if (packetMode !== undefined && !(PACKET_MODES as readonly string[]).includes(packetMode)) {
-    throw new UsageError(`--packet-mode must be one of ${PACKET_MODES.join(", ")}`);
-  }
   const lines = selectLines();
   const options = lineOptions(values["line-option"] ?? []);
   const decide = decideFlags();
   const config: RunConfig = {
-    selection,
-    model: values.model,
-    thinkingLevel: thinking,
-    provers: number("provers", values.provers, DEFAULT_CONFIG.provers),
-    sessions: number("sessions", values.sessions, DEFAULT_CONFIG.sessions),
-    limits: {
-      turns: number("turns", values.turns, DEFAULT_CONFIG.limits.turns),
-      contextTokens: number("context-tokens", values["context-tokens"], DEFAULT_CONFIG.limits.contextTokens),
-    },
-    notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
-    ...(cacheRetention !== undefined ? { cacheRetention } : {}),
-    ...(packetMode !== undefined ? { packetMode: packetMode as PacketMode } : {}),
-    budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
-    concurrency: number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
-    tools: [...new Set(values.tool ?? [])],
+    ...sharedConfig(selection, values.model, thinking),
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
     ...(offpeak !== undefined ? { offpeak } : {}),
-    ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
     ...(decide !== undefined ? { decide } : {}),
   };
   const host = hostName(values.host);
@@ -523,6 +547,71 @@ async function run(): Promise<number> {
     ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
   });
   return finished(result, dir);
+}
+
+/** `harness ablate ...` (documentation/ablate.md). */
+async function ablate(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`ablate takes no positional argument, got ${target}`);
+  if (values.checkout === undefined) throw new UsageError("ablate needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("ablate needs --model PROVIDER/ID (harness models lists them)");
+  if (values.ablation !== undefined || values["line-option"] !== undefined || values["memory-from"] !== undefined) {
+    throw new UsageError("ablate chooses the lines itself (--configs, or --experiment with --lines); --ablation, --line-option and --memory-from belong to run");
+  }
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const checkout = values.checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const { problems, selection } = selectProblems(index);
+  const list = (text: string | undefined): string[] | undefined => (text === undefined ? undefined : text.split(",").map((x) => x.trim()).filter((x) => x !== ""));
+  const split = number("split", values.split, undefined);
+  const consortium = consortiumFlags();
+  const offpeak = offpeakFlags();
+  const decide = decideFlags();
+  const config: RunConfig = {
+    ...sharedConfig(selection, values.model, thinking),
+    ...(consortium !== undefined ? { consortium } : {}),
+    ...(offpeak !== undefined ? { offpeak } : {}),
+    ...(decide !== undefined ? { decide } : {}),
+  };
+  const host = hostName(values.host);
+  const controller = stoppable();
+  const codeRev = codeRevision();
+  const dir = resolve(values.out ?? join("runs", newId("ablation")));
+  await ablateCommand({
+    template: {
+      index,
+      checkout,
+      models: builtinModels(),
+      registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+      leanEnvironment: (options) => hostLeanEnv({ host, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+      signal: controller.signal,
+      log: (line) => console.error(line),
+      ...(codeRev !== undefined ? { codeRev } : {}),
+    },
+    config,
+    problems,
+    dir,
+    ...(list(values.configs) !== undefined ? { configs: list(values.configs) as string[] } : {}),
+    ...(values.experiment !== undefined ? { experiment: values.experiment } : {}),
+    ...(values.lines !== undefined ? { lines: selectLines() } : {}),
+    ...(list(values.models) !== undefined ? { models: list(values.models) as string[] } : {}),
+    ...(split !== undefined ? { split } : {}),
+    ...(values.reference !== undefined ? { reference: values.reference } : {}),
+    log: (line) => console.error(line),
+    print: (line) => process.stdout.write(`${line}\n`),
+  });
+  console.log(`Ablation directory: ${dir}`);
+  return 0;
+}
+
+/** `harness chunks RUN_DIR...`. */
+function chunks(): number {
+  const ks = (values["chunk-k"] ?? "").split(",").filter((x) => x !== "").map((x) => Number(x));
+  if (ks.some((k) => !Number.isInteger(k) || k < 1)) throw new UsageError(`--chunk-k takes whole numbers of at least 1, got ${values["chunk-k"]}`);
+  const budget = number("budget-usd", values["budget-usd"], undefined);
+  chunksCommand(positionals.slice(1), (line) => process.stdout.write(`${line}\n`), { ...(ks.length > 0 ? { ks } : {}), ...(budget !== undefined ? { budgetUsd: budget } : {}) });
+  return 0;
 }
 
 /** Ctrl-C stops the run: the problems in progress end as aborted; a second one quits at once. */
