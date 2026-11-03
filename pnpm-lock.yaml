@@ -401,6 +401,9 @@ importers:
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory
+      '@seshat/models':
+        specifier: workspace:*
+        version: link:../models
       '@seshat/registry':
         specifier: workspace:*
         version: link:../registry

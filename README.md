@@ -8,9 +8,9 @@ validator, the certifier (a kernel replay in a fresh Lean process), a client for
 the capability registry (manifests, host profiles, MCP boundary, contract tests), a first bench of
 575 problems from
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures), the M0 loop
-(independent provers on pi, in sessions that pass on their notes) and seven lines (M1: shared claims
+(independent provers on pi, in sessions that pass on their notes) and eleven lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
-counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory) are written and tested with a
+counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals, documented in [documentation/induction.md](documentation/induction.md) and [documentation/repair.md](documentation/repair.md)) are written and tested with a
 simulated model and a simulated Lean. The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
@@ -49,6 +49,11 @@ flowchart TB
   holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers"]:::wait
   ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m17["Line M17: extended environment<br/>the run's Lean has more<br/>packages than the bench's"]:::wait
+  m8["Line M8: inductive engine<br/>data tables, hypotheses as<br/>programs, conjecture pool"]:::wait
+  m13["Line M13: theory exploration<br/>minimal laws, integer relations,<br/>candidates for the library"]:::wait
+  m16["Line M16: program search<br/>islands of scored programs,<br/>rung 2 of the ladder"]:::wait
+  m14["Line M14: repairs<br/>typed critics, Lakatos repair<br/>of refuted conjectures"]:::wait
+  sandbox["Sandbox for programs<br/>time and memory limits,<br/>no network, scratch directory"]:::built
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
@@ -112,6 +117,22 @@ flowchart TB
   m11 -->|"sequences"| oeis
   m11 -->|"negation proofs"| fast
   m11 -->|"nodes, computed edges"| journal
+  bench -->|"problems, when<br/>M8 is on"| m8
+  llm -->|"hypotheses as programs,<br/>step DAGs, programs"| m8
+  m8 -->|"columns and hypotheses<br/>run in"| sandbox
+  m8 -.->|"Sage columns"| sage
+  m8 -->|"test lemmas, triviality"| leancheck
+  m8 -->|"open conjectures derived<br/>from the target, tables"| journal
+  m8 -->|"pool in the briefing"| provers
+  m13 -->|"open laws, library<br/>candidates"| journal
+  m13 -->|"laws in the briefing"| provers
+  ladder -->|"rung 2"| m16
+  m16 -->|"programs and the<br/>scoring program run in"| sandbox
+  m16 -->|"witness proof,<br/>never the score"| fast
+  m16 -->|"programs and scores<br/>as nodes"| journal
+  m8 -->|"refuted hypotheses<br/>and their tables"| m14
+  m14 -->|"repaired claims,<br/>open, with their concept"| journal
+  m14 -->|"repair suggestions<br/>for the next session"| provers
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -->|"sketches ending in<br/>named sorry holes"| m12

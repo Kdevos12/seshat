@@ -95,6 +95,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [induction.md](induction.md): the inductive engine and what a program may do: data tables, the classical
   conjecturing (recurrences, PSLQ, the Dalmatian heuristic), the sandbox for programs, and the lines M8,
   M13 and M16 as they are built.
+- [repair.md](repair.md): typed repairs from failure classes (the critics of Ireland and Bundy) and the
+  Lakatos-style repair of a refuted conjecture (line M14).
 - [decide.md](decide.md): typed decisions that order work: the sites and the forbidden list, the backends
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.
