@@ -1,6 +1,6 @@
 import type { Json } from "@seshat/core";
 import { completeJson, isInterrupted, type FinishedAttempt, type ProblemContext } from "@seshat/lines";
-import { type Attempt, classifyStrategy, type MemoryStore, normalizeDetail } from "@seshat/memory";
+import { type Attempt, classifyStrategy, isStrategy, type MemoryStore, normalizeDetail, screenProse } from "@seshat/memory";
 import { allLessons, LESSON_KIND, type LessonData, type LessonRecord, type LessonScope, MAX_SUPPORT } from "./records.ts";
 
 /** How global promotion works: `human` stages it in a run with `--human` and applies it otherwise. */
@@ -53,7 +53,7 @@ export interface LessonDraft {
  * older entry and nothing else (the text is never rewritten and the counters do not move). Returns the
  * entry and whether it is new. A claim lesson is recorded on its claim.
  */
-export function addLesson(memory: MemoryStore, draft: LessonDraft): { lesson: LessonRecord | undefined; nodeId: string; created: boolean } {
+export function addLesson(memory: MemoryStore, draft: LessonDraft): { lesson: LessonRecord | undefined; nodeId: string; created: boolean; rejected?: string } {
   const existing = allLessons(memory).find((l) => l.key === draft.key);
   if (existing !== undefined) {
     const support = union(existing.support, draft.support);
@@ -64,8 +64,11 @@ export function addLesson(memory: MemoryStore, draft: LessonDraft): { lesson: Le
     }
     return { lesson: existing, nodeId: existing.nodeId, created: false };
   }
+  // A lesson reaches prompts: its text passes the strict screen, whoever wrote it (review I3).
+  const screened = screenProse(draft.text, { max: MAX_TEXT });
+  if (!screened.ok) return { lesson: undefined, nodeId: "", created: false, rejected: screened.reason };
   const data: LessonData = {
-    text: clip(draft.text, MAX_TEXT),
+    text: screened.text,
     type: draft.type,
     scope: draft.scope,
     scopeKey: draft.scopeKey,
@@ -111,11 +114,11 @@ export function labelOf(attempt: Pick<FinishedAttempt, "strategy" | "declaredStr
  * and on enough claims widens to a global lesson, which is staged for the team in a run with `--human`.
  */
 export function learnStrategy(problem: ProblemContext, attempt: FinishedAttempt, label: string | undefined, o: LearnOptions): { added: number } {
-  if (attempt.outcome !== "valid" || label === undefined || label === "other") return { added: 0 };
+  if (attempt.outcome !== "valid" || label === undefined || !isStrategy(label) || label === "other") return { added: 0 };
   const domain = problem.domain[0] ?? "general";
   let added = 0;
   const first = addLesson(problem.memory, {
-    text: `A \`${label}\` proof was accepted by Lean on ${domain} problems; try that strategy early.`,
+    text: `A proof using the ${label} strategy passed the fast check on ${domain} problems; try that strategy early.`,
     type: "strategy",
     scope: "domain",
     scopeKey: domain,
@@ -133,7 +136,7 @@ export function learnStrategy(problem: ProblemContext, attempt: FinishedAttempt,
   const claims = new Set(same.flatMap((l) => l.claims));
   if (domains.size < o.globalMinDomains || claims.size < o.globalMinClaims) return { added };
   const wider = addLesson(problem.memory, {
-    text: `A \`${label}\` proof was accepted by Lean in ${domains.size} domains (${[...domains].slice(0, 4).join(", ")}); try that strategy early.`,
+    text: `A proof using the ${label} strategy passed the fast check in ${domains.size} domains (${[...domains].slice(0, 4).join(", ")}); try that strategy early.`,
     type: "strategy",
     scope: "global",
     scopeKey: "",
@@ -186,7 +189,7 @@ export function failureGroups(memory: MemoryStore): FailureGroup[] {
 }
 
 function templateText(g: FailureGroup): string {
-  return `Lean rejected ${g.attempts.length} attempts on ${g.claims.length} claim(s) the same way (${g.failureClass.replace(/_/g, " ")}: ${g.detail}); check for it before you submit.`;
+  return `The check rejected ${g.attempts.length} attempts on ${g.claims.length} claim(s) the same way (${g.failureClass.replace(/_/g, " ")}: ${g.detail}); check for it before you submit.`;
 }
 
 async function distilled(problem: ProblemContext, g: FailureGroup): Promise<string | undefined> {
@@ -205,8 +208,12 @@ async function distilled(problem: ProblemContext, g: FailureGroup): Promise<stri
       reuse: true,
       schema: { type: "object", properties: { constraint: { type: "string" } }, required: ["constraint"] },
     });
-    const text = typeof answer.value.constraint === "string" ? clip(answer.value.constraint, 200) : "";
-    return text === "" ? undefined : text;
+    const screened = screenProse(typeof answer.value.constraint === "string" ? answer.value.constraint : "", { max: 200 });
+    if (!screened.ok) {
+      problem.log(`lessons: the model's line for a recurring failure was refused (${screened.reason}); a template does`);
+      return undefined;
+    }
+    return screened.text;
   } catch (error) {
     if (isInterrupted(error)) throw error;
     problem.log(`lessons: the model could not put a recurring failure in a line, a template does: ${error instanceof Error ? clip(error.message, 120) : String(error)}`);
@@ -236,13 +243,19 @@ export async function learnConstraints(problem: ProblemContext, o: LearnOptions)
       continue;
     }
     if (problem.signal.aborted) break;
+    // The template quotes Lean's own detail: if it does not pass the screen there is nothing safe to say, and no model is asked.
+    const template = screenProse(templateText(g), { max: MAX_TEXT });
+    if (!template.ok) {
+      problem.log(`lessons: a recurring failure (${g.failureClass}) is not made a lesson: its detail is refused (${template.reason})`);
+      continue;
+    }
     let text: string | undefined;
     if (o.distill && used < o.maxDistill && !problem.budget.exhausted) {
       used += 1;
       text = await distilled(problem, g);
     }
     const r = addLesson(problem.memory, {
-      text: text ?? templateText(g),
+      text: text ?? template.text,
       type: "constraint",
       scope,
       scopeKey,

@@ -35,7 +35,7 @@ A lesson is never deleted or rewritten. A duplicate adds its support to the olde
 ## How lessons are added
 
 **From an accepted proof (strategy).** When a session's proof is accepted by the fast check, the strategy label of its submission
-(`classifyStrategy`, the label M1 records) gives a domain lesson: "A `induction` proof was accepted by Lean on msc:11 problems; try
+(`classifyStrategy`, the label M1 records) gives a domain lesson: "A proof using the induction strategy passed the fast check on msc:11 problems; try
 that strategy early." The same strategy in `globalMinDomains` domains (2) and on `globalMinClaims` claims (3) widens to a global
 lesson. The label `other` teaches nothing. "Accepted" is the fast check; the certifier has not replayed the proof yet, and the lesson
 says no more than that.
@@ -47,8 +47,13 @@ failure, when a global constraint covers it and the claim lesson is deactivated 
 `lean_unavailable` and `other`, or with no detail, is not a lesson. One model call (`completeJson`, the site `lessons.distill`, at
 most `maxDistill` per problem, charged to the problem's budget) puts the group in one line such as "Nat subtraction truncates: state
 bounds before subtracting"; the prompt holds the failure class, the detail and up to three statements, and asks for nothing the
-failures do not show. When the call fails, or `distill` is off, a template is the text: "Lean rejected 4 attempts on 2 claim(s) the
+failures do not show. When the call fails, or `distill` is off, a template is the text: "The check rejected 4 attempts on 2 claim(s) the
 same way (unsolved goals: ...); check for it before you submit." Either way the lesson lists the attempts it rests on.
+
+**Screened text.** Every lesson text passes the strict screen of `@seshat/memory` (`screenProse`: one line, at most 240 characters, no code,
+forbidden Lean token, link, declaration name or instruction) inside `addLesson`, whoever wrote it. The model's line is screened and falls
+back to the template when refused; the template quotes Lean's own detail, so it is screened too, and a failure whose detail does not pass
+(an error that names a lemma) is not made a lesson at all and no model is asked about it.
 
 ## What the provers see
 
