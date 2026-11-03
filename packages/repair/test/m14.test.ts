@@ -23,19 +23,20 @@ const hypotheses = {
     { id: "odd_prime", level: "pattern", informal: "an odd number from 3 on has at most two divisors", premise: "(n) => n % 2 === 1 && n >= 3", conclusion: "(n) => { let c = 0; for (let d = 1; d <= n; d++) if (n % d === 0) c++; return c <= 2; }", statement: "(n : ℕ) (h : n % 2 = 1) (h3 : 3 ≤ n) : (Nat.divisors n).card ≤ 2", uses: ["divisors"] },
   ],
 };
-const answers = (request: { site?: string }): unknown => {
-  if (request.site === "induction.hypotheses") return hypotheses;
+const renamed = { hypotheses: [{ ...hypotheses.hypotheses[0], statement: "(m : ℕ) (h : m % 2 = 1) (h3 : 3 ≤ m) : (Nat.divisors m).card ≤ 2" }] };
+const answers = (request: { site?: string }, proposed: unknown = hypotheses): unknown => {
+  if (request.site === "induction.hypotheses") return proposed;
   if (request.site === "conjecture.relevance") return { score: 0.5 };
   if (request.site === "induction.dag" || request.site === "repair.dag") return { proof: "p", steps: [{ id: "s1", statement: "a step", dependsOn: [] }, { id: "s2", statement: "the repaired claim", dependsOn: ["s1"] }] };
   throw new Error(`unexpected ${request.site}`);
 };
 
-async function afterM8() {
+async function afterM8(proposed: unknown = hypotheses) {
   const memory = openMemory("orchestrator-test");
   const { claimId } = await memory.ensureClaim({ statement: TARGET, header: "import Mathlib", origin: "bench:t" });
   const logs: string[] = [];
   const problem = {
-    line: "M8", runId: "r", problemId: "p", claimId, memory, registry, llm: scriptedLlm([answers]), log: (t: string) => logs.push(t),
+    line: "M8", runId: "r", problemId: "p", claimId, memory, registry, llm: scriptedLlm([(r: { site?: string }) => answers(r, proposed)]), log: (t: string) => logs.push(t),
     signal: new AbortController().signal, options: { ...M8_OPTIONS, rounds: 1, classical: false, triviality: false, testCases: 0 },
   } as unknown as ProblemContext;
   await createM8().hooks.beforeProvers?.(problem);
@@ -71,6 +72,16 @@ describe("the line M14: Lakatos repair of what the table refuted", () => {
     assert.match(text, /open claim/);
     // Nothing moved: the refuted hypothesis became no claim, and no status changed.
     assert.ok(memory.claims().every((c) => c.status === "open"));
+  });
+
+  it("writes the premise in the hypothesis's own binder, not the target's", async () => {
+    const { memory, problem } = await afterM8(renamed);
+    await hook(createM14(), "beforeProvers")(problem);
+    const [claim] = memory.claims().filter((c) => c.origin === "line:M14");
+    assert.ok(claim !== undefined && claim.kind === "formal", "a formal repair");
+    assert.match(claim.statement, /^\(m : ℕ\) \(h : m % 2 = 1\) \(h3 : 3 ≤ m\) \(h_repair : ¬ \(/);
+    assert.doesNotMatch(claim.statement.split(":")[0] ?? "", /\bn\b/);
+    assert.doesNotMatch(claim.statement.replace(/\(Nat\.divisors m\)/, ""), /\bn\b/);
   });
 
   it("writes nothing twice when it runs again (resume)", async () => {

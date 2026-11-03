@@ -108,15 +108,17 @@ export function createM14(): Line {
     const target = memory.claim(problem.claimId);
     if (target === undefined) return;
     const tables = readTables(memory, problem.claimId);
-    const recognized = recognizeStatement(target.statement);
     let made = 0;
     for (const node of memory.nodes(REFUTED_HYPOTHESIS_KIND, { claimId: problem.claimId })) {
       if (made >= s.maxLakatos) break;
       const refuted = node.data as unknown as RefutedHypothesis;
       const table = tables.find((t) => t.table.id === refuted.tableId)?.table;
       if (table === undefined) continue;
-      const variable = "statement" in recognized && recognized.statement.kind === "nat" ? recognized.statement.variable : "n";
-      const found = lakatosRepair({ table, verdicts: refuted.verdicts, informal: refuted.informal, ...(refuted.statement !== undefined ? { statement: refuted.statement } : {}), variable, minRetained: s.minRetained });
+      // The premise is written in the hypothesis's own binder, which need not be the target's: the name comes from
+      // the hypothesis's statement, and a statement that is not a recognized natural-number one gives an informal repair.
+      const own = refuted.statement !== undefined ? recognizeStatement(refuted.statement) : undefined;
+      const ownVariable = own !== undefined && "statement" in own && own.statement.kind === "nat" ? own.statement.variable : undefined;
+      const found = lakatosRepair({ table, verdicts: refuted.verdicts, informal: refuted.informal, ...(refuted.statement !== undefined && ownVariable !== undefined ? { statement: refuted.statement } : {}), variable: ownVariable ?? "n", minRetained: s.minRetained });
       if (found.options.length === 0) {
         problem.log(`M14: ${refuted.hypothesis} has no repair: ${found.reason}`);
         continue;

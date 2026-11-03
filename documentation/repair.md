@@ -55,7 +55,8 @@ repair costs anything that held.)
 
 The repaired statement is the old one with the premise `¬ (concept)` added after its binders (`withPremise`), in
 Lean when every column in the concept has a Lean form (`lean` on the column), the object's name taken from the
-statement. Otherwise the repair is informal: an informal claim, whose argument goes through the step DAG first.
+hypothesis's own statement (not the target's: the two may name the object differently). A hypothesis whose statement is not a
+recognized natural-number one, gives an informal repair, as does a column with no Lean form: an informal claim, whose argument goes through the step DAG first.
 
 The line reads the hypotheses that line M8 recorded as refuted (`refuted_hypothesis` nodes, with the verdict on
 every object of the table) and, for up to `maxLakatos` of them, makes the repaired conjecture a claim of its own:
