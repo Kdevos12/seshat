@@ -22,6 +22,11 @@ export class PriceBook {
     return this.models[name];
   }
 
+  /** Whether the host says any model ignores a setting; when it does not, no line has anything to ask. */
+  get describesIgnores(): boolean {
+    return Object.values(this.models).some((entry) => entry.ignores !== undefined);
+  }
+
   /** The prices of a model, or undefined when the host gives none: the run then charges pi-ai's numbers. */
   pricingOf(model: Pick<Model<Api>, "provider" | "id">): ModelPricing | undefined {
     return this.models[`${model.provider}/${model.id}`]?.pricing;
