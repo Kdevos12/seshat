@@ -44,6 +44,13 @@ describe("the experiments", () => {
     assert.deepEqual(DECIDE_SITES.sort(), ["conjecture.relevance", "fleet.cold_start", "prove.search.order"]);
   });
 
+  it("isolate the counterexample set: the two arms differ by one option of M8 and nothing else", () => {
+    const [off, on] = experimentArms("cegis");
+    assert.deepEqual(off?.lines, on?.lines);
+    assert.equal(off?.lineOptions?.M8?.counterexampleSet, false);
+    assert.equal(on?.lineOptions?.M8?.counterexampleSet, true);
+  });
+
   it("refuse a name that is not an experiment", () => {
     assert.throws(() => experimentArms("nothing"), RunSetupError);
   });

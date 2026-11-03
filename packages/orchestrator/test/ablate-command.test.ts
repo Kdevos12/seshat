@@ -37,6 +37,29 @@ describe("splitBench", () => {
   });
 });
 
+describe("splitBench by file or stem", () => {
+  const e = (path: string, fullName: string) => ({ id: `${path}#${fullName}`, path, fullName }) as unknown as ProblemEntry;
+  const many = [e("A", "a1"), e("A", "a1.variants.x"), e("A", "a2"), e("B", "b1"), e("B", "b1.variants.y"), e("C", "c1"), e("D", "d1"), e("D", "d2")];
+
+  it("never puts two problems of one file on both sides", () => {
+    const s = splitBench(many, 3, "s", "file");
+    const files = (ps: ProblemEntry[]) => new Set(ps.map((p) => p.path));
+    for (const f of files(s.build)) assert.equal(files(s.measure).has(f), false, `file ${f} on both sides`);
+    assert.ok(s.build.length >= 3);
+    assert.equal(s.build.length + s.measure.length, many.length);
+  });
+
+  it("never separates a problem from its variants, though it may keep a file's other problems apart", () => {
+    const s = splitBench(many, 2, "s", "stem");
+    const stems = (ps: ProblemEntry[]) => new Set(ps.map((p) => `${p.path}${p.fullName.split(".variants.")[0]}`));
+    for (const t of stems(s.build)) assert.equal(stems(s.measure).has(t), false, `${t} on both sides`);
+  });
+
+  it("refuses a split that leaves nothing to measure", () => {
+    assert.throws(() => splitBench([e("A", "a1"), e("A", "a2"), e("A", "a3")], 1, "s", "file"), /leaves nothing to measure/);
+  });
+});
+
 describe("harness ablate", () => {
   it("takes the cumulative configurations by name, or one experiment, not both", () => {
     assert.deepEqual(commandArms({ configs: ["M0", "M1"] }).map((a) => a.name), ["M0", "M1"]);

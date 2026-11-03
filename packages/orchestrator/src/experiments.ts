@@ -111,11 +111,11 @@ export const EXPERIMENTS: Experiment[] = [
   {
     name: "cegis",
     amendment: "PD5",
-    description: "The run with the counterexample set (the induction lines on) against the same lines without them.",
-    notRun: "The tokens saved are an estimate.",
+    description: "M8 with its counterexample set against M8 with the set off (`M8.counterexampleSet=false`): only the set differs.",
+    notRun: "The tokens saved are an estimate; the effect is on the candidates M8's model proposes, so it needs a real model.",
     arms: ({ lines }) => [
-      arm("without-induction", "no induction line, so no counterexample enters the set", without(lines, ["M8", "M13", "M14", "M16"])),
-      arm("with-induction", "the induction lines on: the set drops what a counterexample refutes", lines, { versus: "without-induction" }),
+      arm("set-off", "M8 proposes and checks without the counterexample set", lines, { lineOptions: { M8: { counterexampleSet: false } } }),
+      arm("set-on", "the counterexamples found so far go in the prompt and every candidate meets them first", lines, { lineOptions: { M8: { counterexampleSet: true } }, versus: "set-off" }),
     ],
   },
   {

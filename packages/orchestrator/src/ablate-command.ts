@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type ProblemEntry, sample } from "@seshat/bench";
-import { readEvents } from "@seshat/core";
+import { type ProblemEntry, sample, stemOf } from "@seshat/bench";
+import { readEvents, sha256Hex } from "@seshat/core";
 import { type AblationInput, type AblationResult, type Arm, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
 import { renderAblation, renderChunks } from "./ablation-table.ts";
 import { analyseChunks, attemptsByProver } from "./chunks.ts";
@@ -9,12 +9,35 @@ import { allLines, experiment, experimentArms } from "./experiments.ts";
 import { RunSetupError } from "./run.ts";
 import { runLabel } from "./run-label.ts";
 
-/** Splits a bench for an ablation: `build` problems to build the memory on, and the rest to measure on (plan change PE9, item 2). */
-export function splitBench(problems: readonly ProblemEntry[], build: number, seed: string): { build: ProblemEntry[]; measure: ProblemEntry[] } {
+export const SPLIT_BY = ["none", "file", "stem"] as const;
+export type SplitBy = (typeof SPLIT_BY)[number];
+
+/**
+ * Splits a bench for an ablation: about `build` problems to build the memory on, and the rest to measure on (plan change PE9, item 2).
+ * With `by` "file" or "stem" the unit of the split is a file of the checkout or a problem with its variants, so that a lemma the library
+ * learned on one problem is not measured on its own variant or a neighbour in the same file, which would be the optimistic measurement
+ * the split exists to avoid. Units are taken in the order of a seeded hash until at least `build` problems are in the build part.
+ */
+export function splitBench(problems: readonly ProblemEntry[], build: number, seed: string, by: SplitBy = "none"): { build: ProblemEntry[]; measure: ProblemEntry[] } {
   if (!Number.isInteger(build) || build < 1 || build >= problems.length) throw new RunSetupError(`--split takes a number of problems to build the memory on, from 1 to ${problems.length - 1}, got ${build}`);
-  const built = sample(problems, build, `${seed}\nsplit`);
+  if (by === "none") {
+    const built = sample(problems, build, `${seed}\nsplit`);
+    const ids = new Set(built.map((p) => p.id));
+    return { build: built, measure: problems.filter((p) => !ids.has(p.id)) };
+  }
+  const key = (p: ProblemEntry): string => (by === "file" ? p.path : `${p.path}\u0000${stemOf(p.fullName)}`);
+  const units = new Map<string, ProblemEntry[]>();
+  for (const p of problems) units.set(key(p), [...(units.get(key(p)) ?? []), p]);
+  const order = [...units.keys()].map((k) => ({ k, h: sha256Hex(`${seed}\nsplit\n${k}`) })).sort((x, y) => (x.h < y.h ? -1 : 1));
+  const built: ProblemEntry[] = [];
+  for (const { k } of order) {
+    if (built.length >= build) break;
+    built.push(...(units.get(k) as ProblemEntry[]));
+  }
   const ids = new Set(built.map((p) => p.id));
-  return { build: built, measure: problems.filter((p) => !ids.has(p.id)) };
+  const measure = problems.filter((p) => !ids.has(p.id));
+  if (measure.length === 0) throw new RunSetupError(`--split ${build} by ${by} leaves nothing to measure on: the problems fall in too few ${by === "file" ? "files" : "families of variants"}`);
+  return { build: built, measure };
 }
 
 export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProblems" | "problems"> {
@@ -27,6 +50,7 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
   models?: readonly string[];
   /** The number of problems the memory is built on before the arms are measured on the others. */
   split?: number;
+  splitBy?: SplitBy;
   print: (line: string) => void;
 }
 
@@ -45,7 +69,7 @@ export async function ablateCommand(command: AblateCommand): Promise<AblationRes
   if (existsSync(join(command.dir, "ablation.json"))) throw new RunSetupError(`${command.dir} holds a finished ablation: write into a new directory (an ablation that was cut off is resumed by giving the same directory again)`);
   const arms = commandArms(command);
   const seed = String(command.config.seed ?? "ablate");
-  const split = command.split !== undefined ? splitBench(command.problems, command.split, seed) : undefined;
+  const split = command.split !== undefined ? splitBench(command.problems, command.split, seed, command.splitBy) : undefined;
   mkdirSync(command.dir, { recursive: true });
   const result = await runAblation({
     ...(command.experiment !== undefined ? { notRun: [experiment(command.experiment).notRun] } : {}),

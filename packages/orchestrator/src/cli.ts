@@ -19,7 +19,7 @@ import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { measureRun } from "./measures.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { ablateCommand, chunksCommand, readIdList } from "./ablate-command.ts";
+import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
@@ -42,7 +42,7 @@ const usage = `usage:
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N] [--pilot RUN_DIR]
+              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
@@ -141,6 +141,7 @@ const { positionals, values } = parseArgs({
     experiment: { type: "string" },
     models: { type: "string" },
     split: { type: "string" },
+    "split-by": { type: "string" },
     pilot: { type: "string" },
     "chunk-k": { type: "string" },
     "probe-every": { type: "string" },
@@ -663,6 +664,7 @@ async function ablate(): Promise<number> {
     ...(values.lines !== undefined ? { lines: selectLines() } : {}),
     ...(list(values.models) !== undefined ? { models: list(values.models) as string[] } : {}),
     ...(split !== undefined ? { split } : {}),
+    ...(values["split-by"] !== undefined ? { splitBy: splitByFlag(values["split-by"]) } : {}),
     ...(values.pilot !== undefined ? { pilot: pilotMeasures(values.pilot) } : {}),
     log: (line) => console.error(line),
     print: (line) => process.stdout.write(`${line}\n`),
@@ -676,6 +678,11 @@ function pilotMeasures(dir: string) {
   const journal = join(resolve(dir), "journal.jsonl");
   if (!existsSync(journal)) throw new InputError(`${dir} is not a run directory: it has no journal.jsonl`);
   return measureRun(readInput(() => readEvents(journal)));
+}
+
+function splitByFlag(value: string): SplitBy {
+  if (!(SPLIT_BY as readonly string[]).includes(value)) throw new UsageError(`--split-by must be one of ${SPLIT_BY.join(", ")}, got ${value}`);
+  return value as SplitBy;
 }
 
 /** `harness chunks RUN_DIR...`. */
