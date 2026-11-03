@@ -152,7 +152,7 @@ describe("harness run", () => {
     const options: Array<[string[], RegExp]> = [
       [["--model", "a/b", "--all"], /^run needs --checkout/],
       [["--checkout", checkout, "--all"], /^run needs --model PROVIDER\/ID/],
-      [["--checkout", checkout, "--model", "a/b"], /^choose the problems with exactly one of --sample, --problem and --all/],
+      [["--checkout", checkout, "--model", "a/b"], /^choose the problems with exactly one of --sample, --problem, --all, --sequence and --tag/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--sample", "2"], /^choose the problems with exactly one of/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--seed", "s"], /^--seed goes with --sample/],
       [["--checkout", checkout, "--model", "a/b", "--sample", "0"], /^--sample must be a positive integer, got 0/],
