@@ -73,7 +73,7 @@ describe("the line M5 in a run", () => {
     assert.ok((recorded[0]?.data as { provenance?: unknown }).provenance !== undefined, "a lesson carries a provenance stamp");
     const data = recorded[0]?.data.data as { scope: string; scopeKey: string; strategy: string; text: string; claims: string[] };
     assert.deepEqual([data.scope, data.scopeKey, data.strategy], ["domain", "msc:11", "rewriting"]);
-    assert.equal(data.text, "A `rewriting` proof was accepted by Lean on msc:11 problems; try that strategy early.");
+    assert.equal(data.text, "A proof using the rewriting strategy passed the fast check on msc:11 problems; try that strategy early.");
 
     // The draw names it in every session of the second problem; the section is shown exactly when it included it.
     const started = ofType(events, "attempt.started");
@@ -83,7 +83,7 @@ describe("the line M5 in a run", () => {
     assert.ok(shown.length >= 1 && shown.length <= sessions);
     const withSection = prompts.filter((p) => /\n# Lessons\n/.test(p));
     assert.equal(withSection.length, shown.length);
-    assert.match(withSection[0] ?? "", /\n# Lessons\nAdvice from the outcomes of earlier attempts in this harness\. It is not proved and may be wrong for this problem: Lean's verdicts and the goal decide\.\n- \(msc:11\) A `rewriting` proof was accepted/);
+    assert.match(withSection[0] ?? "", /\n# Lessons\nAdvice from the outcomes of earlier attempts in this harness\. It is not proved and may be wrong for this problem: Lean's verdicts and the goal decide\.\n- \(msc:11\) A proof using the rewriting strategy passed the fast check/);
 
     // The lessons took the notes' place: no session starts from the model's prose.
     assert.ok(prompts.every((p) => !p.includes("my private notes")));
@@ -117,14 +117,14 @@ describe("the line M5 in a run", () => {
       file: FILE,
       problems: 2,
       config: { lines: ["M1", "M5"], sessions: 2 },
-      responses: [...bad, ...bad, ...bad, ...bad, say('{"constraint": "Name the lemma you rewrite with; Lean cannot find the ones you guess."}')],
+      responses: [...bad, ...bad, ...bad, ...bad, say('{"constraint": "Name the lemma you rewrite with; guessed names are not found."}')],
     });
     const calls = ofType(events, "model_call.finished").filter((e) => e.data.site === "lessons.distill");
     assert.equal(calls.length, 1);
     const lessons = ofType(events, "node.recorded").filter((e) => e.data.kind === "lesson").map((e) => e.data.data as { type: string; scope: string; origin: string; text: string; support: string[] });
     assert.equal(lessons.length, 1);
     assert.deepEqual([lessons[0]?.type, lessons[0]?.scope, lessons[0]?.origin, lessons[0]?.support.length], ["constraint", "global", "distilled", 4]);
-    assert.equal(lessons[0]?.text, "Name the lemma you rewrite with; Lean cannot find the ones you guess.");
+    assert.equal(lessons[0]?.text, "Name the lemma you rewrite with; guessed names are not found.");
   });
 
   it("stages a lesson for the global scope in a run with --human until the team answers, and answers by command", { timeout: 60000 }, async () => {
@@ -143,7 +143,7 @@ describe("the line M5 in a run", () => {
     const said: string[] = [];
     const out = (l: string) => said.push(l);
     lessonsCommand("pending", dir, { out });
-    assert.match(said[0] ?? "", /^nod_\w+  \[strategy\] A `rewriting` proof was accepted by Lean in 1 domains \(msc:11\); try that strategy early\.  \(1 claim\(s\), 1 attempt\(s\)\)$/);
+    assert.match(said[0] ?? "", /^nod_\w+  \[strategy\] A proof using the rewriting strategy passed the fast check in 1 domains \(msc:11\); try that strategy early\.  \(1 claim\(s\), 1 attempt\(s\)\)$/);
     assert.match(said[1] ?? "", /^Answer with: harness lessons approve\|reject /);
     const id = said[0]?.split("  ")[0] as string;
 
