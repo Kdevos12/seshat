@@ -408,7 +408,7 @@ carries a commutative-ring module that normalizes by a Gröbner basis (the Lean 
 the algebraic solver), so polynomial identities with hypotheses are one of its jobs; and the
 battery's tactic list is read from the host (what the host's Lean has), with no assumption that
 `polyrith` exists: whether it is still in the pinned Mathlib is read from the host. Amended by PD8
-(conditional): a k-NN over cheap goal features may order the battery as a second injectable orderer,
+(ON HOLD, not approved by the owner until the k-NN has been explained to them; build nothing from it): a k-NN over cheap goal features may order the battery as a second injectable orderer,
 but only if Task 14's real data show a gap against a best-in-hindsight oracle; it is built there,
 not here.
 
@@ -774,7 +774,7 @@ implication problems, and reports the share closed without a model per step of p
 after Tasks 6 and 7 merge; the dataset's licence is not stated, so check it before copying any row
 into the repository (read from a local cache otherwise, never vendor it); no submission to the
 challenge is planned; tests: a converter on three hand-written rows in the dataset's shape, nothing
-downloads in tests. PD8, conditional: after the real data, if the Beta posteriors per domain leave a
+downloads in tests. PD8, ON HOLD (not approved by the owner until the k-NN has been explained to them; build nothing from it), conditional: after the real data, if the Beta posteriors per domain leave a
 gap against an oracle that picks the best tactic per goal in hindsight, a k-NN over cheap goal
 features (head symbol, size, the domains the router fired) is added as an orderer for Task 6's
 battery (the injectable orderer of J3) and measured at equal CPU; otherwise it is not built.
