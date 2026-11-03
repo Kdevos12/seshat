@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Entry } from "@seshat/library";
-import { CitableIds, expandTool, graphQueryTool, parsePattern, type ToolEnv } from "../src/index.ts";
+import { CitableIds, cutToTokens, estimateTokens, expandTool, graphQueryTool, parsePattern, renderPrefix, renderTail, type ToolEnv } from "../src/index.ts";
 import { claim, prove, world } from "../../graph/test/helpers.ts";
 
 const run = (tool: ReturnType<typeof expandTool>, args: Record<string, unknown>) => tool.run(args as never, new AbortController().signal);
@@ -60,5 +60,49 @@ describe("tool hardening", () => {
     const text = await run(graphQueryTool(env), { pattern: "?a + 0 = ?a" });
     assert.match(text, /\[library, computed\] Demo\.h/);
     w.close();
+  });
+});
+
+describe("the packet's budget and its labels", () => {
+  const input = (budget: number, facts: Array<{ claimId: string; status: "proved" | "computed"; statement: string; score: number; graph: number; similarity: number }> = [], badges = true) => ({
+    theorem: "foo", statement: "(n : ℕ) : n + 0 = n", goalId: "clm_goal", facts, edges: [], premises: [], header: "import Mathlib", tried: [], lessons: [],
+    ids: new CitableIds(() => false), budget, options: { gloss: true, badges, rendering: "list" as const, graphEdges: 100 },
+  });
+  const fact = (id: string, statement: string, status: "proved" | "computed" = "proved") => ({ claimId: id, status, statement, score: 1, graph: 1, similarity: 1 });
+
+  it("never prints a computed fact like a proved one, whatever the options", () => {
+    for (const badges of [true, false]) {
+      const out = renderPrefix(input(2000, [fact("clm_a", "(n : ℕ) : 0 + n = n"), fact("clm_b", "(n : ℕ) : 1 * n = n", "computed")], badges));
+      const b = out.text.split("\n").find((l) => l.includes("1 * n = n")) as string;
+      const a = out.text.split("\n").find((l) => l.includes("0 + n = n")) as string;
+      assert.match(b, /computed|not yet replayed/, `badges ${badges}`);
+      assert.doesNotMatch(a, /computed|not yet replayed/);
+    }
+  });
+
+  it("names an id only for an item that is shown", () => {
+    const ids = new CitableIds(() => false);
+    const facts = Array.from({ length: 30 }, (_, k) => fact(`clm_${k}`, `(n : ℕ) : n + ${k} = ${k} + n`));
+    const out = renderPrefix({ ...input(300, facts), ids });
+    assert.equal(ids.all().length, out.shown.facts + 1);
+  });
+
+  it("bounds Lean text from above and cuts a tail to its budget with visible marks", () => {
+    const lean = "∀ x ∈ S, ∃ y, x ∣ y → ⟨x, y⟩ ≤ ℕ";
+    assert.ok(estimateTokens(lean) >= [...lean].length / 2, "at least half a token a character for Lean symbols");
+    assert.ok(estimateTokens(cutToTokens(lean.repeat(50), 100)) <= 100);
+    const big = Array.from({ length: 400 }, (_, k) => `  have h${k} : ${k} + 0 = ${k} := by simp`).join("\n");
+    const holes = Array.from({ length: 60 }, (_, k) => `n${k} : ℕ\n⊢ n${k} + 0 = n${k}`);
+    const tail = renderTail({ session: 1, sessions: 2, request: 2, aux: big, proof: big, holes, feedback: "e".repeat(20000), toolResults: [{ tool: "expand", text: "t".repeat(20000) }], instruction: "Wrap up.", budget: 1500 });
+    assert.ok(estimateTokens(tail) <= 1500, `${estimateTokens(tail)} tokens`);
+    assert.match(tail, /\[\.\.\. \d+ lines not shown\]/);
+    assert.match(tail, /more holes not shown/);
+    assert.match(tail, /Wrap up\.$/);
+  });
+
+  it("says when the goal alone is above the budget", () => {
+    const out = renderPrefix(input(5));
+    assert.equal(out.overBudget, true);
+    assert.equal(renderPrefix(input(2000)).overBudget, false);
   });
 });

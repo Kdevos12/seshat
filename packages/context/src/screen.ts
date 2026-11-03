@@ -21,3 +21,9 @@ export function screenLean(raw: string, max: number): string | undefined {
   if (INSTRUCTION.test(text)) return undefined;
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
+
+const IDENT = /^[\p{L}\p{N}_.'!?«»]+$/u;
+const MODULE = /^[\p{L}\p{N}_.]+$/u;
+/** A name or label that comes from an export or a library: only identifier characters pass; anything else is not echoed. */
+export const ident = (text: string | undefined): string => (text !== undefined && text.length <= 200 && IDENT.test(text) ? text : "(name not shown)");
+export const moduleName = (text: string | undefined): string => (text !== undefined && text.length <= 200 && MODULE.test(text) ? text : "(module not shown)");

@@ -25,14 +25,23 @@ always kept):
 | Candidate premises | Local declarations, then the library, then other packages, then Mathlib, in that order ([Premises](#premises)). |
 | Already tried | The memory's `alreadyTried` lines (M1), at most `maxTried`. |
 | Active lessons | The lessons M5 offers, as the draw left them. |
+| Notes from other lines | The briefing sections of the other enabled lines (the graph's findings, a fleet directive, a step plan, a curriculum), taken from the opening message the packet replaces, each line passed through the strict screen and capped. The sections M4 replaces with its own (already tried, library, lessons, the classical battery) and the team's sections (the harness adds those to every packet) are not repeated. |
 
 **The tail**, for each request: where the session stands (session, request, budget left), the file's regions as last checked, the
 holes of the sketch, the last raw Lean feedback (only the last check is shown), the answers to the tools the prover called in its last
 turn (`expand`, `graph_query`: the packet replaces the history, so an answer would otherwise vanish), the instruction of the wrap-up
-request, and, with `newSince`, the facts learned since the prefix was frozen.
+request, and, with `newSince`, the facts learned since the prefix was frozen, each with its standing. A claim the prefix shows whose status the projection has since withdrawn (a `computed` claim back to `open`, a settled one `retracted`) or a library lemma that is no longer usable is named under "No longer valid since this session started", so that the frozen prefix and the cache stay as they are while the model is not left with a false fact. Every part of the tail is cut to its share of the tail's budget with a visible mark (`[... n lines not shown]`).
 
-Every item has a citable id: `C` a claim, `E` an edge, `L` a premise, `A` a lesson. Ids are short, stable within the session, and
+Every item that is shown has a citable id (an item the budget cut has none): `C` a claim, `E` an edge, `L` a premise, `A` a lesson. Ids are short, stable within the session, and
 resolved without regard to case. M6 resolves them like any other citation.
+
+## What is lost when M4 is on
+
+The packet replaces the opening message, so the opening message's own content is not shown: the prover's notes from earlier sessions (the M0 loop's mechanism; the sketch's state and the last feedback take their place, and M5's lessons are the advice that carries over), and any section of another line that M4 replaces by title. The briefing sections of the other lines are kept as the "Notes from other lines" section above.
+
+## Resume
+
+M4 keeps nothing in its process. Each attempt leaves a `context_carry` node (the regions, the holes and the raw feedback of its last check, by claim and prover), and the next session of the prover reads it back, so a run cut and resumed gives the first tail an uncut run gives. The packet records (`context_packet` nodes) carry the prefix and tail sizes, the budget and whether the goal alone was above it; the naive arm records its size too.
 
 ## Premises
 
@@ -98,3 +107,9 @@ budget, the frozen prefix over three requests, the tools and their screens, the 
 run: against a real Lean or model; against the real Mathlib export (the premise index is an interface fed by a fixture, like M3's);
 the tree-similarity channel is not built; the ATMS labels of a fact are not used; the thresholds and shares are untuned; and no
 measure says the compiled packet beats the history. The carry of the last session's feedback into the next one is in-process only.
+
+## Size and bounds
+
+`estimateTokens` is an upper bound, not an estimate: an ASCII character costs a third of a token, any other character (Lean's symbols) one and a half. Every part of the packet is cut to a share of its budget; when the goal alone is above the prefix's budget the prefix is the goal, the record says `overBudget` and the session's log says so.
+
+The tools are bounded: a pattern has at most 64 characters and four metavariables or wildcards and is matched token by token with a step counter (no regular expression sees a model's string), `graph_query` takes at most 50 results, a depth of 4, 6 anchors and 10 start claims, every answer is cut at 12000 characters, and the proof text of a promoted library lemma is shown line by line through the strict screen (a line with a comment or an instruction is replaced by `(line not shown)`). `graph_query` reaches only the claims whose ids the packet or an answer has shown.
