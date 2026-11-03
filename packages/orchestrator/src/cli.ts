@@ -43,7 +43,7 @@ const usage = `usage:
   harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
   harness steer RUN_DIR [--focus CLAIM] [--drop CLAIM] [--forbid STRATEGY [--claim CLAIM]]
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--as NAME]
-  harness library export RUN_DIR [--out DIR]
+  harness library export RUN_DIR [--out DIR] [--include-computed]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
   harness report RUN_DIR [--json]
 
@@ -86,6 +86,7 @@ const { positionals, values } = parseArgs({
     implementation: { type: "string" },
     case: { type: "string", multiple: true },
     out: { type: "string" },
+    "include-computed": { type: "boolean" },
     bench: { type: "string" },
     checkout: { type: "string" },
     sample: { type: "string" },
@@ -358,11 +359,11 @@ function decideFlags(): DecideSettings | undefined {
   return settings;
 }
 
-/** `harness library export RUN_DIR [--out DIR]`. */
+/** `harness library export RUN_DIR [--out DIR] [--include-computed]`. */
 function libraryCommand(): number {
   if (target !== "export") throw new UsageError("library takes a subcommand: export RUN_DIR");
   if (third === undefined) throw new UsageError("library export needs a run directory");
-  libraryExportCommand(third, { out: values.out, print: (line) => console.log(line) });
+  libraryExportCommand(third, { out: values.out, includeComputed: values["include-computed"], print: (line) => console.log(line) });
   return 0;
 }
 

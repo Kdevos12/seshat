@@ -76,9 +76,11 @@ export function renderHit(hit: Hit, header: string, index?: number): string {
   const e = hit.entry;
   const head = `${index === undefined ? "-" : `${index}.`} [${e.label}] ${e.name} ${e.signature.length > 240 ? `${e.signature.slice(0, 239)}…` : e.signature}`;
   const gloss = e.gloss === "" ? "" : `\n   ${e.gloss}`;
+  const standing =
+    e.claimStatus === undefined ? "" : e.claimStatus === "proved" ? "\n   status: proved (replayed by the certifier)" : "\n   status: accepted by Lean's check, not yet replayed by the certifier";
   const needs = e.module !== undefined && !header.includes(e.module) ? `\n   needs: import ${e.module}` : "";
   const text = e.text === undefined ? "" : `\n   Paste into the auxiliary region, then use it by name:\n${e.text.split("\n").map((l) => `   ${l}`).join("\n")}`;
-  return `${head}${gloss}${needs}${text}`;
+  return `${head}${gloss}${standing}${needs}${text}`;
 }
 
 export function createM3(deps: M3Deps = {}): Line {
@@ -129,7 +131,7 @@ export function createM3(deps: M3Deps = {}): Line {
       hits: hits.length,
       text:
         "Declarations that may help, searched in this order: this file, the harness library, other packages, Mathlib. " +
-        "A [library] lemma was proved and checked by Lean on an earlier problem: paste its text into your auxiliary region (names starting aux_lib_) and use it. " +
+        "A [library] lemma was accepted by Lean's check on an earlier problem (its status line says whether the certifier has replayed it): paste its text into your auxiliary region (names starting aux_lib_) and use it. " +
         "The tool library_search looks for more.\n" +
         hits.map((h, i) => renderHit(h, header, i + 1)).join("\n"),
     };
