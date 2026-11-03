@@ -193,7 +193,7 @@ without the key names none. `openRegistry` looks the environment up when it buil
 ## Line M17: a run in an extended environment
 
 M17 (plan change LC3) is the line that tests whether more packages help: M0, or the best line, in
-`base` against the same run with M17 in `extended`, at equal budget (Task 14 measures it). It is an
+`base` against the same run with M17 in `extended`, at equal budget (`harness ablate --experiment m17` sets them side by side; it needs a real, pinned environment to say anything). It is an
 ordinary line (`--lines M17`, `config.lines`) with one option and no hook:
 
 | Option | Default | Meaning |

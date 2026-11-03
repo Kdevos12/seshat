@@ -84,8 +84,8 @@ one after each failed session, up to `maxDepth`.
 ## The naive packet
 
 `naive: true` compiles the same content without selection, order or ids and without tools: the goal, then every fact, lemma and
-lesson in one string, compiled again for each request. It is the comparison arm of Task 14; the packet is measured against it, not
-assumed better.
+lesson in one string, compiled again for each request. It is the comparison arm of Task 14 (`harness ablate --experiment packet-mode`); the packet is measured against it, not
+assumed better. Not run against a real model.
 
 ## Options
 
@@ -97,7 +97,7 @@ assumed better.
 ## Seams
 
 - The packet API takes the append-only mode of PD2: `{prefix, tail}` is the only shape the hook answers, and which request builds on
-  which is the session's, not the line's. Whether append-only pays is measured in Task 14.
+  which is the session's, not the line's. Whether append-only pays is measured by `harness ablate --experiment packet-mode` ([ablate.md](ablate.md#experiments)); the option is `--packet-mode` ([lines.md](lines.md#packet-modes)).
 - Task 28's `keepReasoning`/`rewriteHistory` apply to the history, which M4 replaces; the line does not touch them.
 
 ## Tested, and not yet

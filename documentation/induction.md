@@ -308,7 +308,7 @@ checker is not read back. The set is the proposer's input and the first thing a 
 - **M16.** A witness Lean rejected is recorded (`lean_decide`). The next search for the claim shows those outputs in the sampled
   prompt next to the scored programs, and a sampled program that builds one is dropped before it is scored (seeds are not).
 
-The counter for Task 14's table is `cegisCounter(memory, claimId?)`: candidates dropped (by line and by source) and the tokens
+The counter for Task 14's table ("Counterexample set" in [ablate.md](ablate.md)) is `cegisCounter(memory, claimId?)`: candidates dropped (by line and by source) and the tokens
 saved against a baseline without the set. Each drop is a `cegis_drop` node, written once for a (line, candidate), so a resume
 does not count twice. The tokens are an estimate, and it is only credited when the baseline would have spent: for M8 a dropped
 candidate that the table alone would have let through (the table catches the rest for free, so those drops save nothing),
