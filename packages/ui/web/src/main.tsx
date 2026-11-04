@@ -1,4 +1,4 @@
-import { render } from "preact";
+import { Component, type ComponentChildren, render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { Doctor } from "./doctor.tsx";
 import { RunView } from "./run.tsx";
@@ -16,6 +16,23 @@ function useRoute(): string[] {
     return () => removeEventListener("hashchange", on);
   }, []);
   return route;
+}
+
+/** A screen that cannot draw what it was given shows one plain line instead of a blank page. */
+class Guard extends Component<{ children?: ComponentChildren }, { failed: boolean }> {
+  state = { failed: false };
+  componentDidCatch() {
+    this.setState({ failed: true });
+  }
+  render() {
+    return this.state.failed ? (
+      <p class="notice" role="alert">
+        This screen could not be drawn from what the server sent. Reload the page; the journal is untouched.
+      </p>
+    ) : (
+      this.props.children
+    );
+  }
 }
 
 function App() {
@@ -41,7 +58,9 @@ function App() {
         </nav>
       </header>
       <main>
+        <Guard key={route.join("/")}>
         {here === "settings" ? <Settings /> : here === "doctor" ? <Doctor /> : here === "run" && id !== undefined ? <RunView key={id} id={id} jobId={job} /> : <Start />}
+        </Guard>
       </main>
       <footer>
         <p>

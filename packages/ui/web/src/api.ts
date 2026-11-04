@@ -8,11 +8,28 @@ export class ApiError extends Error {
   }
 }
 
+// The session's token comes from the fragment of the address `harness ui` printed. It is kept in this tab's session storage (never a cookie,
+// which every service on 127.0.0.1 would receive) and taken out of the address bar at once.
+let token = "";
+try {
+  const fromAddress = /(?:^|[#&])token=([A-Za-z0-9_-]+)/.exec(location.hash)?.[1];
+  if (fromAddress !== undefined) {
+    sessionStorage.setItem("seshat-token", fromAddress);
+    history.replaceState(null, "", `${location.pathname}${location.search}#/`);
+  }
+  token = sessionStorage.getItem("seshat-token") ?? "";
+} catch {
+  token = /(?:^|[#&])token=([A-Za-z0-9_-]+)/.exec(location.hash)?.[1] ?? "";
+}
+
+const authorization = (): Record<string, string> => (token === "" ? {} : { authorization: `Bearer ${token}` });
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method,
-    credentials: "same-origin",
+    credentials: "omit",
     headers: {
+      ...authorization(),
       ...(method !== "GET" ? { "x-seshat-request": "1" } : {}),
       ...(body !== undefined ? { "content-type": "application/json" } : {}),
     },
@@ -36,12 +53,37 @@ export const del = <T>(path: string): Promise<T> => call<T>("DELETE", path);
 
 export const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** Follows a server-sent event stream; returns the way to stop. */
+/**
+ * Follows a server-sent event stream with fetch, so that the request carries the token in a header (an EventSource cannot). Returns the way to stop.
+ */
 export function follow(path: string, handlers: Record<string, (data: string) => void>, onError?: () => void): () => void {
-  const source = new EventSource(path, { withCredentials: true });
-  for (const [name, handler] of Object.entries(handlers)) source.addEventListener(name, (e) => handler((e as MessageEvent<string>).data));
-  source.onerror = () => onError?.();
-  return () => source.close();
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      const response = await fetch(path, { credentials: "omit", headers: authorization(), signal: controller.signal });
+      if (!response.ok || response.body === null) throw new Error(`stream ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let cut: number;
+        while ((cut = buffer.indexOf("\n\n")) >= 0) {
+          const block = buffer.slice(0, cut);
+          buffer = buffer.slice(cut + 2);
+          const event = /^event: (.*)$/m.exec(block)?.[1] ?? "message";
+          const data = /^data: (.*)$/m.exec(block)?.[1] ?? "";
+          handlers[event]?.(data);
+        }
+      }
+      onError?.();
+    } catch {
+      if (!controller.signal.aborted) onError?.();
+    }
+  })();
+  return () => controller.abort();
 }
 
 // ---- The shapes the server sends. They are the reader's (packages/ui/src/reader.ts); only what the page uses is listed.

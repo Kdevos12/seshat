@@ -7,9 +7,6 @@ import type { MiddlewareHandler } from "hono";
  * any route, so a request that fails one never reaches code that reads a run or starts a process.
  */
 
-/** The cookie that carries the session token after the first visit with `?token=`. */
-export const COOKIE = "seshat_session";
-
 /** A fresh token: 256 random bits, URL-safe. */
 export function newToken(): string {
   return randomBytes(32).toString("base64url");
@@ -23,17 +20,6 @@ function digest(text: string): Buffer {
 export function tokenMatches(token: string, given: string | undefined): boolean {
   if (given === undefined || given === "") return false;
   return timingSafeEqual(digest(token), digest(given));
-}
-
-/** The value of a cookie in a `Cookie` header, or undefined. */
-export function cookieValue(header: string | undefined, name: string): string | undefined {
-  if (header === undefined) return undefined;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return undefined;
 }
 
 /** The Content-Security-Policy of every response: the page loads its own files and talks to its own server, nothing else. */
@@ -80,9 +66,10 @@ const SAFE = new Set(["GET", "HEAD"]);
  * The checks, in order. A failure is a plain-text answer with no detail an attacker could use:
  * 1. `Host` must be this server's address and port (a DNS-rebound name carries the attacker's host name);
  * 2. `Origin`, when present, must be this server's own origin, and a request that changes anything must carry one (or, from a browser that
- *    sends none, `Sec-Fetch-Site: same-origin`); a non-browser client with a token may send neither on a read;
- * 3. the token, in the cookie or as a bearer token, on every request. The one exception is the first visit with `?token=`, which sets the
- *    cookie and sends the browser on to `/` so that the token leaves the address bar.
+ *    sends none, `Sec-Fetch-Site: same-origin`) and the header `X-Seshat-Request: 1`;
+ * 3. every route under `/api/` needs the token, as `Authorization: Bearer`. There is no cookie: a cookie is sent to every service on
+ *    127.0.0.1 whatever its port, and a second instance would overwrite it. The page's own files, which hold nothing of any run, are served
+ *    to a request that passes 1 and 2; the token is in the fragment of the address `harness ui` prints, which no browser sends.
  */
 export function guard(o: GuardOptions): MiddlewareHandler {
   return async (c, next) => {
@@ -99,17 +86,11 @@ export function guard(o: GuardOptions): MiddlewareHandler {
     }
     if (!SAFE.has(c.req.method) && c.req.header("x-seshat-request") !== "1") return c.text("Missing request header.", 403);
 
-    const url = new URL(c.req.url);
-    const fromUrl = url.pathname === "/" && c.req.method === "GET" ? url.searchParams.get("token") : null;
-    if (fromUrl !== null) {
-      if (!tokenMatches(o.token, fromUrl)) return c.text("Bad token.", 401);
-      c.header("Set-Cookie", `${COOKIE}=${o.token}; HttpOnly; SameSite=Strict; Path=/`);
-      return c.redirect("/", 303);
+    const path = new URL(c.req.url).pathname;
+    if (path.startsWith("/api/") || !SAFE.has(c.req.method)) {
+      const bearer = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+      if (!tokenMatches(o.token, bearer)) return c.text("Missing or bad token. Open the address `harness ui` printed.", 401);
     }
-
-    const bearer = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1];
-    const given = bearer ?? cookieValue(c.req.header("cookie"), COOKIE);
-    if (!tokenMatches(o.token, given)) return c.text("Missing or bad token. Open the address `harness ui` printed.", 401);
     await next();
   };
 }

@@ -15,25 +15,33 @@ after(async () => {
 });
 
 describe("the local server's guards", () => {
-  it("answers nothing without the session token, and trades the token in the address for a cookie", async () => {
+  it("answers no request to the API without the session token, and sets no cookie", async () => {
     const s = await server();
     const { port, token } = s.server;
-    assert.equal((await raw(port, "/api/session", { host: `127.0.0.1:${port}` })).status, 401, "no token");
-    assert.equal((await raw(port, "/api/session", { host: `127.0.0.1:${port}`, authorization: "Bearer wrong" })).status, 401, "wrong token");
-    assert.equal((await raw(port, "/", { host: `127.0.0.1:${port}` })).status, 401, "even the page");
-    assert.equal((await raw(port, "/api/session", { host: `127.0.0.1:${port}`, authorization: `Bearer ${token}` })).status, 200);
-
-    const first = await fetch(`${s.server.url}`, { redirect: "manual" });
-    assert.equal(first.status, 303);
-    assert.equal(first.headers.get("location"), "/", "the token leaves the address bar");
-    const cookie = first.headers.get("set-cookie") ?? "";
-    assert.match(cookie, /HttpOnly/);
-    assert.match(cookie, /SameSite=Strict/);
-    const page = await fetch(`${s.server.origin}/`, { headers: { cookie: cookie.split(";")[0] as string } });
+    const host = { host: `127.0.0.1:${port}` };
+    assert.equal((await raw(port, "/api/session", host)).status, 401, "no token");
+    assert.equal((await raw(port, "/api/session", { ...host, authorization: "Bearer wrong" })).status, 401, "wrong token");
+    assert.equal((await raw(port, "/api/session", { ...host, authorization: `Bearer ${token}x` })).status, 401, "a token with something added");
+    assert.equal((await raw(port, "/api/session", { ...host, cookie: `seshat_session=${token}` })).status, 401, "a cookie is not a credential");
+    assert.equal((await raw(port, "/api/session?token=" + token, host)).status, 401, "a token in the query is not a credential");
+    assert.equal((await raw(port, "/api/session", { ...host, authorization: `Bearer ${token}` })).status, 200);
+    // The page's own files hold nothing of any run, and the token is in the fragment, which is never sent.
+    assert.match(s.server.url, /#token=/);
+    const page = await fetch(`${s.server.origin}/`);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /hello/);
-    const bad = await fetch(`${s.server.origin}/?token=nope`, { redirect: "manual" });
-    assert.equal(bad.status, 401);
+    assert.equal(page.headers.get("set-cookie"), null);
+    assert.equal((await s.call("GET", "/api/session")).headers.get("set-cookie"), null);
+    // Nothing that changes anything without the token, even from the right origin.
+    assert.equal((await fetch(`${s.server.origin}/api/jobs`, { method: "POST", headers: { origin: s.server.origin, "x-seshat-request": "1", "content-type": "application/json" }, body: "{}" })).status, 401);
+  });
+
+  it("keeps two instances apart: the token of one opens nothing of the other", async () => {
+    const a = await server();
+    const b = await server();
+    assert.notEqual(a.server.token, b.server.token);
+    assert.equal((await fetch(`${b.server.origin}/api/session`, { headers: { authorization: `Bearer ${a.server.token}` } })).status, 401);
+    assert.equal((await fetch(`${a.server.origin}/api/session`, { headers: { authorization: `Bearer ${a.server.token}` } })).status, 200);
+    assert.equal((await fetch(`${b.server.origin}/api/session`, { headers: { authorization: `Bearer ${b.server.token}` } })).status, 200);
   });
 
   it("refuses a Host that is not this server (DNS rebinding) even with the token", async () => {
@@ -72,6 +80,24 @@ describe("the local server's guards", () => {
       assert.equal(response.headers.get("referrer-policy"), "no-referrer");
       assert.equal(response.headers.get("cache-control"), "no-store");
     }
+  });
+
+  it("puts the policy on the event streams too", async () => {
+    const s = await server();
+    const controller = new AbortController();
+    const response = await fetch(`${s.server.origin}/api/jobs/none/events`, { headers: { authorization: `Bearer ${s.server.token}` }, signal: controller.signal });
+    assert.equal(response.status, 404);
+    assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    mkdirSync(join(s.runsDir, "r"));
+    writeFileSync(join(s.runsDir, "r", "journal.jsonl"), "");
+    const stream = await fetch(`${s.server.origin}/api/runs/r/events`, { headers: { authorization: `Bearer ${s.server.token}` }, signal: controller.signal });
+    assert.equal(stream.status, 200);
+    assert.match(stream.headers.get("content-type") ?? "", /event-stream/);
+    assert.match(stream.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    assert.equal(stream.headers.get("cache-control"), "no-store");
+    controller.abort();
   });
 
   it("serves only the front end's files, and no path leaves them", async () => {

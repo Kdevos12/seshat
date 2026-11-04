@@ -61,11 +61,42 @@ describe("the key file", () => {
     assert.throws(() => new KeyStore(join(dir, "bad.json")).providers(), KeyFileError);
   });
 
+  it("never changes the mode of a directory the person chose, only of one it creates", () => {
+    const dir = tempDir("ui-keys-");
+    const mine = join(dir, "shared");
+    mkdirSync(mine, { mode: 0o755 });
+    chmodSync(mine, 0o755);
+    new KeyStore(join(mine, "keys.json")).set("alpha", "ALPHA_API_KEY", KEY);
+    assert.equal(statSync(mine).mode & 0o777, 0o755, "the parent the person made keeps its mode");
+    assert.equal(statSync(join(mine, "keys.json")).mode & 0o777, 0o600);
+    new KeyStore(join(dir, "fresh", "keys.json")).set("alpha", "ALPHA_API_KEY", KEY);
+    assert.equal(statSync(join(dir, "fresh")).mode & 0o777, 0o700, "a directory it creates is private");
+  });
+
+  it("finds the repository through a symbolic link in the path", () => {
+    const dir = tempDir("ui-keys-");
+    const viaLink = join(dir, "repo-link");
+    symlinkSync(REPO_ROOT, viaLink);
+    assert.throws(() => new KeyStore(join(viaLink, "config", "keys.json"), REPO_ROOT), /outside the repository/);
+    assert.throws(() => new KeyStore(join(viaLink, "not-yet", "keys.json"), REPO_ROOT), /outside the repository/);
+  });
+
+  it("gives a command only the variables of the providers it names", () => {
+    const store = new KeyStore(join(tempDir("ui-keys-"), "keys.json"));
+    store.set("alpha", "ALPHA_API_KEY", KEY);
+    store.set("beta", "BETA_API_KEY", `${KEY}-2`);
+    assert.deepEqual(Object.keys(store.env(["alpha"])), ["ALPHA_API_KEY"]);
+    assert.deepEqual(Object.keys(store.env([])), []);
+    assert.deepEqual(Object.keys(store.env()).sort(), ["ALPHA_API_KEY", "BETA_API_KEY"]);
+  });
+
   it("accepts only a plausible key and hides keys in text", () => {
     assert.equal(validKey(KEY), true);
     for (const bad of ["", "short", "has space in it 12345", "line\nbreak12345", "tab\t12345678", 12345678, undefined, "x".repeat(5000), "é-not-ascii-key"]) assert.equal(validKey(bad), false, String(bad));
     assert.equal(redact(`Authorization: Bearer ${KEY} and again ${KEY}`, [KEY]), "Authorization: Bearer [key hidden] and again [key hidden]");
     assert.equal(redact("nothing here", [KEY]), "nothing here");
+    const odd = 'sk-a/b+c"d\\e-0123456789';
+    for (const form of [JSON.stringify(odd).slice(1, -1), encodeURIComponent(odd), Buffer.from(odd).toString("base64"), Buffer.from(odd).toString("base64url")]) assert.equal(redact(`x ${form} y`, [odd]), "x [key hidden] y", form);
   });
 });
 

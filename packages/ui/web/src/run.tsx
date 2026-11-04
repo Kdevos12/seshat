@@ -112,8 +112,19 @@ export function RunView(props: { id: string; jobId?: string | undefined }) {
   );
 }
 
+const text = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : JSON.stringify(v));
+
+/** The shape comes from a child process; every field is read defensively and shown as text. */
 function SignatureCard(props: { job: Job; signature: Signature; onAnswered: () => void }) {
-  const s = props.signature;
+  const raw = (typeof props.signature === "object" && props.signature !== null ? props.signature : {}) as unknown as Record<string, unknown>;
+  const s = {
+    source: raw.source === "prose" ? ("prose" as const) : ("lean" as const),
+    prose: text(raw.prose),
+    theorem: text(raw.theorem),
+    testLemmas: typeof raw.testLemmas === "object" && raw.testLemmas !== null ? (raw.testLemmas as Signature["testLemmas"]) : undefined,
+    trivial: typeof raw.trivial === "object" && raw.trivial !== null ? (raw.trivial as Signature["trivial"]) : undefined,
+    notes: (Array.isArray(raw.notes) ? raw.notes : []).map(text),
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const answer = async (yes: boolean) => {
@@ -127,10 +138,11 @@ function SignatureCard(props: { job: Job; signature: Signature; onAnswered: () =
     }
   };
   const t = s.testLemmas;
+  const tried = Number(t?.tried);
   return (
     <section class="card" aria-labelledby="sign-title">
       <h2 id="sign-title">Does this say what you mean?</h2>
-      <p class="muted">Nothing has been spent. Signing records that you accept this statement as your meaning; it does not make it true, and the proof is still decided by Lean.</p>
+      <p class="muted">{s.source === "prose" ? "Turning your words into Lean was a model call: it is already charged to your allowance, whatever you answer. " : ""}The research has not started and nothing more is spent until you sign. Signing records that you accept this statement as your meaning; it does not make it true, and the proof is still decided by Lean.</p>
       <div class="pair">
         {s.source === "prose" ? (
           <div>
@@ -145,13 +157,13 @@ function SignatureCard(props: { job: Job; signature: Signature; onAnswered: () =
       </div>
       {t !== undefined ? (
         <Notice kind={t.result === "refuted" || t.failedAt !== undefined ? "warn" : "info"}>
-          Tried on its first cases: {t.result}
-          {t.tried > 0 ? ` (${t.tried} tried)` : ""}
-          {t.failedAt !== undefined ? `; it fails at ${t.failedAt}, so it probably does not mean what you meant` : ""}
-          {t.note !== undefined ? `. ${t.note}` : ""}
+          Tried on its first cases: {text(t.result)}
+          {tried > 0 ? ` (${tried} tried)` : ""}
+          {t.failedAt !== undefined ? `; it fails at ${text(t.failedAt)}, so it probably does not mean what you meant` : ""}
+          {t.note !== undefined ? `. ${text(t.note)}` : ""}
         </Notice>
       ) : null}
-      {s.trivial !== undefined ? <Notice kind="warn">Cheap automation proves this as written ({s.trivial.by}): it is probably trivial, which may not be what you meant.</Notice> : null}
+      {s.trivial !== undefined ? <Notice kind="warn">Cheap automation proves this as written ({text(s.trivial.by)}): it is probably trivial, which may not be what you meant.</Notice> : null}
       {s.notes.map((n, i) => (
         <p class="muted small" key={i}>
           Note: {n}

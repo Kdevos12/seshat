@@ -1,6 +1,6 @@
-import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 /**
  * The API keys of the local interface (documentation/ui.md, "Provider settings"). Each key lives in one local file with mode 0600, in a
@@ -37,6 +37,22 @@ export function validKey(key: unknown): key is string {
   return typeof key === "string" && key.length >= 8 && key.length <= 4096 && /^[\x21-\x7e]+$/.test(key);
 }
 
+/** The real path of a path that may not exist yet: the real path of its deepest existing ancestor, then the rest. */
+function realPath(path: string): string {
+  const rest: string[] = [];
+  let here = path;
+  for (;;) {
+    try {
+      return join(realpathSync(here), ...rest.reverse());
+    } catch {
+      const parent = dirname(here);
+      if (parent === here) return path;
+      rest.push(basename(here));
+      here = parent;
+    }
+  }
+}
+
 const VARIABLE = /^[A-Z][A-Z0-9_]{1,80}$/;
 
 export class KeyStore {
@@ -46,8 +62,9 @@ export class KeyStore {
   constructor(file: string, repoRoot?: string) {
     this.file = resolve(file);
     if (repoRoot !== undefined) {
-      const root = resolve(repoRoot);
-      if (this.file === root || this.file.startsWith(root.endsWith(sep) ? root : root + sep)) {
+      const root = realPath(resolve(repoRoot));
+      const real = realPath(this.file);
+      if (real === root || real.startsWith(root.endsWith(sep) ? root : root + sep)) {
         throw new KeyFileError(`the key file must be outside the repository (${root}); set SESHAT_KEYS_FILE to a path elsewhere`);
       }
     }
@@ -80,11 +97,14 @@ export class KeyStore {
 
   private write(data: FileShape): void {
     const dir = dirname(this.file);
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    try {
-      chmodSync(dir, 0o700);
-    } catch {
-      // A directory we do not own: the file's own mode still protects the keys.
+    // Only a directory this call creates is given mode 0700: a directory the person chose (their home, say) is never changed.
+    const created = mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (created !== undefined) {
+      try {
+        chmodSync(created, 0o700);
+      } catch {
+        // The file's own mode still protects the keys.
+      }
     }
     const temporary = `${this.file}.${process.pid}.tmp`;
     // The file is created with mode 0600 and nothing is ever written to it with a wider one.
@@ -124,10 +144,10 @@ export class KeyStore {
     return true;
   }
 
-  /** The environment variables of the stored keys, for a subprocess. */
-  env(): Record<string, string> {
+  /** The environment variables of the stored keys, for a subprocess: all of them, or only those of the providers named. */
+  env(only?: readonly string[]): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const { variable, key } of Object.values(this.read().keys)) out[variable] = key;
+    for (const [id, { variable, key }] of Object.entries(this.read().keys)) if (only === undefined || only.includes(id)) out[variable] = key;
     return out;
   }
 
@@ -137,9 +157,21 @@ export class KeyStore {
   }
 }
 
-/** Replaces every stored key in a line of text. */
+/** Every form in which a key may be printed: as it is, JSON-escaped, URL-encoded, and base64 (alone, or as `user:key` is not guessed). */
+export function forms(secret: string): string[] {
+  const out = new Set<string>([secret, JSON.stringify(secret).slice(1, -1), encodeURIComponent(secret), Buffer.from(secret).toString("base64"), Buffer.from(secret).toString("base64url")]);
+  // A base64 text of a longer string that holds the key differs at its edges with the key's position; the three shifts are covered.
+  for (const shift of [1, 2]) {
+    const padded = Buffer.from(`${"x".repeat(shift)}${secret}`).toString("base64");
+    const body = padded.slice(4, padded.endsWith("=") ? padded.lastIndexOf("=") - 1 : undefined);
+    if (body.length >= 8) out.add(body);
+  }
+  return [...out].filter((f) => f.length >= 6);
+}
+
+/** Replaces every stored key, in every form of `forms`, in a text. */
 export function redact(text: string, secrets: readonly string[]): string {
   let out = text;
-  for (const secret of secrets) if (secret.length >= 6) out = out.split(secret).join("[key hidden]");
+  for (const secret of secrets) if (secret.length >= 6) for (const form of forms(secret)) out = out.split(form).join("[key hidden]");
   return out;
 }

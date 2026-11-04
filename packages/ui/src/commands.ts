@@ -1,8 +1,9 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classifyStatement } from "@seshat/orchestrator";
 import { newId } from "@seshat/core";
-import { readResumeInfo, runDirectory } from "./reader.ts";
+import type { KeyScope } from "./jobs.ts";
+import { readResumeInfo, readRun, runDirectory } from "./reader.ts";
 
 /**
  * What the interface may ask the process manager to start: `harness solve|run|resume|hint|steer|sign`, each with a fixed list of
@@ -33,6 +34,12 @@ export interface Planned {
   runId: string | undefined;
   /** Whether the person may start it detached, so that it outlives the server. */
   mayDetach: boolean;
+  /** Which stored keys the command may have: the chosen model's provider only; none for a command that calls no model. */
+  keys: KeyScope;
+  /** Writes the files the command reads, once nothing can refuse the command any more. */
+  prepare?: () => void;
+  /** Removes them if the command could not start. */
+  cleanup?: () => void;
 }
 
 export interface PlanContext {
@@ -75,6 +82,21 @@ const ID = /^[A-Za-z0-9_][A-Za-z0-9_.:#/-]{0,200}$/;
 const STRATEGY = /^[A-Za-z0-9_][A-Za-z0-9_. -]{0,80}$/;
 const LINE = /^[A-Za-z0-9_]{1,16}$/;
 
+/** The key scope of a model named `PROVIDER/ID`: that provider's key alone. With no model named the command picks the cheapest, so it may need any. */
+function scopeOf(model: string | undefined): KeyScope {
+  if (model === undefined) return { mode: "all" };
+  const slash = model.indexOf("/");
+  return slash > 0 ? { mode: "provider", provider: model.slice(0, slash) } : { mode: "all" };
+}
+
+function runModel(dir: string): string | undefined {
+  try {
+    return readRun(dir).model ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function flag(name: string, value: string | number | undefined): string[] {
   return value === undefined ? [] : [`--${name}=${value}`];
 }
@@ -112,27 +134,34 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
       const maxUsd = num(body, "maxUsd", { required: true, max: 1000, what: "the spend ceiling" }) as number;
       const runId = freshRunId();
       const dir = join(ctx.runsDir, runId);
-      // The statement goes to a file the command reads, so that text which happens to be a path is never read as one.
+      // The statement goes to a file the command reads, so that text which happens to be a path is never read as one. Every field is
+      // checked before the file exists; it is written when the command is about to start, and kept, under runs/_inputs, as the record of what was asked.
       const inputs = join(ctx.runsDir, "_inputs");
-      mkdirSync(inputs, { recursive: true, mode: 0o700 });
       const file = join(inputs, `${runId}.${mode === "lean" ? "lean" : "txt"}`);
-      writeFileSync(file, statement, { mode: 0o600 });
+      const model = str(body, "model", { pattern: MODEL, what: "the model" });
+      const argv = [
+        "solve",
+        file,
+        `--out=${dir}`,
+        `--max-usd=${maxUsd}`,
+        ...flag("model", model),
+        ...flag("turn-usd", num(body, "turnUsd", { max: 1000, what: "the dollar limit of the first turn" })),
+        ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
+        ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
+        "--ask-stdin",
+      ];
       return {
         kind: "solve",
-        argv: [
-          "solve",
-          file,
-          `--out=${dir}`,
-          `--max-usd=${maxUsd}`,
-          ...flag("model", str(body, "model", { pattern: MODEL, what: "the model" })),
-          ...flag("turn-usd", num(body, "turnUsd", { max: 1000, what: "the dollar limit of the first turn" })),
-          ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
-          ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
-          "--ask-stdin",
-        ],
+        argv,
         dir,
         runId,
         mayDetach: false,
+        keys: scopeOf(model),
+        prepare: () => {
+          mkdirSync(inputs, { recursive: true, mode: 0o700 });
+          writeFileSync(file, statement, { mode: 0o600, flag: "wx" });
+        },
+        cleanup: () => rmSync(file, { force: true }),
       };
     }
     case "run": {
@@ -151,6 +180,8 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         if (typeof l !== "string" || !LINE.test(l)) throw new RequestError("a line id is not in a form the interface accepts");
         return `--lines=${l}`;
       });
+      // A run has a spend ceiling the person set: the interface does not start one that would spend by the harness's default.
+      const runBudget = num(body, "runBudgetUsd", { required: true, max: 100_000, what: "the spend ceiling of the run" }) as number;
       const runId = freshRunId();
       const dir = join(ctx.runsDir, runId);
       return {
@@ -164,7 +195,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
           ...flag("bench", str(body, "bench", { max: 1000, what: "the bench file" })),
           ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
           ...flag("budget-usd", num(body, "budgetUsd", { max: 100_000, what: "the budget of a problem" })),
-          ...flag("run-budget-usd", num(body, "runBudgetUsd", { max: 100_000, what: "the budget of the run" })),
+          `--run-budget-usd=${runBudget}`,
           ...lineFlags,
           ...turnLimit(body),
           ...(body.human === true ? ["--human"] : []),
@@ -173,6 +204,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         dir,
         runId,
         mayDetach: true,
+        keys: scopeOf(model),
       };
     }
     case "resume": {
@@ -185,6 +217,8 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         dir,
         runId,
         mayDetach: true,
+        // The run's own model, as its journal says; a run whose model cannot be read gets every stored key.
+        keys: scopeOf(runModel(dir)),
       };
     }
     case "hint": {
@@ -196,6 +230,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         dir,
         runId,
         mayDetach: false,
+        keys: { mode: "none" },
       };
     }
     case "sign": {
@@ -207,6 +242,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         dir,
         runId,
         mayDetach: false,
+        keys: { mode: "none" },
       };
     }
     case "steer": {
@@ -223,7 +259,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
       ];
       if (argv.length === 2) throw new RequestError("steer needs something to say: a claim to focus on or drop, a strategy to forbid, or a limit for the next turn");
-      return { kind: "steer", argv, dir, runId, mayDetach: false };
+      return { kind: "steer", argv, dir, runId, mayDetach: false, keys: { mode: "none" } };
     }
     default:
       throw new RequestError(`unknown command ${JSON.stringify(kind).slice(0, 40)}`);
