@@ -6,9 +6,9 @@ import { describe, it } from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { ProblemEntry } from "@seshat/bench";
 import { provenanceProblems, sha256Hex } from "@seshat/core";
-import { buildReport, DEFAULT_CONFIG, REPO_ROOT, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
+import { buildReport, DEFAULT_CONFIG, PROMPT_VERSION, REPO_ROOT, type RunConfig, type RunOptions, type RunResult } from "../src/index.ts";
 import { feedbackOf, gitDates, modelReflector, optimizePromptsCommand, readDates } from "../src/optimize-command.ts";
-import { patchFor, ProposalWriter, unifiedPatch } from "../src/optimize-output.ts";
+import { bumpedVersion, patchFor, ProposalWriter, unifiedPatch } from "../src/optimize-output.ts";
 import { PROMPT_TARGETS, promptTarget } from "../src/prompt-screen.ts";
 import { RunSetupError } from "../src/run.ts";
 import { scriptedRun } from "./ablate-helpers.ts";
@@ -16,6 +16,17 @@ import { fauxModels, tempDir } from "./m0-helpers.ts";
 
 const target = promptTarget("prover.system");
 const promptFile = join(REPO_ROOT, target.file);
+
+/** A scratch git repository holding the prompt file and its version record, as the checkout has them. */
+function promptRepo(): string {
+  const repo = tempDir("mh-patch-");
+  for (const f of [target.file, target.versionFile]) {
+    mkdirSync(join(repo, dirname(f)), { recursive: true });
+    copyFileSync(join(REPO_ROOT, f), join(repo, f));
+  }
+  execFileSync("git", ["-C", repo, "init", "-q"]);
+  return repo;
+}
 
 function files(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -65,15 +76,21 @@ describe("a patch of a prompt file", () => {
     const candidate = target.current.replace("work out the mathematics before writing Lean", "think through the mathematics before you write any Lean").replace("# Method", "# How to work");
     const patch = patchFor(target, candidate, REPO_ROOT);
     assert.match(patch, /^diff --git a\/packages\/orchestrator\/prompts\/prover\.system\.txt b\//);
-    const repo = tempDir("mh-patch-");
-    mkdirSync(join(repo, dirname(target.file)), { recursive: true });
-    writeFileSync(join(repo, target.file), text);
+    assert.ok(text.length > 0);
+    const repo = promptRepo();
     writeFileSync(join(repo, "p.patch"), patch);
-    execFileSync("git", ["-C", repo, "init", "-q"]);
     execFileSync("git", ["-C", repo, "apply", "--check", "p.patch"]);
     execFileSync("git", ["-C", repo, "apply", "p.patch"]);
     assert.equal(readFileSync(join(repo, target.file), "utf8"), `${candidate}\n`);
+    // The version moves with the text: a minor bump, and the hash of what was written.
+    assert.deepEqual(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")), { promptVersion: "m0-2.2", sha256: sha256Hex(candidate) });
     assert.equal(unifiedPatch("f.txt", "a\nb\n", "a\nb\n"), "");
+  });
+
+  it("bumps the minor part of a version, which does not open an epoch", () => {
+    assert.equal(bumpedVersion("m0-2.1"), "m0-2.2");
+    assert.equal(bumpedVersion("m0-2.9"), "m0-2.10");
+    assert.equal(bumpedVersion("m0-3"), "m0-3.1");
   });
 
   it("makes several hunks and a pure insertion", () => {
@@ -92,11 +109,12 @@ describe("a patch of a prompt file", () => {
   it("is refused for a file that is not a prompt file, a text that fails the screen, and a checkout whose prompt has changed", () => {
     assert.throws(() => patchFor({ ...target, file: "packages/guards/src/guards.ts" }, target.current, REPO_ROOT), /not a prompt file/);
     assert.throws(() => patchFor(target, target.current.replace("Never allowed", "Allowed"), REPO_ROOT), /no longer passes the strict screen/);
-    const repo = tempDir("mh-patch-");
-    mkdirSync(join(repo, dirname(target.file)), { recursive: true });
-    copyFileSync(promptFile, join(repo, target.file));
+    const repo = promptRepo();
     writeFileSync(join(repo, target.file), `${readFileSync(promptFile, "utf8")}An extra line.\n`);
     assert.throws(() => patchFor(target, target.current, repo), /not the text the optimization started from/);
+    const unrecorded = promptRepo();
+    writeFileSync(join(unrecorded, target.versionFile), JSON.stringify({ promptVersion: "m0-2.1", sha256: "0".repeat(64) }));
+    assert.throws(() => patchFor(target, target.current.replace("Method", "Approach"), unrecorded), /a prompt was changed without its version/);
   });
 
   it("registers prompt files only", () => {
@@ -199,12 +217,11 @@ describe("harness optimize-prompts on a simulated bench", () => {
     assert.equal(evidence.promptSha256, sha256Hex(improved));
     assert.equal(readFileSync(join(dir, "candidates/c1/prompt.txt"), "utf8"), `${improved}\n`);
     // The patch applies to the prompt file, and gives the candidate.
-    const repo = tempDir("mh-apply-");
-    mkdirSync(join(repo, dirname(target.file)), { recursive: true });
-    copyFileSync(promptFile, join(repo, target.file));
-    execFileSync("git", ["-C", repo, "init", "-q"]);
+    const repo = promptRepo();
     execFileSync("git", ["-C", repo, "apply", join(dir, "candidates/c1/prover.system.patch")]);
     assert.equal(readFileSync(join(repo, target.file), "utf8"), `${improved}\n`);
+    assert.equal(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")).promptVersion, "m0-2.2");
+    assert.equal(evidence.provenance.promptVersion, `${PROMPT_VERSION}+${sha256Hex(improved).slice(0, 8)}`, "the candidate is stamped with the version a run measuring it is");
     // The report says what it is.
     const report = readFileSync(join(dir, "report.md"), "utf8");
     assert.equal(printed.join("\n"), report, "what is printed is what is saved");

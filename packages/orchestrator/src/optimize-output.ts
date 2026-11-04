@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { sha256Hex } from "@seshat/core";
 import { type Candidate, type Finalist, type OptimizationResult, type OptimizationSplits, totals, type Totals } from "./optimize.ts";
 import { type PromptTarget, screenPrompt, targetProblems } from "./prompt-screen.ts";
 import { labelLines, type RunLabel } from "./run-label.ts";
@@ -113,20 +114,29 @@ export function unifiedPatch(file: string, before: string, after: string, contex
   return [`diff --git a/${file} b/${file}`, `--- a/${file}`, `+++ b/${file}`, ...body].join("\n") + "\n";
 }
 
+/** The next version of a prompt: the minor part goes up (a rewording does not open an epoch, `promptMajor`); a version with none gets `.1`. */
+export function bumpedVersion(version: string): string {
+  const match = /^(.*\d+)\.(\d+)$/.exec(version);
+  return match === null ? `${version}.1` : `${match[1]}.${Number(match[2]) + 1}`;
+}
+
 /**
- * The patch that makes `candidate` the text of the target's prompt file, against the file as the checkout holds it. The target must be a prompt
- * file, the candidate must pass the screen again (it was model-derived text, and it is written now), and the file must still say what the
- * optimization started from; otherwise nothing is proposed.
+ * The patch that makes `candidate` the text of the target's prompt file and records its new version and hash in the version file next to it, against
+ * the files as the checkout holds them. The target's files must be a prompt file and its version record, the candidate must pass the screen again (it
+ * was model-derived text, and it is written now), and the files must still say what the optimization started from; otherwise nothing is proposed.
  */
 export function patchFor(target: PromptTarget, candidate: string, repoRoot: string): string {
   const problems = targetProblems(target);
   if (problems.length > 0) throw new RunSetupError(problems.join("; "));
   const reasons = screenPrompt(candidate, target);
   if (reasons.length > 0) throw new RunSetupError(`candidate for ${target.id} no longer passes the strict screen: ${reasons.join("; ")}`);
-  const path = join(repoRoot, target.file);
-  const before = readFileSync(path, "utf8");
+  const before = readFileSync(join(repoRoot, target.file), "utf8");
   if (before.replace(/\n$/, "") !== target.current) throw new RunSetupError(`${target.file} in ${repoRoot} is not the text the optimization started from: a patch against it would not mean what was measured`);
-  return unifiedPatch(target.file, before, `${candidate}\n`);
+  const versionBefore = readFileSync(join(repoRoot, target.versionFile), "utf8");
+  const record = JSON.parse(versionBefore) as { promptVersion?: unknown; sha256?: unknown };
+  if (record.sha256 !== sha256Hex(target.current)) throw new RunSetupError(`${target.versionFile} does not record the hash of ${target.file}: a prompt was changed without its version`);
+  const next = `${JSON.stringify({ promptVersion: bumpedVersion(String(record.promptVersion)), sha256: sha256Hex(candidate) }, null, 2)}\n`;
+  return unifiedPatch(target.file, before, `${candidate}\n`) + unifiedPatch(target.versionFile, versionBefore, next);
 }
 
 const usd = (x: number) => `$${x.toFixed(3)}`;

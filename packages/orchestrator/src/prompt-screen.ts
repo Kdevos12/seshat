@@ -1,5 +1,5 @@
 import { forbiddenTokensIn, maskCommentsAndStrings } from "@seshat/core";
-import { PROVER_SYSTEM_FILE, PROVER_SYSTEM_TEMPLATE } from "./prompt.ts";
+import { PROVER_SYSTEM_FILE, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_FILE } from "./prompt.ts";
 
 /**
  * A prompt the harness may optimize (documentation/prompts.md). Every target is a text file under a `prompts` directory of a package,
@@ -10,6 +10,8 @@ export interface PromptTarget {
   id: string;
   /** The file, from the repository root, that a person merges a patch into. */
   file: string;
+  /** The file that records the prompt's version and the hash of its text, which a merge bumps. */
+  versionFile: string;
   /** The merged text. */
   current: string;
   /** Placeholders the text must hold, each exactly once. */
@@ -22,6 +24,7 @@ export const PROMPT_TARGETS: readonly PromptTarget[] = [
   {
     id: "prover.system",
     file: PROVER_SYSTEM_FILE,
+    versionFile: PROVER_VERSION_FILE,
     current: PROVER_SYSTEM_TEMPLATE,
     placeholders: ["{{NOTES_CHARS}}", "{{TOOLS_SECTION}}"],
     anchors: ["lean_check", "-- HARNESS:AUX:BEGIN", "-- HARNESS:AUX:END", "-- HARNESS:PROOF:BEGIN", "-- HARNESS:PROOF:END", "Lean decides", "Never allowed", "sorry"],
@@ -36,10 +39,14 @@ export function promptTarget(id: string, targets: readonly PromptTarget[] = PROM
 
 /** Where a prompt file may be: a `prompts` directory of a package. Nothing else of the repository is a prompt. */
 const PROMPT_FILE = /^packages\/[a-z0-9-]+\/prompts\/[A-Za-z0-9._-]+\.txt$/;
+const VERSION_FILE = /^packages\/[a-z0-9-]+\/prompts\/[A-Za-z0-9._-]+\.version\.json$/;
 
 /** Why a target is not one an optimization may propose changes to: its file is not a prompt file. Empty when it is. */
 export function targetProblems(target: PromptTarget): string[] {
-  return PROMPT_FILE.test(target.file) ? [] : [`${target.id}: ${target.file} is not a prompt file (packages/NAME/prompts/FILE.txt): the optimization proposes changes to prompt files and to nothing else`];
+  const problems: string[] = [];
+  if (!PROMPT_FILE.test(target.file)) problems.push(`${target.id}: ${target.file} is not a prompt file (packages/NAME/prompts/FILE.txt): the optimization proposes changes to prompt files and to nothing else`);
+  if (!VERSION_FILE.test(target.versionFile)) problems.push(`${target.id}: ${target.versionFile} is not a prompt version record (packages/NAME/prompts/FILE.version.json)`);
+  return problems;
 }
 
 /**

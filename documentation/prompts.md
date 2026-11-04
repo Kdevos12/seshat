@@ -101,8 +101,8 @@ rewriting is a model call by API.
 
 ### Provenance
 
-Each candidate carries the stamp of Task 23 (rewriting model, prompt version it derives from, Mathlib revision, harness revision, budget class, time), in
-`evidence.json`. A run that measures a candidate stamps what it learns with `PROMPT_VERSION+HASH`, an epoch of its own. A person who merges a patch bumps `PROMPT_VERSION`.
+Each candidate carries the stamp of Task 23 (rewriting model, prompt version it derives from with its own hash, Mathlib revision, harness revision, budget class, time), in
+`evidence.json`. A run that measures a candidate stamps what it learns with `PROMPT_VERSION+HASH`, an epoch of its own. The prompt's version lives with its text, in `prompts/prover.system.version.json` (`promptVersion` and the hash of the text); `PROMPT_VERSION` reads it, and a test fails when the text and the record disagree, so a prompt cannot change without its version. A candidate is stamped with `PROMPT_VERSION+HASH8`, as a run measuring it is, and its patch changes both files (the text, and a minor bump of the version with the new hash, which does not open an epoch).
 
 ### Not run
 
