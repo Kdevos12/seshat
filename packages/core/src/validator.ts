@@ -1,4 +1,5 @@
 import { sha256Hex } from "./canonical-json.ts";
+import { maskCommentsAndStrings } from "./lean-source.ts";
 import {
   type LeanCertifier,
   type CertificationResult,
@@ -221,6 +222,23 @@ export function forbiddenTokensIn(masked: string): string[] {
   const text = masked.replace(/_root_\./g, " ");
   const literal = firstCharacterLiteral(text);
   return FORBIDDEN_PATTERNS.filter(([, patterns]) => holdsToken(text, patterns, literal)).map(([token]) => token);
+}
+
+/**
+ * The strict screen for text that a model wrote or chose and that reaches a Lean file or a Pantograph goal (a
+ * statement, a header, a tactic, a lemma name, a hole): the one copy, used by every line. Comments and strings are
+ * masked in the strict form, then `forbiddenTokensIn` (`#eval`, `macro_rules`, `IO`...), no `#`, and no `--` or
+ * `/-` in the raw text or in what the mask leaves (a `-- x` would swallow what the harness writes after the text on
+ * its line). Returns the reasons the text is refused; empty when it passes.
+ */
+export function leanTextProblems(text: string): string[] {
+  const masked = maskCommentsAndStrings(text, { strict: true });
+  const reasons: string[] = [];
+  const forbidden = forbiddenTokensIn(masked);
+  if (forbidden.length > 0) reasons.push(`it holds the token${forbidden.length > 1 ? "s" : ""} ${forbidden.map((t) => `'${t}'`).join(", ")}, which the validator refuses in a proof`);
+  if (masked.includes("#")) reasons.push("it holds '#', which starts a Lean command");
+  if (text.includes("--") || text.includes("/-") || masked.includes("--") || masked.includes("/-")) reasons.push("it holds '--' or '/-' where Lean may read a comment that reaches into the lines written after it");
+  return reasons;
 }
 
 /** Checks the two regions without Lean. Returns the reasons the submission is refused. */

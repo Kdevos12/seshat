@@ -83,6 +83,13 @@ describe("a model's script cannot make the solvers touch the host (review I4)", 
     assert.doesNotThrow(() => screenTptp("% include('x')\n/* include('y') */\ntff(a, axiom, $true).\n"));
   });
 
+  it("refuses an include that a quoted atom hides from a comment strip (final review 3)", () => {
+    assert.throws(() => screenTptp("fof(a,axiom,p('/*')).\ninclude('/etc/hostname').\nfof(b,axiom,p('*/'))."), Refused);
+    assert.throws(() => screenTptp("fof(a,axiom,p('/*')).\nfof(b,axiom,p('*/'))."), Refused);
+    assert.throws(() => screenTptp("/* x */ INCLUDE('f')."), Refused);
+    assert.throws(() => screenTptp("fof(a,axiom,p('x')). % 'q\ninclude('f')."), Refused);
+  });
+
   it("answer a refused script with an error and never start the program", async () => {
     const r = registry("echo started > started.txt; printf 'unsat\\n'", "echo started > started.txt; printf '%% SZS status Theorem for p\\n'");
     const smt = await r.invoke("smt.z3", { smtlib: '(set-option :regular-output-channel "/tmp/seshat-x")\n(check-sat)' });

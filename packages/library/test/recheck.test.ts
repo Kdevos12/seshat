@@ -84,7 +84,16 @@ describe("compiling the library again when the Mathlib revision changes (PE1)", 
     const ctx = { ...problem, problemId: "p9", claimId: "c9", target: { source: "import Mathlib\n" }, log: (t: string) => logs.push(t) } as unknown as ProblemContext;
     const attempt = { attemptId: "a1", outcome: "invalid", submission: { aux: "theorem aux_x (n : ℕ) : n = n := by\n  native_decide", proof: "simp" } } as never;
     assert.equal(recordCandidates(ctx, attempt, { ...DEFAULT_PROMOTION, fromFailed: true }), 0);
-    assert.match(logs.join("\n"), /aux_x is not a candidate: it holds a forbidden token \(native_decide\)/);
+    assert.match(logs.join("\n"), /aux_x is not a candidate: it holds the token .native_decide./);
+    assert.equal(candidates(memory).length, 0);
+  });
+
+  it("does not read a candidate whose statement or proof holds a comment or a # command (final review 1)", async () => {
+    const { memory, problem } = await library("rev-a");
+    const logs: string[] = [];
+    const ctx = { ...problem, problemId: "p9", claimId: "c9", target: { source: "import Mathlib\n" }, log: (t: string) => logs.push(t) } as unknown as ProblemContext;
+    const attempt = { attemptId: "a2", outcome: "invalid", submission: { aux: "theorem aux_y (n : ℕ) : n = n := by\n  simp -- x\n#reduce 1", proof: "simp" } } as never;
+    assert.equal(recordCandidates(ctx, attempt, { ...DEFAULT_PROMOTION, fromFailed: true }), 0);
     assert.equal(candidates(memory).length, 0);
   });
 });

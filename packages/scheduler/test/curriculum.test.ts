@@ -6,6 +6,16 @@ import { createM18Line, M18_GENERATION_KIND, M18_OPTIONS, M18_SESSION_KIND, read
 const TARGET = "(n : ℕ) : n + 0 = n";
 
 describe("the variants a model proposes", () => {
+  it("drops a statement that the strict screen refuses: a #eval after a newline, a trailing comment (final review 1)", () => {
+    const { kept, dropped } = readVariants(
+      { variants: [{ kind: "small_case", statement: '(n : Nat) : n = n\n#eval IO.Process.run {cmd := "id"}' }, { kind: "small_case", statement: "(n : Nat) : n = n -- x" }, { kind: "small_case", statement: "(n : ℕ) : n * 1 = n" }] },
+      TARGET,
+      5,
+    );
+    assert.deepEqual(kept.map((k) => k.statement), ["(n : ℕ) : n * 1 = n"]);
+    assert.equal(dropped.filter((d) => /strict screen/.test(d)).length, 2);
+  });
+
   it("keeps statements in signature form, easiest first, up to the limit", () => {
     const { kept, dropped } = readVariants(
       { variants: [{ kind: "small_case", statement: ": 2 + 0 = 2" }, { kind: "prime_case", statement: "(p : ℕ) (hp : p.Prime) : p + 0 = p" }, { kind: "extra_hypothesis", statement: "(n : ℕ) (h : 1 < n) : n + 0 = n" }] },

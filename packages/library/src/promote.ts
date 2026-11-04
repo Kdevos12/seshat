@@ -1,4 +1,4 @@
-import { forbiddenTokensIn, type Json, maskCommentsAndStrings } from "@seshat/core";
+import { type Json, leanTextProblems } from "@seshat/core";
 import type { FinishedAttempt, ProblemContext } from "@seshat/lines";
 import {
   CANDIDATE_KIND,
@@ -56,9 +56,9 @@ export function recordCandidates(problem: ProblemContext, attempt: FinishedAttem
     if (known.has(lemma.name)) continue;
     // A proof the fast check accepted passed the validator's screen; one of a failed attempt may have been refused for a forbidden
     // token, and the triviality probe would send it to Lean as it is (review M5).
-    const forbidden = forbiddenTokensIn(maskCommentsAndStrings(`${lemma.statement}\n${lemma.proof}`, { strict: true }));
-    if (forbidden.length > 0) {
-      problem.log(`library: ${lemma.name} is not a candidate: it holds a forbidden token (${forbidden.join(", ")})`);
+    const unsafe = [...leanTextProblems(lemma.statement), ...leanTextProblems(lemma.proof)];
+    if (unsafe.length > 0) {
+      problem.log(`library: ${lemma.name} is not a candidate: ${unsafe.join("; ")}`);
       continue;
     }
     const data: CandidateData = {

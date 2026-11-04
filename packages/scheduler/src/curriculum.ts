@@ -1,4 +1,4 @@
-import { hash32, type Json, seeded } from "@seshat/core";
+import { hash32, type Json, leanTextProblems, seeded } from "@seshat/core";
 import { checkEdge, createVariant, IMPLICATION_CLOSERS, memorySource, parseSignature } from "@seshat/graph";
 import {
   type Briefing, completeJson, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type TaskEnd, type TaskInfo,
@@ -153,6 +153,11 @@ export function readVariants(value: unknown, target: string, limit: number): { k
     }
     if (/\bsorry\b|\badmit\b/.test(statement)) {
       dropped.push("mentions sorry");
+      continue;
+    }
+    const unsafe = leanTextProblems(statement);
+    if (unsafe.length > 0) {
+      dropped.push(`refused by the strict screen: ${unsafe.join("; ")}`);
       continue;
     }
     try {

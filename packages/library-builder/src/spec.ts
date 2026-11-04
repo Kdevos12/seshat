@@ -87,6 +87,13 @@ export function specProblems(spec: LibrarySpec): string[] {
       else if (screened.text !== text.replace(/\s+/g, " ").trim()) problems.push(`${what} is longer than ${max} characters`);
     };
     prose("the reason", spec.reason, 300);
+    if (spec.port !== undefined) {
+      // These reach the coding agent's prompt (agent.ts renderPrompt): fixed shapes, no prose.
+      if (!/^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9._~\/-]+$/.test(spec.port.git) || spec.port.git.length > 200) problems.push("the package's git address is not a plain https address");
+      if (!/^[A-Za-z0-9._\/-]{1,100}$/.test(spec.port.rev)) problems.push("the package's rev is not a plain commit, tag or branch name");
+      if (!IDENTIFIER.test(spec.port.name)) problems.push("the package name is not a capitalized Lean identifier");
+      for (const lib of spec.port.libs) if (!/^[A-Za-z][A-Za-z0-9_.]{0,100}$/.test(lib)) problems.push(`the library ${JSON.stringify(lib)} is not a module name`);
+    }
     for (const item of spec.items) prose(`the informal statement of ${item.expectedName}`, item.informal, 400);
     for (const t of spec.testLemmas) {
       const scan = scanRegion(t.statement);
