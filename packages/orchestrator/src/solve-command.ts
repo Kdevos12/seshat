@@ -29,9 +29,11 @@ export interface SolveFlags extends DoctorFlags {
   yes?: boolean;
   /**
    * Ask for the signature over the standard streams, for a program that drives the command (`harness ui`): the signature is printed as one
-   * line, `SESHAT_SIGNATURE` and then its JSON, and the answer is one line on standard input, `yes` or anything else for no.
+   * line, `SESHAT_SIGNATURE`, then `askNonce` (a secret the program gave this command, so that no other text can pass for the line) and then
+   * its JSON; the answer is one line on standard input, `yes STATEMENT_ID` for the statement that was shown, anything else for no.
    */
   askStdin?: boolean;
+  askNonce?: string;
   lean?: boolean;
   prose?: boolean;
   noCheck?: boolean;
@@ -229,9 +231,11 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
-          io.out(`${SIGNATURE_LINE} ${JSON.stringify(signature)}`);
+          if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");
+          io.out(`${SIGNATURE_LINE} ${flags.askNonce} ${JSON.stringify(signature)}`);
           const answer = await (io.readLine ?? stdinLine)();
-          const yes = answer !== undefined && /^y(es)?$/i.test(answer.trim());
+          // The answer names the statement that was shown: a yes for any other statement is a no.
+          const yes = answer !== undefined && answer.trim() === `yes ${signature.statementId}`;
           if (!yes) io.err("Not signed: nothing was run.");
           return yes;
         }

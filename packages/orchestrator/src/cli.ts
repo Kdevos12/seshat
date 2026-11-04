@@ -77,7 +77,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check]
+              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -85,6 +85,8 @@ ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a t
 and written (default runs).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
+--ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
+answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
 solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
 the proposition) or prose, or a file holding one. Prose is formalized by the cheapest model with a price, shown to you with test lemmas on its first
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
@@ -1035,6 +1037,10 @@ async function solve(): Promise<number> {
   const maxUsd = number("max-usd", values["max-usd"], undefined);
   const turnUsd = number("turn-usd", values["turn-usd"], undefined);
   const lines = values.lines === undefined ? undefined : selectLines();
+  // The nonce of a program that drives this command is read once and removed, so that no program this command starts can read it.
+  const askNonce = process.env.SESHAT_ASK_NONCE;
+  delete process.env.SESHAT_ASK_NONCE;
+  if (values["ask-stdin"] === true && (askNonce === undefined || askNonce === "")) throw new UsageError("--ask-stdin is for a program that drives the command; it gives the nonce in SESHAT_ASK_NONCE");
   const controller = stoppable();
   const codeRev = codeRevision();
   return await solveCommand(
@@ -1048,6 +1054,7 @@ async function solve(): Promise<number> {
       ...(values.as !== undefined ? { as: values.as } : {}),
       yes: values.yes === true,
       askStdin: values["ask-stdin"] === true,
+      ...(askNonce !== undefined ? { askNonce } : {}),
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
