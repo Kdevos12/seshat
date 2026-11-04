@@ -136,7 +136,7 @@ An informal hypothesis goes through the step DAG first (plan change PC11, item 2
 `proposeHypothesisDag` asks for a `StepDag` (checked by `checkStepDag`), `recordHypothesisDag` writes its
 steps as informal claims (origin `line:M8`) with `decomposes_into` edges and a learned node last, and
 `dependencyMatch` records ProofScore's dependency-match (the F1 of the declared against the found
-auxiliary dependencies) as a fidelity measure. `formalizeHypothesis` then asks for the Lean statement.
+auxiliary dependencies) as a fidelity measure. `formalizeHypothesis` then asks for the Lean statement. `harness solve` ([quickstart.md](quickstart.md#harness-solve)) uses the same function, with its screen and test lemmas, to formalize a person's prose statement before any spend.
 
 `testLemmas` checks a statement on small cases through `evaluateWithLean` (a `decide`-style example per
 case): each case is `passed`, `failed`, `skipped` or `inconclusive`, and one failure drops the

@@ -51,7 +51,7 @@ The code is in `packages/orchestrator/src`:
    revision, and the enabled lines with their
    options (only when there are some, so that an M0 run records what it always did).
 3. Works on the problems in order, `concurrency` at a time.
-4. Records `run.finished`, then writes `report.md` and `report.json`.
+4. Records `run.finished`, then writes `report.md` and `report.json`. `RESULT.md` is rewritten at each certified result and at each stop, and a last time when the process ends, a crash included ([quickstart.md](quickstart.md#resultmd)).
 
 With `--human` or a turn limit (consortium mode, [human.md](human.md)) the run also records `turn.started`
 before the work, and the work can end early, at the turn's limit or at a breakpoint: no session, problem
@@ -422,6 +422,9 @@ per prover, can take a ledger past its limit.
 | `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. |
 | `proofs/NAME-HASH.lean` | The file of each candidate proof. |
 | `report.md`, `report.json` | The report. |
+| `RESULT.md` | What the run found, built from the journal alone and rewritten after every certified result and at every stop ([quickstart.md](quickstart.md#resultmd)). |
+| `resume.json` | The checkout, bench file and host the run began with, so that `RESULT.md` can name the exact command that resumes it. Not a fact of the run: the journal does not hold it. |
+| `view.html` | The static page `harness view` writes ([quickstart.md](quickstart.md#the-view)). |
 | `turns/N/report.md`, `turns/N/report.json` | The account of turn N, for the research team: only in a consortium run ([human.md](human.md#the-account)). |
 
 ## Commands
