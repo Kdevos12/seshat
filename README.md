@@ -22,7 +22,7 @@ The provers can also be given SageMath, an external program installed with Docke
 ([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2 and human-written skills and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
 draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
-([documentation/memory.md](documentation/memory.md)). Nothing has run against a real
+([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance. A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
 Lean or a real model yet.
 
 ## How research flows
@@ -74,6 +74,11 @@ flowchart TB
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
+  solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults: small cap, gate, M1 and M10"]:::built
+  signature["Signature of a prose statement<br/>formalized, shown with test lemmas,<br/>statement.signed before any spend"]:::wait
+  doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::wait
+  resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
+  viewhtml["harness view<br/>one static HTML page from the journal,<br/>no server, no network, all text escaped"]:::built
 
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::wait
@@ -128,6 +133,14 @@ flowchart TB
   team -->|"harness resume"| orchestrator
   llm -.->|"if asked"| narrative
   narrative -.->|"marked model-written"| account
+  solve -->|"one-problem index,<br/>student config"| orchestrator
+  solve -->|"prose"| signature
+  llm -.->|"formalizes prose"| signature
+  signature -->|"statement.signed, as human"| journal
+  doctor -->|"checks; writes the isolated<br/>host profile when it can"| certifier
+  orchestrator -->|"rewritten at each result,<br/>each stop"| resultmd
+  journal -->|"read, no model"| resultmd
+  journal -->|"read, no model"| viewhtml
   bench -->|statements| identity
   identity -->|claims| journal
   fleet -->|"who works on what,<br/>with which settings"| provers
@@ -322,6 +335,9 @@ pnpm install
 pnpm check
 pnpm harness capabilities
 pnpm harness models
+pnpm harness doctor    # what this machine lacks, and the isolated host profile when it can write one
+pnpm harness solve "Every even number above two is a sum of two primes." --max-usd 2    # or Lean, or a file; RESULT.md in the run directory
+pnpm harness view runs/RUN_ID    # runs/RUN_ID/view.html, static
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1

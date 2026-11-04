@@ -332,6 +332,44 @@ describe("harness report", () => {
   });
 });
 
+/** Removes every credential from the environment, except the Lean server's, so that pi-ai finds no provider. */
+const WITHOUT_CREDENTIALS: Record<string, undefined> = Object.fromEntries(
+  Object.keys(process.env).filter((name) => /KEY|TOKEN|SECRET|CREDENTIALS/i.test(name) && name !== "LEAN_SERVER_API_KEY").map((name) => [name, undefined]),
+);
+
+describe("harness doctor and harness solve", () => {
+  let server: Server;
+  let url = "";
+  before(async () => {
+    server = fakeKimina();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  after(() => server.close());
+
+  it("says in plain words what is missing and what to do, and exits 1", async () => {
+    const r = await harness(["doctor", "--no-write", "--host", "local"], { ...WITHOUT_CREDENTIALS, LEAN_SERVER_API_URL: url, PATH: "/nowhere" });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /^ok +Kimina Lean server: .* answers\.$/m);
+    assert.match(r.stdout, /^MISSING +Lean: Lean 4 is not installed here/m);
+    assert.match(r.stdout, /^ +What to do: Install Lean with elan/m);
+    assert.match(r.stdout, /^MISSING +Model credentials: No model provider has credentials/m);
+    assert.match(r.stdout, /^warning +Certifier isolation: This machine has no isolation for the certifier.*stays? `computed`/m);
+    assert.match(r.stdout, /Without isolation for the certifier, a run can only reach `computed`/);
+    const nothingWritten = await harness(["doctor", "--no-write", "--rewrite"]);
+    assert.equal(nothingWritten.code, 2);
+  });
+
+  it("refuses to solve without a statement, with both readings, or with no model it can choose, before anything is spent", async () => {
+    assert.equal((await harness(["solve"])).code, 2);
+    assert.equal((await harness(["solve", "(n : ℕ) : n = n", "--lean", "--prose"])).code, 2);
+    const none = await harness(["solve", "(n : ℕ) : n = n", "--out", join(tempDir(), "run")], { ...WITHOUT_CREDENTIALS, LEAN_SERVER_API_URL: url });
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /No model can be chosen/);
+    assert.match(none.stderr, /harness doctor/);
+  });
+});
+
 describe("harness models", () => {
   it("lists the providers, then the models of one", async () => {
     const providers = await harness(["models"], WITHOUT_ANTHROPIC_KEYS);

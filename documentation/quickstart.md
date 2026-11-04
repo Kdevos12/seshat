@@ -10,6 +10,108 @@ Nothing here changes what counts as a result. Lean is the judge: a claim is `pro
 the certifier's kernel replay says so ([trust.md](trust.md)), and a run without a certifier says plainly
 that its results stay `computed`.
 
+## The shortest road
+
+```sh
+pnpm install
+pnpm harness doctor                       # what is missing here, and how to fix it
+pnpm harness solve "Every even number above two is the sum of two primes." --max-usd 2
+pnpm harness solve "(n : ℕ) : n + 0 = n"  # the same, from a Lean statement
+pnpm harness solve my-problem.lean
+```
+
+`solve` prints the model it chose, the allowance, and the statement it will prove; a prose statement waits
+for your signature. When the run ends it prints where `RESULT.md` is. `harness view RUN_DIR` makes the
+picture.
+
+## harness solve
+
+`harness solve STATEMENT [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes]` takes one
+statement and works on it. Nothing here is a new mechanism of a run: `solve` prepares the inputs of
+`harness run` and calls it (`packages/orchestrator/src/solve.ts`, `student.ts`, `solve-command.ts`).
+
+**The statement.** It is read as Lean when it has a `theorem` or `lemma`, an `import` line, or the shape
+`binders : proposition` (`(n : ℕ) : n + 0 = n`); anything else is prose. `--lean` and `--prose` force
+the reading (a bare proposition such as `∀ n : ℕ, n + 0 = n` is Lean only with `--lean`). A file is read
+whole: `.lean` is Lean, `.txt`, `.md` and `.tex` are prose. A Lean text with no `import` gets `import
+Mathlib`; a signature or a proposition becomes `theorem solve_target ... := by sorry`; the target of a
+file is its theorem whose proof is `sorry` (the last, when there are several; the lemmas above it are the
+file's own). A text with nothing to prove is refused with the reason.
+
+**Prose is formalized, shown and signed before any spend.** The cheapest model with a price makes a Lean
+statement of your words (the induction path: `formalizeHypothesis`, whose answer goes through the strict
+screen that every model-written statement goes through). The harness then shows you your words next to the
+Lean statement, tries the statement in Lean on its first ten numbers (a refuted case is said; the statement
+probably does not mean what you meant) and asks whether cheap automation proves it (then it is trivial as
+written). You answer `y`, or the run does not start (`--yes` answers for you; without a terminal and without
+`--yes` the answer is no). The signature is a `statement.signed` event, written by `human:NAME`
+(`--as NAME`, `SESHAT_USER`, then the login name), the first event after `run.started`, before any task,
+claim or model call of the run. It holds your words, the signed statement and its id, the problem it is the
+target of, the model, the request and response of the formalization call (blobs of the run), what the
+first cases said and whether the statement was trivial. A statement you wrote in Lean is journaled the same
+way (`source: "lean"`) with no prose, and is not asked about: you wrote it. `RESULT.md` and the view show
+the signature.
+
+The signature records that **you accepted the statement as your meaning**. It does not make anything true, and
+no proof depends on it: the claim's status still comes from the certifier alone.
+
+**The one-problem bench.** The problem becomes a checkout of one file and a bench index of one problem under
+`RUN_DIR/problem` (`Solve.lean`, `index.json`; category `research open`, no AMS code, `benchId` `solve-HASH`).
+The index has the shape and the hash check of the bench's, so the run, its memory and `harness resume` do not
+know the difference. The exact command that resumes the run is in `RESULT.md`:
+`harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json`.
+
+**The student defaults.** Every one is the value of an existing option of `harness run`:
+
+| Default | Value | Option it sets |
+|---|---|---|
+| Allowance | `--max-usd`, default $2, always there | `budget: { problemUsd, runUsd }`, both the allowance: nothing goes past it |
+| Formalization | its cost comes off the allowance | the run's budget is `--max-usd` minus what the formalization cost |
+| Budget gate and probe first | on, with the gate's own defaults | `--gate` ([scheduler.md](scheduler.md#the-budget-gate)) |
+| Lines | M1 (shared claims) and M10 (the classical battery before any model call) | `--lines M1,M10`; `--lines` changes them |
+| Model | the cheapest model that has a price, among the providers with credentials | `--model`; the price is input plus output per million tokens, from the host's table when it has the model and from pi-ai otherwise; a model with no price is never chosen, because no dollar cap could see it |
+| Consortium stop | a turn ends, with its account, when it has spent half the allowance (`--turn-usd`), at an impasse, or when the problem is settled | `--turn-usd`, the breakpoints ([human.md](human.md)); the run then waits, and `harness resume` spends the rest up to the allowance |
+| Off-peak | not by default; `--offpeak` waits for the host's off-peak prices when its table has a calendar for the model | `--offpeak` |
+| Host | the one named, `HARNESS_HOST`, `sandboxed` when `doctor` has written it, then `local` | `--host` |
+| User | `--as`, `SESHAT_USER`, the login name; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
+
+The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
+not spent stays yours.
+
+Before it spends, `solve` runs the checks of `doctor` that a run cannot go without (Kimina, credentials,
+prices, the network) and stops with the words of `doctor` when one is missing; `--no-check` skips them.
+
+## harness doctor
+
+`harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]` checks the machine, in the order
+a person would fix it, and says for each thing what it found and what to do. It exits 1 when something a
+run needs is missing.
+
+| Check | Missing when | It says |
+|---|---|---|
+| Lean | there is no `lake` on the PATH, or no Lean project for the certifier (`LEAN_PROJECT_DIR`, or a built environment) | to install Lean with elan; to run `pnpm harness lean-env build` or set `LEAN_PROJECT_DIR` |
+| Kimina Lean server | nothing answers at `LEAN_SERVER_API_URL` (default `http://localhost:8000`), it refuses the machine (401, 403), or it answers something else | to start one ([lean.md](lean.md)); to set `LEAN_SERVER_API_KEY` |
+| Model credentials | no provider has credentials | to set one provider's key (`pnpm harness models` lists the providers) |
+| Price table | the chosen model (`--model`, or the cheapest) has no price in the host profile or in pi-ai | to give it a `models` entry in the host profile ([m0-loop.md](m0-loop.md#prices)), or to choose a priced model |
+| Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
+| Certifier isolation | (a warning, not a failure) the host profile has no sandbox for the certifier and this machine has none | that results stay `computed` |
+
+**The isolation profile.** The certifier runs a candidate's Lean code, and it refuses to without a sandbox
+([certifier.md](certifier.md#where-untrusted-code-runs); Ruling 22). When the host profile in use has no
+sandbox and does not opt out, `doctor` looks for bubblewrap and then Docker, and proves that it works
+(a `bwrap` that cannot make a user namespace is reported, not trusted; Docker needs a running daemon and
+the image of the Docker recipe, `seshat-lean:4.27.0` or `SESHAT_LEAN_IMAGE`). If one works it writes
+`config/hosts/sandboxed.json`: `local.json` with `lean.certify` behind the recipe of certifier.md (bubblewrap
+with `prlimit`, no network, the filesystem read-only except the work directory; or the Docker recipe, no
+network, read-only, all capabilities dropped, as your user). The file is written once and never over an
+existing one (`--rewrite` replaces it, `--no-write` only checks), it is git-ignored, and no profile `doctor`
+writes sets `unsandboxed`: that stays a choice a person writes down. `solve` and `doctor` use
+`sandboxed` by themselves when it exists.
+
+**Without any isolation** `doctor` writes nothing and says so: *every proof that passes the fast check stays
+`computed`, and no claim can become `proved` or `refuted`.* `solve` still works, and `RESULT.md` says the
+same in its words. The fail-closed rule of the certifier is unchanged.
+
 ## RESULT.md
 
 Every run leaves `RUN_DIR/RESULT.md` next to its journal. It is built from the journal alone, by code: no

@@ -19,6 +19,8 @@ export * from "./result.ts";
 export * from "./resume.ts";
 export * from "./run.ts";
 export * from "./session.ts";
+export * from "./solve.ts";
+export * from "./solve-command.ts";
 export * from "./student.ts";
 export * from "./team-command.ts";
 export * from "./team.ts";

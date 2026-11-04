@@ -69,6 +69,10 @@ Each problem has:
 `sample(problems, n, seed)` takes a deterministic subset: the `n` problems whose hash with the seed
 is smallest.
 
+## A bench of one problem
+
+`harness solve` ([quickstart.md](quickstart.md#harness-solve)) writes a checkout of one file and an index of one problem under the run directory (`problem/Solve.lean`, `problem/index.json`): `category` `research open`, no AMS code, `benchId` `solve-HASH`, the source `local:HASH`. The index has the shape and the hash check of the bench's and is read by `readIndex`, so `harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json` takes it like any other.
+
 ## Sequences
 
 An index built from Task 14 on also holds `sequences`: lists of related problems, built from the checkout's structure alone, for the lemma library (line M3). A problem solved early leaves lemmas the later ones can use, so a run that works a sequence in order measures what the library gives; `--memory-from` chains runs, and `--split` of `harness ablate` measures a library built on one part of the bench on another.
