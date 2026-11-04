@@ -393,6 +393,8 @@ wrote is unverified (Global Constraint 16); the screen keeps it to plain words.
 
 ## Memory across runs
 
+With the budget gate on, a problem whose claim the earlier run certified under the same environment hash is not launched again: the gate skips it with a `budget.gated` row `by: "memory"` and no model or Lean call ([scheduler.md](scheduler.md#the-budget-gate)).
+
 `harness run --memory-from RUN_DIR` starts a run on the memory of an earlier one: its claims, edges,
 nodes, lessons, attempts and tool runs, its stamps and epochs, and the posteriors that follow from them.
 The earlier run is not copied and not written. `run.started` names it (`memoryFrom`: the directory, the
