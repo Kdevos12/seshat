@@ -145,6 +145,9 @@ export interface ReportMeta {
   promptVersion: string;
   /** The level of the sign test before the correction for the finalists. */
   alpha: number;
+  /** The cap on the total spend, and the plan's worst case before it started. */
+  maxUsd: number;
+  estimate: { minimum: number; maximum: number };
   /** Earlier optimizations that used problems of the gate splits (the ledger). */
   spentBefore: string[];
 }
@@ -175,7 +178,7 @@ export function renderOptimization(result: OptimizationResult, meta: ReportMeta)
     ...(meta.splits.leaked.length > 0 ? [`${meta.splits.leaked.length} newer problem(s) were left out of the temporal split because a problem of their family is in the older part: ${meta.splits.leaked.join(", ")}.`, ""] : []),
     "## The search",
     "",
-    `${result.trials.length} iteration(s); the rewriting model cost ${usd(result.reflectUsd)}.${result.stoppedBy !== undefined ? ` Stopped early: ${result.stoppedBy}.` : ""}`,
+    `${result.trials.length} iteration(s); the rewriting model cost ${usd(result.reflectUsd)}. Everything spent: ${usd(result.spentUsd)} of a cap of ${usd(meta.maxUsd)} (the plan's worst case was ${usd(meta.estimate.maximum)}; the last rewriting call may overshoot its own budget, and a measurement is charged as the journals scored it).${result.stoppedBy !== undefined ? ` Stopped early: ${result.stoppedBy}.` : ""}`,
     "",
     "| Iteration | Parent | Outcome | Child | Minibatch (parent, child) | Why |",
     "|---|---|---|---|---|---|",

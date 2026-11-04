@@ -115,13 +115,16 @@ describe("harness optimize-prompts", () => {
     assert.match((await harness(["optimize-prompts", "--all"])).stderr, /needs --checkout/);
     assert.match((await harness(["optimize-prompts", "--all", "--checkout", checkout])).stderr, /needs --model/);
     assert.match((await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x"])).stderr, /needs --cutoff/);
+    const nocap = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01"]);
+    assert.equal(nocap.code, 2);
+    assert.match(nocap.stderr, /needs --max-usd/);
     const lines = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--lines", "M1"]);
     assert.equal(lines.code, 2);
     assert.match(lines.stderr, /measures the prover alone/);
-    const split = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--split", "heldout", "--out", out]);
+    const split = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--max-usd", "10", "--split", "heldout", "--out", out]);
     assert.equal(split.code, 2);
     assert.match(split.stderr, /--split takes dev/);
-    const guarded = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--out", new URL("../../guards/x", import.meta.url).pathname]);
+    const guarded = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--max-usd", "10", "--out", new URL("../../guards/x", import.meta.url).pathname]);
     assert.equal(guarded.code, 2);
     assert.match(guarded.stderr, /no write access/);
   });

@@ -173,7 +173,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     faux.setResponses([fauxAssistantMessage(`<prompt>\n${improved}\n</prompt>`)]);
     return {
       printed,
-      args: { template: { ...template, models }, config: { ...base, model: name }, problems, dir, repoRoot: REPO_ROOT, cutoff: "2026-01-01", dates, iterations: 2, minibatch: 3, minGateProblems: 1, ledger: join(tempDir("mh-ledger-"), "gate-ledger.json"), now: () => new Date("2026-11-03T00:00:00.000Z"), print: (l: string) => printed.push(l), ...extra },
+      args: { template: { ...template, models }, config: { ...base, model: name }, problems, dir, repoRoot: REPO_ROOT, cutoff: "2026-01-01", dates, iterations: 2, minibatch: 3, minGateProblems: 1, maxUsd: 1000, ledger: join(tempDir("mh-ledger-"), "gate-ledger.json"), now: () => new Date("2026-11-03T00:00:00.000Z"), print: (l: string) => printed.push(l), ...extra },
     };
   };
 
@@ -289,6 +289,33 @@ describe("harness optimize-prompts on a simulated bench", () => {
     await assert.rejects(optimizePromptsCommand(command(join(tempDir(), "o"), { run, cutoff: "2030-01-01" }).args), /no temporal holdout/);
     assert.deepEqual(spent, []);
     assert.equal(existsSync(join(REPO_ROOT, "packages/guards/proposals")), false);
+  });
+
+  it("refuses without a cap that makes sense, a plan that cannot afford its first measurements, and a model with no price", async () => {
+    const run = fakeRun();
+    await assert.rejects(optimizePromptsCommand(command(join(tempDir(), "o"), { run, maxUsd: 0 }).args), /needs a cap on its total spend/);
+    await assert.rejects(optimizePromptsCommand(command(join(tempDir(), "o"), { run, maxUsd: 10 }).args), /cheapest useful plan .* could cost \$80\.00/);
+    const free = fauxModels(0);
+    free.faux.setResponses([]);
+    const unpriced = command(join(tempDir(), "o"), { run });
+    await assert.rejects(optimizePromptsCommand({ ...unpriced.args, template: { ...unpriced.args.template, models: free.models }, config: { ...unpriced.args.config, model: free.name } }), /no price in pi-ai.*--allow-unpriced/);
+    const allowed = join(tempDir(), "o");
+    await optimizePromptsCommand({ ...command(allowed, { run }).args, allowUnpriced: true, template: { ...unpriced.args.template, models: free.models }, config: { ...unpriced.args.config, model: free.name }, reflect: async () => ({ text: "none", usd: 0 }) });
+    assert.ok(existsSync(join(allowed, "report.md")));
+  });
+
+  it("records the plan's worst case and what was spent, and stops at the cap while still writing the report", async () => {
+    const dir = join(tempDir("mh-opt-"), "out");
+    const { args } = command(dir, { run: fakeRun(), maxUsd: 90 });
+    const result = await optimizePromptsCommand(args);
+    assert.ok(result.spentUsd > 0 && result.spentUsd <= 90);
+    const o = JSON.parse(readFileSync(join(dir, "optimization.json"), "utf8"));
+    assert.equal(o.maxUsd, 90);
+    assert.equal(o.estimate.minimum, 80);
+    assert.ok(o.estimate.maximum > 90);
+    assert.ok(o.spentUsd > 0);
+    assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Everything spent: \$[\d.]+ of a cap of \$90\.000/);
+    assert.match(String(o.stoppedBy), /spent|room for/);
   });
 
   it("renders a report that says no candidate was measured when none beat the merged prompt on dev", async () => {

@@ -274,6 +274,8 @@ export interface OptimizationResult {
   trials: Trial[];
   finalists: Finalist[];
   reflectUsd: number;
+  /** Everything spent: the measurements as scored, and the rewriting model. */
+  spentUsd: number;
   /** Where the evaluations of the merged prompt on the dev, held-out and temporal splits are. */
   baselineDirs: Record<string, string | undefined>;
   stoppedBy?: string;
@@ -297,10 +299,23 @@ export interface OptimizeInput {
   minSavings?: number;
   /** The level of the sign test, before the correction for the finalists (default 0.1, as `harness ablate` reads its verdicts). */
   alpha?: number;
+  /** The most the whole optimization may spend, in dollars: every measurement as the journals count it, and the rewriting model. Optional only for a caller that measures nothing real. */
+  maxUsd?: number;
+  /** The per-problem budget of a measurement, which bounds what one more measurement can cost (problems times this). */
+  problemUsd?: number;
   /** Called once, just before the held-out and temporal splits are first measured: they are spent from then on. */
   beforeGate?: () => void;
   now?: () => Date;
   log?: (line: string) => void;
+}
+
+/** What a plan can cost at most: every problem of every planned measurement spending its whole budget, and the rewriting model its budget. */
+export function estimateUsd(plan: { dev: number; heldout: number; temporal: number; iterations: number; finalists: number; problemUsd: number; reflectBudgetUsd: number }): { minimum: number; maximum: number } {
+  const runs = (n: number) => n * plan.problemUsd;
+  // The merged prompt on dev, and a first rewrite on its minibatch (every problem of dev, at worst), are what a run cannot do without.
+  const minimum = runs(plan.dev * 2);
+  const maximum = runs(plan.dev * (1 + plan.iterations) + (plan.heldout + plan.temporal) * (1 + plan.finalists)) + plan.reflectBudgetUsd;
+  return { minimum, maximum };
 }
 
 export const REFLECT_SYSTEM = `You improve the system prompt of an automated Lean 4 prover. You are shown the current prompt and what the prover did with it on a few problems: whether Lean accepted its proof, what it cost, and the errors Lean gave. Rewrite the prompt so that the prover solves more problems for the same money.
@@ -389,8 +404,14 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
   const now = input.now ?? (() => new Date());
   const devIds = splits.dev.map((p) => p.id);
   const stamp = (): Provenance => stampProvenance(input.provenance, { now: now() });
+  let spentUsd = 0;
+  const cap = input.maxUsd ?? Number.POSITIVE_INFINITY;
+  const unit = input.problemUsd ?? 0;
+  /** Whether one more measurement of `n` problems can still end inside the cap, at worst. */
+  const affords = (n: number): boolean => spentUsd + n * unit <= cap;
   const evaluateOn = async (label: string, text: string | undefined, problems: readonly ProblemEntry[]) => {
     const evaluation = await input.evaluate({ label, template: text, problems });
+    spentUsd += evaluation.scores.reduce((sum, s) => sum + s.usd, 0);
     const missing = problems.filter((p) => !evaluation.scores.some((s) => s.problemId === p.id));
     if (missing.length > 0) log(`optimize: ${label}: ${missing.length} problem${missing.length === 1 ? "" : "s"} without a result`);
     return evaluation;
@@ -417,6 +438,10 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
       stoppedBy = `the reflecting model has cost $${reflectUsd.toFixed(3)}, the budget of $${budget.toFixed(3)}`;
       break;
     }
+    if (!affords(minibatch + splits.dev.length)) {
+      stoppedBy = `the optimization has spent $${spentUsd.toFixed(3)} of its $${cap.toFixed(3)} and could not afford another measurement`;
+      break;
+    }
     const front = paretoFront(pool, devIds);
     const parent = pickParent(front, input.seed, `parent${iteration}`);
     const batch = sample(splits.dev, minibatch, `${input.seed}\nbatch${iteration}`);
@@ -429,6 +454,7 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
       continue;
     }
     reflectUsd += answer.usd;
+    spentUsd += answer.usd;
     const text = extractPrompt(answer.text);
     if (text === undefined) {
       trials.push({ ...base, status: "no_prompt", reasons: ["the answer holds no <prompt>...</prompt>"] });
@@ -458,6 +484,11 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
     }
     // A child that does better on the minibatch is scored on the rest of the dev split, so that every member of the pool has a score on every problem.
     const rest = splits.dev.filter((p) => !child.scores.has(p.id));
+    if (rest.length > 0 && !affords(rest.length)) {
+      trials.push({ ...detail, status: "no_gain", reasons: ["not scored on the rest of dev: the cap on the total spend"] });
+      stoppedBy = `the optimization has spent $${spentUsd.toFixed(3)} of its $${cap.toFixed(3)}`;
+      break;
+    }
     if (rest.length > 0) {
       const more = await evaluateOn(`${id}-dev`, text, rest);
       for (const [k, s] of scoresOf(more, rest)) child.scores.set(k, s);
@@ -470,10 +501,16 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
   }
 
   const front = paretoFront(pool, devIds);
-  const ranked = front.members
+  const wanted = front.members
     .filter((c) => c !== baseline && compareTotals(c, baseline, devIds) > 0)
     .sort((a, b) => compareTotals(b, a, devIds) || pool.indexOf(a) - pool.indexOf(b))
     .slice(0, maxFinalists);
+  // The gate measures the merged prompt once and each finalist once on both unseen splits; as many finalists as the cap leaves room for.
+  const gateSize = splits.heldout.length + splits.temporal.length;
+  let fit = wanted.length;
+  while (fit > 0 && !affords(gateSize * (1 + fit))) fit -= 1;
+  if (fit < wanted.length) stoppedBy = `${stoppedBy !== undefined ? `${stoppedBy}; ` : ""}the cap on the total spend leaves room for ${fit} of ${wanted.length} finalist${wanted.length === 1 ? "" : "s"} on the unseen splits`;
+  const ranked = wanted.slice(0, fit);
   const finalists: Finalist[] = [];
   if (ranked.length > 0) {
     // The merged prompt is measured once on each unseen split; every finalist is measured on the same problems at the same budget.
@@ -497,5 +534,5 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
       finalists.push({ candidate, dev: totals(candidate, devIds), gates, status, accepted: status === "accepted" });
     }
   }
-  return { target: target.id, seed: input.seed, baseline, pool, front, trials, finalists, reflectUsd, baselineDirs, ...(stoppedBy !== undefined ? { stoppedBy } : {}) };
+  return { target: target.id, seed: input.seed, baseline, pool, front, trials, finalists, reflectUsd, spentUsd, baselineDirs, ...(stoppedBy !== undefined ? { stoppedBy } : {}) };
 }

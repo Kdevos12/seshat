@@ -42,7 +42,7 @@ The screen is a floor, not a judgment: a text that passes it is still measured, 
 ## `harness optimize-prompts`
 
 ```sh
-harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff 2026-01-01 --sample 40 --split dev \
+harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff 2026-01-01 --sample 40 --split dev --max-usd 300 \
   [--dates FILE] [--reflector-model PROVIDER/ID] [--iterations 8] [--minibatch 3] [--finalists 2] [--reflect-budget-usd 2] [--out DIR]
 ```
 
@@ -73,6 +73,15 @@ Off by default, outside every ablation run and never part of a research run. Pro
    unified diff `git apply` reads. The measurement runs, with their journals and ablation tables, are under `work/`.
 
 Every measurement is one `harness ablate` arm: `Arm.prompts` with the baseline configuration (M0 and the `--tool` capabilities), so the numbers are read from the journals like any ablation's.
+
+### What it can spend
+
+`--max-usd` is required: a cap in dollars on the whole optimization, the measurements as their journals count them plus the rewriting model. At the start the
+command prints the plan's worst case (every problem of every measurement spending its whole `--budget-usd`, plus `--reflect-budget-usd`) and refuses to start if
+even the first measurements (the merged prompt on dev and one rewrite on it) could cost more than the cap. If the worst case of the full plan is above the cap,
+that is said, and the run stops at the cap: before each measurement it checks that the measurement could still end inside the cap, the gate measures as many
+finalists as fit, and the report is still written, with what was spent. The last rewriting call may overshoot `--reflect-budget-usd`, which is checked before the
+call. A model with no price in pi-ai (its dollars would be charged as $0) is refused, for the prover and the rewriting model, unless `--allow-unpriced`.
 
 ### What it cannot write
 

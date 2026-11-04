@@ -7,7 +7,7 @@ import type { ProblemEntry } from "@seshat/bench";
 import { budgetClassOf, type HarnessEvent, type Json, readEvents, sha256Hex } from "@seshat/core";
 import { type AblationInput, runAblation } from "./ablation.ts";
 import { messageCost } from "./budget.ts";
-import { type Evaluate, type Evaluation, optimizationSplits, optimize, type OptimizationResult, type Reflect, type Score } from "./optimize.ts";
+import { estimateUsd, type Evaluate, type Evaluation, optimizationSplits, optimize, type OptimizationResult, type Reflect, type Score } from "./optimize.ts";
 import { patchFor, ProposalWriter, renderOptimization } from "./optimize-output.ts";
 import { PROMPT_VERSION } from "./prompt.ts";
 import { type PromptTarget, promptTarget, screenPrompt, targetProblems } from "./prompt-screen.ts";
@@ -165,6 +165,10 @@ export interface OptimizeCommand {
   minibatch?: number;
   finalists?: number;
   reflectBudgetUsd?: number;
+  /** The most the whole optimization may spend (required): the measurements as the journals count them, and the rewriting model. */
+  maxUsd: number;
+  /** Go on with a model that has no price, whose dollars no cap can see (default: refused). */
+  allowUnpriced?: boolean;
   /** The level of the sign test before the correction for the finalists (default 0.1). */
   alpha?: number;
   /** Fewest problems in the held-out split and in the temporal holdout (default 8): a smaller split cannot show a significant gain. */
@@ -196,6 +200,15 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
   if (existsSync(join(command.dir, "report.md"))) throw new RunSetupError(`${command.dir} holds a finished optimization: write into a new directory`);
   const seed = String(command.config.seed ?? "optimize");
   const splits = optimizationSplits(command.problems, command.dates, { cutoff: command.cutoff, seed });
+  if (!(command.maxUsd > 0) || !Number.isFinite(command.maxUsd)) throw new RunSetupError(`the optimization needs a cap on its total spend in dollars (--max-usd), a positive number, got ${String(command.maxUsd)}`);
+  // A model with no price is charged $0, so no cap can see what it costs: refused unless asked for.
+  for (const name of new Set([command.config.model, command.reflectorModel ?? command.config.model])) {
+    const slash = name.indexOf("/");
+    const known = slash > 0 ? command.template.models.getModel(name.slice(0, slash), name.slice(slash + 1)) : undefined;
+    if (known !== undefined && !(known.cost.input > 0 || known.cost.output > 0) && command.allowUnpriced !== true) {
+      throw new RunSetupError(`${name} has no price in pi-ai, so its responses would be charged $0 and --max-usd could not stop it: give it a price, or go on with --allow-unpriced`);
+    }
+  }
   const minGate = command.minGateProblems ?? 8;
   for (const [name, list] of [["held-out", splits.heldout], ["temporal", splits.temporal]] as const) {
     if (list.length < minGate) throw new RunSetupError(`the ${name} split has ${list.length} problems, fewer than the ${minGate} a gate needs to show a significant gain: choose more problems (--sample), another --cutoff, or lower --min-gate-problems knowing that no gain will be significant`);
@@ -208,7 +221,16 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
     throw new RunSetupError(`problems of the held-out or temporal split were already used as a gate by ${spentBefore.join("; ")}: each reuse selects on the gate a little more. Choose other problems, or go on with --reuse-gates (the report says so)`);
   }
   const reflectorModel = command.reflectorModel ?? command.config.model;
+  const reflectBudget = command.reflectBudgetUsd ?? 2;
+  const estimate = estimateUsd({
+    dev: splits.dev.length, heldout: splits.heldout.length, temporal: splits.temporal.length, iterations: command.iterations ?? 8,
+    finalists: command.finalists ?? 2, problemUsd: command.config.budget.problemUsd, reflectBudgetUsd: reflectBudget,
+  });
+  if (estimate.minimum > command.maxUsd) {
+    throw new RunSetupError(`the cheapest useful plan (the merged prompt on dev and one rewrite measured on it) could cost $${estimate.minimum.toFixed(2)} at ${command.config.budget.problemUsd} dollars per problem, more than --max-usd ${command.maxUsd}: raise the cap, lower --budget-usd, or choose fewer problems`);
+  }
   const log = command.log ?? (() => undefined);
+  log(`optimize-prompts: cost at most $${estimate.maximum.toFixed(2)} if every problem of every measurement spends its whole budget; the cap is $${command.maxUsd.toFixed(2)}${estimate.maximum > command.maxUsd ? " (the run stops at the cap and still writes its report)" : ""}`);
   log(`optimize-prompts: ${splits.dev.length} dev, ${splits.heldout.length} held-out and ${splits.temporal.length} temporal problems (newer than ${splits.cutoff})`);
   const reflect = command.reflect ?? modelReflector({ models: command.template.models, model: reflectorModel, thinkingLevel: command.config.thinkingLevel, ...(command.template.signal !== undefined ? { signal: command.template.signal } : {}) });
   const result = await optimize({
@@ -228,6 +250,8 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
     ...(command.minibatch !== undefined ? { minibatch: command.minibatch } : {}),
     ...(command.finalists !== undefined ? { finalists: command.finalists } : {}),
     ...(command.reflectBudgetUsd !== undefined ? { reflectBudgetUsd: command.reflectBudgetUsd } : {}),
+    maxUsd: command.maxUsd,
+    problemUsd: command.config.budget.problemUsd,
     ...(command.alpha !== undefined ? { alpha: command.alpha } : {}),
     beforeGate: () => {
       // From here the gate is spent, whether or not the run finishes.
@@ -269,9 +293,9 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
   }
   writer.write(
     "optimization.json",
-    `${JSON.stringify({ target: target.id, seed, cutoff: splits.cutoff, splits: { dev: splits.dev.map((p) => p.id), heldout: splits.heldout.map((p) => p.id), temporal: splits.temporal.map((p) => p.id), undated: splits.undated, leaked: splits.leaked }, trials: result.trials, reflectUsd: result.reflectUsd, baselineDirs: result.baselineDirs, finalists: result.finalists.map((f) => ({ candidate: f.candidate.id, status: f.status, accepted: f.accepted, dev: f.dev, gates: f.gates })), label }, null, 2)}\n`,
+    `${JSON.stringify({ target: target.id, seed, cutoff: splits.cutoff, splits: { dev: splits.dev.map((p) => p.id), heldout: splits.heldout.map((p) => p.id), temporal: splits.temporal.map((p) => p.id), undated: splits.undated, leaked: splits.leaked }, trials: result.trials, reflectUsd: result.reflectUsd, spentUsd: result.spentUsd, maxUsd: command.maxUsd, estimate, stoppedBy: result.stoppedBy ?? null, baselineDirs: result.baselineDirs, finalists: result.finalists.map((f) => ({ candidate: f.candidate.id, status: f.status, accepted: f.accepted, dev: f.dev, gates: f.gates })), label }, null, 2)}\n`,
   );
-  const text = renderOptimization(result, { label, model: command.config.model, reflectorModel, target, splits, budget: { problemUsd: command.config.budget.problemUsd }, proposalsDir: command.dir, promptVersion: PROMPT_VERSION, alpha: command.alpha ?? 0.1, spentBefore });
+  const text = renderOptimization(result, { label, model: command.config.model, reflectorModel, target, splits, budget: { problemUsd: command.config.budget.problemUsd }, proposalsDir: command.dir, promptVersion: PROMPT_VERSION, alpha: command.alpha ?? 0.1, spentBefore, maxUsd: command.maxUsd, estimate });
   writer.write("report.md", text);
   command.print(text);
   return result;
