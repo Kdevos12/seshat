@@ -41,6 +41,7 @@
 | `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12, the curriculum of M18, and the archive, schemas and line M15, join it | core, fleet, graph, lean-meta, library, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, M17, fleet), the M1 line, the `harness` command (and `harness lean-env`) | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
+| `@seshat/ui` | The local interface, `harness ui`: the journal reader, the loopback server and its guards, the process manager, provider settings, the static front end ([ui.md](ui.md)); depends on the orchestrator for the readers and the commands, which loads it only for `harness ui` | orchestrator, core, hono, pi-ai |
 
 The packages of the planned mechanisms exist as skeletons (a `package.json` and an empty
 `src/index.ts`), with their dependencies in the lockfile, so that the task that writes one adds

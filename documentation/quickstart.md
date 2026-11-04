@@ -14,6 +14,7 @@ that its results stay `computed`.
 
 ```sh
 pnpm install
+pnpm harness ui                           # or the same in a page: documentation/ui.md
 pnpm harness doctor                       # what is missing here, and how to fix it
 pnpm harness solve "Every even number above two is the sum of two primes." --max-usd 2
 pnpm harness solve "(n : ℕ) : n + 0 = n"  # the same, from a Lean statement
@@ -199,4 +200,6 @@ account of each turn** of a consortium run (why it ended, what it spent, each pr
 asked, the answers since); **spend per site and rung**; the leads and the evidence, marked; what failed; and
 the command that resumes the run. A journal whose hash chain does not verify gets a banner at the top.
 
-A live interface that watches a run as it goes waits for the first real runs.
+## The local interface
+
+`harness ui [--port N] [--open]` starts a page on your own machine (`127.0.0.1` only) that does what this page does without the command line: you write the statement, set the spend ceiling, sign the Lean statement beside your words, watch the cost by site with a stop button, read the result and copy the certified proof, and continue, hint or steer. Open the address it prints; it carries a token for the session. Keys for model providers can be saved on its Providers page, in a file only you can read. It starts the same commands and changes no claim's status: [ui.md](ui.md).
