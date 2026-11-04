@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-04 UTC. `main` at 39aae02 plus the bench index regeneration, 2399 tests.
+Updated 2026-11-04 UTC. `main` at b666bda, 2404 tests.
 
 ## Tasks
 
@@ -643,3 +643,5 @@ Task 26: implementer dispatched (worktree wt/t26 from main 77f9e6e)
 
 
 Bench index: `bench/fc-bench-v1-discrete.json` regenerated after Task 14 added `sequences` and `tags` to the hashed index body; the old index no longer matched the rebuild test.
+
+Final review (2026-11-04): independent review found no way around the status rules. Fixed in b666bda: one strict Lean screen in core applied to curriculum variants, sketch holes and library promotion; quote-aware TPTP screen; screened prose in the prover briefing; screened port specs and symlink-safe adoptBuild. Left open: abstract sorts treated as nonempty in SMT (evidence only), proved_informal has no evidence gate, models/src/statement.ts keeps comments by design. Nothing has run against a real Lean, model, Vampire, Jev or Sage.
