@@ -1180,7 +1180,11 @@ Main team, after Task 29. `harness solve`, `harness doctor`, the student default
 `harness view` (static HTML from the journal). A prose statement is shown for signature before any
 spend. Documentation: a new `documentation/quickstart.md`, `README.md` (commands, status) and the
 diagram. Tests: a Lean statement and a prose statement end to end with the simulated Lean and the
-faux provider, `doctor` with each dependency missing in turn, `view` rebuilt from a recorded journal.
+faux provider, `doctor` with each dependency missing in turn, `view` rebuilt from a recorded journal. Also in Task 30 (found by the comparison of 2026-11-04, `research/comparaison-agents.md`):
+a default isolation profile for the certifier so a student's host can reach `proved` (`doctor` detects
+bubblewrap or Docker and writes the host profile; without any, the run says plainly that results stay
+`computed`; Ruling 22's fail-closed rule is unchanged), a journal event for the signature of a
+prose statement, and an optional `actor` field on events for several users (additive).
 PB8 also belongs here: the account is built from the journal by code, with no model call, rewritten
 after every certified result and at every stop (tokens, dollars, time, a crash), and rebuilt by
 `harness report` for a run whose process died; a test cuts a run at every event and checks that the
