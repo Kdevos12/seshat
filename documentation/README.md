@@ -94,6 +94,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   Lean or prose statement, the signature of prose, the student defaults), `harness doctor` (what the machine
   lacks, the isolated host profile), `RESULT.md` (what a run leaves, whatever stopped it) and `harness view`
   (one static HTML page of a run).
+- [ui.md](ui.md): the local interface, `harness ui`: a journal reader, a loopback server with a token and a process manager for
+  the commands, provider settings with keys kept outside the repository, and the screens.
 - [human.md](human.md): consortium mode: turns that end at a limit or a breakpoint, the account of
   each turn, the team's hints, signatures and steers, and what an answer can and cannot change.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
