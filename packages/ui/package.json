@@ -1,0 +1,25 @@
+{
+  "name": "@seshat/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The local interface (harness ui): a journal reader, a loopback server with a process manager, provider settings, and a static front end.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build:web": "vite build --config web/vite.config.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.2.0",
+    "@hono/node-server": "2.1.6",
+    "@seshat/core": "workspace:*",
+    "@seshat/orchestrator": "workspace:*",
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "cytoscape": "3.34.4",
+    "preact": "10.29.8",
+    "vite": "8.3.5"
+  }
+}

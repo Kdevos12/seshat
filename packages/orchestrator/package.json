@@ -36,7 +36,8 @@
     "@seshat/models": "workspace:*",
     "@seshat/registry": "workspace:*",
     "@seshat/repair": "workspace:*",
-    "@seshat/scheduler": "workspace:*"
+    "@seshat/scheduler": "workspace:*",
+    "@seshat/ui": "workspace:*"
   },
   "devDependencies": {
     "@earendil-works/pi-mcp": "1.2.0"
