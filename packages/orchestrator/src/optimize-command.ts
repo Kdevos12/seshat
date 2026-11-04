@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Models } from "@earendil-works/pi-ai";
 import type { ProblemEntry } from "@seshat/bench";
@@ -131,6 +131,21 @@ export function readDates(path: string): Map<string, string> {
   return new Map(entries as Array<[string, string]>);
 }
 
+/** One optimization that reached its gate: which problems it measured the held-out and temporal splits on. */
+export interface LedgerEntry {
+  at: string;
+  benchId: string;
+  out: string;
+  problems: string[];
+}
+
+function readLedger(path: string): LedgerEntry[] {
+  if (!existsSync(path)) return [];
+  const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (!Array.isArray(value)) throw new RunSetupError(`${path}: expected a list of optimizations`);
+  return value as LedgerEntry[];
+}
+
 export interface OptimizeCommand {
   template: AblationInput["template"];
   config: RunConfig;
@@ -150,6 +165,14 @@ export interface OptimizeCommand {
   minibatch?: number;
   finalists?: number;
   reflectBudgetUsd?: number;
+  /** The level of the sign test before the correction for the finalists (default 0.1). */
+  alpha?: number;
+  /** Fewest problems in the held-out split and in the temporal holdout (default 8): a smaller split cannot show a significant gain. */
+  minGateProblems?: number;
+  /** The file that records which problems earlier optimizations gated on (default `proposals/gate-ledger.json` of the repository). */
+  ledger?: string;
+  /** Go on although a problem of the gate splits was used by an earlier optimization: the report says so. */
+  reuseGates?: boolean;
   /** Injected for tests: the rewriting model, and the run of one measurement. */
   reflect?: Reflect;
   run?: AblationInput["run"];
@@ -173,6 +196,17 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
   if (existsSync(join(command.dir, "report.md"))) throw new RunSetupError(`${command.dir} holds a finished optimization: write into a new directory`);
   const seed = String(command.config.seed ?? "optimize");
   const splits = optimizationSplits(command.problems, command.dates, { cutoff: command.cutoff, seed });
+  const minGate = command.minGateProblems ?? 8;
+  for (const [name, list] of [["held-out", splits.heldout], ["temporal", splits.temporal]] as const) {
+    if (list.length < minGate) throw new RunSetupError(`the ${name} split has ${list.length} problems, fewer than the ${minGate} a gate needs to show a significant gain: choose more problems (--sample), another --cutoff, or lower --min-gate-problems knowing that no gain will be significant`);
+  }
+  const ledgerPath = command.ledger ?? join(command.repoRoot, "proposals", "gate-ledger.json");
+  const ledger = readLedger(ledgerPath);
+  const gateIds = new Set([...splits.heldout, ...splits.temporal].map((p) => `${command.template.index.benchId}\u0000${p.id}`));
+  const spentBefore = ledger.filter((e) => e.problems.some((id) => gateIds.has(`${e.benchId}\u0000${id}`))).map((e) => `${e.at.slice(0, 10)} (${e.out})`);
+  if (spentBefore.length > 0 && command.reuseGates !== true) {
+    throw new RunSetupError(`problems of the held-out or temporal split were already used as a gate by ${spentBefore.join("; ")}: each reuse selects on the gate a little more. Choose other problems, or go on with --reuse-gates (the report says so)`);
+  }
   const reflectorModel = command.reflectorModel ?? command.config.model;
   const log = command.log ?? (() => undefined);
   log(`optimize-prompts: ${splits.dev.length} dev, ${splits.heldout.length} held-out and ${splits.temporal.length} temporal problems (newer than ${splits.cutoff})`);
@@ -194,6 +228,12 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
     ...(command.minibatch !== undefined ? { minibatch: command.minibatch } : {}),
     ...(command.finalists !== undefined ? { finalists: command.finalists } : {}),
     ...(command.reflectBudgetUsd !== undefined ? { reflectBudgetUsd: command.reflectBudgetUsd } : {}),
+    ...(command.alpha !== undefined ? { alpha: command.alpha } : {}),
+    beforeGate: () => {
+      // From here the gate is spent, whether or not the run finishes.
+      const entry: LedgerEntry = { at: (command.now ?? (() => new Date()))().toISOString(), benchId: command.template.index.benchId, out: command.dir, problems: [...splits.heldout, ...splits.temporal].map((p) => p.id) };
+      new ProposalWriter(dirname(ledgerPath), command.repoRoot).write(basename(ledgerPath), `${JSON.stringify([...ledger, entry], null, 2)}\n`);
+    },
     ...(command.now !== undefined ? { now: command.now } : {}),
     log,
   });
@@ -217,7 +257,7 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
           provenance: c.provenance,
           promptSha256: sha256Hex(c.text),
           dev: { problems: dev, scores: [...c.scores.values()], baseline: [...result.baseline.scores.values()] },
-          status: f === undefined ? "pareto only: not measured on the held-out split or the temporal holdout" : f.accepted ? "accepted" : "not accepted",
+          status: f === undefined ? "pareto only: not measured on the held-out split or the temporal holdout" : f.status.replace("_", " "),
           gates: f?.gates ?? [],
           label,
         } as unknown as Json,
@@ -225,13 +265,13 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
         2,
       )}\n`,
     );
-    if (f?.accepted === true) writer.write(join("candidates", c.id, `${target.id}.patch`), patchFor(target, c.text, command.repoRoot));
+    if (f !== undefined && f.status !== "rejected") writer.write(join("candidates", c.id, f.status === "accepted" ? `${target.id}.patch` : `${target.id}.needs-review.patch`), patchFor(target, c.text, command.repoRoot));
   }
   writer.write(
     "optimization.json",
-    `${JSON.stringify({ target: target.id, seed, cutoff: splits.cutoff, splits: { dev: splits.dev.map((p) => p.id), heldout: splits.heldout.map((p) => p.id), temporal: splits.temporal.map((p) => p.id), undated: splits.undated, leaked: splits.leaked }, trials: result.trials, reflectUsd: result.reflectUsd, baselineDirs: result.baselineDirs, finalists: result.finalists.map((f) => ({ candidate: f.candidate.id, accepted: f.accepted, dev: f.dev, gates: f.gates })), label }, null, 2)}\n`,
+    `${JSON.stringify({ target: target.id, seed, cutoff: splits.cutoff, splits: { dev: splits.dev.map((p) => p.id), heldout: splits.heldout.map((p) => p.id), temporal: splits.temporal.map((p) => p.id), undated: splits.undated, leaked: splits.leaked }, trials: result.trials, reflectUsd: result.reflectUsd, baselineDirs: result.baselineDirs, finalists: result.finalists.map((f) => ({ candidate: f.candidate.id, status: f.status, accepted: f.accepted, dev: f.dev, gates: f.gates })), label }, null, 2)}\n`,
   );
-  const text = renderOptimization(result, { label, model: command.config.model, reflectorModel, target, splits, budget: { problemUsd: command.config.budget.problemUsd }, proposalsDir: command.dir, promptVersion: PROMPT_VERSION });
+  const text = renderOptimization(result, { label, model: command.config.model, reflectorModel, target, splits, budget: { problemUsd: command.config.budget.problemUsd }, proposalsDir: command.dir, promptVersion: PROMPT_VERSION, alpha: command.alpha ?? 0.1, spentBefore });
   writer.write("report.md", text);
   command.print(text);
   return result;

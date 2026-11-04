@@ -10,7 +10,7 @@ import { RunSetupError } from "./run.ts";
  * scored on every problem of a dev split; a parent drawn from the per-problem Pareto set; a model reads what the parent did on a small batch
  * of problems and rewrites the prompt; the child is kept only if it does better than its parent on that batch, then scored on the whole dev
  * split. At the end the best candidates of the Pareto set meet the held-out split and the temporal holdout, and a candidate is accepted
- * only if it beats the merged prompt on both, at equal budget. Nothing here writes a file: the measurements and the model are injected.
+ * only if it beats the merged prompt on both, at equal budget, significantly (sign test, corrected for the finalists). Nothing here writes a file: the measurements and the model are injected.
  */
 
 /** One problem's result under one prompt. */
@@ -231,6 +231,14 @@ export interface Gate {
   /** The totals over the problems of the split: the merged prompt, then the candidate. */
   baseline: Totals;
   candidate: Totals;
+  /** Beats the merged prompt on certified problems (or ties and saves enough), on the problems both finished. */
+  beats: boolean;
+  /** The sign test of the problems only one side certified, at `alpha`. A gain that saves money at a tie is never significant. */
+  significant: boolean;
+  /** The one-sided sign-test p of the split, and the level it was held to (the option divided by the finalists measured). */
+  p: number;
+  alpha: number;
+  /** Beats and significant. */
   accepted: boolean;
   /** Why not, or the note that goes with a yes. */
   note: string;
@@ -241,7 +249,20 @@ export interface Finalist {
   candidate: Candidate;
   dev: Totals;
   gates: Gate[];
+  /**
+   * `accepted`: beats the merged prompt on both unseen splits, significantly on both. `needs_review`: beats it on both, but at least one gain is
+   * indicative only (the sign test does not reach the level): a patch is written under another name and a person decides whether to measure on
+   * more problems. `rejected`: anything else.
+   */
+  status: "accepted" | "needs_review" | "rejected";
   accepted: boolean;
+}
+
+export interface GateRule {
+  /** A tie on certified problems beats the merged prompt only with this share less spent. */
+  minSavings: number;
+  /** The level of the one-sided sign test over the finalists measured (Bonferroni: this divided by their number). */
+  alpha: number;
 }
 
 export interface OptimizationResult {
@@ -272,8 +293,12 @@ export interface OptimizeInput {
   finalists?: number;
   /** Stops the search when the reflecting model has cost this much (default 2). */
   reflectBudgetUsd?: number;
-  /** A candidate that ties the merged prompt on solved problems is accepted only if it costs at least this share less (default 0.05). */
+  /** A candidate that ties the merged prompt on certified problems beats it only if it costs at least this share less (default 0.05). */
   minSavings?: number;
+  /** The level of the sign test, before the correction for the finalists (default 0.1, as `harness ablate` reads its verdicts). */
+  alpha?: number;
+  /** Called once, just before the held-out and temporal splits are first measured: they are spent from then on. */
+  beforeGate?: () => void;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -312,26 +337,29 @@ function scoresOf(evaluation: Evaluation, problems: readonly ProblemEntry[]): Ma
 
 /**
  * The acceptance rule for one split. The candidate has to beat the merged prompt, paired by problem and at the same budget (the evaluations
- * share their configuration): more problems solved, or as many and at least `minSavings` fewer dollars. A split the two did not finish alike
- * is not comparable, and a candidate that is not comparable is not accepted. A gain the sign test calls indicative only is noted, and a
- * person weighs it.
+ * share their configuration): more problems certified, or as many and at least `minSavings` fewer dollars, over the same finished problems; a
+ * split the two did not finish alike is not comparable. It is accepted only if the gain is also significant: the exact one-sided sign test of the
+ * problems only one side certified, at `alpha`. A saving at a tie has no such test, so it can make a candidate worth a second look
+ * (`beats`) and never an accepted one.
  */
-export function gate(split: Gate["split"], baseline: Candidate, candidate: Candidate, problems: readonly ProblemEntry[], minSavings: number, dirs?: string): Gate {
+export function gate(split: Gate["split"], baseline: Candidate, candidate: Candidate, problems: readonly ProblemEntry[], rule: GateRule, dirs?: string): Gate {
   // Compared on certified outcomes only: a fast-check candidate counts as not solved on both sides.
   const certified = (c: Candidate) => [...c.scores.values()].map((s) => ({ problemId: s.problemId, outcome: isSolved(s) ? "proved" : "unsolved", usd: s.usd }));
   const comparison = compareArms("candidate", { perProblem: certified(candidate) }, { name: "merged prompt", measures: { perProblem: certified(baseline) } });
   const ids = problems.map((p) => p.id);
   const b = totals(baseline, ids);
   const c = totals(candidate, ids);
-  const covered = comparison.common === problems.length;
-  let accepted = comparison.verdict === "beats" && covered;
+  const covered = comparison.common === problems.length && comparison.verdict !== "not comparable";
+  let beats = comparison.verdict === "beats" && covered;
   let note = comparison.reason;
   if (!covered) note = `${comparison.common} of ${problems.length} problems were finished by both: not comparable`;
-  else if (accepted && comparison.deltaSolved === 0 && !(c.usd <= b.usd * (1 - minSavings))) {
-    accepted = false;
-    note = `ties on problems solved and saves less than ${Math.round(minSavings * 100)}% ($${c.usd.toFixed(3)} against $${b.usd.toFixed(3)})`;
-  } else if (comparison.verdict === "not comparable") accepted = false;
-  return { split, problems: problems.length, comparison, baseline: b, candidate: c, accepted, note, ...(dirs !== undefined ? { dir: dirs } : {}) };
+  else if (beats && comparison.deltaSolved === 0 && !(c.usd <= b.usd * (1 - rule.minSavings))) {
+    beats = false;
+    note = `ties on problems certified and saves less than ${Math.round(rule.minSavings * 100)}% ($${c.usd.toFixed(3)} against $${b.usd.toFixed(3)})`;
+  }
+  const significant = beats && comparison.deltaSolved > 0 && comparison.pSolves <= rule.alpha;
+  if (beats && !significant) note += `; not significant: sign test p=${comparison.pSolves.toFixed(3)} against ${rule.alpha.toFixed(3)}${comparison.deltaSolved === 0 ? " (a saving at a tie has no test)" : ""}`;
+  return { split, problems: problems.length, comparison, baseline: b, candidate: c, beats, significant, p: comparison.pSolves, alpha: rule.alpha, accepted: beats && significant, note, ...(dirs !== undefined ? { dir: dirs } : {}) };
 }
 
 /** Throws when two splits share a problem: a prompt tuned on a problem would be measured on it. */
@@ -357,6 +385,7 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
   const maxFinalists = input.finalists ?? 2;
   const budget = input.reflectBudgetUsd ?? 2;
   const minSavings = input.minSavings ?? 0.05;
+  const alpha = input.alpha ?? 0.1;
   const now = input.now ?? (() => new Date());
   const devIds = splits.dev.map((p) => p.id);
   const stamp = (): Provenance => stampProvenance(input.provenance, { now: now() });
@@ -448,6 +477,9 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
   const finalists: Finalist[] = [];
   if (ranked.length > 0) {
     // The merged prompt is measured once on each unseen split; every finalist is measured on the same problems at the same budget.
+    input.beforeGate?.();
+    // Bonferroni: each finalist is a test on each split, so the level is shared among the finalists measured.
+    const rule: GateRule = { minSavings, alpha: alpha / ranked.length };
     const heldBase = await evaluateOn("baseline-heldout", undefined, splits.heldout);
     const timeBase = await evaluateOn("baseline-temporal", undefined, splits.temporal);
     baselineDirs.heldout = heldBase.dir;
@@ -458,10 +490,11 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
       const h = await evaluateOn(`${candidate.id}-heldout`, candidate.text, splits.heldout);
       const t = await evaluateOn(`${candidate.id}-temporal`, candidate.text, splits.temporal);
       const gates = [
-        gate("heldout", held, { ...candidate, scores: scoresOf(h, splits.heldout) }, splits.heldout, minSavings, h.dir),
-        gate("temporal", time, { ...candidate, scores: scoresOf(t, splits.temporal) }, splits.temporal, minSavings, t.dir),
+        gate("heldout", held, { ...candidate, scores: scoresOf(h, splits.heldout) }, splits.heldout, rule, h.dir),
+        gate("temporal", time, { ...candidate, scores: scoresOf(t, splits.temporal) }, splits.temporal, rule, t.dir),
       ];
-      finalists.push({ candidate, dev: totals(candidate, devIds), gates, accepted: gates.every((g) => g.accepted) });
+      const status = gates.every((g) => g.accepted) ? "accepted" : gates.every((g) => g.beats) ? "needs_review" : "rejected";
+      finalists.push({ candidate, dev: totals(candidate, devIds), gates, status, accepted: status === "accepted" });
     }
   }
   return { target: target.id, seed: input.seed, baseline, pool, front, trials, finalists, reflectUsd, baselineDirs, ...(stoppedBy !== undefined ? { stoppedBy } : {}) };

@@ -147,8 +147,8 @@ describe("what the rewriting model is told", () => {
 describe("harness optimize-prompts on a simulated bench", () => {
   const entry = (path: string, fullName: string) => ({ id: `${path}#${fullName}`, path, fullName }) as unknown as ProblemEntry;
   const problems = [
-    ...["a", "b", "c", "d", "e"].map((x) => entry(`Old${x}.lean`, x)),
-    ...["n", "m"].map((x) => entry(`New${x}.lean`, x)),
+    ...["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "o", "p"].map((x) => entry(`Old${x}.lean`, x)),
+    ...["n", "m", "q", "r", "s", "t"].map((x) => entry(`New${x}.lean`, x)),
   ];
   const dates = new Map(problems.map((p) => [p.id, p.path.startsWith("New") ? "2026-06-01" : "2025-01-01"]));
   const base: RunConfig = { ...DEFAULT_CONFIG, selection: { all: true }, model: "faux/prover", thinkingLevel: "off", provers: 1, sessions: 2 };
@@ -160,7 +160,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     return async (o: RunOptions): Promise<RunResult> => {
       const marker = o.config.prompts?.proverSystem === undefined ? "merged" : "better";
       seen.push(`${marker}:${o.problems.map((p) => p.fullName).join("")}`);
-      const solves = marker === "merged" ? 1 : 3;
+      const solves = marker === "merged" ? 1 : 99;
       const run = scriptedRun({ problems: o.problems.map((p, k) => (k < solves ? { id: p.id, outcome: "proved" as const, attempts: [{ outcome: "valid" as const, usd: 0.1 }] } : { id: p.id, outcome: "unsolved" as const, attempts: [{ usd: 0.1 }] })) }, o.dir);
       const report = buildReport(run.events);
       return { runId: report.runId, dir: o.dir, problems: [], usd: report.usd, report };
@@ -173,7 +173,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     faux.setResponses([fauxAssistantMessage(`<prompt>\n${improved}\n</prompt>`)]);
     return {
       printed,
-      args: { template: { ...template, models }, config: { ...base, model: name }, problems, dir, repoRoot: REPO_ROOT, cutoff: "2026-01-01", dates, iterations: 2, minibatch: 3, now: () => new Date("2026-11-03T00:00:00.000Z"), print: (l: string) => printed.push(l), ...extra },
+      args: { template: { ...template, models }, config: { ...base, model: name }, problems, dir, repoRoot: REPO_ROOT, cutoff: "2026-01-01", dates, iterations: 2, minibatch: 3, minGateProblems: 1, ledger: join(tempDir("mh-ledger-"), "gate-ledger.json"), now: () => new Date("2026-11-03T00:00:00.000Z"), print: (l: string) => printed.push(l), ...extra },
     };
   };
 
@@ -213,11 +213,45 @@ describe("harness optimize-prompts on a simulated bench", () => {
     assert.match(report, /### c1: accepted: beats the merged prompt on the held-out split and on the temporal holdout/);
     assert.match(report, /nothing changes until a person merges one/);
     // The merged prompt and the candidate were run on the same held-out and temporal problems.
-    const held = seen.filter((s) => /^(merged|better):[a-e]+$/.test(s));
-    assert.ok(held.length >= 2);
+    const held = seen.filter((s) => (s.split(":")[1] ?? "").length === 6);
+    assert.equal(held.length, 4, "the merged prompt and the candidate, each on the held-out and the temporal problems");
+    assert.deepEqual(held.filter((s) => s.startsWith("merged")).map((s) => s.split(":")[1]).sort(), held.filter((s) => s.startsWith("better")).map((s) => s.split(":")[1]).sort());
+    assert.equal(JSON.parse(readFileSync(args.ledger as string, "utf8"))[0].problems.length, 12, "the gate splits are recorded as spent");
     const optimization = JSON.parse(readFileSync(join(dir, "optimization.json"), "utf8"));
-    assert.deepEqual(optimization.splits.temporal.sort(), ["Newm.lean#m", "Newn.lean#n"]);
+    assert.deepEqual(optimization.splits.temporal.sort(), ["Newm.lean#m", "Newn.lean#n", "Newq.lean#q", "Newr.lean#r", "News.lean#s", "Newt.lean#t"]);
     for (const id of optimization.splits.temporal) assert.ok(!optimization.splits.dev.includes(id) && !optimization.splits.heldout.includes(id));
+  });
+
+  it("writes the patch under another name when the gain is indicative only", async () => {
+    const dir = join(tempDir("mh-opt-"), "out");
+    // The better prompt solves three problems more than the merged one on each split: 3-0 is p=0.125.
+    const run = async (o: RunOptions): Promise<RunResult> => {
+      const better = o.config.prompts?.proverSystem !== undefined;
+      const solves = better ? (o.problems.length >= 6 && o.problems.every((p) => p.path.startsWith("Old")) && o.dir.includes("dev") ? 99 : 4) : 1;
+      const r = scriptedRun({ problems: o.problems.map((p, k) => (k < solves ? { id: p.id, outcome: "proved" as const, attempts: [{ outcome: "valid" as const, usd: 0.1 }] } : { id: p.id, outcome: "unsolved" as const, attempts: [{ usd: 0.1 }] })) }, o.dir);
+      const report = buildReport(r.events);
+      return { runId: report.runId, dir: o.dir, problems: [], usd: report.usd, report };
+    };
+    const { args } = command(dir, { run });
+    const result = await optimizePromptsCommand(args);
+    assert.equal(result.finalists[0]?.status, "needs_review");
+    const written = files(dir);
+    assert.ok(written.includes("candidates/c1/prover.system.needs-review.patch"));
+    assert.ok(!written.includes("candidates/c1/prover.system.patch"), "no plain patch for a gain that is indicative only");
+    assert.match(readFileSync(join(dir, "report.md"), "utf8"), /needs review: beats the merged prompt on both splits, but a gain is indicative only/);
+  });
+
+  it("refuses a gate with too few problems, and the reuse of problems an earlier optimization gated on, unless told to", async () => {
+    const run = fakeRun();
+    await assert.rejects(optimizePromptsCommand(command(join(tempDir(), "o"), { run, minGateProblems: 8 }).args), /fewer than the 8 a gate needs/);
+    const ledger = join(tempDir("mh-ledger-"), "gate-ledger.json");
+    await optimizePromptsCommand(command(join(tempDir(), "first"), { run, ledger }).args);
+    const again = command(join(tempDir(), "second"), { run, ledger });
+    await assert.rejects(optimizePromptsCommand(again.args), /already used as a gate by .*first/);
+    const allowed = command(join(tempDir(), "third"), { run, ledger, reuseGates: true });
+    await optimizePromptsCommand(allowed.args);
+    assert.match(readFileSync(join(allowed.args.dir, "report.md"), "utf8"), /already used by .*first/);
+    assert.equal(JSON.parse(readFileSync(ledger, "utf8")).length, 2);
   });
 
   it("writes no patch for a candidate that does not beat the merged prompt on both splits", async () => {
@@ -238,7 +272,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     assert.ok(written.includes("candidates/c1/evidence.json"));
     assert.ok(!written.some((f) => f.endsWith(".patch")), "no patch for a candidate that was not accepted");
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Nothing was accepted\. The prompt is unchanged, and no patch was written\./);
-    assert.equal(JSON.parse(readFileSync(join(dir, "candidates/c1/evidence.json"), "utf8")).status, "not accepted");
+    assert.equal(JSON.parse(readFileSync(join(dir, "candidates/c1/evidence.json"), "utf8")).status, "rejected");
   });
 
   it("refuses, before it spends anything, a directory in a protected tree, a split other than dev, a finished directory and a target that is not a prompt file", async () => {

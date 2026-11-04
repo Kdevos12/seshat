@@ -114,46 +114,72 @@ describe("the splits", () => {
   });
 });
 
+const RULE = { minSavings: 0.05, alpha: 0.1 };
+
 describe("the gate", () => {
   const problems = [entry("A", "a"), entry("B", "b"), entry("C", "c")];
   const base = (rows: Array<[string, number]>) => cand("base", Object.fromEntries(problems.map((p, k) => [p.id, rows[k] as [string, number]])));
   const trial = (rows: Array<[string, number]>) => cand("c1", Object.fromEntries(problems.map((p, k) => [p.id, rows[k] as [string, number]])));
 
-  it("accepts more problems solved", () => {
-    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["proved", 1], ["unsolved", 1]]), problems, 0.05);
-    assert.equal(g.accepted, true);
+  it("accepts a gain only when the sign test supports it, at the level it is given", () => {
+    const six = ["a", "b", "c", "d", "e", "f"].map((x) => entry("G", x));
+    const rows = (n: number) => Object.fromEntries(six.map((p, k) => [p.id, [k < n ? "proved" : "unsolved", 1] as [string, number]]));
+    const none = cand("base", rows(0));
+    const all = gate("heldout", none, cand("c1", rows(6)), six, RULE);
+    assert.deepEqual([all.beats, all.significant, all.accepted], [true, true, true]);
+    assert.ok(all.p < 0.02);
+    const four = cand("c1", rows(4));
+    assert.equal(gate("heldout", none, four, six, RULE).accepted, true, "4-0 is p=0.0625, enough at 0.1");
+    const corrected = gate("heldout", none, four, six, { ...RULE, alpha: 0.05 });
+    assert.deepEqual([corrected.beats, corrected.accepted], [true, false], "but not at 0.1 shared by two finalists");
+    assert.match(corrected.note, /not significant: sign test p=0\.063 against 0\.050/);
+    const two = gate("heldout", none, cand("c1", rows(2)), six, RULE);
+    assert.deepEqual([two.beats, two.accepted], [true, false], "a gain of two problems is indicative only");
+  });
+
+  it("never accepts a saving at a tie, which has no test", () => {
+    const six = ["a", "b", "c"].map((x) => entry("G", x));
+    const mk = (usd: number) => cand("x", Object.fromEntries(six.map((p) => [p.id, ["proved", usd] as [string, number]])));
+    const g = gate("temporal", mk(1), mk(0.5), six, RULE);
+    assert.deepEqual([g.beats, g.significant, g.accepted], [true, false, false]);
+    assert.match(g.note, /a saving at a tie has no test/);
+  });
+
+  it("beats on more problems solved", () => {
+    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["proved", 1], ["unsolved", 1]]), problems, RULE);
+    assert.equal(g.beats, true);
     assert.equal(g.comparison.deltaSolved, 1);
   });
 
   it("refuses fewer problems solved, and the same number at the same price", () => {
-    assert.equal(gate("heldout", base([["proved", 1], ["proved", 1], ["unsolved", 1]]), trial([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), problems, 0.05).accepted, false);
-    const tie = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), problems, 0.05);
-    assert.equal(tie.accepted, false);
+    assert.equal(gate("heldout", base([["proved", 1], ["proved", 1], ["unsolved", 1]]), trial([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), problems, RULE).beats, false);
+    const tie = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), problems, RULE);
+    assert.equal(tie.beats, false);
   });
 
   it("accepts a tie only when it saves enough", () => {
     const b = base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]);
-    assert.equal(gate("temporal", b, trial([["proved", 0.5], ["unsolved", 1], ["unsolved", 1]]), problems, 0.05).accepted, true);
-    const small = gate("temporal", b, trial([["proved", 1], ["unsolved", 0.97], ["unsolved", 1]]), problems, 0.05);
-    assert.equal(small.accepted, false);
+    assert.equal(gate("temporal", b, trial([["proved", 0.5], ["unsolved", 1], ["unsolved", 1]]), problems, RULE).beats, true);
+    const small = gate("temporal", b, trial([["proved", 1], ["unsolved", 0.97], ["unsolved", 1]]), problems, RULE);
+    assert.equal(small.beats, false);
     assert.match(small.note, /saves less than 5%/);
   });
 
   it("counts certified outcomes only: a fast-check candidate is no win, and is shown apart", () => {
-    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["candidate", 1], ["candidate", 1]]), problems, 0.05);
-    assert.equal(g.accepted, false);
+    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["candidate", 1], ["candidate", 1]]), problems, RULE);
+    assert.equal(g.beats, false);
     assert.equal(g.comparison.deltaSolved, 0);
     assert.deepEqual([g.baseline.solved, g.baseline.candidates, g.candidate.solved, g.candidate.candidates], [1, 0, 1, 2]);
-    const lost = gate("heldout", base([["proved", 1], ["candidate", 1], ["unsolved", 1]]), trial([["candidate", 1], ["candidate", 1], ["candidate", 1]]), problems, 0.05);
-    assert.equal(lost.accepted, false, "more fast-check passes, fewer certified");
+    const lost = gate("heldout", base([["proved", 1], ["candidate", 1], ["unsolved", 1]]), trial([["candidate", 1], ["candidate", 1], ["candidate", 1]]), problems, RULE);
+    assert.equal(lost.beats, false, "more fast-check passes, fewer certified");
     assert.ok(compareScores({ outcome: "proved", usd: 9 }, { outcome: "candidate", usd: 0.1 }) > 0);
     assert.ok(compareScores({ outcome: "refuted", usd: 1 }, { outcome: "unsolved", usd: 1 }) > 0);
   });
 
   it("is not comparable when a split was not finished alike", () => {
     const partial = cand("c1", { [problems[0]!.id]: ["proved", 1] });
-    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), partial, problems, 0.05);
-    assert.equal(g.accepted, false);
+    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), partial, problems, RULE);
+    assert.equal(g.beats, false);
     assert.match(g.note, /not comparable/);
   });
 });
@@ -168,8 +194,8 @@ describe("extracting a rewrite", () => {
 
 describe("the search and the acceptance rule", () => {
   const dev = ["d1", "d2", "d3", "d4"].map((x) => entry("Dev.lean", x));
-  const heldout = ["h1", "h2", "h3"].map((x) => entry("Held.lean", x));
-  const temporal = ["t1", "t2"].map((x) => entry("New.lean", x));
+  const heldout = ["h1", "h2", "h3", "h4", "h5", "h6"].map((x) => entry("Held.lean", x));
+  const temporal = ["t1", "t2", "t3", "t4", "t5", "t6"].map((x) => entry("New.lean", x));
   const splits = { dev, heldout, temporal };
 
   const rewrite = (marker: string) => target.current.replace("Method", `Method ${marker}`).replace("# Method", `# Method (${marker})`);
@@ -210,11 +236,12 @@ describe("the search and the acceptance rule", () => {
   it("accepts a candidate that beats the merged prompt on the held-out split and on the temporal holdout", async () => {
     const sim = simulate({
       merged: ["d1", "h1", "t1"],
-      Better: ["d1", "d2", "d3", "h1", "h2", "t1", "t2"],
+      Better: ["d1", "d2", "d3", "h1", "h2", "h3", "h4", "h5", "h6", "t1", "t2", "t3", "t4", "t5", "t6"],
     });
     const r = await optimize(base({ evaluate: sim.evaluate, ...scripted([answer("Better")]) }));
     assert.equal(r.finalists.length, 1);
     const [f] = r.finalists;
+    assert.equal(f?.status, "accepted");
     assert.equal(f?.accepted, true);
     assert.deepEqual(f?.gates.map((g) => [g.split, g.accepted]), [["heldout", true], ["temporal", true]]);
     assert.equal(f?.dev.solved, 3);
@@ -230,20 +257,45 @@ describe("the search and the acceptance rule", () => {
     assert.deepEqual(held.map((c) => c.label), ["baseline-heldout", "c1-heldout"]);
     assert.deepEqual(held[0]?.problems, held[1]?.problems);
     const time = sim.calls.filter((c) => c.label.endsWith("-temporal"));
-    assert.deepEqual(time[0]?.problems, ["t1", "t2"]);
+    assert.deepEqual(time[0]?.problems, ["t1", "t2", "t3", "t4", "t5", "t6"]);
     assert.deepEqual(time[0]?.problems, time[1]?.problems);
   });
 
   it("rejects a candidate that wins on dev and loses on the held-out split (it fit the dev problems)", async () => {
-    const sim = simulate({ merged: ["d1", "h1", "h2", "t1"], Overfit: ["d1", "d2", "d3", "d4", "t1", "t2"] });
+    const sim = simulate({ merged: ["d1", "h1", "h2", "t1"], Overfit: ["d1", "d2", "d3", "d4", "t1", "t2", "t3", "t4", "t5", "t6"] });
     const r = await optimize(base({ evaluate: sim.evaluate, ...scripted([answer("Overfit")]) }));
     const [f] = r.finalists;
     assert.equal(f?.accepted, false);
     assert.deepEqual(f?.gates.map((g) => g.accepted), [false, true]);
   });
 
+  it("marks a candidate that beats the merged prompt on both splits by a margin the sign test does not support as needing review", async () => {
+    const sim = simulate({ merged: ["d1", "h1", "t1"], Better: ["d1", "d2", "d3", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"] });
+    const r = await optimize(base({ evaluate: sim.evaluate, ...scripted([answer("Better")]) }));
+    const f = r.finalists[0];
+    assert.equal(f?.status, "needs_review");
+    assert.equal(f?.accepted, false);
+    assert.deepEqual(f?.gates.map((g) => [g.beats, g.significant]), [[true, false], [true, false]]);
+    assert.ok((f?.gates[0]?.p ?? 0) > 0.1);
+  });
+
+  it("divides the level of the sign test among the finalists, and tells the caller when the gate is first used", async () => {
+    // Two finalists, each 4-0 on the held-out and temporal splits: p=0.0625 passes 0.1 alone, and fails 0.1 shared by two.
+    const sim = simulate({ merged: ["d1"], A: ["d1", "d2", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"], B: ["d1", "d3", "d4", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"] });
+    let used = 0;
+    const r = await optimize(base({ evaluate: sim.evaluate, iterations: 2, finalists: 2, beforeGate: () => { used += 1; }, ...scripted([answer("A"), answer("B")]) }));
+    assert.equal(used, 1);
+    assert.equal(r.finalists.length, 2);
+    for (const f of r.finalists) {
+      assert.equal(f.gates[0]?.alpha, 0.05);
+      assert.equal(f.status, "needs_review");
+    }
+    const one = await optimize(base({ evaluate: simulate({ merged: ["d1"], A: ["d1", "d2", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"] }).evaluate, iterations: 1, ...scripted([answer("A")]) }));
+    assert.equal(one.finalists[0]?.status, "accepted");
+  });
+
   it("rejects a candidate that holds up on the held-out split and loses on the temporal holdout", async () => {
-    const sim = simulate({ merged: ["d1", "h1", "t1", "t2"], Old: ["d1", "d2", "h1", "h2"] });
+    const sim = simulate({ merged: ["d1", "h1", "t1", "t2", "t3"], Old: ["d1", "d2", "h1", "h2", "h3", "h4", "h5", "h6"] });
     const r = await optimize(base({ evaluate: sim.evaluate, ...scripted([answer("Old")]) }));
     assert.deepEqual(r.finalists[0]?.gates.map((g) => g.accepted), [true, false]);
     assert.equal(r.finalists[0]?.accepted, false);

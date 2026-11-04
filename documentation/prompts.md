@@ -60,11 +60,16 @@ Off by default, outside every ablation run and never part of a research run. Pro
    strict screen, and is run only if it passes. It is kept only if it does better than its parent on the minibatch, and is then scored on the rest of dev.
    The Pareto set (`paretoFront`) is, per problem, the candidates best on it (a certified problem beats the others, then cheaper wins), less the dominated ones.
 3. **Gate** (`gate`). The best finalists of the Pareto set that beat the merged prompt on dev are run, with the merged prompt, on the held-out split and
-   on the temporal holdout, under the same configuration and budget. A candidate is accepted only if on both splits it solves more problems, or as many for
-   at least 5% less money, over the same finished problems (`compareArms`). Splits not finished alike are not comparable and do not accept. The detail
-   column notes a gain the sign test calls indicative only.
+   on the temporal holdout, under the same configuration and budget. On each split a candidate *beats* the merged prompt if it certifies more problems, or as
+   many for at least 5% less money, over the same finished problems (`compareArms`; splits not finished alike are not comparable). It is *accepted* only if
+   it also passes the exact one-sided sign test of the problems only one side certified, at `--alpha` (default 0.1) divided by the number of finalists measured
+   (Bonferroni), on both splits. A saving at a tie has no test, so it never gets past `needs review`. A candidate that beats the merged prompt on both
+   splits without passing the test is `needs review`: its patch is written as `prover.system.needs-review.patch`, and the report says to measure on more
+   problems. A split with fewer than `--min-gate-problems` (default 8) problems is refused before anything is spent, because no gain on it could be significant.
+   **The gate is spent.** A ledger (`--ledger`, default `proposals/gate-ledger.json`) records the problems of the held-out and temporal splits of every optimization
+   that reached its gate; a run whose gate splits share a problem with an earlier one is refused unless `--reuse-gates` is given, and then the report names it.
 4. **Output.** Into `--out` (default `proposals/ID`, git-ignored): `report.md`, `optimization.json`, and for each Pareto member `candidates/ID/prompt.txt`
-   and `evidence.json` (provenance stamp, lineage, dev scores, gate results). Only an accepted candidate gets `candidates/ID/prover.system.patch`, a
+   and `evidence.json` (provenance stamp, lineage, dev scores, gate results). Only an accepted or needs-review candidate gets `candidates/ID/prover.system.patch` (or `.needs-review.patch`), a
    unified diff `git apply` reads. The measurement runs, with their journals and ablation tables, are under `work/`.
 
 Every measurement is one `harness ablate` arm: `Arm.prompts` with the baseline configuration (M0 and the `--tool` capabilities), so the numbers are read from the journals like any ablation's.
