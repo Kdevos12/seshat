@@ -206,9 +206,9 @@ of the line M10 configure it:
   ATP, reconstructs, and runs the next ATP only if Lean accepted nothing from the answers so far, so
   the first prover whose output Lean accepts after reconstruction wins and the later ones cost nothing.
 
-In both modes a prover that vanishes at run time is recorded in `missing` and the other goes on, and a
+The evidence is listed by cutoff and then by the order of the tools (z3, then the ATPs as `atpTools` gives them), never by which prover answered first, so the premise sets reach Lean in the same order on a resume. In both modes a prover that vanishes at run time is recorded in `missing` and the other goes on, and a
 set of premises is handed to Lean once. The briefing names the provers that answered ("Vampire and E
-proved the goal in the encoded theory...").
+proved the goal in the encoded theory..."). The node `first_order_run` records the tools asked (`tools`), and "ATP and SMT found nothing" is said when at least one of them ran.
 
 ## The line
 

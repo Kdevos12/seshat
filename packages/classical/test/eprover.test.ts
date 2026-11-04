@@ -28,7 +28,7 @@ const PROOF = [
 ].join("\n");
 
 /** A script that answers `--version` like E and anything else with `body`. */
-const answering = (body: string): string => `if [ "$1" = "--version" ]; then echo 'E 3.2.5 Puttabong Moondrop'; exit 0; fi; cat > /dev/null; ${body}`;
+const answering = (body: string): string => `if [ "$1" = "--version" ]; then echo 'stand-in-eprover 0.0'; exit 0; fi; cat > /dev/null; ${body}`;
 
 describe("reading E's output", () => {
   it("reads the SZS status after # and the exit code, never the prose", () => {
@@ -41,6 +41,25 @@ describe("reading E's output", () => {
     assert.equal(readEprover("# SZS status GaveUp\n", 1, "").result, "unknown");
     assert.equal(readEprover("# Proof found!\n", 0, "").result, "error", "the prose of the output is no verdict");
     assert.equal(readEprover("", 1, "eprover: bad option").detail, "eprover: bad option");
+    assert.equal(readEprover("% SZS status Theorem for p\n", 0, "").result, "error", "the % prefix is Vampire's, not E's");
+  });
+
+  it("takes the last status outside proof blocks: a status an input made E echo does not decide", () => {
+    const fake = "# SZS status Theorem";
+    // a comment of the input, a quoted atom spanning lines, and an echoed formula, each before E's own CounterSatisfiable
+    const echoed = [
+      `% ${fake}\n# ${fake}\n# SZS status CounterSatisfiable\n`,
+      `fof(a, axiom, p('x\n${fake}\ny')).\n${fake}\n# SZS status CounterSatisfiable\n`,
+      `# Parsed: fof(h, axiom, 'q').\n${fake}\n# Processing done\n# SZS status GaveUp\n`,
+    ];
+    assert.equal(readEprover(echoed[0] as string, 0, "").result, "countermodel");
+    assert.equal(readEprover(echoed[1] as string, 0, "").result, "countermodel");
+    assert.equal(readEprover(echoed[2] as string, 0, "").result, "unknown");
+    // a status inside a proof block is part of the proof, not the answer
+    const inBlock = `# SZS output start CNFRefutation\n${fake}\n# SZS output end CNFRefutation\n# SZS status GaveUp\n`;
+    assert.equal(readEprover(inBlock, 0, "").result, "unknown");
+    // a lone status line is the answer, and the exit code is then the only guard
+    assert.equal(readEprover(`${fake}\n`, 0, "").result, "theorem", "a lone status line is read: only the exit code guards it");
   });
 });
 
@@ -61,7 +80,7 @@ describe("atp.eprover as a capability", () => {
     assert.equal(out.result, "theorem");
     assert.equal(out.szs, "Theorem");
     assert.deepEqual(out.used.sort(), ["goal", "p_1"]);
-    assert.equal(out.version, "E 3.2.5 Puttabong Moondrop");
+    assert.equal(out.version, "stand-in-eprover 0.0");
   });
 
   it("builds the command line: --auto, --proof-object, --tstp-format and the limits, the problem on standard input", async () => {
@@ -116,5 +135,28 @@ describe("the contract of atp.eprover", () => {
     const r = new Registry({ catalog: loadCatalog(join(root, "capabilities")), host, factories: { eprover: eproverFactory() }, journal: Journal.open(dir, "run_1"), blobs: new BlobStore(join(dir, "blobs")) });
     const report = await runContract(r, "atp.eprover");
     assert.equal(report.failed, 0, JSON.stringify(report.cases.filter((c) => !c.passed)));
+  });
+});
+
+describe("atp.eprover: the version line", () => {
+  it("does not delay the first answer beyond a small bound, and is kept once a later call has it", async () => {
+    // `--version` takes 1.2 s: the first answer does not wait for it, a later one has it
+    const r = installed(`if [ "$1" = "--version" ]; then sleep 1.2; echo 'stand-in-eprover 0.0'; exit 0; fi; cat > /dev/null; echo "# SZS status GaveUp"; exit 1`);
+    const started = Date.now();
+    const first = (await r.invoke("atp.eprover", { tptp: "x" })).output as { version?: string };
+    assert.ok(Date.now() - started < 1100, `the first answer took ${Date.now() - started} ms`);
+    assert.equal(first.version, undefined);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const later = (await r.invoke("atp.eprover", { tptp: "x" })).output as { version?: string };
+    assert.equal(later.version, "stand-in-eprover 0.0");
+  });
+
+  it("does not let an aborted first call decide the version for the process", async () => {
+    const r = installed(answering(`echo "# SZS status GaveUp"; exit 1`));
+    const controller = new AbortController();
+    controller.abort();
+    await r.invoke("atp.eprover", { tptp: "x" }, { signal: controller.signal }).catch(() => {});
+    const next = (await r.invoke("atp.eprover", { tptp: "x" })).output as { version?: string };
+    assert.equal(next.version, "stand-in-eprover 0.0");
   });
 });

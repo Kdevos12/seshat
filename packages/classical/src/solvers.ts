@@ -122,14 +122,22 @@ const THEOREM = new Set(["Theorem", "Unsatisfiable", "ContradictoryAxioms"]);
 const COUNTER = new Set(["CounterSatisfiable", "Satisfiable"]);
 
 /**
- * Reads a TPTP prover's answer from the SZS status line (`% SZS status Theorem for NAME`) and the exit
- * code, never from the prose. A status that a nonzero exit code contradicts is an `error`, since a
- * proof claim from a run that failed is not to be trusted. The axioms used are the names in the
+ * Reads a TPTP prover's answer from the SZS status line (`% SZS status Theorem for NAME` for Vampire,
+ * `# SZS status Theorem` for E: `prefix` is the comment character the prover uses, and the other is
+ * not accepted) and the exit code, never from the prose. Text that an input could make a prover echo
+ * (a comment, a quoted atom, a formula) comes before the prover's own status line or inside a proof
+ * block, so complete `SZS output start..end` blocks are left out and the LAST status line outside them
+ * is the answer. A status that a nonzero exit code contradicts is an `error`, since a proof claim
+ * from a run that failed is not to be trusted. The axioms used are the names in the
  * `file('path', name)` annotations of the proof.
  */
-export function readSzs(stdout: string, exitCode: number | null, stderr: string): Omit<AtpOutput, "elapsedMs" | "exitCode"> {
-  const status = /^[%#]\s*SZS status\s+(\w+)/mu.exec(stdout)?.[1];
-  const proofBlock = /^[%#]\s*SZS output start \w+[^\n]*\n([\s\S]*?)^[%#]\s*SZS output end/mu.exec(stdout)?.[1];
+export function readSzs(stdout: string, exitCode: number | null, stderr: string, prefix: "%" | "#" = "%"): Omit<AtpOutput, "elapsedMs" | "exitCode"> {
+  const mark = prefix === "%" ? "%" : "#";
+  const block = new RegExp(`^${mark}\\s*SZS output start \\w+[^\\n]*\\n([\\s\\S]*?)^${mark}\\s*SZS output end[^\\n]*(?:\\n|$)`, "gmu");
+  const outside = stdout.replace(block, "");
+  const statuses = [...outside.matchAll(new RegExp(`^${mark}\\s*SZS status\\s+(\\w+)`, "gmu"))];
+  const status = statuses.at(-1)?.[1];
+  const proofBlock = new RegExp(`^${mark}\\s*SZS output start \\w+[^\\n]*\\n([\\s\\S]*?)^${mark}\\s*SZS output end`, "mu").exec(stdout)?.[1];
   const used = proofBlock === undefined ? [] : [...new Set([...proofBlock.matchAll(/file\('[^']*',\s*([A-Za-z0-9_]+)\)/gu)].map((m) => m[1] as string))];
   const proof = proofBlock === undefined ? {} : { proof: proofBlock.slice(0, 20000) };
   if (status === undefined) return { szs: "none", result: "error", used: [], detail: (stderr.split("\n").find((l) => l.trim() !== "") ?? `no SZS status, exit code ${exitCode}`).slice(0, 500) };
@@ -142,9 +150,9 @@ export function readSzs(stdout: string, exitCode: number | null, stderr: string)
   return { szs: status, result: status === "GaveUp" || status === "Unknown" || status === "Incomplete" ? "unknown" : "error", used: [] };
 }
 
-/** Vampire prints its status after `%`, E after `#`; both are read the same way. */
-export const readVampire = readSzs;
-export const readEprover = readSzs;
+/** Vampire prints its status after `%`, E after `#`. */
+export const readVampire = (stdout: string, exitCode: number | null, stderr: string) => readSzs(stdout, exitCode, stderr, "%");
+export const readEprover = (stdout: string, exitCode: number | null, stderr: string) => readSzs(stdout, exitCode, stderr, "#");
 
 /** Vampire as a process: `vampire --input_syntax tptp --proof tptp -t N` with the problem on standard input. */
 export function vampireFactory(): ImplementationFactory {
@@ -169,7 +177,7 @@ export function vampireFactory(): ImplementationFactory {
           throw error;
         }
         if (result.aborted) throw new Error("aborted");
-        const read = result.timedOut ? ({ szs: "Timeout", result: "timeout", used: [] as string[] } as const) : readSzs(result.stdout, result.exitCode, result.stderr);
+        const read = result.timedOut ? ({ szs: "Timeout", result: "timeout", used: [] as string[] } as const) : readVampire(result.stdout, result.exitCode, result.stderr);
         const out: AtpOutput = { ...read, exitCode: result.exitCode, elapsedMs: result.elapsedMs };
         return out as unknown as Json;
       },
@@ -190,7 +198,7 @@ export function vampireFactory(): ImplementationFactory {
 /**
  * E as a process: `eprover --auto --proof-object --tstp-format --cpu-limit=N --memory-limit=M` with
  * the problem on standard input. The binary is the host's own installation (never bundled; E is
- * GPL-2.0 and only invoked). The answer is read like Vampire's (`readSzs`); the version line of
+ * GPL-2.0 and only invoked). The answer is read like Vampire's (`readSzs`, with E's `#` prefix); the version line of
  * `eprover --version` is read once and recorded in each tool run.
  */
 export function eproverFactory(): ImplementationFactory {
@@ -200,12 +208,36 @@ export function eproverFactory(): ImplementationFactory {
     const args = Array.isArray(context.settings.args) ? (context.settings.args as string[]) : ["--auto", "--proof-object", "--tstp-format"];
     // A profile that replaces the arguments (a wrapper script) gets them in front of `--version` too.
     const base = Array.isArray(context.settings.args) ? (context.settings.args as string[]) : [];
-    let version: Promise<string | undefined> | undefined;
-    const readVersion = (signal?: AbortSignal): Promise<string | undefined> => {
-      version ??= runProcess({ command, args: [...base, "--version"], timeoutMs: 10000, ...(signal !== undefined ? { signal } : {}) }).then(
-        (r) => (r.exitCode === 0 ? (r.stdout.trim().split("\n")[0] || undefined)?.slice(0, 200) : undefined),
-        () => undefined,
-      );
+    // The version line is read in the background, with no caller's signal (an abort must not decide it), at most three times
+    // (a binary that prints nothing is not asked on every call), and a failed or empty answer is not kept.
+    let version: string | undefined;
+    let pending: Promise<void> | undefined;
+    let attempts = 0;
+    const probe = (): Promise<void> => {
+      if (version !== undefined) return Promise.resolve();
+      if (pending === undefined && attempts < 3) {
+        attempts++;
+        pending = runProcess({ command, args: [...base, "--version"], timeoutMs: 3000 })
+          .then(
+            (r) => {
+              const line = r.exitCode === 0 && !r.timedOut ? (r.stdout.trim().split("\n")[0] ?? "").slice(0, 200) : "";
+              if (line !== "") version = line;
+            },
+            () => {},
+          )
+          .finally(() => {
+            pending = undefined;
+          });
+      }
+      return pending ?? Promise.resolve();
+    };
+    /** What the answer waits for: the version, for at most half a second (it was started before the run). */
+    const versionNow = async (): Promise<string | undefined> => {
+      if (version === undefined) {
+        let timer: NodeJS.Timeout | undefined;
+        await Promise.race([probe(), new Promise<void>((resolve) => (timer = setTimeout(resolve, 500)))]);
+        clearTimeout(timer);
+      }
       return version;
     };
     return {
@@ -217,6 +249,7 @@ export function eproverFactory(): ImplementationFactory {
           if (error instanceof Refused) return { szs: "none", result: "error", used: [], detail: `refused: ${error.message}`, exitCode: null, elapsedMs: 0 } as unknown as Json;
           throw error;
         }
+        void probe();
         let result;
         try {
           result = await runIsolated({ command, args: [...args, `--cpu-limit=${Math.ceil(timeoutSec)}`, `--memory-limit=${memoryMb}`], stdin: tptp, timeoutMs: (timeoutSec + 5) * 1000, signal: invoke.signal, memoryMb: memoryMb * 2 });
@@ -225,8 +258,8 @@ export function eproverFactory(): ImplementationFactory {
           throw error;
         }
         if (result.aborted) throw new Error("aborted");
-        const read = result.timedOut ? ({ szs: "Timeout", result: "timeout", used: [] as string[] } as const) : readSzs(result.stdout, result.exitCode, result.stderr);
-        const found = await readVersion(invoke.signal);
+        const read = result.timedOut ? ({ szs: "Timeout", result: "timeout", used: [] as string[] } as const) : readEprover(result.stdout, result.exitCode, result.stderr);
+        const found = await versionNow();
         const out: AtpOutput = { ...read, exitCode: result.exitCode, elapsedMs: result.elapsedMs, ...(found !== undefined ? { version: found } : {}) };
         return out as unknown as Json;
       },

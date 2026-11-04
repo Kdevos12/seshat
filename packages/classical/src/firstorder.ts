@@ -80,6 +80,8 @@ export interface FirstOrderRunData {
   outside?: string;
   /** The tools that were not there. */
   missing: string[];
+  /** The tools the stage asked (z3 and the ATPs of the settings the host offers); absent in nodes written before E. */
+  tools?: string[];
   evidence: Evidence[];
   /** The union of the premises of the successful calls. */
   union: string[];
@@ -204,6 +206,7 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
     data.missing.push("smt.z3", ...wanted.filter((t) => t === "atp.vampire" || ctx.solvers.eprover === null));
     return finish(false);
   }
+  data.tools = [...(ctx.solvers.smt !== null ? ["smt.z3"] : []), ...provers.map((p) => p.tool)];
   const index = ctx.index ?? [];
   const select = ctx.selector ?? mixSelectors(symbolSelector);
   const cutoffs = index.length === 0 ? [0] : [...ctx.settings.cutoffs];
@@ -222,7 +225,8 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
     const jobs = cutoffs.map(async (cutoff) => {
       const chosen = cutoff === 0 ? [] : fragmentPremises(goal.statement, select(goal.statement, index, cutoff));
       const problem = lower(goal.statement, chosen);
-      const found: Evidence[] = [];
+      // One slot per tool, in the order of the tools: the evidence does not depend on which tool answers first.
+      const slots: Evidence[][] = [[], ...atps.map((): Evidence[] => [])];
       const split = (named: Array<{ name: string; kind: string; lean: string }>, used: readonly string[]) => ({
         hypotheses: named.filter((n) => n.kind === "hypothesis" && used.includes(n.name)).map((n) => n.lean),
         premises: named.filter((n) => n.kind === "premise" && used.includes(n.name)).map((n) => n.lean),
@@ -234,7 +238,7 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
         runs.push(
           smt({ smtlib: script.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
             (out) => {
-              if (out.status === "unsat") found.push({ tool: "smt.z3", cutoff, answer: "unsat", elapsedMs: out.elapsedMs, ...split(script.named, out.core ?? script.named.map((n) => n.name)) });
+              if (out.status === "unsat") (slots[0] as Evidence[]).push({ tool: "smt.z3", cutoff, answer: "unsat", elapsedMs: out.elapsedMs, ...split(script.named, out.core ?? script.named.map((n) => n.name)) });
             },
             (error) => missing(error, "smt.z3"),
           ),
@@ -242,11 +246,11 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
       }
       if (atps.length > 0) {
         const text = toTptp(problem);
-        for (const { tool, run } of atps) {
+        for (const [slot, { tool, run }] of atps.entries()) {
           runs.push(
             run({ tptp: text.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
               (out) => {
-                if (out.result === "theorem") found.push({ tool, cutoff, answer: out.szs, elapsedMs: out.elapsedMs, ...split(text.named, out.used.length > 0 ? out.used : text.named.map((n) => n.name)) });
+                if (out.result === "theorem") (slots[slot + 1] as Evidence[]).push({ tool, cutoff, answer: out.szs, elapsedMs: out.elapsedMs, ...split(text.named, out.used.length > 0 ? out.used : text.named.map((n) => n.name)) });
               },
               (error) => missing(error, tool),
             ),
@@ -254,7 +258,7 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
         }
       }
       await Promise.all(runs);
-      return found;
+      return slots.flat();
     });
     return (await Promise.all(jobs)).flat();
   };

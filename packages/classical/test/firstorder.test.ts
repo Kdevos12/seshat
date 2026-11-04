@@ -168,6 +168,18 @@ describe("ATP and SMT with reconstruction", () => {
       assert.deepEqual(data.missing, []);
     });
 
+    it("orders the evidence by cutoff and tool, not by which prover answers first", async () => {
+      const slow = (ms: number, used: string[]) => async () => (await new Promise((resolve) => setTimeout(resolve, ms)), { szs: "Theorem", result: "theorem" as const, used, exitCode: 0, elapsedMs: ms });
+      // E answers first, Vampire last; the evidence still lists Vampire first
+      const solvers: Solvers = { smt: null, atp: slow(30, ["p_1", "goal"]), eprover: slow(1, ["p_2", "goal"]) };
+      const { ctx, memory } = setup(solvers, new ScriptedLean({}), () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2] } });
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      const data = memory.nodes(FIRST_ORDER_RUN)[0]?.data as { evidence: Array<{ tool: string }>; union: string[] };
+      assert.deepEqual(data.evidence.map((e) => e.tool), ["atp.vampire", "atp.eprover"]);
+      assert.deepEqual(data.union, ["Int.add_comm", "Int.mul_comm"]);
+    });
+
     it("lets E win when only E's premises reconstruct in Lean, and submits one Lean proof", async () => {
       const solvers: Solvers = { smt: null, atp: theorem(["p_1", "goal"]), eprover: theorem(["p_2", "goal"]) };
       const lean = new ScriptedLean({ "grind [Int.mul_comm]": { ok: true } });
