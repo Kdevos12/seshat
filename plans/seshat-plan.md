@@ -1181,6 +1181,10 @@ Main team, after Task 29. `harness solve`, `harness doctor`, the student default
 spend. Documentation: a new `documentation/quickstart.md`, `README.md` (commands, status) and the
 diagram. Tests: a Lean statement and a prose statement end to end with the simulated Lean and the
 faux provider, `doctor` with each dependency missing in turn, `view` rebuilt from a recorded journal.
+PB8 also belongs here: the account is built from the journal by code, with no model call, rewritten
+after every certified result and at every stop (tokens, dollars, time, a crash), and rebuilt by
+`harness report` for a run whose process died; a test cuts a run at every event and checks that the
+account holds every certified result up to the cut.
 
 ## Later (not scheduled)
 
