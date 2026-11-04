@@ -86,8 +86,32 @@ export function screenSmtLib(script: string): void {
 
 /** Throws `Refused` when a TPTP problem includes another file. */
 export function screenTptp(text: string): void {
-  const code = text.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/^%.*$/gmu, " ");
-  if (/\binclude\s*\(/u.test(code)) throw new Refused("an include directive");
+  // Vampire tokenises quoted atoms before comments, so a quote may hide a comment opener from a plain strip. Read the way it does:
+  // quoted atoms first (their content is blanked; a `/*` inside one is refused), then comments, then look for `include` in the code.
+  let code = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text.charAt(i);
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < text.length && text.charAt(j) !== c) j += text.charAt(j) === "\\" ? 2 : 1;
+      if (j >= text.length) throw new Refused("an unterminated quoted atom");
+      if (text.slice(i, j).includes("/*")) throw new Refused("a comment opener inside a quoted atom");
+      code += " ";
+      i = j + 1;
+    } else if (c === "%") {
+      while (i < text.length && text.charAt(i) !== "\n") i++;
+    } else if (c === "/" && text.charAt(i + 1) === "*") {
+      const end = text.indexOf("*/", i + 2);
+      if (end < 0) throw new Refused("an unterminated comment");
+      code += " ";
+      i = end + 2;
+    } else {
+      code += c;
+      i++;
+    }
+  }
+  if (/\binclude\s*\(/iu.test(code)) throw new Refused("an include directive");
 }
 
 function isExecutable(path: string): boolean {

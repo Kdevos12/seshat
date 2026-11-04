@@ -1,4 +1,4 @@
-import { hash32, seeded } from "@seshat/core";
+import { hash32, leanTextProblems, seeded } from "@seshat/core";
 import {
   Atms, checkEdge, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
@@ -236,6 +236,12 @@ export function createM12Line(): Line {
       const submission = JSON.parse(stored) as { aux: string; proof: string };
       const reading: SketchReading = readSketch(submission);
       const names = reading.holes.map((h) => h.name);
+      const unsafe = reading.holes.map((h) => ({ name: h.name, reasons: leanTextProblems(h.statement) })).find((h) => h.reasons.length > 0);
+      if (unsafe !== undefined) {
+        problem.memory.updateNode(nodeId, { registered: true }, `the hole ${unsafe.name} is refused by the strict screen: ${unsafe.reasons.join("; ")}`);
+        problem.log(`sketch of ${record.attemptId}: the hole ${unsafe.name} is refused by the strict screen (${unsafe.reasons.join("; ")})`);
+        continue;
+      }
       const holes: string[] = [];
       for (const hole of reading.holes) {
         const ensured = await problem.memory.ensureClaim({

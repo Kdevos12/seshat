@@ -3,7 +3,7 @@ import { type RandomSource } from "@seshat/core";
 import { decideOrderer } from "@seshat/decide";
 import { type Briefing, type JsonObject, LINE_TITLES, type Line, type ProblemContext } from "@seshat/lines";
 import { LeanGoals, LeanMetaError } from "@seshat/lean-meta";
-import type { Claim, MemoryStore } from "@seshat/memory";
+import { type Claim, type MemoryStore, screenProse } from "@seshat/memory";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type FirstOrderSettings, FIRST_ORDER_RUN, type FirstOrderRunData, registrySolvers, type Solvers, solveFirstOrder } from "./firstorder.ts";
 import { type HostProbe, probeHost } from "./probe.ts";
@@ -338,7 +338,11 @@ export function describeTried(memory: MemoryStore, claimId: string): string | un
   }
   for (const node of memory.nodes(FIRST_ORDER_RUN, { claimId })) {
     const d = node.data as unknown as FirstOrderRunData;
-    if (d.outside !== undefined) lines.push(`ATP and SMT were not tried: the goal is outside their fragment (${d.outside}).`);
+    if (d.outside !== undefined) {
+      // The translator's message quotes text of a model-written subgoal: prose that passes the strict screen, or a fixed sentence.
+      const reason = screenProse(d.outside, { max: 160 });
+      lines.push(reason.ok ? `ATP and SMT were not tried: the goal is outside their fragment (${reason.text}).` : "ATP and SMT were not tried: the goal is outside their fragment.");
+    }
     else if (d.evidence.length > 0) {
       lines.push(
         `${[...new Set(d.evidence.map((e) => e.tool === "smt.z3" ? "z3" : "Vampire"))].join(" and ")} proved the goal in the encoded theory${d.union.length > 0 ? `, using ${d.union.join(", ")}` : ""}; ${d.solved !== undefined ? `Lean accepted ${d.solved.tactic}` : "Lean did not accept any reconstruction with grind, aesop or hammer, so this is evidence and no proof"}.`,

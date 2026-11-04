@@ -171,9 +171,7 @@ refused; the 3-skill rule holds.
 
 ## Not adopted (with the reason)
 
-- A k-NN over goal features for the battery order (the former PD8): withdrawn by the user on 2026-11-03
-  ("Go retirer", message cmsg_01Jryd7vSFN5UXiBr35Aon5EMwhRfJuKYuF6WzviB3XMrn). The Beta posteriors per
-  domain stay the battery's order; reopen only with real data that show a gap.
+- The former PD8: withdrawn by the owner on 2026-11-03.
 - Area method (no Lean port; the bench has no geometry), theory morphisms in MMT (a second
   ecosystem; homology detection is suspended, Ruling 20), VF2 (NP-complete; anti-unification and
   MAC/FAC already serve), lean-egg (deprecated by its authors in favour of `grind`).

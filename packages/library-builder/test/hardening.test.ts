@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -144,6 +144,17 @@ describe("what is adopted is what is hashed, and adoption is all or nothing (rev
     adoptBuild(result, { root, runActive: () => false });
     // Every adopted file is under the hashed tree.
     assert.notEqual(hashDirectory(join(root, "lean/SeshatLib")), before);
+  });
+
+  it("refuses to write through a symbolic link in the checkout (final review 7)", async () => {
+    const h = harness();
+    const result = await h.builder("good").build(SPEC, OPTIONS);
+    const root = mkdtempSync(join(tmpdir(), "mh-lb-link-"));
+    const outside = mkdtempSync(join(tmpdir(), "mh-lb-out-"));
+    mkdirSync(join(root, "lean/SeshatLib"), { recursive: true });
+    symlinkSync(outside, join(root, "lean/SeshatLib/Combinatorics"));
+    assert.throws(() => adoptBuild(result, { root, runActive: () => false }), /symbolic link/);
+    assert.equal(readdirSync(outside).length, 0);
   });
 
   it("leaves nothing behind when a file cannot be written", async () => {

@@ -27,7 +27,7 @@ A **spec** (`LibrarySpec`, written by a person or by a later spec writer, never 
 the imports the new files may use, the items to formalize (an informal statement, the expected name and `def` or `theorem`),
 and the **test lemmas**: statements in Lean that the agent must prove under exactly those names. `fill` formalizes the items
 under `lean/SeshatLib/<Domain>/`; `port` brings a package that has no tag for the pinned toolchain under `lean/ports/<Package>/`
-(it names the git address, the rev and the libraries to build). A definition with no test lemma that states something about
+(it names the git address, the rev and the libraries to build). For a spec that is not a human's, the git address (a plain https address), the rev, the package name and the libraries are checked against fixed shapes, since they reach the coding agent's prompt. A definition with no test lemma that states something about
 it makes the spec invalid. `harness library build SPEC.json` reads it.
 
 **Who wrote the spec.** A spec has an `author`. `human:NAME` is trusted as written (`harness library build` marks the file's spec `human:cli`:
@@ -116,7 +116,7 @@ caller ([Not done](#not-done)).
 
 ## From a passing build to a new environment version
 
-`adoptBuild` writes the accepted files into a checkout, adding files only (a file that exists with other content is an error). The hash of a local
+`adoptBuild` writes the accepted files into a checkout, adding files only (a file that exists with other content is an error). It re-runs `pathProblem` on each path and refuses a target or a directory above it that is a symbolic link. The hash of a local
 package such as `lean/SeshatLib` is the hash of its files ([lean-env.md](lean-env.md#the-environment-hash)), so the next `harness lean-env resolve` of an environment that lists
 it gives another hash, and a run started afterwards runs in that environment. A run that is going keeps its own. Results of earlier runs are
 tied to the earlier hash and stay replayable (`--memory-from` carries verified facts only under the same hash). `--adopt` refuses while a run is going: a run's

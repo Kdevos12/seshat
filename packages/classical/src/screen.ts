@@ -1,25 +1,9 @@
-import { forbiddenTokensIn, maskCommentsAndStrings } from "@seshat/core";
+import { leanTextProblems } from "@seshat/core";
 
-/**
- * The strict screen for text that a model wrote or chose and that reaches a Lean file or a Pantograph
- * goal: a statement, a header, a tactic, a lemma name, a premise name. The same reading as
- * `screenLeanText` of `@seshat/induction` (which depends on this package, so it cannot be imported):
- * comments and strings masked in the strict form, then `forbiddenTokensIn` (`#eval`, `macro_rules`, `IO`...),
- * no `#`, no `--` or `/-` that Lean may read as a comment reaching into the lines after the text.
- */
+export { leanTextProblems };
+
+/** Thrown when text a model wrote fails the strict screen of `@seshat/core` (`leanTextProblems`, the one copy). */
 export class UnsafeText extends Error {}
-
-/** Why a text may not reach Lean; empty when it may. */
-export function leanTextProblems(text: string): string[] {
-  const masked = maskCommentsAndStrings(text, { strict: true });
-  const reasons: string[] = [];
-  const forbidden = forbiddenTokensIn(masked);
-  if (forbidden.length > 0) reasons.push(`it holds the token${forbidden.length > 1 ? "s" : ""} ${forbidden.map((t) => `'${t}'`).join(", ")}, which the validator refuses in a proof`);
-  if (masked.includes("#")) reasons.push("it holds '#', which starts a Lean command");
-  // The strict mask hides a comment; the raw text must hold none, since `-- x` swallows what the harness writes after the text on its line.
-  if (text.includes("--") || text.includes("/-") || masked.includes("--") || masked.includes("/-")) reasons.push("it holds '--' or '/-' where Lean may read a comment that reaches into the lines written after it");
-  return reasons;
-}
 
 /** Why a header a model chose may not open a Lean file: the screen of the text without its `import` lines. */
 export function headerProblems(header: string): string[] {

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { lstatSync } from "node:fs";
+import { pathProblem } from "./diff.ts";
 import type { Json } from "@seshat/core";
 import { definitionNameProblem, type MemoryNode, type MemoryStore } from "@seshat/memory";
 import type { LibraryBuildResult } from "./builder.ts";
@@ -86,6 +88,20 @@ export interface AdoptOptions {
   approvedBy?: string;
 }
 
+/** Whether the target, or a directory between the root and it, is a symbolic link (a path that does not exist yet is not). */
+function symlinkOnPath(root: string, target: string): boolean {
+  let at = target;
+  while (at.length > root.length && at.startsWith(root)) {
+    try {
+      if (lstatSync(at).isSymbolicLink()) return true;
+    } catch {
+      // not there yet
+    }
+    at = dirname(at);
+  }
+  return false;
+}
+
 /**
  * Lands an accepted build's files in the checkout, between runs. The next `harness lean-env resolve` of an environment
  * that lists the library as a local package then gives another environment hash (the hash of a local package is the
@@ -101,6 +117,9 @@ export function adoptBuild(result: LibraryBuildResult, options: AdoptOptions): s
   const targets = result.files.map((f) => ({ f, target: join(options.root, f.path) }));
   for (const { f, target } of targets) {
     if (!target.startsWith(`${options.root}/`) || f.path.includes("..")) throw new Error(`adoptBuild: ${f.path} leaves ${options.root}`);
+    const bad = pathProblem(f.path);
+    if (bad !== undefined) throw new Error(`adoptBuild: ${f.path} is refused: ${bad}`);
+    if (symlinkOnPath(options.root, target)) throw new Error(`adoptBuild: ${f.path} goes through a symbolic link in the checkout`);
     if (existsSync(target) && readFileSync(target, "utf8") !== f.content) throw new Error(`adoptBuild: ${target} exists with other content; a file is never edited in place`);
   }
   // All or none: each file is written to a temporary name and renamed, and an error removes what this call already put in place.
@@ -108,6 +127,7 @@ export function adoptBuild(result: LibraryBuildResult, options: AdoptOptions): s
   try {
     for (const { f, target } of targets) {
       if (existsSync(target)) continue;
+      if (symlinkOnPath(options.root, target)) throw new Error(`adoptBuild: ${target} goes through a symbolic link in the checkout`);
       mkdirSync(dirname(target), { recursive: true });
       const temporary = `${target}.adopting-${process.pid}`;
       writeFileSync(temporary, f.content, { flag: "wx" });

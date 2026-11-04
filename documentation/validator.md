@@ -270,3 +270,10 @@ a proof trusted; the Lean checks and certification are.
 target's `axioms`, the Lean `messages` and `sorries` located in the prover's file, the `checked`
 file, the `submissionHash` (sha256 of the submitted file), `editsOutsideRegions`, `holes`, and
 `leanStatus`, the checker's status, absent when the file was refused before Lean.
+
+## The strict screen for model text (`leanTextProblems`)
+
+`leanTextProblems(text)` in `@seshat/core` is the one strict screen for text a model wrote that reaches a Lean file: comments and
+strings masked in the strict form, `forbiddenTokensIn`, no `#`, and no `--` or `/-` in the raw text. `@seshat/classical`,
+`@seshat/induction` (`screenLeanText`), `@seshat/models` (statements), the curriculum (`readVariants`), the sketch holes of the
+scheduler and the library's candidates all use it; none keeps a copy.
