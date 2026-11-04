@@ -26,12 +26,15 @@ import {
 } from "@seshat/core";
 import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
-import { type JsonObject, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
+import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
-import { TaskLedger } from "@seshat/scheduler";
+import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
+import { BudgetGate } from "./budget-gate.ts";
+import { problemDecide } from "./decide.ts";
+import { lineLlm } from "./llm.ts";
 import { Ledger } from "./budget.ts";
 import { beginTurn, closeTurn, waitingProblems } from "./consortium.ts";
 import { checkDecideSettings, type DecideSettings, resolveDecideSettings, sitesSentOutside } from "@seshat/decide";
@@ -40,7 +43,7 @@ import { LINES } from "./lines.ts";
 import { type Certification, conflictNote, type LoadedProblem, loadProblem, Workbench } from "./problem.ts";
 import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { promptTarget, screenPrompt } from "./prompt-screen.ts";
-import { createProverTasks, endProverTask } from "./prover-tasks.ts";
+import { createProverTasks, endProverTask, type ProverTask } from "./prover-tasks.ts";
 import { type ProverResult, type ProverResume, runProver } from "./prover.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import {
@@ -122,6 +125,14 @@ export interface RunConfig {
    * model. Absent: the run's model everywhere. With `jev`, proof states go to a third party.
    */
   decide?: DecideSettings;
+  /**
+   * The budget gate (documentation/scheduler.md, "The budget gate"; Task 29): a deterministic rule before every paid launch, a probe-first
+   * start (one prover, one session, at most a tenth of the problem's budget) that widens only after Lean progress, and a run on
+   * `--memory-from` that relaunches nothing already certified under the same environment. `{}` turns it on with the defaults. Where the rule has
+   * no numbers `decide` is asked at `budget.wave` and `budget.line` (the run's model by default, Jev if the configuration says so, `off` for the
+   * rule alone). Absent: no gate, the provers start together as they always did.
+   */
+  gate?: GateSettings;
   /**
    * A candidate prompt to measure instead of the merged one (`harness optimize-prompts`, documentation/prompts.md): the text of the
    * prover's system prompt with its placeholders. It passes the strict screen at the start of the run, is recorded in `run.started`, and
@@ -244,6 +255,9 @@ export interface TurnSummary {
   account: string;
 }
 
+/** The pseudo-line the budget gate's own model calls (`decide` at `budget.wave` and `budget.line`) are booked to. */
+const GATE_LINE = "gate" as LineId;
+
 /** Problems ending with a harness error in a row: the run stops. */
 const MAX_FAILED_PROBLEMS = 3;
 
@@ -280,6 +294,13 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
   }
   problems.push(...checkDecideSettings(config.decide));
+  if (config.gate !== undefined) {
+    try {
+      gateSettings(config.gate);
+    } catch (error) {
+      problems.push(`gate: ${messageOf(error)}`);
+    }
+  }
   if (config.prompts?.proverSystem !== undefined) {
     problems.push(...screenPrompt(config.prompts.proverSystem, promptTarget("prover.system")).map((reason) => `prompts.proverSystem: ${reason}`));
   }
@@ -620,6 +641,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.offpeak !== undefined ? { offpeak: config.offpeak as Json } : {}),
       // Only when given, so that a run without it records what it always did.
       ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
+      ...(config.gate !== undefined ? { gate: config.gate as unknown as Json } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -919,6 +941,63 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (o.signal?.aborted) stop();
     o.signal?.addEventListener("abort", stop, { once: true });
     try {
+      // The budget gate of this problem (Task 29). Its handles on the workbench and the lines are filled in as they are made.
+      const live: { workbench?: Workbench; lines?: ProblemLines } = {};
+      const gate =
+        config.gate === undefined
+          ? undefined
+          : (() => {
+              const llm = lineLlm({
+                line: GATE_LINE,
+                journal,
+                blobs,
+                models: o.models,
+                model: config.model,
+                resolveModel: (name) => (name === config.model ? Promise.resolve(model) : resolveModel(o.models, name)),
+                thinkingLevel: config.thinkingLevel,
+                ledger,
+                problemId: entry.id,
+                signal: controller.signal,
+                ...(turn !== undefined ? { turn } : {}),
+                prices,
+              });
+              return new BudgetGate({
+                settings: gateSettings(config.gate),
+                journal,
+                problemId: entry.id,
+                claimId,
+                ledger,
+                seed: config.seed ?? runId,
+                rung: () => live.lines?.rung ?? 0,
+                attemptIds: () => live.workbench?.attemptIds ?? [],
+                ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
+                decide: problemDecide({
+                  line: GATE_LINE,
+                  config: resolveDecideSettings(config.decide),
+                  journal,
+                  blobs,
+                  registry,
+                  llm,
+                  ledger,
+                  problemId: entry.id,
+                  claimId,
+                  signal: controller.signal,
+                  ...(turn !== undefined ? { turn } : {}),
+                }),
+                log: (text) => log(`${entry.id}: ${text}`),
+              });
+            })();
+      // A claim certified earlier under the same environment is not worked on again (PB5): the chain carries a `proved` or `refuted`
+      // status only when the environment is the same, so a status that is there is one this run may rely on.
+      if (gate !== undefined && again === undefined && journal.chain !== undefined) {
+        const earlier = journal.projection.claim(claimId)?.status;
+        if (earlier === "proved" || earlier === "refuted") {
+          const reason = `the claim is already ${earlier} in the memory this run started on, under the same Lean environment: nothing is launched again`;
+          gate.memorySkip(reason);
+          log(`${entry.fullName}: ${reason}`);
+          return finish("skipped", reason);
+        }
+      }
       let reference: Reference;
       try {
         const checker = new RegistryLeanChecker(registry, { actor: "orchestrator" });
@@ -938,6 +1017,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       const workbench = new Workbench({
         journal, registry, problem, claimId, problemId: entry.id, reference, blobs, ...(certifier !== undefined ? { certifier } : {}),
       });
+      live.workbench = workbench;
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
       const transcript = (attemptId: string, messages: AgentMessage[]) =>
         writeFileSync(join(o.dir, "transcripts", `${attemptId}.json`), `${JSON.stringify(messages)}\n`);
@@ -1010,8 +1090,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ledger,
           signal: controller.signal,
           workbench,
+          ...(gate !== undefined ? { gate } : {}),
         });
         lines = problemLines;
+        live.lines = problemLines;
         end = (outcome, reason, proof) => settle(problemLines, workbench, outcome, reason, proof);
         try {
           if (resume === undefined) {
@@ -1051,63 +1133,112 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         adopted ||
         resumeFailure !== undefined ||
         (lines !== undefined && (lineFailure !== undefined || workbench.candidate !== undefined || controller.signal.aborted));
-      const settled: PromiseSettledResult<ProverResult>[] = idle
-        ? []
-        : await Promise.allSettled(
-            working.map((task) => {
-              let ended = false;
-              const end = (how: Parameters<typeof endProverTask>[2]) => {
-                if (ended) return;
-                ended = true;
-                endProverTask(tasks, task, how);
-              };
-              const resumed = carried.get(task.taskId);
-              tasks.start(task.taskId, resumed === undefined ? `prover ${task.name} starts` : `prover ${task.name} resumes after the interruption, at session ${resumed.session + 1}`);
-              // The decisions a process that ended left out for the prover's last finished attempt, before its next session reads them.
-              if (resumed !== undefined) router.resumeTask(task.taskId, claimId);
-              return runProver({
-                name: task.name,
-                taskId: task.taskId,
-                blobs,
-                workbench,
-                journal,
-                models: o.models,
-                model,
-                modelName: config.model,
-                thinkingLevel: config.thinkingLevel,
-                sessions: config.sessions,
-                limits: config.limits,
-                notesChars: config.notesChars,
-                ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
-                ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
-                ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
-                prices,
-                ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
-                ledger,
-                signal: controller.signal,
-                transcript,
-                tools: pinned.tools,
-                stamp: (modelId) => stampProvenance(provenance, { modelId }),
-                onAttemptEnd: (attempt) => {
-                  void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });
-                  breakpoints?.afterAttempt(entry.id);
-                },
-                // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
-                onEnd: (result) => {
-                  if (result.stop === "turn") return;
-                  end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
-                },
-                ...(turn !== undefined ? { turn } : {}),
-                ...(resumed !== undefined ? { resume: resumed } : {}),
-                ...(lines !== undefined ? { lines } : {}),
-              }).catch((error: unknown) => {
-                // A harness failure stops the problem's other provers too.
-                controller.abort(ABORT_STOPPED);
-                end({ crash: messageOf(error) });
-                throw error;
-              });
-            }),
-          );
+      /**
+       * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
+       * prover that was started before carries; `probe` makes it a probe: `sessions` sessions under a ledger of its own, then it pauses.
+       */
+      const startProver = (task: ProverTask, how: { begin: boolean; resumed: ProverResume | undefined; probe?: { sessions: number; ledger: Ledger } }): Promise<ProverResult> => {
+        let ended = false;
+        const end = (done: Parameters<typeof endProverTask>[2]) => {
+          if (ended) return;
+          ended = true;
+          endProverTask(tasks, task, done);
+        };
+        const resumed = how.resumed;
+        if (how.begin) tasks.start(task.taskId, resumed === undefined ? `prover ${task.name} starts` : `prover ${task.name} resumes after the interruption, at session ${resumed.session + 1}`);
+        // The decisions a process that ended left out for the prover's last finished attempt, before its next session reads them.
+        if (how.begin && resumed !== undefined) router.resumeTask(task.taskId, claimId);
+        return runProver({
+          name: task.name,
+          taskId: task.taskId,
+          blobs,
+          workbench,
+          journal,
+          models: o.models,
+          model,
+          modelName: config.model,
+          thinkingLevel: config.thinkingLevel,
+          sessions: config.sessions,
+          limits: config.limits,
+          notesChars: config.notesChars,
+          ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
+          ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+          ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
+          prices,
+          ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
+          ledger: how.probe?.ledger ?? ledger,
+          ...(how.probe !== undefined ? { probe: { sessions: how.probe.sessions } } : {}),
+          ...(gate !== undefined ? { gate } : {}),
+          signal: controller.signal,
+          transcript,
+          tools: pinned.tools,
+          stamp: (modelId) => stampProvenance(provenance, { modelId }),
+          onAttemptEnd: (attempt) => {
+            void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });
+            breakpoints?.afterAttempt(entry.id);
+          },
+          // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
+          onEnd: (result) => {
+            if (result.stop === "turn" || result.stop === "probe") return;
+            end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
+          },
+          ...(turn !== undefined ? { turn } : {}),
+          ...(resumed !== undefined ? { resume: resumed } : {}),
+          ...(lines !== undefined ? { lines } : {}),
+        }).catch((error: unknown) => {
+          // A harness failure stops the problem's other provers too.
+          controller.abort(ABORT_STOPPED);
+          end({ crash: messageOf(error) });
+          throw error;
+        });
+      };
+      const settleRun = async (run: Promise<ProverResult>): Promise<PromiseSettledResult<ProverResult>> => {
+        try {
+          return { status: "fulfilled", value: await run };
+        } catch (reason) {
+          return { status: "rejected", reason };
+        }
+      };
+      /**
+       * With the budget gate (documentation/scheduler.md, "The budget gate"): the first prover runs a probe, one session of at most a tenth of
+       * the problem's budget, and the problem widens (the other provers start, the first goes on) only if the probe made Lean progress, or
+       * the exploration floor lets it through. Without the gate every prover starts at once.
+       */
+      const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
+        const [first, ...rest] = working;
+        if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))));
+        let stage = gate.stage;
+        if (stage === "start" || stage === "probing") {
+          const { capUsd } = gate.probe();
+          const resumedFirst = carried.get(first.taskId);
+          // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
+          if (resumedFirst === undefined || resumedFirst.session < 1) {
+            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: ledger.child(capUsd) } }));
+            if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+          }
+          const widened = await gate.widen(working.length);
+          if (widened.action === "skip") {
+            endProverTask(tasks, first, { stop: "gate", sessions: config.sessions, budget: "the problem's budget" });
+            for (const task of rest) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");
+            tasks.promote(entry.id);
+            return [{ status: "fulfilled", value: { name: first.name, attempts: workbench.attemptIds.length, stop: "gate" } }];
+          }
+          stage = "wide";
+        }
+        if (stage === "stopped") {
+          // The gate had stopped the problem at its probe before the interruption: nothing is left to run.
+          for (const task of working) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");
+          tasks.promote(entry.id);
+          return [];
+        }
+        // Widened: the first prover goes on from where its probe left it, the others start.
+        const probed = proverResumeOf(journal, blobs, first.taskId);
+        return Promise.all([
+          settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed })),
+          ...rest.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))),
+        ]);
+      };
+      const settled: PromiseSettledResult<ProverResult>[] = idle ? [] : await gated();
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = workbench.attemptIds.length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
