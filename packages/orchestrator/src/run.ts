@@ -66,6 +66,7 @@ import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type Tu
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
+import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
@@ -208,6 +209,18 @@ export interface RunOptions {
   wallClock?: () => number;
   /** Waits for the off-peak option; default: a timer that the run's signal cuts short. A test advances its clock here. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /**
+   * The bench index file the run was given (`--bench`), written to `resume.json` with the checkout and the host so that RESULT.md can
+   * name the exact command that resumes the run. Absent: the command names the checkout and the host alone.
+   */
+  benchFile?: string;
+  /** The person every event of the run is on behalf of (the envelope's `user`, documentation/journal.md). Ignored by a resume, which names its own. */
+  user?: string;
+  /**
+   * Called once, right after `run.started` of a new run and before anything else is written or spent (not by a resume): `harness solve`
+   * records the person's signature of the statement here (documentation/quickstart.md). It may write events; it may not spend.
+   */
+  afterStart?: (journal: Journal) => void;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -365,6 +378,8 @@ export interface ResumeOptions {
   wallClock?: () => number;
   /** As `RunOptions.sleep`. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** The person the events of this process are on behalf of. */
+  user?: string;
 }
 
 /**
@@ -398,6 +413,7 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.turns !== undefined ? { turns: o.turns } : {}),
       ...(o.wallClock !== undefined ? { wallClock: o.wallClock } : {}),
       ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
+      ...(o.user !== undefined ? { user: o.user } : {}),
     },
     recorded,
   );
@@ -493,7 +509,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     // A resume may still refuse (the host, registry, tools or certifier are not the run's): it leaves the
     // journal's cut last line for `beginResumption` to deal with, so that a refusal writes nothing to it.
     // A resumed run reads its chain of earlier journals from its own `run.started`.
-    journal = Journal.open(o.dir, runId, { ...(resume !== undefined ? { deferRepair: true } : {}), ...(chain !== undefined ? { memory: chain } : {}) });
+    journal = Journal.open(o.dir, runId, { ...(resume !== undefined ? { deferRepair: true } : {}), ...(chain !== undefined ? { memory: chain } : {}), ...(o.user !== undefined ? { user: o.user } : {}) });
   } catch (error) {
     if (resume === undefined) throw error;
     throw new RunSetupError(`the journal of ${o.dir} cannot be opened: ${messageOf(error)}`, { cause: error });
@@ -577,6 +593,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     return await abandon(`the statement identity of line ${giver?.id}: ${messageOf(error)}`, error, registry);
   }
   for (const sub of ["transcripts", "proofs"]) mkdirSync(join(o.dir, sub), { recursive: true });
+  // RESULT.md is rewritten after every certified result and at every stop (documentation/quickstart.md, "RESULT.md").
+  const stopResultKeeping = keepResultCurrent(journal, o.dir, (line) => (o.log ?? (() => {}))(line));
 
   // The task ledger: the orchestrator is its only writer (documentation/ledger.md).
   const tasks = new TaskLedger(journal);
@@ -660,6 +678,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       },
       "orchestrator",
     );
+    // What RESULT.md needs to name the command that resumes the run: not a fact of the run, so not in the journal.
+    writeFileSync(
+      join(o.dir, "resume.json"),
+      `${JSON.stringify({ checkout: resolve(o.checkout), ...(o.benchFile !== undefined ? { bench: resolve(o.benchFile) } : {}), host: registry.host.host }, null, 2)}\n`,
+    );
+    o.afterStart?.(journal);
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
@@ -1403,7 +1427,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       );
     }
     await registry.close();
+    stopResultKeeping();
     journal.close();
+    // Whatever ended the run, a crash too, leaves the account of where it stands (PB8). A process that is killed leaves it to `harness report`.
+    try {
+      writeResult(o.dir);
+    } catch (error) {
+      log(`RESULT.md could not be written: ${messageOf(error)}`);
+    }
   }
   if (crashed !== undefined) throw crashed.error;
   // The account is built from the journal alone, once it is closed (documentation/human.md).

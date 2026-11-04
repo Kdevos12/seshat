@@ -203,7 +203,8 @@ function describe(node: NodeRow): string {
   return `${clip(said ?? JSON.stringify(node.data ?? null), 240)}${evidenceText}${refuted}`;
 }
 
-function recordLine(node: NodeRow): RecordLine {
+/** One line on a record of the graph, as the account and RESULT.md give it. */
+export function recordLine(node: NodeRow): RecordLine {
   return { id: node.node_id, kind: node.kind, ...(node.claim_id !== null ? { claimId: node.claim_id } : {}), text: describe(node) };
 }
 
