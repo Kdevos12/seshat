@@ -127,4 +127,6 @@ blocks the Lean toolchain downloads and has no model credentials.
   resumption, calibration, and that proof states go to a third party when Jev is on.
 - [ablate.md](ablate.md): `harness ablate`: the cumulative configurations and the experiments, what each column of the table measures,
   the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`.
+- [prompts.md](prompts.md): the prover's system prompt as a file, the strict screen a rewritten prompt passes, and `harness optimize-prompts`:
+  GEPA-style rewriting on a dev split, the held-out and temporal gate, and the proposals a person merges.
 - [development.md](development.md): conventions, tests, commits.
