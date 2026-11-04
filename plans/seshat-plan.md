@@ -1163,6 +1163,25 @@ instant deferred to the next window, the wait bound, and the option rejected wit
 prices are first estimates from the provider's pages: they are checked on the first real run, before
 any conclusion of Task 14's comparison of packet modes is used. Not run against a real provider here.
 
+### Task 29: Proportionate budgets (PB1 to PB5 of `plans/plan-change-proportional-budgets.md`)
+
+Main team, after Task 14. Additive hook `problem.budget.ask`; the deterministic gate and its journal
+event (launch, probe, skip, widen, with the numbers); probe-first start of a problem; the `decide`
+sites `budget.wave` and `budget.line` for cases without numbers (LLM default, Jev optional; their state
+holds counts and dollars only); the report's avoided-spend table; the check that a run on
+`--memory-from` relaunches nothing already certified under the same environment. Ablation arms in
+`harness ablate`: no gate, rule, rule + LLM, rule + Jev. Documentation: `scheduler.md`, `fleet.md`,
+`decide.md`, `m0-loop.md`. Tests with the faux provider and an injected clock; the gate's savings are
+simulated until a real run.
+
+### Task 30: Solve a problem of one's own with the least friction (PB6, PB7)
+
+Main team, after Task 29. `harness solve`, `harness doctor`, the student defaults, `RESULT.md`,
+`harness view` (static HTML from the journal). A prose statement is shown for signature before any
+spend. Documentation: a new `documentation/quickstart.md`, `README.md` (commands, status) and the
+diagram. Tests: a Lean statement and a prose statement end to end with the simulated Lean and the
+faux provider, `doctor` with each dependency missing in turn, `view` rebuilt from a recorded journal.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
