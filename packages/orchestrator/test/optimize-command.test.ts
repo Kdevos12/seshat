@@ -48,6 +48,17 @@ describe("the proposals writer", () => {
   });
 });
 
+describe("the proposals directory behind a link", () => {
+  it("is judged by where it really is: a link into a protected tree is refused, a link to a free place is not", () => {
+    const dir = tempDir("mh-link-");
+    symlinkSync(join(REPO_ROOT, "packages", "guards"), join(dir, "into-guards"));
+    assert.throws(() => new ProposalWriter(join(dir, "into-guards"), REPO_ROOT), /no write access/);
+    assert.throws(() => new ProposalWriter(join(dir, "into-guards", "new", "deeper"), REPO_ROOT), /no write access/);
+    symlinkSync(tempDir("mh-free-"), join(dir, "free"));
+    assert.doesNotThrow(() => new ProposalWriter(join(dir, "free", "out"), REPO_ROOT));
+  });
+});
+
 describe("a patch of a prompt file", () => {
   it("applies with git, gives exactly the candidate, and is empty for no change", () => {
     const text = readFileSync(promptFile, "utf8");

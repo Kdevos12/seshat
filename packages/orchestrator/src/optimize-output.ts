@@ -21,13 +21,25 @@ const WRITABLE = new Set([".txt", ".json", ".md", ".patch"]);
  * not text, json, markdown or a patch. The runs that measure candidates write their journals under `work/` through the ablation runner, as
  * `harness ablate` does; they are not written here.
  */
+/** A path with the symbolic links of its nearest existing ancestor resolved, whether or not the path itself exists yet. */
+export function realish(path: string): string {
+  const full = resolve(path);
+  let head = full;
+  const tail: string[] = [];
+  while (!existsSync(head) && dirname(head) !== head) {
+    tail.unshift(head.slice(dirname(head).length).replace(/^[\\/]/, ""));
+    head = dirname(head);
+  }
+  return join(realpathSync(head), ...tail);
+}
+
 export class ProposalWriter {
   readonly dir: string;
   private readonly root: string;
 
   constructor(dir: string, repoRoot: string) {
-    this.dir = resolve(dir);
-    this.root = resolve(repoRoot);
+    this.dir = realish(dir);
+    this.root = realish(repoRoot);
     for (const tree of PROTECTED_TREES) {
       const protectedDir = join(this.root, tree);
       const inside = relative(protectedDir, this.dir);
