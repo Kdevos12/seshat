@@ -46,7 +46,7 @@ const usage = `usage:
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
-              [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-share SITE=X]...]
+              [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
@@ -116,7 +116,8 @@ unverified memory items (documentation/memory.md, "Randomized inclusion"): the s
 launch, a probe of one prover and one session first, widening only on Lean progress, and a floor that lets a fixed
 fraction of the skips through (--gate-floor, default 0.1); --gate-probe is the probe's share of the problem's budget
 (default 0.1), --gate-margin the tie margin where decide is asked (default 0.1), --gate-share SITE=X the share of what
-is left a launch at wave, session, task or judge may cost (X above 0 and at most 1). Without --gate, nothing changes.
+is left a launch at wave, session, task or judge may cost (X above 0 and at most 1), --gate-min-sessions N the sessions a
+prover runs before the gate can end it (default 2). Without --gate, nothing changes.
 --memory-from starts the run on the memory of an earlier run (documentation/memory.md, "Memory across runs"): its
 journal is read first, pinned by its last hash, and never written; its verified facts carry only under the same
 Lean environment.
@@ -208,6 +209,7 @@ const { positionals, values } = parseArgs({
     "gate-floor": { type: "string" },
     "gate-probe": { type: "string" },
     "gate-margin": { type: "string" },
+    "gate-min-sessions": { type: "string" },
     "gate-share": { type: "string", multiple: true },
     "memory-from": { type: "string" },
     resume: { type: "string" },
@@ -493,6 +495,7 @@ function gateFlags(): GateSettings | undefined {
   const floor = number("gate-floor", values["gate-floor"], undefined);
   const probeFraction = number("gate-probe", values["gate-probe"], undefined);
   const margin = number("gate-margin", values["gate-margin"], undefined);
+  const minSessions = number("gate-min-sessions", values["gate-min-sessions"], undefined);
   const share: Record<string, number> = {};
   for (const given of values["gate-share"] ?? []) {
     const match = /^([a-z]+)=(.+)$/.exec(given);
@@ -500,15 +503,16 @@ function gateFlags(): GateSettings | undefined {
     if (match === null || Number.isNaN(x)) throw new UsageError(`--gate-share takes SITE=X, got ${JSON.stringify(given)}`);
     share[match[1] as string] = x;
   }
-  const given = floor !== undefined || probeFraction !== undefined || margin !== undefined || Object.keys(share).length > 0;
+  const given = floor !== undefined || probeFraction !== undefined || margin !== undefined || minSessions !== undefined || Object.keys(share).length > 0;
   if (values.gate !== true) {
-    if (given) throw new UsageError("--gate-floor, --gate-probe, --gate-margin and --gate-share set the budget gate: give --gate too");
+    if (given) throw new UsageError("--gate-floor, --gate-probe, --gate-margin, --gate-min-sessions and --gate-share set the budget gate: give --gate too");
     return undefined;
   }
   const settings: GateSettings = {
     ...(floor !== undefined ? { floor } : {}),
     ...(probeFraction !== undefined ? { probeFraction } : {}),
     ...(margin !== undefined ? { margin } : {}),
+    ...(minSessions !== undefined ? { minSessions } : {}),
     ...(Object.keys(share).length > 0 ? { share: share as NonNullable<GateSettings["share"]> } : {}),
   };
   try {
@@ -918,7 +922,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 

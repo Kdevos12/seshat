@@ -344,7 +344,7 @@ An aborted response is charged for the usage that pi kept.
 
 ### The budget gate
 
-With `--gate` ([scheduler.md](scheduler.md#the-budget-gate)) a problem's budget is spent in proportion to its chance: a deterministic rule before each paid launch, a probe of one prover and one session (at most a tenth of the problem's budget) before the others start, and widening only on Lean progress. A launch the gate refuses is journaled as `budget.gated` with its numbers; the prover ends with the stop `gate`. Without `--gate` this section does not apply.
+With `--gate` ([scheduler.md](scheduler.md#the-budget-gate)) a problem's budget is spent in proportion to its chance: a deterministic rule before each paid launch, a probe of one prover and one session (at most a tenth of the problem's budget) before the others start, and widening only on Lean progress. A launch the gate refuses is journaled as `budget.gated` with its numbers; the prover ends with the stop `gate`. A resume of a probe whose session was started and not finished takes the probe as over: the gate decides without that session's result (no Lean progress to see), which is sound and wastes the probe. In a run with turns a stop makes the problem wait for the next turn instead of ending it ([scheduler.md](scheduler.md#the-budget-gate)). Without `--gate` this section does not apply.
 
 ### Prices
 
@@ -470,7 +470,7 @@ Options of `harness run`:
 | `--turn-narrative` | off | A model adds a short narrative to each turn's account, marked as model-written, with every id it cites checked. |
 | `--impasse-posterior X`, `--impasse-attempts N` | 0.1, 8 | When a problem is at an impasse: after `N` finished attempts, a success posterior at or below `X` (the boundary is included: the defaults fire at the 8th failed attempt; they are untuned). |
 | `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
-| `--gate` | off | Turns on the budget gate ([scheduler.md](scheduler.md#the-budget-gate)): a rule before each paid launch, a probe first, widening on Lean progress, the floor. `--gate-floor X` (default 0.1), `--gate-probe X` (the probe's share of the problem's budget, default 0.1), `--gate-margin X` (the tie margin, default 0.1) and `--gate-share SITE=X` (wave, session, task or judge; repeatable) set it and need `--gate`. Written into `run.started`; a resume keeps it. |
+| `--gate` | off | Turns on the budget gate ([scheduler.md](scheduler.md#the-budget-gate)): a rule before each paid launch, a probe first, widening on Lean progress, the floor. `--gate-floor X` (default 0.1), `--gate-probe X` (the probe's share of the problem's budget, default 0.1), `--gate-margin X` (the tie margin, default 0.1), `--gate-min-sessions N` (the sessions a prover runs before the gate can end it, default 2) and `--gate-share SITE=X` (wave, session, task or judge; repeatable) set it and need `--gate`. Written into `run.started`; a resume keeps it. |
 | `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 

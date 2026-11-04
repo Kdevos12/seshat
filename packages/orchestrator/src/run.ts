@@ -969,6 +969,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 ledger,
                 seed: config.seed ?? runId,
                 rung: () => live.lines?.rung ?? 0,
+                ...(turn !== undefined ? { turn: () => turn.number } : {}),
                 attemptIds: () => live.workbench?.attemptIds ?? [],
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
                 decide: problemDecide({
@@ -1217,6 +1218,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
           }
           const widened = await gate.widen(working.length);
+          if (widened.action === "skip" && turn !== undefined) {
+            // A run with a team (turns): the problem is not over. The turn ends at an impasse, as for any problem the team should look at, the
+            // probe's prover stays paused and the others ready, and the next turn (after a hint, a steer or a new budget) asks the gate again.
+            turn.strike({
+              reason: "impasse",
+              detail: `${entry.fullName}: the budget gate stopped it after its probe, which made no Lean progress`,
+              breakpoint: { kind: "impasse", problemId: entry.id },
+            });
+            return [{ status: "fulfilled", value: { name: first.name, attempts: workbench.attemptIds.length, stop: "turn" } }];
+          }
           if (widened.action === "skip") {
             endProverTask(tasks, first, { stop: "gate", sessions: config.sessions, budget: "the problem's budget" });
             for (const task of rest) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");

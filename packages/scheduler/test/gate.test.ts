@@ -155,3 +155,21 @@ describe("the settings", () => {
     assert.deepEqual(gateSettings({}), DEFAULT_GATE);
   });
 });
+
+describe("the floor's draw and a prover's grace", () => {
+  it("puts the draw and the fraction in a floor verdict, and in none other", () => {
+    const through = gateRule(query({ estimateUsd: 0.5, floorDraw: 0.05 }), state, DEFAULT_GATE).verdict;
+    assert.deepEqual([through.floorDraw, through.floorFraction], [0.05, 0.1]);
+    assert.equal(gateRule(query({ estimateUsd: 0.5, floorDraw: 0.5 }), state, DEFAULT_GATE).verdict.floorDraw, undefined);
+    assert.equal(gateRule(query(), state, DEFAULT_GATE).verdict.floorDraw, undefined);
+    const widened = widenRule(query({ site: "wave", progress: false, floorDraw: 0.01 }), state, DEFAULT_GATE).verdict;
+    assert.deepEqual([widened.by, widened.floorDraw, widened.floorFraction], ["floor", 0.01, 0.1]);
+  });
+
+  it("lets a prover run a minimum of sessions before the gate can end it", () => {
+    assert.equal(DEFAULT_GATE.minSessions, 2);
+    assert.equal(gateSettings({ minSessions: 1 }).minSessions, 1);
+    assert.throws(() => gateSettings({ minSessions: 0 }), /minSessions must be a whole number of at least 1/);
+    assert.throws(() => gateSettings({ minSessions: 1.5 }), /minSessions must be a whole number of at least 1/);
+  });
+});

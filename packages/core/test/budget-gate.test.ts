@@ -92,11 +92,19 @@ describe("budget.gated", () => {
     const journal = open();
     try {
       const bad = (changes: Changes, message: RegExp) => assert.throws(() => journal.emit("budget.gated", gated(changes), "orchestrator"), message);
-      const over = { estimateUsd: 0.25, by: "floor" as const, exploration: true };
+      const over = { estimateUsd: 0.25, by: "floor" as const, exploration: true, floorDraw: 0.05, floorFraction: 0.1 };
       journal.emit("budget.gated", gated(over), "orchestrator");
       bad({ ...over, exploration: false }, /the exploration floor says so: exploration must be true/);
       bad({ exploration: true }, /exploration is the floor's: by must be floor/);
       bad({ ...over, action: "skip" }, /the floor only lets a launch through/);
+      // The floor lets through what the rule skipped, with the draw that did it.
+      bad({ ...over, floorDraw: undefined }, /records its draw and the fraction/);
+      bad({ ...over, floorFraction: undefined }, /records its draw and the fraction/);
+      bad({ ...over, floorDraw: 0.2 }, /draw 0.2 is not under its fraction 0.1/);
+      bad({ ...over, floorFraction: 1.5, floorDraw: 0.2 }, /not under its fraction 1.5/);
+      bad({ ...over, estimateUsd: 0.1 }, /lets through what the rule skipped, and 0.1 is not over the threshold 0.2/);
+      bad({ ...over, thresholdUsd: undefined }, /the rule needs the chance of success and the threshold/);
+      bad({ ...over, thresholdUsd: 0.1 }, /threshold 0.1 is not 0.5 x 4 x 0.1/);
     } finally {
       journal.close();
     }
@@ -112,10 +120,12 @@ describe("budget.gated", () => {
       bad({ action: "widen", progress: false }, /widens only after Lean progress/);
       bad({ action: "widen" }, /widens only after Lean progress/);
       journal.emit("budget.gated", wave({ action: "widen", progress: true }), "orchestrator");
-      journal.emit("budget.gated", wave({ action: "widen", progress: false, by: "floor", exploration: true, estimateUsd: 0.25 }), "orchestrator");
+      journal.emit("budget.gated", wave({ action: "widen", progress: false, by: "floor", exploration: true, estimateUsd: 0.25, floorDraw: 0.01, floorFraction: 0.1 }), "orchestrator");
+      // No progress, no threshold: the skip the floor overrides is the progress skip, which has no numbers.
+      journal.emit("budget.gated", wave({ action: "widen", progress: false, by: "floor", exploration: true, pSuccess: undefined, thresholdUsd: undefined, floorDraw: 0.01, floorFraction: 0.1 }), "orchestrator");
       journal.emit("budget.gated", wave({ action: "skip", by: "progress", progress: false, pSuccess: undefined, thresholdUsd: undefined, reason: "the probe made no Lean progress" }), "orchestrator");
       bad({ action: "skip", by: "progress", progress: true }, /no progress is what a progress skip says/);
-      assert.deepEqual(journal.projection.gates({ problemId: "P1", site: "wave" }).map((g) => g.action), ["probe", "widen", "widen", "skip"]);
+      assert.deepEqual(journal.projection.gates({ problemId: "P1", site: "wave" }).map((g) => g.action), ["probe", "widen", "widen", "widen", "skip"]);
     } finally {
       journal.close();
     }
@@ -127,7 +137,37 @@ describe("budget.gated", () => {
       const bad = (changes: Changes, message: RegExp) => assert.throws(() => journal.emit("budget.gated", gated(changes), "orchestrator"), message);
       const cold = { by: "decide" as const, pSuccess: undefined, thresholdUsd: undefined };
       bad(cold, /a decide answer names its decision/);
+      bad({ ...cold, decisionId: "dec_1" }, /the decision dec_1 is not in the journal/);
+      const decision = (changes: Partial<EventDataMap["decision.made"]> = {}): EventDataMap["decision.made"] => ({
+        decisionId: "dec_1",
+        key: "k1",
+        line: "gate",
+        problemId: "P1",
+        claimId: "clm_1",
+        site: "budget.wave",
+        backend: "llm",
+        requested: "llm",
+        model: "prov/model",
+        type: "choice",
+        labels: ["launch", "skip"],
+        requestHash: "r",
+        stateHash: "s",
+        answer: "launch",
+        probabilities: { launch: 0.75, skip: 0.25 },
+        costUsd: 0.001,
+        modelCallIds: [],
+        ...changes,
+      });
+      journal.emit("decision.made", decision(), "orchestrator");
+      journal.emit("decision.made", decision({ decisionId: "dec_2", key: "k2", site: "budget.line", answer: "skip", probabilities: { launch: 0.1, skip: 0.9 } }), "orchestrator");
+      journal.emit("decision.made", decision({ decisionId: "dec_3", key: "k3", site: "prove.search.order" }), "orchestrator");
       journal.emit("budget.gated", gated({ ...cold, decisionId: "dec_1", reason: "no posterior: asked budget.wave" }), "orchestrator");
+      // The decision must be the one of this site and say what the answer says.
+      bad({ ...cold, decisionId: "dec_2" }, /a session is decided at budget.wave, not at budget.line/);
+      bad({ ...cold, decisionId: "dec_3" }, /a session is decided at budget.wave, not at prove.search.order/);
+      bad({ ...cold, decisionId: "dec_1", action: "skip", estimateUsd: 0.25 }, /answered launch, which is not skip/);
+      bad({ ...cold, decisionId: "dec_2", site: "task" }, /answered skip, which is not launch/);
+      journal.emit("budget.gated", gated({ ...cold, decisionId: "dec_2", site: "task", action: "skip" }), "orchestrator");
       journal.emit("budget.gated", gated({ site: "wave", action: "skip", by: "memory", pSuccess: undefined, thresholdUsd: undefined, reason: "certified earlier under the same environment" }), "orchestrator");
       bad({ by: "memory", action: "launch", pSuccess: undefined, thresholdUsd: undefined }, /a claim certified earlier is skipped/);
     } finally {

@@ -591,6 +591,11 @@ export interface EventDataMap {
     taskId?: string;
     /** The `decision.made` that answered, when `by` is `decide`. */
     decisionId?: string;
+    /** For `by: floor`: the draw in [0, 1) and the fraction of the skips the floor lets through; the draw is under the fraction. */
+    floorDraw?: number;
+    floorFraction?: number;
+    /** The consortium turn the answer was given in, when the run has turns: a skip of a stopped problem is reconsidered in a later turn. */
+    turn?: number;
     reason: string;
   };
   /**

@@ -209,8 +209,9 @@ describe("harness run --lines", () => {
       [["--decide-site", "prove.search.order"], /^--decide-site takes SITE=llm\|jev\|off/],
       [["--decide-site", "fidelity.review=jev"], /^decide.sites.fidelity.review: decide is forbidden at fidelity.review/],
       [["--decide-votes", "12"], /^decide.votes must be a whole number from 1 to 9, got 12/],
-      [["--gate-floor", "0.2"], /^--gate-floor, --gate-probe, --gate-margin and --gate-share set the budget gate: give --gate too/],
+      [["--gate-floor", "0.2"], /^--gate-floor, --gate-probe, --gate-margin, --gate-min-sessions and --gate-share set the budget gate: give --gate too/],
       [["--gate", "--gate-floor", "1.5"], /^floor must be from 0 to 1/],
+      [["--gate", "--gate-min-sessions", "0"], /^minSessions must be a whole number of at least 1/],
       [["--gate", "--gate-share", "vibes=0.5"], /unknown site vibes/],
       [["--gate", "--gate-share", "wave"], /^--gate-share takes SITE=X, got "wave"/],
     ];

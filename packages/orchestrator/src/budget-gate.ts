@@ -1,5 +1,5 @@
 import { type EventDataMap, hash32, type Journal, seeded, TASK_WRITER } from "@seshat/core";
-import { attemptWeights, betaMean, DEFAULT_GAMMA, posteriorOf, sample, UNIFORM } from "@seshat/fleet";
+import { attemptWeights, DEFAULT_GAMMA, posteriorOf, sample, UNIFORM } from "@seshat/fleet";
 import { type BudgetAnswer, type BudgetAsk, type Decide, isInterrupted } from "@seshat/lines";
 import { type Attempt, failureDepth } from "@seshat/memory";
 import {
@@ -35,6 +35,8 @@ export interface BudgetGateOptions {
   seed: string | number;
   /** The ladder rung the problem is on. */
   rung: () => number;
+  /** The consortium turn in progress, when the run has turns: a problem the gate stopped is looked at again in a later turn. */
+  turn?: () => number | undefined;
   /** The attempts the problem's provers made, for the depth of the probe's check. */
   attemptIds: () => readonly string[];
   /** The ladder's measure of Lean progress now (new subclaims proved, fewer holes), when the run has a memory. */
@@ -75,11 +77,24 @@ export class BudgetGate {
     return this.o.journal.projection.gates({ problemId: this.o.problemId }).map((g) => g.data);
   }
 
-  /** Where the problem stands: no probe yet, probing, widened, or stopped after its probe. */
+  /** The sessions a prover runs before the gate can end it. */
+  get minSessions(): number {
+    return this.o.settings.minSessions;
+  }
+
+  /**
+   * Where the problem stands: no probe yet, probing, widened, or stopped after its probe. A stop is final within the turn it was given
+   * in, and with the budget and the rung it was given at; a later turn, a new budget (what the team gave) or a ladder escalation puts
+   * the problem back to `probing`, so the gate looks again with the draws of the new round (documentation/scheduler.md).
+   */
   get stage(): "start" | "probing" | "wide" | "stopped" {
     const waves = this.rows().filter((g) => g.site === "wave");
     if (waves.some((g) => g.action === "widen")) return "wide";
-    if (waves.some((g) => g.action === "skip" && g.by !== "memory")) return "stopped";
+    const stop = waves.filter((g) => g.action === "skip" && g.by !== "memory").at(-1);
+    if (stop !== undefined) {
+      const same = stop.turn === this.o.turn?.() && stop.rung === this.o.rung() && stop.budgetUsd === this.budgetUsd();
+      return same ? "stopped" : "probing";
+    }
     return waves.some((g) => g.action === "probe") ? "probing" : "start";
   }
 
@@ -133,15 +148,21 @@ export class BudgetGate {
     return paid.length === 0 ? PRIOR_SESSION_USD : paid.reduce((sum, usd) => sum + usd, 0) / paid.length;
   }
 
-  /** The price of proving a claim directly (M12's pricing): the sessions it is expected to take, 1 over the success rate and at most `sessions`, times what a session costs. */
+  /**
+   * What a task costs if it uses its sessions: the sessions times what a session costs. The chance of success is not in the price: the
+   * rule weighs the price by it (`share x remaining x pSuccess`), and counting it here too would count it twice.
+   */
   taskUsd(sessions: number): number {
-    const { beta } = this.posterior();
-    return this.sessionUsd() * Math.min(1 / Math.max(betaMean(beta), 0.02), Math.max(1, sessions));
+    return this.sessionUsd() * Math.max(1, sessions);
   }
 
-  /** The numbers of the next answer: the draws come from the seeded source at the position of this answer in the journal. */
-  private draws(): { pSuccess?: number; coldDraw: number; floorDraw: number } {
-    const rng = seeded(hash32(`${String(this.o.seed)}\ngate\n${this.o.problemId}\n${this.rows().length}`));
+  /**
+   * The numbers of the next answer. The draws come from a seeded source keyed by the request (the problem, the site and the prover and
+   * session, or the task, or the round of the wave), not by the number of rows in the journal: provers that ask together read the same
+   * row count, and the order they ask in is not the same from one execution to the next, but what each one asks is.
+   */
+  private draws(key: string): { pSuccess?: number; coldDraw: number; floorDraw: number } {
+    const rng = seeded(hash32(`${String(this.o.seed)}\ngate\n${this.o.problemId}\n${key}`));
     const { beta, counted } = this.posterior();
     const thompson = sample(rng, beta);
     const coldDraw = sample(rng, UNIFORM);
@@ -149,8 +170,8 @@ export class BudgetGate {
     return { ...(counted > 0 ? { pSuccess: thompson } : {}), coldDraw, floorDraw };
   }
 
-  private query(site: GateSite, estimateUsd: number, given?: number): GateQuery {
-    const draws = this.draws();
+  private query(site: GateSite, estimateUsd: number, key: string, given?: number): GateQuery {
+    const draws = this.draws(key);
     return {
       site,
       estimateUsd,
@@ -159,6 +180,11 @@ export class BudgetGate {
       floorDraw: draws.floorDraw,
       rung: this.o.rung(),
     };
+  }
+
+  /** How many answers this problem holds for a site and a task already: the round of a request that is made more than once. */
+  private round(site: GateSite, taskId?: string): number {
+    return this.rows().filter((g) => g.site === site && g.taskId === taskId).length;
   }
 
   /** The state that a decision is asked about: counts and dollars, nothing of the mathematics. */
@@ -236,6 +262,9 @@ export class BudgetGate {
       ...(where.session !== undefined ? { session: where.session } : {}),
       ...(where.taskId !== undefined ? { taskId: where.taskId } : {}),
       ...(decisionId !== undefined ? { decisionId } : {}),
+      ...(verdict.floorDraw !== undefined ? { floorDraw: verdict.floorDraw } : {}),
+      ...(verdict.floorFraction !== undefined ? { floorFraction: verdict.floorFraction } : {}),
+      ...(this.o.turn?.() !== undefined ? { turn: this.o.turn() as number } : {}),
       reason,
     };
     this.o.journal.emit("budget.gated", data, TASK_WRITER);
@@ -274,7 +303,7 @@ export class BudgetGate {
   async widen(provers: number): Promise<GateOutcome> {
     const why = this.progress();
     const estimate = Math.max(1, provers) * this.sessionUsd();
-    const query = { ...this.query("wave", estimate), progress: why !== undefined };
+    const query = { ...this.query("wave", estimate, `wave:${this.rows().filter((g) => g.site === "wave").length}`), progress: why !== undefined };
     const answer = widenRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(why === undefined ? verdict : { ...verdict, reason: `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
@@ -282,7 +311,7 @@ export class BudgetGate {
 
   /** Before a session of a widened prover. */
   async session(who: { prover: string; session: number }): Promise<GateOutcome> {
-    const query = this.query("session", this.sessionUsd());
+    const query = this.query("session", this.sessionUsd(), `session:${who.prover}:${who.session}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(verdict, who, decisionId);
@@ -290,7 +319,7 @@ export class BudgetGate {
 
   /** Before a line's task is worked (`budget.line` where there are no numbers). `sessions` is the task's budget in sessions. */
   async task(who: { taskId: string; sessions?: number }): Promise<GateOutcome> {
-    const query = this.query("task", this.taskUsd(who.sessions ?? 1));
+    const query = this.query("task", this.taskUsd(who.sessions ?? 1), `task:${who.taskId}:${this.round("task", who.taskId)}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(verdict, { taskId: who.taskId }, decisionId);
@@ -299,7 +328,10 @@ export class BudgetGate {
   /** The hook a line calls (`problem.budget.ask`, documentation/lines.md): the line gives the estimate and may give the chance of success. */
   async ask(request: BudgetAsk): Promise<BudgetAnswer> {
     if (!Number.isFinite(request.estimateUsd) || request.estimateUsd < 0) throw new RangeError(`the estimate of a launch is a non-negative number of dollars, got ${String(request.estimateUsd)}`);
-    const query = this.query(request.site, request.estimateUsd, request.pSuccess);
+    if (request.pSuccess !== undefined && !(Number.isFinite(request.pSuccess) && request.pSuccess >= 0 && request.pSuccess <= 1)) {
+      throw new RangeError(`the chance of success of a launch is from 0 to 1, got ${String(request.pSuccess)}`);
+    }
+    const query = this.query(request.site, request.estimateUsd, `${request.site}:${request.taskId ?? ""}:${this.round(request.site, request.taskId)}`, request.pSuccess);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     const out = this.write(verdict, request.taskId !== undefined ? { taskId: request.taskId } : {}, decisionId);
