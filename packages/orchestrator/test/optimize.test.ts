@@ -24,7 +24,7 @@ function cand(id: string, results: Record<string, [string, number]>): Candidate 
 describe("the order of results", () => {
   it("puts a solved problem above an unsolved one and the cheaper above the dearer", () => {
     assert.equal(compareScores({ outcome: "proved", usd: 5 }, { outcome: "unsolved", usd: 0.1 }), 1);
-    assert.equal(compareScores({ outcome: "candidate", usd: 0.1 }, { outcome: "proved", usd: 0.2 }), 1);
+    assert.equal(compareScores({ outcome: "refuted", usd: 0.1 }, { outcome: "proved", usd: 0.2 }), 1);
     assert.equal(compareScores({ outcome: "unsolved", usd: 0.3 }, { outcome: "unsolved", usd: 0.1 }), -1);
     assert.equal(compareScores({ outcome: "unsolved", usd: 0.1 }, { outcome: "unsolved", usd: 0.1 }), 0);
   });
@@ -279,7 +279,7 @@ describe("the search and the acceptance rule", () => {
     const s = scripted([answer("A"), answer("B")]);
     const r = await optimize(base({ evaluate: sim.evaluate, reflect: async (q) => ({ ...(await s.reflect(q)), usd: 0.3 }), iterations: 6, reflectBudgetUsd: 0.5 }));
     assert.match(s.prompts[0] ?? "", /# The current prompt\n<prompt>\nYou are a mathematician/);
-    assert.match(s.prompts[0] ?? "", /## d1\nsolved \(proved\), \$0\.100\nLean accepted the proof\./);
+    assert.match(s.prompts[0] ?? "", /## d1\ncertified \(proved\), \$0\.100\nLean accepted the proof\./);
     assert.match(s.prompts[0] ?? "", /## d2\nnot solved \(unsolved\), \$0\.100\nerror: unsolved goals/);
     assert.equal(r.trials.length, 2);
     assert.match(r.stoppedBy ?? "", /budget/);
