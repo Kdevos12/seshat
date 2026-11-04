@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DecideSettings } from "@seshat/decide";
+import type { GateSettings } from "@seshat/scheduler";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type BenchIndex, type ProblemEntry, sample } from "@seshat/bench";
 import {
@@ -143,6 +144,7 @@ function configOf(recorded: unknown): RunConfig {
       : {}),
     ...(typeof r.seed === "string" || typeof r.seed === "number" ? { seed: r.seed } : {}),
     ...(typeof r.decide === "object" && r.decide !== null && !Array.isArray(r.decide) ? { decide: r.decide as DecideSettings } : {}),
+    ...(typeof r.gate === "object" && r.gate !== null && !Array.isArray(r.gate) ? { gate: r.gate as GateSettings } : {}),
   };
 }
 

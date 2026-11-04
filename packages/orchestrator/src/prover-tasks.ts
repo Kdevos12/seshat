@@ -57,7 +57,7 @@ export function createProverTasks(tasks: TaskLedger, o: ProverTasksOptions): Pro
 export type ProverTaskEnd =
   | {
       /** `ProverResult.stop`. A prover that the consortium turn interrupted (`turn`) has not ended: its task stays `running` until the run is resumed. */
-      stop: Exclude<ProverStop, "turn">;
+      stop: Exclude<ProverStop, "turn" | "probe">;
       /** Sessions the prover could use. */
       sessions: number;
       /** What ran out, when the budget did: "the problem's budget" or "the run's budget". */
@@ -96,6 +96,8 @@ export function proverTaskEnding(task: Pick<ProverTask, "name">, end: ProverTask
       return { to: "cancelled", reason: holds ? POINTLESS : "the run was stopped" };
     case "line":
       return { to: "cancelled", reason: holds ? POINTLESS : `a line stopped ${who}` };
+    case "gate":
+      return holds ? { to: "cancelled", reason: POINTLESS } : { to: "failed", reason: `the budget gate skipped ${who}'s next session: its price was over the share of what was left, weighted by the chance of success` };
   }
 }
 

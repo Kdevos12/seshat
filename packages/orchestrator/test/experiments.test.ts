@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ablationProblems, compareArms } from "../src/ablation.ts";
+import { ablationProblems, armConfig, compareArms } from "../src/ablation.ts";
 import { allLines, DECIDE_SITES, EXPERIMENTS, experimentArms, experimentNames } from "../src/experiments.ts";
 import { DEFAULT_CONFIG, type RunConfig, RunSetupError } from "../src/index.ts";
 
@@ -9,7 +9,7 @@ void compareArms;
 
 describe("the experiments", () => {
   it("name every amendment's experiment", () => {
-    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "m17"]);
+    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "gate", "m17"]);
     assert.ok(EXPERIMENTS.every((e) => e.notRun.length > 0 && e.amendment.length > 0));
   });
 
@@ -42,6 +42,22 @@ describe("the experiments", () => {
     const arms = experimentArms("decide");
     assert.equal(arms.length, DECIDE_SITES.length + 1);
     assert.deepEqual(DECIDE_SITES.sort(), ["conjecture.relevance", "fleet.cold_start", "prove.search.order"]);
+  });
+
+  it("measure the budget gate in four arms that differ by the gate and by who answers its cold starts and ties", () => {
+    const arms = experimentArms("gate");
+    assert.deepEqual(arms.map((a) => a.name), ["no-gate", "rule", "rule+llm", "rule+jev"]);
+    assert.deepEqual(arms.map((a) => a.versus), [undefined, "no-gate", "rule", "rule+llm"]);
+    assert.equal(arms[0]?.gate, false);
+    assert.deepEqual(arms[1]?.decide?.sites, { "budget.wave": "off", "budget.line": "off" });
+    assert.equal(arms[3]?.decide?.sites?.["budget.wave"], "jev");
+    assert.deepEqual(arms[2]?.lines, arms[0]?.lines);
+    // The J3 experiment does not list the gate's sites.
+    assert.ok(!DECIDE_SITES.some((s) => s.startsWith("budget.")));
+    const table = { gate: { floor: 0.2 } } as never;
+    assert.equal(armConfig(table, arms[0] as never).gate, undefined, "false takes the table's gate away");
+    assert.deepEqual(armConfig({} as never, arms[1] as never).gate, {});
+    assert.deepEqual(armConfig(table, { name: "x", description: "", lines: [] }).gate, { floor: 0.2 }, "an arm with no gate setting keeps the table's");
   });
 
   it("isolate the counterexample set: the two arms differ by one option of M8 and nothing else", () => {

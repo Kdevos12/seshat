@@ -73,6 +73,7 @@ export function renderAblation(result: AblationResult): string {
     ...difficulty(result),
     ...spendBySite(arms),
     ...cache(arms),
+    ...gate(arms),
     ...decisions(arms),
     ...agreements(arms),
     ...extras(arms),
@@ -128,6 +129,25 @@ function cache(arms: readonly ArmResult[]): string[] {
     "The share of input read from the provider's cache and the dollars it saved, per line and per rung. Checked on the first real run before any conclusion about the packet modes is used.",
     "",
     ...table(["Configuration", "Scope", "Responses", "Cache ratio", "Saved"], rows),
+    "",
+  ];
+}
+
+function gate(arms: readonly ArmResult[]): string[] {
+  const rows = arms.flatMap((a) => {
+    const g = a.measures.gate;
+    if (g === undefined) return [];
+    const launched = g.bySite.reduce((n, s) => n + s.launched, 0);
+    const skipped = g.bySite.reduce((n, s) => n + s.skipped, 0);
+    return [[a.arm.name, String(g.answers), String(g.probes), String(g.widened), String(g.stoppedAtProbe), String(launched), String(skipped), `${money(g.avoidedUsd)} (estimate)`, `${g.decisions.count} (${money(g.decisions.usd)})`]];
+  });
+  if (rows.length === 0) return [];
+  return [
+    "## Budget gate",
+    "",
+    "What the gate answered in each configuration that had one, from the journal. The avoided dollars are the gate's estimate of what the skipped launches would have cost, not a measurement: the table's cost per solve above is the measure.",
+    "",
+    ...table(["Configuration", "Answers", "Probes", "Widened", "Stopped at probe", "Launched", "Skipped", "Avoided", "Questions to decide"], rows),
     "",
   ];
 }

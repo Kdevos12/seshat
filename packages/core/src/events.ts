@@ -554,6 +554,51 @@ export interface EventDataMap {
     toolRunId?: string;
   };
   /**
+   * The budget gate answered before a paid launch (documentation/scheduler.md, "The budget gate"; PB1 of
+   * `plans/plan-change-proportional-budgets.md`): a prover wave, a session, a line's task or a judge call. The rule is
+   * deterministic: launch when `estimateUsd <= share * remainingUsd * pSuccess` (`thresholdUsd`), with an exploration
+   * floor that lets a fixed fraction of the skips through. A problem starts with a probe (one prover, one session, at
+   * most a tenth of its budget) and widens only after Lean progress. Written by the orchestrator only, which checks the
+   * arithmetic; the numbers are what makes the avoided spend measurable and the gate ablatable. It changes no claim.
+   */
+  "budget.gated": {
+    problemId: string;
+    /** What was about to be launched: a wave of provers (the probe, then a widening), a session, a line's task, a judge call. */
+    site: "wave" | "session" | "task" | "judge";
+    /** `probe`: the problem's first launch. `widen`: more provers, sessions or a stronger model, after Lean progress. */
+    action: "launch" | "probe" | "skip" | "widen";
+    /** Who decided: the formula, the exploration floor, the probe-first start, the lack of Lean progress, a `decide` answer, or the memory (already certified). */
+    by: "rule" | "floor" | "probe" | "progress" | "decide" | "memory";
+    /** What the launch is expected to cost, in dollars (an estimate from the sessions already paid, or a prior). */
+    estimateUsd: number;
+    /** What the problem has left, and its whole budget. */
+    remainingUsd: number;
+    budgetUsd: number;
+    /** The fraction of what is left that this site may take. */
+    share: number;
+    /** The success chance the rule used: a Thompson draw from the claim's Beta posterior. Absent where there are no numbers. */
+    pSuccess?: number;
+    /** `share * remainingUsd * pSuccess`. */
+    thresholdUsd?: number;
+    /** The ladder rung the problem was on. */
+    rung: number;
+    /** True when the exploration floor let the launch through. */
+    exploration: boolean;
+    /** For a wave: whether the probe made Lean progress (the ladder's measure). */
+    progress?: boolean;
+    prover?: string;
+    session?: number;
+    taskId?: string;
+    /** The `decision.made` that answered, when `by` is `decide`. */
+    decisionId?: string;
+    /** For `by: floor`: the draw in [0, 1) and the fraction of the skips the floor lets through; the draw is under the fraction. */
+    floorDraw?: number;
+    floorFraction?: number;
+    /** The consortium turn the answer was given in, when the run has turns: a skip of a stopped problem is reconsidered in a later turn. */
+    turn?: number;
+    reason: string;
+  };
+  /**
    * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
    * name, version and content hash, what it adds and the programs and servers its tools would run. Written
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
@@ -637,9 +682,15 @@ export const EVENT_TYPES: readonly EventType[] = [
   "ladder.escalated",
   "memory.epoch_opened",
   "decision.made",
+  "budget.gated",
   "pack.installed",
   "pack.removed",
 ];
+
+/** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */
+export const GATE_SITES = ["wave", "session", "task", "judge"] as const;
+export const GATE_ACTIONS = ["launch", "probe", "skip", "widen"] as const;
+export const GATE_DECIDERS = ["rule", "floor", "probe", "progress", "decide", "memory"] as const;
 
 export function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && (EVENT_TYPES as readonly string[]).includes(value);

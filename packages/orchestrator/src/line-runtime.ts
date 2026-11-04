@@ -5,6 +5,7 @@ import type {
   AttemptAnnotation,
   Briefing,
   Budget,
+  BudgetAsk,
   EnabledLine,
   FinishedAttempt,
   FrozenPacket,
@@ -32,6 +33,7 @@ import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@se
 import { messageOf, type Registry } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
 import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
+import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
 import { lineLlm } from "./llm.ts";
@@ -105,6 +107,8 @@ export interface ProblemLinesOptions {
   /** The problem's signal. */
   signal: AbortSignal;
   workbench: Workbench;
+  /** The problem's budget gate, when the run has one: lines reach it as `budget.ask`, and a task is gated before it starts. */
+  gate?: BudgetGate;
 }
 
 /** The enabled lines of a run, in `LINE_ORDER`, and what their contexts share. */
@@ -318,7 +322,7 @@ export class ProblemLines {
           signal: own,
           problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench },
         }),
-      budget: budgetOf(this.p.ledger),
+      budget: budgetOf(this.p.ledger, this.p.gate),
       tasks: taskApi(o.tasks, o.journal, { problemId: this.p.problemId, claimId: this.p.claimId, line: id }),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
@@ -675,6 +679,16 @@ export class ProblemLines {
       if (row === undefined || row.status !== "ready" || row.problem_id !== this.p.problemId) {
         throw new LineError(runner, hookName, `${choice.taskId} is not a ready task of this problem`);
       }
+      // The budget gate weighs the task's price against what is left before it is opened (`budget.line` where there are no numbers).
+      if (this.p.gate !== undefined) {
+        const gated = await this.p.gate.task({ taskId: choice.taskId, sessions: row.budget.sessions ?? 1 });
+        if (gated.action === "skip") {
+          tasks.cancel(choice.taskId, `the budget gate skipped it: ${gated.reason}`);
+          tasks.promote(this.p.problemId);
+          this.log(`task ${choice.taskId} is skipped by the budget gate: ${gated.reason}`);
+          continue;
+        }
+      }
       tasks.start(choice.taskId, `${hookName === "runTask" ? "worked" : "scheduled"} by line ${runner}: ${choice.reason}`);
       this.log(`task ${choice.taskId} starts: ${choice.reason}`);
       let end;
@@ -833,8 +847,9 @@ function taskApi(tasks: TaskLedger, journal: Journal, who: { problemId: string; 
   };
 }
 
-function budgetOf(ledger: Ledger): Budget {
+function budgetOf(ledger: Ledger, gate?: BudgetGate): Budget {
   return {
+    ...(gate !== undefined ? { ask: (request: BudgetAsk) => gate.ask(request) } : {}),
     get limitUsd() {
       return ledger.limitUsd;
     },

@@ -342,6 +342,10 @@ cached sum (the projection keeps none), and a finished total, when there is one,
 charges, so the larger of the two is never too small or counted twice.
 An aborted response is charged for the usage that pi kept.
 
+### The budget gate
+
+With `--gate` ([scheduler.md](scheduler.md#the-budget-gate)) a problem's budget is spent in proportion to its chance: a deterministic rule before each paid launch, a probe of one prover and one session (at most a tenth of the problem's budget) before the others start, and widening only on Lean progress. A launch the gate refuses is journaled as `budget.gated` with its numbers; the prover ends with the stop `gate`. A resume of a probe whose session was started and not finished takes the probe as over: the gate decides without that session's result (no Lean progress to see), which is sound and wastes the probe. In a run with turns a stop makes the problem wait for the next turn instead of ending it ([scheduler.md](scheduler.md#the-budget-gate)). Without `--gate` this section does not apply.
+
 ### Prices
 
 Dollars decide every budget option and every ablation, and the cost fields that ship with a provider's
@@ -466,6 +470,7 @@ Options of `harness run`:
 | `--turn-narrative` | off | A model adds a short narrative to each turn's account, marked as model-written, with every id it cites checked. |
 | `--impasse-posterior X`, `--impasse-attempts N` | 0.1, 8 | When a problem is at an impasse: after `N` finished attempts, a success posterior at or below `X` (the boundary is included: the defaults fire at the 8th failed attempt; they are untuned). |
 | `--draw-seed S` | the run's id | Seeds the draws of unverified memory items a line makes ([memory.md](memory.md#randomized-inclusion)); the same seed draws the same. Recorded in the run's configuration. |
+| `--gate` | off | Turns on the budget gate ([scheduler.md](scheduler.md#the-budget-gate)): a rule before each paid launch, a probe first, widening on Lean progress, the floor. `--gate-floor X` (default 0.1), `--gate-probe X` (the probe's share of the problem's budget, default 0.1), `--gate-margin X` (the tie margin, default 0.1), `--gate-min-sessions N` (the sessions a prover runs before the gate can end it, default 2) and `--gate-share SITE=X` (wave, session, task or judge; repeatable) set it and need `--gate`. Written into `run.started`; a resume keeps it. |
 | `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
@@ -523,6 +528,8 @@ interruptions cut, and how many times the journal's last line was cut (`resumed`
 turn of a consortium run, after the run paused by itself, is not an interruption and is not in that count.
 
 A run with the line M12 (or one with a `ladder.escalated` event) adds a table of the escalation ladder: for each problem the rung it ended at, the rung at which it was solved, and the dollars each rung cost (`ladder` on the problem's line in `report.json`; [scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change)).
+
+A run with the gate (`gate` in `report.json`) adds a paragraph and a table of its answers by site, and the avoided spend, an estimate of what the skipped launches would have cost, never a measured amount ([scheduler.md](scheduler.md#the-budget-gate)). It is read from the journal alone.
 
 A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
 waits for the team says it is paused after turn N and where the account is, instead of "has not finished".
