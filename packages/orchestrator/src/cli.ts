@@ -24,6 +24,9 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { writeResult } from "./result.ts";
+import { writeView } from "./view.ts";
+import { doctorCommand, solveCommand } from "./solve-command.ts";
 import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
@@ -72,8 +75,22 @@ const usage = `usage:
   harness packs [--packs-dir DIR]
   harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
+  harness view RUN_DIR [--out FILE]
+  harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
+              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check]
+  harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
 
-HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
+solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
+the proposition) or prose, or a file holding one. Prose is formalized by the cheapest model with a price, shown to you with test lemmas on its first
+cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
+whole budget, the formalization included; the budget gate, probe first and the classical lines M1 and M10 are on; a turn stops, with its
+account, at half the allowance (--turn-usd). RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
+model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
+config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
+report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
+rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
+RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
 (documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
@@ -191,6 +208,12 @@ const { positionals, values } = parseArgs({
     "reflect-budget-usd": { type: "string" },
     alpha: { type: "string" },
     "max-usd": { type: "string" },
+    yes: { type: "boolean" },
+    lean: { type: "boolean" },
+    prose: { type: "boolean" },
+    "no-check": { type: "boolean" },
+    "no-write": { type: "boolean" },
+    rewrite: { type: "boolean" },
     "allow-unpriced": { type: "boolean" },
     "min-gate-problems": { type: "string" },
     ledger: { type: "string" },
@@ -257,6 +280,9 @@ async function main(): Promise<number> {
     if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
+    if (command === "view") return view();
+    if (command === "solve") return await solve();
+    if (command === "doctor") return await doctor();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
@@ -993,6 +1019,51 @@ async function listModels(provider: string | undefined): Promise<number> {
   return 0;
 }
 
+/** `harness solve STATEMENT`: documentation/quickstart.md. */
+async function solve(): Promise<number> {
+  if (target === undefined) throw new UsageError("solve needs a statement: Lean, prose, or a file that holds one");
+  if (third !== undefined) throw new UsageError(`solve takes one statement: put it in quotes (got a second argument, ${JSON.stringify(third)})`);
+  if (values.lean === true && values.prose === true) throw new UsageError("--lean and --prose cannot both be given");
+  const maxUsd = number("max-usd", values["max-usd"], undefined);
+  const turnUsd = number("turn-usd", values["turn-usd"], undefined);
+  const lines = values.lines === undefined ? undefined : selectLines();
+  const controller = stoppable();
+  const codeRev = codeRevision();
+  return await solveCommand(
+    target,
+    {
+      ...(values.host !== undefined ? { host: values.host } : {}),
+      ...(values.model !== undefined ? { model: values.model } : {}),
+      ...(maxUsd !== undefined ? { max: maxUsd } : {}),
+      ...(turnUsd !== undefined ? { turnUsd } : {}),
+      ...(values.out !== undefined ? { out: values.out } : {}),
+      ...(values.as !== undefined ? { as: values.as } : {}),
+      yes: values.yes === true,
+      lean: values.lean === true,
+      prose: values.prose === true,
+      noCheck: values["no-check"] === true,
+      ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
+      ...(lines !== undefined ? { lines } : {}),
+    },
+    { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
+  );
+}
+
+/** `harness doctor`: documentation/quickstart.md. */
+async function doctor(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`doctor takes no argument, got ${target}`);
+  if (values["no-write"] === true && values.rewrite === true) throw new UsageError("--no-write and --rewrite cannot both be given");
+  return await doctorCommand(
+    {
+      ...(values.host !== undefined ? { host: values.host } : {}),
+      ...(values.model !== undefined ? { model: values.model } : {}),
+      noWrite: values["no-write"] === true,
+      rewrite: values.rewrite === true,
+    },
+    { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels() },
+  );
+}
+
 function report(): number {
   if (target === undefined) throw new UsageError("report needs a run directory");
   const journal = join(target, "journal.jsonl");
@@ -1004,6 +1075,21 @@ function report(): number {
   const probed = existsSync(probeFile) ? readInput(() => JSON.parse(readFileSync(probeFile, "utf8")) as ProbeResult) : undefined;
   if (values.json) process.stdout.write(`${JSON.stringify(probed === undefined ? built : { ...built, probe: probed.verdict }, null, 2)}\n`);
   else process.stdout.write(renderRunReport(built) + (probed === undefined ? "" : `\n${renderProbe(probed)}`));
+  // The account of a run whose process died is rebuilt here, from the journal alone.
+  try {
+    writeResult(target);
+  } catch (error) {
+    console.error(`RESULT.md could not be written: ${messageOf(error)}`);
+  }
+  return 0;
+}
+
+/** `harness view RUN_DIR [--out FILE]`: one static page from the journal alone (documentation/quickstart.md, "The view"). */
+function view(): number {
+  const dir = requireTarget("view", "a run directory");
+  if (!existsSync(join(dir, "journal.jsonl"))) throw new InputError(`${dir} is not a run directory: it has no journal.jsonl`);
+  const file = readInput(() => writeView(resolve(dir), values.out !== undefined ? resolve(values.out) : undefined));
+  console.log(`View: ${file}`);
   return 0;
 }
 

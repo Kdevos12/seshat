@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -295,6 +295,30 @@ describe("harness report", () => {
     assert.equal(json.stdout, readFileSync(join(dir, "report.json"), "utf8"));
   });
 
+  it("rebuilds RESULT.md for a run whose process died, and view writes one page of it", async () => {
+    const full = await demoRun({ responses: [check("exact trivial_proof")] });
+    // The process died before it wrote anything of its own: no report, no RESULT.md.
+    const dead = killedAt(full.dir, (e) => e.type === "validation.finished");
+    assert.ok(!existsSync(join(dead, "report.md")));
+    rmSync(join(dead, "RESULT.md"), { force: true });
+    const report = await harness(["report", dead]);
+    assert.equal(report.code, 0, report.stderr);
+    const text = readFileSync(join(dead, "RESULT.md"), "utf8");
+    assert.match(text, /The journal has no end/);
+    assert.match(text, /pnpm harness resume .* --checkout /);
+    const page = await harness(["view", dead]);
+    assert.equal(page.code, 0, page.stderr);
+    assert.match(page.stdout, /^View: .*view\.html$/m);
+    assert.match(readFileSync(join(dead, "view.html"), "utf8"), /^<!doctype html>/);
+    const elsewhere = join(tempDir(), "page.html");
+    assert.equal((await harness(["view", dead, "--out", elsewhere])).code, 0);
+    assert.ok(existsSync(elsewhere));
+    const none = await harness(["view", tempDir()]);
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /is not a run directory/);
+    assert.equal((await harness(["view"])).code, 2);
+  });
+
   it("refuses a directory that holds no run", async () => {
     const empty = tempDir();
     const none = await harness(["report", empty]);
@@ -305,6 +329,44 @@ describe("harness report", () => {
     assert.equal(unstarted.code, 2);
     assert.match(unstarted.stderr, /the run did not start, its journal is empty$/m);
     assert.equal((await harness(["report"])).code, 2);
+  });
+});
+
+/** Removes every credential from the environment, except the Lean server's, so that pi-ai finds no provider. */
+const WITHOUT_CREDENTIALS: Record<string, undefined> = Object.fromEntries(
+  Object.keys(process.env).filter((name) => /KEY|TOKEN|SECRET|CREDENTIALS/i.test(name) && name !== "LEAN_SERVER_API_KEY").map((name) => [name, undefined]),
+);
+
+describe("harness doctor and harness solve", () => {
+  let server: Server;
+  let url = "";
+  before(async () => {
+    server = fakeKimina();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  after(() => server.close());
+
+  it("says in plain words what is missing and what to do, and exits 1", async () => {
+    const r = await harness(["doctor", "--no-write", "--host", "local"], { ...WITHOUT_CREDENTIALS, LEAN_SERVER_API_URL: url, PATH: "/nowhere" });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /^ok +Kimina Lean server: .* answers\.$/m);
+    assert.match(r.stdout, /^MISSING +Lean: Lean 4 is not installed here/m);
+    assert.match(r.stdout, /^ +What to do: Install Lean with elan/m);
+    assert.match(r.stdout, /^MISSING +Model credentials: No model provider has credentials/m);
+    assert.match(r.stdout, /^warning +Certifier isolation: This machine has no isolation for the certifier.*stays? `computed`/m);
+    assert.match(r.stdout, /Without isolation for the certifier, a run can only reach `computed`/);
+    const nothingWritten = await harness(["doctor", "--no-write", "--rewrite"]);
+    assert.equal(nothingWritten.code, 2);
+  });
+
+  it("refuses to solve without a statement, with both readings, or with no model it can choose, before anything is spent", async () => {
+    assert.equal((await harness(["solve"])).code, 2);
+    assert.equal((await harness(["solve", "(n : ℕ) : n = n", "--lean", "--prose"])).code, 2);
+    const none = await harness(["solve", "(n : ℕ) : n = n", "--out", join(tempDir(), "run")], { ...WITHOUT_CREDENTIALS, LEAN_SERVER_API_URL: url });
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /No model can be chosen/);
+    assert.match(none.stderr, /harness doctor/);
   });
 });
 

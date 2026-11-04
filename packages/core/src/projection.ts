@@ -811,6 +811,9 @@ export class Projection {
       case "pack.installed":
       case "pack.removed":
         return;
+      // A person's signature of the statement a run works on: a record for the account and the view, no table.
+      case "statement.signed":
+        return;
       case "memory.epoch_opened": {
         const d = event.data;
         db.prepare("insert into epochs (epoch, seq, reason, changes_json, provenance_json) values (?, ?, ?, ?, ?)").run(
