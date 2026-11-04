@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-04 UTC. `main` at the Task 30 merge, 2516 tests; `task/t31` (implemented, not merged) adds the local interface.
+Updated 2026-11-04 UTC. `main` at the atp.eprover merge (1a15014), 2594 tests; Tasks 1 to 31 and atp.eprover merged.
 
 ## Tasks
 
