@@ -399,12 +399,15 @@ through the translator in the tests; Vampire has not run: no binary was availabl
 E (Stephan Schulz's equational prover) on a TPTP problem, the second ATP beside `atp.vampire`: same
 manifest shape, same input (`tptp`, `timeoutSec`), same output (`szs`, `result`, `used`, `exitCode`,
 `elapsedMs`, `proof`, `detail`), plus an optional `version`, the first line of `eprover --version`,
-read once per process and recorded in every tool run. It is a process (factory `eprover`; the command
+read in the background from the first call (a hanging `--version` delays no answer by more than half a second, three attempts at most, an empty or failed answer is not kept) and recorded in the tool runs that have it. It is a process (factory `eprover`; the command
 is a setting, `EPROVER_COMMAND`, default `eprover`) run as `eprover --auto --proof-object
 --tstp-format --cpu-limit=N --memory-limit=M` with the problem on standard input, in the same empty
 directory, minimal environment and process group as the other solvers, and the same TPTP screen. The
 answer is read by the shared `readSzs` from the SZS status line (E prints it after `#`, Vampire after
-`%`) and the exit code, never from the prose; the axioms used are the `file(...)` annotations of the
+`%`, and each reader accepts only its own prefix) and the exit code, never from the prose. Complete
+`SZS output start..end` blocks are left out and the last status line outside them is the answer, so a
+status that an input made the prover echo (a comment, a quoted atom, a formula) does not decide; this
+holds for Vampire too; the axioms used are the `file(...)` annotations of the
 proof. `theorem` is evidence at most, as for Vampire: the claim changes only when the premises are
 handed to `grind`, `aesop` or `hammer` and Lean accepts the result through `validate` (Rulings 13 and
 22). The capability is `deferred`, `optional` in both profiles, and `unavailable` where no binary is
@@ -414,7 +417,8 @@ installed.
 (E's download page, https://wwwlehre.dhbw-stuttgart.de/~sschulz/E/Download.html; the repository's
 `COPYING` is the GPL, Version 2, June 1991: https://github.com/eprover/eprover). Seshat never bundles,
 links or redistributes E: it starts the user's own installation as a separate program and reads its
-text output, which the GPL does not restrict. Whether the licence is "version 2 only" or "or later"
+text output. That this use is compatible with the licence is our reading, not a statement of the
+sources above. Whether the licence is "version 2 only" or "or later"
 was not checked.
 
 **To verify against a real binary** (nothing here has run, no E binary was available): that E reads the

@@ -355,7 +355,7 @@ export function describeTried(memory: MemoryStore, claimId: string): string | un
       lines.push(
         `${[...new Set(d.evidence.map((e) => e.tool === "smt.z3" ? "z3" : e.tool === "atp.eprover" ? "E" : "Vampire"))].join(" and ")} proved the goal in the encoded theory${d.union.length > 0 ? `, using ${d.union.join(", ")}` : ""}; ${d.solved !== undefined ? `Lean accepted ${d.solved.tactic}` : "Lean did not accept any reconstruction with grind, aesop or hammer, so this is evidence and no proof"}.`,
       );
-    } else if (d.missing.length < 2) lines.push("ATP and SMT found nothing.");
+    } else if (d.tools !== undefined ? d.tools.some((t) => !d.missing.includes(t)) : d.missing.length < 2) lines.push("ATP and SMT found nothing.");
   }
   for (const node of memory.nodes("search_run", { claimId })) {
     const d = node.data as { solved: boolean; tried: number };

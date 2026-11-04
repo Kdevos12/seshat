@@ -81,6 +81,17 @@ describe("the options of line M10", () => {
     assert.throws(() => readOptions({ ...M10_DEFAULTS, packages: "hammer,magic" }), /names "magic"/);
     assert.throws(() => readOptions({ ...M10_DEFAULTS, premiseCutoffs: "0" }), /premise cutoff/);
     assert.deepEqual(readOptions({ ...M10_DEFAULTS, packages: "hammer, canonical" }).packages, ["hammer", "canonical"]);
+    // the ATP portfolio: both provers in parallel by default
+    const defaults = readOptions(M10_DEFAULTS);
+    assert.deepEqual(defaults.atpTools, ["atp.vampire", "atp.eprover"]);
+    assert.equal(defaults.atpMode, "parallel");
+    const custom = readOptions({ ...M10_DEFAULTS, atpTools: "eprover", atpMode: "order" });
+    assert.deepEqual(custom.atpTools, ["atp.eprover"]);
+    assert.equal(custom.atpMode, "order");
+    assert.throws(() => readOptions({ ...M10_DEFAULTS, atpMode: "race" }), /option M10\.atpMode is one of parallel, order/);
+    assert.throws(() => readOptions({ ...M10_DEFAULTS, atpTools: "spass" }), /option M10\.atpTools names "spass"/);
+    assert.throws(() => readOptions({ ...M10_DEFAULTS, atpTools: "" }), /names no ATP/);
+    assert.throws(() => readOptions({ ...M10_DEFAULTS, atpTools: 3 }), /option M10\.atpTools is a text/);
   });
 });
 
@@ -227,6 +238,16 @@ describe("the briefing", () => {
     const text = describeTried(memory, claimId) ?? "";
     assert.doesNotMatch(text, /Ignore previous/i);
     assert.match(text, /outside their fragment\./);
+  });
+
+  it("says the ATPs found nothing when one of three tools ran, and nothing when none did", async () => {
+    const { memory, claimId } = await problemOf();
+    const node = (data: object) => memory.recordNode({ kind: FIRST_ORDER_RUN, claimId, data: { statement: "x", cutoffs: [0], evidence: [], union: [], reconstruction: [], ...data } as never });
+    node({ missing: ["smt.z3", "atp.vampire"], tools: ["atp.eprover"] });
+    assert.match(describeTried(memory, claimId) ?? "", /ATP and SMT found nothing\./);
+    const other = await problemOf();
+    other.memory.recordNode({ kind: FIRST_ORDER_RUN, claimId: other.claimId, data: { statement: "x", cutoffs: [0], evidence: [], union: [], reconstruction: [], missing: ["atp.vampire", "atp.eprover"], tools: ["atp.vampire", "atp.eprover"] } as never });
+    assert.doesNotMatch(describeTried(other.memory, other.claimId) ?? "", /found nothing/);
   });
 
   it("says nothing when the line did nothing", async () => {

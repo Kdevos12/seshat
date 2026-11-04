@@ -332,6 +332,10 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   listed there as "to verify"). Decisions the plan does not state: `--silent` is not passed (it may hide
   the proof); the portfolio default is parallel with both provers; `order` mode reconstructs after
   each prover; an ATP named in `atpTools` but not offered is skipped without error.
+  Review round 1 fixes: the SZS reader leaves proof blocks out, takes the last status and accepts only its
+  prover's prefix (`%` Vampire, `#` E); evidence is ordered by cutoff and tool; the node `first_order_run`
+  gains the optional `tools`; the version is read in the background; licence wording softened; tests for
+  `atpTools` and `atpMode` through `readOptions`.
 
 ## Log
 
