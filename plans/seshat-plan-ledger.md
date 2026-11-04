@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-04 UTC. `main` at b666bda, 2404 tests.
+Updated 2026-11-04 UTC. `main` at the Task 30 merge, 2516 tests.
 
 ## Tasks
 
@@ -40,7 +40,7 @@ Updated 2026-11-04 UTC. `main` at b666bda, 2404 tests.
 | 27 | Installable packs: tools and skills (PD7) | main | merged | `task/t27` | `50f0792` |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | 29 | Proportionate budgets: gate, probe first, `budget.*` decide sites (PB1 to PB5) | main | merged (`1c96731`) | `task/t29` | Review round 1 fixed (stopped probe reconsidered per turn, journal checks floor and decide rows, request-keyed draws, minSessions). Not done: PB5's clause on strategies the failure memory holds as exhausted (no hard state; the gate prices past failures through a lower success chance). Simulated only; avoided dollars are an estimate; not run against a real model or Jev. |
-| 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | implemented on `task/t30`, not pushed, not reviewed | `task/t30` | after Task 29 |
+| 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | merged (`0ab8147`) | `task/t30` | Review round 1 fixed (strict screen and signature for user Lean, bounded formalization spend, host in the resume command, sandbox probe runs the real recipe, Markdown escaping, shell quoting). Open: the signature is not cross-checked against the claim; an `afterStart` that throws leaves a started journal without a signature. Simulated only: no real bubblewrap, Docker, model or Lean. |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
