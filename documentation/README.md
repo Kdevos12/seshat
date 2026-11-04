@@ -90,6 +90,8 @@ blocks the Lean toolchain downloads and has no model credentials.
   anchored revisions, the drift detectors, and the `drift` nodes they write.
 - [fleet.md](fleet.md): the fleet line: posteriors per strategy and model, Thompson sampling, adaptive
   width, escalation, and the `allocation` nodes.
+- [quickstart.md](quickstart.md): a problem of your own with the least friction: `RESULT.md` (what a run leaves,
+  whatever stopped it) and `harness view` (one static HTML page of a run).
 - [human.md](human.md): consortium mode: turns that end at a limit or a breakpoint, the account of
   each turn, the team's hints, signatures and steers, and what an answer can and cannot change.
 - [validator.md](validator.md): problem sketches, the editable regions, the checks.
