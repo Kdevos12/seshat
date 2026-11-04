@@ -4,6 +4,7 @@ import type { ProblemEntry } from "@seshat/bench";
 import { BlobStore, hashJson, type Json, readEvents } from "@seshat/core";
 import { cegisCounter } from "@seshat/induction";
 import { type DecideSettings, checkDecideSettings } from "@seshat/decide";
+import type { GateSettings } from "@seshat/scheduler";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER, type LineRegistry, resolveLines, SUSPENDED_LINES } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
 import { LINES } from "./lines.ts";
@@ -29,6 +30,8 @@ export interface Arm {
   lineOptions?: Record<string, JsonObject>;
   packetMode?: PacketMode;
   decide?: DecideSettings;
+  /** The budget gate of this arm (documentation/scheduler.md, "The budget gate"): its settings, `false` for none even when the table has one. Absent: the table's. */
+  gate?: GateSettings | false;
   /** Another model than the table's. */
   model?: string;
   /** Direct capabilities besides `lean_check` (the table's, when absent). */
@@ -54,7 +57,8 @@ export function cumulativeArms(names: readonly string[] = cumulativeNames()): Ar
 
 /** The run configuration of an arm: the table's, with the arm's lines and settings. */
 export function armConfig(base: RunConfig, arm: Arm): RunConfig {
-  const { lines: _lines, lineOptions: _options, packetMode: _mode, decide: _decide, tools: _tools, prompts: _prompts, ...shared } = base;
+  const { lines: _lines, lineOptions: _options, packetMode: _mode, decide: _decide, tools: _tools, prompts: _prompts, gate: baseGate, ...shared } = base;
+  const gate = arm.gate === undefined ? baseGate : arm.gate === false ? undefined : arm.gate;
   return {
     ...shared,
     ...(arm.model !== undefined ? { model: arm.model } : {}),
@@ -64,6 +68,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
     ...(arm.packetMode !== undefined ? { packetMode: arm.packetMode } : {}),
     ...(arm.decide !== undefined ? { decide: arm.decide } : {}),
     ...(arm.prompts !== undefined ? { prompts: arm.prompts } : {}),
+    ...(gate !== undefined ? { gate } : {}),
   };
 }
 
