@@ -13,10 +13,15 @@ export interface EventLogOptions {
    * that a refusal leaves the journal's bytes as they were. Default false: the repair is made on open.
    */
   deferRepair?: boolean;
+  /** The person every event of this journal is on behalf of (`user` of the envelope); an `append` may name another. */
+  user?: string;
   /** fsync after every append. Slower; use when a crash must not lose the last events. */
   durable?: boolean;
   now?: () => Date;
 }
+
+/** A user is a short name: letters, digits, dots, underscores and dashes. */
+export const USER_NAME = /^[\p{L}\p{N}._-]{1,64}$/u;
 
 export type EventListener = (event: HarnessEvent) => void;
 
@@ -33,6 +38,7 @@ export class EventLog {
   private lastHash: string;
   private readonly durable: boolean;
   private readonly now: () => Date;
+  private readonly user: string | undefined;
   private listeners: EventListener[] = [];
   /** What a crash left at the end and was dealt with, or, while the repair is deferred, what is waiting to be. */
   recovered: TornTail | undefined;
@@ -48,6 +54,7 @@ export class EventLog {
     this.run = options.run;
     this.durable = options.durable ?? false;
     this.now = options.now ?? (() => new Date());
+    this.user = options.user;
     const last = existing.at(-1);
     this.nextSeq = existing.length;
     this.lastHash = last?.hash ?? "";
@@ -99,7 +106,7 @@ export class EventLog {
     };
   }
 
-  append<K extends EventType>(type: K, data: EventDataMap[K], actor: string): Extract<HarnessEvent, { type: K }> {
+  append<K extends EventType>(type: K, data: EventDataMap[K], actor: string, user?: string): Extract<HarnessEvent, { type: K }> {
     if (this.fd < 0) throw new Error("journal is closed");
     if (this.repairPending) throw new Error(`journal ${this.path} ends in a line a crash cut: repair() it before appending`);
     const body = {
@@ -109,6 +116,7 @@ export class EventLog {
       ts: this.now().toISOString(),
       run: this.run,
       actor,
+      ...((user ?? this.user) !== undefined ? { user: (user ?? this.user) as string } : {}),
       type,
       data,
       prev: this.lastHash,
@@ -217,6 +225,7 @@ function isEnvelope(value: unknown): value is HarnessEvent {
     typeof e.ts === "string" &&
     typeof e.run === "string" &&
     typeof e.actor === "string" &&
+    (e.user === undefined || typeof e.user === "string") &&
     isEventType(e.type) &&
     typeof e.data === "object" &&
     e.data !== null &&

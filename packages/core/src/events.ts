@@ -19,6 +19,12 @@ export interface EventEnvelope<T extends string = string, D = unknown> {
   run: string;
   /** Who produced the fact: `orchestrator`, `prover:<id>`, `validator`, a capability id... */
   actor: string;
+  /**
+   * The person on whose behalf the fact was produced, when the run is shared by several people (Task 30,
+   * documentation/journal.md). Optional and additive: an event without it hashes exactly as before, and
+   * it says nothing of trust, which `actor` carries.
+   */
+  user?: string;
   type: T;
   data: D;
   /** Hash of the previous event, "" for the first one. */
@@ -630,6 +636,31 @@ export interface EventDataMap {
     hash: string;
   };
   /**
+   * A person signed the statement a run works on (`harness solve`, documentation/quickstart.md): the Lean statement a model
+   * formalized from their prose, shown to them with the test lemmas that were tried on it, before the run spends anything on
+   * proving it. Written by `human:NAME` only, as the first event after `run.started`. It changes no claim: it records which
+   * statement the person accepted as the meaning of their words, and what the formalization cost (`formalization`, charged
+   * before the run's own budget starts). A statement the person wrote in Lean is `source: "lean"` and has no prose.
+   */
+  "statement.signed": {
+    source: "prose" | "lean";
+    /** The person's words, for a prose statement. */
+    prose?: string;
+    /** The Lean statement in signature form that was signed. */
+    statement: string;
+    statementId: string;
+    /** The problem the run works on, which the statement is the target of. */
+    problemId: string;
+    /** `provider/id` of the model that formalized the prose. */
+    model?: string;
+    /** The formalization call: its request and response are blobs of the run, and its cost is not in the run's budget. */
+    formalization?: { requestHash: string; responseHash: string; usd: number; inputTokens: number; outputTokens: number };
+    /** What the first cases said of the statement: Lean's `decide` on the first numbers (`passed`, `failed`, `skipped`, `inconclusive`). */
+    testLemmas?: { result: string; tried: number; failedAt?: number; note?: string };
+    /** The statement is closed by cheap automation (`by` names the tactics): the person signed it knowing. */
+    trivial?: { by: string };
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -681,6 +712,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "task.routed",
   "ladder.escalated",
   "memory.epoch_opened",
+  "statement.signed",
   "decision.made",
   "budget.gated",
   "pack.installed",

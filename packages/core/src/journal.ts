@@ -4,7 +4,7 @@ import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisions.ts";
 import { type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
-import { EventLog, readEvents } from "./log.ts";
+import { EventLog, readEvents, USER_NAME } from "./log.ts";
 import { HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
 import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
@@ -71,8 +71,9 @@ export class Journal {
    * already has events reads its own chain from its `run.started`, checked against what it pinned
    * (`MemoryChainError` when an earlier journal is gone or changed).
    */
-  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean; memory?: MemoryChain } = {}): Journal {
+  static open(dir: string, run: string, options: { durable?: boolean; deferRepair?: boolean; memory?: MemoryChain; user?: string } = {}): Journal {
     const { memory, ...logOptions } = options;
+    if (options.user !== undefined && !USER_NAME.test(options.user)) throw new Error(`user ${JSON.stringify(options.user)}: a user is 1 to 64 letters, digits, dots, underscores and dashes`);
     const file = join(dir, "journal.jsonl");
     const chain = memory ?? chainOfJournal(file);
     mkdirSync(dir, { recursive: true });
@@ -102,9 +103,11 @@ export class Journal {
     }
   }
 
-  emit<K extends EventType>(type: K, data: EventDataMap[K], actor: string): Extract<HarnessEvent, { type: K }> {
+  /** `options.user` is the person the event is on behalf of, when it is not the journal's own (`Journal.open`'s `user`). */
+  emit<K extends EventType>(type: K, data: EventDataMap[K], actor: string, options: { user?: string } = {}): Extract<HarnessEvent, { type: K }> {
     this.check({ type, data } as EventBody, actor);
-    return this.log.append(type, data, actor);
+    if (options.user !== undefined && !USER_NAME.test(options.user)) throw new Error(`user ${JSON.stringify(options.user)}: a user is 1 to 64 letters, digits, dots, underscores and dashes`);
+    return this.log.append(type, data, actor, options.user);
   }
 
   private check(event: EventBody, actor: string): void {
@@ -354,6 +357,15 @@ export class Journal {
         if (typeof d.name !== "string" || !/^[a-z][a-z0-9-]*$/.test(d.name)) throw new Error(`${event.type}: bad pack name ${JSON.stringify(d.name)}`);
         if (typeof d.version !== "string" || d.version === "") throw new Error(`${event.type}: pack ${d.name} needs a version`);
         if (typeof d.hash !== "string" || !/^[0-9a-f]{64}$/.test(d.hash)) throw new Error(`${event.type}: pack ${d.name} needs the sha256 of its content`);
+        return;
+      }
+      case "statement.signed": {
+        const d = event.data;
+        if (!actor.startsWith("human:")) throw new Error(`statement.signed is a person's signature, written by human:NAME, not by ${actor}`);
+        if (d.source !== "prose" && d.source !== "lean") throw new Error(`statement.signed: source is prose or lean, not ${String(d.source)}`);
+        if (typeof d.statement !== "string" || d.statement.trim() === "") throw new Error("statement.signed names the statement that was signed");
+        if (d.source === "prose" && (typeof d.prose !== "string" || d.prose.trim() === "")) throw new Error("statement.signed: a prose statement carries the person's prose");
+        if (typeof d.problemId !== "string" || d.problemId === "") throw new Error("statement.signed names the problem the statement is the target of");
         return;
       }
       case "memory.epoch_opened": {

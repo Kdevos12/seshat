@@ -27,6 +27,7 @@ Each line is an envelope (`packages/core/src/events.ts`):
 | `ts` | ISO 8601 time of the append. |
 | `run` | Run id. |
 | `actor` | Who produced the fact: `orchestrator`, `prover:<id>`, `validator`, a capability id. |
+| `user` | Optional. The person on whose behalf the fact was produced, when several people share a run (`Journal.open(dir, run, {user})`, or `emit(..., {user})` for one event). Absent in a journal of one user: an event without it hashes exactly as it did before the field existed. It is a label, not a credential: trust is carried by `actor` (`human:NAME`), and a name of `user` is 1 to 64 letters, digits, dots, underscores and dashes. |
 | `type`, `data` | The fact. |
 | `prev` | Hash of the previous event, empty for the first. |
 | `hash` | sha256 of the canonical JSON of the envelope without `hash`. |
@@ -68,6 +69,7 @@ Event types:
 | `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
 | `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
 | `budget.gated` | `problemId`, `site` (`wave`, `session`, `task`, `judge`), `action` (`launch`, `probe`, `skip`, `widen`), `by` (`rule`, `floor`, `probe`, `progress`, `decide`, `memory`), `estimateUsd`, `remainingUsd`, `budgetUsd`, `share`, `pSuccess?`, `thresholdUsd?`, `rung`, `exploration`, `progress?`, `prover?`, `session?`, `taskId?`, `decisionId?`, `reason` |
+| `statement.signed` | `source` (`prose`, `lean`), `prose?`, `statement`, `statementId`, `problemId`, `model?`, `formalization?` (`requestHash`, `responseHash`, `usd`, `inputTokens`, `outputTokens`), `testLemmas?` (`result`, `tried`, `failedAt?`, `note?`), `trivial?` (`by`): a person signed the Lean statement a run works on, as the first event after `run.started` ([quickstart.md](quickstart.md#a-statement-in-words)). Written by `human:NAME` only; it changes no claim |
 | `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `programs`, `source` |
 | `pack.removed` | `name`, `version`, `hash` |
 
