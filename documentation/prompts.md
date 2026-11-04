@@ -74,6 +74,14 @@ Off by default, outside every ablation run and never part of a research run. Pro
 
 Every measurement is one `harness ablate` arm: `Arm.prompts` with the baseline configuration (M0 and the `--tool` capabilities), so the numbers are read from the journals like any ablation's.
 
+### Resuming
+
+A model call and a measurement are money, so a cut-off optimization (a crash, a kill, Ctrl-C, the cap) is not thrown away. Every answer of the rewriting model is
+written to `optimization.partial.json` as it arrives, and each finished measurement keeps its `done.json` under `work/`. Run the same command again with the
+same `--out` and the same arguments: the search is seeded, so it replays the recorded rewrites without asking the model again and without running a finished
+measurement again, and goes on from the first thing that did not finish (a measurement that was cut off is set aside as `NAME.partial-N`, never deleted). A
+directory made with other problems, seed, cutoff, models or plan is refused. The ledger entry of the gate is one per directory.
+
 ### What it can spend
 
 `--max-usd` is required: a cap in dollars on the whole optimization, the measurements as their journals count them plus the rewriting model. At the start the

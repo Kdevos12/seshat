@@ -188,7 +188,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     assert.equal(sha256Hex(readFileSync(promptFile, "utf8")), before, "no prompt changed");
     // Everything the command wrote of its own is a proposal, and the measurements are under work/.
     const written = files(dir);
-    assert.ok(written.every((f) => /^(report\.md|optimization\.json|candidates\/c\d+\/[\w.-]+\.(txt|json|patch)|work\/.+)$/.test(f)), written.join("\n"));
+    assert.ok(written.every((f) => /^(report\.md|optimization(?:\.partial)?\.json|candidates\/c\d+\/[\w.-]+\.(txt|json|patch)|work\/.+)$/.test(f)), written.join("\n"));
     assert.ok(written.includes("candidates/c1/prompt.txt") && written.includes("candidates/c1/prover.system.patch") && written.includes("candidates/c1/evidence.json"));
     const evidence = JSON.parse(readFileSync(join(dir, "candidates/c1/evidence.json"), "utf8"));
     assert.deepEqual(provenanceProblems(evidence.provenance), []);
@@ -316,6 +316,36 @@ describe("harness optimize-prompts on a simulated bench", () => {
     assert.ok(o.spentUsd > 0);
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Everything spent: \$[\d.]+ of a cap of \$90\.000/);
     assert.match(String(o.stoppedBy), /spent|room for/);
+  });
+
+  it("goes on from where a cut-off optimization stopped: the rewrites are replayed and the finished measurements are not run again", async () => {
+    const dir = join(tempDir("mh-opt-"), "out");
+    const ledger = join(tempDir("mh-ledger-"), "gate-ledger.json");
+    const ran: string[] = [];
+    let cut = true;
+    const inner = fakeRun();
+    const run = async (o: RunOptions): Promise<RunResult> => {
+      if (cut && o.dir.includes("heldout")) throw new Error("the process was killed");
+      ran.push(o.dir.split("/work/")[1]?.split("/")[0] ?? "");
+      return await inner(o);
+    };
+    let asked = 0;
+    const reflect = async () => { asked += 1; return { text: `<prompt>\n${improved}\n</prompt>`, usd: 0.01 }; };
+    await assert.rejects(optimizePromptsCommand(command(dir, { run, reflect, ledger }).args), /killed/);
+    assert.ok(existsSync(join(dir, "optimization.partial.json")));
+    assert.equal(existsSync(join(dir, "report.md")), false);
+    const firstRuns = [...ran];
+    assert.ok(firstRuns.includes("baseline-dev") && firstRuns.includes("c1-batch1"));
+    assert.equal(asked, 2);
+    // A different plan is refused; the same one goes on.
+    await assert.rejects(optimizePromptsCommand(command(dir, { run, reflect, ledger, iterations: 3 }).args), /cut-off optimization made with other/);
+    cut = false;
+    ran.length = 0;
+    const result = await optimizePromptsCommand(command(dir, { run, reflect: async () => { throw new Error("must not be asked again"); }, ledger }).args);
+    assert.equal(result.finalists[0]?.status, "accepted");
+    assert.ok(!ran.includes("baseline-dev") && !ran.includes("c1-batch1") && !ran.includes("c1-dev"), `finished measurements ran again: ${ran.join(", ")}`);
+    assert.ok(ran.some((x) => x.includes("heldout")));
+    assert.equal(JSON.parse(readFileSync(ledger, "utf8")).length, 1, "the same optimization is one entry of the ledger");
   });
 
   it("renders a report that says no candidate was measured when none beat the merged prompt on dev", async () => {

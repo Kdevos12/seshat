@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Models } from "@earendil-works/pi-ai";
 import type { ProblemEntry } from "@seshat/bench";
-import { budgetClassOf, type HarnessEvent, type Json, readEvents, sha256Hex } from "@seshat/core";
+import { budgetClassOf, hashJson, type HarnessEvent, type Json, readEvents, sha256Hex } from "@seshat/core";
 import { type AblationInput, runAblation } from "./ablation.ts";
 import { messageCost } from "./budget.ts";
 import { estimateUsd, type Evaluate, type Evaluation, optimizationSplits, optimize, type OptimizationResult, type Reflect, type Score } from "./optimize.ts";
@@ -216,7 +216,7 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
   const ledgerPath = command.ledger ?? join(command.repoRoot, "proposals", "gate-ledger.json");
   const ledger = readLedger(ledgerPath);
   const gateIds = new Set([...splits.heldout, ...splits.temporal].map((p) => `${command.template.index.benchId}\u0000${p.id}`));
-  const spentBefore = ledger.filter((e) => e.problems.some((id) => gateIds.has(`${e.benchId}\u0000${id}`))).map((e) => `${e.at.slice(0, 10)} (${e.out})`);
+  const spentBefore = ledger.filter((e) => e.out !== command.dir && e.problems.some((id) => gateIds.has(`${e.benchId}\u0000${id}`))).map((e) => `${e.at.slice(0, 10)} (${e.out})`);
   if (spentBefore.length > 0 && command.reuseGates !== true) {
     throw new RunSetupError(`problems of the held-out or temporal split were already used as a gate by ${spentBefore.join("; ")}: each reuse selects on the gate a little more. Choose other problems, or go on with --reuse-gates (the report says so)`);
   }
@@ -232,7 +232,43 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
   const log = command.log ?? (() => undefined);
   log(`optimize-prompts: cost at most $${estimate.maximum.toFixed(2)} if every problem of every measurement spends its whole budget; the cap is $${command.maxUsd.toFixed(2)}${estimate.maximum > command.maxUsd ? " (the run stops at the cap and still writes its report)" : ""}`);
   log(`optimize-prompts: ${splits.dev.length} dev, ${splits.heldout.length} held-out and ${splits.temporal.length} temporal problems (newer than ${splits.cutoff})`);
-  const reflect = command.reflect ?? modelReflector({ models: command.template.models, model: reflectorModel, thinkingLevel: command.config.thinkingLevel, ...(command.template.signal !== undefined ? { signal: command.template.signal } : {}) });
+  const rawReflect = command.reflect ?? modelReflector({ models: command.template.models, model: reflectorModel, thinkingLevel: command.config.thinkingLevel, ...(command.template.signal !== undefined ? { signal: command.template.signal } : {}) });
+  // A cut-off optimization goes on from what it recorded: each answer of the rewriting model is kept as it comes, the measurements that finished
+  // are kept by the ablation runner, and the search, which is seeded, replays to the same place (documentation/prompts.md, "Resuming").
+  const identity = hashJson({
+    target: target.id, seed, cutoff: splits.cutoff, bench: command.template.index.benchId, reflectorModel, model: command.config.model,
+    dev: splits.dev.map((p) => p.id), heldout: splits.heldout.map((p) => p.id), temporal: splits.temporal.map((p) => p.id),
+    iterations: command.iterations ?? 8, minibatch: command.minibatch ?? 3, finalists: command.finalists ?? 2,
+  });
+  const partialPath = join(command.dir, "optimization.partial.json");
+  let recorded: Array<{ text: string; usd: number } | { error: string }> = [];
+  if (existsSync(partialPath)) {
+    const partial = JSON.parse(readFileSync(partialPath, "utf8")) as { identity: string; reflections: typeof recorded };
+    if (partial.identity !== identity) throw new RunSetupError(`${command.dir} holds a cut-off optimization made with other problems, seed, cutoff, models or plan: resume it with the same arguments, or use a new directory (its measurements are in ${join(command.dir, "work")})`);
+    recorded = partial.reflections;
+    log(`optimize-prompts: resuming a cut-off optimization: ${recorded.length} rewrite${recorded.length === 1 ? "" : "s"} replayed, finished measurements are not run again`);
+  }
+  let calls = 0;
+  const reflect: Reflect = async (request) => {
+    const index = calls;
+    calls += 1;
+    const had = recorded[index];
+    if (had !== undefined) {
+      if ("error" in had) throw new Error(had.error);
+      return had;
+    }
+    try {
+      const answer = await rawReflect(request);
+      recorded.push({ text: answer.text, usd: answer.usd });
+      return answer;
+    } catch (error) {
+      // An answer cut off by Ctrl-C is not an answer: it is asked again when the optimization resumes.
+      if (command.template.signal?.aborted !== true) recorded.push({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    } finally {
+      writer.write("optimization.partial.json", `${JSON.stringify({ identity, reflections: recorded }, null, 2)}\n`);
+    }
+  };
   const result = await optimize({
     target,
     splits,
@@ -256,7 +292,7 @@ export async function optimizePromptsCommand(command: OptimizeCommand): Promise<
     beforeGate: () => {
       // From here the gate is spent, whether or not the run finishes.
       const entry: LedgerEntry = { at: (command.now ?? (() => new Date()))().toISOString(), benchId: command.template.index.benchId, out: command.dir, problems: [...splits.heldout, ...splits.temporal].map((p) => p.id) };
-      new ProposalWriter(dirname(ledgerPath), command.repoRoot).write(basename(ledgerPath), `${JSON.stringify([...ledger, entry], null, 2)}\n`);
+      new ProposalWriter(dirname(ledgerPath), command.repoRoot).write(basename(ledgerPath), `${JSON.stringify([...ledger.filter((e) => e.out !== entry.out), entry], null, 2)}\n`);
     },
     ...(command.now !== undefined ? { now: command.now } : {}),
     log,
