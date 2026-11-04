@@ -139,6 +139,17 @@ describe("the gate", () => {
     assert.match(small.note, /saves less than 5%/);
   });
 
+  it("counts certified outcomes only: a fast-check candidate is no win, and is shown apart", () => {
+    const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), trial([["proved", 1], ["candidate", 1], ["candidate", 1]]), problems, 0.05);
+    assert.equal(g.accepted, false);
+    assert.equal(g.comparison.deltaSolved, 0);
+    assert.deepEqual([g.baseline.solved, g.baseline.candidates, g.candidate.solved, g.candidate.candidates], [1, 0, 1, 2]);
+    const lost = gate("heldout", base([["proved", 1], ["candidate", 1], ["unsolved", 1]]), trial([["candidate", 1], ["candidate", 1], ["candidate", 1]]), problems, 0.05);
+    assert.equal(lost.accepted, false, "more fast-check passes, fewer certified");
+    assert.ok(compareScores({ outcome: "proved", usd: 9 }, { outcome: "candidate", usd: 0.1 }) > 0);
+    assert.ok(compareScores({ outcome: "refuted", usd: 1 }, { outcome: "unsolved", usd: 1 }) > 0);
+  });
+
   it("is not comparable when a split was not finished alike", () => {
     const partial = cand("c1", { [problems[0]!.id]: ["proved", 1] });
     const g = gate("heldout", base([["proved", 1], ["unsolved", 1], ["unsolved", 1]]), partial, problems, 0.05);

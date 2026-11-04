@@ -52,11 +52,13 @@ Off by default, outside every ablation run and never part of a research run. Pro
    by `splitBench` with a problem kept together with its variants. A newer problem whose family is among the older ones is left out of the
    temporal split and listed. The splits are checked to be disjoint. A date comes from `--dates FILE` (problem id to ISO date) or from the first
    commit of the problem's file in the checkout; a problem with no date counts as older. `--split` takes `dev` only: the other splits are never searched.
+"Solved" means certified: `proved` or `refuted` (kernel replay). A problem that passed the fast check only (`candidate`) is not an objective and is shown apart ("+N fast check only") in the report.
+
 2. **Search** (`optimize`, GEPA). The merged prompt is scored on every dev problem (solved or not, and dollars). Each iteration draws a parent
    from the Pareto set, in proportion to the problems it leads on; shows the rewriting model the parent and, for a minibatch of dev problems,
    what happened (outcome, attempts, Lean's last complaints, as data); and takes the rewrite between `<prompt>` tags. The rewrite goes through the
    strict screen, and is run only if it passes. It is kept only if it does better than its parent on the minibatch, and is then scored on the rest of dev.
-   The Pareto set (`paretoFront`) is, per problem, the candidates best on it (a solved problem beats an unsolved one, then cheaper wins), less the dominated ones.
+   The Pareto set (`paretoFront`) is, per problem, the candidates best on it (a certified problem beats the others, then cheaper wins), less the dominated ones.
 3. **Gate** (`gate`). The best finalists of the Pareto set that beat the merged prompt on dev are run, with the merged prompt, on the held-out split and
    on the temporal holdout, under the same configuration and budget. A candidate is accepted only if on both splits it solves more problems, or as many for
    at least 5% less money, over the same finished problems (`compareArms`). Splits not finished alike are not comparable and do not accept. The detail

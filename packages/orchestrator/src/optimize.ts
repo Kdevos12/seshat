@@ -1,7 +1,7 @@
 import { type ProblemEntry, sample, stemOf } from "@seshat/bench";
 import { type Provenance, type ProvenanceContext, sha256Hex, stampProvenance } from "@seshat/core";
 import { splitBench } from "./ablate-command.ts";
-import { compareArms, type Comparison, SOLVED } from "./ablation.ts";
+import { compareArms, type Comparison } from "./ablation.ts";
 import { type PromptTarget, screenPrompt } from "./prompt-screen.ts";
 import { RunSetupError } from "./run.ts";
 
@@ -21,7 +21,22 @@ export interface Score {
   usd: number;
 }
 
-export const isSolved = (s: Pick<Score, "outcome">): boolean => SOLVED.has(s.outcome);
+/**
+ * Solved means certified: `proved` or `refuted`, which only the certifier's kernel replay makes. A `candidate` passed the fast check and nothing
+ * more, so it is not an objective: a prompt that raised fast-check passes that later fail the replay would look like a win. Candidates are counted
+ * apart (`totals`, the report).
+ */
+export const isSolved = (s: Pick<Score, "outcome">): boolean => s.outcome === "proved" || s.outcome === "refuted";
+
+/** A problem's result counted for what the fast check alone said. */
+export const isFastCheckOnly = (s: Pick<Score, "outcome">): boolean => s.outcome === "candidate";
+
+/** What a candidate did over some problems: certified, fast-check only, and dollars. */
+export interface Totals {
+  solved: number;
+  candidates: number;
+  usd: number;
+}
 
 /** What measuring a prompt on problems gives: a score for each, and what happened, as text a model can read. */
 export interface Evaluation {
@@ -56,16 +71,18 @@ export function compareScores(a: Pick<Score, "outcome" | "usd">, b: Pick<Score, 
 }
 
 /** A candidate's totals on problems: solved, and dollars. */
-export function totals(c: Candidate, ids: readonly string[]): { solved: number; usd: number } {
+export function totals(c: Candidate, ids: readonly string[]): Totals {
   let solved = 0;
+  let candidates = 0;
   let usd = 0;
   for (const id of ids) {
     const s = c.scores.get(id);
     if (s === undefined) continue;
     if (isSolved(s)) solved += 1;
+    else if (isFastCheckOnly(s)) candidates += 1;
     usd += s.usd;
   }
-  return { solved, usd };
+  return { solved, candidates, usd };
 }
 
 /** The order of two candidates on problems: more solved, then fewer dollars; 0 when equal. */
@@ -201,8 +218,8 @@ export interface Trial {
   child?: string;
   minibatch: string[];
   /** Dollars the parent and the child spent, and problems each solved, on the minibatch. */
-  parentBatch?: { solved: number; usd: number };
-  childBatch?: { solved: number; usd: number };
+  parentBatch?: Totals;
+  childBatch?: Totals;
   reasons?: string[];
 }
 
@@ -212,8 +229,8 @@ export interface Gate {
   problems: number;
   comparison: Comparison;
   /** The totals over the problems of the split: the merged prompt, then the candidate. */
-  baseline: { solved: number; usd: number };
-  candidate: { solved: number; usd: number };
+  baseline: Totals;
+  candidate: Totals;
   accepted: boolean;
   /** Why not, or the note that goes with a yes. */
   note: string;
@@ -222,7 +239,7 @@ export interface Gate {
 
 export interface Finalist {
   candidate: Candidate;
-  dev: { solved: number; usd: number };
+  dev: Totals;
   gates: Gate[];
   accepted: boolean;
 }
@@ -273,7 +290,7 @@ Rules for your answer:
 export function reflectionPrompt(parent: Candidate, batch: readonly ProblemEntry[]): string {
   const cases = batch.map((p) => {
     const s = parent.scores.get(p.id);
-    const result = s === undefined ? "not run" : `${isSolved(s) ? "solved" : "not solved"} (${s.outcome}), $${s.usd.toFixed(3)}`;
+    const result = s === undefined ? "not run" : `${isSolved(s) ? "certified" : isFastCheckOnly(s) ? "fast check only, not certified" : "not solved"} (${s.outcome}), $${s.usd.toFixed(3)}`;
     return `## ${p.fullName}\n${result}\n${parent.feedback.get(p.id) ?? "(no details)"}`;
   });
   return `# The current prompt\n<prompt>\n${parent.text}\n</prompt>\n\n# What the prover did with it\n${cases.join("\n\n")}\n\nWrite the improved prompt.`;
@@ -300,10 +317,9 @@ function scoresOf(evaluation: Evaluation, problems: readonly ProblemEntry[]): Ma
  * person weighs it.
  */
 export function gate(split: Gate["split"], baseline: Candidate, candidate: Candidate, problems: readonly ProblemEntry[], minSavings: number, dirs?: string): Gate {
-  const comparison = compareArms("candidate", { perProblem: [...candidate.scores.values()].map((s) => ({ problemId: s.problemId, outcome: s.outcome, usd: s.usd })) }, {
-    name: "merged prompt",
-    measures: { perProblem: [...baseline.scores.values()].map((s) => ({ problemId: s.problemId, outcome: s.outcome, usd: s.usd })) },
-  });
+  // Compared on certified outcomes only: a fast-check candidate counts as not solved on both sides.
+  const certified = (c: Candidate) => [...c.scores.values()].map((s) => ({ problemId: s.problemId, outcome: isSolved(s) ? "proved" : "unsolved", usd: s.usd }));
+  const comparison = compareArms("candidate", { perProblem: certified(candidate) }, { name: "merged prompt", measures: { perProblem: certified(baseline) } });
   const ids = problems.map((p) => p.id);
   const b = totals(baseline, ids);
   const c = totals(candidate, ids);

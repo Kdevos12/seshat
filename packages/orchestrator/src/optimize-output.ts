@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { type Candidate, type Finalist, type OptimizationResult, type OptimizationSplits, totals } from "./optimize.ts";
+import { type Candidate, type Finalist, type OptimizationResult, type OptimizationSplits, totals, type Totals } from "./optimize.ts";
 import { type PromptTarget, screenPrompt, targetProblems } from "./prompt-screen.ts";
 import { labelLines, type RunLabel } from "./run-label.ts";
 import { RunSetupError } from "./run.ts";
@@ -130,6 +130,8 @@ export function patchFor(target: PromptTarget, candidate: string, repoRoot: stri
 }
 
 const usd = (x: number) => `$${x.toFixed(3)}`;
+/** "3 certified" or "3 certified (+2 fast check only)". */
+const count = (t: Totals) => `${t.solved} certified${t.candidates > 0 ? ` (+${t.candidates} fast check only)` : ""}`;
 
 export interface ReportMeta {
   label: RunLabel;
@@ -173,16 +175,16 @@ export function renderOptimization(result: OptimizationResult, meta: ReportMeta)
     "| Iteration | Parent | Outcome | Child | Minibatch (parent, child) | Why |",
     "|---|---|---|---|---|---|",
     ...result.trials.map((t) =>
-      `| ${t.iteration} | ${t.parent} | ${t.status.replace(/_/g, " ")} | ${t.child ?? ""} | ${t.parentBatch !== undefined && t.childBatch !== undefined ? `${t.parentBatch.solved} solved ${usd(t.parentBatch.usd)}, ${t.childBatch.solved} solved ${usd(t.childBatch.usd)}` : ""} | ${(t.reasons ?? []).join("; ").replace(/\|/g, "/")} |`,
+      `| ${t.iteration} | ${t.parent} | ${t.status.replace(/_/g, " ")} | ${t.child ?? ""} | ${t.parentBatch !== undefined && t.childBatch !== undefined ? `${count(t.parentBatch)} ${usd(t.parentBatch.usd)}, ${count(t.childBatch)} ${usd(t.childBatch.usd)}` : ""} | ${(t.reasons ?? []).join("; ").replace(/\|/g, "/")} |`,
     ),
     "",
     "## Pareto set on dev",
     "",
-    `The merged prompt (c0) solves ${totals(result.baseline, dev).solved} of ${dev.length} dev problems for ${usd(totals(result.baseline, dev).usd)}. A member is the best prompt on at least one problem and dominated by no other.`,
+    `Solved means certified (proved or refuted by kernel replay); a candidate that passed the fast check only is counted apart and is not an objective. The merged prompt (c0) has ${count(totals(result.baseline, dev))} of ${dev.length} dev problems for ${usd(totals(result.baseline, dev).usd)}. A member is the best prompt on at least one problem and dominated by no other.`,
     "",
     "| Candidate | From | Solved | Dollars | Best on |",
     "|---|---|---|---|---|",
-    ...result.front.members.map((c: Candidate) => `| ${c.id} | ${c.parent ?? "the merged prompt"} | ${totals(c, dev).solved} of ${dev.length} | ${usd(totals(c, dev).usd)} | ${(result.front.leads.get(c.id) ?? []).length} problem(s) |`),
+    ...result.front.members.map((c: Candidate) => `| ${c.id} | ${c.parent ?? "the merged prompt"} | ${count(totals(c, dev))} of ${dev.length} | ${usd(totals(c, dev).usd)} | ${(result.front.leads.get(c.id) ?? []).length} problem(s) |`),
     "",
     "## Finalists against the merged prompt",
     "",
@@ -191,9 +193,9 @@ export function renderOptimization(result: OptimizationResult, meta: ReportMeta)
     lines.push("No candidate beat the merged prompt on dev, so none was measured on the held-out split or the temporal holdout. Nothing is proposed.", "");
   }
   for (const f of result.finalists) {
-    lines.push(`### ${f.candidate.id}: ${verdictLine(f)}`, "", `Dev: ${f.dev.solved} of ${dev.length} solved for ${usd(f.dev.usd)}.`, "", "| Split | Problems | Merged prompt | Candidate | Verdict | Detail |", "|---|---|---|---|---|---|");
+    lines.push(`### ${f.candidate.id}: ${verdictLine(f)}`, "", `Dev: ${count(f.dev)} of ${dev.length} for ${usd(f.dev.usd)}.`, "", "| Split | Problems | Merged prompt | Candidate | Verdict | Detail |", "|---|---|---|---|---|---|");
     for (const g of f.gates) {
-      lines.push(`| ${g.split} | ${g.problems} | ${g.baseline.solved} solved ${usd(g.baseline.usd)} | ${g.candidate.solved} solved ${usd(g.candidate.usd)} | ${g.accepted ? "beats" : "does not beat"} | ${g.note.replace(/\|/g, "/")} |`);
+      lines.push(`| ${g.split} | ${g.problems} | ${count(g.baseline)} ${usd(g.baseline.usd)} | ${count(g.candidate)} ${usd(g.candidate.usd)} | ${g.accepted ? "beats" : "does not beat"} | ${g.note.replace(/\|/g, "/")} |`);
     }
     lines.push("");
   }
