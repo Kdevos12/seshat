@@ -5,7 +5,7 @@ import { type Briefing, type JsonObject, LINE_TITLES, type Line, type ProblemCon
 import { LeanGoals, LeanMetaError } from "@seshat/lean-meta";
 import { type Claim, type MemoryStore, screenProse } from "@seshat/memory";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
-import { type FirstOrderSettings, FIRST_ORDER_RUN, type FirstOrderRunData, registrySolvers, type Solvers, solveFirstOrder } from "./firstorder.ts";
+import { type AtpTool, parseAtpTools, type FirstOrderSettings, FIRST_ORDER_RUN, type FirstOrderRunData, registrySolvers, type Solvers, solveFirstOrder } from "./firstorder.ts";
 import { type HostProbe, probeHost } from "./probe.ts";
 import { BATTERY_RUN, type BatteryRunData, Posteriors } from "./posterior.ts";
 import { type Premise, type PremiseSelector, parseCutoffs } from "./premises.ts";
@@ -38,6 +38,10 @@ export const M10_DEFAULTS = {
   /** Run ATP and SMT with reconstruction when the battery fails. */
   firstOrder: true,
   atpTimeoutSec: 20,
+  /** The ATPs, in order: `vampire`, `eprover` or both (the default; one the host does not offer is skipped). */
+  atpTools: "vampire,eprover",
+  /** `parallel`: the ATPs run together and their answers are reconstructed together; `order`: one after the other, the first whose answer Lean accepts wins. */
+  atpMode: "parallel",
   /** The premise cutoffs of the first-order tools, comma separated. */
   premiseCutoffs: "16,64,256",
   reconstructBudgetSec: 60,
@@ -60,6 +64,8 @@ export interface M10Options {
   maxSubgoals: number;
   firstOrder: boolean;
   atpTimeoutSec: number;
+  atpTools: AtpTool[];
+  atpMode: "parallel" | "order";
   premiseCutoffs: number[];
   reconstructBudgetSec: number;
   search: boolean;
@@ -107,6 +113,8 @@ export function readOptions(raw: Readonly<JsonObject>): M10Options {
     maxSubgoals: integer("maxSubgoals", 0, 100),
     firstOrder: flag("firstOrder"),
     atpTimeoutSec: integer("atpTimeoutSec", 1, 300),
+    atpTools: parseAtpTools(list("atpTools")),
+    atpMode: choice("atpMode", ["parallel", "order"]),
     premiseCutoffs: parseCutoffs(list("premiseCutoffs")),
     reconstructBudgetSec: integer("reconstructBudgetSec", 1, 3600),
     search: flag("search"),
@@ -118,7 +126,7 @@ export function readOptions(raw: Readonly<JsonObject>): M10Options {
 export interface M10Services {
   /** The Lean checker for a problem. Default: the registry's `lean.check`, so that every try is a tool run of the line. */
   checker?: (problem: ProblemContext) => LeanChecker;
-  /** ATP and SMT. Default: the registry's `smt.z3` and `atp.vampire`, whichever the host offers. */
+  /** ATP and SMT. Default: the registry's `smt.z3`, `atp.vampire` and `atp.eprover`, whichever the host offers. */
   solvers?: (problem: ProblemContext) => Solvers;
   /** The declarations premises are taken from (Task 9's library, the `lean.meta` export of Task 21). Default: none. */
   premises?: (problem: ProblemContext) => readonly Premise[];
@@ -228,7 +236,7 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
     }
     if (problem.signal.aborted) return;
     if (options.firstOrder && !ran(problem.memory, FIRST_ORDER_RUN, claim)) {
-      const fo: FirstOrderSettings = { cutoffs: options.premiseCutoffs, timeoutSec: options.atpTimeoutSec, reconstructBudgetSec: options.reconstructBudgetSec, parallel: options.parallel, maxSubmissions: options.maxSubmissions };
+      const fo: FirstOrderSettings = { cutoffs: options.premiseCutoffs, timeoutSec: options.atpTimeoutSec, reconstructBudgetSec: options.reconstructBudgetSec, parallel: options.parallel, maxSubmissions: options.maxSubmissions, atpTools: options.atpTools, atpMode: options.atpMode };
       const out = await refusing(problem, label, () => solveFirstOrder(
         {
           solvers: services.solvers?.(problem) ?? registrySolvers(problem.registry, { actor: ACTOR }),
@@ -345,7 +353,7 @@ export function describeTried(memory: MemoryStore, claimId: string): string | un
     }
     else if (d.evidence.length > 0) {
       lines.push(
-        `${[...new Set(d.evidence.map((e) => e.tool === "smt.z3" ? "z3" : "Vampire"))].join(" and ")} proved the goal in the encoded theory${d.union.length > 0 ? `, using ${d.union.join(", ")}` : ""}; ${d.solved !== undefined ? `Lean accepted ${d.solved.tactic}` : "Lean did not accept any reconstruction with grind, aesop or hammer, so this is evidence and no proof"}.`,
+        `${[...new Set(d.evidence.map((e) => e.tool === "smt.z3" ? "z3" : e.tool === "atp.eprover" ? "E" : "Vampire"))].join(" and ")} proved the goal in the encoded theory${d.union.length > 0 ? `, using ${d.union.join(", ")}` : ""}; ${d.solved !== undefined ? `Lean accepted ${d.solved.tactic}` : "Lean did not accept any reconstruction with grind, aesop or hammer, so this is evidence and no proof"}.`,
       );
     } else if (d.missing.length < 2) lines.push("ATP and SMT found nothing.");
   }
