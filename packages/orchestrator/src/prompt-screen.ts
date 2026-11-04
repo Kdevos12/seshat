@@ -42,15 +42,30 @@ export function targetProblems(target: PromptTarget): string[] {
   return PROMPT_FILE.test(target.file) ? [] : [`${target.id}: ${target.file} is not a prompt file (packages/NAME/prompts/FILE.txt): the optimization proposes changes to prompt files and to nothing else`];
 }
 
-/** The model-derived text is never an instruction to weaken a check, to skip Lean, or to claim a result without it. */
+/**
+ * Phrases that weaken the trust rules: an instruction to skip Lean, to override, to claim a result, to count a failure as success, or to
+ * stop on the model's own judgement. A blacklist, not a proof: it catches the wordings a review has found, and a new wording gets past it.
+ * The real gate is the human read of the patch (documentation/prompts.md). It applies to the lines a candidate adds to the merged prompt.
+ */
 const WEAKENING: Array<[RegExp, string]> = [
   [/\b(?:ignore|disregard|override|forget)\b/i, "it tells the model to ignore or override something"],
   [/\b(?:skip|avoid|bypass|without)\s+(?:the\s+)?(?:lean|lean_check|checking|check)\b/i, "it tells the model to skip the Lean check"],
   [/\bdo not (?:call|use|run)\s+lean_check\b/i, "it tells the model not to call lean_check"],
-  [/\b(?:claim|declare|report|state|say)\b[^.\n]{0,40}\b(?:proved|accepted|verified|solved|done)\b[^.\n]{0,30}\b(?:without|before|even if)\b/i, "it tells the model to claim a result without Lean"],
-  [/\b(?:trust|rely on) (?:your|the model's) own (?:judgment|reasoning) over lean\b/i, "it puts the model's judgment over Lean's"],
+  [/\b(?:claim|declare|report|state|say|write|announce|conclude)\b[^.\n]{0,50}\b(?:proved|proven|accepted|verified|solved|done|correct)\b/i, "it tells the model to state a result"],
+  [/\b(?:treat|count|consider|take)\b[^.\n]{0,50}\b(?:as|for)\s+(?:a\s+)?(?:success|successful|proved|proven|accepted|valid|done)\b/i, "it tells the model to count something as a success"],
+  [/\b(?:finish|stop|conclude|submit|answer|decide)\b[^.\n]{0,50}\b(?:own|your)\s+(?:judge?ment|belief|opinion|confidence|assessment|sense)\b/i, "it tells the model to stop on its own judgement"],
+  [/\b(?:own|your)\s+(?:judge?ment|assessment)\s+(?:over|instead of|rather than|replaces?)\b/i, "it puts the model's judgement over Lean's"],
+  [/\b(?:trust|rely on) (?:your|the model's) own (?:judge?ment|reasoning) over lean\b/i, "it puts the model's judgment over Lean's"],
   [/\bsystem prompt\b|\bprevious instructions?\b/i, "it speaks of the system prompt or of previous instructions"],
 ];
+
+const REFUSAL_WORDS = /\b(?:never|not|no|n't|refused|forbidden|disallowed|avoid|without|except|cannot|must)\b/i;
+
+/** The lines of a text that the merged prompt does not hold as they are. */
+function addedLines(text: string, merged: string): string[] {
+  const had = new Set(merged.split("\n").map((l) => l.trim()));
+  return text.split("\n").map((l) => l.trim()).filter((l) => l !== "" && !had.has(l));
+}
 
 /** Characters that show nothing or change how text reads: control, format, line and paragraph separators, private use, unassigned and tag characters. */
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}]|[\u00ad\u061c\u180e\ufe00-\ufe0f]|[\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
@@ -84,7 +99,14 @@ export function screenPrompt(text: string, target: PromptTarget): string[] {
   const known = new Set(forbiddenTokensIn(maskCommentsAndStrings(target.current)));
   const novel = forbiddenTokensIn(maskCommentsAndStrings(text)).filter((t) => !known.has(t));
   if (novel.length > 0) reasons.push(`it names the Lean token${novel.length > 1 ? "s" : ""} ${novel.map((t) => `'${t}'`).join(", ")}, which the validator refuses and the merged prompt does not name`);
-  for (const [pattern, why] of WEAKENING) if (pattern.test(text) && !pattern.test(target.current)) reasons.push(why);
+  const added = addedLines(text, target.current);
+  const addedText = added.join("\n");
+  for (const [pattern, why] of WEAKENING) if (pattern.test(addedText)) reasons.push(why);
+  // A line the rewrite adds that names a token the validator refuses (the merged prompt names them to say they are refused) must say it is refused.
+  for (const line of added) {
+    const tokens = forbiddenTokensIn(maskCommentsAndStrings(line)).filter((t) => t.includes("_") || t.startsWith("#") || ["axiom", "admit", "unsafe"].includes(t));
+    if (tokens.length > 0 && !REFUSAL_WORDS.test(line)) reasons.push(`it names ${tokens.map((t) => `'${t}'`).join(", ")} without saying it is refused: "${line.slice(0, 80)}"`);
+  }
   for (const placeholder of target.placeholders) {
     const n = text.split(placeholder).length - 1;
     if (n !== 1) reasons.push(`the placeholder ${placeholder} must appear exactly once, it appears ${n} times`);
