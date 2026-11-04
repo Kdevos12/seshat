@@ -93,6 +93,7 @@ flowchart TB
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
     smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
     vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
+    eprover["atp_eprover<br/>E on TPTP, SZS status"]:::wait
     proveauto["prove_auto<br/>the battery on one goal"]:::wait
     provesearch["prove_search<br/>goal-level best-first search"]:::wait
     moretools["SAT, counterexample<br/>search"]:::planned
@@ -213,8 +214,8 @@ flowchart TB
   m10 -->|"cheapest tactics first,<br/>stop at the first success"| battery
   battery -->|"Lean files"| leancheck
   battery -->|"a success is submitted<br/>through validate"| fast
-  m10 -->|"SMT-LIB, TPTP"| smtz3 & vampire
-  smtz3 & vampire -->|"unsat is evidence,<br/>premises go to grind,<br/>aesop, hammer"| battery
+  m10 -->|"SMT-LIB, TPTP"| smtz3 & vampire & eprover
+  smtz3 & vampire & eprover -->|"unsat is evidence,<br/>premises go to grind,<br/>aesop, hammer"| battery
   m10 -->|"tries, evidence,<br/>posteriors from the journal"| journal
   m10 -->|"briefing: what was tried"| provers
   proveauto -->|"the same battery"| battery
@@ -270,7 +271,7 @@ flowchart TB
 ```
 
 Blue: built and tested with the simulated model and Lean. Orange: written and tested with simulations, but it
-needs something real before it has run: a Lean server, a model, a service (Jev, the OEIS), a program (SageMath, Vampire) or data (the
+needs something real before it has run: a Lean server, a model, a service (Jev, the OEIS), a program (SageMath, Vampire, E) or data (the
 equational-theories rows, the first real ablation). Grey and dashed: planned, not written (the further classical tools, such as SAT and counterexample search).
 
 Today one loop runs, tested with a simulated model and a simulated Lean: each prover edits a Lean

@@ -104,6 +104,11 @@
       "optional": true,
       "settings": { "process": { "command": "${env:VAMPIRE_COMMAND:-vampire}" } }
     },
+    "atp.eprover": {
+      "use": ["process"],
+      "optional": true,
+      "settings": { "process": { "command": "${env:EPROVER_COMMAND:-eprover}" } }
+    },
     "oeis.search": {
       "use": ["site"],
       "optional": true,

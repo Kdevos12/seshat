@@ -11,13 +11,15 @@ import type { HostTactics, TacticSpec } from "./tactics.ts";
 import { lower, Outside, toSmtLib, toTptp } from "./translate.ts";
 import type { ClaimGoal } from "./solve.ts";
 
-/** The two first-order tools, as functions; `null` when the host does not offer one. */
+/** The first-order tools, as functions; `null` when the host does not offer one. */
 export interface Solvers {
   smt: ((input: { smtlib: string; timeoutSec: number }, signal?: AbortSignal) => Promise<SmtOutput>) | null;
   atp: ((input: { tptp: string; timeoutSec: number }, signal?: AbortSignal) => Promise<AtpOutput>) | null;
+  /** E (`atp.eprover`), the second prover of the portfolio. Absent or `null` when the host does not offer it. */
+  eprover?: ((input: { tptp: string; timeoutSec: number }, signal?: AbortSignal) => Promise<AtpOutput>) | null;
 }
 
-/** The solvers through the registry: each call is a tool run of `smt.z3` or `atp.vampire`. A tool the host does not offer is `null`. */
+/** The solvers through the registry: each call is a tool run of `smt.z3`, `atp.vampire` or `atp.eprover`. A tool the host does not offer is `null`. */
 export function registrySolvers(registry: Registry, options: { actor: string; attemptId?: string }): Solvers {
   const call = <T>(capability: string) => async (input: object, signal?: AbortSignal): Promise<T> => {
     try {
@@ -43,6 +45,7 @@ export function registrySolvers(registry: Registry, options: { actor: string; at
   return {
     smt: offered("smt.z3") ? call<SmtOutput>("smt.z3") : null,
     atp: offered("atp.vampire") ? call<AtpOutput>("atp.vampire") : null,
+    eprover: offered("atp.eprover") ? call<AtpOutput>("atp.eprover") : null,
   };
 }
 
@@ -59,10 +62,10 @@ export class ToolMissing extends Error {
 export const FIRST_ORDER_RUN = "first_order_run";
 
 export interface Evidence {
-  tool: "smt.z3" | "atp.vampire";
+  tool: "smt.z3" | "atp.vampire" | "atp.eprover";
   /** The premise cutoff of the call (0: no premises beyond the hypotheses). */
   cutoff: number;
-  /** `unsat` for z3, the SZS status for Vampire. */
+  /** `unsat` for z3, the SZS status for Vampire and E. */
   answer: string;
   /** The hypotheses and premises of the unsat core or the proof, by their Lean names. */
   hypotheses: string[];
@@ -77,6 +80,8 @@ export interface FirstOrderRunData {
   outside?: string;
   /** The tools that were not there. */
   missing: string[];
+  /** The tools the stage asked (z3 and the ATPs of the settings the host offers); absent in nodes written before E. */
+  tools?: string[];
   evidence: Evidence[];
   /** The union of the premises of the successful calls. */
   union: string[];
@@ -94,6 +99,25 @@ export interface FirstOrderSettings {
   reconstructBudgetSec: number;
   parallel: number;
   maxSubmissions: number;
+  /** The ATPs to use, in order; one the host does not offer is skipped. Default: Vampire and E. */
+  atpTools?: readonly AtpTool[];
+  /** `parallel`: every ATP at once, then the reconstruction of all answers. `order`: one ATP after the other, and the first whose answer Lean accepts wins; a later one runs only when the earlier gave no answer Lean accepted. Default `parallel`. */
+  atpMode?: "parallel" | "order";
+}
+
+export type AtpTool = "atp.vampire" | "atp.eprover";
+export const ATP_TOOLS: readonly AtpTool[] = ["atp.vampire", "atp.eprover"];
+
+/** Reads the `atpTools` option: names (`vampire`, `eprover`, with or without `atp.`) separated by commas, in the order given, once each. */
+export function parseAtpTools(text: string): AtpTool[] {
+  const out: AtpTool[] = [];
+  for (const raw of text.split(",").map((t) => t.trim()).filter((t) => t !== "")) {
+    const tool = (raw.startsWith("atp.") ? raw : `atp.${raw}`) as AtpTool;
+    if (!ATP_TOOLS.includes(tool)) throw new RangeError(`option M10.atpTools names ${JSON.stringify(raw)}; the ATPs are vampire and eprover`);
+    if (!out.includes(tool)) out.push(tool);
+  }
+  if (out.length === 0) throw new RangeError("option M10.atpTools names no ATP (vampire, eprover)");
+  return out;
 }
 
 export const DEFAULT_FIRST_ORDER: FirstOrderSettings = { cutoffs: [16, 64, 256], timeoutSec: 20, reconstructBudgetSec: 60, parallel: 4, maxSubmissions: 3 };
@@ -172,51 +196,22 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
     data.outside = error.message;
     return finish(false);
   }
-  if (ctx.solvers.smt === null && ctx.solvers.atp === null) {
-    data.missing.push("smt.z3", "atp.vampire");
+  const wanted = ctx.settings.atpTools ?? ATP_TOOLS;
+  const provers: Array<{ tool: AtpTool; run: NonNullable<Solvers["atp"]> }> = [];
+  for (const tool of wanted) {
+    const run = tool === "atp.vampire" ? ctx.solvers.atp : (ctx.solvers.eprover ?? null);
+    if (run !== null) provers.push({ tool, run });
+  }
+  if (ctx.solvers.smt === null && provers.length === 0) {
+    data.missing.push("smt.z3", ...wanted.filter((t) => t === "atp.vampire" || ctx.solvers.eprover === null));
     return finish(false);
   }
+  data.tools = [...(ctx.solvers.smt !== null ? ["smt.z3"] : []), ...provers.map((p) => p.tool)];
   const index = ctx.index ?? [];
   const select = ctx.selector ?? mixSelectors(symbolSelector);
   const cutoffs = index.length === 0 ? [0] : [...ctx.settings.cutoffs];
   data.cutoffs = cutoffs;
 
-  const jobs = cutoffs.map(async (cutoff) => {
-    const chosen = cutoff === 0 ? [] : fragmentPremises(goal.statement, select(goal.statement, index, cutoff));
-    const problem = lower(goal.statement, chosen);
-    const found: Evidence[] = [];
-    const split = (named: Array<{ name: string; kind: string; lean: string }>, used: readonly string[]) => ({
-      hypotheses: named.filter((n) => n.kind === "hypothesis" && used.includes(n.name)).map((n) => n.lean),
-      premises: named.filter((n) => n.kind === "premise" && used.includes(n.name)).map((n) => n.lean),
-    });
-    const runs: Array<Promise<void>> = [];
-    if (ctx.solvers.smt !== null) {
-      const smt = ctx.solvers.smt;
-      const script = toSmtLib(problem);
-      runs.push(
-        smt({ smtlib: script.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
-          (out) => {
-            if (out.status === "unsat") found.push({ tool: "smt.z3", cutoff, answer: "unsat", elapsedMs: out.elapsedMs, ...split(script.named, out.core ?? script.named.map((n) => n.name)) });
-          },
-          (error) => missing(error, "smt.z3"),
-        ),
-      );
-    }
-    if (ctx.solvers.atp !== null) {
-      const atp = ctx.solvers.atp;
-      const text = toTptp(problem);
-      runs.push(
-        atp({ tptp: text.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
-          (out) => {
-            if (out.result === "theorem") found.push({ tool: "atp.vampire", cutoff, answer: out.szs, elapsedMs: out.elapsedMs, ...split(text.named, out.used.length > 0 ? out.used : text.named.map((n) => n.name)) });
-          },
-          (error) => missing(error, "atp.vampire"),
-        ),
-      );
-    }
-    await Promise.all(runs);
-    return found;
-  });
   const missing = (error: unknown, tool: string): void => {
     if (error instanceof ToolMissing) {
       if (!data.missing.includes(tool)) data.missing.push(tool);
@@ -225,45 +220,106 @@ export async function solveFirstOrder(ctx: FirstOrderContext, goal: ClaimGoal): 
     if (ctx.signal.aborted) return;
     throw error;
   };
-  for (const found of await Promise.all(jobs)) data.evidence.push(...found);
-  data.union = [...new Set(data.evidence.flatMap((e) => e.premises))];
-  if (data.evidence.length === 0 || ctx.signal.aborted) return finish(false);
-  ctx.log(`M10: ${data.evidence.map((e) => `${e.tool}@${e.cutoff}`).join(", ")} proved the goal in the encoded theory; reconstructing in Lean`);
-
-  // Premise sets to try: each call's own (smallest first), then the union of all.
-  const sets: string[][] = [];
-  for (const e of [...data.evidence].sort((a, b) => a.premises.length - b.premises.length)) {
-    if (e.premises.length > 0 && !sets.some((s) => s.join() === e.premises.join())) sets.push(e.premises);
-  }
-  if (data.union.length > 0 && !sets.some((s) => s.join() === data.union.join())) sets.push(data.union);
-  if (sets.length === 0) {
-    ctx.log("M10: the proof uses no premise beyond the hypotheses, which the battery's grind and aesop have tried: the evidence stays evidence");
-    return finish(false);
-  }
-  let refusals = 0;
-  for (const premises of sets) {
-    if (ctx.signal.aborted || refusals > ctx.settings.maxSubmissions) break;
-    const tactics = reconstructionTactics(premises, ctx.host);
-    const result = await runBattery({
-      checker: ctx.checker,
-      goal,
-      tactics,
-      domain: "first_order_reconstruction",
-      posteriors: new Posteriors(),
-      order: { mode: "mean" },
-      parallel: ctx.settings.parallel,
-      cpuBudgetSec: ctx.settings.reconstructBudgetSec,
-      signal: ctx.signal,
+  /** Runs z3 (when asked) and the given ATPs on every cutoff in parallel, and returns the answers that proved the goal. */
+  const gather = async (useSmt: boolean, atps: ReadonlyArray<{ tool: AtpTool; run: NonNullable<Solvers["atp"]> }>): Promise<Evidence[]> => {
+    const jobs = cutoffs.map(async (cutoff) => {
+      const chosen = cutoff === 0 ? [] : fragmentPremises(goal.statement, select(goal.statement, index, cutoff));
+      const problem = lower(goal.statement, chosen);
+      // One slot per tool, in the order of the tools: the evidence does not depend on which tool answers first.
+      const slots: Evidence[][] = [[], ...atps.map((): Evidence[] => [])];
+      const split = (named: Array<{ name: string; kind: string; lean: string }>, used: readonly string[]) => ({
+        hypotheses: named.filter((n) => n.kind === "hypothesis" && used.includes(n.name)).map((n) => n.lean),
+        premises: named.filter((n) => n.kind === "premise" && used.includes(n.name)).map((n) => n.lean),
+      });
+      const runs: Array<Promise<void>> = [];
+      if (useSmt && ctx.solvers.smt !== null) {
+        const smt = ctx.solvers.smt;
+        const script = toSmtLib(problem);
+        runs.push(
+          smt({ smtlib: script.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
+            (out) => {
+              if (out.status === "unsat") (slots[0] as Evidence[]).push({ tool: "smt.z3", cutoff, answer: "unsat", elapsedMs: out.elapsedMs, ...split(script.named, out.core ?? script.named.map((n) => n.name)) });
+            },
+            (error) => missing(error, "smt.z3"),
+          ),
+        );
+      }
+      if (atps.length > 0) {
+        const text = toTptp(problem);
+        for (const [slot, { tool, run }] of atps.entries()) {
+          runs.push(
+            run({ tptp: text.text, timeoutSec: ctx.settings.timeoutSec }, ctx.signal).then(
+              (out) => {
+                if (out.result === "theorem") (slots[slot + 1] as Evidence[]).push({ tool, cutoff, answer: out.szs, elapsedMs: out.elapsedMs, ...split(text.named, out.used.length > 0 ? out.used : text.named.map((n) => n.name)) });
+              },
+              (error) => missing(error, tool),
+            ),
+          );
+        }
+      }
+      await Promise.all(runs);
+      return slots.flat();
     });
-    data.reconstruction.push(...result.tries.map((t: TryRecord) => ({ tactic: t.tactic, outcome: t.outcome })));
-    if (result.winner === undefined) continue;
-    const verdict = await ctx.validate({ claimId: goal.claimId, proof: result.winner.proof });
-    data.submission = { verdict: verdict.verdict, status: verdict.status, ...(verdict.validationId !== undefined ? { validationId: verdict.validationId } : {}), reasons: verdict.reasons };
-    if (verdict.verdict === "valid") {
-      data.solved = { tactic: result.winner.tactic, proof: result.winner.proof };
-      return finish(true);
+    return (await Promise.all(jobs)).flat();
+  };
+
+  // Premise sets already handed to Lean, and the submissions Lean accepted a proof for but validate refused.
+  const tried = new Set<string>();
+  let refusals = 0;
+  /** Hands the premises of the answers so far to grind, aesop and hammer; true when `validate` accepted a proof. */
+  const reconstruct = async (): Promise<boolean> => {
+    // Premise sets to try: each call's own (smallest first, ties in the order of the tools), then the union of all.
+    const sets: string[][] = [];
+    for (const e of [...data.evidence].sort((a, b) => a.premises.length - b.premises.length)) {
+      if (e.premises.length > 0 && !sets.some((x) => x.join() === e.premises.join())) sets.push(e.premises);
     }
-    refusals++;
+    if (data.union.length > 0 && !sets.some((x) => x.join() === data.union.join())) sets.push(data.union);
+    if (sets.length === 0) {
+      ctx.log("M10: the proof uses no premise beyond the hypotheses, which the battery's grind and aesop have tried: the evidence stays evidence");
+      return false;
+    }
+    for (const premises of sets) {
+      if (tried.has(premises.join())) continue;
+      tried.add(premises.join());
+      if (ctx.signal.aborted || refusals > ctx.settings.maxSubmissions) break;
+      const tactics = reconstructionTactics(premises, ctx.host);
+      const result = await runBattery({
+        checker: ctx.checker,
+        goal,
+        tactics,
+        domain: "first_order_reconstruction",
+        posteriors: new Posteriors(),
+        order: { mode: "mean" },
+        parallel: ctx.settings.parallel,
+        cpuBudgetSec: ctx.settings.reconstructBudgetSec,
+        signal: ctx.signal,
+      });
+      data.reconstruction.push(...result.tries.map((t: TryRecord) => ({ tactic: t.tactic, outcome: t.outcome })));
+      if (result.winner === undefined) continue;
+      const verdict = await ctx.validate({ claimId: goal.claimId, proof: result.winner.proof });
+      data.submission = { verdict: verdict.verdict, status: verdict.status, ...(verdict.validationId !== undefined ? { validationId: verdict.validationId } : {}), reasons: verdict.reasons };
+      if (verdict.verdict === "valid") {
+        data.solved = { tactic: result.winner.tactic, proof: result.winner.proof };
+        return true;
+      }
+      refusals++;
+    }
+    return false;
+  };
+
+  // The portfolio (plan change: E beside Vampire). In parallel, z3 and every ATP run at once and the answers are reconstructed
+  // together. In order, z3 runs with the first ATP; a later ATP runs only when Lean accepted nothing from the earlier answers.
+  const groups: Array<{ smt: boolean; atps: typeof provers }> =
+    ctx.settings.atpMode === "order" && provers.length > 1 ? provers.map((p, i) => ({ smt: i === 0, atps: [p] })) : [{ smt: true, atps: provers }];
+  for (const group of groups) {
+    if (ctx.signal.aborted) break;
+    const found = await gather(group.smt, group.atps);
+    if (found.length === 0) continue;
+    data.evidence.push(...found);
+    data.union = [...new Set(data.evidence.flatMap((e) => e.premises))];
+    if (ctx.signal.aborted) break;
+    ctx.log(`M10: ${found.map((e) => `${e.tool}@${e.cutoff}`).join(", ")} proved the goal in the encoded theory; reconstructing in Lean`);
+    if (await reconstruct()) return finish(true);
   }
   return finish(false);
 }

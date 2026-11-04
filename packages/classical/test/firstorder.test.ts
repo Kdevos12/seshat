@@ -12,12 +12,14 @@ import {
   FIRST_ORDER_RUN,
   type FirstOrderContext,
   mixSelectors,
+  parseAtpTools,
   parseCutoffs,
   type Premise,
   reconstructionTactics,
   type Solvers,
   solveFirstOrder,
   symbolSelector,
+  ToolMissing,
 } from "../src/index.ts";
 import { ScriptedLean } from "./fake-lean.ts";
 
@@ -150,6 +152,107 @@ describe("ATP and SMT with reconstruction", () => {
     assert.equal(out.settled, false);
     const data = memory.nodes(FIRST_ORDER_RUN)[0]?.data as { missing: string[] };
     assert.deepEqual(data.missing, ["smt.z3", "atp.vampire"]);
+  });
+
+  describe("the ATP portfolio of Vampire and E", () => {
+    const theorem = (used: string[]) => async () => ({ szs: "Theorem", result: "theorem" as const, used, exitCode: 0, elapsedMs: 1 });
+    const nothing = async () => ({ szs: "GaveUp", result: "unknown" as const, used: [] as string[], exitCode: 1, elapsedMs: 1 });
+
+    it("runs both provers at every cutoff and tags the evidence with the tool", async () => {
+      const solvers: Solvers = { smt: null, atp: theorem(["p_1", "goal"]), eprover: theorem(["p_2", "goal"]) };
+      const { ctx, memory } = setup(solvers, new ScriptedLean({}), () => valid);
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      const data = memory.nodes(FIRST_ORDER_RUN)[0]?.data as { evidence: Array<{ tool: string }>; missing: string[] };
+      assert.deepEqual(data.evidence.map((e) => e.tool).sort(), ["atp.eprover", "atp.eprover", "atp.vampire", "atp.vampire"]);
+      assert.deepEqual(data.missing, []);
+    });
+
+    it("orders the evidence by cutoff and tool, not by which prover answers first", async () => {
+      const slow = (ms: number, used: string[]) => async () => (await new Promise((resolve) => setTimeout(resolve, ms)), { szs: "Theorem", result: "theorem" as const, used, exitCode: 0, elapsedMs: ms });
+      // E answers first, Vampire last; the evidence still lists Vampire first
+      const solvers: Solvers = { smt: null, atp: slow(30, ["p_1", "goal"]), eprover: slow(1, ["p_2", "goal"]) };
+      const { ctx, memory } = setup(solvers, new ScriptedLean({}), () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2] } });
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      const data = memory.nodes(FIRST_ORDER_RUN)[0]?.data as { evidence: Array<{ tool: string }>; union: string[] };
+      assert.deepEqual(data.evidence.map((e) => e.tool), ["atp.vampire", "atp.eprover"]);
+      assert.deepEqual(data.union, ["Int.add_comm", "Int.mul_comm"]);
+    });
+
+    it("lets E win when only E's premises reconstruct in Lean, and submits one Lean proof", async () => {
+      const solvers: Solvers = { smt: null, atp: theorem(["p_1", "goal"]), eprover: theorem(["p_2", "goal"]) };
+      const lean = new ScriptedLean({ "grind [Int.mul_comm]": { ok: true } });
+      const { ctx, memory, requests } = setup(solvers, lean, () => valid);
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      const out = await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      assert.ok(out.settled);
+      assert.deepEqual(requests.map((r) => r.proof), ["grind [Int.mul_comm]"]);
+    });
+
+    it("keeps the answers of both provers as evidence when Lean accepts neither, and changes no status", async () => {
+      const solvers: Solvers = { smt: null, atp: theorem(["p_1", "goal"]), eprover: theorem(["p_2", "goal"]) };
+      const { ctx, memory, requests } = setup(solvers, new ScriptedLean({}), () => valid);
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      const out = await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      assert.equal(out.settled, false);
+      assert.deepEqual(requests, []);
+      assert.equal(memory.claim(claim.claimId)?.status, "open");
+    });
+
+    it("in order, tries E only when Vampire's answer did not reconstruct, and stops at the first accepted", async () => {
+      const calls: string[] = [];
+      const solvers: Solvers = {
+        smt: null,
+        atp: async () => (calls.push("vampire"), theorem(["p_1", "goal"])()),
+        eprover: async () => (calls.push("eprover"), theorem(["p_2", "goal"])()),
+      };
+      // Vampire's premise fails in Lean, E's passes.
+      const lean = new ScriptedLean({ "grind [Int.mul_comm]": { ok: true } });
+      const first = setup(solvers, lean, () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2], atpMode: "order" } });
+      const c1 = await first.memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      assert.ok((await solveFirstOrder(first.ctx, { ...GOAL, claimId: c1.claimId })).settled);
+      assert.deepEqual(calls, ["vampire", "eprover"]);
+      // Vampire's premise passes: E is never run.
+      calls.length = 0;
+      const second = setup(solvers, new ScriptedLean({ "grind [Int.add_comm]": { ok: true } }), () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2], atpMode: "order" } });
+      const c2 = await second.memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      assert.ok((await solveFirstOrder(second.ctx, { ...GOAL, claimId: c2.claimId })).settled);
+      assert.deepEqual(calls, ["vampire"]);
+    });
+
+    it("honours the tool list: E alone, or the installed prover alone when the other is missing", async () => {
+      const calls: string[] = [];
+      const solvers: Solvers = { smt: null, atp: async () => (calls.push("vampire"), nothing()), eprover: async () => (calls.push("eprover"), nothing()) };
+      const only = setup(solvers, new ScriptedLean({}), () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2], atpTools: ["atp.eprover"] } });
+      const c1 = await only.memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(only.ctx, { ...GOAL, claimId: c1.claimId });
+      assert.deepEqual(calls, ["eprover"]);
+      calls.length = 0;
+      const fallback = setup({ smt: null, atp: solvers.atp, eprover: null }, new ScriptedLean({}), () => valid, { settings: { ...DEFAULT_FIRST_ORDER, cutoffs: [2] } });
+      const c2 = await fallback.memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(fallback.ctx, { ...GOAL, claimId: c2.claimId });
+      assert.deepEqual(calls, ["vampire"]);
+      const data = fallback.memory.nodes(FIRST_ORDER_RUN)[0]?.data as { missing: string[] };
+      assert.deepEqual(data.missing, [], "a prover the host does not offer is not an error when the other is there");
+    });
+
+    it("records a prover that vanished at run time as missing and goes on with the other", async () => {
+      const solvers: Solvers = { smt: null, atp: theorem(["p_1", "goal"]), eprover: async () => { throw new ToolMissing("atp.eprover"); } };
+      const { ctx, memory } = setup(solvers, new ScriptedLean({}), () => valid);
+      const claim = await memory.ensureClaim({ statement: GOAL.statement, header: GOAL.header, origin: "test" });
+      await solveFirstOrder(ctx, { ...GOAL, claimId: claim.claimId });
+      const data = memory.nodes(FIRST_ORDER_RUN)[0]?.data as { missing: string[]; evidence: unknown[] };
+      assert.deepEqual(data.missing, ["atp.eprover"]);
+      assert.equal(data.evidence.length, 2);
+    });
+
+    it("reads the portfolio settings of the line", () => {
+      assert.deepEqual(parseAtpTools("eprover, vampire"), ["atp.eprover", "atp.vampire"]);
+      assert.deepEqual(parseAtpTools("vampire,eprover,vampire"), ["atp.vampire", "atp.eprover"]);
+      assert.throws(() => parseAtpTools("spass"), RangeError);
+      assert.throws(() => parseAtpTools(""), RangeError);
+    });
   });
 
   it("writes the reconstruction tactics, the hammer only when the host has it", () => {
