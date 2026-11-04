@@ -536,7 +536,7 @@ export interface AttemptAnnotation {
 }
 
 /** Why a prover ended (the values of the orchestrator's `ProverStop`). */
-export type ProverStopReason = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line";
+export type ProverStopReason = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "gate";
 
 /** A prover that has ended, for `afterProver`. */
 export interface ProverEnd {
@@ -663,6 +663,37 @@ export interface Budget {
   /** Spent so far, by the sessions and the lines' model calls. */
   readonly usd: number;
   readonly exhausted: boolean;
+  /**
+   * The budget gate (`problem.budget.ask`, documentation/scheduler.md, "The budget gate"): asked before a paid launch of the
+   * line's own (a task, a judge call, a session), it answers `launch` or `skip` by a deterministic rule that compares the
+   * estimate with the share of what is left weighted by the chance of success, and journals the answer with its numbers.
+   * Absent when the run has no gate (a run without `--gate`, or a context an older caller builds): the line launches as before.
+   * A line that gets `skip` does not launch, and says why in its log.
+   */
+  ask?: (request: BudgetAsk) => Promise<BudgetAnswer>;
+}
+
+/** A paid launch the line is about to make. */
+export interface BudgetAsk {
+  /** `session` (a prover's), `task` (a line's task), `judge` (a one-shot model call to judge). A wave is the orchestrator's. */
+  site: "session" | "task" | "judge";
+  /** What the launch is expected to cost, in dollars (M12's price of a task, a session's mean cost, a judge call's tokens at the model's price). */
+  estimateUsd: number;
+  /** The chance the launch pays, when the line has its own number; absent: a Thompson draw from the claim's posterior. */
+  pSuccess?: number;
+  /** The task the launch is for, recorded with the answer. */
+  taskId?: string;
+}
+
+export interface BudgetAnswer {
+  /** `launch`: go ahead. `skip`: do not (the estimate is over the share of what is left, weighted by the chance of success). */
+  action: "launch" | "skip";
+  /** Who answered: the rule, the exploration floor, or a `decide` call where the rule had no numbers. */
+  by: "rule" | "floor" | "decide" | "probe" | "progress" | "memory";
+  reason: string;
+  /** True when the exploration floor let the launch through over the threshold. */
+  exploration: boolean;
+  thresholdUsd?: number;
 }
 
 /** A task of the ledger as a line sees it (documentation/ledger.md). */

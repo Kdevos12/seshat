@@ -16,6 +16,7 @@ import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
+import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
 
 export interface ProblemLine {
   problemId: string;
@@ -99,6 +100,11 @@ export interface RunReport {
    * can save. `harness ablate` reads it with `siteSpend` and `mergeSiteSpend`.
    */
   sites: SiteLine[];
+  /**
+   * The budget gate (documentation/scheduler.md, "The budget gate"): per site what it launched and skipped, the probes and widenings, and the
+   * avoided spend as the gate's estimate. Absent when the run had no gate.
+   */
+  gate?: GateReport;
   /**
    * The redundant attempts (plan §6): of the attempts that carry a strategy label, the share that
    * failed in a way an earlier attempt on the claim, or on an equivalent one, had already failed.
@@ -587,6 +593,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
     sites: siteSpend(events),
+    ...(gateReport(events) !== undefined ? { gate: gateReport(events) as GateReport } : {}),
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
     ...(library !== undefined ? { library } : {}),
     ...(lessons !== undefined ? { lessons } : {}),
@@ -730,6 +737,7 @@ export function renderRunReport(report: RunReport): string {
           `Spend by site: ${report.sites.map((s) => `${s.site} ${money(s.usd)} (${(s.share * 100).toFixed(0)}%, ${s.calls} call(s))`).join("; ")}.`,
         ]
       : []),
+    ...(report.gate !== undefined ? renderGateReport(report.gate) : []),
     ...(report.redundancy !== undefined
       ? [
           `Redundant attempts: ${report.redundancy.redundant} of ${report.redundancy.attempts} labeled attempts ` +
