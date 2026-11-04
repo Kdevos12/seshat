@@ -114,3 +114,12 @@ describe("the budget gate where the rule has no numbers", () => {
     }
   });
 });
+
+describe("the gate's configuration", () => {
+  it("is checked before a run starts", async () => {
+    const { checkConfig, DEFAULT_CONFIG } = await import("../src/index.ts");
+    const config = { ...DEFAULT_CONFIG, selection: {}, model: "p/m" };
+    assert.deepEqual(checkConfig({ ...config, gate: {} }), []);
+    assert.match(checkConfig({ ...config, gate: { floor: 2 } }).join(), /gate: floor must be from 0 to 1/);
+  });
+});

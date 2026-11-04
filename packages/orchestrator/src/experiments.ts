@@ -136,6 +136,18 @@ export const EXPERIMENTS: Experiment[] = [
     ],
   },
   {
+    name: "gate",
+    amendment: "PB4",
+    description: "The budget gate: no gate, the rule alone, the rule with its cold starts and ties asked of the run's model, and the same asked of Jev. Cost to first success and the avoided spend, by arm.",
+    notRun: "The avoided dollars are the gate's estimate, not a measurement; whether the gate pays (cost to first success, and the problems it wrongly skips) needs a real model. Not run against real Jev.",
+    arms: ({ lines }) => [
+      arm("no-gate", "every prover starts together and every session runs, as before the gate", lines, { gate: false }),
+      arm("rule", "the rule alone: probe first, widen on Lean progress, the floor lets a fraction through", lines, { gate: {}, decide: { sites: { "budget.wave": "off", "budget.line": "off" } }, versus: "no-gate" }),
+      arm("rule+llm", "the rule, with cold starts and ties asked of the run's model", lines, { gate: {}, decide: { backend: "llm", votes: 1 }, versus: "rule" }),
+      arm("rule+jev", "the rule, with cold starts and ties asked of Jev", lines, { gate: {}, decide: { backend: "llm", sites: { "budget.wave": "jev", "budget.line": "jev" }, votes: 1 }, versus: "rule+llm" }),
+    ],
+  },
+  {
     name: "m17",
     amendment: "LC3",
     description: "The run with the library environment extended (line M17) against the run without it.",

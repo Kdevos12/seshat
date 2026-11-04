@@ -4,6 +4,7 @@ import { USE_KIND } from "@seshat/library";
 import { redundancy, type Redundancy } from "@seshat/memory";
 import { M15_HINT_KIND } from "@seshat/scheduler";
 import { type CacheStat, cacheReport } from "./cache-report.ts";
+import { type GateReport, gateReport } from "./gate-report.ts";
 import { buildReport, type RunReport, type SiteLine } from "./report.ts";
 
 /**
@@ -41,6 +42,8 @@ export interface RunMeasures {
   /** Dollars of the sessions on a strategy that had not been tried on the claim's group before, against all session dollars (PE9, over time). */
   novelStrategy: { usd: number; totalUsd: number; share: number };
   sites: SiteLine[];
+  /** The budget gate's answers (Task 29), absent when the arm ran without it. */
+  gate?: GateReport;
   cache?: { total: CacheStat; byLine: Record<string, CacheStat>; byRung?: Record<string, CacheStat> };
   /** Proofs that use a declaration of each source: the harness library, each extra package, Mathlib (LC2). */
   proofsBySource: Record<string, number>;
@@ -300,6 +303,7 @@ export function measureRun(events: readonly HarnessEvent[], options: MeasureOpti
   const declared = [...ix.attempts.values()].flatMap((a) => (a.toolTokens !== undefined ? [a.toolTokens] : []));
   const redundant = redundancy(events);
   const cache = cacheReport(events);
+  const gate = gateReport(events);
 
   // The proofs: the problems with a Lean-checked proof, and the attempt and the validator behind each.
   const proofs = [...ix.problems.values()].filter((p) => p.outcome === "proved" || p.outcome === "refuted" || p.outcome === "candidate");
@@ -391,6 +395,7 @@ export function measureRun(events: readonly HarnessEvent[], options: MeasureOpti
     reuse: share(reusing, proofs.length),
     novelStrategy: { usd: novelUsd, totalUsd: sessionUsd, share: sessionUsd > 0 ? novelUsd / sessionUsd : 0 },
     sites: report.sites,
+    ...(gate !== undefined ? { gate } : {}),
     ...(cache !== undefined ? { cache: { total: cache.total, byLine: cache.byLine, ...(cache.byRung !== undefined ? { byRung: cache.byRung } : {}) } } : {}),
     proofsBySource: report.library?.bySource ?? bySource,
     ...(report.lessons !== undefined
