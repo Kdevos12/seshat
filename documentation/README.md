@@ -93,7 +93,7 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [quickstart.md](quickstart.md): a problem of your own with the least friction: `harness solve` (a
   Lean or prose statement, the signature of prose, the student defaults), `harness doctor` (what the machine
   lacks, the isolated host profile), `RESULT.md` (what a run leaves, whatever stopped it) and `harness view`
-  (one static HTML page of a run).
+  (one static HTML page of a run), and the local page `harness ui` ([ui.md](ui.md)).
 - [ui.md](ui.md): the local interface, `harness ui`: a journal reader, a loopback server with a token and a process manager for
   the commands, provider settings with keys kept outside the repository, and the screens.
 - [human.md](human.md): consortium mode: turns that end at a limit or a breakpoint, the account of

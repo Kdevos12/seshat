@@ -126,3 +126,47 @@ the library reads: the command finds its credentials as it does when you export 
 replaced), not journaled (the interface writes no journal; a command's events never carry the environment) and not echoed: a
 line a command prints that holds a stored key is shown as `[key hidden]`. The tests save a key and then look for it in every
 answer, every log line and every file under the runs directory (`packages/ui/test/keys.test.ts`).
+
+## The screens
+
+The front end is Preact and Cytoscape (MIT, pinned in `packages/ui/package.json`), built by Vite to the static files in
+`packages/ui/static`, which are committed and served by the server: no CDN, no font, no request to another origin. After
+changing anything under `packages/ui/web`, run `pnpm --filter @seshat/ui build:web`; a test compares a digest of the sources with the one the build
+wrote, so a stale build fails `pnpm check`. The sources are type-checked by `packages/ui/web/tsconfig.json`, also by a test.
+
+| Screen | What it does |
+|---|---|
+| **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine |
+| **Signature** | for a statement in words: your words beside the Lean statement a model made of them, what the first cases said, a warning when cheap automation proves it, and two buttons. Nothing has been spent |
+| **Run** | the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; leads, evidence and failures |
+| **Checklist** | `harness doctor` as a list: what is ready, what is missing, what to do. It writes nothing |
+| **Providers** | the library's providers, whether each has credentials, a place to save or remove a key |
+
+**Evidence is never shown as proof.** A problem is worded as proved or refuted only when a valid kernel replay of its claim is in the
+journal; a proof that passed the fast check is "a candidate, not certified"; counter-examples and a tool's findings are "leads" and
+"evidence", in their own section, each marked. The words come from the reader (`plainStatus`), and the tests check them.
+
+**Escaping.** Every text that came from the journal, a model, a program or a person is put on the page as a text node: the front end
+never sets HTML (a test searches its sources for `innerHTML` and the like, and a browser test loads a statement that is an `<img onerror>` and a
+`<script>` and checks that nothing ran and no element appeared). The graph draws labels on a canvas.
+
+**Continue with more budget.** The allowance fixed at the start is the run's whole budget and the existing commands cannot raise it;
+"continue" resumes the run with a limit for the next turn (`--turn-usd`), within what is left. The screen says so.
+
+**Phone width and colour schemes.** The layout is one column below 720px, buttons are at least 44px high, and the page follows the system's
+light or dark scheme. The browser test takes screenshots of every screen at phone and desktop width in both schemes, and fails when the page scrolls sideways.
+
+## Tests
+
+`packages/ui/test`: the reader against a recorded journal (`reader.test.ts`); the guards (`server-security.test.ts`); the routes, the event
+streams and the doctor (`server-routes.test.ts`); commands, hostile statements, stop, detach and shutdown against a fake subprocess
+(`jobs.test.ts`); the key file's mode and non-disclosure (`keys.test.ts`); a run started, signed and stopped through the API with pi-ai's faux
+provider and a simulated Lean (`faux-run.test.ts`); `harness ui` as a child process and `solve --ask-stdin` (`cli.test.ts`); the front end's
+build, sources and types (`web.test.ts`); and one smoke test in headless Chromium through Playwright, which is skipped where Playwright is not
+installed (`browser.test.ts`; `SESHAT_UI_SHOTS=DIR` keeps its screenshots).
+
+## What has not been run
+
+No person has used it in a real browser session, and nothing has run through it against a real model, Lean, Kimina or certifier: the
+tests use a fake subprocess, the faux provider and a simulated Lean. The provider list and the key variables come from the library's own tables
+and have been checked only against what it reports here. Windows and macOS are untried (`--open` uses `open`, `start` or `xdg-open`).

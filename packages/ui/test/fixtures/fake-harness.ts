@@ -11,7 +11,8 @@ process.on("SIGINT", () => {
   process.exit(130);
 });
 if (command === "solve") {
-  console.log(`SESHAT_SIGNATURE ${JSON.stringify({ source: "prose", prose: "Every number equals itself.", theorem: "theorem t (n : Nat) : n = n := by\n  sorry", statement: "(n : Nat) : n = n", statementId: "sid_fake", notes: [] })}`);
+  const hostile = process.env.FAKE_HOSTILE === "1";
+  console.log(`SESHAT_SIGNATURE ${JSON.stringify({ source: "prose", prose: hostile ? "<img src=x onerror=\"window.__pwned=1\"><script>window.__pwned=1</script>** [x](javascript:alert(1))" : "Every number equals itself.", theorem: "theorem t (n : Nat) : n = n := by\n  sorry", statement: "(n : Nat) : n = n", statementId: "sid_fake", notes: hostile ? ["<b onmouseover=alert(1)>note</b>"] : [], testLemmas: { result: "held", tried: 10 } })}`);
   const answer = await new Promise<string | undefined>((resolve) => {
     const rl = createInterface({ input: process.stdin });
     rl.once("line", (line) => resolve(line));
