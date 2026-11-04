@@ -403,7 +403,11 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
   const alpha = input.alpha ?? 0.1;
   const now = input.now ?? (() => new Date());
   const devIds = splits.dev.map((p) => p.id);
-  const stamp = (): Provenance => stampProvenance(input.provenance, { now: now() });
+  /** The stamp of a prompt: the version it derives from, and for a rewrite that version with the first eight characters of its hash, as a run measuring it is stamped. */
+  const stamp = (text?: string): Provenance => ({
+    ...stampProvenance(input.provenance, { now: now() }),
+    ...(text !== undefined ? { promptVersion: `${input.provenance.promptVersion}+${sha256Hex(text).slice(0, 8)}` } : {}),
+  });
   let spentUsd = 0;
   const cap = input.maxUsd ?? Number.POSITIVE_INFINITY;
   const unit = input.problemUsd ?? 0;
@@ -470,7 +474,7 @@ export async function optimize(input: OptimizeInput): Promise<OptimizationResult
       continue;
     }
     const id = `c${pool.length}`;
-    const child: Candidate = { id, text, parent: parent.id, generation: parent.generation + 1, provenance: stamp(), scores: new Map(), feedback: new Map() };
+    const child: Candidate = { id, text, parent: parent.id, generation: parent.generation + 1, provenance: stamp(text), scores: new Map(), feedback: new Map() };
     const trial = await evaluateOn(`${id}-batch${iteration}`, text, batch);
     for (const [k, s] of scoresOf(trial, batch)) child.scores.set(k, s);
     const batchIds = batch.map((p) => p.id);

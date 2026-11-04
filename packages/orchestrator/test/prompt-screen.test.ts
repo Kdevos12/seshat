@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { PROMPT_TARGETS, promptTarget, screenPrompt, targetProblems } from "../src/prompt-screen.ts";
-import { PROMPT_VERSION, PROVER_SYSTEM_TEMPLATE, promptHash, systemPrompt } from "../src/prompt.ts";
+import { PROMPT_VERSION, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_RECORD, promptHash, systemPrompt } from "../src/prompt.ts";
+import { sha256Hex } from "@seshat/core";
 import { RunSetupError } from "../src/run.ts";
 import { check, demoRun } from "./m0-helpers.ts";
 
@@ -31,6 +32,13 @@ describe("the prover's prompt as a file", () => {
     assert.equal(targetProblems({ ...target, file: "packages/guards/src/guards.ts" }).length, 1);
     assert.equal(targetProblems({ ...target, file: "packages/orchestrator/prompts/../src/run.ts" }).length, 1);
     assert.equal(targetProblems({ ...target, file: "lean/SeshatLib/Prompt.txt" }).length, 1);
+  });
+});
+
+describe("the version of the prompt", () => {
+  it("is recorded with the hash of the text, so that a prompt cannot change without its version", () => {
+    assert.equal(PROVER_VERSION_RECORD.sha256, sha256Hex(PROVER_SYSTEM_TEMPLATE), "the prompt text changed: bump the version and the hash in prompts/prover.system.version.json (the patch of `harness optimize-prompts` does)");
+    assert.equal(PROMPT_VERSION, PROVER_VERSION_RECORD.promptVersion);
   });
 });
 

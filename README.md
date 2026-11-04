@@ -327,7 +327,7 @@ pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and
 pnpm harness lean-env resolve base
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation    # the cumulative configurations
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --experiment ladder
-pnpm harness optimize-prompts --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 40 --cutoff 2026-01-01 --split dev   # proposals/ID: candidates, evidence, patches; changes no prompt
+pnpm harness optimize-prompts --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 40 --cutoff 2026-01-01 --split dev --max-usd 300   # proposals/ID: candidates, evidence, patches; changes no prompt
 pnpm harness chunks runs/RUN_ID    # cost to first success for K provers in parallel
 pnpm harness probe runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID
 pnpm harness add ../some-pack --allow-programs    # then: pnpm harness packs, pnpm harness remove NAME

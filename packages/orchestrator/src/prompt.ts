@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 import { sha256Hex } from "@seshat/core";
 
+/**
+ * The version record of the prover's system prompt: its version and the hash of its text. A person who merges a rewrite of the prompt bumps both
+ * (the patch `harness optimize-prompts` writes does), and a test fails when the text and the record disagree.
+ */
+export const PROVER_VERSION_FILE = "packages/orchestrator/prompts/prover.system.version.json";
+export const PROVER_VERSION_RECORD = JSON.parse(readFileSync(new URL("../prompts/prover.system.version.json", import.meta.url), "utf8")) as { promptVersion: string; sha256: string };
+
 /** Changes with any change of the prompts below, and goes into `run.started`. */
-export const PROMPT_VERSION = "m0-2.1";
+export const PROMPT_VERSION: string = PROVER_VERSION_RECORD.promptVersion;
 
 /**
  * The text of the prover's system prompt, with two placeholders: `{{NOTES_CHARS}}` and `{{TOOLS_SECTION}}`. It lives in a file, so that
