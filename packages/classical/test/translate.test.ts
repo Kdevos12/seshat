@@ -84,6 +84,8 @@ describe("reading the solvers' answers", () => {
     assert.equal(readVampire("% SZS status Timeout for p\n", 1, "").result, "timeout");
     assert.equal(readVampire("% SZS status GaveUp for p\n", 1, "").result, "unknown");
     assert.equal(readVampire("Refutation found. Thanks to Tanya!\n", 0, "").result, "error", "the prose of the output is no verdict");
+    assert.equal(readVampire("# SZS status Theorem\n", 0, "").result, "error", "the # prefix is E's, not Vampire's");
+    assert.equal(readVampire("% SZS status Theorem for p\n% SZS status CounterSatisfiable for p\n", 0, "").result, "countermodel", "the last status outside a proof wins");
   });
 });
 

@@ -1,0 +1,36 @@
+{
+  "capability": "atp.eprover",
+  "cases": [
+    {
+      "name": "a theorem",
+      "purpose": "Theorem status, exit code 0, and the used axiom.",
+      "input": {
+        "tptp": "tff(a, axiom, ![X:$int]: $greater(X, 0)).\ntff(g, conjecture, $greater(5, 0)).\n"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "theorem"
+        },
+        {
+          "path": "szs",
+          "matches": "^(Theorem|Unsatisfiable)$"
+        }
+      ]
+    },
+    {
+      "name": "not a theorem",
+      "purpose": "CounterSatisfiable or GaveUp, never a theorem.",
+      "input": {
+        "tptp": "tff(p_type, type, p: $int > $o).\ntff(g, conjecture, ![X:$int]: p(X)).\n",
+        "timeoutSec": 5
+      },
+      "expect": [
+        {
+          "path": "result",
+          "matches": "^(countermodel|unknown|timeout)$"
+        }
+      ]
+    }
+  ]
+}

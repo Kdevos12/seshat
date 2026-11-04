@@ -163,7 +163,7 @@ approximations above.
 
 `smt.z3` and `atp.vampire` ([capabilities.md](capabilities.md#smtz3-and-atpvampire)) run the two
 problems. z3 comes from PyPI's `z3-solver`; its tests run when `z3` is on the PATH and say how to
-install it otherwise. Vampire is untested here (no binary): its answer parser is tested on SZS text
+install it otherwise. Vampire and E are untested here (no binary): their shared answer parser is tested on SZS text
 written from the TPTP documentation, and the process wrapper on scripts that print it.
 
 ## ATP and SMT with reconstruction
@@ -176,7 +176,7 @@ written from the TPTP documentation, and the process wrapper on scripts that pri
    the `lean.meta` export of Task 21: none by default, and then one call with the hypotheses only).
    A premise outside the fragment is dropped alone. Several short tries beat one long one, and an
    even mix of two selectors gains, which is why the cutoffs run in parallel;
-2. runs z3 and Vampire on every translation, in parallel, and keeps the **union of the successes**:
+2. runs z3 and the ATPs (Vampire and E, the **portfolio**, below) on every translation, in parallel, and keeps the **union of the successes**:
    each `unsat` or `Theorem` answer becomes an `Evidence` (tool, cutoff, answer, the hypotheses and
    premises of the unsat core or of the proof's `file(...)` annotations) in a node `first_order_run`;
 3. hands the premises of each success (smallest first), then of the union, to `grind [p, ...]`,
@@ -187,8 +187,28 @@ The answer of a solver is `computed` evidence at most: it changes no claim's sta
 raised because of it, and a run where Lean accepts no reconstruction ends with the evidence and the
 claim as it was. A proof that uses no premise beyond the goal's hypotheses is not reconstructed: the
 battery tried `grind` and `aesop` on exactly that. A tool the host does not have is recorded in
-`missing` and the other goes on. Nothing in this path has run against a real Lean or Vampire;
+`missing` and the other goes on. Nothing in this path has run against a real Lean, Vampire or E;
 z3 ran on the translated scripts only.
+
+### The portfolio of Vampire and E
+
+`atp.vampire` and `atp.eprover` ([capabilities.md](capabilities.md#atpeprover)) are two ATPs behind the
+same function type, and the stage tries them as a portfolio. Their answers are `Evidence` tagged with
+the tool, read by the same SZS reader, and reconstructed by the same premise sets and the same Lean
+tactics (`grind`, `aesop`, `hammer`): E adds a second chance, not a second route to a status. Two options
+of the line M10 configure it:
+
+- `atpTools` (default `vampire,eprover`): the ATPs to use, in the order given. One the host does not
+  offer is skipped, so the default is both when both are installed and the installed one otherwise; a
+  list naming only a missing prover runs no ATP (z3 still runs) and the stage notes it in `missing`.
+- `atpMode`: `parallel` (default) runs z3 and every ATP at once on each translation and reconstructs
+  all the answers together, smallest premise set first, then the union; `order` runs z3 with the first
+  ATP, reconstructs, and runs the next ATP only if Lean accepted nothing from the answers so far, so
+  the first prover whose output Lean accepts after reconstruction wins and the later ones cost nothing.
+
+The evidence is listed by cutoff and then by the order of the tools (z3, then the ATPs as `atpTools` gives them), never by which prover answered first, so the premise sets reach Lean in the same order on a resume. In both modes a prover that vanishes at run time is recorded in `missing` and the other goes on, and a
+set of premises is handed to Lean once. The briefing names the provers that answered ("Vampire and E
+proved the goal in the encoded theory..."). The node `first_order_run` records the tools asked (`tools`), and "ATP and SMT found nothing" is said when at least one of them ran.
 
 ## The line
 
