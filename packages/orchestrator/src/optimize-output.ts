@@ -143,10 +143,15 @@ export interface ReportMeta {
   /** Where the proposals are, for the merge instructions. */
   proposalsDir: string;
   promptVersion: string;
+  /** The level of the sign test before the correction for the finalists. */
+  alpha: number;
+  /** Earlier optimizations that used problems of the gate splits (the ledger). */
+  spentBefore: string[];
 }
 
 function verdictLine(f: Finalist): string {
-  return f.accepted ? "accepted: beats the merged prompt on the held-out split and on the temporal holdout" : "not accepted";
+  if (f.status === "accepted") return "accepted: beats the merged prompt on the held-out split and on the temporal holdout, significantly on both";
+  return f.status === "needs_review" ? "needs review: beats the merged prompt on both splits, but a gain is indicative only" : "not accepted";
 }
 
 /** The report of an optimization, as markdown: the splits, the search, the Pareto set, and each finalist against the merged prompt. */
@@ -195,29 +200,37 @@ export function renderOptimization(result: OptimizationResult, meta: ReportMeta)
   for (const f of result.finalists) {
     lines.push(`### ${f.candidate.id}: ${verdictLine(f)}`, "", `Dev: ${count(f.dev)} of ${dev.length} for ${usd(f.dev.usd)}.`, "", "| Split | Problems | Merged prompt | Candidate | Verdict | Detail |", "|---|---|---|---|---|---|");
     for (const g of f.gates) {
-      lines.push(`| ${g.split} | ${g.problems} | ${count(g.baseline)} ${usd(g.baseline.usd)} | ${count(g.candidate)} ${usd(g.candidate.usd)} | ${g.accepted ? "beats" : "does not beat"} | ${g.note.replace(/\|/g, "/")} |`);
+      lines.push(`| ${g.split} | ${g.problems} | ${count(g.baseline)} ${usd(g.baseline.usd)} | ${count(g.candidate)} ${usd(g.candidate.usd)} | ${g.accepted ? "beats, significant" : g.beats ? "beats, indicative only" : "does not beat"} (p=${g.p.toFixed(3)}, level ${g.alpha.toFixed(3)}) | ${g.note.replace(/\|/g, "/")} |`);
     }
     lines.push("");
   }
-  const accepted = result.finalists.filter((f) => f.accepted);
+  const accepted = result.finalists.filter((f) => f.status === "accepted");
+  const review = result.finalists.filter((f) => f.status === "needs_review");
   lines.push(
     "## What a person does",
     "",
-    accepted.length === 0
+    accepted.length === 0 && review.length === 0
       ? "Nothing was accepted. The prompt is unchanged, and no patch was written."
       : [
-          `Accepted: ${accepted.map((f) => f.candidate.id).join(", ")}. Each has a patch under \`candidates/ID/\`. The optimization changed no prompt: nothing changes until a person merges one.`,
+          accepted.length > 0 ? `Accepted: ${accepted.map((f) => f.candidate.id).join(", ")} (patch \`ID/${meta.target.id}.patch\`).` : "",
+          review.length > 0 ? `Needs review: ${review.map((f) => f.candidate.id).join(", ")} (patch \`ID/${meta.target.id}.needs-review.patch\`): it beats the merged prompt on both splits, but a gain is indicative only. Measure it on more problems before merging.` : "",
+          "The optimization changed no prompt: nothing changes until a person merges one.",
           "",
           "```sh",
           "git checkout -b prompts/PROPOSAL",
           `git apply ${meta.proposalsDir}/candidates/ID/${meta.target.id}.patch`,
-          "# bump PROMPT_VERSION in packages/orchestrator/src/prompt.ts, read the new text, then:",
           "pnpm check",
           "```",
           "",
-          "Read the whole new prompt before merging, not the numbers alone. A gain the sign test calls indicative only (see the detail column) is a reason to measure again on more problems. The provenance stamp of each candidate is in `evidence.json`.",
-        ].join("\n"),
+          "Read the whole new prompt before merging, not the numbers alone: the screen is a blacklist, and the human read is the gate. The provenance stamp of each candidate is in `evidence.json`.",
+        ].filter((l, k, all) => l !== "" || all[k - 1] !== "").join("\n"),
     "",
+    ...(result.finalists.length === 0 ? [] : [
+    "## The gate is spent",
+    "",
+    `The held-out split and the temporal holdout have now been measured against ${accepted.length + review.length + result.finalists.filter((f) => f.status === "rejected").length} finalist(s). Each further optimization on the same problems selects on them a little more: ${meta.spentBefore.length > 0 ? `these problems were already used by ${meta.spentBefore.join("; ")}.` : "no earlier optimization used these problems."} The sign test is held to ${meta.alpha} divided by the finalists of this run, not by the number of runs. Use new problems for a new optimization when the old gate has been used.`,
+    "",
+    ]),
   );
   return `${lines.join("\n")}\n`;
 }
