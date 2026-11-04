@@ -156,7 +156,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation of it that does not answer as `warn` and does not fail on it, also when the
   capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
   implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
-  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire` and `decide.ask`, and no other capability.
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire`, `atp.eprover` and `decide.ask`, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -393,6 +393,39 @@ exists, an address-space limit of twice that. The page for them is
 [classical.md](classical.md#translation-to-smt-lib-and-tptp). z3 (PyPI's `z3-solver` 5.3.3.0) ran
 through the translator in the tests; Vampire has not run: no binary was available, so its contract
 (2 cases) and its proof parsing are written from its documentation.
+
+## `atp.eprover`
+
+E (Stephan Schulz's equational prover) on a TPTP problem, the second ATP beside `atp.vampire`: same
+manifest shape, same input (`tptp`, `timeoutSec`), same output (`szs`, `result`, `used`, `exitCode`,
+`elapsedMs`, `proof`, `detail`), plus an optional `version`, the first line of `eprover --version`,
+read once per process and recorded in every tool run. It is a process (factory `eprover`; the command
+is a setting, `EPROVER_COMMAND`, default `eprover`) run as `eprover --auto --proof-object
+--tstp-format --cpu-limit=N --memory-limit=M` with the problem on standard input, in the same empty
+directory, minimal environment and process group as the other solvers, and the same TPTP screen. The
+answer is read by the shared `readSzs` from the SZS status line (E prints it after `#`, Vampire after
+`%`) and the exit code, never from the prose; the axioms used are the `file(...)` annotations of the
+proof. `theorem` is evidence at most, as for Vampire: the claim changes only when the premises are
+handed to `grind`, `aesop` or `hammer` and Lean accepts the result through `validate` (Rulings 13 and
+22). The capability is `deferred`, `optional` in both profiles, and `unavailable` where no binary is
+installed.
+
+**Licence.** E is free software under the GNU General Public License, "currently version 2.0"
+(E's download page, https://wwwlehre.dhbw-stuttgart.de/~sschulz/E/Download.html; the repository's
+`COPYING` is the GPL, Version 2, June 1991: https://github.com/eprover/eprover). Seshat never bundles,
+links or redistributes E: it starts the user's own installation as a separate program and reads its
+text output, which the GPL does not restrict. Whether the licence is "version 2 only" or "or later"
+was not checked.
+
+**To verify against a real binary** (nothing here has run, no E binary was available): that E reads the
+problem from standard input when given no file; that `--tstp-format` and `--proof-object` print the
+proof in `# SZS output start` / `end` blocks at the default output level (the `--silent` option is not
+used for that reason); the exit code of a proof (taken to be 0, and `Theorem` with another code is an
+`error`); and how well E's TFF support copes with the `$int` arithmetic the translator writes (E is
+strongest on pure first-order and equational problems). The settings `args` and `memoryMb` replace the
+flags and the memory limit. The contract (2 cases) runs against the real binary when `EPROVER_COMMAND`
+or `eprover` answers `--version`, and is skipped otherwise; stand-in shell scripts cover success,
+timeout, no proof, garbage output and an absent binary.
 
 ## `prove.auto` and `prove.search`
 

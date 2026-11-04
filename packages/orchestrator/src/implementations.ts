@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { proveAutoFactory, proveSearchFactory, vampireFactory, z3Factory } from "@seshat/classical";
+import { eproverFactory, proveAutoFactory, proveSearchFactory, vampireFactory, z3Factory } from "@seshat/classical";
 import { fauxFactory, jevFactory } from "@seshat/decide";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
 import { lookupEnvironment } from "@seshat/lean-env";
@@ -44,6 +44,7 @@ export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   "prove-search": proveSearchFactory(pantographFactory()),
   z3: z3Factory(),
   vampire: vampireFactory(),
+  eprover: eproverFactory(),
 };
 
 export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "host" | "factories" | "leanEnv"> {
