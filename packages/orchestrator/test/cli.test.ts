@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -293,6 +293,30 @@ describe("harness report", () => {
     const json = await harness(["report", dir, "--json"]);
     assert.equal(json.code, 0, json.stderr);
     assert.equal(json.stdout, readFileSync(join(dir, "report.json"), "utf8"));
+  });
+
+  it("rebuilds RESULT.md for a run whose process died, and view writes one page of it", async () => {
+    const full = await demoRun({ responses: [check("exact trivial_proof")] });
+    // The process died before it wrote anything of its own: no report, no RESULT.md.
+    const dead = killedAt(full.dir, (e) => e.type === "validation.finished");
+    assert.ok(!existsSync(join(dead, "report.md")));
+    rmSync(join(dead, "RESULT.md"), { force: true });
+    const report = await harness(["report", dead]);
+    assert.equal(report.code, 0, report.stderr);
+    const text = readFileSync(join(dead, "RESULT.md"), "utf8");
+    assert.match(text, /The journal has no end/);
+    assert.match(text, /pnpm harness resume .* --checkout /);
+    const page = await harness(["view", dead]);
+    assert.equal(page.code, 0, page.stderr);
+    assert.match(page.stdout, /^View: .*view\.html$/m);
+    assert.match(readFileSync(join(dead, "view.html"), "utf8"), /^<!doctype html>/);
+    const elsewhere = join(tempDir(), "page.html");
+    assert.equal((await harness(["view", dead, "--out", elsewhere])).code, 0);
+    assert.ok(existsSync(elsewhere));
+    const none = await harness(["view", tempDir()]);
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /is not a run directory/);
+    assert.equal((await harness(["view"])).code, 2);
   });
 
   it("refuses a directory that holds no run", async () => {
