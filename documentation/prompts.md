@@ -25,14 +25,18 @@ A rewrite is model-derived text that reaches a prover, so it is screened before 
 (`screenPrompt`, `packages/orchestrator/src/prompt-screen.ts`). Each target (`PROMPT_TARGETS`) names its file, its placeholders and its anchors.
 A text is refused when it
 
-- is empty, or holds control, zero-width or bidirectional characters, a link or an address;
+- is empty, or holds an invisible character (control, format, zero-width, bidirectional, Unicode tag, variation-selector, soft-hyphen, line and
+  paragraph separator, private-use or unassigned characters), any non-ASCII character the merged prompt does not already use, a link or an address;
 - names a Lean token the validator refuses that the merged prompt does not already name (the merged prompt lists them to say they are refused);
-- tells the model to ignore or override something, to skip the Lean check, not to call `lean_check`, or to claim a result without Lean;
+- adds a line that tells the model to ignore or override something, to skip the Lean check, not to call `lean_check`, to state a result, to count a timeout or error
+  as success or to stop on its own judgement, or that names a token the validator refuses without saying it is refused (the phrase rules read the lines a rewrite
+  adds to the merged prompt, so a future edit of the merged text cannot switch a rule off);
 - does not hold each placeholder exactly once, or holds another one;
 - drops an anchor: `lean_check`, the four `-- HARNESS:` region markers, "Lean decides", "Never allowed" and `sorry`. These tie the prompt to the trust
   rules and to the file format; a self-modifying agent that removes its own guard phrases is the failure the Darwin Gödel Machine showed;
 - is more than one and a half times or less than half the merged prompt's length: a longer prompt is a larger bill, and the budget would no longer be equal.
 
+The phrase rules are a blacklist, not a proof: they catch the wordings reviews have found, and a new wording gets past them. The human read of the patch is the real gate.
 The screen is a floor, not a judgment: a text that passes it is still measured, and a person still reads it.
 
 ## `harness optimize-prompts`
