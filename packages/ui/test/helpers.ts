@@ -3,9 +3,19 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tempDir } from "../../orchestrator/test/m0-helpers.ts";
+import type { DoctorSystem } from "@seshat/orchestrator";
 import { type RunningServer, type ServerOptions, startServer } from "../src/index.ts";
 
 export const FAKE_HARNESS = fileURLToPath(new URL("./fixtures/fake-harness.ts", import.meta.url));
+
+/** A machine with nothing on it: no command, no server, no network. */
+export const BARE_MACHINE: DoctorSystem = {
+  env: {},
+  which: () => undefined,
+  run: async () => ({ code: -1, stdout: "", stderr: "not found" }),
+  http: async () => ({ error: "no network in a test" }),
+  ids: () => undefined,
+};
 
 export interface Started {
   server: RunningServer;
@@ -32,6 +42,8 @@ export async function started(options: ServerOptions = {}): Promise<Started> {
     staticDir,
     keyFile,
     graceMs: 2000,
+    system: BARE_MACHINE,
+    configDir: join(dir, "config-dir"),
     pollMs: 50,
     env: { PATH: process.env.PATH ?? "", HOME: dir },
     command: (argv) => ({ file: process.execPath, args: ["--disable-warning=ExperimentalWarning", FAKE_HARNESS, ...argv] }),

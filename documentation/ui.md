@@ -98,3 +98,31 @@ always, before any spend.
 | `GET /api/providers`, `/api/providers/ID/models` | the library's providers | nothing |
 | `PUT` and `DELETE /api/providers/ID/key` | | the key file |
 | `POST /api/jobs` and the routes of a job | | a statement file under `runs/_inputs`; whatever the command it starts writes, as that command |
+
+## Provider settings
+
+No provider is named in this package. `GET /api/providers` lists what the pi-ai library holds at run time
+(`packages/ui/src/providers.ts`): its id, name, how many chat models it lists, and whether credentials are found.
+`GET /api/providers/ID/models` lists the models of one, with the library's price per million input and output tokens, in the
+`PROVIDER/ID` form that `--model` takes.
+
+**Which variable carries a key.** The library reports every environment variable it looks at while it checks a provider's
+credentials. The interface asks it, and takes the first name ending in `API_KEY` (then `TOKEN`) with which the library
+says the provider is configured; a provider with none (ambient credentials, a login flow) has nothing to save, and the
+screen says so. Nothing is mapped by hand, so a provider the library adds works the day it is added.
+
+**Where a key lives.** `PUT /api/providers/ID/key` writes it to `keys.json` in `$XDG_CONFIG_HOME/seshat` (or
+`~/.config/seshat`; `SESHAT_KEYS_FILE` moves it). The directory has mode 0700 and the file 0600, written whole through a rename.
+A path inside the repository is refused, so a key cannot be committed. The file is read only if it is a plain file of the
+current user that no one else can read; otherwise the settings screen says to `chmod 600` it, and no command is started
+with keys the interface cannot trust. A stored key counts as credentials for the doctor and for the model list, and a
+stored key wins over the same variable in the server's own environment.
+
+**How a command receives it.** The process manager adds each stored key to the environment of the subprocess, under the variable
+the library reads: the command finds its credentials as it does when you export them yourself.
+
+**What never happens to it.** The browser can save and delete a key and is never sent one back: the answers say
+`stored: true` and nothing more. It is not logged (the server logs no request body, and an error line has every stored key
+replaced), not journaled (the interface writes no journal; a command's events never carry the environment) and not echoed: a
+line a command prints that holds a stored key is shown as `[key hidden]`. The tests save a key and then look for it in every
+answer, every log line and every file under the runs directory (`packages/ui/test/keys.test.ts`).
