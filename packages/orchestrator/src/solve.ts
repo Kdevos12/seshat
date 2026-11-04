@@ -4,6 +4,7 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { buildSequences, type BenchIndex, type ProblemEntry, readIndex, writeIndex } from "@seshat/bench";
 import {
   BlobStore,
+  forbiddenTokensIn,
   hashJson,
   importsOf,
   type LeanChecker,
@@ -22,6 +23,7 @@ import {
 import { cheapTactics, formalizeHypothesis, testLemmas, type TestLemmas } from "@seshat/induction";
 import { type Llm, type LlmRequest, type LlmResult, withJson } from "@seshat/lines";
 import { messageCost } from "./budget.ts";
+import { shellQuote } from "./result.ts";
 import type { PriceBook } from "./prices.ts";
 import { resolveModel, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 import { checkAllowance, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
@@ -60,12 +62,15 @@ export function isSignature(text: string): boolean {
     const close = open === undefined ? undefined : closers[open];
     if (close === undefined) break;
     let depth = 0;
+    const start = i;
     for (; i < masked.length; i++) {
       const c = masked[i] as string;
       if (c === open) depth++;
       else if (c === close && --depth === 0) break;
     }
     if (depth !== 0) return false;
+    // A binder (x : T) or {x : T} has a colon inside; a parenthesis in prose ("(Fermat) : ...") does not.
+    if ((open === "(" || open === "{") && !masked.slice(start + 1, i).includes(":")) return false;
     i++;
     groups++;
   }
@@ -78,7 +83,7 @@ export function isSignature(text: string): boolean {
  */
 export function classifyStatement(text: string): "lean" | "prose" {
   const masked = maskCommentsAndStrings(text.trim());
-  if (DECLARATION.test(masked) || /^import\s/m.test(masked) || isSignature(text)) return "lean";
+  if (DECLARATION.test(masked) || /^import\s+[A-Z][\w.]*\s*$/m.test(masked) || isSignature(text)) return "lean";
   return "prose";
 }
 
@@ -122,6 +127,17 @@ export function leanProblem(text: string, header: string = DEFAULT_HEADER): Lean
     if (head === undefined || (head.keyword !== "theorem" && head.keyword !== "lemma")) continue;
     if (!SORRY.test(maskCommentsAndStrings(command.text))) continue;
     targets.push([...(scopes[k] ?? []), head.name].join(".").replace(/^(?:.*\.)?_root_\./, ""));
+  }
+  // The screen of every model-written text, for a file the person wrote or downloaded: it reaches Kimina and the certifier as it stands.
+  // Comments are kept (a file has docstrings), the header is apart, and `sorry` is the target's proof.
+  const rest = toPlainHeader(source).split("\n").map((line) => (/^import\s/.test(line) ? "" : line)).join("\n");
+  const maskedRest = maskCommentsAndStrings(rest);
+  const reasons = forbiddenTokensIn(maskedRest).filter((t) => t !== "sorry");
+  if (maskedRest.includes("#")) reasons.push("#");
+  if (reasons.length > 0) {
+    throw new SolveInputError(
+      `the Lean text is refused by the screen that every model-written text goes through, because it is checked by Lean as it stands: ${reasons.map((t) => `'${t}'`).join(", ")}. Remove it, or state the problem without it.`,
+    );
   }
   const fullName = targets.at(-1);
   if (fullName === undefined) throw new SolveInputError("no theorem or lemma in the text has `sorry` for its proof: there is nothing to prove. Leave the proof out, or write `:= by sorry`");
@@ -192,20 +208,41 @@ export interface FormalizationSpend {
   responseHash: string;
 }
 
-/** An `Llm` for the few calls before a run exists: its requests and responses go to the run's blobs, and its cost is added up. */
-export function preRunLlm(o: { models: Models; model: string; prices?: PriceBook; blobs: BlobStore; signal?: AbortSignal; maxUsd: number }): Llm & { spend(): FormalizationSpend | undefined } {
-  const spent = { usd: 0, inputTokens: 0, outputTokens: 0 };
+/** Dollars per million tokens of a model, input and output, from the host's table when it has the model and from pi-ai otherwise. */
+function pricePerMillion(model: Model<Api>, prices?: PriceBook): { input: number; output: number } {
+  const host = prices?.pricingOf(model);
+  return host !== undefined ? { input: host.cacheMiss, output: host.output } : { input: model.cost.input, output: model.cost.output };
+}
+
+/** The smallest answer worth paying for, in tokens: below it the call is not made. */
+const MIN_ANSWER_TOKENS = 64;
+
+/**
+ * An `Llm` for the few calls before a run exists: its requests and responses go to the run's blobs, and its cost is added up. Every call is bounded
+ * before it is sent: the input is estimated (three characters a token, an over-estimate), and the answer gets the `maxTokens` that the rest of
+ * `maxUsd` can pay for at the model's output price, so that the share cannot be passed by one call, nor by the retry of `completeJson`.
+ */
+export function preRunLlm(o: { models: Models; model: string; prices?: PriceBook; blobs: BlobStore; signal?: AbortSignal; maxUsd: number }): Llm & { spend(): FormalizationSpend | undefined; total(): { usd: number; inputTokens: number; outputTokens: number; calls: number } } {
+  const spent = { usd: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
   let last: { requestHash: string; responseHash: string } | undefined;
   let model: Model<Api> | undefined;
   const llm = withJson(async (request: LlmRequest): Promise<LlmResult> => {
-    if (spent.usd >= o.maxUsd) throw new SolveInputError(`formalizing the statement has already cost $${spent.usd.toFixed(4)}, the share of the allowance it may take: stopping before more is spent`);
     const name = request.model ?? o.model;
     model ??= await resolveModel(o.models, name);
-    const requestHash = o.blobs.putJson({ model: name, system: request.system ?? null, prompt: request.prompt, maxTokens: request.maxTokens ?? null });
+    const price = pricePerMillion(model, o.prices);
+    const estimatedInput = Math.ceil(((request.system?.length ?? 0) + request.prompt.length) / 3);
+    const left = o.maxUsd - spent.usd - (estimatedInput * price.input) / 1e6;
+    const affordable = price.output > 0 ? Math.floor((left * 1e6) / price.output) : 4096;
+    const maxTokens = Math.min(request.maxTokens ?? 4096, 4096, affordable);
+    if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
+      throw new SolveInputError(`formalizing the statement may cost $${o.maxUsd.toFixed(4)} (a share of the allowance) and has cost $${spent.usd.toFixed(4)}: not enough is left for an answer, so no call is made. Raise --max-usd, or write the statement in Lean.`);
+    }
+    const requestHash = o.blobs.putJson({ model: name, system: request.system ?? null, prompt: request.prompt, maxTokens });
+    spent.calls++;
     const message = await o.models.completeSimple(
       model,
       { ...(request.system !== undefined ? { systemPrompt: request.system } : {}), messages: [{ role: "user", content: request.prompt, timestamp: Date.now() }] },
-      { ...(o.signal !== undefined ? { signal: o.signal } : {}), ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}) },
+      { ...(o.signal !== undefined ? { signal: o.signal } : {}), maxTokens },
     );
     const cost: TokenCost = messageCost(model, message, o.prices);
     spent.usd += cost.usd;
@@ -216,7 +253,11 @@ export function preRunLlm(o: { models: Models; model: string; prices?: PriceBook
     last = { requestHash, responseHash: o.blobs.put(text) };
     return { text, cost, model: name, modelCallId: requestHash };
   });
-  return { ...llm, spend: () => (last === undefined ? undefined : { ...spent, ...last }) };
+  return {
+    ...llm,
+    spend: () => (last === undefined ? undefined : { usd: spent.usd, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, ...last }),
+    total: () => ({ ...spent }),
+  };
 }
 
 // --- The run ----------------------------------------------------------------------------------
@@ -250,6 +291,8 @@ export interface SolveOptions {
   lines?: StudentOptions["lines"];
   base?: StudentOptions["base"];
   prices?: PriceBook;
+  /** The host profile the run uses, which the resume command names. */
+  host?: string;
   /** The person's name, for the signature and every event of the run. */
   user: string;
   /** The first lines of the file, for a statement without imports. */
@@ -284,9 +327,9 @@ export interface SolveResult {
 
 /** The command that resumes a solve, exactly. */
 export function solveResumeCommand(dir: string, problem: OneProblem, host?: string): string {
-  const parts = ["harness", "resume", resolve(dir), "--checkout", problem.checkout, "--bench", problem.indexFile];
+  const parts = [resolve(dir), "--checkout", problem.checkout, "--bench", problem.indexFile];
   if (host !== undefined) parts.push("--host", host);
-  return parts.join(" ");
+  return `harness resume ${parts.map((p) => shellQuote(p)).join(" ")}`;
 }
 
 /** The share of the allowance the formalization may take. */
@@ -314,13 +357,17 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     const llm = preRunLlm({ models: o.models, model: o.model, blobs, maxUsd: o.maxUsd * FORMALIZATION_SHARE, ...(o.prices !== undefined ? { prices: o.prices } : {}), ...(o.signal !== undefined ? { signal: o.signal } : {}) });
     show(`Formalizing your statement with ${o.model} (this is the only model call before you sign; it is charged to your allowance)...`);
     let answer: Awaited<ReturnType<typeof formalizeHypothesis>>;
+    // What the call cost is written down whatever comes next, because no journal exists yet to hold it: a refused, failed or declined formalization has still been paid for.
+    const record = (state: string): void => writeFileSync(join(dir, "formalization.json"), `${JSON.stringify({ state, model: o.model, ...llm.total() }, null, 2)}\n`);
     try {
       answer = await formalizeHypothesis(llm, { id: "statement", level: "generalization", informal: prose, conclusion: "", uses: [] }, "the problem of the person running the harness", header, { model: o.model });
     } catch (error) {
-      const spend = llm.spend();
-      throw new SolveInputError(`${error instanceof Error ? error.message : String(error)}${spend !== undefined ? ` (the formalization cost $${spend.usd.toFixed(4)})` : ""}`);
+      record("failed");
+      const spent = llm.total();
+      throw new SolveInputError(`${error instanceof Error ? error.message : String(error)}${spent.calls > 0 ? ` (the formalization cost $${spent.usd.toFixed(4)}; it is written in ${join(dir, "formalization.json")})` : ""}`);
     }
     formalization = llm.spend();
+    record(answer.statement === undefined ? "refused" : "formalized");
     if (answer.statement === undefined) throw new SolveInputError(`the model's Lean statement was refused: ${answer.problem ?? "unreadable"}. Nothing was proved or run; try again, or write the statement in Lean.`);
     lean = leanProblem(`theorem ${TARGET_NAME} ${answer.statement}`, header);
     notes.push(`the model formalized your words; read the Lean statement below and sign it only if it says what you mean`);
@@ -355,8 +402,11 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(trivial !== undefined ? { trivial } : {}),
     notes,
   };
-  const resume = solveResumeCommand(dir, problem);
-  if (!(await o.confirm(signature))) return { state: "declined", dir, signature, problem, ...(formalization !== undefined ? { formalization } : {}), resume };
+  const resume = solveResumeCommand(dir, problem, o.host);
+  if (!(await o.confirm(signature))) {
+    if (formalization !== undefined) writeFileSync(join(dir, "formalization.json"), `${JSON.stringify({ state: "declined", model: o.model, ...formalization }, null, 2)}\n`);
+    return { state: "declined", dir, signature, problem, ...(formalization !== undefined ? { formalization } : {}), resume };
+  }
 
   // The allowance is the person's total: what the formalization cost comes off it.
   const remaining = Math.round((o.maxUsd - (formalization?.usd ?? 0)) * 1e6) / 1e6;

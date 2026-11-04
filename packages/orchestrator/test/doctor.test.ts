@@ -7,13 +7,17 @@ import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX
 import { fauxModels, tempDir } from "./m0-helpers.ts";
 
 /** A machine described by what it has: commands on PATH, the answers of its servers. */
-function machine(o: { has?: string[]; fails?: string[]; http?: (url: string) => { status: number } | { error: string }; env?: Record<string, string> } = {}): DoctorSystem {
+function machine(o: { has?: string[]; fails?: string[]; probe?: { code: number; stdout: string; stderr: string }; calls?: string[][]; http?: (url: string) => { status: number } | { error: string }; env?: Record<string, string> } = {}): DoctorSystem {
   const has = new Set(o.has ?? []);
   const fails = new Set(o.fails ?? []);
   return {
     env: o.env ?? {},
     which: (c) => (has.has(c) ? `/usr/bin/${c}` : undefined),
-    run: async (c, args) => (fails.has(c) || fails.has(`${c} ${args[0]}`) ? { code: 1, stdout: "", stderr: `${c}: failed` } : { code: 0, stdout: "Lake version 5\n", stderr: "" }),
+    run: async (c, args) => {
+      o.calls?.push([c, ...args]);
+      if (o.probe !== undefined && args.includes("-c")) return o.probe;
+      return fails.has(c) || fails.has(`${c} ${args[0]}`) ? { code: 1, stdout: "", stderr: `${c}: failed` } : { code: 0, stdout: "Lake version 5\n", stderr: "" };
+    },
     http: async (url) => (o.http ?? (() => ({ status: 200 })))(url),
     ids: () => ({ uid: 1000, gid: 1000 }),
   };
@@ -120,9 +124,9 @@ describe("harness doctor", () => {
   });
 
   it("does not trust bubblewrap that cannot make a sandbox, and falls back on nothing", async () => {
-    const { report, dir } = await run(machine({ has: ALL, fails: ["bwrap"] }));
+    const { report, dir } = await run(machine({ has: ALL, fails: ["prlimit"] }));
     assert.equal(byId(report, "isolation").status, "warn");
-    assert.match(byId(report, "isolation").detail, /cannot make a sandbox/);
+    assert.match(byId(report, "isolation").detail, /failed its test/);
     assert.equal(existsSync(join(dir, "hosts", "sandboxed.json")), false);
   });
 
@@ -172,6 +176,72 @@ describe("harness doctor", () => {
     writeFileSync(path, JSON.stringify(base));
     const s = await doctor({ system: machine({ has: ALL }), models, profile: loadHostProfile(path), configDir: dir, leanProject: "/p" });
     assert.match(byId(s, "isolation").detail, /behind `bwrap`/);
+  });
+});
+
+describe("doctor, review round 1", () => {
+  it("tests the real recipe before it trusts it: the work directory is writable, the rest is not, there is no network", async () => {
+    const calls: string[][] = [];
+    const ok = await run(machine({ has: ALL, calls }));
+    assert.equal(ok.report.isolation?.written, true);
+    const probe = calls.find((c) => c.includes("-c"));
+    assert.ok(probe !== undefined && probe[0] === "prlimit" && probe.includes("bwrap") && probe.includes("--unshare-net"), "the probe runs the recipe, prlimit and all");
+    const script = probe.at(-1) ?? "";
+    assert.match(script, /touch '.*seshat-doctor-work-.*\/ok'/);
+    assert.match(script, /seshat-probe-outside/);
+    assert.match(script, /\/proc\/net\/dev/);
+    assert.match(script, /dev\/tcp/);
+    for (const [stdout, words] of [["it can write outside the work directory", /write outside/], ["a network interface other than loopback is visible", /network interface/], ["it can open a connection to the network", /connection/]] as const) {
+      const bad = await run(machine({ has: ALL, probe: { code: 12, stdout, stderr: "" } }));
+      assert.equal(existsSync(join(bad.dir, "hosts", "sandboxed.json")), false, "nothing is written for a sandbox that does not confine");
+      assert.match(byId(bad.report, "isolation").detail, words);
+      assert.match(byId(bad.report, "isolation").detail, /stays? `computed`/);
+    }
+  });
+
+  it("tests the Docker recipe by running it, not by looking at the image", async () => {
+    const calls: string[][] = [];
+    const ok = await run(machine({ has: ["lake", "docker"], calls }));
+    assert.equal(ok.report.isolation?.tool, "docker");
+    assert.ok(calls.some((c) => c[0] === "docker" && c[1] === "run" && c.includes("--network") && c.includes("-c")));
+    const bad = await run(machine({ has: ["lake", "docker"], probe: { code: 14, stdout: "it can open a connection to the network", stderr: "" } }));
+    assert.equal(bad.report.isolation, undefined);
+    assert.match(byId(bad.report, "isolation").detail, /recipe failed its test/);
+  });
+
+  it("tests a sandbox the host profile already names, and does not overstate what it protects", async () => {
+    const dir = config();
+    const path = join(dir, "hosts", "local.json");
+    const base = JSON.parse(readFileSync(path, "utf8"));
+    base.capabilities["lean.certify"].settings.lake = { sandbox: ["bwrap", "--unshare-net", "--"] };
+    writeFileSync(path, JSON.stringify(base));
+    const { models } = fauxModels();
+    const profile = loadHostProfile(path);
+    const good = await doctor({ system: machine({ has: ALL }), models, profile, configDir: dir, leanProject: "/p" });
+    assert.equal(byId(good, "isolation").status, "ok");
+    assert.match(byId(good, "isolation").detail, /confirmed/);
+    assert.match(byId(good, "isolation").detail, /still read the files your user can read/);
+    assert.doesNotMatch(byId(good, "isolation").detail, /cannot reach your files/);
+    const bad = await doctor({ system: machine({ has: ALL, probe: { code: 13, stdout: "a network interface other than loopback is visible", stderr: "" } }), models, profile, configDir: dir, leanProject: "/p" });
+    assert.equal(byId(bad, "isolation").status, "warn");
+    assert.match(byId(bad, "isolation").detail, /test run of it failed/);
+  });
+
+  it("writes the profile from the host in use, without an unsandboxed key, and refuses an image name that is an option", async () => {
+    const dir = config();
+    const base = JSON.parse(readFileSync(join(dir, "hosts", "local.json"), "utf8"));
+    base.capabilities["lean.certify"].settings.lake.unsandboxed = false;
+    base.host = "mine";
+    writeFileSync(join(dir, "hosts", "mine.json"), JSON.stringify(base));
+    const { models } = fauxModels();
+    const r = await doctor({ system: machine({ has: ALL }), models, profile: loadHostProfile(join(dir, "hosts", "mine.json")), configDir: dir, leanProject: "/p" });
+    const written = JSON.parse(readFileSync(join(dir, "hosts", "sandboxed.json"), "utf8"));
+    assert.equal("unsandboxed" in written.capabilities["lean.certify"].settings.lake, false);
+    assert.match(written.description, /the host mine/);
+    assert.equal(r.isolation?.written, true);
+    const odd = await run(machine({ has: ["lake", "docker"], env: { SESHAT_LEAN_IMAGE: "--privileged" } }));
+    assert.match(byId(odd.report, "isolation").detail, /not an image name/);
+    assert.equal(existsSync(join(odd.dir, "hosts", "sandboxed.json")), false);
   });
 });
 

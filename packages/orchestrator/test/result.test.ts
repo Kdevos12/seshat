@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type HarnessEvent, readEvents } from "@seshat/core";
-import { buildResult, readResult, renderResult, resumeCommand, writeResult } from "../src/index.ts";
+import { buildResult, md, readResult, renderResult, resumeCommand, shellQuote, writeResult } from "../src/index.ts";
 import { certifier } from "./resume-helpers.ts";
-import { certifyingRegistry, check, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { certifyingRegistry, check, demoRun, killedAt, ofType, say, tempDir } from "./m0-helpers.ts";
 import { scriptedJournal } from "./scripted-journal.ts";
 import { TWO_PROBLEMS } from "./turns-helpers.ts";
 
@@ -193,5 +193,50 @@ describe("a run cut at every event", () => {
       certifiedSeen = Math.max(certifiedSeen, result.certified.length);
     }
     assert.equal(certifiedSeen, 2);
+  });
+});
+
+describe("RESULT.md review fixes", () => {
+  it("makes journal text inert in Markdown and keeps a statement from closing its own code span", () => {
+    const s = scriptedJournal();
+    const events = readEvents(join(s.dir, "journal.jsonl"));
+    s.journal.close();
+    const result = buildResult(events);
+    const hostile = "x` ![](http://host/?k) <img src=x> | a\nb";
+    const text = renderResult({
+      ...result,
+      claims: { ...result.claims, listed: [{ id: "clm_x", status: "open", statement: hostile }] },
+      evidence: [{ id: "nod_x", kind: "conjecture", text: hostile }],
+      counterexamples: [{ id: "nod_y", kind: "counter_model", text: hostile }],
+      certified: [{ ...result.certified[0]!, statement: hostile }],
+    });
+    for (const line of text.split("\n").filter((l) => /^(\| clm_x|- \[evidence\]|- nod_y)/.test(l))) {
+      assert.doesNotMatch(line, /(^|[^\\])(<img|!\[)/, line);
+      assert.match(line, /\\!\\\[/);
+    }
+    assert.match(text, /``\s?x` !\[\]\(http:\/\/host\/\?k\) <img src=x> \| a b\s?``/, "the statement is in a code span that the backtick cannot close");
+    assert.equal(md("a`b|c\nd"), "a\\`b\\|c d");
+  });
+
+  it("quotes the values of the resume command and refuses what cannot be quoted", () => {
+    assert.equal(shellQuote("runs/ok-1"), "runs/ok-1");
+    assert.equal(shellQuote("a b; rm -rf ~"), "'a b; rm -rf ~'");
+    assert.equal(shellQuote("it's"), "'it'\\''s'");
+    assert.throws(() => shellQuote("a\nb"));
+    const dir = tempDir();
+    writeFileSync(join(dir, "resume.json"), JSON.stringify({ checkout: "/p/with space", bench: "/p/i.json", host: "sandboxed" }));
+    assert.equal(resumeCommand(dir, "paused"), `pnpm harness resume ${shellQuote(dir)} --checkout '/p/with space' --bench /p/i.json --host sandboxed`);
+    writeFileSync(join(dir, "resume.json"), JSON.stringify({ checkout: "x\n```\nrm -rf ~", host: "h" }));
+    assert.match(resumeCommand(dir, "paused"), /resume.json is missing/);
+  });
+
+  it("calls a problem certified only by a replay of the right kind", () => {
+    const s = scriptedJournal();
+    // A certified proof of the negation of a claim that is still open does not make the problem certified.
+    s.journal.emit("validation.finished", { validationId: "val_neg", claimId: s.claims.stuck, attemptId: s.attempts[6]!, method: "kernel_replay", verdict: "valid", reasons: [], axioms: [], submissionHash: "h", negation: true }, "certifier");
+    const events = readEvents(join(s.dir, "journal.jsonl"));
+    s.journal.close();
+    const stuck = buildResult(events).problems.find((p) => p.target === "accumulation");
+    assert.deepEqual([stuck?.claimStatus, stuck?.certified], ["open", false]);
   });
 });

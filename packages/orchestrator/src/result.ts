@@ -218,7 +218,11 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
     // Problems and the claims they are about.
     const finishedOf = new Map<string, Extract<HarnessEvent, { type: "problem.finished" }>["data"]>();
     for (const e of events) if (e.type === "problem.finished") finishedOf.set(e.data.problemId, e.data);
-    const certifiedFor = (claimId: string): boolean => p.validations(claimId).some((v) => v.method === "kernel_replay" && v.verdict === "valid");
+    // A proved claim is certified by a proof of the claim, a refuted one by a proof of its negation: a valid replay of the other kind does not count.
+    const certifiedFor = (claimId: string): boolean => {
+      const status = p.claim(claimId)?.status;
+      return p.validations(claimId).some((v) => v.method === "kernel_replay" && v.verdict === "valid" && v.negation === (status === "refuted"));
+    };
     const problems: ProblemStanding[] = p.problems().map((row) => {
       const done = finishedOf.get(row.problem_id);
       return {
@@ -399,9 +403,11 @@ export function resumeCommand(dir: string | undefined, state: RunState): string 
   const file = dir === undefined ? undefined : join(dir, "resume.json");
   if (file !== undefined && existsSync(file)) {
     try {
-      const saved = JSON.parse(readFileSync(file, "utf8")) as { checkout?: string; bench?: string; host?: string };
+      const saved = JSON.parse(readFileSync(file, "utf8")) as { checkout?: unknown; bench?: unknown; host?: unknown };
       if (typeof saved.checkout === "string") {
-        return `pnpm harness resume ${where} --checkout ${saved.checkout}${typeof saved.bench === "string" ? ` --bench ${saved.bench}` : ""}${typeof saved.host === "string" ? ` --host ${saved.host}` : ""}`;
+        const bench = typeof saved.bench === "string" ? ` --bench ${shellQuote(saved.bench)}` : "";
+        const host = typeof saved.host === "string" ? ` --host ${shellQuote(saved.host)}` : "";
+        return `pnpm harness resume ${shellQuote(where)} --checkout ${shellQuote(saved.checkout)}${bench}${host}`;
       }
     } catch {
       // A damaged file is the same as none.
@@ -413,6 +419,26 @@ export function resumeCommand(dir: string | undefined, state: RunState): string 
 // ---------------------------------------------------------------------------------------------
 // The text.
 
+/** Plain text from the journal, made inert in Markdown: no code span, link, image, HTML or table cell can start from it, and it stays on one line. */
+export function md(text: string): string {
+  return text.replace(/\r?\n|\r/g, " ").replace(/[\\`<>[\]!|]/g, (c) => `\\${c}`);
+}
+
+/** Journal text as an inline code span that the text cannot close. */
+export function code(text: string): string {
+  const flat = text.replace(/\r?\n|\r/g, " ");
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((m) => m.length));
+  const tick = "`".repeat(longest + 1);
+  const pad = /^[`\s]|[`\s]$/.test(flat) ? " " : "";
+  return `${tick}${pad}${flat}${pad}${tick}`;
+}
+
+/** A value of a shell command, quoted when it has anything but safe characters. */
+export function shellQuote(value: string): string {
+  if (/[\0\n\r`]/.test(value)) throw new Error("a value with a newline or a backtick cannot be put in a command");
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 function fenced(text: string, language = "lean"): string[] {
   // A fence longer than any run of backticks in the text cannot be closed by the text.
   const longest = Math.max(2, ...(text.match(/`+/g) ?? []).map((m) => m.length));
@@ -421,7 +447,7 @@ function fenced(text: string, language = "lean"): string[] {
 }
 
 function table(head: string[], rows: string[][]): string[] {
-  const cell = (x: string) => x.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const cell = (x: string) => md(x);
   return [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`)];
 }
 
@@ -433,14 +459,14 @@ function counts(map: Record<string, number>): string {
 function headline(r: Result): string[] {
   if (r.problems.length === 0) return ["**No problem was registered.** The run ended before it began on one."];
   return r.problems.map((x) => {
-    const target = `\`${x.target}\``;
+    const target = code(x.target);
     if (x.claimStatus === "proved" && x.certified) return `**Proved.** The Lean kernel certified a proof of ${target} (claim ${x.claimId}).`;
     if (x.claimStatus === "refuted" && x.certified) return `**Refuted.** The Lean kernel certified a proof of the negation of ${target} (claim ${x.claimId}).`;
     if (x.claimStatus === "proved" || x.claimStatus === "refuted") return `**${x.claimStatus === "proved" ? "Proved" : "Refuted"} by the memory this run started on**, not by this run: ${target} (claim ${x.claimId}).`;
     if (x.claimStatus === "computed") {
       return `**Not proved: a candidate.** A proof of ${target} passed the fast Lean check and was not certified${r.certifier.name === null || r.certifier.unavailable !== undefined ? " (there was no certifier; see below)" : ""}. The claim's status is \`computed\`.`;
     }
-    const why = x.reason !== undefined ? ` ${x.reason}` : "";
+    const why = x.reason !== undefined ? ` ${md(x.reason)}` : "";
     return `**Not solved yet.** ${target} is \`${x.claimStatus}\`${x.outcome !== undefined ? `; the problem ended as ${x.outcome}.${why}` : "; the problem has no outcome in the journal."}`;
   });
 }
@@ -457,8 +483,8 @@ export function renderResult(r: Result): string {
   lines.push(
     "## Where the run stands",
     "",
-    `- ${when}${r.stop !== undefined ? `: ${r.stop.detail}` : r.state === "cut" ? ": the process was killed or crashed, or it is still running. What follows is what the journal holds up to its last event." : ""}.`,
-    `- Spent ${money(r.spend.usd)}${r.spend.budgetUsd !== undefined ? ` of ${money(r.spend.budgetUsd)}` : ""}, ${r.spend.inputTokens} input and ${r.spend.outputTokens} output tokens, in ${Math.round(r.seconds)} s${r.model !== undefined ? `, with ${r.model}` : ""}.`,
+    `- ${when}${r.stop !== undefined ? `: ${md(r.stop.detail)}` : r.state === "cut" ? ": the process was killed or crashed, or it is still running. What follows is what the journal holds up to its last event." : ""}.`,
+    `- Spent ${money(r.spend.usd)}${r.spend.budgetUsd !== undefined ? ` of ${money(r.spend.budgetUsd)}` : ""}, ${r.spend.inputTokens} input and ${r.spend.outputTokens} output tokens, in ${Math.round(r.seconds)} s${r.model !== undefined ? `, with ${md(r.model)}` : ""}.`,
   );
   if (r.spend.formalizationUsd !== undefined) lines.push(`- Formalizing your words cost ${money(r.spend.formalizationUsd)} more, before the run began (it is in the signature event, not in the figures above).`);
   lines.push(`- The journal: ${r.journal.events} events, last hash ${r.journal.head.slice(0, 16)}, chain ${r.journal.chain}.`);
@@ -469,15 +495,15 @@ export function renderResult(r: Result): string {
       "",
       ...fenced(r.signature.statement),
       "",
-      ...(r.signature.prose !== undefined ? [`from your words: ${clip(r.signature.prose, 300)}`, ""] : []),
-      ...(r.signature.testLemmas !== undefined ? [`Test lemmas on the first cases: ${r.signature.testLemmas.result}${r.signature.testLemmas.tried > 0 ? ` (${r.signature.testLemmas.tried} case(s))` : ""}${r.signature.testLemmas.note !== undefined ? `, ${clip(r.signature.testLemmas.note, 160)}` : ""}.`, ""] : []),
+      ...(r.signature.prose !== undefined ? [`from your words: ${md(clip(r.signature.prose, 300))}`, ""] : []),
+      ...(r.signature.testLemmas !== undefined ? [`Test lemmas on the first cases: ${r.signature.testLemmas.result}${r.signature.testLemmas.tried > 0 ? ` (${r.signature.testLemmas.tried} case(s))` : ""}${r.signature.testLemmas.note !== undefined ? `, ${md(clip(r.signature.testLemmas.note, 160))}` : ""}.`, ""] : []),
     );
   }
   // The certifier.
   if (r.certifier.name === null || r.certifier.unavailable !== undefined) {
     lines.push(
       "",
-      `> **No certifier ran.** ${r.certifier.unavailable !== undefined ? `\`lean.certify\` was unavailable: ${clip(r.certifier.unavailable, 300)}.` : "The host has no \`lean.certify\`."} A proof that passes the fast Lean check stays \`computed\`; only a certified proof makes a claim \`proved\`. Run \`pnpm harness doctor\` to see what is missing.`,
+      `> **No certifier ran.** ${r.certifier.unavailable !== undefined ? `\`lean.certify\` was unavailable: ${md(clip(r.certifier.unavailable, 300))}.` : "The host has no \`lean.certify\`."} A proof that passes the fast Lean check stays \`computed\`; only a certified proof makes a claim \`proved\`. Run \`pnpm harness doctor\` to see what is missing.`,
     );
   }
   // Claims.
@@ -493,7 +519,7 @@ export function renderResult(r: Result): string {
     lines.push(
       `### ${c.negation ? "Refutation" : "Proof"} of ${c.claimId}`,
       "",
-      `Statement: \`${c.statement}\``,
+      `Statement: ${code(c.statement)}`,
       "",
       `Certified by kernel replay ${c.validationId}${c.attemptId !== undefined ? `, proof from ${c.prover ?? "a prover"}, attempt ${c.attemptId}` : ""}; axioms: ${c.axioms.length === 0 ? "none" : c.axioms.join(", ")}.${c.negation ? " The file proves the negation of the statement." : ""}`,
       "",
@@ -502,36 +528,36 @@ export function renderResult(r: Result): string {
     );
   }
   if (r.carried.length > 0) {
-    lines.push("", "Proved or refuted in the memory this run started on (not certified again by this run):", "", ...r.carried.map((c) => `- ${c.claimId} (${c.status}): ${c.statement}`));
+    lines.push("", "Proved or refuted in the memory this run started on (not certified again by this run):", "", ...r.carried.map((c) => `- ${c.claimId} (${c.status}): ${md(c.statement)}`));
   }
   // Candidates.
   if (r.candidates.length > 0) {
     lines.push("", "## Passed the fast check, not certified", "", "These proofs were accepted by the fast Lean check. They are candidates (`computed`), not results: until the kernel replay certifies them, they may still be wrong.", "");
     for (const c of r.candidates) {
-      lines.push(`### Candidate for ${c.claimId}`, "", `Statement: \`${c.statement}\``, "", `Fast check ${c.validationId}${c.attemptId !== undefined ? `, from ${c.prover ?? "a prover"}, attempt ${c.attemptId}` : ""}.`, "", ...(c.file !== undefined ? fenced(c.file) : ["(file not in the run directory)"]), "");
+      lines.push(`### Candidate for ${c.claimId}`, "", `Statement: ${code(c.statement)}`, "", `Fast check ${c.validationId}${c.attemptId !== undefined ? `, from ${c.prover ?? "a prover"}, attempt ${c.attemptId}` : ""}.`, "", ...(c.file !== undefined ? fenced(c.file) : ["(file not in the run directory)"]), "");
     }
   }
   // Partial.
   if (r.partial.length > 0) {
     lines.push("", "## Partial sketches with open holes", "", "Not proofs: each file still has `sorry`. They are where the provers got to.", "");
     for (const s of r.partial) {
-      lines.push(`### ${s.claimId}: ${s.holes} open hole(s)`, "", `Statement: \`${s.statement}\``, "", `The last file of ${s.prover} (attempt ${s.attemptId}), regions only:`, "", ...fenced(`${s.aux.trim() === "" ? "" : `${s.aux}\n\n-- proof:\n`}${s.proof}`));
+      lines.push(`### ${s.claimId}: ${s.holes} open hole(s)`, "", `Statement: ${code(s.statement)}`, "", `The last file of ${s.prover} (attempt ${s.attemptId}), regions only:`, "", ...fenced(`${s.aux.trim() === "" ? "" : `${s.aux}\n\n-- proof:\n`}${s.proof}`));
       if (s.lastCheck !== undefined) lines.push("", "What Lean said of it:", "", ...fenced(s.lastCheck, "text"));
       lines.push("");
     }
   }
   // Counter-examples and evidence.
   if (r.counterexamples.length > 0) {
-    lines.push("", "## Counter-examples", "", "Found by a program or a small model. They are leads: a claim is `refuted` only by a certified proof of its negation (see above).", "", ...r.counterexamples.map((c) => `- ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${c.text}`));
+    lines.push("", "## Counter-examples", "", "Found by a program or a small model. They are leads: a claim is `refuted` only by a certified proof of its negation (see above).", "", ...r.counterexamples.map((c) => `- ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${md(c.text)}`));
   }
   if (r.evidence.length > 0) {
-    lines.push("", "## Indicative evidence (not proofs)", "", "What tools, fingerprints and conjectures found. Marked as evidence: none of it changes a claim's status.", "", ...r.evidence.map((c) => `- [evidence] ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${c.text}`));
+    lines.push("", "## Indicative evidence (not proofs)", "", "What tools, fingerprints and conjectures found. Marked as evidence: none of it changes a claim's status.", "", ...r.evidence.map((c) => `- [evidence] ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${md(c.text)}`));
   }
   // Failed.
   lines.push("", "## What was tried and failed", "");
   if (r.failed.length === 0 && r.errors.length === 0) lines.push("Nothing failed yet, or no session has ended.");
   if (r.failed.length > 0) lines.push(...table(["Claim", "Strategy", "Attempts", "Outcomes", "Last failure"], r.failed.map((f) => [f.claimId, f.strategy, String(f.attempts), counts(f.outcomes), f.lastFailure ?? ""])));
-  if (r.errors.length > 0) lines.push("", ...r.errors.map((e) => `- ${e}`));
+  if (r.errors.length > 0) lines.push("", ...r.errors.map((e) => `- ${md(e)}`));
   // Spend.
   lines.push("", "## Spend", "", ...(r.spend.sites.length === 0 ? ["Nothing was spent."] : table(["Site", "Calls", "Dollars", "Input tokens", "Output tokens", "Share"], r.spend.sites.map((s) => [s.site, String(s.calls), money(s.usd), String(s.inputTokens), String(s.outputTokens), `${(s.share * 100).toFixed(0)}%`]))));
   if (r.spend.rungs !== undefined) lines.push("", `By rung of the ladder: ${Object.entries(r.spend.rungs).sort(([a], [b]) => Number(a) - Number(b)).map(([rung, usd]) => `rung ${rung} ${money(usd)}`).join(", ")}.`);

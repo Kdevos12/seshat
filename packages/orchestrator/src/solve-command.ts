@@ -194,6 +194,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       model,
       maxUsd,
       user,
+      host,
       prices,
       header: DEFAULT_HEADER,
       checker: new RegistryLeanChecker(checkerRegistry, { actor: "orchestrator" }),
@@ -202,8 +203,9 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
       confirm: async (signature) => {
         showSignature(signature, io);
-        if (signature.source === "lean" || flags.yes === true) {
-          if (signature.source === "prose") io.out("Signed with --yes.");
+        // A Lean statement is signed too: the person may have downloaded it, and what is proved is this text and no other.
+        if (flags.yes === true) {
+          io.out("Signed with --yes.");
           return true;
         }
         const ask = io.ask ?? terminalAsk;
