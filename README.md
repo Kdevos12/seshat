@@ -11,7 +11,7 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 (independent provers on pi, in sessions that pass on their notes) and seventeen lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
 counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M15: an archive of alternative decompositions and the schemas of the closed ones, on its second rung, documented in [documentation/archive.md](documentation/archive.md); M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M4: the context compiler, a packet in place of the history, documented in [documentation/context.md](documentation/context.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals; M10: a classical battery, a domain router, z3 and Vampire with reconstruction in Lean, before any model; documented in [documentation/induction.md](documentation/induction.md), [documentation/repair.md](documentation/repair.md) and [documentation/classical.md](documentation/classical.md)) are written and tested with a
-simulated model and a simulated Lean, and all of them work in one run (M7 and M9 are suspended). `harness ablate` runs the cumulative configurations, M0 and then each line in turn, or one experiment, on the same problems at the same budget and writes the comparison table; it reads everything from the journals, together with the reliability of the typed decisions, the cost-to-first-success curves and an entrenchment probe of the memory ([documentation/ablate.md](documentation/ablate.md)). The bench also holds sequences of related problems and analogy and induction tags, and `bench-ext` converts the equational-theories data from a local cache ([documentation/bench.md](documentation/bench.md)). The work of a run is recorded as tasks in a ledger, and a run
+simulated model and a simulated Lean, and all of them work in one run (M7 and M9 are suspended). `harness ablate` runs the cumulative configurations, M0 and then each line in turn, or one experiment, on the same problems at the same budget and writes the comparison table; it reads everything from the journals, together with the reliability of the typed decisions, the cost-to-first-success curves and an entrenchment probe of the memory ([documentation/ablate.md](documentation/ablate.md)). `harness optimize-prompts` rewrites the prover's prompt (a file) GEPA-style on a dev split and proposes patches that beat the merged prompt on a held-out split and a temporal holdout; a person merges them ([documentation/prompts.md](documentation/prompts.md)). The bench also holds sequences of related problems and analogy and induction tags, and `bench-ext` converts the equational-theories data from a local cache ([documentation/bench.md](documentation/bench.md)). The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
 steers go into the journal and change no claim's status ([documentation/human.md](documentation/human.md)). The Lean the harness runs against is written
@@ -39,6 +39,8 @@ flowchart TB
   ablate["harness ablate<br/>M0 then each line, or one experiment:<br/>same problems, same budget"]:::built
   measures["Measures from the journals<br/>spend per site, reliability and ECE,<br/>cache per rung and line, curves"]:::built
   probe["Entrenchment probe<br/>memory on against verified facts<br/>only, alarm in the report"]:::built
+  optprompts["harness optimize-prompts<br/>GEPA-style rewrite on a dev split,<br/>gate: held-out and temporal,<br/>patches a person merges"]:::built
+  realopt["First real prompt optimization<br/>needs a model, Lean<br/>and the dataset"]:::wait
   realablate["First real ablation<br/>needs a model, Lean, Jev<br/>and the dataset"]:::wait
   fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run"]:::built
   dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
@@ -242,6 +244,8 @@ flowchart TB
   measures -->|"the comparison table"| ablate
   journal -->|"memory on, and<br/>verified facts only"| probe
   probe -->|"alarm, probe.json"| account
+  ablate -->|"each candidate is an arm"| optprompts
+  optprompts -.->|"real runs"| realopt
   ablate -.->|"real runs"| realablate
   benchext -.-> realablate
 ```
@@ -323,6 +327,7 @@ pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and
 pnpm harness lean-env resolve base
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation    # the cumulative configurations
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --experiment ladder
+pnpm harness optimize-prompts --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 40 --cutoff 2026-01-01 --split dev   # proposals/ID: candidates, evidence, patches; changes no prompt
 pnpm harness chunks runs/RUN_ID    # cost to first success for K provers in parallel
 pnpm harness probe runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID
 pnpm harness add ../some-pack --allow-programs    # then: pnpm harness packs, pnpm harness remove NAME

@@ -107,3 +107,22 @@ describe("run --probe-every", () => {
     }
   });
 });
+
+describe("harness optimize-prompts", () => {
+  it("needs a checkout, a model and a cutoff, and refuses the flags of run, a split other than dev and a protected directory", async () => {
+    const checkout = tempDir("mh-cli-checkout-");
+    const out = join(tempDir("mh-cli-out-"), "a");
+    assert.match((await harness(["optimize-prompts", "--all"])).stderr, /needs --checkout/);
+    assert.match((await harness(["optimize-prompts", "--all", "--checkout", checkout])).stderr, /needs --model/);
+    assert.match((await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x"])).stderr, /needs --cutoff/);
+    const lines = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--lines", "M1"]);
+    assert.equal(lines.code, 2);
+    assert.match(lines.stderr, /measures the prover alone/);
+    const split = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--split", "heldout", "--out", out]);
+    assert.equal(split.code, 2);
+    assert.match(split.stderr, /--split takes dev/);
+    const guarded = await harness(["optimize-prompts", "--all", "--checkout", checkout, "--model", "faux/x", "--cutoff", "2026-01-01", "--out", new URL("../../guards/x", import.meta.url).pathname]);
+    assert.equal(guarded.code, 2);
+    assert.match(guarded.stderr, /no write access/);
+  });
+});

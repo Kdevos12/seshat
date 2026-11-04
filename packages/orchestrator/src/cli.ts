@@ -25,6 +25,7 @@ import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } fr
 import { buildReport, renderRunReport } from "./report.ts";
 import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
+import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
@@ -48,6 +49,9 @@ const usage = `usage:
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
+  harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
+              [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
+              [--reflect-budget-usd X] [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
@@ -72,6 +76,12 @@ ablate: runs the cumulative configurations of plan section 6 (M0, then each line
 (documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
 would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
+optimize-prompts: GEPA-style rewriting of the prover's system prompt (documentation/prompts.md). It splits the problems into dev, a held-out
+split and a temporal holdout (problems newer than --cutoff), rewrites the prompt on dev with the model, keeps a Pareto set per problem, and
+measures the best candidates against the merged prompt on the two splits the search never saw, at the same budget. It changes no prompt: it
+writes the candidates, their evidence and, for a candidate that beats the merged prompt on both splits, a patch into --out (default
+proposals/ID), and a person merges it. Dates come from --dates FILE (problem id to ISO date) or the first commit of each problem's file in
+--checkout. Every measurement is a run per problem: the cost is several ablation arms, so start with a small --sample.
 probe: reruns a fixed probe set (20 problems by default, none of which built the memory) twice, with the memory of RUN_DIR and with its verified
 facts alone, and rings an alarm when the memory does worse beyond noise (documentation/ablate.md). run --probe-every K does it after every K-th
 run of a memory chain; harness report shows the result.
@@ -163,6 +173,14 @@ const { positionals, values } = parseArgs({
     models: { type: "string" },
     split: { type: "string" },
     "split-by": { type: "string" },
+    cutoff: { type: "string" },
+    dates: { type: "string" },
+    target: { type: "string" },
+    "reflector-model": { type: "string" },
+    iterations: { type: "string" },
+    minibatch: { type: "string" },
+    finalists: { type: "string" },
+    "reflect-budget-usd": { type: "string" },
     pilot: { type: "string" },
     "chunk-k": { type: "string" },
     "probe-every": { type: "string" },
@@ -220,6 +238,7 @@ async function main(): Promise<number> {
     if (command === "run") return await run();
     if (command === "report") return report();
     if (command === "ablate") return await ablate();
+    if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
     if (command === "probe") return await probe();
     if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
@@ -722,6 +741,60 @@ async function ablate(): Promise<number> {
     print: (line) => process.stdout.write(`${line}\n`),
   });
   console.log(`Ablation directory: ${dir}`);
+  return 0;
+}
+
+/** `harness optimize-prompts ...` (documentation/prompts.md). */
+async function optimizePrompts(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`optimize-prompts takes no positional argument, got ${target}`);
+  if (values.checkout === undefined) throw new UsageError("optimize-prompts needs --checkout: a checkout of the bench's repository");
+  if (values.model === undefined) throw new UsageError("optimize-prompts needs --model PROVIDER/ID (harness models lists them)");
+  if (values.cutoff === undefined) throw new UsageError("optimize-prompts needs --cutoff DATE: problems newer than it are the temporal holdout");
+  if (values.ablation !== undefined || values["line-option"] !== undefined || values["memory-from"] !== undefined || values.lines !== undefined) {
+    throw new UsageError("optimize-prompts measures the prover alone, with lean_check and the --tool capabilities: --lines, --ablation, --line-option and --memory-from belong to run");
+  }
+  if (values.sequence !== undefined || values.tag !== undefined) throw new UsageError("optimize-prompts splits the problems itself: choose them with --sample, --problem or --all");
+  const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
+  if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+  const checkout = values.checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
+  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const { problems, selection } = selectProblems(index);
+  const consortium = consortiumFlags();
+  const offpeak = offpeakFlags();
+  const decide = decideFlags();
+  const config: RunConfig = {
+    ...sharedConfig(selection, values.model, thinking),
+    ...(consortium !== undefined ? { consortium } : {}),
+    ...(offpeak !== undefined ? { offpeak } : {}),
+    ...(decide !== undefined ? { decide } : {}),
+  };
+  const dates = values.dates !== undefined ? readInput(() => readDates(values.dates as string)) : gitDates(checkout, problems);
+  const whole = (name: string, value: string | undefined): number | undefined => {
+    const n = number(name, value, undefined);
+    if (n !== undefined && (!Number.isInteger(n) || n < 1)) throw new UsageError(`--${name} must be a whole number of at least 1, got ${value}`);
+    return n;
+  };
+  const dir = resolve(values.out ?? join(REPO_ROOT, "proposals", newId("opt")));
+  await optimizePromptsCommand({
+    template: runTemplate(index, checkout, stoppable()),
+    config,
+    problems,
+    dir,
+    repoRoot: REPO_ROOT,
+    cutoff: values.cutoff,
+    dates,
+    ...(values.split !== undefined ? { split: values.split } : {}),
+    ...(values.target !== undefined ? { target: values.target } : {}),
+    ...(values["reflector-model"] !== undefined ? { reflectorModel: values["reflector-model"] } : {}),
+    ...(whole("iterations", values.iterations) !== undefined ? { iterations: whole("iterations", values.iterations) as number } : {}),
+    ...(whole("minibatch", values.minibatch) !== undefined ? { minibatch: whole("minibatch", values.minibatch) as number } : {}),
+    ...(whole("finalists", values.finalists) !== undefined ? { finalists: whole("finalists", values.finalists) as number } : {}),
+    ...(number("reflect-budget-usd", values["reflect-budget-usd"], undefined) !== undefined ? { reflectBudgetUsd: number("reflect-budget-usd", values["reflect-budget-usd"], undefined) as number } : {}),
+    log: (line) => console.error(line),
+    print: (line) => process.stdout.write(`${line}\n`),
+  });
+  console.log(`Proposals directory: ${dir}`);
   return 0;
 }
 
