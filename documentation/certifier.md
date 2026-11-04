@@ -149,6 +149,11 @@ stop is change files and use what the user can reach: the program, the project, 
 `.olean` files the replay trusts (the imports are not replayed), the user's own files, the network.
 Without a sandbox, a candidate can therefore make later candidates `certified`.
 
+`harness doctor` ([quickstart.md](quickstart.md#harness-doctor)) finds out whether this machine has bubblewrap or Docker that works and, when
+the host profile in use has no sandbox, writes `config/hosts/sandboxed.json`: the local profile with the certifier behind the bubblewrap or Docker
+recipe below. It writes it once and never over an existing file, it is git-ignored, and it never sets `unsandboxed`; without isolation it writes
+nothing and says that results stay `computed`. The rule that the certifier refuses to run without a sandbox is unchanged.
+
 **So the certifier fails closed.** `lean.certify` is unavailable, with this reason, in `pnpm harness
 health lean.certify` and in the run (below), unless the host profile gives the implementation
 either:

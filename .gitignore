@@ -10,3 +10,4 @@ lean/*/.lake/
 lean/env/*/
 packs/
 proposals/
+config/hosts/sandboxed.json
