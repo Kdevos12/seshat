@@ -27,6 +27,11 @@ export interface SolveFlags extends DoctorFlags {
   out?: string;
   as?: string;
   yes?: boolean;
+  /**
+   * Ask for the signature over the standard streams, for a program that drives the command (`harness ui`): the signature is printed as one
+   * line, `SESHAT_SIGNATURE` and then its JSON, and the answer is one line on standard input, `yes` or anything else for no.
+   */
+  askStdin?: boolean;
   lean?: boolean;
   prose?: boolean;
   noCheck?: boolean;
@@ -42,6 +47,8 @@ export interface CommandIo {
   system?: DoctorSystem;
   /** Asks a yes/no question; absent: a terminal prompt, or a refusal when there is no terminal. */
   ask?: (question: string) => Promise<boolean>;
+  /** With `askStdin`: reads the answer line; absent: standard input. */
+  readLine?: () => Promise<string | undefined>;
   signal?: AbortSignal;
   configDir?: string;
   codeRev?: string;
@@ -64,13 +71,13 @@ function leanProjectOf(host: string, configDir: string, system: DoctorSystem): s
   }
 }
 
-/** `harness doctor`: what the machine has and lacks, in plain words. Exit 1 when something a run needs is missing. */
-export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<number> {
+/** The report of `harness doctor` as data (the command prints it; `harness ui` shows it). Nothing is written unless the flags ask for it. */
+export async function doctorReport(flags: DoctorFlags, io: Pick<CommandIo, "models" | "system" | "configDir">): Promise<DoctorReport> {
   const configDir = io.configDir ?? `${REPO_ROOT}config`;
   const system = io.system ?? realSystem();
   const host = studentHost(flags.host, configDir);
   const profile = loadHostProfile(hostProfilePath(configDir, host));
-  const report = await doctor({
+  return await doctor({
     system,
     models: io.models,
     profile,
@@ -79,6 +86,11 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
     write: flags.noWrite === true ? "never" : flags.rewrite === true ? "rewrite" : "auto",
     ...(flags.model !== undefined ? { model: flags.model } : {}),
   });
+}
+
+/** `harness doctor`: what the machine has and lacks, in plain words. Exit 1 when something a run needs is missing. */
+export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<number> {
+  const report = await doctorReport(flags, io);
   for (const line of renderDoctor(report)) io.out(line);
   return report.ok ? 0 : 1;
 }
@@ -115,6 +127,20 @@ function showSignature(s: Signature, io: CommandIo): void {
   for (const note of s.notes) io.out(`  Note: ${note}`);
   io.out("");
 }
+
+/** The first line of standard input, or undefined when it ends before one. */
+async function stdinLine(): Promise<string | undefined> {
+  const rl = createInterface({ input: process.stdin, terminal: false });
+  try {
+    for await (const line of rl) return line;
+    return undefined;
+  } finally {
+    rl.close();
+  }
+}
+
+/** The marker of the line that carries a signature when the command is driven by a program (`--ask-stdin`). */
+export const SIGNATURE_LINE = "SESHAT_SIGNATURE";
 
 async function terminalAsk(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
@@ -202,6 +228,13 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
       confirm: async (signature) => {
+        if (flags.askStdin === true) {
+          io.out(`${SIGNATURE_LINE} ${JSON.stringify(signature)}`);
+          const answer = await (io.readLine ?? stdinLine)();
+          const yes = answer !== undefined && /^y(es)?$/i.test(answer.trim());
+          if (!yes) io.err("Not signed: nothing was run.");
+          return yes;
+        }
         showSignature(signature, io);
         // A Lean statement is signed too: the person may have downloaded it, and what is proved is this text and no other.
         if (flags.yes === true) {
