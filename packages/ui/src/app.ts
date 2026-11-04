@@ -76,14 +76,18 @@ export function createApp(o: AppOptions): Hono {
     return c.json({ error: "internal error" }, 500);
   });
 
-  async function body(c: { req: { header(name: string): string | undefined; json(): Promise<unknown> } }): Promise<Record<string, unknown>> {
+  async function body(c: { req: { header(name: string): string | undefined; text(): Promise<string> } }): Promise<Record<string, unknown>> {
     if (!/^application\/json(\s*;|$)/i.test(c.req.header("content-type") ?? "")) throw new RequestError("send JSON", 415);
     const length = Number(c.req.header("content-length") ?? "0");
     if (length > MAX_BODY) throw new RequestError("request too large", 413);
     let parsed: unknown;
     try {
-      parsed = await c.req.json();
-    } catch {
+      // The size is checked on what was read, not on what the header claimed.
+      const text = await c.req.text();
+      if (text.length > MAX_BODY) throw new RequestError("request too large", 413);
+      parsed = JSON.parse(text);
+    } catch (error) {
+      if (error instanceof RequestError) throw error;
       throw new RequestError("not valid JSON");
     }
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new RequestError("send a JSON object");

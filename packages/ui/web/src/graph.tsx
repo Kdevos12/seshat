@@ -56,7 +56,6 @@ export function Graph(props: { claims: ClaimView[]; edges: EdgeView[] }) {
       autoungrabify: true,
       minZoom: 0.2,
       maxZoom: 2.5,
-      layout: { name: "breadthfirst", directed: true, spacingFactor: 1.1, padding: 12, roots: props.claims.filter((c) => c.target).map((c) => `#${CSS.escape(c.id)}`) },
       style: [
         { selector: "node", style: { shape: "round-rectangle", width: 118, height: 40, label: "data(label)", "text-wrap": "wrap", "text-valign": "center", "text-halign": "center", "font-size": 10, color: text, "background-color": css("--open"), "border-width": 1, "border-color": line } },
         ...STATUSES.map((s) => ({ selector: `node[status = "${s}"]`, style: { "background-color": css(`--${s}`) } })),
@@ -67,6 +66,7 @@ export function Graph(props: { claims: ClaimView[]; edges: EdgeView[] }) {
         { selector: 'edge[status = "proposed"]', style: { "line-style": "dashed" } },
       ],
     });
+    cy.layout({ name: "breadthfirst", directed: true, spacingFactor: 1.1, padding: 12, roots: cy.nodes("[target = 1]") as unknown as string[] }).run();
     cy.on("tap", "node", (event) => setPicked(props.claims.find((c) => c.id === event.target.id())));
     return () => cy.destroy();
   }, [props.claims, props.edges, dark]);

@@ -13,16 +13,30 @@ describe("harness solve --ask-stdin", () => {
     const err: string[] = [];
     const code = await solveCommand(
       "(n : ℕ) : n + 0 = n",
-      { out: join(tempDir("ui-solve-"), "run"), askStdin: true, noCheck: true, model: name, max: 1, host: "local" },
+      { out: join(tempDir("ui-solve-"), "run"), askStdin: true, askNonce: "nonce-for-the-test", noCheck: true, model: name, max: 1, host: "local" },
       { out: (l) => out.push(l), err: (l) => err.push(l), models, system: BARE_MACHINE, readLine: async () => "no" },
     );
     assert.equal(code, 1);
-    const line = out.find((l) => l.startsWith(`${SIGNATURE_LINE} `));
+    const line = out.find((l) => l.startsWith(`${SIGNATURE_LINE} nonce-for-the-test `));
     assert.ok(line, out.join("\n"));
-    const signature = JSON.parse(line.slice(SIGNATURE_LINE.length + 1));
+    const signature = JSON.parse(line.slice(SIGNATURE_LINE.length + 1 + "nonce-for-the-test ".length));
     assert.equal(signature.source, "lean");
     assert.match(signature.theorem, /n \+ 0 = n/);
     assert.match(err.join("\n"), /Not signed/);
+  });
+
+  it("takes a yes only for the statement that was shown, and refuses to run without the caller's nonce", async () => {
+    const { models, name } = fauxModels();
+    const run = (askNonce: string | undefined, answer: string) =>
+      solveCommand(
+        "(n : ℕ) : n + 0 = n",
+        { out: join(tempDir("ui-solve-"), "run"), askStdin: true, ...(askNonce !== undefined ? { askNonce } : {}), noCheck: true, model: name, max: 1, host: "local" },
+        { out: () => {}, err: () => {}, models, system: BARE_MACHINE, readLine: async () => answer },
+      );
+    assert.equal(await run("n", "yes sid_some_other_statement"), 1, "a yes for another statement is a no");
+    assert.equal(await run("n", "yes"), 1, "a bare yes is a no");
+    assert.equal(await run("n", "y"), 1);
+    assert.equal(await run(undefined, "yes sid"), 2, "without the nonce the command refuses");
   });
 });
 
@@ -40,7 +54,7 @@ describe("harness ui", () => {
       const url = await new Promise<string>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`no address: ${text}`)), 15000);
         const look = setInterval(() => {
-          const m = /(http:\/\/127\.0\.0\.1:\d+\/\?token=\S+)/.exec(text);
+          const m = /(http:\/\/127\.0\.0\.1:\d+\/#token=\S+)/.exec(text);
           if (m !== null) {
             clearTimeout(timer);
             clearInterval(look);
@@ -48,13 +62,14 @@ describe("harness ui", () => {
           }
         }, 50);
       });
-      const first = await fetch(url, { redirect: "manual" });
-      assert.equal(first.status, 303);
-      const bare = await fetch(new URL("/", url));
-      assert.equal(bare.status, 401);
-      const page = await fetch(new URL("/", url), { headers: { cookie: (first.headers.get("set-cookie") ?? "").split(";")[0] as string } });
+      const token = /#token=(\S+)/.exec(url)?.[1] ?? "";
+      const origin = new URL(url).origin;
+      assert.equal((await fetch(`${origin}/api/session`)).status, 401, "no token, no answer");
+      assert.equal((await fetch(`${origin}/api/session`, { headers: { authorization: `Bearer ${token}` } })).status, 200);
+      const page = await fetch(`${origin}/`);
       assert.equal(page.status, 200);
       assert.match(await page.text(), /<title>Seshat<\/title>/);
+      assert.equal(page.headers.get("set-cookie"), null, "no cookie is ever set");
     } finally {
       child.kill("SIGINT");
     }

@@ -112,6 +112,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       await page.screenshot({ path: join(shots, "signature-phone.png"), fullPage: true });
       const text = await page.textContent("body");
       assert.ok(text.includes('<img src=x onerror="window.__pwned=1">'), "the words are shown as text");
+      assert.match(text, /already charged to your allowance/);
       assert.equal(await page.evaluate("window.__pwned"), undefined);
       assert.equal(await page.locator('img[src="x"]').count(), 0);
       await page.click("button:has-text('Yes, sign it and start')");

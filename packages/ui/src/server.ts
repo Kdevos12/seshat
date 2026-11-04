@@ -38,7 +38,7 @@ export interface ServerOptions {
 }
 
 export interface RunningServer {
-  /** The address to open: it carries the token once, and the server turns it into a cookie and removes it from the address bar. */
+  /** The address to open. The token is in the fragment, which a browser never sends to any server; the page keeps it for the session and removes it from the address bar. */
   url: string;
   /** The same address without the token. */
   origin: string;
@@ -59,7 +59,8 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const manager = new ProcessManager({
     ...(options.command !== undefined ? { command: options.command } : {}),
     cwd: process.cwd(),
-    env: () => ({ ...baseEnv, ...keys.env() }),
+    // A command gets the stored key of the provider it is told to use, not every key the file holds.
+    env: (scope) => ({ ...baseEnv, ...keys.env(scope.mode === "none" ? [] : scope.mode === "all" ? undefined : [scope.provider]) }),
     secrets: () => {
       try {
         return keys.secrets();
@@ -92,7 +93,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const origin = `http://${BIND_ADDRESS}:${port}`;
   let closing: Promise<void> | undefined;
   return {
-    url: `${origin}/?token=${token}`,
+    url: `${origin}/#token=${token}`,
     origin,
     port,
     token,

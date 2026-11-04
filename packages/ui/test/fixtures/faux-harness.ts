@@ -6,6 +6,8 @@ import { createInterface } from "node:readline";
 import { certifier } from "../../../orchestrator/test/resume-helpers.ts";
 import { certifyingRegistry, check, DemoLean, fauxModels } from "../../../orchestrator/test/m0-helpers.ts";
 
+const nonce = process.env.SESHAT_ASK_NONCE;
+delete process.env.SESHAT_ASK_NONCE;
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const { models, faux, name } = fauxModels();
@@ -28,14 +30,14 @@ const result = await solve({
   checker: new DemoLean(),
   signal: controller.signal,
   confirm: async (signature) => {
-    console.log(`${SIGNATURE_LINE} ${JSON.stringify(signature)}`);
+    console.log(`${SIGNATURE_LINE} ${nonce} ${JSON.stringify(signature)}`);
     const rl = createInterface({ input: process.stdin });
     const line = await new Promise<string | undefined>((resolve) => {
       rl.once("line", resolve);
       rl.once("close", () => resolve(undefined));
     });
     rl.close();
-    return line?.trim() === "yes";
+    return line?.trim() === `yes ${signature.statementId}`;
   },
   show: (line) => console.log(line),
 });
