@@ -32,11 +32,16 @@ statement and works on it. Nothing here is a new mechanism of a run: `solve` pre
 
 **The statement.** It is read as Lean when it has a `theorem` or `lemma`, an `import` line, or the shape
 `binders : proposition` (`(n : ℕ) : n + 0 = n`); anything else is prose. `--lean` and `--prose` force
-the reading (a bare proposition such as `∀ n : ℕ, n + 0 = n` is Lean only with `--lean`). A file is read
-whole: `.lean` is Lean, `.txt`, `.md` and `.tex` are prose. A Lean text with no `import` gets `import
+the reading (a bare proposition such as `∀ n : ℕ, n + 0 = n` is Lean only with `--lean`). A parenthesis in prose
+(`(Fermat) : the equation ...`) is not a binder, which has a colon inside, and `import` starts Lean only
+before a module name (`import Mathlib`). A file is read whole: `.lean` is Lean, `.txt`, `.md` and `.tex` are prose. A Lean text with no `import` gets `import
 Mathlib`; a signature or a proposition becomes `theorem solve_target ... := by sorry`; the target of a
 file is its theorem whose proof is `sorry` (the last, when there are several; the lemmas above it are the
 file's own). A text with nothing to prove is refused with the reason.
+
+**The screen.** A Lean statement or file you wrote, or downloaded, reaches Kimina and the certifier as it stands, so it goes through
+the strict screen that every model-written text goes through (`#eval`, `run_cmd`, `elab`, `macro`, `IO`, `import` after the header, any `#`...),
+with comments kept (a file has docstrings) and the header apart. A text the screen refuses is not run; the message names the token.
 
 **Prose is formalized, shown and signed before any spend.** The cheapest model with a price makes a Lean
 statement of your words (the induction path: `formalizeHypothesis`, whose answer goes through the strict
@@ -49,8 +54,14 @@ written). You answer `y`, or the run does not start (`--yes` answers for you; wi
 claim or model call of the run. It holds your words, the signed statement and its id, the problem it is the
 target of, the model, the request and response of the formalization call (blobs of the run), what the
 first cases said and whether the statement was trivial. A statement you wrote in Lean is journaled the same
-way (`source: "lean"`) with no prose, and is not asked about: you wrote it. `RESULT.md` and the view show
+way (`source: "lean"`) with no prose, and is asked about too: what is proved is this text and no other, and a file you
+downloaded is not a file you wrote. `RESULT.md` and the view show
 the signature.
+
+**What the formalization may cost.** The call is bounded before it is sent: the input is estimated, and the answer gets the
+`maxTokens` that the rest of 20% of `--max-usd` can pay for at the model's output price (the retry of the JSON answer included); when
+nothing worth paying for is left no call is made. Because no journal exists yet, what it cost is written to
+`RUN_DIR/formalization.json` (`state`: `formalized`, `refused`, `failed` or `declined`, with dollars and tokens) whatever comes next.
 
 The signature records that **you accepted the statement as your meaning**. It does not make anything true, and
 no proof depends on it: the claim's status still comes from the certifier alone.
@@ -58,8 +69,10 @@ no proof depends on it: the claim's status still comes from the certifier alone.
 **The one-problem bench.** The problem becomes a checkout of one file and a bench index of one problem under
 `RUN_DIR/problem` (`Solve.lean`, `index.json`; category `research open`, no AMS code, `benchId` `solve-HASH`).
 The index has the shape and the hash check of the bench's, so the run, its memory and `harness resume` do not
-know the difference. The exact command that resumes the run is in `RESULT.md`:
-`harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json`.
+know the difference. The exact command that resumes the run is in `RESULT.md` and printed when a turn stops:
+`harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json --host HOST`, with the host the run began with
+(the isolated profile is not the default of `harness resume`) and every value quoted for a shell. A `resume.json` whose values cannot be
+quoted (a newline, a backtick) gives the placeholder command instead.
 
 **The student defaults.** Every one is the value of an existing option of `harness run`:
 
@@ -73,7 +86,7 @@ know the difference. The exact command that resumes the run is in `RESULT.md`:
 | Consortium stop | a turn ends, with its account, when it has spent half the allowance (`--turn-usd`), at an impasse, or when the problem is settled | `--turn-usd`, the breakpoints ([human.md](human.md)); the run then waits, and `harness resume` spends the rest up to the allowance |
 | Off-peak | not by default; `--offpeak` waits for the host's off-peak prices when its table has a calendar for the model | `--offpeak` |
 | Host | the one named, `HARNESS_HOST`, `sandboxed` when `doctor` has written it, then `local` | `--host` |
-| User | `--as`, `SESHAT_USER`, the login name; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
+| User | `--as`, `SESHAT_USER`, then the operating system's login name, which is then journaled (`user`, `human:NAME`) as it is; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
 
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
 not spent stays yours.
@@ -98,10 +111,14 @@ run needs is missing.
 
 **The isolation profile.** The certifier runs a candidate's Lean code, and it refuses to without a sandbox
 ([certifier.md](certifier.md#where-untrusted-code-runs); Ruling 22). When the host profile in use has no
-sandbox and does not opt out, `doctor` looks for bubblewrap and then Docker, and proves that it works
-(a `bwrap` that cannot make a user namespace is reported, not trusted; Docker needs a running daemon and
-the image of the Docker recipe, `seshat-lean:4.27.0` or `SESHAT_LEAN_IMAGE`). If one works it writes
-`config/hosts/sandboxed.json`: `local.json` with `lean.certify` behind the recipe of certifier.md (bubblewrap
+sandbox and does not opt out, `doctor` looks for bubblewrap and then Docker, and **runs the real recipe** (the `prlimit` and
+`bwrap` command, or `docker run` with the image) around a small test on scratch directories: the work directory must be writable,
+a file outside it must not be, no network interface but loopback may be visible, and a connection out must fail. Only a recipe that passes is
+used; one that fails is reported with what it did wrong (a `bwrap` that cannot make a user namespace, an image that is missing, a daemon
+that is down, a sandbox that does not confine). A sandbox the host profile already names is tested the same way. The recipe leaves your files
+readable (the root is bound read-only): it protects what is written and the network, not what is read. Docker needs the image of the Docker recipe, `seshat-lean:4.27.0` or
+`SESHAT_LEAN_IMAGE`, which must be an image name and not an option. If one works it writes
+`config/hosts/sandboxed.json`: the host profile in use (`local.json` by default) with `lean.certify` behind the recipe of certifier.md (bubblewrap
 with `prlimit`, no network, the filesystem read-only except the work directory; or the Docker recipe, no
 network, read-only, all capabilities dropped, as your user). The file is written once and never over an
 existing one (`--rewrite` replaces it, `--no-write` only checks), it is git-ignored, and no profile `doctor`
@@ -149,6 +166,12 @@ written whole or not at all (a rename), so a reader never sees half of one.
     sentence that there is nothing to resume. The command comes from `resume.json`, which the run
     writes beside its journal with the checkout, the bench file and the host it began with; without it
     the command has placeholders.
+
+**Text from the journal is inert.** Whatever a model, a program or a person wrote (statements, evidence, failures, reasons) is put into
+`RESULT.md` with its backticks, angle brackets, brackets, exclamation marks, pipes and newlines escaped, and a statement is shown in a code span that
+no backtick in it can close, so a preview of the file cannot be made to load an image or follow a link by what the journal holds. The resume command
+is built from `resume.json` with each value quoted for a shell; a headline says `Proved` only when a valid replay of the claim itself is in the journal, and
+`Refuted` only when one of its negation is.
 
 **What it never does.** It never states a status the journal does not hold: the headline reads the
 claim's status from the projection, "certified" means a valid kernel replay of that claim, and a claim

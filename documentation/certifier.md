@@ -151,7 +151,7 @@ Without a sandbox, a candidate can therefore make later candidates `certified`.
 
 `harness doctor` ([quickstart.md](quickstart.md#harness-doctor)) finds out whether this machine has bubblewrap or Docker that works and, when
 the host profile in use has no sandbox, writes `config/hosts/sandboxed.json`: the local profile with the certifier behind the bubblewrap or Docker
-recipe below. It writes it once and never over an existing file, it is git-ignored, and it never sets `unsandboxed`; without isolation it writes
+recipe below. It runs the recipe on scratch directories first and writes the profile only if the work directory is writable, a file outside it is not, and the network is unreachable. It writes it once and never over an existing file, it is git-ignored, and it never sets `unsandboxed`; without isolation it writes
 nothing and says that results stay `computed`. The rule that the certifier refuses to run without a sandbox is unchanged.
 
 **So the certifier fails closed.** `lean.certify` is unavailable, with this reason, in `pnpm harness

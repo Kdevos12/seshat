@@ -171,3 +171,47 @@ describe("harness solve", () => {
     assert.equal(ofType(resumed.events, "run.resumed").length, 1, "the run was resumed on the one-problem bench");
   });
 });
+
+describe("Task 30 review round 1", () => {
+  it("applies the strict screen to a Lean statement or file, keeping docstrings and the header", () => {
+    for (const bad of ["theorem a : True := by\n  run_cmd logInfo \"x\"\n  trivial", "theorem a : 1 = 1 := by\n  sorry\n#eval 1", "macro \"foo\" : tactic => `(tactic| rfl)\ntheorem a : 1 = 1 := by sorry", "theorem a : IO Unit := by sorry"]) {
+      assert.throws(() => leanProblem(bad), /screen/, bad);
+    }
+    const ok = leanProblem("import Mathlib\n\n/-- A docstring -- with dashes. -/\ntheorem a (n : ℕ) : n = n := by\n  sorry\n");
+    assert.equal(ok.fullName, "a");
+  });
+
+  it("does not read prose as Lean because of a parenthesis or an import word", () => {
+    assert.equal(classifyStatement("(Fermat) : the equation x^n + y^n = z^n has no solution"), "prose");
+    assert.equal(classifyStatement("import the known bounds and show that they agree"), "prose");
+    assert.equal(classifyStatement("(a b : ℕ) : a + b = b + a"), "lean");
+    assert.equal(classifyStatement("import Mathlib\ntheorem x : True := by sorry"), "lean");
+  });
+
+  it("names the host and quotes every value in the resume command", async () => {
+    const { o } = options({ responses: [check("exact trivial_proof")], dir: join(tempDir("mh solve space-"), "run"), host: "sandboxed" });
+    const run = await solve(o);
+    assert.match(run.resume, /^harness resume '.*mh solve space-.*\/run' --checkout '.*problem' --bench '.*index\.json' --host sandboxed$/);
+  });
+
+  it("bounds the formalization call by its share, and writes down what it cost even when the person declines or it fails", async () => {
+    // Too little left for an answer: no call is made at all.
+    const broke = options({ statement: "Adding zero changes nothing.", responses: [], maxUsd: 0.001, price: 3000 });
+    await assert.rejects(solve(broke.o), /not enough is left for an answer/);
+    // A formalization the screen refuses is paid for and written down.
+    const bad = fauxAssistantMessage([fauxText(JSON.stringify({ statement: "(n : ℕ) : n = n := by simp" }))]);
+    const refused = options({ statement: "Everything equals itself.", responses: [bad] });
+    await assert.rejects(solve(refused.o), /refused/);
+    const refusedRecord = JSON.parse(readFileSync(join(refused.o.dir, "formalization.json"), "utf8")) as { state: string; usd: number; calls: number };
+    assert.deepEqual([refusedRecord.state, refusedRecord.calls], ["refused", 1]);
+    assert.ok(refusedRecord.usd > 0);
+    // A declined signature keeps the record.
+    const good = fauxAssistantMessage([fauxText(JSON.stringify({ statement: SIGNATURE }))]);
+    const declined = options({ statement: "Adding zero changes nothing.", responses: [good], confirm: async () => false });
+    const result = await solve(declined.o);
+    const declinedRecord = JSON.parse(readFileSync(join(declined.o.dir, "formalization.json"), "utf8")) as { state: string; usd: number };
+    assert.equal(declinedRecord.state, "declined");
+    assert.equal(declinedRecord.usd, result.formalization?.usd);
+  });
+});
+

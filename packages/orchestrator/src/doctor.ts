@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import type { HostProfile } from "@seshat/registry";
@@ -311,6 +312,38 @@ function sandboxOf(profile: HostProfile): { sandbox: readonly string[]; unsandbo
   return { sandbox: Array.isArray(lake?.sandbox) ? (lake.sandbox as string[]) : [], unsandboxed: lake?.unsandboxed === true };
 }
 
+/**
+ * Runs a sandbox exactly as the certifier would (`{work}` and `{project}` stand for scratch directories) around a small script, and says what
+ * it found: the work directory is writable, nothing outside it is, no network interface but loopback is there and nothing can connect out.
+ * Undefined when the sandbox confines as it should; otherwise the first thing that went wrong, in words.
+ */
+export async function probeSandbox(system: DoctorSystem, sandbox: readonly string[]): Promise<string | undefined> {
+  if (sandbox.length === 0) return "the sandbox command is empty";
+  const work = mkdtempSync(join(tmpdir(), "seshat-doctor-work-"));
+  const project = mkdtempSync(join(tmpdir(), "seshat-doctor-project-"));
+  try {
+    const script = [
+      `touch '${work}/ok' || { echo "it cannot write the work directory"; exit 11; }`,
+      `if touch /seshat-probe-outside 2>/dev/null; then echo "it can write outside the work directory"; exit 12; fi`,
+      `if [ -r /proc/net/dev ] && [ "$(tail -n +3 /proc/net/dev | grep -vc '^ *lo:')" != 0 ]; then echo "a network interface other than loopback is visible"; exit 13; fi`,
+      `if command -v bash >/dev/null 2>&1 && bash -c 'exec 3<>/dev/tcp/1.1.1.1/53' 2>/dev/null; then echo "it can open a connection to the network"; exit 14; fi`,
+      "exit 0",
+    ].join("\n");
+    const argv = [...sandbox.map((part) => part.replaceAll("{work}", work).replaceAll("{project}", project)), "sh", "-c", script];
+    const [command, ...args] = argv as [string, ...string[]];
+    const result = await system.run(command, args, 60_000);
+    if (result.code === 0) return undefined;
+    const said = (result.stdout.trim() || result.stderr.trim()).split("\n")[0] ?? "";
+    return said !== "" ? said : `the test exited with code ${result.code}`;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+/** A Docker image name that cannot be read as an option. */
+const IMAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/;
+
 async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<DoctorReport["isolation"]> {
   const { system, profile } = o;
   const title = "Certifier isolation";
@@ -322,7 +355,18 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
     return undefined;
   }
   if (current.sandbox.length > 0) {
-    checks.push({ id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`: a candidate's code cannot reach your files or your network.` });
+    const flaw = await probeSandbox(system, current.sandbox);
+    checks.push(
+      flaw === undefined
+        ? { id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`, and a test run of that sandbox here confirmed that a candidate's code can write only its work directory and cannot use the network. It can still read the files your user can read.` }
+        : {
+            id: "isolation",
+            status: "warn",
+            title,
+            detail: `The host profile ${profile.host} names a sandbox for the certifier, and a test run of it failed: ${flaw}. Certifications will fail, or will not be confined, so results may stay \`computed\`.`,
+            fix: "Fix the sandbox command of lean.certify in that profile, or delete it and run `pnpm harness doctor` again for the default one.",
+          },
+    );
     return undefined;
   }
   if (current.unsandboxed) {
@@ -342,20 +386,29 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
   const bwrap = system.which("bwrap");
   const prlimit = system.which("prlimit");
   if (bwrap !== undefined) {
-    const probe = await system.run("bwrap", ["--ro-bind", "/", "/", "--dev", "/dev", "--unshare-net", "--unshare-pid", "--die-with-parent", "true"], 15_000);
-    if (probe.code !== 0) why.push(`bubblewrap is installed (${bwrap}) but cannot make a sandbox here: ${(probe.stderr || probe.stdout).trim().split("\n")[0] || `exit ${probe.code}`}. Unprivileged user namespaces may be switched off on this system.`);
-    else if (prlimit === undefined) why.push("bubblewrap works, but `prlimit` (util-linux) is missing, and the recipe caps memory with it: install util-linux.");
-    else found.push(bubblewrapRecipe());
+    if (prlimit === undefined) why.push("bubblewrap is installed, but `prlimit` (util-linux) is missing, and the recipe caps memory with it: install util-linux.");
+    else {
+      const flaw = await probeSandbox(system, bubblewrapRecipe().sandbox);
+      if (flaw !== undefined) why.push(`bubblewrap is installed (${bwrap}) but the recipe failed its test here: ${flaw}. Unprivileged user namespaces may be switched off on this system.`);
+      else found.push(bubblewrapRecipe());
+    }
   }
   const docker = system.which("docker");
   const image = system.env.SESHAT_LEAN_IMAGE !== undefined && system.env.SESHAT_LEAN_IMAGE !== "" ? system.env.SESHAT_LEAN_IMAGE : DEFAULT_LEAN_IMAGE;
   const ids = system.ids();
-  if (docker !== undefined && found.length === 0) {
+  if (docker !== undefined && found.length === 0 && !IMAGE_NAME.test(image)) {
+    why.push(`SESHAT_LEAN_IMAGE is ${JSON.stringify(image)}, which is not an image name (it would be read as an option of docker).`);
+  } else if (docker !== undefined && found.length === 0) {
     const info = await system.run("docker", ["info"], 15_000);
     if (info.code !== 0) why.push(`Docker is installed (${docker}) but its daemon does not answer: start Docker.`);
     else if ((await system.run("docker", ["image", "inspect", image], 15_000)).code !== 0) why.push(`Docker works, but the image ${image} is not built here: documentation/certifier.md (recipe 3) says what it holds. Build it, or set SESHAT_LEAN_IMAGE to yours.`);
     else if (ids === undefined) why.push("Docker works, but this system gives no user id to run the container as.");
-    else found.push(dockerRecipe(image, ids));
+    else {
+      const recipe = dockerRecipe(image, ids);
+      const flaw = await probeSandbox(system, recipe.sandbox);
+      if (flaw !== undefined) why.push(`Docker works and the image ${image} exists, but the recipe failed its test: ${flaw}.`);
+      else found.push(recipe);
+    }
   }
   const recipe = found[0];
   if (recipe === undefined) {
@@ -376,12 +429,14 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
   const mode = o.write ?? "auto";
   let written = false;
   if (mode !== "never" && (!existed || mode === "rewrite")) {
-    const base = JSON.parse(readFileSync(join(o.configDir, "hosts", "local.json"), "utf8")) as HostProfile & { description?: string };
-    const lake = (base.capabilities["lean.certify"]?.settings?.lake ?? {}) as Record<string, unknown>;
+    // The profile in use is the base (its other capabilities stay as they are); local.json when that file is not there.
+    const inUse = join(o.configDir, "hosts", `${profile.host}.json`);
+    const base = JSON.parse(readFileSync(existsSync(inUse) ? inUse : join(o.configDir, "hosts", "local.json"), "utf8")) as HostProfile & { description?: string };
+    const { unsandboxed: _opted, ...lake } = (base.capabilities["lean.certify"]?.settings?.lake ?? {}) as Record<string, unknown>;
     const next = {
       ...base,
       host: name,
-      description: `Generated by \`harness doctor\`: the local host with the certifier behind ${recipe.tool}, so that a proof can reach \`proved\`. Written once and never over an existing file; delete it to have it made again. ${base.description ?? ""}`.trim(),
+      description: `Generated by \`harness doctor\`: the host ${profile.host} with the certifier behind ${recipe.tool}, so that a proof can reach \`proved\`. Written once and never over an existing file; delete it to have it made again. ${base.description ?? ""}`.trim(),
       capabilities: {
         ...base.capabilities,
         "lean.certify": {
