@@ -79,6 +79,10 @@ const usage = `usage:
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
+  harness ui [--port N] [--open] [--runs DIR]
+
+ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
+and written (default runs).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
 solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
@@ -286,6 +290,7 @@ async function main(): Promise<number> {
     if (command === "view") return view();
     if (command === "solve") return await solve();
     if (command === "doctor") return await doctor();
+    if (command === "ui") return await ui();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
@@ -1051,6 +1056,14 @@ async function solve(): Promise<number> {
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );
+}
+
+/** `harness ui`: the local interface (documentation/ui.md); loaded only when asked for. */
+async function ui(): Promise<number> {
+  if (target !== undefined) throw new UsageError(`ui takes no argument, got ${target}`);
+  const port = number("port", values.port, undefined);
+  const { uiCommand } = await import("@seshat/ui");
+  return await uiCommand({ port, open: values.open === true, runsDir: values.runs, out: (line) => console.log(line) });
 }
 
 /** `harness doctor`: documentation/quickstart.md. */

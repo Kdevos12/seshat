@@ -6,3 +6,4 @@ export * from "./providers.ts";
 export * from "./reader.ts";
 export * from "./security.ts";
 export * from "./server.ts";
+export * from "./command.ts";

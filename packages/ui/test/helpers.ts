@@ -1,5 +1,6 @@
 import { request } from "node:http";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { REPO_ROOT } from "@seshat/orchestrator";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tempDir } from "../../orchestrator/test/m0-helpers.ts";
@@ -36,6 +37,9 @@ export async function started(options: ServerOptions = {}): Promise<Started> {
   mkdirSync(runsDir, { recursive: true });
   mkdirSync(staticDir, { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>test</title><p>hello</p>");
+  // The doctor reads a host profile from the config directory.
+  mkdirSync(join(dir, "config-dir", "hosts"), { recursive: true });
+  cpSync(join(REPO_ROOT, "config", "hosts", "local.json"), join(dir, "config-dir", "hosts", "local.json"));
   const logs: string[] = [];
   const server = await startServer({
     runsDir,

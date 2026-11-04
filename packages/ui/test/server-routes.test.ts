@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
-import { appendFileSync, cpSync, mkdirSync, readdirSync } from "node:fs";
+import { appendFileSync, cpSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { REPO_ROOT } from "@seshat/orchestrator";
 import { scriptedJournal } from "../../orchestrator/test/scripted-journal.ts";
 import { started, type Started, until } from "./helpers.ts";
 
 const open: Started[] = [];
 async function server(): Promise<Started> {
   const s = await started();
-  mkdirSync(join(s.dir, "config-dir", "hosts"), { recursive: true });
-  cpSync(join(REPO_ROOT, "config", "hosts", "local.json"), join(s.dir, "config-dir", "hosts", "local.json"));
   open.push(s);
   return s;
 }

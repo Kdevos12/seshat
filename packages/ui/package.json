@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build:web": "vite build --config web/vite.config.ts"
+    "build:web": "vite build --config web/vite.config.ts && node --disable-warning=ExperimentalWarning web/stamp.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.2.0",
