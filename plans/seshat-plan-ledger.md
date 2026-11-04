@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-04 02:00 UTC. `main` at 77f9e6e, 2332 tests.
+Updated 2026-11-04 UTC. `main` at 39aae02 plus the bench index regeneration, 2399 tests.
 
 ## Tasks
 
@@ -36,7 +36,7 @@ Updated 2026-11-04 02:00 UTC. `main` at 77f9e6e, 2332 tests.
 | 23 | Memory across runs, provenance and epochs, randomized inclusion | main | merged in `52efd50` (not run against a real Lean or model) | `task/t23` |
 | 24 | Session-frozen packet prefix | main | merged in `3a9d76c` (not run against a real provider) | `task/t24` |
 | 25 | M18: curriculum of variants | main | merged | `task/t25` | `f6363b6` |
-| 26 | `harness optimize-prompts` | main | implementing | `task/t26` | |
+| 26 | `harness optimize-prompts` | main | merged (`39aae02`) | `task/t26` | Review round 1 fixed (invisible Unicode screen, required --max-usd, certified-only scoring, sign test with Bonferroni and gate-split ledger); only the prover.system prompt is a target. Simulated: nothing ran against a real model. |
 | 27 | Installable packs: tools and skills (PD7) | main | merged | `task/t27` | `50f0792` |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
@@ -640,3 +640,6 @@ Task 14: implementer dispatched (worktree wt/t14 from main f37801e)
 Task 14: implementer done (11 commits, 2229/2229); review round 1: no Critical; Important I1 (run --probe-every was parsed and ignored), I2 (the difficulty split was chosen on the reference arm's own outcomes), I3 (chunk curves degenerate on real journals: provers stop at first success), I4 (a cut-off ablation lost everything and could not resume), I5 (saved tables carried no simulated or not-run label), I6 (compareArms compared arms that had not finished the same problems); nine Minor, seven fixed
 Task 14: merged: task/t14 merged into main 77f9e6e (--no-ff; 2332/2332), pushed; nothing ran against a real model, Lean or Jev; deferred to the final review: K>1 chunk curves need a fixed-attempt measurement run that is not built, candidate still counts as solved (Certified printed beside it), M12, M3 and M15 do not act in the all-lines test (no second demo problem needing a decomposition), the bench-ext row shape is an assumption and the dataset licence is unverified, the probe alarm has little power at 20 problems, no analogy or induction annotations file committed
 Task 26: implementer dispatched (worktree wt/t26 from main 77f9e6e)
+
+
+Bench index: `bench/fc-bench-v1-discrete.json` regenerated after Task 14 added `sequences` and `tags` to the hashed index body; the old index no longer matched the rebuild test.
