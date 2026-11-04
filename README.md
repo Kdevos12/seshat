@@ -47,6 +47,7 @@ flowchart TB
   judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
   llm["LLMs through their APIs<br/>any provider, no training"]:::built
+  budgetgate["Budget gate (off by default)<br/>price against chance before each launch,<br/>probe first, widen on Lean progress,<br/>exploration floor, skips kept in the journal"]:::wait
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
   orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
@@ -116,6 +117,8 @@ flowchart TB
   bench -->|problems| orchestrator
   orchestrator -->|"tasks, budgets"| ledger
   ledger -->|"one task per prover"| provers
+  budgetgate -->|"launch, probe,<br/>widen or skip"| provers
+  fleet -->|"posterior<br/>of the claim"| budgetgate
   ledger -->|"task events,<br/>routing decisions"| journal
   journal -->|"resume after<br/>a crash"| orchestrator
   orchestrator -->|"a turn ends: limit,<br/>breakpoint"| account

@@ -155,6 +155,32 @@ Line `M18` ([curriculum.md](curriculum.md)) is the line of rung 1 and `M15` ([ar
 with a stand-in line of rung 1, with M18 and with M15. Dollars that a rung's line spends count in the problem's spend since its last Lean
 progress, so M18's variants hasten the move to the next rung; a proved variant is not Lean progress (it is no subclaim of the target).
 
+## The budget gate
+
+Task 29 (PB1 to PB5 of `plans/plan-change-proportional-budgets.md`, Ruling 31). Before this, a problem spent its whole budget whatever its chance of success was: every prover started at once and every session ran until the budget stopped it. The gate puts a price against a chance before each paid launch. It is **off by default** (`harness run --gate`, `RunConfig.gate`); without it nothing here applies and the run is as it was. The rule and the probe live in `@seshat/scheduler` (`gate.ts`), the orchestrator applies them (`budget-gate.ts`), and the answer is journaled as `budget.gated` ([journal.md](journal.md)).
+
+**The rule (PB1).** A launch has an estimate (dollars, from the mean cost of the sessions already paid on the problem, or a first guess when there are none) and the claim's chance of success, a Thompson draw from its success posterior ([fleet.md](fleet.md#posteriors)). The launch goes ahead when
+
+```
+estimate <= share(site) x remaining x pSuccess
+```
+
+where `remaining` is what is left of the problem's budget and `share` is the part of it one launch of that site may cost: `wave` and `session` 0.5, `task` 0.25, `judge` 0.1 (`--gate-share SITE=X`). The rule is a function of its numbers, so the same numbers give the same answer, and the draw is seeded by the run's seed and the place, so a resumed run asks the same question and gets the same answer. `budget.gated` carries the numbers (the estimate, what is left, the budget, the share, the chance, the threshold, the rung) and the reason in words, with the posterior ("Beta(a, b) from n attempts"); the journal recomputes the threshold and refuses an answer that does not follow from it.
+
+**The floor (PB2).** A fixed fraction of the launches the rule would skip go ahead anyway (`--gate-floor`, default 0.1; a draw under the fraction). Without it a posterior that is wrong would never be corrected, since a skipped launch produces no evidence. A launch the floor let through says so (`by: "floor"`, `exploration: true`) and the report counts them and their estimated price. A floor of 0 turns it off.
+
+**Where `decide` is asked (PB3).** The rule has no numbers at a cold start (no attempt counted on the claim) and is near its threshold at a tie (the estimate within the margin, `--gate-margin`, default 0.1, of it). Only there is the question put to `decide` at `budget.wave` (a wave of provers, or a session of one) or `budget.line` (a line's task, or a judge call), as a choice between `launch` and `skip` ([decide.md](decide.md)). The state of the question holds counts and dollars and no mathematics. A decision that is off, fails, or is not made leaves the rule's own answer, which at a cold start is the rule on the flat prior's draw. The answer is booked in the journal with `by: "decide"` and its decision id. The model calls cost money, are booked to the pseudo-line `gate`, and the report adds them up.
+
+**Probe first (PB4).** A problem does not start with its whole fleet. The first prover runs one session under a child ledger of at most a tenth of the problem's budget (`--gate-probe`, default 0.1); its stop is `probe`, a pause, not an end. The gate then answers once for the wave: it **widens** (the other provers start and the first one resumes) when the probe made Lean progress (the measure of the ladder above: a subclaim proved, or fewer open holes, or an attempt that failed deep enough to count as progress), or when the floor lets it through, and otherwise **skips** (`by: "progress"`: the first prover ends with the stop `gate` and the other provers never start). A widening after progress is still under the rule: it can be refused for its price. Sessions after the first, of a prover that goes on, are gated at the site `session`, and the tasks of a line and its judge calls at `task` and `judge`: a task the gate skips is cancelled with the reason "the budget gate skipped it".
+
+**A claim certified earlier (PB5).** With the gate on, a problem whose chain already holds the claim proved or refuted (a run on `--memory-from`, under the same Lean environment, where the memory carries the status over) is not launched again: the problem ends `skipped`, the journal holds a `budget.gated` row `by: "memory"` and no model or Lean call is made. The estimate of that row is the price of one session, and the report counts it as avoided spend. Without the gate the loop launches the problem again, as it always did. The soft failure memory ([fleet.md](fleet.md#soft-failure-memory)) has no state in which a claim is exhausted for good: what it records of past failures lowers the chance, and the gate prices that.
+
+**In the report and the table.** The report adds a paragraph and a table of the gate by site (launched, skipped, let through by the floor, decided by `decide`, avoided dollars) read from the journal alone, with no model call (PB8). The avoided dollars are **an estimate** at the moment of the skip, not money that was spent or measured, and they are marked as such wherever they appear. What the gate is worth is measured by `harness ablate --experiment gate` ([ablate.md](ablate.md#experiments)): four arms, no gate, the rule, the rule with `decide` asked of the model, the rule with `decide` asked of Jev, on the same problems and budget, compared by cost to first success.
+
+**Resuming.** The settings are written into `run.started` and a resumed run reads them back; the answers already journaled are not asked again.
+
+**Not run.** The gate is tested with a simulated Lean and the faux provider: the rule and its arithmetic, determinism, the floor's rate over many draws, the probe cap, widening and skipping, `--memory-from`, the report, resume. Whether it pays on real problems, whether its defaults (shares, floor, probe fraction, margin) are right, and whether Jev answers its two sites better than the model, have not run.
+
 ## Owners chosen by the fleet (Ruling 29)
 
 `TaskApi.assign(taskId, owner, reason)` ([lines.md](lines.md#tasks)) gives a task of the problem that

@@ -60,9 +60,10 @@ An experiment is a short list of arms that differ by one option, run on the same
 | `cegis` | PD5 | M8 with its counterexample set against `M8.counterexampleSet=false`: only the set differs | tokens saved are an estimate; needs a real model |
 | `lsp` | PC7 | `lean.lsp` as a tool set against M0 | needs a language server |
 | `decide` | J1, J4, J5 (line D1) | the model for every site, then one arm per J3 site asked of Jev | not run against real Jev |
+| `gate` | PB4 | no gate, the rule alone, the rule with `budget.wave` and `budget.line` asked of the model, and asked of Jev | the avoided dollars are an estimate; needs a real model; not run against real Jev |
 | `m17` | LC3 | the base Lean environment against the one M17 extends | needs a pinned real environment |
 
-Options are line options, so an experiment's lines must include the line whose option it sets (`packet-mode` needs M4 for the naive arm). The decide experiment's table adds the agreement between each Jev arm and the model arm on the questions both answered.
+Options are line options, so an experiment's lines must include the line whose option it sets (`packet-mode` needs M4 for the naive arm). The `gate` experiment's table adds a Budget gate section (answers, probes, widenings, stops at the probe, launches, skips, the avoided estimate, the questions to `decide` and their cost), and `--gate` with its settings applies to every arm that does not set its own. The decide experiment's table adds the agreement between each Jev arm and the model arm on the questions both answered.
 
 ## The command line
 
