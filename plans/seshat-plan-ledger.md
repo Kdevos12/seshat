@@ -39,6 +39,8 @@ Updated 2026-11-04 UTC. `main` at b666bda, 2404 tests.
 | 26 | `harness optimize-prompts` | main | merged (`39aae02`) | `task/t26` | Review round 1 fixed (invisible Unicode screen, required --max-usd, certified-only scoring, sign test with Bonferroni and gate-split ledger); only the prover.system prompt is a target. Simulated: nothing ran against a real model. |
 | 27 | Installable packs: tools and skills (PD7) | main | merged | `task/t27` | `50f0792` |
 | 28 | Provider-aware cost accounting: price table, cache ratio, `reasoning_content` safety, ignored settings, off-peak option (PD1, PD3) | main | merged | `task/t28` | `0ad9cdf` |
+| 29 | Proportionate budgets: gate, probe first, `budget.*` decide sites (PB1 to PB5) | main | planned | `task/t29` | after Task 14 |
+| 30 | `harness solve`, `doctor`, `view` (PB6, PB7) | main | planned | `task/t30` | after Task 29 |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
