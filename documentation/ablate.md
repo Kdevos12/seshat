@@ -35,7 +35,7 @@ here. The shares are of the claims the run made, so a configuration without M12 
 
 `cumulativeArms()` gives the configurations of plan section 6: M0 (no line), then each line in the order of section 7 added to the ones before it, without the suspended M7 and M9 (Ruling 20). `runAblation` runs every arm on the same problems, with the same seed, at the same budget (providers, sessions, dollars per problem), each into its own journal under `arms/<name>/measure`. When `buildProblems` is set, each arm first runs on those problems to build its memory and is measured on the others with `memoryFrom`, so the memory never saw the problems it is measured on. `ablationProblems` is called before anything is spent: it calls `ablationRefusal` (turns and breakpoints are refused), refuses off-peak scheduling and duplicate arm names, and checks the lines, the line options and the decide settings. The result is written as `ablation.json`, and `renderAblation` writes `ablation.md`.
 
-An arm is also a point in an experiment: it can carry line options, a packet mode, decide settings, a model and a tool set, and name the arm it is compared against.
+An arm is also a point in an experiment: it can carry a candidate prompt (`prompts`, which `harness optimize-prompts` measures through it, documentation/prompts.md), line options, a packet mode, decide settings, a model and a tool set, and name the arm it is compared against.
 
 ## Reliability of decisions (J4)
 

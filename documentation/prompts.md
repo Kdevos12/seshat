@@ -34,3 +34,50 @@ A text is refused when it
 - is more than one and a half times or less than half the merged prompt's length: a longer prompt is a larger bill, and the budget would no longer be equal.
 
 The screen is a floor, not a judgment: a text that passes it is still measured, and a person still reads it.
+
+## `harness optimize-prompts`
+
+```sh
+harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff 2026-01-01 --sample 40 --split dev \
+  [--dates FILE] [--reflector-model PROVIDER/ID] [--iterations 8] [--minibatch 3] [--finalists 2] [--reflect-budget-usd 2] [--out DIR]
+```
+
+Off by default, outside every ablation run and never part of a research run. Prompts change only when a person merges what it proposes.
+
+1. **Splits** (`optimizationSplits`). Problems dated after `--cutoff` are the temporal holdout. The older ones are cut into dev (60%) and held-out
+   by `splitBench` with a problem kept together with its variants. A newer problem whose family is among the older ones is left out of the
+   temporal split and listed. The splits are checked to be disjoint. A date comes from `--dates FILE` (problem id to ISO date) or from the first
+   commit of the problem's file in the checkout; a problem with no date counts as older. `--split` takes `dev` only: the other splits are never searched.
+2. **Search** (`optimize`, GEPA). The merged prompt is scored on every dev problem (solved or not, and dollars). Each iteration draws a parent
+   from the Pareto set, in proportion to the problems it leads on; shows the rewriting model the parent and, for a minibatch of dev problems,
+   what happened (outcome, attempts, Lean's last complaints, as data); and takes the rewrite between `<prompt>` tags. The rewrite goes through the
+   strict screen, and is run only if it passes. It is kept only if it does better than its parent on the minibatch, and is then scored on the rest of dev.
+   The Pareto set (`paretoFront`) is, per problem, the candidates best on it (a solved problem beats an unsolved one, then cheaper wins), less the dominated ones.
+3. **Gate** (`gate`). The best finalists of the Pareto set that beat the merged prompt on dev are run, with the merged prompt, on the held-out split and
+   on the temporal holdout, under the same configuration and budget. A candidate is accepted only if on both splits it solves more problems, or as many for
+   at least 5% less money, over the same finished problems (`compareArms`). Splits not finished alike are not comparable and do not accept. The detail
+   column notes a gain the sign test calls indicative only.
+4. **Output.** Into `--out` (default `proposals/ID`, git-ignored): `report.md`, `optimization.json`, and for each Pareto member `candidates/ID/prompt.txt`
+   and `evidence.json` (provenance stamp, lineage, dev scores, gate results). Only an accepted candidate gets `candidates/ID/prover.system.patch`, a
+   unified diff `git apply` reads. The measurement runs, with their journals and ablation tables, are under `work/`.
+
+Every measurement is one `harness ablate` arm: `Arm.prompts` with the baseline configuration (M0 and the `--tool` capabilities), so the numbers are read from the journals like any ablation's.
+
+### What it cannot write
+
+All writes go through `ProposalWriter`: only text, json, markdown and patch files, only below the proposals directory. The directory is refused
+when it is inside `packages` (the validator, guards, journal code and the tests), `lean`, `bench` (the indexes), `capabilities`, `config`, `plans`,
+`documentation`, `.git` or `node_modules`, or holds one of them. A patch is made only for a registered prompt file (`packages/NAME/prompts/FILE.txt`),
+from a text that passes the screen again, against the file as the checkout holds it. The command never edits a prompt file, and never runs a model for training: the
+rewriting is a model call by API.
+
+### Provenance
+
+Each candidate carries the stamp of Task 23 (rewriting model, prompt version it derives from, Mathlib revision, harness revision, budget class, time), in
+`evidence.json`. A run that measures a candidate stamps what it learns with `PROMPT_VERSION+HASH`, an epoch of its own. A person who merges a patch bumps `PROMPT_VERSION`.
+
+### Not run
+
+Nothing here has run against a real model or Lean: the tests use the faux provider, scripted runs and a simulated bench. Targets: only the prover's system
+prompt is a prompt file with a candidate seam; the lines' prompts live in their packages and join by becoming a file and a registered target. The date of a problem is
+the date of its file. With few problems the gate is weak (a difference of one is noise); read the sign test and the text before merging.
