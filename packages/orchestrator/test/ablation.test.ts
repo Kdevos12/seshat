@@ -87,6 +87,16 @@ describe("runAblation on scripted runs", () => {
     assert.equal(JSON.parse(readFileSync(join(dir, "ablation.json"), "utf8")).arms.length, 3);
   });
 
+  it("writes a Budget gate section for the arms that had a gate, with the avoided dollars marked as an estimate", async () => {
+    const result = await runAblation({ template, config: base, problems, arms: cumulativeArms(["M0", "M1"]), dir: tempDir("mh-ablate-run-"), run: fakeRun(specs) });
+    assert.doesNotMatch(renderAblation(result), /## Budget gate/);
+    const site = { site: "session", launched: 3, skipped: 2, explored: 1, exploredUsd: 0.2, decided: 1, avoidedUsd: 0.8 };
+    const gated = { ...result, arms: result.arms.map((a, i) => (i === 1 ? { ...a, measures: { ...a.measures, gate: { answers: 5, bySite: [site], probes: 2, widened: 1, stoppedAtProbe: 1, certifiedEarlier: 0, avoidedUsd: 0.8, decisions: { count: 1, usd: 0.01 } } } } : a)) };
+    const table = renderAblation(gated);
+    assert.match(table, /## Budget gate/);
+    assert.match(table, /\| M1 \| 5 \| 2 \| 1 \| 1 \| 3 \| 2 \| \$0\.800 \(estimate\) \| 1 \(\$0\.010\) \|/);
+  });
+
   it("says whether each arm beats the one before it, and by which problems", async () => {
     const result = await runAblation({ template, config: base, problems, arms: cumulativeArms(["M0", "M1", "M10"]), dir: tempDir("mh-ablate-run-"), run: fakeRun(specs) });
     const [, m1, m10] = result.arms;

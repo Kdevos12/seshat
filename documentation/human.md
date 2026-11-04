@@ -125,6 +125,8 @@ decides and a model does not:
 | `settled` | A problem ends `proved` or `refuted`: a certified result is worth a person's eyes before the run goes on |
 | `disagreement` | A `judgment` node with `data.disagreement: true` is recorded: two informal validators did not agree (plan change PC9). The node is the lines' to write; the harness only reads it |
 
+With the budget gate on ([scheduler.md](scheduler.md#the-budget-gate)), a problem the gate stopped after its probe is an impasse too: the turn ends with the `impasse` breakpoint (the gate's own, written whatever the attempt count is), the problem is not finished, and the next turn asks the gate again, with a new round of draws, after the team's answer.
+
 The defaults (8 attempts, 0.1) are not tuned. They are a first guess that says "eight failures in a row and no sign of progress"; nothing in the repository measured them against runs, and a team that finds the run stops too early or too late changes `--impasse-attempts` and `--impasse-posterior`. The `disagreement` breakpoint has no producer yet: the node it reads is described in [lines.md](lines.md#the-judgment-node), and the breakpoint is tested with a line written for the test.
 
 A breakpoint fires once for what it saw. `turn.ended.breakpoint` records it and the next turn reads that

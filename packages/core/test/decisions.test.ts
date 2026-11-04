@@ -60,7 +60,7 @@ describe("decision.made", () => {
       assert.match(decisionSiteProblem("fidelity.review") ?? "", /forbidden at fidelity.review/);
       assert.match(decisionSiteProblem("graph.attempt") ?? "", /not a decide site/);
       assert.equal(decisionSiteProblem("conjecture.relevance"), undefined);
-      assert.deepEqual(Object.keys(DECISION_SITES).sort(), ["conjecture.relevance", "fleet.cold_start", "prove.search.order"]);
+      assert.deepEqual(Object.keys(DECISION_SITES).sort(), ["budget.line", "budget.wave", "conjecture.relevance", "fleet.cold_start", "prove.search.order"]);
       assert.throws(() => journal.emit("decision.made", decision({ type: "score", labels: ["a", "b"], answer: "a", probabilities: { a: 1, b: 0 } }), "orchestrator"), /asks choice, not a score/);
     } finally {
       journal.close();

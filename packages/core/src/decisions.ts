@@ -27,6 +27,13 @@ export const DECISION_SITES: Readonly<Record<string, readonly DecisionType[]>> =
   "prove.search.order": ["choice"],
   /** The fleet's cold start: a Choice over strategy families, as capped pseudo-counts. */
   "fleet.cold_start": ["choice"],
+  /**
+   * PB3: whether a wave of provers (or a session of one) is worth its price where the budget gate has no numbers (a cold start with no
+   * posterior, a tie within the margin). The state holds counts and dollars, no mathematical content.
+   */
+  "budget.wave": ["choice"],
+  /** PB3: whether a line's task, or a judge call, is worth opening where the gate has no numbers. The state holds counts and dollars only. */
+  "budget.line": ["choice"],
 };
 
 /**

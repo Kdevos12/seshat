@@ -67,6 +67,7 @@ Event types:
 | `ladder.escalated` | `problemId`, `from`, `to`, `lines`, `threshold`, `sinceProgressUsd`, `budgetUsd`, `reason` |
 | `memory.epoch_opened` | `epoch`, `reason`, `changes` (`field`, `from`, `to`), `provenance` |
 | `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
+| `budget.gated` | `problemId`, `site` (`wave`, `session`, `task`, `judge`), `action` (`launch`, `probe`, `skip`, `widen`), `by` (`rule`, `floor`, `probe`, `progress`, `decide`, `memory`), `estimateUsd`, `remainingUsd`, `budgetUsd`, `share`, `pSuccess?`, `thresholdUsd?`, `rung`, `exploration`, `progress?`, `prover?`, `session?`, `taskId?`, `decisionId?`, `reason` |
 | `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `programs`, `source` |
 | `pack.removed` | `name`, `version`, `hash` |
 
@@ -105,7 +106,9 @@ is `human:NAME`.
 
 The task events (`task.*`) are the ledger's ([ledger.md](ledger.md)): the work of a run, as tasks
 that point at claims and edges. Only the orchestrator writes them. `ladder.escalated` is a problem's move up the
-escalation ladder ([scheduler.md](scheduler.md)); the journal checks that the spend since the last Lean progress reaches the threshold. `attempt.charged` is one model
+escalation ladder ([scheduler.md](scheduler.md)); the journal checks that the spend since the last Lean progress reaches the threshold. `budget.gated` is the answer of the budget gate before a paid launch (the journal recomputes a `rule` row, checks a `floor` row's draw against its fraction and its estimate against the threshold, and a `decide` row against the `decision.made` it names) ([scheduler.md](scheduler.md#the-budget-gate)); only the
+orchestrator writes it, and the journal checks that the threshold is the share of what is left times the chance of success, that a launch
+over the threshold was the exploration floor's, and that a wave widens only after Lean progress. `attempt.charged` is one model
 response of a session, so that the cost of a session that was cut is not lost; `run.resumed` marks
 the run's continuation after a crash, and is followed by the orchestrator's closing of what the
 process left open: the sessions with no end (`attempt.finished`, `aborted`, `stoppedBy: "interrupted"`),

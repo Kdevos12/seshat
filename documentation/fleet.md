@@ -244,6 +244,8 @@ the others in `afterAttempt`: the orchestrator runs that hook before it journals
 finished, and a prover woken there would read a posterior one attempt old. A prover is alive until
 its loop ends (`afterProver`).
 
+With the budget gate on ([scheduler.md](scheduler.md#the-budget-gate)) the width is applied after the probe: the first prover runs alone for one capped session, and the others start only if the gate widens the wave. The width above is the ceiling then, not the first move.
+
 With `widen` off every prover starts at once, as in M0; the strategies are still told, and still
 differ among provers that work together.
 

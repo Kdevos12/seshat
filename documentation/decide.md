@@ -54,6 +54,16 @@ types), each with the run's model as the default:
 | `conjecture.relevance` | a Score per conjecture of the pool, on its statement alone (J3 item 1, plan change PC4.2) | `score`, `noul` | Task 13 (not built yet) |
 | `prove.search.order` | the order in which to try candidates that come without a model call: battery tactics, mined tactics, library lemmas tried by `apply`, aesop rules (J3 item 3) | `choice` | `decideOrderer` below, for Task 6 |
 | `fleet.cold_start` | a prior over strategy families, as capped pseudo-counts (J3 item 4) | `choice` | the fleet's option `coldStart` |
+| `budget.wave` | whether a wave of provers, or a session of one, is worth its price where the budget gate has no numbers (PB3) | `choice` | the budget gate ([scheduler.md](scheduler.md#the-budget-gate)) |
+| `budget.line` | whether a line's task, or a judge call, is worth opening where the budget gate has no numbers (PB3) | `choice` | the budget gate |
+
+The two `budget.*` sites are the budget gate's (Task 29, PB3 of `plans/plan-change-proportional-budgets.md`). The rule of the gate is a formula
+and answers wherever there are numbers; `decide` is asked only where there are none: a cold start with no posterior, or a tie within a margin of
+the threshold. The state of these two sites holds counts and dollars (attempts counted, sessions paid, the estimate, what is left, the share, the
+rung) and no mathematical content: no statement, no goal, no problem name. So even with `jev` on there, a third party sees no conjecture. The
+answer is `launch` or `skip`; it orders, and no threshold is put on its probability. A decision that fails leaves the gate with the rule's own
+answer. The sites were checked against the forbidden list above (`budget.wave` and `budget.line` match none of its patterns), and the names that
+would have matched (`budget.session`, `budget.progress`) are refused: a test says so.
 
 The abductive rerank of J3 item 2 was dropped with Task 12 ([Ruling 20](../plans/seshat-plan-rulings.md)).
 

@@ -33,8 +33,8 @@ export function allLines(): string[] {
 const without = (lines: readonly string[], drop: readonly string[]) => lines.filter((id) => !drop.includes(id));
 const RUNG_LINES = ["M18", "M15", "M16"];
 
-/** The J3 sites, in the order of the registry. */
-export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES);
+/** The J3 sites, in the order of the registry. The budget gate's two (PB3) are measured by the `gate` experiment, not here. */
+export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES).filter((site) => !site.startsWith("budget."));
 
 const arm = (name: string, description: string, lines: string[], rest: Partial<Arm> = {}): Arm => ({ name, description, lines, ...rest });
 
@@ -133,6 +133,18 @@ export const EXPERIMENTS: Experiment[] = [
     arms: ({ lines }) => [
       arm("llm", "every decision asked of the run's model", lines),
       ...DECIDE_SITES.map((site) => arm(`jev:${site}`, `${site} asked of Jev`, lines, { decide: { backend: "llm", sites: { [site]: "jev" }, votes: 1 }, versus: "llm" })),
+    ],
+  },
+  {
+    name: "gate",
+    amendment: "PB4",
+    description: "The budget gate: no gate, the rule alone, the rule with its cold starts and ties asked of the run's model, and the same asked of Jev. Cost to first success and the avoided spend, by arm.",
+    notRun: "The avoided dollars are the gate's estimate, not a measurement; whether the gate pays (cost to first success, and the problems it wrongly skips) needs a real model. Not run against real Jev.",
+    arms: ({ lines }) => [
+      arm("no-gate", "every prover starts together and every session runs, as before the gate", lines, { gate: false }),
+      arm("rule", "the rule alone: probe first, widen on Lean progress, the floor lets a fraction through", lines, { gate: {}, decide: { sites: { "budget.wave": "off", "budget.line": "off" } }, versus: "no-gate" }),
+      arm("rule+llm", "the rule, with cold starts and ties asked of the run's model", lines, { gate: {}, decide: { backend: "llm", votes: 1 }, versus: "rule" }),
+      arm("rule+jev", "the rule, with cold starts and ties asked of Jev", lines, { gate: {}, decide: { backend: "llm", sites: { "budget.wave": "jev", "budget.line": "jev" }, votes: 1 }, versus: "rule+llm" }),
     ],
   },
   {

@@ -61,6 +61,14 @@ export interface ProverOptions {
   waitOffPeak?: () => Promise<void>;
   /** The prover picks up where an interrupted run left it, instead of starting. */
   resume?: ProverResume;
+  /**
+   * The problem's probe (documentation/scheduler.md, "The budget gate"): the prover runs only `sessions` sessions and then
+   * pauses with `probe`, neither ended nor failed, so that the orchestrator decides whether the problem widens. Its `ledger`
+   * is a child of the problem's with the probe's cap; running into that cap pauses it too.
+   */
+  probe?: { sessions: number };
+  /** The budget gate: asked before each session after a prover's first. A `skip` ends the prover with `gate`. */
+  gate?: { minSessions: number; session(who: { prover: string; session: number }): Promise<{ action: string }> };
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
   onEnd?: (result: ProverResult) => void;
   /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
@@ -92,9 +100,10 @@ export interface ProverResume {
 
 /**
  * Why a prover stopped: it found the candidate, used its sessions, ran out of budget, was stopped,
- * kept failing, a line's `beforeSession` stopped it, or the consortium turn ended (`turn`).
+ * kept failing, a line's `beforeSession` stopped it, the consortium turn ended (`turn`), the budget gate skipped its next session
+ * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end).
  */
-export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn";
+export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate";
 
 export interface ProverResult {
   name: string;
@@ -120,6 +129,8 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
     if (o.turn?.ended === undefined || !isTurnEnded(error)) throw error;
     result = { name: o.name, attempts: progress.attempts, stop: "turn" };
   }
+  // A prover that ran its probe has not ended either: the gate says whether it goes on.
+  if (result.stop === "probe") return result;
   o.onEnd?.(result);
   // The lines hear of a prover that ended, not of one the turn interrupted: it has not ended, it waits.
   if (result.stop !== "turn") await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
@@ -140,10 +151,20 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   let attempts = resumed?.attempts ?? 0;
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
-  for (let session = (resumed?.session ?? 0) + 1; session <= o.sessions; session++) {
+  // The probe's cap is its own ledger's: running into it pauses the prover, running into the problem's budget ends it.
+  const budgetStop = (): ProverStop => (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
+  const lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
+  for (let session = (resumed?.session ?? 0) + 1; session <= lastSession; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
-    if (o.ledger.exhausted) return done("budget");
+    if (o.ledger.exhausted) return done(budgetStop());
     if (o.turn?.ended !== undefined) return done("turn");
+    // The wave that started a prover paid for its first session: the gate weighs the ones after it.
+    if (o.gate !== undefined && o.probe === undefined && session > o.gate.minSessions) {
+      const gated = await o.gate.session({ prover: o.name, session });
+      if (gated.action === "skip") return done("gate");
+      if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
+      if (o.turn?.ended !== undefined) return done("turn");
+    }
     if (o.waitOffPeak !== undefined) {
       await o.waitOffPeak();
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
@@ -174,7 +195,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       if (typeof plan.settings?.temperature === "number") temperature = plan.settings.temperature;
       // The problem may have ended while the lines decided.
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
-      if (o.ledger.exhausted) return done("budget");
+      if (o.ledger.exhausted) return done(budgetStop());
       if (o.turn?.ended !== undefined) return done("turn");
     }
     attempts += 1;
@@ -378,7 +399,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       case "valid":
         return done("solved");
       case "budget_exhausted":
-        return done("budget");
+        return done(budgetStop());
       case "aborted":
         return done("aborted");
       case "error":
@@ -389,7 +410,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         failed = 0;
     }
   }
-  return done("sessions");
+  return done(lastSession < o.sessions ? "probe" : "sessions");
 }
 
 function outcomeOf(result: SessionResult): AttemptOutcome {
