@@ -33,8 +33,8 @@ export function allLines(): string[] {
 const without = (lines: readonly string[], drop: readonly string[]) => lines.filter((id) => !drop.includes(id));
 const RUNG_LINES = ["M18", "M15", "M16"];
 
-/** The J3 sites, in the order of the registry. */
-export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES);
+/** The J3 sites, in the order of the registry. The budget gate's two (PB3) are measured by the `gate` experiment, not here. */
+export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES).filter((site) => !site.startsWith("budget."));
 
 const arm = (name: string, description: string, lines: string[], rest: Partial<Arm> = {}): Arm => ({ name, description, lines, ...rest });
 
