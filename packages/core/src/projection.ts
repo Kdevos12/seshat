@@ -172,6 +172,17 @@ export interface ItemAttemptRow {
   included: boolean;
 }
 
+/** An answer of the budget gate (`budget.gated`). */
+export interface GateRow {
+  seq: number;
+  problem_id: string;
+  site: string;
+  action: string;
+  by: string;
+  /** The event's data. */
+  data: EventDataMap["budget.gated"];
+}
+
 /** A decision of the `decide` capability (`decision.made`). */
 export interface DecisionRow {
   decision_id: string;
@@ -346,7 +357,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 9;
+export const PROJECTION_VERSION = 10;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -365,6 +376,7 @@ const INHERITED_SKIPPED: readonly string[] = [
   "ladder.escalated",
   // A decision is answered from its own run's journal: the same problem id in a chained run is another problem.
   "decision.made",
+  "budget.gated",
 ];
 
 /**
@@ -431,6 +443,9 @@ create table if not exists decisions (
   decision_id text primary key, key text not null, problem_id text not null, line text not null, site text not null,
   backend text not null, requested text not null, seq integer not null, data_json text not null);
 create index if not exists decisions_by_problem on decisions (problem_id, key);
+create table if not exists gates (
+  seq integer primary key, problem_id text not null, site text not null, action text not null, by text not null, data_json text not null);
+create index if not exists gates_by_problem on gates (problem_id, site);
 create table if not exists tasks (
   task_id text primary key, kind text not null, problem_id text, claim_id text, edge_id text, owner text,
   acceptance_json text not null, budget_json text not null, depends_on_json text not null, parent_task_id text,
@@ -760,6 +775,12 @@ export class Projection {
         ).run(d.decisionId, d.key, d.problemId, d.line, d.site, d.backend, d.requested, event.seq, canonicalJson(d));
         return;
       }
+      case "budget.gated": {
+        const d = event.data;
+        db.prepare("insert into gates (seq, problem_id, site, action, by, data_json) values (?, ?, ?, ?, ?, ?)").run(
+          event.seq, d.problemId, d.site, d.action, d.by, canonicalJson(d));
+        return;
+      }
       case "task.created": {
         const d = event.data;
         db.prepare(
@@ -984,6 +1005,14 @@ export class Projection {
   decisionByKey(problemId: string, key: string): DecisionRow | undefined {
     const row = this.db.prepare("select * from decisions where problem_id = ? and key = ?").get(problemId, key) as StoredDecision | undefined;
     return row === undefined ? undefined : decisionRow(row);
+  }
+
+  /** The answers of the budget gate, in order; of one problem or one site when given. */
+  gates(filter: { problemId?: string; site?: string } = {}): GateRow[] {
+    const rows = this.db
+      .prepare("select * from gates where (? is null or problem_id = ?) and (? is null or site = ?) order by seq")
+      .all(filter.problemId ?? null, filter.problemId ?? null, filter.site ?? null, filter.site ?? null) as unknown as Array<Omit<GateRow, "data"> & { data_json: string }>;
+    return rows.map(({ data_json, ...rest }) => ({ ...rest, data: JSON.parse(data_json) as GateRow["data"] }));
   }
 
   /** The decisions of the run, in order; of one site or one problem when given. */

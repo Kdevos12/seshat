@@ -39,7 +39,9 @@
         "enum": [
           "conjecture.relevance",
           "prove.search.order",
-          "fleet.cold_start"
+          "fleet.cold_start",
+          "budget.wave",
+          "budget.line"
         ],
         "description": "Where the decision is made; only these sites accept decide"
       },

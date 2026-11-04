@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisions.ts";
-import type { EventBody, EventDataMap, EventType, HarnessEvent } from "./events.ts";
+import { type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents } from "./log.ts";
 import { HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
@@ -313,6 +313,10 @@ export class Journal {
         this.onlyOrchestrator(event.type, actor);
         this.checkDecision(event.data);
         return;
+      case "budget.gated":
+        this.onlyOrchestrator(event.type, actor);
+        this.checkGate(event.data);
+        return;
       case "run.started":
       case "run.finished":
         return;
@@ -422,6 +426,69 @@ export class Journal {
         if (typeof d.reason !== "string" || d.reason === "") throw new Error(`problem ${d.problemId}: a move up the ladder needs a reason`);
         return;
       }
+    }
+  }
+
+  /**
+   * A gate answer is one the rule could have given: a site and an action that go together, numbers that are numbers, a
+   * threshold that is the share of what is left times the chance of success, and an answer that follows from it. The
+   * exploration floor is the only way a launch goes over the threshold; a widening needs Lean progress or the floor.
+   */
+  private checkGate(d: EventDataMap["budget.gated"]): void {
+    const what = `gate answer for ${d.problemId}`;
+    if (!this.projection.problem(d.problemId)) throw new Error(`${what}: unknown problem ${d.problemId}`);
+    if (!(GATE_SITES as readonly string[]).includes(d.site)) throw new Error(`${what}: unknown site ${String(d.site)}`);
+    if (!(GATE_ACTIONS as readonly string[]).includes(d.action)) throw new Error(`${what}: unknown action ${String(d.action)}`);
+    if (!(GATE_DECIDERS as readonly string[]).includes(d.by)) throw new Error(`${what}: unknown deciding party ${String(d.by)}`);
+    for (const name of ["estimateUsd", "remainingUsd"] as const) {
+      if (typeof d[name] !== "number" || !Number.isFinite(d[name]) || d[name] < 0) throw new Error(`${what}: ${name} must be a non-negative number`);
+    }
+    if (typeof d.budgetUsd !== "number" || !(d.budgetUsd > 0) || !Number.isFinite(d.budgetUsd)) throw new Error(`${what}: budgetUsd must be positive`);
+    if (typeof d.share !== "number" || !(d.share > 0 && d.share <= 1)) throw new Error(`${what}: share must be from 0 to 1 (above 0)`);
+    if (typeof d.reason !== "string" || d.reason === "") throw new Error(`${what}: a gate decision needs a reason`);
+    if (d.site === "wave") {
+      if (d.action === "launch") throw new Error(`${what}: a wave is probed, widened or skipped, not launched`);
+    } else if (d.action === "probe" || d.action === "widen") {
+      throw new Error(`${what}: only a wave is widened or probed, not a ${d.site}`);
+    }
+    if (d.action === "probe" && d.by !== "probe") throw new Error(`${what}: a probe is the problem's first launch: by must be probe`);
+    if (d.exploration && d.by !== "floor") throw new Error(`${what}: exploration is the floor's: by must be floor`);
+    switch (d.by) {
+      case "rule": {
+        const p = d.pSuccess;
+        const t = d.thresholdUsd;
+        if (p === undefined || t === undefined) throw new Error(`${what}: the rule needs the chance of success and the threshold`);
+        if (!(p >= 0 && p <= 1)) throw new Error(`${what}: pSuccess must be from 0 to 1, got ${String(p)}`);
+        const expected = d.share * d.remainingUsd * p;
+        if (Math.abs(t - expected) > 1e-9 + 1e-6 * Math.abs(expected)) {
+          throw new Error(`${what}: the threshold ${String(t)} is not ${String(d.share)} x ${String(d.remainingUsd)} x ${String(p)}`);
+        }
+        if (d.action === "skip") {
+          if (d.estimateUsd <= t) throw new Error(`${what}: the rule skips ${String(d.estimateUsd)} under the threshold ${String(t)}`);
+        } else {
+          if (d.estimateUsd > t + 1e-9) throw new Error(`${what}: the rule launches ${String(d.estimateUsd)} over the threshold ${String(t)}`);
+          if (d.action === "widen" && d.progress !== true) throw new Error(`${what}: a wave widens only after Lean progress`);
+        }
+        return;
+      }
+      case "floor":
+        if (!d.exploration) throw new Error(`${what}: the exploration floor says so: exploration must be true`);
+        if (d.action === "skip" || d.action === "probe") throw new Error(`${what}: the floor only lets a launch through`);
+        return;
+      case "probe":
+        if (d.site !== "wave" || d.action !== "probe") throw new Error(`${what}: a probe is the problem's first launch: a wave probed, by probe`);
+        return;
+      case "progress":
+        if (d.site !== "wave" || d.action !== "skip" || d.progress !== false) throw new Error(`${what}: no progress is what a progress skip says: a wave skipped with progress false`);
+        return;
+      case "decide":
+        if (typeof d.decisionId !== "string" || d.decisionId === "") throw new Error(`${what}: a decide answer names its decision`);
+        if (d.action === "widen" && d.progress !== true) throw new Error(`${what}: a wave widens only after Lean progress`);
+        if (d.action === "probe") throw new Error(`${what}: a probe is not decided`);
+        return;
+      case "memory":
+        if (d.action !== "skip") throw new Error(`${what}: a claim certified earlier is skipped`);
+        return;
     }
   }
 

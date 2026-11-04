@@ -109,6 +109,9 @@ export function labelDecisions(events: readonly HarnessEvent[]): LabeledDecision
     } else if (d.site === "fleet.cold_start") {
       winners = strategiesOf(d.claimId);
       success = d.claimId === undefined ? undefined : winners.includes(answer);
+    } else if (d.site.startsWith("budget.")) {
+      // The budget gate's questions (documentation/scheduler.md, "The budget gate") are measured in dollars to first success by the gate ablation, not by a label.
+      success = undefined;
     } else {
       success = d.claimId === undefined ? undefined : SETTLED.has(status.get(d.claimId) ?? "");
     }
