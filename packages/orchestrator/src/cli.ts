@@ -51,7 +51,7 @@ const usage = `usage:
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
-              [--reflect-budget-usd X] [--alpha X] [--min-gate-problems N] [--ledger FILE] [--reuse-gates] [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
+              --max-usd X [--reflect-budget-usd X] [--allow-unpriced] [--alpha X] [--min-gate-problems N] [--ledger FILE] [--reuse-gates] [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
@@ -182,6 +182,8 @@ const { positionals, values } = parseArgs({
     finalists: { type: "string" },
     "reflect-budget-usd": { type: "string" },
     alpha: { type: "string" },
+    "max-usd": { type: "string" },
+    "allow-unpriced": { type: "boolean" },
     "min-gate-problems": { type: "string" },
     ledger: { type: "string" },
     "reuse-gates": { type: "boolean" },
@@ -748,6 +750,10 @@ async function ablate(): Promise<number> {
   return 0;
 }
 
+function failUsage(message: string): never {
+  throw new UsageError(message);
+}
+
 /** `harness optimize-prompts ...` (documentation/prompts.md). */
 async function optimizePrompts(): Promise<number> {
   if (target !== undefined) throw new UsageError(`optimize-prompts takes no positional argument, got ${target}`);
@@ -795,6 +801,8 @@ async function optimizePrompts(): Promise<number> {
     ...(whole("minibatch", values.minibatch) !== undefined ? { minibatch: whole("minibatch", values.minibatch) as number } : {}),
     ...(whole("finalists", values.finalists) !== undefined ? { finalists: whole("finalists", values.finalists) as number } : {}),
     ...(number("reflect-budget-usd", values["reflect-budget-usd"], undefined) !== undefined ? { reflectBudgetUsd: number("reflect-budget-usd", values["reflect-budget-usd"], undefined) as number } : {}),
+    maxUsd: number("max-usd", values["max-usd"], undefined) ?? failUsage("optimize-prompts needs --max-usd X: a cap in dollars on everything the optimization spends (its worst case is printed at the start)"),
+    ...(values["allow-unpriced"] === true ? { allowUnpriced: true } : {}),
     ...(number("alpha", values.alpha, undefined) !== undefined ? { alpha: number("alpha", values.alpha, undefined) as number } : {}),
     ...(whole("min-gate-problems", values["min-gate-problems"]) !== undefined ? { minGateProblems: whole("min-gate-problems", values["min-gate-problems"]) as number } : {}),
     ...(values.ledger !== undefined ? { ledger: resolve(values.ledger) } : {}),

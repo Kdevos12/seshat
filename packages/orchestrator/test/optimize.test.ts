@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ProblemEntry } from "@seshat/bench";
-import { assertDisjoint, type Candidate, compareScores, type Evaluate, extractPrompt, gate, optimize, type OptimizeInput, optimizationSplits, paretoFront, pickParent, type Reflect, type Score } from "../src/optimize.ts";
+import { assertDisjoint, estimateUsd, type Candidate, compareScores, type Evaluate, extractPrompt, gate, optimize, type OptimizeInput, optimizationSplits, paretoFront, pickParent, type Reflect, type Score } from "../src/optimize.ts";
 import { promptTarget } from "../src/prompt-screen.ts";
 import { RunSetupError } from "../src/run.ts";
 
@@ -344,6 +344,25 @@ describe("the search and the acceptance rule", () => {
     assert.equal(r.pool.length, 3);
     assert.deepEqual(r.front.members.map((c) => c.id).sort(), ["c1", "c2"], "c1 is the only one to solve d2, c2 solves more in all");
     assert.equal(r.front.members.some((c) => c.id === "c0"), false, "the merged prompt is dominated by both");
+  });
+
+  it("stops at a cap on the total spend, and measures only the finalists that fit on the unseen splits", async () => {
+    const sim = simulate({ merged: ["d1"], A: ["d1", "d2", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"], B: ["d1", "d3", "d4", "h1", "h2", "h3", "h4", "t1", "t2", "t3", "t4"] });
+    // Each problem costs $0.1 and may cost $1: twelve gate problems per candidate, three measurements for two finalists.
+    const r = await optimize(base({ evaluate: sim.evaluate, iterations: 2, finalists: 2, problemUsd: 1, maxUsd: 30, ...scripted([answer("A"), answer("B")]) }));
+    assert.equal(r.finalists.length, 1);
+    assert.match(r.stoppedBy ?? "", /room for 1 of 2 finalists/);
+    assert.ok(r.spentUsd > 0 && r.spentUsd <= 30);
+    const none = await optimize(base({ evaluate: simulate({ merged: ["d1"], A: ["d1", "d2"] }).evaluate, iterations: 3, problemUsd: 1, maxUsd: 8, ...scripted([answer("A")]) }));
+    assert.equal(none.trials.length, 0, "the first measurement of a rewrite does not fit");
+    assert.match(none.stoppedBy ?? "", /could not afford another measurement/);
+    assert.equal(none.finalists.length, 0);
+  });
+
+  it("estimates the worst case of a plan", () => {
+    const e = estimateUsd({ dev: 10, heldout: 6, temporal: 4, iterations: 5, finalists: 2, problemUsd: 2, reflectBudgetUsd: 1 });
+    assert.equal(e.minimum, 40);
+    assert.equal(e.maximum, 2 * (10 * 6 + 10 * 3) + 1);
   });
 
   it("measures no finalist when no candidate beats the merged prompt on dev", async () => {
