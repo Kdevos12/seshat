@@ -4,6 +4,7 @@ import type { BenchIndex } from "@seshat/bench";
 import { join } from "node:path";
 import { BlobStore, type HarnessEvent } from "@seshat/core";
 import { buildReport, renderRunReport } from "../src/index.ts";
+import { consortium } from "./turns-helpers.ts";
 import { assertSound, certifier } from "./resume-helpers.ts";
 import { createM12Line } from "@seshat/scheduler";
 import type { Line } from "@seshat/lines";
@@ -37,7 +38,7 @@ describe("the budget gate: probe first", () => {
     const { events, result } = await demoRun({
       responses: [check("sorry"), say("notes")],
       pricePerMillion: 60,
-      config: { ...WIDE, provers: 2, sessions: 2, budget: { problemUsd: 1 }, gate: { floor: 0 } },
+      config: { ...WIDE, provers: 2, sessions: 2, budget: { problemUsd: 1 }, gate: { minSessions: 1, floor: 0 } },
     });
     const probeAttempt = ofType(events, "attempt.finished")[0]?.data;
     assert.equal(probeAttempt?.outcome, "budget_exhausted", "the probe's own ledger ran out");
@@ -53,7 +54,7 @@ describe("the budget gate: probe first", () => {
     // `sorry` leaves a hole with a goal: the sketch compiles, which is progress. Then a prover finds the proof.
     const { events } = await demoRun({
       responses: [check("sorry"), say("notes"), check("exact trivial_proof"), check("exact trivial_proof"), check("exact trivial_proof")],
-      config: { ...WIDE, provers: 2, sessions: 2, gate: { floor: 0, share: { wave: 1, session: 1 } } },
+      config: { ...WIDE, provers: 2, sessions: 2, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } } },
     });
     const kinds = summary(events);
     assert.deepEqual(kinds.slice(0, 2), ["wave:probe:probe", "wave:widen:rule"]);
@@ -71,7 +72,7 @@ describe("the budget gate: probe first", () => {
   });
 
   it("is the same for the same seed: the answers, with their numbers, repeat", async () => {
-    const run = () => demoRun({ responses: [check("sorry"), say("notes"), check("exact trivial_proof"), check("exact trivial_proof")], config: { ...WIDE, provers: 2, sessions: 2, gate: { floor: 0.5 } } });
+    const run = () => demoRun({ responses: [check("sorry"), say("notes"), check("exact trivial_proof"), check("exact trivial_proof")], config: { ...WIDE, provers: 2, sessions: 2, gate: { minSessions: 1, floor: 0.5 } } });
     const a = gates((await run()).events).map(({ reason, ...numbers }) => numbers);
     const b = gates((await run()).events).map(({ reason, ...numbers }) => numbers);
     assert.deepEqual(a, b);
@@ -84,7 +85,7 @@ describe("the budget gate: before a session", () => {
   it("skips a session whose price is over the share of what is left times the chance, and records the numbers", async () => {
     const { events, result } = await demoRun({
       responses: [check("sorry"), say("notes")],
-      config: { ...widened, gate: { floor: 0, share: { wave: 1, session: 0.0001 } } },
+      config: { ...widened, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 0.0001 } } },
     });
     const [probe, widen, session] = gates(events);
     assert.equal(probe?.action, "probe");
@@ -101,7 +102,7 @@ describe("the budget gate: before a session", () => {
   it("lets the exploration floor launch the sessions the rule skips, and says so", async () => {
     const { events } = await demoRun({
       responses: [check("sorry"), say("notes"), check("exact trivial_proof")],
-      config: { ...widened, gate: { floor: 1, share: { wave: 1, session: 0.0001 } } },
+      config: { ...widened, gate: { minSessions: 1, floor: 1, share: { wave: 1, session: 0.0001 } } },
     });
     const session = gates(events).find((g) => g.site === "session");
     assert.equal(session?.action, "launch");
@@ -166,12 +167,12 @@ describe("the budget gate: a run on earlier memory", () => {
       bench: benchIn(ENV_A, shared),
       memoryFrom: a.dir,
       responses: [check("sorry"), say("notes"), check("bad"), say("notes")],
-      config: { provers: 1, sessions: 2, seed: "memory", gate: { floor: 0, share: { wave: 1, session: 1 } } },
+      config: { provers: 1, sessions: 2, seed: "memory", gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } } },
     });
     const widen = gates(b.events).find((g) => g.action === "widen");
     assert.match(widen?.reason ?? "", /posterior Beta\(1\.00, 6\.80\) from 7 attempts/, "6 failures at 0.8, and the probe's");
     // A claim with no earlier run has only the probe behind it.
-    const c = await demoRun({ bench: benchIn(ENV_A, demoBench()), responses: [check("sorry"), say("notes"), check("bad"), say("notes")], config: { provers: 1, sessions: 2, seed: "memory", gate: { floor: 0, share: { wave: 1, session: 1 } } } });
+    const c = await demoRun({ bench: benchIn(ENV_A, demoBench()), responses: [check("sorry"), say("notes"), check("bad"), say("notes")], config: { provers: 1, sessions: 2, seed: "memory", gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } } } });
     assert.match(gates(c.events).find((g) => g.action === "widen")?.reason ?? "", /posterior Beta\(1\.00, 2\.00\) from 1 attempts/);
   });
 });
@@ -181,7 +182,7 @@ describe("the budget gate: where the rule has no numbers", () => {
     // The probe says nothing (no check): no attempt counts, so the posterior is the flat prior and the floor (1) widens anyway.
     const { events, dir } = await demoRun({
       responses: [say("I do not know where to start."), say("notes"), say(JSON.stringify({ verdict: "launch", reason: "cheap" })), check("exact trivial_proof")],
-      config: { provers: 1, sessions: 3, seed: "cold", budget: { problemUsd: 1 }, gate: { floor: 1 } },
+      config: { provers: 1, sessions: 3, seed: "cold", budget: { problemUsd: 1 }, gate: { minSessions: 1, floor: 1 } },
     });
     const answers = gates(events);
     assert.deepEqual(answers.map((g) => `${g.site}:${g.action}:${g.by}`).slice(0, 3), ["wave:probe:probe", "wave:widen:floor", "session:launch:decide"]);
@@ -210,7 +211,7 @@ describe("the report", () => {
   it("shows the avoided spend by site as the gate's estimate, from the journal alone", async () => {
     const { events, result } = await demoRun({
       responses: [check("sorry"), say("notes")],
-      config: { provers: 1, sessions: 3, seed: "report", budget: { problemUsd: 1 }, gate: { floor: 0, share: { wave: 1, session: 0.0001 } } },
+      config: { provers: 1, sessions: 3, seed: "report", budget: { problemUsd: 1 }, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 0.0001 } } },
     });
     const skipped = gates(events).filter((g) => g.action === "skip");
     assert.equal(skipped.length, 1);
@@ -243,7 +244,7 @@ describe("the report", () => {
 });
 
 describe("the budget gate across an interruption", () => {
-  const config = { provers: 2, sessions: 2, seed: "resume", budget: { problemUsd: 1 }, gate: { floor: 0, share: { wave: 1, session: 1 } } };
+  const config = { provers: 2, sessions: 2, seed: "resume", budget: { problemUsd: 1 }, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } } };
   const script = () => [check("sorry"), say("notes"), check("exact trivial_proof"), check("exact trivial_proof"), say("notes")];
 
   it("does not probe a second time when the process ended after the probe, and goes on to the widening it had not decided", async () => {
@@ -331,5 +332,47 @@ describe("the budget gate and a line's task", () => {
     const plain: string[] = [];
     await demoRun({ lines: { M12: createM12Line(), M14: worker(plain) }, config: base, lean: new DemoLean(m12Answer), responses: [check("bad"), say("notes"), say("notes")] });
     assert.deepEqual(plain, ["ask:none", "worked"]);
+  });
+});
+
+describe("the budget gate: a prover's first sessions", () => {
+  it("does not end a prover before it has run its minimum of sessions: by default the gate weighs the third", async () => {
+    const { events } = await demoRun({
+      responses: [check("sorry"), say("notes"), check("sorry"), say("notes"), check("sorry"), say("notes")],
+      config: { provers: 1, sessions: 4, seed: "grace", budget: { problemUsd: 1 }, gate: { floor: 0, share: { wave: 1, session: 0.0001 } } },
+    });
+    const sessions = gates(events).filter((g) => g.site === "session");
+    assert.deepEqual(sessions.map((g) => [g.session, g.action]), [[3, "skip"]], "sessions 1 (the probe) and 2 were not weighed");
+    assert.equal(ofType(events, "attempt.started").length, 2);
+  });
+});
+
+describe("the budget gate: in a run with a team", () => {
+  it("does not end a problem it stopped at its probe: the turn ends at an impasse and the next turn asks the gate again", async () => {
+    const config = { ...WIDE, consortium: consortium({}), gate: { floor: 0 } };
+    const first = await demoRun({ responses: [check("bad"), say("notes")], config });
+    assert.deepEqual(summary(first.events), ["wave:probe:probe", "wave:skip:progress"]);
+    assert.equal(gates(first.events)[1]?.turn, 1);
+    assert.equal(ofType(first.events, "turn.ended")[0]?.data.reason, "impasse");
+    assert.equal(ofType(first.events, "turn.ended")[0]?.data.breakpoint?.kind, "impasse");
+    assert.equal(ofType(first.events, "problem.finished").length, 0, "the problem waits for the team");
+    assert.equal(ofType(first.events, "task.status_changed").filter((e) => e.data.to === "cancelled").length, 0, "no prover task is cancelled");
+    assert.equal(first.result.turn?.paused, true);
+    assertSound(first.events);
+    // The next turn: the probe's session is not run again, and the gate looks again with the draws of a new round.
+    const next = await demoResume({ dir: first.dir, bench: first.bench, responses: [] });
+    const rows = gates(next.events);
+    assert.deepEqual(summary(next.events), ["wave:probe:probe", "wave:skip:progress", "wave:skip:progress"]);
+    assert.equal(rows[2]?.turn, 2);
+    assert.equal(ofType(next.events, "attempt.started").length, 1, "the probe was not run again");
+    assert.equal(ofType(next.events, "problem.finished").length, 0, "and the problem still waits");
+    assert.equal(ofType(next.events, "turn.ended").length, 2);
+    assertSound(next.events);
+  });
+
+  it("is unchanged without a team: the stop ends the problem", async () => {
+    const { events, result } = await demoRun({ responses: [check("bad"), say("notes")], config: { ...WIDE, gate: { floor: 0 } } });
+    assert.equal(gates(events)[1]?.turn, undefined);
+    assert.equal(result.problems[0]?.outcome, "unsolved");
   });
 });

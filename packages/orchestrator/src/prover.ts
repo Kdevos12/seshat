@@ -68,7 +68,7 @@ export interface ProverOptions {
    */
   probe?: { sessions: number };
   /** The budget gate: asked before each session after a prover's first. A `skip` ends the prover with `gate`. */
-  gate?: { session(who: { prover: string; session: number }): Promise<{ action: string }> };
+  gate?: { minSessions: number; session(who: { prover: string; session: number }): Promise<{ action: string }> };
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
   onEnd?: (result: ProverResult) => void;
   /** Called after each attempt's `attempt.finished`: the orchestrator takes the routing decisions about the task here. */
@@ -159,7 +159,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     if (o.ledger.exhausted) return done(budgetStop());
     if (o.turn?.ended !== undefined) return done("turn");
     // The wave that started a prover paid for its first session: the gate weighs the ones after it.
-    if (o.gate !== undefined && o.probe === undefined && session > 1) {
+    if (o.gate !== undefined && o.probe === undefined && session > o.gate.minSessions) {
       const gated = await o.gate.session({ prover: o.name, session });
       if (gated.action === "skip") return done("gate");
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");

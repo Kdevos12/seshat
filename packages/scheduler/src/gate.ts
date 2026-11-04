@@ -21,6 +21,11 @@ export interface GateSettings {
   probeFraction?: number;
   /** An estimate within this fraction of the threshold is a tie, which `decide` may break. Default 0.1; 0 turns ties off. */
   margin?: number;
+  /**
+   * A prover is not ended by the gate before it has run this many sessions: the gate weighs the session after them. Default 2, at least 1.
+   * One low Thompson draw would otherwise end a widened prover for good after its first session.
+   */
+  minSessions?: number;
 }
 
 export interface ResolvedGate {
@@ -28,6 +33,7 @@ export interface ResolvedGate {
   floor: number;
   probeFraction: number;
   margin: number;
+  minSessions: number;
 }
 
 /** What a site may take of what is left: a wave of provers or a session, half of it; a line's task, a quarter; a judge call, a tenth. */
@@ -36,6 +42,7 @@ export const DEFAULT_GATE: Readonly<ResolvedGate> = {
   floor: 0.1,
   probeFraction: 0.1,
   margin: 0.1,
+  minSessions: 2,
 };
 
 /** The settings with the defaults under them; refuses a value out of range. */
@@ -52,7 +59,9 @@ export function gateSettings(given: GateSettings = {}): ResolvedGate {
   if (!(typeof probeFraction === "number" && probeFraction > 0 && probeFraction <= 1)) throw new RangeError(`probeFraction must be above 0 and at most 1, got ${String(probeFraction)}`);
   const margin = given.margin ?? DEFAULT_GATE.margin;
   if (!(typeof margin === "number" && margin >= 0 && margin <= 1)) throw new RangeError(`margin must be from 0 to 1, got ${String(margin)}`);
-  return { share, floor, probeFraction, margin };
+  const minSessions = given.minSessions ?? DEFAULT_GATE.minSessions;
+  if (!(Number.isInteger(minSessions) && minSessions >= 1)) throw new RangeError(`minSessions must be a whole number of at least 1, got ${String(minSessions)}`);
+  return { share, floor, probeFraction, margin, minSessions };
 }
 
 /** What the gate is asked: the hook `problem.budget.ask` (documentation/lines.md). */
@@ -91,6 +100,9 @@ export interface GateVerdict {
   rung: number;
   exploration: boolean;
   progress?: boolean;
+  /** For `by: floor`: the draw and the fraction it was under. */
+  floorDraw?: number;
+  floorFraction?: number;
   reason: string;
 }
 
@@ -148,7 +160,7 @@ function formula(query: GateQuery, state: GateState, settings: ResolvedGate): Ga
   if (launch) {
     verdict = { ...base, action: go, by: "rule", exploration: false, reason: `${f4(query.estimateUsd)} is within ${numbers}` };
   } else if (query.floorDraw < settings.floor) {
-    verdict = { ...base, action: go, by: "floor", exploration: true, reason: `${f4(query.estimateUsd)} is over ${numbers}; the exploration floor lets it through (draw ${query.floorDraw.toFixed(4)} < ${String(settings.floor)})` };
+    verdict = { ...base, action: go, by: "floor", exploration: true, floorDraw: query.floorDraw, floorFraction: settings.floor, reason: `${f4(query.estimateUsd)} is over ${numbers}; the exploration floor lets it through (draw ${query.floorDraw.toFixed(4)} < ${String(settings.floor)})` };
   } else {
     verdict = { ...base, action: "skip", by: "rule", exploration: false, reason: `${f4(query.estimateUsd)} is over ${numbers}` };
   }
@@ -180,7 +192,7 @@ export function widenRule(query: GateQuery, state: GateState, settings: Resolved
       progress: false,
     };
     if (query.floorDraw < settings.floor) {
-      return { verdict: { ...base, action: "widen", by: "floor", exploration: true, reason: `the probe made no Lean progress; the exploration floor widens anyway (draw ${query.floorDraw.toFixed(4)} < ${String(settings.floor)})` } };
+      return { verdict: { ...base, action: "widen", by: "floor", exploration: true, floorDraw: query.floorDraw, floorFraction: settings.floor, reason: `the probe made no Lean progress; the exploration floor widens anyway (draw ${query.floorDraw.toFixed(4)} < ${String(settings.floor)})` } };
     }
     return { verdict: { ...base, action: "skip", by: "progress", exploration: false, reason: "the probe made no Lean progress: the problem does not widen" } };
   }
