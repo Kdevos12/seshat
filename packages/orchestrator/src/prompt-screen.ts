@@ -52,8 +52,21 @@ const WEAKENING: Array<[RegExp, string]> = [
   [/\bsystem prompt\b|\bprevious instructions?\b/i, "it speaks of the system prompt or of previous instructions"],
 ];
 
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]|[​-‏‪-‮⁠-⁤⁦-⁩﻿]/u;
+/** Characters that show nothing or change how text reads: control, format, line and paragraph separators, private use, unassigned and tag characters. */
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}]|[\u00ad\u061c\u180e\ufe00-\ufe0f]|[\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
+
+/** The characters of a text that a person reading it would not see as written, or that the merged prompt does not already hold. */
+function strayCharacters(text: string, merged: string): string[] {
+  const known = new Set(merged);
+  const stray = new Set<string>();
+  for (const ch of text) {
+    if (ch === "\n" || ch === "\t") continue;
+    const code = ch.codePointAt(0) as number;
+    if (INVISIBLE.test(ch)) stray.add(`U+${code.toString(16).toUpperCase().padStart(4, "0")}`);
+    else if (code > 126 && !known.has(ch)) stray.add(`U+${code.toString(16).toUpperCase().padStart(4, "0")} (${ch})`);
+  }
+  return [...stray];
+}
 
 /**
  * The strict screen of a rewritten prompt (Global Constraint 16): the text is model-derived and reaches a prover, so it passes before it
@@ -65,7 +78,8 @@ const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]|[​-‏‪-‮⁠-⁤⁦-�
 export function screenPrompt(text: string, target: PromptTarget): string[] {
   const reasons: string[] = [];
   if (text.trim() === "") return ["it is empty"];
-  if (CONTROL.test(text)) reasons.push("it holds control, zero-width or bidirectional characters");
+  const stray = strayCharacters(text, target.current);
+  if (stray.length > 0) reasons.push(`it holds characters that are invisible or that the merged prompt does not use (${stray.slice(0, 6).join(", ")}${stray.length > 6 ? ", ..." : ""}): control, format, zero-width, bidirectional, tag, variation-selector and separator characters are refused, and so is any non-ASCII character the merged prompt lacks`);
   if (/https?:|www\.|\w@\w/i.test(text)) reasons.push("it holds a link or an address");
   const known = new Set(forbiddenTokensIn(maskCommentsAndStrings(target.current)));
   const novel = forbiddenTokensIn(maskCommentsAndStrings(text)).filter((t) => !known.has(t));
