@@ -1190,6 +1190,28 @@ after every certified result and at every stop (tokens, dollars, time, a crash),
 `harness report` for a run whose process died; a test cuts a run at every event and checks that the
 account holds every certified result up to the cut.
 
+### Task 31: The local interface (`harness ui`)
+
+Main team, after Task 30. Approved by the owner on 2026-11-04 ("Oui go. Utilisable avec toutes api");
+the survey `research/interfaces-existantes.md` chose option A: a small local Node server bound to
+127.0.0.1 (hono) with a Vite front end (Lit or Preact, Cytoscape for the graph, MIT, no account, no
+remote server), delivered in stages, the first being the static `harness view` front end reused.
+No provider is hard-coded: the settings screen lists the providers of pi-ai at run time and keeps
+each API key in a local file with mode 0600 that the run's subprocess reads and the browser never
+receives back. Screens: start (a statement in prose or Lean and a spend ceiling), the signature screen
+(the formalized statement beside the prose and its test lemmas), `doctor` as a checklist, the spend
+gauge by site with a stop button, plain-language status (evidence is never shown as proof), the
+result (`RESULT.md` and the certified proof with a copy button), continue with more budget, a hint or
+a steer, and the read-only research graph. The UI adds no research logic: it reads the journal and
+starts the existing commands as subprocesses, so it cannot change a claim's status. Security: bind to
+loopback only, a per-session token on every request, a check of the Host and Origin headers against
+DNS rebinding and cross-site requests, every journal text escaped, a content security policy, keys never
+logged or journaled, and the subprocess stops with the server unless started detached by the person.
+Dependencies are pinned and few. Documentation: `documentation/ui.md`, `quickstart.md`, the README.
+Tests: the server against a recorded journal and a fake subprocess, the token and header checks, the
+key file mode, escaping of hostile text, a run started and stopped from the API with the faux provider.
+Not run against a real browser session here beyond a headless smoke test.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
