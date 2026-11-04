@@ -24,6 +24,8 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { writeResult } from "./result.ts";
+import { writeView } from "./view.ts";
 import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
@@ -72,8 +74,12 @@ const usage = `usage:
   harness packs [--packs-dir DIR]
   harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
+  harness view RUN_DIR [--out FILE]
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json).
+report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
+rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
+RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
 (documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
@@ -257,6 +263,7 @@ async function main(): Promise<number> {
     if (command === "lean-env") return await leanEnv();
     if (command === "run") return await run();
     if (command === "report") return report();
+    if (command === "view") return view();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
@@ -1004,6 +1011,21 @@ function report(): number {
   const probed = existsSync(probeFile) ? readInput(() => JSON.parse(readFileSync(probeFile, "utf8")) as ProbeResult) : undefined;
   if (values.json) process.stdout.write(`${JSON.stringify(probed === undefined ? built : { ...built, probe: probed.verdict }, null, 2)}\n`);
   else process.stdout.write(renderRunReport(built) + (probed === undefined ? "" : `\n${renderProbe(probed)}`));
+  // The account of a run whose process died is rebuilt here, from the journal alone.
+  try {
+    writeResult(target);
+  } catch (error) {
+    console.error(`RESULT.md could not be written: ${messageOf(error)}`);
+  }
+  return 0;
+}
+
+/** `harness view RUN_DIR [--out FILE]`: one static page from the journal alone (documentation/quickstart.md, "The view"). */
+function view(): number {
+  const dir = requireTarget("view", "a run directory");
+  if (!existsSync(join(dir, "journal.jsonl"))) throw new InputError(`${dir} is not a run directory: it has no journal.jsonl`);
+  const file = readInput(() => writeView(resolve(dir), values.out !== undefined ? resolve(values.out) : undefined));
+  console.log(`View: ${file}`);
   return 0;
 }
 
