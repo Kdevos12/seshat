@@ -83,7 +83,7 @@ export function heuristicsCommand(action: "list" | "stats" | "mine", dirs: reado
       o.out("Accepted proofs that went another way than their card:");
       for (const u of stats.unexplained) o.out(`  ${u.attemptId ?? "?"}: ${u.card} (${u.expected}) in ${u.bucket}, proved by ${u.strategy}`);
     }
-    o.out("No model. The effect is PE2's: P(effect < 0) from the sessions with the card against the control of its buckets.");
+    o.out("No model. The effect is PE2's: P(effect < 0) from the sessions with the card against the control sessions of its buckets that could have had it. Every session counts once: unlike the draw, no discount, probation or weight for another model.");
     return 0;
   }
   const stats = heuristicStats(sessionsOf(dirs), bank);
@@ -96,6 +96,7 @@ export function heuristicsCommand(action: "list" | "stats" | "mine", dirs: reado
     writeFileSync(o.outFile, `${JSON.stringify({ runs: dirs.map((d) => resolve(d)), sessions: stats.sessions, control: stats.control, proposals, unexplained: stats.unexplained }, null, 2)}\n`);
     o.out(`proposals written to ${o.outFile}`);
   }
+  o.out("Every session counts once here (no discount, probation or weight for another model, unlike the draw).");
   o.out("A proposal changes nothing: a person edits the card (a built-in card through a reviewed commit, a pack's through a new version of the pack).");
   return 0;
 }

@@ -219,6 +219,14 @@ describe("the miner's proposals", () => {
     assert.equal(line.deactivated, false);
   });
 
+  it("counts a control session for a card only when the card was eligible for it", () => {
+    const control = (valid: boolean, eligible: string[]) => ({ settings: { heuristic: "none", heuristicRule: "control", heuristicBucket: "A", heuristicEligible: eligible }, outcome: valid ? "valid" : "invalid" });
+    const stats = heuristicStats([...sessions("vary.one_parameter", "A", 2, 2), control(true, ["vary.one_parameter"]), control(false, ["other.card"]), control(false, ["other.card"])], BUILTIN_CARDS);
+    const line = stats.cards[0] as CardLine;
+    assert.deepEqual([line.controlSessions, line.controlValid], [1, 1]);
+    assert.deepEqual(stats.control, { sessions: 3, valid: 1 }, "the run's control still counts them all");
+  });
+
   it("lists accepted proofs that went another way than their tactic card", () => {
     const stats = heuristicStats([{ attemptId: "att_1", settings: { heuristic: "induction.strengthen", heuristicFamily: "induction", heuristicBucket: "A" }, outcome: "valid", strategy: "cases" }], BUILTIN_CARDS);
     assert.deepEqual(stats.unexplained, [{ attemptId: "att_1", card: "induction.strengthen", bucket: "A", strategy: "cases", expected: "induction" }]);

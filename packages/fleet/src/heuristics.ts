@@ -88,6 +88,19 @@ export function runBank(registry: unknown, config: HeuristicsConfig): BankCard[]
 export type CardRule = "control" | "thompson" | "none_applicable";
 
 /**
+ * Whether a session is a control session that could have been given the card: drawn as the control while the card
+ * was among the eligible ones (`heuristicEligible`, recorded on every control session), so that a card is compared
+ * with sessions on the same eligibility terms (its `when`, its strategy, the mode), not with every control of the
+ * bucket. A control session recorded without the list counts for every card.
+ */
+export function controlFor(attempt: Pick<Attempt, "settings">, cardId: string): boolean {
+  const settings = attempt.settings;
+  if (settings?.heuristic !== "none" || settings.heuristicRule !== "control") return false;
+  const eligible = settings.heuristicEligible;
+  return !Array.isArray(eligible) || eligible.includes(cardId);
+}
+
+/**
  * A card's effect in a bucket (plan change HB3): the sessions given it against the control sessions, as PE2's two Beta
  * posteriors (`effectOf` of `@seshat/memory`). Only a proof Lean accepted or a failed check says something, as in PE2; each
  * session counts its weight.
@@ -110,7 +123,7 @@ export function cardEffect(cardId: string, history: readonly Attempt[], weigh: A
     cardId,
     {},
     tally((a) => a.settings?.heuristic === cardId),
-    tally((a) => a.settings?.heuristic === "none" && a.settings?.heuristicRule === "control"),
+    tally((a) => controlFor(a, cardId)),
   );
 }
 
@@ -120,6 +133,8 @@ export interface CardDraw {
   rule: CardRule;
   /** The cards that applied but were left out because their measured effect in the bucket is negative. */
   deactivated?: string[];
+  /** For the control: the cards it could have been given, which its session is compared with (`controlFor`). */
+  eligible?: string[];
   /** The draw of each family and of each card of the chosen family, rounded. */
   draws?: { heuristicFamily?: { [family: string]: number }; heuristic?: { [card: string]: number } };
 }
@@ -131,6 +146,8 @@ export interface CardDrawInput {
   strategy?: string;
   /** The families other provers hold on the same subgoal now: left out while another family is left. */
   taken: ReadonlySet<string>;
+  /** The cards other provers hold on the same subgoal now: when every family is taken, left out while another card is left. */
+  takenCards?: ReadonlySet<string>;
   /** The finished attempts of the session's bucket, on any claim, that had a card or the control. */
   history: readonly Attempt[];
   /** The session's model: another model's sessions count `crossModelWeight`. */
@@ -170,21 +187,28 @@ export function drawCard(random: RandomSource, input: CardDrawInput): CardDraw {
   const eligible = applying.filter((card) => !deactivated.includes(card.id));
   const off = deactivated.length > 0 ? { deactivated } : {};
   if (eligible.length === 0) return { rule: "none_applicable", ...off };
-  if (random() < input.config.noCardShare) return { rule: "control", ...off };
+  if (random() < input.config.noCardShare) return { rule: "control", ...off, eligible: eligible.map((card) => card.id) };
   const settingOf = (key: string) => (attempt: Attempt): string | undefined => {
     const value = attempt.settings?.[key];
     return typeof value === "string" ? value : undefined;
   };
+  // Provers on one subgoal look at it in different ways: families no other prover holds first; when every family is
+  // held, the families that still have a card no other prover holds; only then any card again.
+  const takenCards = input.takenCards ?? new Set<string>();
+  const untaken = eligible.filter((card) => !takenCards.has(card.id));
   const allFamilies = [...new Set(eligible.map((card) => card.family))];
   const free = allFamilies.filter((family) => !input.taken.has(family));
-  const families = free.length > 0 ? free : allFamilies;
+  const withFreeCard = [...new Set(untaken.map((card) => card.family))];
+  const families = free.length > 0 ? free : withFreeCard.length > 0 ? withFreeCard : allFamilies;
   const familyPosteriors = group(input.history, settingOf("heuristicFamily"), input.partial, weigh);
   const family = thompson(random, families.map((f) => [f, familyPosteriors.get(f)?.choice ?? UNIFORM] as const));
   if (family === undefined) return { rule: "none_applicable", ...off };
   const mean = betaMean(familyPosteriors.get(family.choice)?.choice ?? UNIFORM);
   const w = input.config.familyPriorWeight;
   const cardPosteriors = group(input.history, settingOf("heuristic"), input.partial, weigh);
-  const inFamily = eligible.filter((card) => card.family === family.choice);
+  const familyCards = eligible.filter((card) => card.family === family.choice);
+  const freeInFamily = familyCards.filter((card) => !takenCards.has(card.id));
+  const inFamily = freeInFamily.length > 0 ? freeInFamily : familyCards;
   const withPrior = (b: Beta | undefined): Beta => {
     const base = b ?? UNIFORM;
     return { alpha: base.alpha + w * mean, beta: base.beta + w * (1 - mean) };

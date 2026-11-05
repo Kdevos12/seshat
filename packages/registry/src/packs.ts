@@ -318,6 +318,12 @@ function heuristicRules(manifest: PackManifest, problems: string[]): { heuristic
   const prefix = cardPrefixOf(manifest.name);
   const heuristics: HeuristicCard[] = [];
   let ok = true;
+  // The first part of a card id is at most 32 characters (CARD_ID), and a pack's starts with pack_ and its name.
+  const maxName = 32 - "pack_".length;
+  if (list.length > 0 && manifest.name.length > maxName) {
+    problems.push(`${at} a pack whose name is longer than ${maxName} characters cannot carry cards: its card ids start with ${prefix}, and the first part of a card id is at most 32 characters`);
+    return { heuristics, overlaps: [] };
+  }
   for (const [i, value] of list.entries()) {
     const id = isPlainObject(value) && typeof value.id === "string" ? value.id : `heuristics[${i}]`;
     const found = cardProblems(value);
@@ -330,6 +336,12 @@ function heuristicRules(manifest: PackManifest, problems: string[]): { heuristic
     if (!card.id.startsWith(prefix)) {
       ok = false;
       problems.push(`${at} card ${card.id}: a pack's card ids start with ${prefix} (its name, as its tools do), so that no two packs and no built-in card, present or later, share one`);
+    }
+    // The briefing fences a pack's card between [begin text of pack:NAME] and [end text of pack:NAME]: a bracket in the
+    // question could pose as that fence.
+    if (/[[\]]/.test(card.ask)) {
+      ok = false;
+      problems.push(`${at} card ${card.id}: its ask holds a bracket ([ or ]), which could pose as the fence the briefing quotes it in`);
     }
     const screened = screenPackText(card.ask, ASK_MAX);
     if (screened !== undefined) {
