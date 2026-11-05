@@ -160,16 +160,16 @@ importers:
       '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
+    devDependencies:
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
 
   packages/heuristics:
     dependencies:
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory
-    devDependencies:
-      '@seshat/guards':
-        specifier: workspace:*
-        version: link:../guards
 
   packages/induction:
     dependencies:
@@ -429,6 +429,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
 
   packages/repair:
     dependencies:

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { BUILTIN_CARDS } from "@seshat/heuristics";
 import { categoryOf, framingProblems, isOpenConjecture, neutralQuestion } from "../src/index.ts";
 
 describe("the category of a statement", () => {
@@ -38,5 +39,11 @@ describe("the question put to a prover", () => {
     assert.deepEqual(framingProblems("This hint will help you prove it."), ["help you prove"]);
     assert.deepEqual(framingProblems("Show that the bound holds, and demonstrate this conjecture."), ["prove that", "prove the statement"]);
     assert.deepEqual(framingProblems("Determine whether the bound holds. Look for a proof and for a counterexample."), []);
+  });
+});
+
+describe("the bank's built-in heuristic cards", () => {
+  it("ask for no demonstration of the statement (documentation/heuristics.md)", () => {
+    for (const card of BUILTIN_CARDS) assert.deepEqual(framingProblems(card.ask), [], card.id);
   });
 });

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Journal, readEvents, verifyChain, type EventDataMap } from "@seshat/core";
+import { type Overlap, overlaps } from "@seshat/heuristics";
 import { countTree, loadPack, PackError, packIntact, type LoadedPack, type PackRecord } from "./packs.ts";
 
 /**
@@ -19,6 +20,8 @@ export interface InstalledPack extends PackRecord {
   trust: EventDataMap["pack.installed"]["trust"];
   capabilities: string[];
   skills: string[];
+  /** The ids of its heuristic cards. */
+  heuristics: string[];
   programs: string[];
   source: string;
   dir: string;
@@ -47,7 +50,7 @@ export function installedPacks(packsDir: string): InstalledPack[] {
     .sort((a, b) => (a.name < b.name ? -1 : 1))
     .map((d) => {
       const dir = installedDir(packsDir, d.name);
-      return { ...d, dir, intact: intact(dir, d.hash) };
+      return { ...d, heuristics: d.heuristics ?? [], dir, intact: intact(dir, d.hash) };
     });
 }
 
@@ -137,7 +140,7 @@ function gitClone(url: string, into: string): void {
  * `harness add`: copies (or clones) the source into a staging directory, validates it there, and only
  * then moves it into `installed/` and journals `pack.installed`. Nothing of the pack is executed.
  */
-export function installPack(packsDir: string, source: string, options: InstallOptions = {}): { pack: LoadedPack; replaced?: PackRecord } {
+export function installPack(packsDir: string, source: string, options: InstallOptions = {}): { pack: LoadedPack; replaced?: PackRecord; overlaps: Overlap[] } {
   const root = resolve(packsDir);
   mkdirSync(join(root, "staging"), { recursive: true });
   const stage = mkdtempSync(join(root, "staging", "pack-"));
@@ -174,7 +177,12 @@ export function installPack(packsDir: string, source: string, options: InstallOp
       const owner = others.find((p) => p.skills.includes(skill.name));
       if (owner !== undefined) problems.push(`skill ${skill.name} is already added by the pack ${owner.name}`);
     }
+    for (const card of pack.heuristics) {
+      const owner = others.find((p) => p.heuristics.includes(card.id));
+      if (owner !== undefined) problems.push(`card ${card.id} is already added by the pack ${owner.name}`);
+    }
     if (problems.length > 0) throw new PackError(problems.map((p) => `pack ${name}: ${p}`));
+    const found = [...pack.overlaps, ...overlapsWithPacks(pack, others)];
     if (pack.programs.length > 0 && options.allowPrograms !== true) {
       const env = pack.manifest.requires?.env ?? [];
       throw new PackStoreError(
@@ -206,6 +214,7 @@ export function installPack(packsDir: string, source: string, options: InstallOp
             trust: pack.manifest.trust,
             capabilities: pack.capabilities.map((c) => c.manifest.id).sort(),
             skills: pack.skills.map((s) => s.name),
+            ...(pack.heuristics.length > 0 ? { heuristics: pack.heuristics.map((c) => c.id) } : {}),
             programs: pack.programs,
             source: isGitUrl(source) ? redactUrl(source) : resolve(source),
             acceptedPrograms: pack.programs.length > 0,
@@ -221,10 +230,29 @@ export function installPack(packsDir: string, source: string, options: InstallOp
     } finally {
       journal.close();
     }
-    return { pack: { ...pack, dir: dest }, ...(same !== undefined ? { replaced: { name, version: same.version, hash: same.hash } } : {}) };
+    return { pack: { ...pack, dir: dest }, overlaps: found, ...(same !== undefined ? { replaced: { name, version: same.version, hash: same.hash } } : {}) };
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }
+}
+
+/**
+ * The pack's cards that say what a card of another installed pack says (same family, close questions): reported at
+ * install, never refused. A pack whose files no longer load is skipped here; the run refuses it anyway.
+ */
+function overlapsWithPacks(pack: LoadedPack, others: readonly InstalledPack[]): Overlap[] {
+  if (pack.heuristics.length === 0) return [];
+  const own = new Set(pack.heuristics.map((c) => c.id));
+  const cards = [...pack.heuristics];
+  for (const other of others) {
+    if (other.heuristics.length === 0 || !other.intact) continue;
+    try {
+      cards.push(...loadPack(other.dir).heuristics);
+    } catch {
+      // a pack that does not load is refused when a run loads it
+    }
+  }
+  return overlaps(cards).filter((o) => own.has(o.a) !== own.has(o.b));
 }
 
 /** `harness remove`: journals `pack.removed`, then deletes the pack's files. */

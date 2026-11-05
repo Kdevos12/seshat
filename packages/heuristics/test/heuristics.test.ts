@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { framingProblems } from "@seshat/guards";
 import { STRATEGIES } from "@seshat/memory";
 import {
   applies, ASK_MAX, bankOf, BUILTIN_CARDS, bucketOf, cardProblems, checkBank, DIRECTIVE_CARDS, DIRECTIVE_TEXTS, FAMILIES, FAMILY_STRATEGY,
@@ -32,10 +31,6 @@ describe("the built-in bank", () => {
     assert.deepEqual(Object.keys(DIRECTIVE_TEXTS), ["small_cases", "more_general", "other_tool", "shortest", "skeleton", "doubt"]);
     assert.equal(DIRECTIVE_TEXTS.small_cases, "Work out small cases first, by hand or with decide, and read the pattern from them before you generalize.");
     assert.ok(DIRECTIVE_CARDS.every((c) => c.level === "strategy" && c.when === undefined), "a directive applies everywhere, as before the bank");
-  });
-
-  it("asks for no demonstration in any card (M6's framing check finds nothing)", () => {
-    for (const c of BUILTIN_CARDS) assert.deepEqual(framingProblems(c.ask), [], c.id);
   });
 
   it("has questions short enough, from several traditions, and families from the closed list", () => {
