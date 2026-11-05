@@ -221,12 +221,12 @@
   "implementations": [
     {
       "id": "jev",
-      "version": "decisions-client-1",
+      "version": "systemone-client-2",
       "kind": "inproc",
       "factory": "jev",
-      "description": "Jev, TypeSafe AI's decision-only model, through OpenRouter's Decisions endpoint or TypeSafe's API, with a small HTTP client. Needs JEV_API_KEY and a pinned JEV_MODEL in the environment and an allowed host in the profile. The state and the question are sent to a third party. The request and the answer are written from the plan change's description and have never been made against the real service.",
+      "description": "Jev, TypeSafe AI's decision-only model, in TypeSafe's System One shape, at OpenRouter's Decisions endpoint (JEV_PROVIDER=openrouter, the default) or TypeSafe's own API (JEV_PROVIDER=typesafe), with a small HTTP client. Needs a key (OPENROUTER_API_KEY or TYPESAFE_API_KEY, else JEV_API_KEY) and an allowed host in the profile; the profile pins the model, which JEV_MODEL replaces. The state and the question are sent to a third party. The shapes follow the providers' published references; no request has been made against the real service.",
       "environment": {
-        "service": "Jev decisions endpoint"
+        "service": "Jev System One / Decisions endpoint"
       }
     },
     {

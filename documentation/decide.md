@@ -83,7 +83,7 @@ boundary.
 | Backend | Who answers | Needs |
 |---|---|---|
 | `llm` (default) | The run's model, through the line's `llm` (so charged to the problem, tagged by the decision's site, never another provider's key). `votes` independent calls of `judge` ([lines.md](lines.md#judge)); their shares are the distribution. With one vote the distribution has one label at 1. | nothing |
-| `jev` | Jev, through the capability `decide.ask`, implementation `jev`. | `JEV_API_KEY`, a pinned `JEV_MODEL`, an allowed host |
+| `jev` | Jev, through the capability `decide.ask`, implementation `jev`, at OpenRouter or at TypeSafe (`JEV_PROVIDER`, [below](#the-two-providers-of-jev)). | a key (`JEV_API_KEY`, or the provider's own variable), an allowed host; the pinned model is the profile's unless `JEV_MODEL` replaces it |
 | `faux` | Scripted answers, through `decide.ask`, implementation `faux`. For tests; no shipped profile lists it. | a host that lists it |
 
 The configuration (`RunConfig.decide`, recorded in `run.started`; a resumed run keeps it):
@@ -95,8 +95,8 @@ The configuration (`RunConfig.decide`, recorded in `run.started`; a resumed run 
 | `decide.votes` | `--decide-votes N` | Calls of the run's model per decision, 1 to 9. Default 1. |
 
 **Fallback.** With `jev` asked for, a decision falls back to the run's model, and says why in
-`fallback`, when: the host profile does not list `decide.ask`/`jev`; the key or the model is not in
-the environment (the capability is unavailable and names the variable); the host is not among
+`fallback`, when: the host profile does not list `decide.ask`/`jev`; no key is in the environment,
+or the model is a moving alias (the capability is unavailable and names the variables); the host is not among
 `allowedHosts`; the host cannot be reached (no connection, no answer in time, 5xx, 408, 429);
 Jev refuses or answers something the client cannot read; or the request is too long (below). It
 never fails the run. A pause (the consortium turn is over) or a stop is not a failure of Jev and is
@@ -108,12 +108,42 @@ at one token per three characters, a deliberately high count for mathematics) is
 accurate long-context mode. `decide` then answers with the run's model and records why.
 
 The `jev` client does not follow redirects (`redirect: "error"`): a redirect would send the state to
-a host that was never checked against `allowedHosts`. An answer that does not say its cost
-(`usage.cost`) is booked at a conservative estimate of $0.01 (`JEV_UNREPORTED_COST_USD`), since Jev
-charged for the call; it is not refused, which would leave the money off the books.
+a host that was never checked against `allowedHosts`, and it sends only over `https` (a loopback address
+excepted, for tests). The cost of an answer is `usage.cost` when the provider reports it (OpenRouter
+does); otherwise its `usage.input_tokens` and `output_tokens` at the profile's `inputUsdPerMillion` and
+`outputUsdPerMillion` (TypeSafe's own API reports tokens and no cost; Jev's output tokens are free);
+otherwise a conservative estimate of $0.01 (`JEV_UNREPORTED_COST_USD`), since Jev charged for the call;
+it is not refused, which would leave the money off the books.
 
-The model of `jev` is pinned in the host profile through `JEV_MODEL`; a name that ends in `latest`
-is refused, so a decision can always be replayed against the exact snapshot.
+The model of `jev` is pinned in the host profile (each provider's preset names one, and `JEV_MODEL`
+replaces it); a name that is or ends in `latest` or `preview` (the providers' moving aliases), or whose
+last segment has no version number (`jev` alone), is refused, so a decision can always be replayed against the exact snapshot. Each answer's `model` is
+the version that answered, as the provider names it, and that is what the journal records.
+
+### The two providers of Jev
+
+The shipped profiles carry two presets under `settings.jev.providers`, and `JEV_PROVIDER` picks one:
+
+| `JEV_PROVIDER` | Endpoint | Key | Cost of an answer |
+|---|---|---|---|
+| `openrouter` (default) | OpenRouter's Decisions endpoint, `POST https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY`, else `JEV_API_KEY` | `usage.cost`, as reported |
+| `typesafe` | TypeSafe's own System One API, `POST https://api.typesafe.ai/v1/systemone` | `TYPESAFE_API_KEY`, else `JEV_API_KEY` | `usage.input_tokens` at the preset's price |
+
+Each preset also names its pinned model and its price per million input tokens. `JEV_BASE_URL`,
+`JEV_PATH` and `JEV_MODEL` replace the preset's address, endpoint and model when they are set (an
+empty value is unset); the address must still be on a host of `allowedHosts`. The key is the provider's
+own variable when it is set, and `JEV_API_KEY` otherwise: so switching `JEV_PROVIDER` never sends one
+company's key to the other while both variables are set, and a key in OpenRouter's form (`sk-or-...`)
+is refused for any host but `openrouter.ai`. With `JEV_API_KEY` alone, it is the key of the provider
+chosen: change it when you change `JEV_PROVIDER`.
+OpenRouter also serves the System One protocol: `JEV_BASE_URL=https://openrouter.ai/api/v1` and
+`JEV_PATH=/systemone` reach it.
+
+**A key for OpenRouter is also a key for its chat models.** pi-ai reads `OPENROUTER_API_KEY` for
+OpenRouter's chat models, so with that variable set, `harness solve` without `--model` may choose a
+cheap OpenRouter chat model as the run's model ([quickstart.md](quickstart.md#harness-solve)). Give
+Jev its key as `JEV_API_KEY`, or name the run's model (`--model`, or `SESHAT_MODEL`;
+[models-setup.md](models-setup.md)).
 
 ## The capability `decide.ask`
 
@@ -124,13 +154,35 @@ three sites as the only `site`; its output is `answer`, `probabilities`, `backen
 `costUsd` and the tokens. The run's model is not an implementation: it is the line's own `llm`,
 which `decide` falls back to. Each call of `decide.ask` is a tool run from `line:<id>`.
 
-The `jev` implementation is a small HTTP client of its own (pi-ai covers chat models, not this
-endpoint): `POST {baseUrl}/decisions` with the pinned model, the type, the state, the instructions
-and the options or levels, and the key as a bearer token; it reads `answer`, `distribution` and
-`usage.cost` (and `usage.prompt_tokens`). **The request and the answer are written from the plan
-change's description of OpenRouter's Decisions endpoint and have never been made**: this
-environment cannot reach `openrouter.ai`, there is no key, and the shapes may need adjusting
-against the real service. The default base address is `https://openrouter.ai/api/alpha`.
+### The wire
+
+The `jev` implementation is a small HTTP client of its own, rather than pi-ai's classifier client
+for the same protocol, because it keeps the guards above (allowed hosts, no redirect, `https`, the
+32k refusal before sending). It speaks TypeSafe's System One protocol, which OpenRouter's Decisions
+endpoint takes as well: `POST {baseUrl}{path}` with the key as a bearer token and
+
+```json
+{ "model": "PINNED", "state": "the state", "questions": { "decision": QUESTION } }
+```
+
+where `QUESTION` is `{ "type": "choice", "instructions", "criteria": { key: text } }` for a choice
+(the options), `{ "type": "score", "instructions", "criteria": [levels, lowest first] }` for a score,
+and `{ "type": "noul", "instructions", "criteria": { "true": "yes", "false": "no" } }` for a yes or no
+(TypeSafe's API takes a noul without criteria, OpenRouter's requires both keys). It reads
+`answers.decision`: a choice's `choice` and `probabilities` by key; a score's `probabilities` keyed by
+the level's position from 0, read through its `legend` when it has one (which must agree with the
+question's order; without one, a numeric key is a position and any other a level's name; a level given
+two probabilities, or a score without probabilities, is refused), the answer being the most probable
+level; a noul's `noul`,
+the probability of yes. Then `model` and `usage` (`input_tokens`, `output_tokens`, and `cost` when
+the provider gives it). The provider's error text (200 characters at most) is kept in the failure, with the key
+cleared out of it. An answer of another type than the question, a label the question does not
+have, or a probability that is not one is a failure of the call, and the run's model decides.
+
+The shapes are those of the providers' references (TypeSafe's quickstart and System One reference,
+OpenRouter's Decisions API reference and its Jev guide, read on 2026-11-05) and of pi-ai's own
+System One client. **No request has been made**: this environment cannot reach either host and
+there is no key, so the first real run is the first check of the wire.
 
 ## What is journaled and paid
 
@@ -205,7 +257,10 @@ so in the progress log (`log`, passed by the caller; the fleet passes the sessio
 ## What is not done, and what has not run
 
 - Not run against a real Jev, OpenRouter or TypeSafe: no network and no key here. Everything is
-  tested with a fake server, the faux backend and pi-ai's faux provider.
+  tested with a fake server in the providers' documented shapes, the faux backend and pi-ai's faux
+  provider. The client written first (Task 20) guessed another shape (`type`, `input`, `options`
+  answered by `answer` and `distribution`), which matches neither provider; it was replaced on
+  2026-11-05, before any real run.
 - The ablation line `D1` (J5), the reliability table and the ECE are Task 14's: `harness ablate --experiment decide` runs one arm per site asked of Jev against the model, with the agreement between the two ([ablate.md](ablate.md#experiments)). It has not run against a real Jev: only a faux Jev answers in tests.
 - Task 6's orderer and Task 13's relevance score are not built, so `prove.search.order` and
   `conjecture.relevance` have no caller in the harness; the cold start is the only one that does.

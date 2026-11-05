@@ -40,7 +40,7 @@ function asking(got: Array<Decision | Error>, request = ORDER): Line {
 
 const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
 const shipped = JSON.parse(readFileSync(join(REPO_ROOT, "config/hosts/local.json"), "utf8")) as HostProfile;
-const ENV = { JEV_API_KEY: "sk-test", JEV_MODEL: "PROVIDER/jev-X.Y" };
+const ENV = { JEV_API_KEY: "sk-test", JEV_MODEL: "PROVIDER/jev-0.0" };
 
 /** The demo registry plus `decide.ask`, with the shipped profile's settings for Jev, a fake server and the environment given. */
 function withDecide(fetch: Fetch, env: Record<string, string>, faux = new FauxDecider()): (lean: LeanChecker) => RunOptions["registry"] {
@@ -91,11 +91,11 @@ describe("decide in a run", () => {
     const d = got[0] as Decision;
     assert.deepEqual([d.backend, d.answer, d.fallback], ["jev", "rfl", undefined]);
     assert.equal(server.seen.length, 1);
-    assert.equal(server.seen[0]?.body.model, "PROVIDER/jev-X.Y");
+    assert.equal(server.seen[0]?.body.model, "PROVIDER/jev-0.0");
     const runs = ofType(events, "tool_run.started").filter((e) => e.data.capability === "decide.ask");
     assert.deepEqual(runs.map((r) => [r.data.implementation, r.actor]), [["jev", "line:M4"]]);
     const [call] = ofType(events, "model_call.finished");
-    assert.deepEqual([call?.data.site, call?.data.usd, call?.data.model], ["prove.search.order", 0.00013, "PROVIDER/jev-X.Y"]);
+    assert.deepEqual([call?.data.site, call?.data.usd, call?.data.model], ["prove.search.order", 0.00013, "PROVIDER/jev-0.0"]);
     const made = ofType(events, "decision.made")[0];
     assert.deepEqual([made?.data.backend, made?.data.toolRunId, made?.data.costUsd], ["jev", runs[0]?.data.toolRunId, 0.00013]);
     const sessions = ofType(events, "attempt.finished").reduce((sum, a) => sum + a.data.usd, 0);
@@ -110,7 +110,7 @@ describe("decide in a run", () => {
     const { result, events } = await demoRun({
       lines: { M4: asking(got) },
       config: { lines: ["M4"], decide: { backend: "jev" } },
-      registry: withDecide(server.fetch, { JEV_MODEL: "PROVIDER/jev-X.Y" }),
+      registry: withDecide(server.fetch, { JEV_MODEL: "PROVIDER/jev-0.0" }),
       responses: [verdict("simp"), check("exact trivial_proof")],
     });
     const d = got[0] as Decision;

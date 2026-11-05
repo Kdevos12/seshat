@@ -19,7 +19,7 @@ function registry(use: string[], env: Record<string, string>, fetch = fakeJev().
   return new Registry({ catalog, host, factories: { jev: jevFactory(fetch), "decide-faux": fauxFactory(faux) }, env });
 }
 
-const ENV = { JEV_API_KEY: "sk-test", JEV_MODEL: "PROVIDER/jev-X.Y" };
+const ENV = { JEV_API_KEY: "sk-test", JEV_MODEL: "PROVIDER/jev-0.0" };
 
 describe("the capability decide.ask", () => {
   it("has the three sites of the plan as its input's sites, the same as the journal's", () => {
@@ -49,14 +49,19 @@ describe("the capability decide.ask", () => {
     await assert.rejects(r.invoke(DECIDE_ASK, { ...ORDER, use: "threshold" }), (error) => error instanceof CapabilityError && error.code === "invalid_input");
   });
 
-  it("is unavailable, naming the variable, without the key or the pinned model", async () => {
-    for (const missing of ["JEV_API_KEY", "JEV_MODEL"]) {
-      const env: Record<string, string> = { ...ENV };
-      delete env[missing];
+  it("is unavailable, naming the variables, without a key, and with a moving alias for a model", async () => {
+    for (const [env, named] of [
+      [{ JEV_MODEL: "PROVIDER/jev-0.0" }, "JEV_API_KEY or OPENROUTER_API_KEY"],
+      [{ ...ENV, JEV_MODEL: "~typesafe/jev-latest" }, "pinned to a version"],
+    ] as const) {
       const r = registry(["jev"], env);
-      await assert.rejects(r.invoke(DECIDE_ASK, ORDER), (error) => error instanceof CapabilityError && error.code === "unavailable" && error.message.includes(missing), missing);
+      await assert.rejects(r.invoke(DECIDE_ASK, ORDER), (error) => error instanceof CapabilityError && error.code === "unavailable" && error.message.includes(named), named);
       assert.equal((await r.usable(DECIDE_ASK)).ok, false);
     }
+  });
+
+  it("is usable with a key alone: the profile's preset gives the pinned model", async () => {
+    assert.equal((await registry(["jev"], { OPENROUTER_API_KEY: "sk-or" }).usable(DECIDE_ASK)).ok, true);
   });
 
   it("is unavailable when the profile's host list does not allow the address", async () => {
