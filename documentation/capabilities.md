@@ -356,14 +356,15 @@ A typed question put to a decision-only model: a choice among labelled options, 
 levels, or a yes/no, with the probability of each answer. It is `direct`, produces no node and
 justifies no status. The sites that may ask are a closed list (`site` in the manifest), and the
 forbidden ones are refused by the capability. Its implementation `jev` (factory `jev`) posts to
-Jev's decisions endpoint with a key from `JEV_API_KEY`, only to the hosts in `allowedHosts`, and
+Jev in TypeSafe's System One shape, at OpenRouter's Decisions endpoint or TypeSafe's own API
+(`JEV_PROVIDER`; the profile's presets), with a key from `JEV_API_KEY` or the provider's own variable, only to the hosts in `allowedHosts`, and
 refuses a prompt over 32,000 tokens; `faux` (factory `decide-faux`) is scripted, for tests. Its
 contract has 3 cases. The default backend, the run's own model, is not a registry implementation:
 the orchestrator answers with it when this capability is off, unreachable or refused.
 With `jev` on, short proof states go to a third party; the host profiles say so, and
 [decide.md](decide.md) covers the rest. The `faux` factory is registered in the production factories
-(it is needed by the tests and by `--decide-backend faux`), but the shipped profiles never list it. The request and the answer are guesses from the plan change
-and have never been made.
+(it is needed by the tests and by `--decide-backend faux`), but the shipped profiles never list it. The request and the answer follow the providers'
+published references ([decide.md](decide.md#the-wire)) and have never been made against the real service.
 
 For the three, a site that cannot be reached makes the implementation `unavailable` (a network error,
 the time limit, a status 5xx, 408 or 429), and `harness health` asks each site for its front page.

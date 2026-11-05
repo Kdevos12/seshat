@@ -85,6 +85,7 @@ ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a t
 and written (default runs).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
+--model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
 solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
@@ -270,8 +271,14 @@ const { positionals, values } = parseArgs({
     help: { type: "boolean", short: "h" },
   },
 });
-
 const [command, target, third] = positionals;
+
+/** The commands that start work with a model of their choosing; a resume keeps the model its run began with. */
+const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
+// The model of these commands, when --model is not given: SESHAT_MODEL (documentation/models-setup.md). Not for a resume,
+// which refuses --model.
+const envModel = process.env.SESHAT_MODEL?.trim();
+if (values.model === undefined && envModel !== undefined && envModel !== "" && MODEL_COMMANDS.has(command ?? "") && values.resume === undefined) values.model = envModel;
 
 /** A mistake the user can fix, such as a missing file: the message is printed, and the exit code is 2. */
 class InputError extends Error {}
@@ -689,7 +696,7 @@ async function run(): Promise<number> {
   if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
   if (values.resume !== undefined) return await resume(values.resume);
   if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
-  if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID (harness models lists them)");
+  if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID or SESHAT_MODEL (harness models lists them)");
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
@@ -778,7 +785,7 @@ async function probeRun(memoryDir: string, index: BenchIndex, checkout: string, 
 async function probe(): Promise<number> {
   const memoryDir = requireTarget("probe", "a run directory");
   if (values.checkout === undefined) throw new UsageError("probe needs --checkout: a checkout of the bench's repository");
-  if (values.model === undefined) throw new UsageError("probe needs --model PROVIDER/ID");
+  if (values.model === undefined) throw new UsageError("probe needs --model PROVIDER/ID or SESHAT_MODEL");
   if (!existsSync(values.checkout)) throw new InputError(`no directory ${values.checkout}`);
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
@@ -794,7 +801,7 @@ async function probe(): Promise<number> {
 async function ablate(): Promise<number> {
   if (target !== undefined) throw new UsageError(`ablate takes no positional argument, got ${target}`);
   if (values.checkout === undefined) throw new UsageError("ablate needs --checkout: a checkout of the bench's repository");
-  if (values.model === undefined) throw new UsageError("ablate needs --model PROVIDER/ID (harness models lists them)");
+  if (values.model === undefined) throw new UsageError("ablate needs --model PROVIDER/ID or SESHAT_MODEL (harness models lists them)");
   if (values.ablation !== undefined || values["line-option"] !== undefined || values["memory-from"] !== undefined) {
     throw new UsageError("ablate chooses the lines itself (--configs, or --experiment with --lines); --ablation, --line-option and --memory-from belong to run");
   }
@@ -845,7 +852,7 @@ function failUsage(message: string): never {
 async function optimizePrompts(): Promise<number> {
   if (target !== undefined) throw new UsageError(`optimize-prompts takes no positional argument, got ${target}`);
   if (values.checkout === undefined) throw new UsageError("optimize-prompts needs --checkout: a checkout of the bench's repository");
-  if (values.model === undefined) throw new UsageError("optimize-prompts needs --model PROVIDER/ID (harness models lists them)");
+  if (values.model === undefined) throw new UsageError("optimize-prompts needs --model PROVIDER/ID or SESHAT_MODEL (harness models lists them)");
   if (values.cutoff === undefined) throw new UsageError("optimize-prompts needs --cutoff DATE: problems newer than it are the temporal holdout");
   if (values.ablation !== undefined || values["line-option"] !== undefined || values["memory-from"] !== undefined || values.lines !== undefined) {
     throw new UsageError("optimize-prompts measures the prover alone, with lean_check and the --tool capabilities: --lines, --ablation, --line-option and --memory-from belong to run");

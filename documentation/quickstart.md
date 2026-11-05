@@ -83,7 +83,7 @@ quoted (a newline, a backtick) gives the placeholder command instead.
 | Formalization | its cost comes off the allowance | the run's budget is `--max-usd` minus what the formalization cost |
 | Budget gate and probe first | on, with the gate's own defaults | `--gate` ([scheduler.md](scheduler.md#the-budget-gate)) |
 | Lines | M1 (shared claims) and M10 (the classical battery before any model call) | `--lines M1,M10`; `--lines` changes them |
-| Model | the cheapest model that has a price, among the providers with credentials | `--model`; the price is input plus output per million tokens, from the host's table when it has the model and from pi-ai otherwise; a model with no price is never chosen, because no dollar cap could see it |
+| Model | `SESHAT_MODEL` when it is set ([models-setup.md](models-setup.md)), otherwise the cheapest model that has a price, among the providers with credentials | `--model`; the price is input plus output per million tokens, from the host's table when it has the model and from pi-ai otherwise; a model with no price is never chosen, because no dollar cap could see it |
 | Consortium stop | a turn ends, with its account, when it has spent half the allowance (`--turn-usd`), at an impasse, or when the problem is settled | `--turn-usd`, the breakpoints ([human.md](human.md)); the run then waits, and `harness resume` spends the rest up to the allowance |
 | Off-peak | not by default; `--offpeak` waits for the host's off-peak prices when its table has a calendar for the model | `--offpeak` |
 | Host | the one named, `HARNESS_HOST`, `sandboxed` when `doctor` has written it, then `local` | `--host` |

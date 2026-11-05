@@ -94,6 +94,9 @@ blocks the Lean toolchain downloads and has no model credentials.
   Lean or prose statement, the signature of prose, the student defaults), `harness doctor` (what the machine
   lacks, the isolated host profile), `RESULT.md` (what a run leaves, whatever stopped it) and `harness view`
   (one static HTML page of a run), and the local page `harness ui` ([ui.md](ui.md)).
+- [models-setup.md](models-setup.md): the providers for a first real run: DeepSeek's own API as the run's model (its key, its
+  prices and off-peak calendar in the host profiles, `SESHAT_MODEL`), Jev at OpenRouter or at TypeSafe for `decide`, the
+  variables, and what has not run.
 - [ui.md](ui.md): the local interface, `harness ui`: a journal reader, a loopback server with a token and a process manager for
   the commands, provider settings with keys kept outside the repository, and the screens.
 - [human.md](human.md): consortium mode: turns that end at a limit or a breakpoint, the account of

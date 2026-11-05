@@ -100,7 +100,7 @@ describe("harness CLI", () => {
     assert.equal(all.code, 1);
     assert.match(
       all.stdout,
-      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn decide\.ask\/jev \S+ .*JEV_API_KEY, JEV_MODEL not set\nwarn findstat\.identify\/site \S+ .*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
+      /^FAIL compute\.sage\/docker 0\.9\.5 .*\nFAIL compute\.sage\/local 0\.9\.5 .*ENOENT.*\nwarn decide\.ask\/jev \S+ .*no API key \(set JEV_API_KEY or OPENROUTER_API_KEY\)\nwarn findstat\.identify\/site \S+ .*\nFAIL lean\.certify\/lake 0\.1\.0\+lean-v4\.27\.0\+fc-bench-v1 .*set LEAN_PROJECT_DIR; lean\.certify refuses to run the candidate's code without a sandbox.*\nok {3}lean\.check\/kimina/m,
     );
     assert.match(all.stdout, /^warn lmfdb\.query\/site \S+ /m);
     assert.match(all.stdout, /^warn oeis\.search\/site \S+ /m);
@@ -169,6 +169,17 @@ describe("harness run", () => {
       assert.match(stderr.replace(/^warning: .*\n/, ""), message);
       assert.match(stderr, /\n\nusage:\n/);
     });
+  });
+
+  it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {
+    const env = { SESHAT_MODEL: "nowhere/none" };
+    const started = await harness(["run", "--checkout", checkout, "--all"], env);
+    assert.doesNotMatch(started.stderr, /needs --model/);
+    assert.match(started.stderr, /unknown provider nowhere/, "the run went on with the variable's model");
+    for (const args of [["resume", join(tempDir(), "absent"), "--checkout", checkout], ["run", "--resume", join(tempDir(), "absent"), "--checkout", checkout]]) {
+      const resumed = await harness(args, env);
+      assert.doesNotMatch(resumed.stderr, /cannot be given with it/, args.join(" "));
+    }
   });
 
   it("stops before writing anything when the checkout, the configuration or the model is wrong", async () => {
