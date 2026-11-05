@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { STRATEGIES } from "@seshat/memory";
 import {
   applies, ASK_MAX, bankOf, BUILTIN_CARDS, bucketOf, cardProblems, checkBank, DIRECTIVE_CARDS, DIRECTIVE_TEXTS, FAMILIES, FAMILY_STRATEGY,
-  historyOf, overlaps, parseCard, STARTER_CARDS, statementFeatures, strategyOfCard, type CardContext, type HeuristicCard,
+  heuristicReport, heuristicStats, historyOf, overlaps, parseCard, renderCardLine, renderHeuristicReport, STARTER_CARDS, statementFeatures, strategyOfCard,
+  type CardContext, type CardLine, type HeuristicCard,
 } from "../src/index.ts";
 
 const card = (over: Partial<HeuristicCard> = {}): HeuristicCard => ({
@@ -128,5 +129,49 @@ describe("overlaps and the bank of a run", () => {
     const bank = bankOf([{ name: "p", heuristics: [card({ id: "p.special" })] }]);
     assert.equal(bank.length, BUILTIN_CARDS.length + 1);
     assert.equal(bank.at(-1)?.origin, "pack:p");
+  });
+});
+
+describe("the bank's statistics", () => {
+  const session = (heuristic: string, outcome: string, over: Record<string, string> = {}, strategy?: string) => ({
+    settings: { heuristic, heuristicRule: heuristic === "none" ? (over.rule ?? "control") : "thompson", heuristicBucket: over.bucket ?? "msc:11|forall_nat+inequality", ...(over.family !== undefined ? { heuristicFamily: over.family } : {}) },
+    outcome,
+    ...(strategy !== undefined ? { strategy } : {}),
+  });
+
+  it("sets each card and family against the control of its own buckets, and counts compliance for tactic cards", () => {
+    const stats = heuristicStats(
+      [
+        session("induction.strengthen", "valid", { family: "induction" }, "induction"),
+        session("induction.strengthen", "invalid", { family: "induction" }, "cases"),
+        session("vary.one_parameter", "valid", { family: "vary", bucket: "msc:05|plain" }),
+        session("none", "valid"),
+        session("none", "invalid"),
+        session("none", "valid", { bucket: "msc:05|plain" }),
+        session("none", "invalid", { rule: "none_applicable" }),
+        { settings: { heuristic: "vary.one_parameter" } },
+        { settings: { directive: "doubt" }, outcome: "valid" },
+      ],
+      BUILTIN_CARDS,
+    );
+    assert.equal(stats.sessions, 7, "unfinished sessions and sessions without a draw are left out");
+    assert.deepEqual(stats.control, { sessions: 3, valid: 2 });
+    assert.equal(stats.noneApplicable, 1);
+    const induction = stats.cards.find((c) => c.id === "induction.strengthen");
+    assert.deepEqual([induction?.sessions, induction?.valid, induction?.controlSessions, induction?.controlValid], [2, 1, 2, 1]);
+    assert.deepEqual(induction?.compliance, { classified: 2, matching: 1, strategy: "induction" });
+    const vary = stats.cards.find((c) => c.id === "vary.one_parameter");
+    assert.deepEqual([vary?.controlSessions, vary?.controlValid, vary?.compliance], [1, 1, undefined], "a strategy-neutral card has no compliance");
+    assert.deepEqual(stats.families.map((f) => f.id), ["induction", "vary"]);
+    assert.match(renderCardLine(stats.families[0] as CardLine), /^induction: 1 of 2 valid \(50%\), control of its buckets 1 of 2 \(50%\) \(too few to read\)$/);
+  });
+
+  it("reads a run's journal, and says nothing for a run with the bank off", () => {
+    const started = (attemptId: string, settings?: Record<string, string>) => ({ type: "attempt.started", data: { attemptId, ...(settings !== undefined ? { settings } : {}) } });
+    const finished = (attemptId: string, outcome: string) => ({ type: "attempt.finished", data: { attemptId, outcome } });
+    assert.equal(heuristicReport([started("a"), finished("a", "valid")] as never), undefined);
+    const stats = heuristicReport([started("a", { heuristic: "none", heuristicRule: "control", heuristicBucket: "b" }), finished("a", "valid"), started("b", { heuristic: "doubt", heuristicFamily: "counterexample", heuristicBucket: "b" }), finished("b", "invalid")] as never);
+    assert.ok(stats !== undefined);
+    assert.match(renderHeuristicReport(stats), /^Heuristic cards: 2 finished session\(s\) with a draw; the control \(no card\) 1 of 1 valid\. By family, .*counterexample: 0 of 1 valid/);
   });
 });

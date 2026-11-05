@@ -19,7 +19,7 @@ as data, an environment (`lean/env/NAME.toml`), which `harness lean-env resolve`
 consistency before anything is built ([documentation/lean-env.md](documentation/lean-env.md)); line M17 puts a run in
 one with more packages than the bench's. An optional library builder (off by default) can ask a coding agent for new Lean under `lean/SeshatLib`, behind a gate of Seshat's own; what it writes is `unreviewed` and cannot appear in a claim statement until a person or two checkers review it ([documentation/library-builder.md](documentation/library-builder.md)).
 The provers can also be given SageMath, an external program installed with Docker or pip
-([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2 and human-written skills and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). A run can start on the memory of an earlier
+([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2, human-written skills and heuristic cards and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). With the fleet's option `heuristics`, each session can be given one heuristic card, a method of reasoning written by a person ("vary one parameter at a time"), drawn by family and card against a control share of sessions that get none, and `harness heuristics stats` counts what each family did against that control ([documentation/heuristics.md](documentation/heuristics.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
 draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
 ([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance. A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); `harness ui` is a local web page (a loopback server with a per-session token, Host and Origin checks and a content security policy, a journal reader, provider settings with each key in a 0600 file outside the repository, and screens to start a problem, sign its statement, watch the spend and stop, read the result, continue, hint or steer, and see the read-only graph) that starts the same commands as subprocesses and cannot change a claim's status ([documentation/ui.md](documentation/ui.md); tested with a fake subprocess, the faux provider and one headless-browser smoke test, never with a real browser session by a person); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
@@ -43,6 +43,7 @@ flowchart TB
   realopt["First real prompt optimization<br/>needs a model, Lean<br/>and the dataset"]:::wait
   realablate["First real ablation<br/>needs a model, Lean, Jev<br/>and the dataset"]:::wait
   fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run"]:::built
+  heurbank["Heuristic card bank<br/>methods of reasoning, not tools:<br/>built-in and pack cards,<br/>a control arm per bucket"]:::built
   dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
   judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
@@ -148,6 +149,8 @@ flowchart TB
   bench -->|statements| identity
   identity -->|claims| journal
   fleet -->|"who works on what,<br/>with which settings"| provers
+  heurbank -->|"one card per session,<br/>or none: the control"| fleet
+  packs -->|"cards written<br/>by people"| heurbank
   fleet -->|"mode nl_first"| dag
   dag -->|"step plan"| provers
   dag -->|"informal step claims,<br/>decomposes_into proposals"| journal

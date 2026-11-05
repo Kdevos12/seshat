@@ -122,6 +122,36 @@ is the bank a run draws from, the built-in cards then the packs' cards, each wit
 or `pack:<name>`); a bank with an error is refused. Overlaps are reported, never merged: the person who
 installs a pack chooses.
 
+## Statistics
+
+The bank is measured, never trusted: whether a card helps is a count of what Lean accepted, set against
+the sessions that got no card. `heuristicStats(sessions, bank)` reads the finished sessions whose settings
+record a draw (`heuristic`, `heuristicRule`, `heuristicFamily`, `heuristicBucket`, written by the fleet,
+[fleet.md](fleet.md#heuristic-cards)) and gives, for each family and each card:
+
+- the sessions given it and how many were `valid`;
+- the **control of its buckets**: the sessions of the same buckets that drew no card (`heuristicRule`
+  `control`), and how many were `valid`. A card is never set against the run's average, because the
+  fleet draws by bucket and buckets differ in difficulty; a session no card applied to
+  (`none_applicable`) is not the control and is counted apart;
+- for a tactic card whose family maps to a strategy label, **compliance**: of its sessions M1 classified,
+  how many went the card's way (`strategy` equal to the card's label). A card nobody follows measures
+  nothing.
+
+A line with fewer than 10 sessions, or 10 control sessions, says that it is too few to read. There is no
+test of significance and no model in any of it. The run's report has one paragraph (by family) when a
+session recorded a draw (`heuristicReport(events)`, `report.json` field `heuristics`), and the command
+line gives each card:
+
+```sh
+pnpm harness heuristics list [--packs-dir DIR]   # the bank a run draws from: built-in and installed packs' cards, and their overlaps
+pnpm harness heuristics stats RUN_DIR            # by family and by card, against the control of their buckets
+```
+
+Neither command writes anything. What the plan change calls unexplained successes (a valid session whose
+card no classified strategy explains), the replay of the battery after a new lemma (HB5b) and a card's
+`prepare` step (HB4) are not built.
+
 ## Trust
 
 A card never changes a claim's status, never states a fact and never reaches a system prompt. Built-in
