@@ -148,10 +148,10 @@ describe("the bank in the fleet's hooks", () => {
   });
 
   it("draws a pack's card from the registry the run was built with", async () => {
-    const packCard: HeuristicCard = { id: "p.only", version: 1, family: "vary", level: "strategy", ask: "Which parameter would you vary first, and why?", tradition: "test", source: "test" };
-    const w = await world({ heuristics: ["p.only"], noCardShare: 0, strategies: false }, { packs: [{ manifest: { name: "p" }, heuristics: [packCard] }] });
+    const packCard: HeuristicCard = { id: "pack_p.only", version: 1, family: "vary", level: "strategy", ask: "Which parameter would you vary first, and why?", tradition: "test", source: "test" };
+    const w = await world({ heuristics: ["pack_p.only"], noCardShare: 0, strategies: false }, { packs: [{ manifest: { name: "p" }, heuristics: [packCard] }] });
     const decision = await w.fleet.hooks.beforeSession?.(w.session("p1", 1));
-    assert.equal(decision?.settings?.heuristic, "p.only");
+    assert.equal(decision?.settings?.heuristic, "pack_p.only");
     const sections = (await w.fleet.hooks.briefingSections?.(w.session("p1", 1, decision?.settings ?? {}))) ?? [];
     assert.match(sections[0]?.text ?? "", /\[begin text of pack:p\]/);
   });

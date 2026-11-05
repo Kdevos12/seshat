@@ -722,3 +722,31 @@ battery replay after a new lemma (HB5b), a card's `prepare` step (HB4), the extr
 `origin_informal`, `closed_fast` and `informal_sketch`. Simulated only: no measure of whether any card helps a real
 model; the default shares (0.2 control, 0.5 for another model, a family prior of 2) are first guesses.
 
+Task 32, after the plan's integration (2026-11-05, rebased on `c744ed5`): added PE2's effect (`effectOf`,
+`shouldDeactivate`, no second counter) and M5's deactivation in the draw (`cardMinObservations`, 8), the
+statistics per bucket with the unexplained successes, `harness heuristics mine RUN_DIR... [--out FILE]`, and
+`harness ablate --experiment heuristics` (fleet alone, with directives, with cards). More decisions (Ruling 5):
+(5) `harness heuristics apply` is not a command: cards are static files, so a person applies a proposal by
+editing the card through a reviewed commit or a new pack version, which is the human approval HB5 asks for;
+cost if wrong: a bank journal and a fold of patches in `runBank`; (6) the 13 strategy labels stay M1's
+(`STRATEGIES`, with their text in the fleet's `STRATEGY_HINTS`); a tactic card's family maps to one of them
+(`FAMILY_STRATEGY`), so no strategy text is held twice; (7) the card format lives in `@seshat/heuristics`,
+not `@seshat/core`, since only the fleet, the registry and the report read it; (8) HB2's key by model
+configuration class is replaced by `crossModelWeight` (another model's sessions count 0.5), which keeps the
+buckets large enough to say something; (9) a pack's card ids start with `pack_<name>.`, as its tools do.
+
+Task 32, review round 1 (2026-11-05, an agent that did not write the code; no high-severity finding, no
+trust rule broken). Fixed: (1) a pack card whose question M6's framing check flags is refused at `harness
+add` (`installPack` option `screenCard`, since the guards depend on the registry); (2) a card's control is
+standardized to the card's mix of buckets instead of pooled over them; (4) the statistics count only
+sessions with a verdict (`valid` or `invalid`), as PE2 does; (5) the `pack_<name>.` prefix, so no later
+built-in card can take a pack's id. Recorded, not fixed: (3) not built: HB2 item 5 (a family prior from
+`decide`'s `fleet.cold_start`), HB7's caps `maxActive` and `maxCards` (one card per session is the draw's
+own cap; the `when` filter keeps the eligible set small), HB8.3 overlap on `when` (overlaps are reported on
+the `ask`, with "the same conditions" said when the `when` matches too), and a test that compares a run with
+the bank off to `main` byte for byte (the bank's draw uses its own stream `key:heuristics`, so the other
+streams are unchanged); (6) an unknown card id or a bank error is reported at the first session, not at
+setup, and the bank is rebuilt per session (29 cards: cheap); (7) on a resume after a pack is removed, the
+briefing leaves out a card the attempt still records; (8) the README diagram changed one commit after the
+flow did.
+

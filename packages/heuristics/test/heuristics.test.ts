@@ -205,6 +205,20 @@ describe("the miner's proposals", () => {
     assert.deepEqual(bankProposals(heuristicStats(sessions("bad.card", "A", 0, 3))), [], "too few observations: nothing to propose");
   });
 
+  it("standardizes the control to the card's mix of buckets, so a card drawn in hard buckets is not set against easy ones", () => {
+    const stats = heuristicStats([
+      ...sessions("none", "easy", 90, 10),
+      ...sessions("none", "hard", 1, 9),
+      ...sessions("even.card", "easy", 1, 0),
+      ...sessions("even.card", "hard", 5, 45),
+    ]);
+    const line = stats.cards[0] as CardLine;
+    assert.equal(line.controlSessions, 110);
+    assert.ok(Math.abs(line.controlValid / line.controlSessions - (1 / 51) * 0.9 - (50 / 51) * 0.1) < 1e-3, String(line.controlValid));
+    assert.ok(Math.abs(line.effect.difference) < 0.03, `the card does what the control does in each bucket: ${line.effect.difference}`);
+    assert.equal(line.deactivated, false);
+  });
+
   it("lists accepted proofs that went another way than their tactic card", () => {
     const stats = heuristicStats([{ attemptId: "att_1", settings: { heuristic: "induction.strengthen", heuristicFamily: "induction", heuristicBucket: "A" }, outcome: "valid", strategy: "cases" }], BUILTIN_CARDS);
     assert.deepEqual(stats.unexplained, [{ attemptId: "att_1", card: "induction.strengthen", bucket: "A", strategy: "cases", expected: "induction" }]);

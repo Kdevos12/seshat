@@ -1,3 +1,4 @@
+import { framingProblems } from "@seshat/guards";
 import { installedPacks, installPack, loadCatalog, loadPack, missingRequirements, PackError, PackStoreError, removePack } from "@seshat/registry";
 import { packsDirectory, REPO_ROOT } from "./implementations.ts";
 import { RunSetupError } from "./setup-error.ts";
@@ -18,7 +19,7 @@ export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolea
   const dir = packsDirectory(o.dir);
   const reserved = new Set(loadCatalog(o.catalogDir ?? `${REPO_ROOT}capabilities`).capabilities.keys());
   try {
-    const { pack, replaced, overlaps } = installPack(dir, source, { reserved, allowPrograms: o.allowPrograms === true, replace: o.replace === true, level1: o.level1 === true });
+    const { pack, replaced, overlaps } = installPack(dir, source, { reserved, screenCard: framingProblems, allowPrograms: o.allowPrograms === true, replace: o.replace === true, level1: o.level1 === true });
     const m = pack.manifest;
     if (replaced !== undefined) o.out(`replaced ${replaced.name} ${replaced.version}`);
     o.out(`installed ${m.name} ${m.version} (trust ${m.trust}, hash ${pack.hash.slice(0, 12)}) in ${pack.dir}`);

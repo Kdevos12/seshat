@@ -83,6 +83,11 @@ export interface InstallOptions {
   reserved?: ReadonlySet<string>;
   /** Honours the pack's own `level1` request from the next session; without it the request is only recorded. */
   level1?: boolean;
+  /**
+   * The check of a card's question that the registry cannot import: M6's framing check (`framingProblems` of
+   * `@seshat/guards`, which depends on this package), passed by `harness add`. A card whose question it flags is refused.
+   */
+  screenCard?: (ask: string) => readonly string[];
   /** Install over a pack of the same name (an upgrade): the journal records the removal and the install. */
   replace?: boolean;
   /** Where git clones go wrong in a test, or from. Default: the `git` program. */
@@ -180,6 +185,8 @@ export function installPack(packsDir: string, source: string, options: InstallOp
     for (const card of pack.heuristics) {
       const owner = others.find((p) => p.heuristics.includes(card.id));
       if (owner !== undefined) problems.push(`card ${card.id} is already added by the pack ${owner.name}`);
+      const framing = options.screenCard?.(card.ask) ?? [];
+      if (framing.length > 0) problems.push(`card ${card.id}: its question asks for a demonstration (${framing.join(", ")}); a card says where to look, never what to prove`);
     }
     if (problems.length > 0) throw new PackError(problems.map((p) => `pack ${name}: ${p}`));
     const found = [...pack.overlaps, ...overlapsWithPacks(pack, others)];

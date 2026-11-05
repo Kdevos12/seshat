@@ -25,7 +25,11 @@ export interface CardLine {
   /** Sessions that were given it and said something (a proof Lean accepted, or a failed check), and how many were `valid`. */
   sessions: number;
   valid: number;
-  /** The control sessions (no card, drawn so) of the buckets it was drawn in, and how many were valid. */
+  /**
+   * The control sessions (no card, drawn so) of the buckets it was drawn in, and the valid ones standardized to
+   * the card's own mix of buckets (each bucket's control rate weighs as the card's sessions there do), so it can be
+   * fractional. The effect uses these, and only the card's sessions in buckets that have a control.
+   */
   controlSessions: number;
   controlValid: number;
   /** PE2's effect (`effectOf` of `@seshat/memory`): the two Beta posteriors, their difference and P(effect < 0). */
@@ -74,7 +78,7 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
   const finished = sessions.filter((s) => (s.outcome === "valid" || s.outcome === "invalid") && text(s.settings?.heuristic) !== undefined);
   const control = new Map<string, { sessions: number; valid: number }>();
   let noneApplicable = 0;
-  type Tally = { id: string; family: string; bucket?: string; sessions: number; valid: number; buckets: Set<string>; compliance?: CardLine["compliance"] };
+  type Tally = { id: string; family: string; bucket?: string; sessions: number; valid: number; buckets: Map<string, { sessions: number; valid: number }>; compliance?: CardLine["compliance"] };
   const cards = new Map<string, Tally>();
   const families = new Map<string, Tally>();
   const perBucket = new Map<string, Tally>();
@@ -82,7 +86,7 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
   const tally = (lines: Map<string, Tally>, key: string, id: string, family: string, bucket?: string): Tally => {
     let found = lines.get(key);
     if (found === undefined) {
-      found = { id, family, ...(bucket !== undefined ? { bucket } : {}), sessions: 0, valid: 0, buckets: new Set() };
+      found = { id, family, ...(bucket !== undefined ? { bucket } : {}), sessions: 0, valid: 0, buckets: new Map() };
       lines.set(key, found);
     }
     return found;
@@ -104,7 +108,10 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
     for (const t of [tally(cards, id, id, family), tally(families, family, family, family), tally(perBucket, `${id}\u0000${bucket}`, id, family, bucket)]) {
       t.sessions += 1;
       t.valid += valid;
-      t.buckets.add(bucket);
+      const b = t.buckets.get(bucket) ?? { sessions: 0, valid: 0 };
+      b.sessions += 1;
+      b.valid += valid;
+      t.buckets.set(bucket, b);
     }
     const card = byId.get(id);
     const strategy = card === undefined ? undefined : strategyOfCard(card);
@@ -121,13 +128,30 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
   const lines = (tallies: Map<string, Tally>): CardLine[] =>
     [...tallies.values()]
       .map((t): CardLine => {
+        // The control is standardized to the card's own mix of buckets: each bucket's control rate weighs as the card's
+        // sessions there do, and the control keeps its number of observations. Pooling the control sessions of every bucket
+        // instead would set a card drawn mostly in hard buckets against the easy buckets' control. Buckets with no control
+        // session say nothing of the effect and are left out of both arms.
         let controlSessions = 0;
         let controlValid = 0;
-        for (const bucket of t.buckets) {
-          controlSessions += control.get(bucket)?.sessions ?? 0;
-          controlValid += control.get(bucket)?.valid ?? 0;
+        let compared = 0;
+        let comparedValid = 0;
+        const covered = [...t.buckets].filter(([bucket]) => (control.get(bucket)?.sessions ?? 0) > 0);
+        for (const [bucket] of covered) controlSessions += (control.get(bucket) as { sessions: number }).sessions;
+        for (const [, b] of covered) {
+          compared += b.sessions;
+          comparedValid += b.valid;
         }
-        const effect = effectOf(t.id, {}, armOf(t.valid, t.sessions - t.valid, t.sessions), armOf(controlValid, controlSessions - controlValid, controlSessions));
+        for (const [bucket, b] of covered) {
+          const c = control.get(bucket) as { sessions: number; valid: number };
+          controlValid += (b.sessions / compared) * (c.valid / c.sessions) * controlSessions;
+        }
+        const effect = effectOf(
+          t.id,
+          {},
+          armOf(comparedValid, compared - comparedValid, compared),
+          armOf(controlValid, controlSessions - controlValid, controlSessions),
+        );
         return {
           id: t.id,
           family: t.family,
@@ -135,7 +159,7 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
           sessions: t.sessions,
           valid: t.valid,
           controlSessions,
-          controlValid,
+          controlValid: Math.round(controlValid * 100) / 100,
           effect,
           deactivated: shouldDeactivate(effect, rule),
           ...(t.compliance !== undefined ? { compliance: t.compliance } : {}),
