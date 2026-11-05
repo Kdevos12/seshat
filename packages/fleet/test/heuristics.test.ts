@@ -84,6 +84,22 @@ describe("drawing a session's card", () => {
     assert.equal(drawCard(seeded(1), { ...input, bank: [card("bad", "vary")], history: losing }).rule, "none_applicable");
   });
 
+  it("compares a card only with control sessions that could have been given it, and records what the control could have had", () => {
+    const losing = [...Array.from({ length: 10 }, () => attempt("bad", "vary", false)), ...Array.from({ length: 10 }, () => attempt("none", "", true))];
+    const elsewhere = losing.map((a) => (a.settings?.heuristic === "none" ? ({ ...a, settings: { ...a.settings, heuristicEligible: ["other"] } } as Attempt) : a));
+    assert.equal(cardEffect("bad", losing).without.attempts, 10);
+    assert.equal(cardEffect("bad", elsewhere).without.attempts, 0, "a control that could not have had the card is not its control");
+    const control = drawCard(() => 0, { bank: [card("one", "vary"), card("two", "specialize")], context: context(), taken: new Set(), history: [], model: "faux/prover", partial: 0.5, config: { ...config, noCardShare: 0.5 } });
+    assert.deepEqual([control.rule, control.eligible], ["control", ["one", "two"]]);
+  });
+
+  it("gives provers distinct cards when every family is taken, and repeats a card only when none is left", () => {
+    const bank = [card("v1", "vary"), card("v2", "vary"), card("s1", "specialize")];
+    const input = { bank, context: context(), history: [], model: "faux/prover", partial: 0.5, config, taken: new Set(["vary", "specialize"]) };
+    for (let k = 0; k < 20; k++) assert.equal(drawCard(seeded(k), { ...input, takenCards: new Set(["v1", "s1"]) }).card?.id, "v2");
+    assert.ok(drawCard(seeded(5), { ...input, takenCards: new Set(["v1", "v2", "s1"]) }).card !== undefined, "every card taken: any may be drawn");
+  });
+
   it("reads its options, and refuses the bank together with the directives", () => {
     assert.equal(heuristicsConfigOf({ heuristics: null }), undefined);
     assert.deepEqual(heuristicsConfigOf({ heuristics: true }), { cards: "all", noCardShare: 0.2, crossModelWeight: 0.5, familyPriorWeight: 2, minObservations: 8 });
@@ -154,6 +170,13 @@ describe("the bank in the fleet's hooks", () => {
     assert.equal(decision?.settings?.heuristic, "pack_p.only");
     const sections = (await w.fleet.hooks.briefingSections?.(w.session("p1", 1, decision?.settings ?? {}))) ?? [];
     assert.match(sections[0]?.text ?? "", /\[begin text of pack:p\]/);
+  });
+
+  it("reports a card id the bank does not have before any prover starts", async () => {
+    const w = await world({ heuristics: ["nope"] });
+    await assert.rejects(async () => w.fleet.hooks.beforeProvers?.(w.problem()), /does not have: nope/);
+    const fine = await world({ heuristics: true });
+    await fine.fleet.hooks.beforeProvers?.(fine.problem());
   });
 
   it("leaves the attempt's settings as they were when the bank is off", async () => {

@@ -156,7 +156,10 @@ The load refuses, with every problem together:
   its tool ids do, so that no two packs share one and no built-in card, present or added later, can
   take it; an id taken twice in the pack;
 - an `ask` that fails the screen of a pack's text above (one line, no markup, nothing aimed at the
-  model).
+  model), or holds a bracket (`[` or `]`), which could pose as the fence the briefing quotes a pack's
+  card in;
+- cards in a pack whose name is longer than 27 characters: the first part of a card id is at most 32
+  characters, and a pack's starts with `pack_` and its name.
 
 `harness add` also refuses a card id another installed pack recorded and a card whose question M6's framing
 check flags (`framingProblems`: "prove that", "help you prove"...; a card says where to look, never what

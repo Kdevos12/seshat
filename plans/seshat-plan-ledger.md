@@ -681,7 +681,13 @@ Task 26: implementer dispatched (worktree wt/t26 from main 77f9e6e)
   `pack.json` and in `LoadedPack`, `overlaps` on `LoadedPack` and on `installPack`'s result, optional `heuristics` on
   `pack.installed`; the registry depends on `@seshat/heuristics`. Orchestrator (1d7c449): optional `heuristics` in the
   run report, `harness heuristics list|stats`. Documented in heuristics.md (new), fleet.md, packs.md, journal.md,
-  architecture.md, README.md.
+  architecture.md, README.md. Later commits on the branch: `InstalledPack.heuristics` (the card ids from the
+  journal, `[]` for an older install); `installPack` option `screenCard` (M6's framing check, passed by `harness add`);
+  `harness heuristics mine RUN_DIR... [--out FILE]` and `harness ablate --experiment heuristics`; the fleet option
+  `cardMinObservations`; the attempt `settings` keys `heuristicDeactivated` (cards left out for a negative effect)
+  and `heuristicEligible` (on a control session, the cards it could have been given); the fleet's `beforeProvers`
+  hook (it checks the bank, nothing else) and the same check in `resumeProblem`; pack card ids start with
+  `pack_<name>.`.
 
 Bench index: `bench/fc-bench-v1-discrete.json` regenerated after Task 14 added `sequences` and `tags` to the hashed index body; the old index no longer matched the rebuild test.
 
@@ -703,8 +709,8 @@ Providers for the first real run (2026-11-05): the owner will run with DeepSeek'
 
 Providers, review round 1 (2026-11-05, an agent that did not write the code): fixed (1) `SESHAT_MODEL` was copied into `--model` for every command, so every `harness resume` (and `run --resume`) refused it: it now applies only to run, probe, ablate, optimize-prompts, solve and doctor, and never to a resume (CLI test); (2) `JEV_API_KEY` won over the provider's own variable, so switching to `typesafe` could send an OpenRouter key to TypeSafe: the provider's own variable now wins, and a key in OpenRouter's `sk-or-` form is refused for any other host; (3) a model name with no version (`jev`, `typesafe/jev`) passed the pin check: a digit is now required in its last segment; (4) the provider's error text kept in a failure message is cleared of the key; (5) a score is read through its `legend` when it has one, which must agree with the question's order, a level given two probabilities is refused, and a bare `score` without probabilities is refused rather than rounded to a level; (6) the ledger names no Jev version. Nothing left open.
 
-Task 32, bank of heuristic cards (2026-11-05): implemented on `claude/project-thread-7os98j` at the owner's request ("on
-construit ce système de banque d'heuristique en assurant la cohérence du système seschat de sorte à éviter les doublons").
+Task 32, bank of heuristic cards (2026-11-05): implemented on `claude/project-thread-7os98j` at the owner's request (to build
+the bank of heuristic cards while keeping Seshat coherent, so that nothing is duplicated).
 Built: the card format and its check, 22 closed families aligned on SHAPE, model-free context features and the bucket,
 29 built-in cards (the six directives, word for word, and 23 starter cards from nine traditions), the overlap check;
 the fleet's draw (eligibility, a control share drawn first, a family then a card by Thompson sampling per bucket, the
@@ -749,4 +755,22 @@ streams are unchanged); (6) an unknown card id or a bank error is reported at th
 setup, and the bank is rebuilt per session (29 cards: cheap); (7) on a resume after a pack is removed, the
 briefing leaves out a card the attempt still records; (8) the README diagram changed one commit after the
 flow did.
+
+Task 32, decision on the families (Ruling 5): the closed list has 22 families, SHAPE's with `definitions`,
+`vary`, `invariant`, `extremal` and `count` added for the traditions the owner asked for, and `simplify`. The
+22nd, `simplify`, is there because the directive `shortest` ("Look for the shortest argument you can think of before you build an elaborate one.") is a move of its
+own that none of SHAPE's families holds: it is neither `restate` (a new form of the claim) nor `automation` (a
+tool), and putting it under either would mix its counts with theirs. Cost if wrong: one family whose counts are
+small, merged later by a plan change.
+
+Task 32, review round 2 (2026-11-05, by the plan's owner thread, file task-32-review-r1.md there). Fixed, each with
+a test: (M1) a card is compared only with control sessions that could have been given it: a control session records
+`heuristicEligible`, and both the draw's deactivation (`controlFor`) and the statistics count a control session for a
+card only when the card was in it (for a family, one of its cards); (M2) when every family is held by other provers on
+the subgoal, the draw takes a family that still has a card no other prover holds, and that card; a card repeats only
+when none is left; (L1) a pack card's `ask` with a bracket is refused (it could pose as the briefing's fence); (L2) a
+pack whose name is longer than 27 characters is told it cannot carry cards, and why; (L3) the statistics and the miner
+say plainly that every session counts once there, unlike the draw (no discount, probation or weight for another model);
+(L4) a card id the bank does not have stops the problem before any prover starts (`beforeProvers`, `resumeProblem`);
+(L5) this ledger's Task 32 entries are in English; the interface changes above are complete.
 

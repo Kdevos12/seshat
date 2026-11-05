@@ -206,7 +206,7 @@ const LABELS: readonly string[] = STRATEGIES.filter((label) => label !== "other"
 interface ProblemState {
   gate: Gate;
   /** What each prover works on now: set when its session is admitted, cleared when it ends. */
-  running: Map<string, { subgoal: string; strategy?: string; heuristicFamily?: string }>;
+  running: Map<string, { subgoal: string; strategy?: string; heuristicFamily?: string; heuristic?: string }>;
   /** The strategy of each prover's last session, kept while the prover is alive. */
   last: Map<string, string>;
 }
@@ -317,6 +317,15 @@ export function createFleet(env: FleetEnv = {}): Line {
     resume: "rebuild",
     hooks: {
       /**
+       * The bank is checked once per problem, before any prover starts, so that a card id the bank does not have (or a
+       * bank with an error) stops the problem before anything is spent, not at its first session.
+       */
+      beforeProvers: async (problem) => {
+        const heuristics = configOf(problem.options).heuristics;
+        if (heuristics !== undefined) runBank(problem.registry, heuristics);
+      },
+
+      /**
        * What the process that ended held, from the journal. The claims the run's sessions worked on
        * are the claims with attempts. The strategy a prover that goes on sticks to is the one the
        * allocation of its last session that was not cut chose (a cut session is as if it had not
@@ -325,6 +334,8 @@ export function createFleet(env: FleetEnv = {}): Line {
        * empty, as they are whenever no session is running; the draws are seeded, so they repeat.
        */
       resumeProblem: async (problem, held) => {
+        const heuristics = configOf(problem.options).heuristics;
+        if (heuristics !== undefined) runBank(problem.registry, heuristics);
         const run = runState(problem.registry);
         for (const claimId of held.workedClaims) run.claims.add(claimId);
         const state = problemState(run, problem.problemId);
@@ -530,8 +541,11 @@ export function createFleet(env: FleetEnv = {}): Line {
           const bucket = bucketOf(domains, features);
           const mode = typeof settings?.mode === "string" ? settings.mode : "standard";
           const taken = new Set<string>();
+          const takenCards = new Set<string>();
           for (const [prover, work] of problem.running) {
-            if (prover !== session.prover && work.subgoal === subgoal && work.heuristicFamily !== undefined) taken.add(work.heuristicFamily);
+            if (prover === session.prover || work.subgoal !== subgoal) continue;
+            if (work.heuristicFamily !== undefined) taken.add(work.heuristicFamily);
+            if (work.heuristic !== undefined) takenCards.add(work.heuristic);
           }
           const history = session.memory
             .claims()
@@ -542,6 +556,7 @@ export function createFleet(env: FleetEnv = {}): Line {
             context: { domains, features, ...historyOf(attempts), mode },
             ...(strategy !== undefined ? { strategy } : {}),
             taken,
+            takenCards,
             history,
             model: model ?? session.model,
             partial: config.partial,
@@ -555,9 +570,12 @@ export function createFleet(env: FleetEnv = {}): Line {
             heuristicBucket: bucket,
             ...(drawn.card !== undefined ? { heuristicFamily: drawn.card.family } : {}),
             ...(drawn.deactivated !== undefined ? { heuristicDeactivated: drawn.deactivated } : {}),
+            ...(drawn.eligible !== undefined ? { heuristicEligible: drawn.eligible } : {}),
           };
           if (drawn.draws !== undefined) settingDraws = { ...settingDraws, ...drawn.draws };
-          if (drawn.card !== undefined) problem.running.set(session.prover, { ...(problem.running.get(session.prover) ?? { subgoal }), heuristicFamily: drawn.card.family });
+          if (drawn.card !== undefined) {
+            problem.running.set(session.prover, { ...(problem.running.get(session.prover) ?? { subgoal }), heuristicFamily: drawn.card.family, heuristic: drawn.card.id });
+          }
         }
 
         // This session starts after the prover's last attempt was journaled, so the provers that wait read a

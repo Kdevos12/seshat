@@ -136,7 +136,9 @@ proof Lean accepted or a failed check says something, and a session that was cut
 
 - the sessions given it and how many were `valid`;
 - the **control of its buckets**: the sessions of the same buckets that drew no card (`heuristicRule`
-  `control`), and how many were `valid`, **standardized to the card's own mix of buckets**: each bucket's
+  `control`) while the card was among those they could have been given (`heuristicEligible`, the same
+  eligibility terms; a family counts a control session one of its cards was eligible for), and how many
+  were `valid`, **standardized to the card's own mix of buckets**: each bucket's
   control rate weighs as the card's sessions there do, so a card drawn mostly in hard buckets is not set
   against the easy buckets' control (a bucket with no control session is left out of both arms). A card
   is never set against the run's average, because the fleet draws by bucket and buckets differ in
@@ -152,7 +154,9 @@ proof Lean accepted or a failed check says something, and a session that was cut
 It also lists the **unexplained successes** (HB5 item 2): accepted proofs of sessions given a tactic card
 whose classified strategy is not the card's, for a person to read. A line with fewer than 10 sessions, or
 10 control sessions, says that it is too few to read: at a 30% base rate, a 10-point effect needs about
-350 sessions per arm. No model is called anywhere here. The run's report has one paragraph (by family) when
+350 sessions per arm. No model is called anywhere here. Unlike the fleet's draw, which weighs each session by the discount of
+its run, the probation of its epoch and `crossModelWeight` for another model, the statistics and the miner
+count every session once, whatever its model or run: they are what a person reads, and say so. The run's report has one paragraph (by family) when
 a session recorded a draw (`heuristicReport(events)`, `report.json` field `heuristics`).
 
 ```sh

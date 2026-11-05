@@ -71,22 +71,25 @@ const text = (value: Json | undefined): string | undefined => (typeof value === 
  * control of its own buckets, never against the run's average: the fleet draws cards by bucket, so the
  * control is what the same kind of statement did without a card. The effect is PE2's (two Beta posteriors and
  * P(effect < 0)) and the deactivation M5's rule, the ones the fleet applies; as in PE2, only a proof Lean
- * accepted or a failed check says something. `bank` gives each card's level, for compliance.
+ * accepted or a failed check says something. `bank` gives each card's level, for compliance. Unlike the fleet's draw,
+ * every session counts once here, with no discount, probation or weight for another model.
  */
 export function heuristicStats(sessions: readonly CardSession[], bank: readonly HeuristicCard[] = [], rule: DeactivationRule = CARD_DEACTIVATION): HeuristicStats {
   const byId = new Map(bank.map((card) => [card.id, card]));
   const finished = sessions.filter((s) => (s.outcome === "valid" || s.outcome === "invalid") && text(s.settings?.heuristic) !== undefined);
-  const control = new Map<string, { sessions: number; valid: number }>();
+  // The control sessions of each bucket, with the cards each could have been given (absent: recorded without the list).
+  const control = new Map<string, Array<{ valid: number; eligible?: readonly string[] }>>();
   let noneApplicable = 0;
-  type Tally = { id: string; family: string; bucket?: string; sessions: number; valid: number; buckets: Map<string, { sessions: number; valid: number }>; compliance?: CardLine["compliance"] };
+  type Tally = { kind: "card" | "family"; id: string; family: string; bucket?: string; sessions: number; valid: number; buckets: Map<string, { sessions: number; valid: number }>; compliance?: CardLine["compliance"] };
   const cards = new Map<string, Tally>();
   const families = new Map<string, Tally>();
   const perBucket = new Map<string, Tally>();
   const unexplained: HeuristicStats["unexplained"] = [];
-  const tally = (lines: Map<string, Tally>, key: string, id: string, family: string, bucket?: string): Tally => {
+  const familyOfSeen = new Map<string, string>();
+  const tally = (lines: Map<string, Tally>, key: string, kind: Tally["kind"], id: string, family: string, bucket?: string): Tally => {
     let found = lines.get(key);
     if (found === undefined) {
-      found = { id, family, ...(bucket !== undefined ? { bucket } : {}), sessions: 0, valid: 0, buckets: new Map() };
+      found = { kind, id, family, ...(bucket !== undefined ? { bucket } : {}), sessions: 0, valid: 0, buckets: new Map() };
       lines.set(key, found);
     }
     return found;
@@ -97,15 +100,16 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
     const valid = s.outcome === "valid" ? 1 : 0;
     if (id === "none") {
       if (text(s.settings?.heuristicRule) === "control") {
-        const c = control.get(bucket) ?? { sessions: 0, valid: 0 };
-        c.sessions += 1;
-        c.valid += valid;
-        control.set(bucket, c);
+        const list = control.get(bucket) ?? [];
+        const eligible = s.settings?.heuristicEligible;
+        list.push({ valid, ...(Array.isArray(eligible) ? { eligible: eligible.filter((x): x is string => typeof x === "string") } : {}) });
+        control.set(bucket, list);
       } else noneApplicable += 1;
       continue;
     }
     const family = text(s.settings?.heuristicFamily) ?? byId.get(id)?.family ?? "unknown";
-    for (const t of [tally(cards, id, id, family), tally(families, family, family, family), tally(perBucket, `${id}\u0000${bucket}`, id, family, bucket)]) {
+    familyOfSeen.set(id, family);
+    for (const t of [tally(cards, id, "card", id, family), tally(families, family, "family", family, family), tally(perBucket, `${id}\u0000${bucket}`, "card", id, family, bucket)]) {
       t.sessions += 1;
       t.valid += valid;
       const b = t.buckets.get(bucket) ?? { sessions: 0, valid: 0 };
@@ -132,20 +136,25 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
         // sessions there do, and the control keeps its number of observations. Pooling the control sessions of every bucket
         // instead would set a card drawn mostly in hard buckets against the easy buckets' control. Buckets with no control
         // session say nothing of the effect and are left out of both arms.
+        // A control session counts for a card only when the card was among those it could have been given (the same
+        // eligibility terms), and for a family when one of the family's cards was.
+        const counts = (bucket: string): { sessions: number; valid: number } => {
+          const list = (control.get(bucket) ?? []).filter(
+            (c) => c.eligible === undefined || (t.kind === "card" ? c.eligible.includes(t.id) : c.eligible.some((x) => (byId.get(x)?.family ?? familyOfSeen.get(x)) === t.id)),
+          );
+          return { sessions: list.length, valid: list.reduce((n, c) => n + c.valid, 0) };
+        };
         let controlSessions = 0;
         let controlValid = 0;
         let compared = 0;
         let comparedValid = 0;
-        const covered = [...t.buckets].filter(([bucket]) => (control.get(bucket)?.sessions ?? 0) > 0);
-        for (const [bucket] of covered) controlSessions += (control.get(bucket) as { sessions: number }).sessions;
-        for (const [, b] of covered) {
+        const covered = [...t.buckets].map(([bucket, b]) => ({ b, c: counts(bucket) })).filter(({ c }) => c.sessions > 0);
+        for (const { b, c } of covered) {
+          controlSessions += c.sessions;
           compared += b.sessions;
           comparedValid += b.valid;
         }
-        for (const [bucket, b] of covered) {
-          const c = control.get(bucket) as { sessions: number; valid: number };
-          controlValid += (b.sessions / compared) * (c.valid / c.sessions) * controlSessions;
-        }
+        for (const { b, c } of covered) controlValid += (b.sessions / compared) * (c.valid / c.sessions) * controlSessions;
         const effect = effectOf(
           t.id,
           {},
@@ -166,7 +175,8 @@ export function heuristicStats(sessions: readonly CardSession[], bank: readonly 
         };
       })
       .sort((a, b) => b.sessions - a.sessions || (a.id < b.id ? -1 : a.id > b.id ? 1 : (a.bucket ?? "") < (b.bucket ?? "") ? -1 : 1));
-  const all = [...control.values()].reduce((sum, c) => ({ sessions: sum.sessions + c.sessions, valid: sum.valid + c.valid }), { sessions: 0, valid: 0 });
+  const controls = [...control.values()].flat();
+  const all = { sessions: controls.length, valid: controls.reduce((n, c) => n + c.valid, 0) };
   return { sessions: finished.length, control: all, noneApplicable, cards: lines(cards), families: lines(families), buckets: lines(perBucket), unexplained };
 }
 

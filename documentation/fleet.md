@@ -197,7 +197,8 @@ The card is decided after the strategy and the session mode, from its own stream
    session's **bucket** on any claim of the memory (so across problems, and across runs with
    `--memory-from`): the first domain's two digits and two statement features (`bucketOf`). The families other
    provers hold on the same subgoal now are left out while another family is left, so provers that work at
-   once on one statement look at it in different ways. A card's posterior starts from its family's mean, with
+   once on one statement look at it in different ways; when every family is held, a family that still has a
+   card no other prover holds is drawn, and that card, so a card is repeated only when none is left. A card's posterior starts from its family's mean, with
    the weight of `familyPriorWeight` pseudo-sessions, so a new card begins where its family stands. Every attempt
    counts with its weight (the discount and the probation, as above), times `crossModelWeight` (0.5) when
    another model made it: the same heuristic can help one model and hurt another. The rewards are the `choice`
@@ -208,7 +209,11 @@ The card is decided after the strategy and the session mode, from its own stream
    out are recorded as `heuristicDeactivated`. Nothing is deleted: more control sessions can bring a card back.
 
 The attempt's `settings` record `heuristic` (the card's id, or `none`), `heuristicRule` (`thompson`,
-`control` or `none_applicable`), `heuristicBucket`, and `heuristicFamily` when there is a card; the
+`control` or `none_applicable`), `heuristicBucket`, `heuristicFamily` when there is a card, and, for the
+control, `heuristicEligible`: the cards it could have been given. A card is compared only with control
+sessions whose list holds it (`controlFor`), on the same eligibility terms (its `when`, the strategy, the
+mode), never with every control of the bucket. A card id the bank does not have, or a bank with an error,
+stops the problem before any prover starts (`beforeProvers`, and `resumeProblem` on a resume); the
 allocation's `settingDraws` keep the draws of the families and of the cards. A pack's card is written as
 text from outside the run, fenced and quoted like a pack's skill. With `heuristics` null (the default),
 nothing of this runs and the attempt's settings are what they were. The report's paragraph and `harness
