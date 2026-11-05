@@ -1,4 +1,4 @@
-# Installable packs: tools and skills
+# Installable packs: tools, skills and heuristic cards
 
 Seshat stays modular: a **pack** is the unit of installation for tools and skills. A pack is a
 directory (or a git repository) with a `pack.json`; `harness add` validates it and installs it, and
@@ -41,6 +41,7 @@ skills/<name>.md                    the skills, written by people
 | `capabilities` | The ids of the tools the pack adds; they must be the ones `capabilities/` carries, neither more nor fewer. |
 | `level1` | Tools that ask for the level-1 declared set ([below](#levels)). |
 | `skills` | `name`, `description` (at most 300 characters) and `file` (a `.md` or `.txt` file inside the pack, at most 32 KiB). |
+| `heuristics` | Heuristic cards the pack adds to the bank, in the card format of [heuristics.md](heuristics.md#what-a-card-is) ([below](#heuristic-cards)). Optional. |
 | `requires` | `hosts` the tools are offered on (default: every host), `commands` that must be on the `PATH` and `env`: the only environment variables the pack's manifests may read with `${env:NAME}`. `harness add` prints them, and a manifest that reads any other name is refused at load; at run time the interpolation of a pack's manifest sees only those names. Missing commands and variables are reported as warnings; nothing is installed for the pack. |
 
 Any other field is refused (a `scripts`, `postinstall` or `install` field is how a package
@@ -87,7 +88,7 @@ versioned). `harness add`:
    not started by `harness add`;
 5. refuses a leftover `installed/<name>` directory that the journal does not know, with the way out;
 6. moves the staged copy to `installed/<name>/` and records `pack.installed` (name, version, content
-   hash, trust class, capabilities, skills, programs, source, and what the owner accepted: `acceptedPrograms`, `level1Accepted`, the `env` names) in `journal/`, a journal of its own
+   hash, trust class, capabilities, skills, the ids of its heuristic cards, programs, source, and what the owner accepted: `acceptedPrograms`, `level1Accepted`, the `env` names) in `journal/`, a journal of its own
    ([journal.md](journal.md)). The orchestrator is the only actor that writes the pack events.
 
 `harness packs` lists the installed packs from the journal (a fold of `pack.installed` and
@@ -133,6 +134,43 @@ than `maxFull` (0 to 3, default 3), and `renderSkills` writes the full ones and 
 with its pack. The body is fenced as "text from outside the run" and quoted line by line, so that it cannot forge a heading or close its fence. A skill is advice from outside the run: it is not a lesson and not part of a system
 prompt, and nothing in the loop calls these functions yet (the context compiler and the briefing are
 their readers).
+
+## Heuristic cards
+
+A skill is technical knowledge; a method of reasoning ("vary one parameter at a time") is a **heuristic
+card** ([heuristics.md](heuristics.md)). A pack adds cards in `heuristics`, inline in `pack.json`:
+
+```json
+"heuristics": [{
+  "id": "pack_adder.parity", "version": 1, "family": "invariant", "level": "tactic",
+  "ask": "Which quantity keeps its parity under every step the statement allows?",
+  "tradition": "engel", "source": "Engel, Problem-Solving Strategies (1998), ch. 1"
+}]
+```
+
+The load refuses, with every problem together:
+
+- a card the format refuses (`cardProblems`: an unknown family or field, an `ask` over 160 characters, a
+  link, code, an invisible character, a condition that cannot hold);
+- a card id that does not start with `pack_` and the pack's name (`pack_adder.`, with `_` for `-`), as
+  its tool ids do, so that no two packs share one and no built-in card, present or added later, can
+  take it; an id taken twice in the pack;
+- an `ask` that fails the screen of a pack's text above (one line, no markup, nothing aimed at the
+  model), or holds a bracket (`[` or `]`), which could pose as the fence the briefing quotes a pack's
+  card in;
+- cards in a pack whose name is longer than 27 characters: the first part of a card id is at most 32
+  characters, and a pack's starts with `pack_` and its name.
+
+`harness add` also refuses a card id another installed pack recorded and a card whose question M6's framing
+check flags (`framingProblems`: "prove that", "help you prove"...; a card says where to look, never what
+to prove; the registry takes the check as `installPack`'s option `screenCard`, since the guards depend on
+the registry), and prints the **overlaps**: a card
+of the pack whose question shares most of its content words with a card of the same family, built in or
+from another installed pack. An overlap is reported, never refused or merged: the two cards are measured
+apart, and the person who installs chooses whether to keep the pack. `harness packs` lists each pack's
+cards. A run reads the cards of the registry's packs (`LoadedPack.heuristics`), and the fleet draws them
+only when its option `heuristics` is on ([fleet.md](fleet.md#heuristic-cards)); a pack's card reaches
+the briefing quoted as text from outside the run.
 
 ## Reproducibility
 

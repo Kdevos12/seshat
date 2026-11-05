@@ -148,6 +148,17 @@ export const EXPERIMENTS: Experiment[] = [
     ],
   },
   {
+    name: "heuristics",
+    amendment: "HB3 (Task 32)",
+    description: "The fleet alone, the fleet with the six directives, and the fleet with the bank of heuristic cards (its control share on): only the fleet's option differs.",
+    notRun: "Whether a card helps is a model's behaviour: at a 30% base rate a 10-point effect needs about 350 sessions per arm, so a simulated run says only that the arms run.",
+    arms: ({ lines }) => [
+      arm("fleet", "the fleet's strategies and settings, no directive and no card", lines),
+      arm("directives", "the six directives drawn by Thompson sampling, as before the bank", lines, { lineOptions: { fleet: { directives: true } }, versus: "fleet" }),
+      arm("cards", "one card of the bank per session, a share of sessions with none", lines, { lineOptions: { fleet: { heuristics: true } }, versus: "directives" }),
+    ],
+  },
+  {
     name: "m17",
     amendment: "LC3",
     description: "The run with the library environment extended (line M17) against the run without it.",

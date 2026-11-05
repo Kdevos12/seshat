@@ -22,6 +22,7 @@
     "@seshat/fleet": "workspace:*",
     "@seshat/graph": "workspace:*",
     "@seshat/guards": "workspace:*",
+    "@seshat/heuristics": "workspace:*",
     "@seshat/induction": "workspace:*",
     "@seshat/lean-env": "workspace:*",
     "@seshat/lean-kimina": "workspace:*",

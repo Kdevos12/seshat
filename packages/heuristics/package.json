@@ -1,0 +1,14 @@
+{
+  "name": "@seshat/heuristics",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The bank of heuristic cards: the card format, the closed families, the context features computed without a model, the built-in cards and the overlap check.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/memory": "workspace:*"
+  }
+}

@@ -15,6 +15,10 @@ import { type AttemptWeight, modelPosteriors, posteriorOf, strategyPosteriors } 
 import { hash32, type RandomSource, seeded } from "./random.ts";
 import { sampleSettings, samplesSettings, type SettingsConfig, settingsConfigOf } from "./settings.ts";
 import { Gate, widthFor, type WidthOptions } from "./width.ts";
+import { bucketOf, historyOf, statementFeatures } from "@seshat/heuristics";
+import {
+  DEFAULT_CARD_MIN_OBSERVATIONS, DEFAULT_CROSS_MODEL_WEIGHT, DEFAULT_FAMILY_PRIOR_WEIGHT, DEFAULT_NO_CARD_SHARE, drawCard, heuristicSection, type HeuristicsConfig, heuristicsConfigOf, runBank,
+} from "./heuristics.ts";
 
 /**
  * The options of the fleet policy, with their defaults (`--line-option fleet.maxWidth=2`). A list
@@ -65,6 +69,16 @@ export const FLEET_OPTIONS = {
   modes: null,
   /** The most steps in the DAG of an informal-first session. */
   dagSteps: 8,
+  /** The bank of heuristic cards (documentation/heuristics.md): `true` for every card (built in and from packs), a list of card ids, or null for none. It replaces `directives`, whose six texts are cards of the bank. */
+  heuristics: null,
+  /** The share of sessions that get no card when the bank is on: the control the effect of a card is measured against. */
+  noCardShare: DEFAULT_NO_CARD_SHARE,
+  /** What a session of another model counts in the bank's posteriors, against 1 for the session's own model. */
+  crossModelWeight: DEFAULT_CROSS_MODEL_WEIGHT,
+  /** The weight, in pseudo-sessions, of a family's counts in the prior of each of its cards. */
+  familyPriorWeight: DEFAULT_FAMILY_PRIOR_WEIGHT,
+  /** A card is no longer drawn in a bucket after this many observations with it and in the control, when P(effect < 0) is above 0.9 (M5's rule). */
+  cardMinObservations: DEFAULT_CARD_MIN_OBSERVATIONS,
   /** Seed the strategy choice with a prior from `decide` (site fleet.cold_start): a Choice over the families, as pseudo-counts of weight `coldStartWeight`. Off: the flat prior. */
   coldStart: false,
   /** The total weight of that prior in pseudo-attempts (0 to 4): the journal's own attempts outweigh it after a few. */
@@ -88,6 +102,7 @@ interface FleetConfig {
   dagSteps: number;
   coldStart: boolean;
   coldStartWeight: number;
+  heuristics?: HeuristicsConfig;
 }
 
 function configOf(options: Readonly<JsonObject>): FleetConfig {
@@ -115,6 +130,11 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
   if (!(gamma >= 0 && gamma <= 1)) throw new Error("the option gamma must be between 0 and 1");
   const epsilon = num("epsilon");
   if (!(epsilon >= 0 && epsilon <= 1)) throw new Error("the option epsilon must be between 0 and 1");
+  const settings = settingsConfigOf(options);
+  const heuristics = heuristicsConfigOf(options);
+  if (heuristics !== undefined && settings.directives !== undefined) {
+    throw new Error("the option heuristics replaces directives (the six directives are cards of the bank): set one or the other");
+  }
   const coldStartWeight = num("coldStartWeight");
   if (!(coldStartWeight >= 0 && coldStartWeight <= MAX_COLD_START_WEIGHT)) throw new Error(`the option coldStartWeight must be between 0 and ${MAX_COLD_START_WEIGHT}`);
   return {
@@ -129,10 +149,11 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
     gamma,
     epsilon,
     ranking: ranking as string[] | null,
-    settings: settingsConfigOf(options),
+    settings,
     dagSteps: Math.max(1, Math.floor(num("dagSteps"))),
     coldStart: bool("coldStart"),
     coldStartWeight,
+    ...(heuristics !== undefined ? { heuristics } : {}),
   };
 }
 
@@ -185,7 +206,7 @@ const LABELS: readonly string[] = STRATEGIES.filter((label) => label !== "other"
 interface ProblemState {
   gate: Gate;
   /** What each prover works on now: set when its session is admitted, cleared when it ends. */
-  running: Map<string, { subgoal: string; strategy?: string }>;
+  running: Map<string, { subgoal: string; strategy?: string; heuristicFamily?: string; heuristic?: string }>;
   /** The strategy of each prover's last session, kept while the prover is alive. */
   last: Map<string, string>;
 }
@@ -296,6 +317,15 @@ export function createFleet(env: FleetEnv = {}): Line {
     resume: "rebuild",
     hooks: {
       /**
+       * The bank is checked once per problem, before any prover starts, so that a card id the bank does not have (or a
+       * bank with an error) stops the problem before anything is spent, not at its first session.
+       */
+      beforeProvers: async (problem) => {
+        const heuristics = configOf(problem.options).heuristics;
+        if (heuristics !== undefined) runBank(problem.registry, heuristics);
+      },
+
+      /**
        * What the process that ended held, from the journal. The claims the run's sessions worked on
        * are the claims with attempts. The strategy a prover that goes on sticks to is the one the
        * allocation of its last session that was not cut chose (a cut session is as if it had not
@@ -304,6 +334,8 @@ export function createFleet(env: FleetEnv = {}): Line {
        * empty, as they are whenever no session is running; the draws are seeded, so they repeat.
        */
       resumeProblem: async (problem, held) => {
+        const heuristics = configOf(problem.options).heuristics;
+        if (heuristics !== undefined) runBank(problem.registry, heuristics);
         const run = runState(problem.registry);
         for (const claimId of held.workedClaims) run.claims.add(claimId);
         const state = problemState(run, problem.problemId);
@@ -500,6 +532,52 @@ export function createFleet(env: FleetEnv = {}): Line {
           }
         }
 
+        // The session's heuristic card (documentation/fleet.md, "Heuristic cards"), from its own stream, after the strategy and the mode.
+        if (config.heuristics !== undefined) {
+          const bank = runBank(session.registry, config.heuristics);
+          const statement = session.memory.claim(session.claimId)?.statement ?? session.target.statement;
+          const features = statementFeatures(statement);
+          const domains = session.domain ?? [];
+          const bucket = bucketOf(domains, features);
+          const mode = typeof settings?.mode === "string" ? settings.mode : "standard";
+          const taken = new Set<string>();
+          const takenCards = new Set<string>();
+          for (const [prover, work] of problem.running) {
+            if (prover === session.prover || work.subgoal !== subgoal) continue;
+            if (work.heuristicFamily !== undefined) taken.add(work.heuristicFamily);
+            if (work.heuristic !== undefined) takenCards.add(work.heuristic);
+          }
+          const history = session.memory
+            .claims()
+            .flatMap((claim) => session.memory.attempts(claim.claimId))
+            .filter((attempt) => attempt.settings?.heuristicBucket === bucket);
+          const drawn = drawCard(randomFor(`${key}:heuristics`), {
+            bank,
+            context: { domains, features, ...historyOf(attempts), mode },
+            ...(strategy !== undefined ? { strategy } : {}),
+            taken,
+            takenCards,
+            history,
+            model: model ?? session.model,
+            partial: config.partial,
+            weigh: weigh(history),
+            config: config.heuristics,
+          });
+          settings = {
+            ...settings,
+            heuristic: drawn.card?.id ?? "none",
+            heuristicRule: drawn.rule,
+            heuristicBucket: bucket,
+            ...(drawn.card !== undefined ? { heuristicFamily: drawn.card.family } : {}),
+            ...(drawn.deactivated !== undefined ? { heuristicDeactivated: drawn.deactivated } : {}),
+            ...(drawn.eligible !== undefined ? { heuristicEligible: drawn.eligible } : {}),
+          };
+          if (drawn.draws !== undefined) settingDraws = { ...settingDraws, ...drawn.draws };
+          if (drawn.card !== undefined) {
+            problem.running.set(session.prover, { ...(problem.running.get(session.prover) ?? { subgoal }), heuristicFamily: drawn.card.family, heuristic: drawn.card.id });
+          }
+        }
+
         // This session starts after the prover's last attempt was journaled, so the provers that wait read a
         // posterior that holds it. They look again now that this prover has taken its place and its strategy.
         problem.gate.wake();
@@ -543,6 +621,11 @@ export function createFleet(env: FleetEnv = {}): Line {
       briefingSections: async (session): Promise<Briefing[] | undefined> => {
         const sections: Briefing[] = [];
         const config = configOf(session.options);
+        const heuristic = session.settings?.heuristic;
+        if (config.heuristics !== undefined && typeof heuristic === "string" && heuristic !== "none") {
+          const card = runBank(session.registry, config.heuristics).find((c) => c.id === heuristic);
+          if (card !== undefined) sections.push(heuristicSection(card));
+        }
         const directive = session.settings?.directive;
         const text = typeof directive === "string" ? config.settings.directives?.[directive] : undefined;
         if (text !== undefined) {

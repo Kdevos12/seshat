@@ -42,7 +42,7 @@ Updated 2026-11-04 UTC. `main` at the atp.eprover merge (1a15014), 2594 tests; T
 | 29 | Proportionate budgets: gate, probe first, `budget.*` decide sites (PB1 to PB5) | main | merged (`1c96731`) | `task/t29` | Review round 1 fixed (stopped probe reconsidered per turn, journal checks floor and decide rows, request-keyed draws, minSessions). Not done: PB5's clause on strategies the failure memory holds as exhausted (no hard state; the gate prices past failures through a lower success chance). Simulated only; avoided dollars are an estimate; not run against a real model or Jev. |
 | 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | merged (`0ab8147`) | `task/t30` | Review round 1 fixed (strict screen and signature for user Lean, bounded formalization spend, host in the resume command, sandbox probe runs the real recipe, Markdown escaping, shell quoting). Open: the signature is not cross-checked against the claim; an `afterStart` that throws leaves a started journal without a signature. Simulated only: no real bubblewrap, Docker, model or Lean. |
 | 31 | The local interface `harness ui` | main | merged (`d2732a1`) | `task/t31` | Review round 1 fixed (nonce-bound signature protocol, key scoping per provider, no cookie, digest over the whole bundle, redaction forms, process groups). Simulated only: fake subprocess, faux provider, one headless-browser smoke test; no person has used it in a real session. |
-| 32 | The heuristic bank, line M19 (HB1 to HB8) | main | in progress, built by the thread "Concevoir une banque d'heuristiques" on `claude/project-thread-7os98j`, merged by the controller | `task/t32` | HB5 item 4 on hold (Global Constraint 16) |
+| 32 | The heuristic bank, line M19 (HB1 to HB8) | main | in review, built by the thread "Concevoir une banque d'heuristiques" on `claude/project-thread-7os98j`, merged by the controller | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
@@ -673,6 +673,21 @@ Task 14: implementer done (11 commits, 2229/2229); review round 1: no Critical; 
 Task 14: merged: task/t14 merged into main 77f9e6e (--no-ff; 2332/2332), pushed; nothing ran against a real model, Lean or Jev; deferred to the final review: K>1 chunk curves need a fixed-attempt measurement run that is not built, candidate still counts as solved (Certified printed beside it), M12, M3 and M15 do not act in the all-lines test (no second demo problem needing a decomposition), the bench-ext row shape is an assumption and the dataset licence is unverified, the probe alarm has little power at 20 problems, no analogy or induction annotations file committed
 Task 26: implementer dispatched (worktree wt/t26 from main 77f9e6e)
 
+- Bank of heuristic cards (Task 32, 2026-11-05, branch `claude/project-thread-7os98j`): new package `@seshat/heuristics`
+  (6152bc1). Fleet (6726d07): new options `heuristics` (null by default), `noCardShare`, `crossModelWeight`,
+  `familyPriorWeight`; new attempt `settings` keys `heuristic`, `heuristicRule`, `heuristicBucket`, `heuristicFamily`,
+  only when `heuristics` is on; `settingDraws` gain `heuristicFamily` and `heuristic`; `DIRECTIVES` now reads
+  `DIRECTIVE_TEXTS` of the bank (same text, one source). Registry and core (322ec66): optional `heuristics` in
+  `pack.json` and in `LoadedPack`, `overlaps` on `LoadedPack` and on `installPack`'s result, optional `heuristics` on
+  `pack.installed`; the registry depends on `@seshat/heuristics`. Orchestrator (1d7c449): optional `heuristics` in the
+  run report, `harness heuristics list|stats`. Documented in heuristics.md (new), fleet.md, packs.md, journal.md,
+  architecture.md, README.md. Later commits on the branch: `InstalledPack.heuristics` (the card ids from the
+  journal, `[]` for an older install); `installPack` option `screenCard` (M6's framing check, passed by `harness add`);
+  `harness heuristics mine RUN_DIR... [--out FILE]` and `harness ablate --experiment heuristics`; the fleet option
+  `cardMinObservations`; the attempt `settings` keys `heuristicDeactivated` (cards left out for a negative effect)
+  and `heuristicEligible` (on a control session, the cards it could have been given); the fleet's `beforeProvers`
+  hook (it checks the bank, nothing else) and the same check in `resumeProblem`; pack card ids start with
+  `pack_<name>.`.
 
 Bench index: `bench/fc-bench-v1-discrete.json` regenerated after Task 14 added `sequences` and `tags` to the hashed index body; the old index no longer matched the rebuild test.
 
@@ -693,3 +708,69 @@ Task 31, review round 1 fixes (2026-11-04): (1) the signature line needs the job
 Providers for the first real run (2026-11-05): the owner will run with DeepSeek's own API as the run's model and Jev through OpenRouter or TypeSafe, undecided, so both are configurable. pi-ai 1.2.0 already carries the provider `deepseek` (key `DEEPSEEK_API_KEY`, thinking format, `reasoning_content`, cache-hit usage), so no client was written; the profiles price its two models from DeepSeek's pricing page (read 2026-11-05: the peak price is twice the off-peak one, peak 01:00-04:00 and 06:00-10:00 UTC on weekdays). Task 20's Jev client turned out to guess a wire format that neither provider uses (`type`, `input`, `options`; answered by `answer`, `distribution`): it was rewritten to TypeSafe's System One shape (`{ model, state, questions }`, answered by `answers`), which OpenRouter's Decisions endpoint takes as well, from the providers' references and pi-ai's own System One client. Decisions the plan does not make: (1) the client stays Seshat's own rather than pi-ai's `classify`, to keep the allowed hosts, no redirect, https only and the 32k refusal; (2) OpenRouter's preset uses its Decisions endpoint, which reports `usage.cost`; TypeSafe's reports tokens only, priced at the preset's $0.042 per million input tokens; (3) the presets pin the current Jev version; `latest` and `preview` aliases, and a name with no version, are refused; (4) Chinese public holidays (off-peak at DeepSeek) are not listed, so the budget overcounts on those days; (5) `SESHAT_MODEL` names the model of every command that takes `--model`, because an `OPENROUTER_API_KEY` set for Jev makes OpenRouter's chat models candidates of `solve`'s cheapest choice; the docs advise `JEV_API_KEY`. Tests: a fake DeepSeek server through pi-ai's own catalog entry and the shipped price tables (peak, off-peak, cache saving), a fake Jev server in the System One shape, the shipped presets. Not run against DeepSeek, OpenRouter or TypeSafe: no network or key here. A setup guide for the owner's machine is in the project files (guides/premier-vrai-run.md), outside the repository because it names model identifiers.
 
 Providers, review round 1 (2026-11-05, an agent that did not write the code): fixed (1) `SESHAT_MODEL` was copied into `--model` for every command, so every `harness resume` (and `run --resume`) refused it: it now applies only to run, probe, ablate, optimize-prompts, solve and doctor, and never to a resume (CLI test); (2) `JEV_API_KEY` won over the provider's own variable, so switching to `typesafe` could send an OpenRouter key to TypeSafe: the provider's own variable now wins, and a key in OpenRouter's `sk-or-` form is refused for any other host; (3) a model name with no version (`jev`, `typesafe/jev`) passed the pin check: a digit is now required in its last segment; (4) the provider's error text kept in a failure message is cleared of the key; (5) a score is read through its `legend` when it has one, which must agree with the question's order, a level given two probabilities is refused, and a bare `score` without probabilities is refused rather than rounded to a level; (6) the ledger names no Jev version. Nothing left open.
+
+Task 32, bank of heuristic cards (2026-11-05): implemented on `claude/project-thread-7os98j` at the owner's request (to build
+the bank of heuristic cards while keeping Seshat coherent, so that nothing is duplicated).
+Built: the card format and its check, 22 closed families aligned on SHAPE, model-free context features and the bucket,
+29 built-in cards (the six directives, word for word, and 23 starter cards from nine traditions), the overlap check;
+the fleet's draw (eligibility, a control share drawn first, a family then a card by Thompson sampling per bucket, the
+families other provers hold left out, a family prior for new cards, other models' sessions counted for less); cards in
+packs (ids prefixed by the pack, clashes refused, overlaps printed at `harness add`); statistics against the control of
+each bucket, compliance of tactic cards, the report's paragraph and `harness heuristics list|stats`. Decisions the plan
+change does not state (Ruling 5): (1) the bank is a fleet option, not a line M19, because a later line's
+`beforeSession` does not see an earlier line's decision, and the card must agree with the fleet's strategy and mode;
+cost if wrong: moving `drawCard` into a line once the runtime passes decisions along; (2) cards are static (built in and
+packs), so no memory node kind holds them, and the draw is recorded on the attempt and the allocation; (3) `heuristics`
+and `directives` together are refused, since the directives are cards; (4) the framing check of the built-in cards
+lives in the guards' tests, to keep `@seshat/heuristics` free of a dependency cycle through the registry. Not built:
+model-proposed cards (HB5 item 4, the owner's open question on Global Constraint 16), unexplained successes, the
+battery replay after a new lemma (HB5b), a card's `prepare` step (HB4), the extra features `claim_kind`,
+`origin_informal`, `closed_fast` and `informal_sketch`. Simulated only: no measure of whether any card helps a real
+model; the default shares (0.2 control, 0.5 for another model, a family prior of 2) are first guesses.
+
+Task 32, after the plan's integration (2026-11-05, rebased on `c744ed5`): added PE2's effect (`effectOf`,
+`shouldDeactivate`, no second counter) and M5's deactivation in the draw (`cardMinObservations`, 8), the
+statistics per bucket with the unexplained successes, `harness heuristics mine RUN_DIR... [--out FILE]`, and
+`harness ablate --experiment heuristics` (fleet alone, with directives, with cards). More decisions (Ruling 5):
+(5) `harness heuristics apply` is not a command: cards are static files, so a person applies a proposal by
+editing the card through a reviewed commit or a new pack version, which is the human approval HB5 asks for;
+cost if wrong: a bank journal and a fold of patches in `runBank`; (6) the 13 strategy labels stay M1's
+(`STRATEGIES`, with their text in the fleet's `STRATEGY_HINTS`); a tactic card's family maps to one of them
+(`FAMILY_STRATEGY`), so no strategy text is held twice; (7) the card format lives in `@seshat/heuristics`,
+not `@seshat/core`, since only the fleet, the registry and the report read it; (8) HB2's key by model
+configuration class is replaced by `crossModelWeight` (another model's sessions count 0.5), which keeps the
+buckets large enough to say something; (9) a pack's card ids start with `pack_<name>.`, as its tools do.
+
+Task 32, review round 1 (2026-11-05, an agent that did not write the code; no high-severity finding, no
+trust rule broken). Fixed: (1) a pack card whose question M6's framing check flags is refused at `harness
+add` (`installPack` option `screenCard`, since the guards depend on the registry); (2) a card's control is
+standardized to the card's mix of buckets instead of pooled over them; (4) the statistics count only
+sessions with a verdict (`valid` or `invalid`), as PE2 does; (5) the `pack_<name>.` prefix, so no later
+built-in card can take a pack's id. Recorded, not fixed: (3) not built: HB2 item 5 (a family prior from
+`decide`'s `fleet.cold_start`), HB7's caps `maxActive` and `maxCards` (one card per session is the draw's
+own cap; the `when` filter keeps the eligible set small), HB8.3 overlap on `when` (overlaps are reported on
+the `ask`, with "the same conditions" said when the `when` matches too), and a test that compares a run with
+the bank off to `main` byte for byte (the bank's draw uses its own stream `key:heuristics`, so the other
+streams are unchanged); (6) an unknown card id or a bank error is reported at the first session, not at
+setup, and the bank is rebuilt per session (29 cards: cheap); (7) on a resume after a pack is removed, the
+briefing leaves out a card the attempt still records; (8) the README diagram changed one commit after the
+flow did.
+
+Task 32, decision on the families (Ruling 5): the closed list has 22 families, SHAPE's with `definitions`,
+`vary`, `invariant`, `extremal` and `count` added for the traditions the owner asked for, and `simplify`. The
+22nd, `simplify`, is there because the directive `shortest` ("Look for the shortest argument you can think of before you build an elaborate one.") is a move of its
+own that none of SHAPE's families holds: it is neither `restate` (a new form of the claim) nor `automation` (a
+tool), and putting it under either would mix its counts with theirs. Cost if wrong: one family whose counts are
+small, merged later by a plan change.
+
+Task 32, review round 2 (2026-11-05, by the plan's owner thread, file task-32-review-r1.md there). Fixed, each with
+a test: (M1) a card is compared only with control sessions that could have been given it: a control session records
+`heuristicEligible`, and both the draw's deactivation (`controlFor`) and the statistics count a control session for a
+card only when the card was in it (for a family, one of its cards); (M2) when every family is held by other provers on
+the subgoal, the draw takes a family that still has a card no other prover holds, and that card; a card repeats only
+when none is left; (L1) a pack card's `ask` with a bracket is refused (it could pose as the briefing's fence); (L2) a
+pack whose name is longer than 27 characters is told it cannot carry cards, and why; (L3) the statistics and the miner
+say plainly that every session counts once there, unlike the draw (no discount, probation or weight for another model);
+(L4) a card id the bank does not have stops the problem before any prover starts (`beforeProvers`, `resumeProblem`);
+(L5) this ledger's Task 32 entries are in English; the interface changes above are complete.
+

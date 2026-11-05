@@ -118,6 +118,9 @@ importers:
       '@seshat/decide':
         specifier: workspace:*
         version: link:../decide
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines
@@ -157,6 +160,19 @@ importers:
       '@seshat/registry':
         specifier: workspace:*
         version: link:../registry
+    devDependencies:
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
+
+  packages/heuristics:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
 
   packages/induction:
     dependencies:
@@ -355,6 +371,9 @@ importers:
       '@seshat/guards':
         specifier: workspace:*
         version: link:../guards
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
       '@seshat/induction':
         specifier: workspace:*
         version: link:../induction
@@ -416,6 +435,9 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
 
   packages/repair:
     dependencies:
