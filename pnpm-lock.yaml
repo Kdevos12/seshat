@@ -158,6 +158,16 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/heuristics:
+    dependencies:
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+    devDependencies:
+      '@seshat/guards':
+        specifier: workspace:*
+        version: link:../guards
+
   packages/induction:
     dependencies:
       '@seshat/classical':
