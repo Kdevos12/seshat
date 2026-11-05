@@ -118,6 +118,9 @@ importers:
       '@seshat/decide':
         specifier: workspace:*
         version: link:../decide
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

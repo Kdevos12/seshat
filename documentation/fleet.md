@@ -176,6 +176,39 @@ temperature with each request of the session, and runs it at the thinking level 
 that sample are merged key by key, in the order of the lines; a temperature outside 0 to 2 or an unknown thinking
 level is a line failure in `beforeSession`.
 
+## Heuristic cards
+
+With the option `heuristics` (`true` for every card, or a list of card ids), each session gets at most one
+card of the bank of heuristic cards ([heuristics.md](heuristics.md)): a method of reasoning, as a question,
+in a briefing section "Heuristic for this session". The bank replaces the directives: their six texts are
+cards of it, so a run sets `heuristics` or `directives`, not both (the run is refused otherwise). The cards
+come from `@seshat/heuristics` and from the packs the run's registry was built with (`runBank`).
+
+The card is decided after the strategy and the session mode, from its own stream of the session's key
+(`key:heuristics`), by `drawCard`:
+
+1. **Eligible cards**: those whose `when` holds and `whenNot` does not, in the session's context (the problem's
+   domains, the features of the claim's statement, the claim's history, the mode), and that agree with the
+   session's strategy: a tactic card whose family is a move of one of M1's labels is drawn only for a session
+   on that label (or with no strategy). None eligible: no card (`none_applicable`).
+2. **The control**: a share `noCardShare` (0.2) of the sessions get no card (`control`), drawn first. It is
+   what a card's effect is measured against, in the same bucket.
+3. **A family, then a card**, by Thompson sampling. The posteriors are made of the finished attempts of the
+   session's **bucket** on any claim of the memory (so across problems, and across runs with
+   `--memory-from`): the first domain's two digits and two statement features (`bucketOf`). The families other
+   provers hold on the same subgoal now are left out while another family is left, so provers that work at
+   once on one statement look at it in different ways. A card's posterior starts from its family's mean, with
+   the weight of `familyPriorWeight` pseudo-sessions, so a new card begins where its family stands. Every attempt
+   counts with its weight (the discount and the probation, as above), times `crossModelWeight` (0.5) when
+   another model made it: the same heuristic can help one model and hurt another. The rewards are the `choice`
+   rewards.
+
+The attempt's `settings` record `heuristic` (the card's id, or `none`), `heuristicRule` (`thompson`,
+`control` or `none_applicable`), `heuristicBucket`, and `heuristicFamily` when there is a card; the
+allocation's `settingDraws` keep the draws of the families and of the cards. A pack's card is written as
+text from outside the run, fenced and quoted like a pack's skill. With `heuristics` null (the default),
+nothing of this runs and the attempt's settings are what they were.
+
 ## Informal-first sessions
 
 With `modes` including `nl_first` (plan change PC11 item 1), a session drawn for that mode works from a step DAG:
@@ -302,7 +335,11 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `ranking` | null | models weakest first, `PROVIDER/ID`, the only statement of which is stronger; null: the run's model, then `escalateTo` |
 | `temperature` | null | a number, a list to learn over, or `{"min": 0.2, "max": 1}`; null: the run's own |
 | `thinking` | null | thinking levels to learn over, such as `["low","high"]`; null: the run's own |
-| `directives` | null | `true` for the built-in directives, or an object from label to sentence |
+| `directives` | null | `true` for the built-in directives (their text is the bank's `DIRECTIVE_CARDS`), or an object from label to sentence |
+| `heuristics` | null | the bank of heuristic cards: `true` for every card, or a list of card ids; it replaces `directives` ([Heuristic cards](#heuristic-cards)) |
+| `noCardShare` | 0.2 | the share of sessions with no card, the control |
+| `crossModelWeight` | 0.5 | what another model's session counts in the bank's posteriors |
+| `familyPriorWeight` | 2 | the weight of a family's mean in the prior of each of its cards, from 0 to 8 |
 | `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
 | `dagSteps` | 8 | the most steps in an informal-first session's DAG |
 | `coldStart` | false | add capped pseudo-counts from a `fleet.cold_start` decision ([decide.md](decide.md)) to the strategies' posteriors |
@@ -352,6 +389,8 @@ waiting provers look again) and `afterProblem` (the policy's state of the proble
 line API got `afterProver` for this and for M6 ([lines.md](lines.md)).
 
 ## Tests and what is not done
+
+`packages/fleet/test/heuristics.test.ts` covers the bank: eligible cards (conditions, agreement with the strategy), the control's share, the families other provers hold, the posteriors of a bucket and the family prior, another model's weight, the options and the refusal of the bank with the directives, a pack's card from the registry and its fenced text, and the settings left alone when the bank is off. Not run: a measure of whether any card helps a real model.
 
 `packages/fleet/test/owners.test.ts` covers `chooseOwner` (load first, then the draw, the seed) and the hook on stub contexts: it assigns only line-proposed ready tasks that no prover owns, logs refusals, and leaves a task alone when the problem has no prover task.
 
