@@ -1212,6 +1212,25 @@ Tests: the server against a recorded journal and a fake subprocess, the token an
 key file mode, escaping of hostile text, a run started and stopped from the API with the faux provider.
 Not run against a real browser session here beyond a headless smoke test.
 
+### Task 32: The heuristic bank, line M19 (HB1 to HB8 of `plans/plan-change-heuristics.md`)
+
+Main team, after Task 31. Approved by the owner on 2026-11-05. Built by the session of the thread
+"Concevoir une banque d'heuristiques" on its own branch, merged by the controller after the independent
+review of CLAUDE.md. A heuristic is a method of reasoning, not a tool: tools stay capabilities of the
+registry and a card only names or prepares them. Deliverables: the card schema in `@seshat/core`
+(closed vocabularies of families and features; unknown features refused), the memory node kind
+`heuristic`, the built-in cards that replace the fleet's 13 strategy labels and 6 directives with
+identical behaviour when M19 is off (one source of text, no duplicate), the filter, the Thompson draw by
+family then card with the no-card arm and distinct cards across provers, the briefing section, the
+optional `attempt.started` fields, the measure by randomized inclusion (HB3), `harness heuristics
+mine|apply`, the `heuristics` key of `pack.json`, the starter pack, the replay hook of HB5b through Task
+29's gate, line M19 after `fleet` in `LINE_ORDER`, an ablation arm in `harness ablate`, documentation
+(`documentation/heuristics.md`, `lines.md`, `fleet.md`, `packs.md`, README diagram). Not built: HB5 item 4
+(cards proposed by a model), which waits for the owner's amendment of Global Constraint 16. Coherence
+rules: no second registry of strategy text, no second effect counter (it reuses PE2's), no card
+duplicating a lesson (M5) or a schema (M15); a test fails if two built-in cards share a family, a `when`
+and an `ask`.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
