@@ -207,7 +207,10 @@ The attempt's `settings` record `heuristic` (the card's id, or `none`), `heurist
 `control` or `none_applicable`), `heuristicBucket`, and `heuristicFamily` when there is a card; the
 allocation's `settingDraws` keep the draws of the families and of the cards. A pack's card is written as
 text from outside the run, fenced and quoted like a pack's skill. With `heuristics` null (the default),
-nothing of this runs and the attempt's settings are what they were.
+nothing of this runs and the attempt's settings are what they were. The report's paragraph and `harness
+heuristics stats RUN_DIR` count what each family and card did against the control of its buckets
+([heuristics.md](heuristics.md#statistics)); a test runs a whole simulated run with the bank on
+(`packages/orchestrator/test/heuristics.test.ts`).
 
 ## Informal-first sessions
 

@@ -167,6 +167,9 @@ importers:
 
   packages/heuristics:
     dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory
@@ -368,6 +371,9 @@ importers:
       '@seshat/guards':
         specifier: workspace:*
         version: link:../guards
+      '@seshat/heuristics':
+        specifier: workspace:*
+        version: link:../heuristics
       '@seshat/induction':
         specifier: workspace:*
         version: link:../induction
