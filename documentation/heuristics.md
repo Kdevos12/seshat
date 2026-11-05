@@ -132,5 +132,7 @@ approve is a question the owner has left open (plan change HB5, item 4), and it 
 ## Tested, and not yet
 
 `packages/heuristics/test` covers the card check (every refusal), the built-in bank (valid, no overlap,
-the directives word for word, no framing problem), the statement features, the history counts, the bucket,
-the conditions and the overlaps. Not run: any measure of whether a card helps a real model.
+the directives word for word), the statement features, the history counts, the bucket, the conditions and
+the overlaps; `packages/guards/test/framing.test.ts` checks that M6's framing check finds nothing in a
+built-in card (there, so that this package does not depend on the guards, which depend on the registry,
+which reads pack cards with this package); `packages/registry/test/packs.test.ts` covers a pack's cards. Not run: any measure of whether a card helps a real model.

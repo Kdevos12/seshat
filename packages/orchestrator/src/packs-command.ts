@@ -18,7 +18,7 @@ export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolea
   const dir = packsDirectory(o.dir);
   const reserved = new Set(loadCatalog(o.catalogDir ?? `${REPO_ROOT}capabilities`).capabilities.keys());
   try {
-    const { pack, replaced } = installPack(dir, source, { reserved, allowPrograms: o.allowPrograms === true, replace: o.replace === true, level1: o.level1 === true });
+    const { pack, replaced, overlaps } = installPack(dir, source, { reserved, allowPrograms: o.allowPrograms === true, replace: o.replace === true, level1: o.level1 === true });
     const m = pack.manifest;
     if (replaced !== undefined) o.out(`replaced ${replaced.name} ${replaced.version}`);
     o.out(`installed ${m.name} ${m.version} (trust ${m.trust}, hash ${pack.hash.slice(0, 12)}) in ${pack.dir}`);
@@ -32,6 +32,8 @@ export function addCommand(source: string, o: PacksIo & { allowPrograms?: boolea
     }
     o.out(`  environment variables its tools may read: ${(m.requires?.env ?? []).join(", ") || "none"}`);
     o.out(`  skills (listed by name; at most 3 are loaded in full): ${pack.skills.map((s) => s.name).join(", ") || "none"}`);
+    o.out(`  heuristic cards (methods of reasoning, drawn by the fleet with heuristics on): ${pack.heuristics.map((c) => c.id).join(", ") || "none"}`);
+    for (const overlap of overlaps) o.out(`  overlap: ${overlap.a} and ${overlap.b} (family ${overlap.family}): ${overlap.reason}; both are kept, and measured apart`);
     for (const missing of missingRequirements(pack)) o.out(`  warning: missing ${missing}`);
     o.out("  the pack's tests were checked as written; none was run (harness contract ID runs one against a host)");
     return 0;
@@ -48,7 +50,7 @@ export function packsCommand(o: PacksIo): number {
   if (packs.length === 0) o.out("No pack is installed.");
   for (const p of packs) {
     o.out(`${p.name} ${p.version}  trust ${p.trust}  hash ${p.hash.slice(0, 12)}${p.intact ? "" : "  CHANGED ON DISK: remove and add it again"}`);
-    o.out(`  tools: ${p.capabilities.join(", ") || "none"}; skills: ${p.skills.join(", ") || "none"}`);
+    o.out(`  tools: ${p.capabilities.join(", ") || "none"}; skills: ${p.skills.join(", ") || "none"}; heuristic cards: ${p.heuristics.join(", ") || "none"}`);
     for (const program of p.programs) o.out(`  runs when called: ${program}`);
     if (p.intact) {
       for (const missing of missingRequirements(loadPack(p.dir))) o.out(`  warning: missing ${missing}`);

@@ -101,4 +101,17 @@ describe("harness add, packs and remove", () => {
     assert.throws(() => addCommand(writer, { dir: packsDir, allowPrograms: true, ...io([]) }), RunSetupError);
     assert.equal(existsSync(join(packsDir, "installed", "adder")), false);
   });
+
+  it("lists a pack's heuristic cards and the overlaps it brings, and keeps both cards", () => {
+    const packsDir = tempDir();
+    const card = { id: "adder.vary", version: 1, family: "vary", level: "strategy", ask: "Vary one parameter at a time in small cases, the others fixed: which one does the answer depend on?", tradition: "cps_votat", source: "test" };
+    const lines: string[] = [];
+    assert.equal(addCommand(writePack({ manifest: { heuristics: [card] }, capabilities: null }), { dir: packsDir, ...io(lines) }), 0);
+    assert.match(lines.join("\n"), /heuristic cards \(methods of reasoning, drawn by the fleet with heuristics on\): adder\.vary/);
+    assert.match(lines.join("\n"), /overlap: vary\.one_parameter and adder\.vary \(family vary\): \d+% of their content words in common; both are kept/);
+    const listed: string[] = [];
+    packsCommand({ dir: packsDir, ...io(listed) });
+    assert.match(listed.join("\n"), /heuristic cards: adder\.vary/);
+    assert.deepEqual(openRegistry({ host: "local", packsDir }).packs.flatMap((p) => p.heuristics.map((c) => c.id)), ["adder.vary"]);
+  });
 });

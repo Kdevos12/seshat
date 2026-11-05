@@ -12,5 +12,8 @@
     "@seshat/lines": "workspace:*",
     "@seshat/memory": "workspace:*",
     "@seshat/registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@seshat/heuristics": "workspace:*"
   }
 }
