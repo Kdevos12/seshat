@@ -17,6 +17,7 @@ import { renderHealth } from "./health.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
+import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
@@ -71,6 +72,7 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
   harness packs [--packs-dir DIR]
   harness remove NAME [--packs-dir DIR]
@@ -310,6 +312,10 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "heuristics") {
+      if (target !== "list" && target !== "stats" && target !== "mine") throw new UsageError("heuristics takes a subcommand: list, stats RUN_DIR or mine RUN_DIR...");
+      return heuristicsCommand(target, positionals.slice(2), { packsDir: values["packs-dir"], outFile: values.out, out: (l) => console.log(l) });
+    }
     if (command === "add") {
       if (target === undefined) throw new UsageError("add needs a directory or a git url");
       return addCommand(target, { dir: values["packs-dir"], allowPrograms: values["allow-programs"], replace: values.replace, level1: values.level1, out: (l) => console.log(l) });

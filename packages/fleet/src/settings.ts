@@ -1,3 +1,4 @@
+import { DIRECTIVE_TEXTS } from "@seshat/heuristics";
 import type { JsonObject } from "@seshat/lines";
 import type { Attempt } from "@seshat/memory";
 import { UNIFORM } from "./beta.ts";
@@ -8,17 +9,10 @@ import type { RandomSource } from "./random.ts";
 /**
  * The directives a session can be given at random (plan change PC6, after Nexus): one sentence that
  * points the session at a way of working, so that sessions on one claim do not all start from the same
- * place. Fixed text, worded to ask for no demonstration of the statement (the guards' framing check finds
- * nothing in any of them). The label is what the attempt records.
+ * place. Their text is the bank's (`DIRECTIVE_CARDS` of `@seshat/heuristics`, documentation/heuristics.md):
+ * one source, word for word. The label is what the attempt records.
  */
-export const DIRECTIVES: Readonly<Record<string, string>> = {
-  small_cases: "Work out small cases first, by hand or with decide, and read the pattern from them before you generalize.",
-  more_general: "Look for a more general statement than the target, one that may be easier to handle, then come back to the target from it.",
-  other_tool: "If you would reach for one main tool first, pick another one for this session and see how far it goes.",
-  shortest: "Look for the shortest argument you can think of before you build an elaborate one.",
-  skeleton: "Spend your first checks on the skeleton of the argument, with sorry for every step, and fill the holes only once the skeleton checks.",
-  doubt: "Spend part of your effort looking for the way the statement could fail as written: an edge case, a degenerate instance, a hypothesis that is too weak.",
-};
+export const DIRECTIVES: Readonly<Record<string, string>> = DIRECTIVE_TEXTS;
 
 /** The modes of a session: the usual one, and the informal-first one (plan change PC11). */
 export const SESSION_MODES = ["standard", "nl_first"] as const;

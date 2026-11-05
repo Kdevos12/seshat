@@ -39,6 +39,12 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M9` | reranking from our own labels, without training | `@seshat/abduction` | suspended ([below](#suspended-lines)) |
 | `M17` | extended environment: the run's Lean has more packages than the bench's ([lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)) | `@seshat/lean-env` | built, not run against Lean |
 
+The plan's line M19, the bank of heuristic cards, is no line of its own: it is the fleet's option
+`heuristics` (Ruling 32), because a later line's `beforeSession` does not see the strategy and the mode the
+fleet decided, and a card must agree with both ([fleet.md](fleet.md#heuristic-cards),
+[heuristics.md](heuristics.md)). `harness ablate --experiment heuristics` compares the fleet with and
+without it.
+
 The packages of the lines not built yet exist as skeletons, with their dependencies in the lockfile.
 `@seshat/lean-local` (the certifier on the host) is no line, and it is written
 ([certifier.md](certifier.md)).

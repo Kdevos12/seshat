@@ -618,6 +618,8 @@ export interface EventDataMap {
     trust: "evidence" | "computed";
     capabilities: string[];
     skills: string[];
+    /** The ids of the heuristic cards the pack adds to the bank (documentation/heuristics.md). Absent: none. */
+    heuristics?: string[];
     /** The programs (stdio commands) and servers (URLs) the pack's tools would reach when a run calls them. */
     programs: string[];
     /** Where the pack came from: a directory, or a git url without credentials. */

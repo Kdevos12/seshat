@@ -70,7 +70,7 @@ Event types:
 | `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
 | `budget.gated` | `problemId`, `site` (`wave`, `session`, `task`, `judge`), `action` (`launch`, `probe`, `skip`, `widen`), `by` (`rule`, `floor`, `probe`, `progress`, `decide`, `memory`), `estimateUsd`, `remainingUsd`, `budgetUsd`, `share`, `pSuccess?`, `thresholdUsd?`, `rung`, `exploration`, `progress?`, `prover?`, `session?`, `taskId?`, `decisionId?`, `reason` |
 | `statement.signed` | `source` (`prose`, `lean`), `prose?`, `statement`, `statementId`, `problemId`, `model?`, `formalization?` (`requestHash`, `responseHash`, `usd`, `inputTokens`, `outputTokens`), `testLemmas?` (`result`, `tried`, `failedAt?`, `note?`), `trivial?` (`by`): a person signed the Lean statement a run works on, as the first event after `run.started` ([quickstart.md](quickstart.md#a-statement-in-words)). Written by `human:NAME` only; it changes no claim |
-| `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `programs`, `source` |
+| `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `heuristics` (the ids of its heuristic cards, optional), `programs`, `source` |
 | `pack.removed` | `name`, `version`, `hash` |
 
 A claim's `statement` is in signature form: the binders, then `:` and the type, as between a

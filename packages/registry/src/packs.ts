@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CLAIM_STATUSES } from "@seshat/core";
+import { ASK_MAX, bankOf, type BankCard, cardProblems, type HeuristicCard, type Overlap, overlaps } from "@seshat/heuristics";
 import { CatalogError, loadCatalog, type Capability, type Catalog, type McpServerSpec } from "./manifest.ts";
 import { isPlainObject, validate, type JsonSchema } from "./schema.ts";
 
 /**
  * An installable pack (documentation/packs.md): a directory with `pack.json`, capabilities in
  * `capabilities/<id>/` (manifest and contract, the layout of the repository's own catalog) and skills
- * in markdown files. A pack is untrusted input. Loading it executes nothing and reads nothing outside
+ * in markdown files, heuristic cards in `heuristics` (documentation/heuristics.md). A pack is untrusted input. Loading it executes nothing and reads nothing outside
  * its directory; it adds tools of level 2 only and can never write a claim's status.
  */
 
@@ -52,6 +53,11 @@ export interface PackManifest {
   /** Capabilities that ask to be in the level-1 declared set; they take effect in the next session, never in a running one. */
   level1?: string[];
   skills: PackSkillSpec[];
+  /**
+   * Heuristic cards the pack adds to the bank (documentation/heuristics.md): methods of reasoning written by
+   * the pack's author, never a tool and never a fact. Each id starts with the pack's name.
+   */
+  heuristics?: HeuristicCard[];
   requires?: PackRequirements;
 }
 
@@ -68,6 +74,10 @@ export interface LoadedPack {
   hash: string;
   capabilities: Capability[];
   skills: PackSkill[];
+  /** The pack's heuristic cards, checked: valid, no id of the bank's built-in cards. */
+  heuristics: HeuristicCard[];
+  /** The pack's cards that say what a built-in card or another of its own cards says: reported, not refused. */
+  overlaps: Overlap[];
   /** The programs and servers the pack's tools would reach when a run calls them. */
   programs: string[];
   /** The owner accepted, at install, that the pack's `level1` request is honoured (`harness add --level1`). */
@@ -114,6 +124,7 @@ const PACK_SCHEMA: JsonSchema = {
         additionalProperties: false,
       },
     },
+    heuristics: { type: "array", items: { type: "object" } },
     requires: {
       type: "object",
       properties: {
@@ -286,8 +297,69 @@ export function loadPack(dir: string): LoadedPack {
     skills.push({ ...spec, pack: manifest.name, text: bytes.toString("utf8") });
   }
 
+  const cards = heuristicRules(manifest, problems);
+
   if (problems.length > 0) throw new PackError(problems);
-  return { manifest, dir: root, hash: treeHash(files), capabilities, skills, programs };
+  return { manifest, dir: root, hash: treeHash(files), capabilities, skills, heuristics: cards.heuristics, overlaps: cards.overlaps, programs };
+}
+
+/** The prefix of a pack's card ids, as of its tools: `pack_`, its name with `_` for `-`, then a dot. No built-in card starts so. */
+export const cardPrefixOf = (pack: string): string => `pack_${pack.replace(/-/g, "_")}.`;
+
+/**
+ * What a pack's cards may be: valid cards of the format (documentation/heuristics.md), ids that start with the pack's
+ * name and are not taken in the bank, and an ask that passes the screen for a pack's text. Overlaps with the built-in
+ * cards are returned, for the install to show: two cards that say the same thing are measured apart, and the person
+ * who installs chooses.
+ */
+function heuristicRules(manifest: PackManifest, problems: string[]): { heuristics: HeuristicCard[]; overlaps: Overlap[] } {
+  const list = manifest.heuristics ?? [];
+  const at = `pack ${manifest.name}:`;
+  const prefix = cardPrefixOf(manifest.name);
+  const heuristics: HeuristicCard[] = [];
+  let ok = true;
+  // The first part of a card id is at most 32 characters (CARD_ID), and a pack's starts with pack_ and its name.
+  const maxName = 32 - "pack_".length;
+  if (list.length > 0 && manifest.name.length > maxName) {
+    problems.push(`${at} a pack whose name is longer than ${maxName} characters cannot carry cards: its card ids start with ${prefix}, and the first part of a card id is at most 32 characters`);
+    return { heuristics, overlaps: [] };
+  }
+  for (const [i, value] of list.entries()) {
+    const id = isPlainObject(value) && typeof value.id === "string" ? value.id : `heuristics[${i}]`;
+    const found = cardProblems(value);
+    if (found.length > 0) {
+      ok = false;
+      problems.push(...found.map((p) => `${at} card ${id}: ${p}`));
+      continue;
+    }
+    const card = value as HeuristicCard;
+    if (!card.id.startsWith(prefix)) {
+      ok = false;
+      problems.push(`${at} card ${card.id}: a pack's card ids start with ${prefix} (its name, as its tools do), so that no two packs and no built-in card, present or later, share one`);
+    }
+    // The briefing fences a pack's card between [begin text of pack:NAME] and [end text of pack:NAME]: a bracket in the
+    // question could pose as that fence.
+    if (/[[\]]/.test(card.ask)) {
+      ok = false;
+      problems.push(`${at} card ${card.id}: its ask holds a bracket ([ or ]), which could pose as the fence the briefing quotes it in`);
+    }
+    const screened = screenPackText(card.ask, ASK_MAX);
+    if (screened !== undefined) {
+      ok = false;
+      problems.push(`${at} card ${card.id}: its ask: ${screened}`);
+    }
+    heuristics.push(card);
+  }
+  if (!ok || heuristics.length === 0) return { heuristics, overlaps: [] };
+  let bank: BankCard[];
+  try {
+    bank = bankOf([{ name: manifest.name, heuristics }]);
+  } catch (error) {
+    problems.push(`${at} ${(error as Error).message}`);
+    return { heuristics, overlaps: [] };
+  }
+  const own = new Set(heuristics.map((c) => c.id));
+  return { heuristics, overlaps: overlaps(bank).filter((o) => own.has(o.a) || own.has(o.b)) };
 }
 
 /** A server as the install confirmation shows it: what it runs or reaches, with the names of the headers and variables it sets. */

@@ -11,6 +11,7 @@ export * from "./dag.ts";
 export * from "./discount.ts";
 export * from "./escalation.ts";
 export * from "./fleet.ts";
+export * from "./heuristics.ts";
 export * from "./posterior.ts";
 export * from "./random.ts";
 export * from "./settings.ts";
