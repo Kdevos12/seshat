@@ -136,8 +136,11 @@ proof Lean accepted or a failed check says something, and a session that was cut
 
 - the sessions given it and how many were `valid`;
 - the **control of its buckets**: the sessions of the same buckets that drew no card (`heuristicRule`
-  `control`), and how many were `valid`. A card is never set against the run's average, because the
-  fleet draws by bucket and buckets differ in difficulty; a session no card applied to
+  `control`), and how many were `valid`, **standardized to the card's own mix of buckets**: each bucket's
+  control rate weighs as the card's sessions there do, so a card drawn mostly in hard buckets is not set
+  against the easy buckets' control (a bucket with no control session is left out of both arms). A card
+  is never set against the run's average, because the fleet draws by bucket and buckets differ in
+  difficulty; a session no card applied to
   (`none_applicable`) is not the control and is counted apart;
 - the **effect**: PE2's two Beta posteriors, their difference and P(effect < 0), and whether M5's rule
   deactivates it (8 observations on each side, P(effect < 0) above 0.9); the fleet applies the same rule

@@ -142,7 +142,7 @@ card** ([heuristics.md](heuristics.md)). A pack adds cards in `heuristics`, inli
 
 ```json
 "heuristics": [{
-  "id": "adder.parity", "version": 1, "family": "invariant", "level": "tactic",
+  "id": "pack_adder.parity", "version": 1, "family": "invariant", "level": "tactic",
   "ask": "Which quantity keeps its parity under every step the statement allows?",
   "tradition": "engel", "source": "Engel, Problem-Solving Strategies (1998), ch. 1"
 }]
@@ -152,13 +152,16 @@ The load refuses, with every problem together:
 
 - a card the format refuses (`cardProblems`: an unknown family or field, an `ask` over 160 characters, a
   link, code, an invisible character, a condition that cannot hold);
-- a card id that does not start with the pack's name (`adder.`, with `_` for `-`), so that no two packs
-  share one; an id taken twice in the pack, or one of the built-in bank's (a pack named `vary` cannot
-  carry `vary.one_parameter`);
+- a card id that does not start with `pack_` and the pack's name (`pack_adder.`, with `_` for `-`), as
+  its tool ids do, so that no two packs share one and no built-in card, present or added later, can
+  take it; an id taken twice in the pack;
 - an `ask` that fails the screen of a pack's text above (one line, no markup, nothing aimed at the
   model).
 
-`harness add` also refuses a card id another installed pack recorded, and prints the **overlaps**: a card
+`harness add` also refuses a card id another installed pack recorded and a card whose question M6's framing
+check flags (`framingProblems`: "prove that", "help you prove"...; a card says where to look, never what
+to prove; the registry takes the check as `installPack`'s option `screenCard`, since the guards depend on
+the registry), and prints the **overlaps**: a card
 of the pack whose question shares most of its content words with a card of the same family, built in or
 from another installed pack. An overlap is reported, never refused or merged: the two cards are measured
 apart, and the person who installs chooses whether to keep the pack. `harness packs` lists each pack's

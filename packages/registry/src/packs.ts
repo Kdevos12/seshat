@@ -303,8 +303,8 @@ export function loadPack(dir: string): LoadedPack {
   return { manifest, dir: root, hash: treeHash(files), capabilities, skills, heuristics: cards.heuristics, overlaps: cards.overlaps, programs };
 }
 
-/** The prefix of a pack's card ids: its name, with `_` for `-`, then a dot. */
-export const cardPrefixOf = (pack: string): string => `${pack.replace(/-/g, "_")}.`;
+/** The prefix of a pack's card ids, as of its tools: `pack_`, its name with `_` for `-`, then a dot. No built-in card starts so. */
+export const cardPrefixOf = (pack: string): string => `pack_${pack.replace(/-/g, "_")}.`;
 
 /**
  * What a pack's cards may be: valid cards of the format (documentation/heuristics.md), ids that start with the pack's
@@ -329,7 +329,7 @@ function heuristicRules(manifest: PackManifest, problems: string[]): { heuristic
     const card = value as HeuristicCard;
     if (!card.id.startsWith(prefix)) {
       ok = false;
-      problems.push(`${at} card ${card.id}: a pack's card ids start with ${prefix} (its name), so that no two packs and no built-in card share one`);
+      problems.push(`${at} card ${card.id}: a pack's card ids start with ${prefix} (its name, as its tools do), so that no two packs and no built-in card, present or later, share one`);
     }
     const screened = screenPackText(card.ask, ASK_MAX);
     if (screened !== undefined) {

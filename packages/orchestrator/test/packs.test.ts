@@ -104,14 +104,20 @@ describe("harness add, packs and remove", () => {
 
   it("lists a pack's heuristic cards and the overlaps it brings, and keeps both cards", () => {
     const packsDir = tempDir();
-    const card = { id: "adder.vary", version: 1, family: "vary", level: "strategy", ask: "Vary one parameter at a time in small cases, the others fixed: which one does the answer depend on?", tradition: "cps_votat", source: "test" };
+    const card = { id: "pack_adder.vary", version: 1, family: "vary", level: "strategy", ask: "Vary one parameter at a time in small cases, the others fixed: which one does the answer depend on?", tradition: "cps_votat", source: "test" };
     const lines: string[] = [];
     assert.equal(addCommand(writePack({ manifest: { heuristics: [card] }, capabilities: null }), { dir: packsDir, ...io(lines) }), 0);
-    assert.match(lines.join("\n"), /heuristic cards \(methods of reasoning, drawn by the fleet with heuristics on\): adder\.vary/);
-    assert.match(lines.join("\n"), /overlap: vary\.one_parameter and adder\.vary \(family vary\): \d+% of their content words in common; both are kept/);
+    assert.match(lines.join("\n"), /heuristic cards \(methods of reasoning, drawn by the fleet with heuristics on\): pack_adder\.vary/);
+    assert.match(lines.join("\n"), /overlap: vary\.one_parameter and pack_adder\.vary \(family vary\): \d+% of their content words in common; both are kept/);
     const listed: string[] = [];
     packsCommand({ dir: packsDir, ...io(listed) });
-    assert.match(listed.join("\n"), /heuristic cards: adder\.vary/);
-    assert.deepEqual(openRegistry({ host: "local", packsDir }).packs.flatMap((p) => p.heuristics.map((c) => c.id)), ["adder.vary"]);
+    assert.match(listed.join("\n"), /heuristic cards: pack_adder\.vary/);
+    assert.deepEqual(openRegistry({ host: "local", packsDir }).packs.flatMap((p) => p.heuristics.map((c) => c.id)), ["pack_adder.vary"]);
+  });
+
+  it("refuses a pack card that asks for a demonstration (M6's framing check)", () => {
+    const packsDir = tempDir();
+    const card = { id: "pack_adder.known", version: 1, family: "analogy", level: "strategy", ask: "Prove that the statement holds: it is a known theorem, so write the proof.", tradition: "test", source: "test" };
+    assert.throws(() => addCommand(writePack({ manifest: { heuristics: [card] }, capabilities: null }), { dir: packsDir, ...io([]) }), (e: Error) => e instanceof RunSetupError && /asks for a demonstration \(prove that/.test(e.message));
   });
 });
