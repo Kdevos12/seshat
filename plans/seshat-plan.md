@@ -1212,7 +1212,7 @@ Tests: the server against a recorded journal and a fake subprocess, the token an
 key file mode, escaping of hostile text, a run started and stopped from the API with the faux provider.
 Not run against a real browser session here beyond a headless smoke test.
 
-### Task 32: The heuristic bank, line M19 (HB1 to HB8 of `plans/plan-change-heuristics.md`)
+### Task 32: The heuristic bank (HB1 to HB8 of `plans/plan-change-heuristics.md`)
 
 Main team, after Task 31. Approved by the owner on 2026-11-05. Built by the session of the thread
 "Concevoir une banque d'heuristiques" on its own branch, merged by the controller after the independent
@@ -1226,7 +1226,16 @@ optional `attempt.started` fields, the measure by randomized inclusion (HB3), `h
 mine|apply`, the `heuristics` key of `pack.json`, the starter pack, the replay hook of HB5b through Task
 29's gate, line M19 after `fleet` in `LINE_ORDER`, an ablation arm in `harness ablate`, documentation
 (`documentation/heuristics.md`, `lines.md`, `fleet.md`, `packs.md`, README diagram). Not built: HB5 item 4
-(cards proposed by a model), which waits for the owner's amendment of Global Constraint 16. Coherence
+(cards proposed by a model), which waits for the owner's amendment of Global Constraint 16. Decisions of the builder, accepted (Ruling 5, recorded in Ruling 32): the bank is an option of the
+fleet (`heuristics`, `noCardShare`, `crossModelWeight`, `familyPriorWeight`) and not a separate line
+M19, because a later line's `beforeSession` does not see an earlier line's decision and the card must
+agree with the fleet's strategy and mode; the ablation arm compares the fleet with and without the
+option; cards are static (built-in and from packs), so no memory node kind holds them and the draw is
+recorded on the attempt's settings and the allocation; `heuristics` and `directives` together are
+refused, since the six directives are cards and `DIRECTIVE_TEXTS` is their single source. Left for
+later in this task or after it: HB4 `prepare`, HB5b replay, the unexplained-successes list and the
+extra features `claim_kind`, `origin_informal`, `closed_fast`, `informal_sketch`.
+Coherence
 rules: no second registry of strategy text, no second effect counter (it reuses PE2's), no card
 duplicating a lesson (M5) or a schema (M15); a test fails if two built-in cards share a family, a `when`
 and an `ask`.
