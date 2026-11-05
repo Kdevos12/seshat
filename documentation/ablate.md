@@ -61,6 +61,7 @@ An experiment is a short list of arms that differ by one option, run on the same
 | `lsp` | PC7 | `lean.lsp` as a tool set against M0 | needs a language server |
 | `decide` | J1, J4, J5 (line D1) | the model for every site, then one arm per J3 site asked of Jev | not run against real Jev |
 | `gate` | PB4 | no gate, the rule alone, the rule with `budget.wave` and `budget.line` asked of the model, and asked of Jev | the avoided dollars are an estimate; needs a real model; not run against real Jev |
+| `heuristics` | HB3 (Task 32) | the fleet alone, with the six directives, and with the bank of heuristic cards (`fleet.heuristics=true`, its control share on) | whether a card helps is a model's behaviour; a 10-point effect at a 30% base rate needs about 350 sessions per arm |
 | `m17` | LC3 | the base Lean environment against the one M17 extends | needs a pinned real environment |
 
 Options are line options, so an experiment's lines must include the line whose option it sets (`packet-mode` needs M4 for the naive arm). The `gate` experiment's table adds a Budget gate section (answers, probes, widenings, stops at the probe, launches, skips, the avoided estimate, the questions to `decide` and their cost), and `--gate` with its settings applies to every arm that does not set its own. The decide experiment's table adds the agreement between each Jev arm and the model arm on the questions both answered.

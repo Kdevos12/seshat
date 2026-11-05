@@ -9,7 +9,7 @@ void compareArms;
 
 describe("the experiments", () => {
   it("name every amendment's experiment", () => {
-    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "gate", "m17"]);
+    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "gate", "heuristics", "m17"]);
     assert.ok(EXPERIMENTS.every((e) => e.notRun.length > 0 && e.amendment.length > 0));
   });
 
@@ -65,6 +65,13 @@ describe("the experiments", () => {
     assert.deepEqual(off?.lines, on?.lines);
     assert.equal(off?.lineOptions?.M8?.counterexampleSet, false);
     assert.equal(on?.lineOptions?.M8?.counterexampleSet, true);
+  });
+
+  it("compare the fleet alone, with the directives and with the bank, by the fleet's option only", () => {
+    const arms = experimentArms("heuristics");
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["fleet", undefined], ["directives", "fleet"], ["cards", "directives"]]);
+    assert.deepEqual(arms.map((a) => a.lineOptions?.fleet), [undefined, { directives: true }, { heuristics: true }]);
+    assert.deepEqual(arms[2]?.lines, arms[0]?.lines);
   });
 
   it("refuse a name that is not an experiment", () => {

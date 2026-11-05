@@ -72,7 +72,7 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
-  harness heuristics list|stats [RUN_DIR] [--packs-dir DIR]
+  harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
   harness packs [--packs-dir DIR]
   harness remove NAME [--packs-dir DIR]
@@ -313,8 +313,8 @@ async function main(): Promise<number> {
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
     if (command === "heuristics") {
-      if (target !== "list" && target !== "stats") throw new UsageError("heuristics takes a subcommand: list, or stats RUN_DIR");
-      return heuristicsCommand(target, third, { packsDir: values["packs-dir"], out: (l) => console.log(l) });
+      if (target !== "list" && target !== "stats" && target !== "mine") throw new UsageError("heuristics takes a subcommand: list, stats RUN_DIR or mine RUN_DIR...");
+      return heuristicsCommand(target, positionals.slice(2), { packsDir: values["packs-dir"], outFile: values.out, out: (l) => console.log(l) });
     }
     if (command === "add") {
       if (target === undefined) throw new UsageError("add needs a directory or a git url");

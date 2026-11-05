@@ -7,9 +7,9 @@ import { BlobStore, Journal } from "@seshat/core";
 import { type BankCard, builtinBank, type CardContext, type HeuristicCard } from "@seshat/heuristics";
 import type { FinishedAttempt, JsonObject, ProblemContext, SessionContext } from "@seshat/lines";
 import { type Attempt, MemoryStore } from "@seshat/memory";
-import { allocations, createFleet, drawCard, eligibleCards, FLEET_OPTIONS, heuristicsConfigOf, heuristicSection, runBank, seeded } from "../src/index.ts";
+import { allocations, cardEffect, createFleet, drawCard, eligibleCards, FLEET_OPTIONS, heuristicsConfigOf, heuristicSection, runBank, seeded } from "../src/index.ts";
 
-const config = { cards: "all" as const, noCardShare: 0, crossModelWeight: 0.5, familyPriorWeight: 2 };
+const config = { cards: "all" as const, noCardShare: 0, crossModelWeight: 0.5, familyPriorWeight: 2, minObservations: 8 };
 const context = (over: Partial<CardContext> = {}): CardContext => ({ domains: ["msc:11"], features: ["forall_nat", "size_small"], attempts: 3, depthStuck: 0, mode: "standard", ...over });
 const card = (id: string, family: HeuristicCard["family"], level: HeuristicCard["level"] = "strategy", origin = "builtin"): BankCard => ({
   id, version: 1, family, level, ask: `Ask of ${id}?`, tradition: "test", source: "test", origin,
@@ -17,9 +17,10 @@ const card = (id: string, family: HeuristicCard["family"], level: HeuristicCard[
 
 /** A finished attempt of a bucket, with a card. */
 function attempt(heuristic: string, family: string, valid: boolean, model = "faux/prover"): Attempt {
+  const settings = heuristic === "none" ? { heuristic, heuristicRule: "control", heuristicBucket: "b" } : { heuristic, heuristicFamily: family, heuristicBucket: "b" };
   return {
     attemptId: `a_${Math.random()}`, claimId: "c", prover: "p1", iteration: 1, model, role: "prover", outcome: valid ? "valid" : "invalid",
-    ...(valid ? {} : { failureClass: "syntax" }), startedSeq: 1, settings: { heuristic, heuristicFamily: family, heuristicBucket: "b" },
+    ...(valid ? {} : { failureClass: "syntax" }), startedSeq: 1, settings,
   } as unknown as Attempt;
 }
 
@@ -68,9 +69,25 @@ describe("drawing a session's card", () => {
     assert.deepEqual(Object.keys(recorded.draws?.heuristicFamily ?? {}).sort(), ["specialize", "vary"]);
   });
 
+  it("stops drawing a card whose measured effect against the control is negative (PE2's effect, M5's rule)", () => {
+    const bank = [card("bad", "vary"), card("fine", "specialize")];
+    const losing = [...Array.from({ length: 10 }, () => attempt("bad", "vary", false)), ...Array.from({ length: 10 }, () => attempt("none", "", true))];
+    const input = { bank, context: context(), taken: new Set<string>(), model: "faux/prover", partial: 0.5, config };
+    const effect = cardEffect("bad", losing);
+    assert.deepEqual([effect.with.attempts, effect.without.attempts, effect.pNegative > 0.9], [10, 10, true]);
+    for (let k = 0; k < 20; k++) {
+      const drawn = drawCard(seeded(k), { ...input, history: losing });
+      assert.equal(drawn.card?.id, "fine");
+      assert.deepEqual(drawn.deactivated, ["bad"]);
+    }
+    assert.equal(drawCard(seeded(1), { ...input, history: losing.slice(3) }).deactivated, undefined, "too few observations: the card stays");
+    assert.equal(drawCard(seeded(1), { ...input, bank: [card("bad", "vary")], history: losing }).rule, "none_applicable");
+  });
+
   it("reads its options, and refuses the bank together with the directives", () => {
     assert.equal(heuristicsConfigOf({ heuristics: null }), undefined);
-    assert.deepEqual(heuristicsConfigOf({ heuristics: true }), { cards: "all", noCardShare: 0.2, crossModelWeight: 0.5, familyPriorWeight: 2 });
+    assert.deepEqual(heuristicsConfigOf({ heuristics: true }), { cards: "all", noCardShare: 0.2, crossModelWeight: 0.5, familyPriorWeight: 2, minObservations: 8 });
+    assert.throws(() => heuristicsConfigOf({ heuristics: true, cardMinObservations: 0 }), /cardMinObservations is a whole number from 1/);
     assert.deepEqual(heuristicsConfigOf({ heuristics: ["a", "a"] })?.cards, ["a"]);
     assert.throws(() => heuristicsConfigOf({ heuristics: [] }), /non-empty list/);
     assert.throws(() => heuristicsConfigOf({ heuristics: true, noCardShare: 2 }), /noCardShare is a number from 0 to 1/);
