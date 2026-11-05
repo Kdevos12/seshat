@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { STRATEGIES } from "@seshat/memory";
 import {
   applies, ASK_MAX, bankOf, BUILTIN_CARDS, bucketOf, cardProblems, checkBank, DIRECTIVE_CARDS, DIRECTIVE_TEXTS, FAMILIES, FAMILY_STRATEGY,
-  heuristicReport, heuristicStats, historyOf, overlaps, parseCard, renderCardLine, renderHeuristicReport, STARTER_CARDS, statementFeatures, strategyOfCard,
+  bankProposals, heuristicReport, heuristicStats, historyOf, overlaps, parseCard, renderCardLine, renderHeuristicReport, STARTER_CARDS, statementFeatures, strategyOfCard,
   type CardContext, type CardLine, type HeuristicCard,
 } from "../src/index.ts";
 
@@ -26,6 +26,12 @@ describe("the built-in bank", () => {
     const check = checkBank(BUILTIN_CARDS.map((c) => ({ ...c, origin: "builtin" })));
     assert.deepEqual(check.errors, []);
     assert.deepEqual(check.overlaps, []);
+  });
+
+  it("has no two built-in cards with one family, one condition and one question", () => {
+    const keys = BUILTIN_CARDS.map((c) => JSON.stringify([c.family, c.when ?? null, c.whenNot ?? null, c.ask.trim().toLowerCase()]));
+    assert.equal(new Set(keys).size, keys.length);
+    assert.equal(new Set(BUILTIN_CARDS.map((c) => c.id)).size, BUILTIN_CARDS.length);
   });
 
   it("keeps the six directives of the fleet word for word, under their labels", () => {
@@ -163,7 +169,7 @@ describe("the bank's statistics", () => {
     const vary = stats.cards.find((c) => c.id === "vary.one_parameter");
     assert.deepEqual([vary?.controlSessions, vary?.controlValid, vary?.compliance], [1, 1, undefined], "a strategy-neutral card has no compliance");
     assert.deepEqual(stats.families.map((f) => f.id), ["induction", "vary"]);
-    assert.match(renderCardLine(stats.families[0] as CardLine), /^induction: 1 of 2 valid \(50%\), control of its buckets 1 of 2 \(50%\) \(too few to read\)$/);
+    assert.match(renderCardLine(stats.families[0] as CardLine), /^induction: 1 of 2 valid \(50%\), control of its buckets 1 of 2 \(50%\), P\(effect < 0\) 0\.50 \(too few to read\)$/);
   });
 
   it("reads a run's journal, and says nothing for a run with the bank off", () => {
@@ -172,6 +178,35 @@ describe("the bank's statistics", () => {
     assert.equal(heuristicReport([started("a"), finished("a", "valid")] as never), undefined);
     const stats = heuristicReport([started("a", { heuristic: "none", heuristicRule: "control", heuristicBucket: "b" }), finished("a", "valid"), started("b", { heuristic: "doubt", heuristicFamily: "counterexample", heuristicBucket: "b" }), finished("b", "invalid")] as never);
     assert.ok(stats !== undefined);
-    assert.match(renderHeuristicReport(stats), /^Heuristic cards: 2 finished session\(s\) with a draw; the control \(no card\) 1 of 1 valid\. By family, .*counterexample: 0 of 1 valid/);
+    assert.match(renderHeuristicReport(stats), /^Heuristic cards: 2 session\(s\) with a draw and a verdict; the control \(no card\) 1 of 1 valid\. By family, .*counterexample: 0 of 1 valid/);
+  });
+});
+
+describe("the miner's proposals", () => {
+  const sessions = (card: string, bucket: string, valid: number, invalid: number) => [
+    ...Array.from({ length: valid }, () => ({ settings: card === "none" ? { heuristic: "none", heuristicRule: "control", heuristicBucket: bucket } : { heuristic: card, heuristicFamily: "vary", heuristicBucket: bucket }, outcome: "valid" })),
+    ...Array.from({ length: invalid }, () => ({ settings: card === "none" ? { heuristic: "none", heuristicRule: "control", heuristicBucket: bucket } : { heuristic: card, heuristicFamily: "vary", heuristicBucket: bucket }, outcome: "invalid" })),
+  ];
+
+  it("proposes to retire a card that loses everywhere, a whenNot where it loses in one bucket, and marks one without effect", () => {
+    const stats = heuristicStats([
+      ...sessions("none", "A", 10, 0),
+      ...sessions("none", "B", 20, 20),
+      ...sessions("bad.card", "A", 0, 10),
+      ...sessions("bad.card", "B", 0, 10),
+      ...sessions("local.card", "A", 0, 10),
+      ...sessions("local.card", "B", 20, 0),
+      ...sessions("flat.card", "B", 20, 20),
+    ]);
+    const proposals = bankProposals(stats);
+    assert.deepEqual(proposals.map((p) => [p.kind, p.card, p.bucket]), [["no_effect", "flat.card", undefined], ["retire", "bad.card", undefined], ["when_not", "local.card", "A"]]);
+    assert.ok(stats.cards.find((c) => c.id === "bad.card")?.deactivated);
+    assert.equal(stats.cards.find((c) => c.id === "local.card")?.deactivated, false);
+    assert.deepEqual(bankProposals(heuristicStats(sessions("bad.card", "A", 0, 3))), [], "too few observations: nothing to propose");
+  });
+
+  it("lists accepted proofs that went another way than their tactic card", () => {
+    const stats = heuristicStats([{ attemptId: "att_1", settings: { heuristic: "induction.strengthen", heuristicFamily: "induction", heuristicBucket: "A" }, outcome: "valid", strategy: "cases" }], BUILTIN_CARDS);
+    assert.deepEqual(stats.unexplained, [{ attemptId: "att_1", card: "induction.strengthen", bucket: "A", strategy: "cases", expected: "induction" }]);
   });
 });

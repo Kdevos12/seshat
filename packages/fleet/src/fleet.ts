@@ -17,7 +17,7 @@ import { sampleSettings, samplesSettings, type SettingsConfig, settingsConfigOf 
 import { Gate, widthFor, type WidthOptions } from "./width.ts";
 import { bucketOf, historyOf, statementFeatures } from "@seshat/heuristics";
 import {
-  DEFAULT_CROSS_MODEL_WEIGHT, DEFAULT_FAMILY_PRIOR_WEIGHT, DEFAULT_NO_CARD_SHARE, drawCard, heuristicSection, type HeuristicsConfig, heuristicsConfigOf, runBank,
+  DEFAULT_CARD_MIN_OBSERVATIONS, DEFAULT_CROSS_MODEL_WEIGHT, DEFAULT_FAMILY_PRIOR_WEIGHT, DEFAULT_NO_CARD_SHARE, drawCard, heuristicSection, type HeuristicsConfig, heuristicsConfigOf, runBank,
 } from "./heuristics.ts";
 
 /**
@@ -77,6 +77,8 @@ export const FLEET_OPTIONS = {
   crossModelWeight: DEFAULT_CROSS_MODEL_WEIGHT,
   /** The weight, in pseudo-sessions, of a family's counts in the prior of each of its cards. */
   familyPriorWeight: DEFAULT_FAMILY_PRIOR_WEIGHT,
+  /** A card is no longer drawn in a bucket after this many observations with it and in the control, when P(effect < 0) is above 0.9 (M5's rule). */
+  cardMinObservations: DEFAULT_CARD_MIN_OBSERVATIONS,
   /** Seed the strategy choice with a prior from `decide` (site fleet.cold_start): a Choice over the families, as pseudo-counts of weight `coldStartWeight`. Off: the flat prior. */
   coldStart: false,
   /** The total weight of that prior in pseudo-attempts (0 to 4): the journal's own attempts outweigh it after a few. */
@@ -552,6 +554,7 @@ export function createFleet(env: FleetEnv = {}): Line {
             heuristicRule: drawn.rule,
             heuristicBucket: bucket,
             ...(drawn.card !== undefined ? { heuristicFamily: drawn.card.family } : {}),
+            ...(drawn.deactivated !== undefined ? { heuristicDeactivated: drawn.deactivated } : {}),
           };
           if (drawn.draws !== undefined) settingDraws = { ...settingDraws, ...drawn.draws };
           if (drawn.card !== undefined) problem.running.set(session.prover, { ...(problem.running.get(session.prover) ?? { subgoal }), heuristicFamily: drawn.card.family });

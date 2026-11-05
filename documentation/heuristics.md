@@ -22,6 +22,7 @@ The bank does not add a second copy of anything Seshat already had:
 | Lessons (M5) | `@seshat/lessons` | Separate on purpose: a lesson is learned from the run's outcomes, a card is written by a person. |
 | Schemas (M15), library lemmas (M3) | `@seshat/scheduler`, `@seshat/library` | Separate: verified procedure. A card may name the tools that reach them. |
 | Skills of packs | `@seshat/registry` | Technical knowledge stays a skill; a method of reasoning is a card (`heuristics` in `pack.json`). |
+| The effect of an item and its deactivation (PE2, M5's rule) | `@seshat/memory` (`effectOf`, `shouldDeactivate`) | Reused as it is: a card's effect is its sessions against the bucket's control, and the same rule deactivates it ([below](#statistics)). |
 | Tools (`compute.sage`, `lean.check`, the battery) | the registry | A card names the capabilities that serve its method (`tools`); it is not one of them. |
 
 ## What a card is
@@ -124,33 +125,55 @@ installs a pack chooses.
 
 ## Statistics
 
-The bank is measured, never trusted: whether a card helps is a count of what Lean accepted, set against
-the sessions that got no card. `heuristicStats(sessions, bank)` reads the finished sessions whose settings
-record a draw (`heuristic`, `heuristicRule`, `heuristicFamily`, `heuristicBucket`, written by the fleet,
-[fleet.md](fleet.md#heuristic-cards)) and gives, for each family and each card:
+The bank is measured, never trusted: whether a card helps is what Lean accepted, set against the sessions
+that got no card. There is one effect counter in Seshat, PE2's (`effectOf`, `armOf` and `shouldDeactivate`
+of `@seshat/memory`, [memory.md](memory.md#randomized-inclusion)), and the bank uses it; as in PE2, only a
+proof Lean accepted or a failed check says something, and a session that was cut is left out.
+
+`heuristicStats(sessions, bank)` reads the sessions whose settings record a draw (`heuristic`,
+`heuristicRule`, `heuristicFamily`, `heuristicBucket`, written by the fleet,
+[fleet.md](fleet.md#heuristic-cards)) and gives, for each family, each card, and each card in each bucket:
 
 - the sessions given it and how many were `valid`;
 - the **control of its buckets**: the sessions of the same buckets that drew no card (`heuristicRule`
   `control`), and how many were `valid`. A card is never set against the run's average, because the
   fleet draws by bucket and buckets differ in difficulty; a session no card applied to
   (`none_applicable`) is not the control and is counted apart;
+- the **effect**: PE2's two Beta posteriors, their difference and P(effect < 0), and whether M5's rule
+  deactivates it (8 observations on each side, P(effect < 0) above 0.9); the fleet applies the same rule
+  per bucket before it draws (option `cardMinObservations`);
 - for a tactic card whose family maps to a strategy label, **compliance**: of its sessions M1 classified,
   how many went the card's way (`strategy` equal to the card's label). A card nobody follows measures
   nothing.
 
-A line with fewer than 10 sessions, or 10 control sessions, says that it is too few to read. There is no
-test of significance and no model in any of it. The run's report has one paragraph (by family) when a
-session recorded a draw (`heuristicReport(events)`, `report.json` field `heuristics`), and the command
-line gives each card:
+It also lists the **unexplained successes** (HB5 item 2): accepted proofs of sessions given a tactic card
+whose classified strategy is not the card's, for a person to read. A line with fewer than 10 sessions, or
+10 control sessions, says that it is too few to read: at a 30% base rate, a 10-point effect needs about
+350 sessions per arm. No model is called anywhere here. The run's report has one paragraph (by family) when
+a session recorded a draw (`heuristicReport(events)`, `report.json` field `heuristics`).
 
 ```sh
-pnpm harness heuristics list [--packs-dir DIR]   # the bank a run draws from: built-in and installed packs' cards, and their overlaps
-pnpm harness heuristics stats RUN_DIR            # by family and by card, against the control of their buckets
+pnpm harness heuristics list [--packs-dir DIR]         # the bank a run draws from, and the overlaps in it
+pnpm harness heuristics stats RUN_DIR                  # by family and by card, the unexplained successes
+pnpm harness heuristics mine RUN_DIR... [--out FILE]   # the proposals of several finished runs
 ```
 
-Neither command writes anything. What the plan change calls unexplained successes (a valid session whose
-card no classified strategy explains), the replay of the battery after a new lemma (HB5b) and a card's
-`prepare` step (HB4) are not built.
+**The miner** (`bankProposals`, HB5 item 1) reads finished runs and writes nothing to them. It proposes
+to **retire** a card deactivated across its buckets; to add a **`whenNot`** for a bucket where a card is
+deactivated while it is not elsewhere; and marks a card with **no effect** after four times the minimum of
+observations on each side (P(effect < 0) between 0.4 and 0.6). A proposal changes nothing. Since cards are
+static files (Ruling 32), a person applies one by editing the card: a built-in card through a reviewed
+commit, a pack's through a new version of the pack (`harness add --replace`). That review is the approval
+the plan change gives to `harness heuristics apply`, which is therefore not a command; it would need the
+bank's state in a journal of its own, which nothing else needs. "Wins outside its `when`" cannot be
+observed, since a card is drawn only where its `when` holds.
+
+`harness ablate --experiment heuristics` runs the fleet alone, with the six directives, and with the bank,
+on the same problems at the same budget ([ablate.md](ablate.md#experiments)).
+
+Not built (Ruling 32): a card's `prepare` step (HB4, site `heuristic.prepare` of the gate), the replay of
+the battery after a new lemma (HB5b, site `heuristic.replay`), and the extra features `claim_kind`,
+`origin_informal`, `closed_fast` and `informal_sketch`.
 
 ## Trust
 

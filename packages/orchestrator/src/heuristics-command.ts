@@ -1,18 +1,21 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { readEvents } from "@seshat/core";
-import { type BankCard, bankOf, checkBank, heuristicReport, renderCardLine } from "@seshat/heuristics";
+import { type BankCard, bankOf, bankProposals, checkBank, heuristicReport, heuristicStats, renderCardLine, type CardSession } from "@seshat/heuristics";
 import { loadInstalledPacks } from "@seshat/registry";
 import { packsDirectory } from "./implementations.ts";
 import { RunSetupError } from "./setup-error.ts";
 
 /**
- * `harness heuristics list|stats RUN_DIR` (documentation/heuristics.md): the bank a run would draw from, built in and
- * from the installed packs, and the bank's statistics of a run. Both read; neither calls a model or writes anything.
+ * `harness heuristics list|stats|mine` (documentation/heuristics.md): the bank a run would draw from, built in and from
+ * the installed packs; the bank's statistics of a run; and the proposals the statistics of finished runs suggest. All
+ * three read; none calls a model, and none writes a journal or a card.
  */
 export interface HeuristicsIo {
   /** The pack directory. Default: `SESHAT_PACKS_DIR`, then `packs/` of this repository. */
   packsDir?: string | undefined;
+  /** `mine`: where to write the proposals as JSON, for a person to read. */
+  outFile?: string | undefined;
   out: (line: string) => void;
 }
 
@@ -26,7 +29,31 @@ function installedBank(packsDir: string | undefined): BankCard[] {
   }
 }
 
-export function heuristicsCommand(action: "list" | "stats", dir: string | undefined, o: HeuristicsIo): number {
+function eventsOf(dir: string) {
+  const journal = join(resolve(dir), "journal.jsonl");
+  if (!existsSync(journal)) throw new RunSetupError(`${dir} is not a run directory: it has no journal.jsonl`);
+  return readEvents(journal);
+}
+
+/** The sessions with a draw of every run, from their journals. */
+function sessionsOf(dirs: readonly string[]): CardSession[] {
+  const sessions: CardSession[] = [];
+  for (const dir of dirs) {
+    const byId = new Map<string, CardSession>();
+    for (const event of eventsOf(dir)) {
+      if (event.type === "attempt.started" && typeof event.data.settings?.heuristic === "string") {
+        byId.set(event.data.attemptId, { attemptId: event.data.attemptId, settings: event.data.settings });
+      } else if (event.type === "attempt.finished") {
+        const s = byId.get(event.data.attemptId);
+        if (s !== undefined) Object.assign(s, { outcome: event.data.outcome, strategy: event.data.strategy });
+      }
+    }
+    sessions.push(...byId.values());
+  }
+  return sessions;
+}
+
+export function heuristicsCommand(action: "list" | "stats" | "mine", dirs: readonly string[], o: HeuristicsIo): number {
   const bank = installedBank(o.packsDir);
   if (action === "list") {
     for (const card of bank) {
@@ -35,22 +62,40 @@ export function heuristicsCommand(action: "list" | "stats", dir: string | undefi
     }
     const check = checkBank(bank);
     for (const overlap of check.overlaps) o.out(`overlap: ${overlap.a} and ${overlap.b} (family ${overlap.family}): ${overlap.reason}`);
-    o.out(`${bank.length} card(s), ${new Set(bank.map((c) => c.family)).size} famil${new Set(bank.map((c) => c.family)).size === 1 ? "y" : "ies"}; the fleet draws them with the option heuristics on.`);
+    const families = new Set(bank.map((c) => c.family)).size;
+    o.out(`${bank.length} card(s), ${families} famil${families === 1 ? "y" : "ies"}; the fleet draws them with the option heuristics on.`);
     return 0;
   }
-  if (dir === undefined) throw new RunSetupError("heuristics stats needs a run directory");
-  const journal = join(resolve(dir), "journal.jsonl");
-  if (!existsSync(journal)) throw new RunSetupError(`${dir} is not a run directory: it has no journal.jsonl`);
-  const stats = heuristicReport(readEvents(journal), bank);
-  if (stats === undefined) {
-    o.out("No session of this run had a draw of the bank: the option heuristics was off.");
+  if (dirs.length === 0) throw new RunSetupError(`heuristics ${action} needs a run directory`);
+  if (action === "stats") {
+    if (dirs.length > 1) throw new RunSetupError("heuristics stats reads one run; heuristics mine reads several");
+    const stats = heuristicReport(eventsOf(dirs[0] as string), bank);
+    if (stats === undefined) {
+      o.out("No session of this run had a draw of the bank: the option heuristics was off.");
+      return 0;
+    }
+    o.out(`${stats.sessions} session(s) with a draw and a verdict. Control (no card): ${stats.control.valid} of ${stats.control.sessions} valid. No card applied: ${stats.noneApplicable}.`);
+    o.out("By family:");
+    for (const line of stats.families) o.out(`  ${renderCardLine(line)}`);
+    o.out("By card:");
+    for (const line of stats.cards) o.out(`  ${renderCardLine(line)}`);
+    if (stats.unexplained.length > 0) {
+      o.out("Accepted proofs that went another way than their card:");
+      for (const u of stats.unexplained) o.out(`  ${u.attemptId ?? "?"}: ${u.card} (${u.expected}) in ${u.bucket}, proved by ${u.strategy}`);
+    }
+    o.out("No model. The effect is PE2's: P(effect < 0) from the sessions with the card against the control of its buckets.");
     return 0;
   }
-  o.out(`${stats.sessions} finished session(s) with a draw. Control (no card): ${stats.control.valid} of ${stats.control.sessions} valid. No card applied: ${stats.noneApplicable}.`);
-  o.out("By family:");
-  for (const line of stats.families) o.out(`  ${renderCardLine(line)}`);
-  o.out("By card:");
-  for (const line of stats.cards) o.out(`  ${renderCardLine(line)}`);
-  o.out("Counts only, no model and no test of significance. Each line is set against the control of its own buckets.");
+  const stats = heuristicStats(sessionsOf(dirs), bank);
+  const proposals = bankProposals(stats);
+  o.out(`${stats.sessions} session(s) with a draw and a verdict in ${dirs.length} run(s); control ${stats.control.valid} of ${stats.control.sessions} valid.`);
+  if (proposals.length === 0) o.out("No proposal: no card is deactivated or without effect on this evidence.");
+  for (const p of proposals) o.out(`${p.kind} ${p.card}${p.bucket !== undefined ? ` in ${p.bucket}` : ""}: ${p.reason} (difference ${p.difference}, P(effect < 0) ${p.pNegative}, ${p.sessions} against ${p.controlSessions})`);
+  for (const u of stats.unexplained) o.out(`unexplained success ${u.attemptId ?? "?"}: ${u.card} (${u.expected}) in ${u.bucket}, proved by ${u.strategy}`);
+  if (o.outFile !== undefined) {
+    writeFileSync(o.outFile, `${JSON.stringify({ runs: dirs.map((d) => resolve(d)), sessions: stats.sessions, control: stats.control, proposals, unexplained: stats.unexplained }, null, 2)}\n`);
+    o.out(`proposals written to ${o.outFile}`);
+  }
+  o.out("A proposal changes nothing: a person edits the card (a built-in card through a reviewed commit, a pack's through a new version of the pack).");
   return 0;
 }

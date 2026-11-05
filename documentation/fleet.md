@@ -202,6 +202,10 @@ The card is decided after the strategy and the session mode, from its own stream
    counts with its weight (the discount and the probation, as above), times `crossModelWeight` (0.5) when
    another model made it: the same heuristic can help one model and hurt another. The rewards are the `choice`
    rewards.
+4. **Deactivation**: a card that applies is left out before any draw when its effect in the bucket is negative
+   (`cardEffect`: PE2's two Beta posteriors, its sessions against the bucket's control, each counting its
+   weight; M5's rule: `cardMinObservations` observations on each side and P(effect < 0) above 0.9). The ids left
+   out are recorded as `heuristicDeactivated`. Nothing is deleted: more control sessions can bring a card back.
 
 The attempt's `settings` record `heuristic` (the card's id, or `none`), `heuristicRule` (`thompson`,
 `control` or `none_applicable`), `heuristicBucket`, and `heuristicFamily` when there is a card; the
@@ -343,6 +347,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `noCardShare` | 0.2 | the share of sessions with no card, the control |
 | `crossModelWeight` | 0.5 | what another model's session counts in the bank's posteriors |
 | `familyPriorWeight` | 2 | the weight of a family's mean in the prior of each of its cards, from 0 to 8 |
+| `cardMinObservations` | 8 | a card is no longer drawn in a bucket once it has this many observations with it and in the control, and P(effect < 0) is above 0.9 (M5's rule) |
 | `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
 | `dagSteps` | 8 | the most steps in an informal-first session's DAG |
 | `coldStart` | false | add capped pseudo-counts from a `fleet.cold_start` decision ([decide.md](decide.md)) to the strategies' posteriors |
