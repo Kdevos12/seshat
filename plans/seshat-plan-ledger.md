@@ -5,7 +5,7 @@ reads the same thing ([CLAUDE.md](../CLAUDE.md)). The main team writes this file
 writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and 11. The plan:
 [seshat-plan.md](seshat-plan.md); the rulings: [seshat-plan-rulings.md](seshat-plan-rulings.md).
 
-Updated 2026-11-04 UTC. `main` at the atp.eprover merge (1a15014), 2594 tests; Tasks 1 to 31 and atp.eprover merged.
+Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests passing (1 skipped); Tasks 1 to 32 and atp.eprover merged.
 
 ## Tasks
 
@@ -42,7 +42,7 @@ Updated 2026-11-04 UTC. `main` at the atp.eprover merge (1a15014), 2594 tests; T
 | 29 | Proportionate budgets: gate, probe first, `budget.*` decide sites (PB1 to PB5) | main | merged (`1c96731`) | `task/t29` | Review round 1 fixed (stopped probe reconsidered per turn, journal checks floor and decide rows, request-keyed draws, minSessions). Not done: PB5's clause on strategies the failure memory holds as exhausted (no hard state; the gate prices past failures through a lower success chance). Simulated only; avoided dollars are an estimate; not run against a real model or Jev. |
 | 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | merged (`0ab8147`) | `task/t30` | Review round 1 fixed (strict screen and signature for user Lean, bounded formalization spend, host in the resume command, sandbox probe runs the real recipe, Markdown escaping, shell quoting). Open: the signature is not cross-checked against the claim; an `afterStart` that throws leaves a started journal without a signature. Simulated only: no real bubblewrap, Docker, model or Lean. |
 | 31 | The local interface `harness ui` | main | merged (`d2732a1`) | `task/t31` | Review round 1 fixed (nonce-bound signature protocol, key scoping per provider, no cookie, digest over the whole bundle, redaction forms, process groups). Simulated only: fake subprocess, faux provider, one headless-browser smoke test; no person has used it in a real session. |
-| 32 | The heuristic bank, line M19 (HB1 to HB8) | main | in review, built by the thread "Concevoir une banque d'heuristiques" on `claude/project-thread-7os98j`, merged by the controller | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
+| 32 | The heuristic bank, line M19 (HB1 to HB8) | main | merged (0614185), built by the thread "Concevoir une banque d'heuristiques", reviewed twice; M19 became a fleet option; not built: HB4 prepare, HB5b replay, decide prior, extra features | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
