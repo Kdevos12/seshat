@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,6 +39,18 @@ end Demo
 
 export function tempDir(prefix = "mh-m0-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
+}
+
+/**
+ * A directory of Lean environments for `SESHAT_LEAN_ENV_DIR`: the repository's `lean/env/*.toml` and no
+ * project, as a fresh checkout has them. A `harness` that a test runs with it sees every environment
+ * unresolved, whatever `harness lean-env resolve` or `build` left in `lean/env/` on this machine.
+ */
+export function freshLeanEnvDir(): string {
+  const dir = tempDir("mh-lean-env-");
+  const source = join(REPO_ROOT, "lean", "env");
+  for (const name of readdirSync(source)) if (name.endsWith(".toml")) cpSync(join(source, name), join(dir, name));
+  return dir;
 }
 
 /** A checkout with one problem file (or several, by file name), and its bench index (`DISCRETE` unless a filter is given). */

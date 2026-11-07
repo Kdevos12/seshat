@@ -8,14 +8,16 @@ import { buildReport } from "../src/index.ts";
 import { compareProbe, probeDirOf } from "../src/probe.ts";
 import { measureRun } from "../src/measures.ts";
 import { scriptedRun } from "./ablate-helpers.ts";
-import { tempDir } from "./m0-helpers.ts";
+import { freshLeanEnvDir, tempDir } from "./m0-helpers.ts";
 
 const run = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
+/** The Lean environments as a fresh checkout has them, whatever this machine resolved or built. */
+const LEAN_ENV_DIR = freshLeanEnvDir();
 
 async function harness(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "" } });
+    const { stdout, stderr } = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "", SESHAT_LEAN_ENV_DIR: LEAN_ENV_DIR } });
     return { code: 0, stdout, stderr };
   } catch (error) {
     const e = error as { code: number; stdout: string; stderr: string };

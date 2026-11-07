@@ -40,7 +40,7 @@ resolve: reads each package's lean-toolchain and lake-manifest.json at its rev, 
 every package agrees on the toolchain and on every shared dependency, and writes lakefile.toml, lean-toolchain
 and the lock (with the environment hash) in DIR/NAME. --find tries the tag of the toolchain for a package that
 has no rev. build: lake update, lake exe cache get, lake build per package, timed. show: where an environment
-stands. DIR defaults to lean/env (documentation/lean-env.md). Exit codes: 0 done, 1 refused or failed, 2 a mistake in the command.`;
+stands. DIR defaults to SESHAT_LEAN_ENV_DIR, then lean/env (documentation/lean-env.md). Exit codes: 0 done, 1 refused or failed, 2 a mistake in the command.`;
 
 /** `harness lean-env ACTION [NAME]`; returns the exit code. */
 export async function leanEnvCommand(action: string | undefined, name: string | undefined, options: { find?: boolean }, io: LeanEnvIo): Promise<number> {

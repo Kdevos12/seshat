@@ -57,6 +57,15 @@ describe("opening the registry of a host that names a Lean environment", () => {
     );
   });
 
+  it("looks the environments up in SESHAT_LEAN_ENV_DIR when no directory is given", async () => {
+    const { root, hashes } = await envRoot();
+    const fresh = mkdtempSync(join(tmpdir(), "seshat-env-fresh-"));
+    writeFileSync(join(fresh, "base.toml"), BASE);
+    assert.equal(openRegistry({ host: "local", env: { SESHAT_LEAN_ENV_DIR: root } }).leanEnv?.hash, hashes.base);
+    assert.equal(openRegistry({ host: "local", env: { SESHAT_LEAN_ENV_DIR: fresh } }).leanEnv?.status, "unresolved");
+    assert.equal(openRegistry({ host: "local", envRoot: fresh, env: { SESHAT_LEAN_ENV_DIR: root } }).leanEnv?.status, "unresolved", "an explicit directory wins");
+  });
+
   it("says the environment is unresolved, stale or unknown instead of throwing", async () => {
     const { root } = await envRoot({ resolved: ["base"] });
     const unresolved = openRegistry({ host: "local", envRoot: root, env: { LEAN_ENV: "extended" } });

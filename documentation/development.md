@@ -30,7 +30,11 @@ pnpm test
   in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`), and a simulated
   lean-lsp-mcp (`packages/lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts`, which checks every call
   against the arguments recorded from the real release); the command tests run `harness` as a
-  child process.
+  child process. They set `SESHAT_LEAN_ENV_DIR` to a copy of `lean/env/*.toml` without the projects
+  (`freshLeanEnvDir` in `m0-helpers.ts`), so that a test gives the same result whether or not this
+  machine has run `harness lean-env resolve` or `build`: a resolved environment would otherwise add
+  `+env:NAME@HASH` to every Lean tool's version, and a built one would become the default
+  `LEAN_PROJECT_DIR` ([lean-env.md](lean-env.md#in-a-run)).
 - A change updates the documentation page that describes it, in the same commit.
 - The diagram in the README, "How research flows", shows the steps a statement goes through and the
   tools a prover can call, each marked built, written but waiting for a Lean server, or planned. A

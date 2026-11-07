@@ -1,8 +1,9 @@
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eproverFactory, proveAutoFactory, proveSearchFactory, vampireFactory, z3Factory } from "@seshat/classical";
 import { fauxFactory, jevFactory } from "@seshat/decide";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
-import { lookupEnvironment } from "@seshat/lean-env";
+import { DEFAULT_ENV_ROOT, lookupEnvironment } from "@seshat/lean-env";
 import { leanLspFactory } from "@seshat/lean-lsp";
 import { lakeCertifyFactory } from "@seshat/lean-local";
 import { leanMetaFactory, pantographFactory } from "@seshat/lean-meta";
@@ -55,7 +56,7 @@ export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "
   factories?: Readonly<Record<string, ImplementationFactory>>;
   /** The Lean environment, in place of the one the host profile names (`LEAN_ENV`, default `base`). */
   leanEnv?: string;
-  /** The directory with the environment files. Default: `lean/env/` of this repository. */
+  /** The directory with the environment files. Default: `SESHAT_LEAN_ENV_DIR`, then `lean/env/` of this repository. */
   envRoot?: string;
   /** The pack directory (documentation/packs.md). Default: `SESHAT_PACKS_DIR`, then `packs/` of this repository. */
   packsDir?: string;
@@ -79,13 +80,24 @@ export function packsDirectory(explicit?: string): string {
   return explicit ?? (process.env.SESHAT_PACKS_DIR || `${REPO_ROOT}packs`);
 }
 
+/**
+ * The directory of the Lean environments (`<name>.toml`, and `<name>/` once resolved): the option,
+ * `SESHAT_LEAN_ENV_DIR` (relative to the working directory), then `lean/env/` of this repository.
+ */
+export function leanEnvDirectory(explicit?: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
+  if (explicit !== undefined) return explicit;
+  const given = env.SESHAT_LEAN_ENV_DIR;
+  return given !== undefined && given !== "" ? resolve(given) : DEFAULT_ENV_ROOT;
+}
+
 export function hostName(explicit?: string): string {
   return explicit || process.env.HARNESS_HOST || "local";
 }
 
 /**
  * The Lean environment a host runs against and where it stands on this machine: the name the host
- * profile gives (`leanEnv`, usually `${env:LEAN_ENV:-base}`) or `override`, looked up in `lean/env/`.
+ * profile gives (`leanEnv`, usually `${env:LEAN_ENV:-base}`) or `override`, looked up in `lean/env/`
+ * (or `envRoot`, or `SESHAT_LEAN_ENV_DIR`: `leanEnvDirectory`).
  * The project the harness's own Lean tools use is `LEAN_PROJECT_DIR` when it is set, and the
  * environment's project when that is built; the lock is read from that project, so the hash names the
  * project the tools really run in. Undefined for a host that names no environment.
@@ -106,7 +118,7 @@ export function leanEnvPin(
   }
   if (name === undefined || name === "") return undefined;
   const given = env.LEAN_PROJECT_DIR !== undefined && env.LEAN_PROJECT_DIR !== "" ? env.LEAN_PROJECT_DIR : undefined;
-  const pin = lookupEnvironment(name, { ...(options.envRoot !== undefined ? { root: options.envRoot } : {}), ...(given !== undefined ? { projectDir: given } : {}) });
+  const pin = lookupEnvironment(name, { root: leanEnvDirectory(options.envRoot, env), ...(given !== undefined ? { projectDir: given } : {}) });
   // The environment's own project is the default only once it is built: before that, Lake would fetch packages.
   return { pin, projectDir: given ?? (pin.status === "resolved" && pin.built === true ? pin.dir : undefined) };
 }
