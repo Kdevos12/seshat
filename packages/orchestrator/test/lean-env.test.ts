@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { promisify } from "node:util";
 import type { CommandRunner, Fetcher, PackageFile } from "@seshat/lean-env";
 import { leanEnvCommand, type LeanEnvIo } from "../src/lean-env-command.ts";
+import { freshLeanEnvDir } from "./m0-helpers.ts";
 
 const run = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -104,10 +105,16 @@ describe("harness lean-env", () => {
   });
 
   it("runs from the command line against the repository's environments without the network (show)", async () => {
-    const { stdout } = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "lean-env", "show"]);
-    assert.match(stdout, /^base: (unresolved|resolved)/m);
-    assert.match(stdout, /^extended: (unresolved|resolved)/m);
-    const failed = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "lean-env", "show", "nope"]).catch((e: { code: number; stderr: string; stdout: string }) => e);
+    // The repository's environment files, without what this machine resolved or built from them.
+    const env = { ...process.env, SESHAT_LEAN_ENV_DIR: freshLeanEnvDir() };
+    const { stdout } = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "lean-env", "show"], { env });
+    assert.match(stdout, /^base: unresolved/m);
+    assert.match(stdout, /^extended: unresolved/m);
+    const failed = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "lean-env", "show", "nope"], { env }).catch((e: { code: number; stderr: string; stdout: string }) => e);
     assert.equal((failed as { code: number }).code, 2);
+    // --env-dir wins over SESHAT_LEAN_ENV_DIR.
+    const other = root({ "only.toml": BASE });
+    const chosen = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "lean-env", "show", "--env-dir", other], { env });
+    assert.equal(chosen.stdout, "only: unresolved\n");
   });
 });

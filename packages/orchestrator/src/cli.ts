@@ -15,7 +15,7 @@ import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@ses
 import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
 import { openForAnswers } from "./team.ts";
-import { hostLeanEnv, hostName, openRegistry, REPO_ROOT } from "./implementations.ts";
+import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
@@ -129,7 +129,8 @@ run with those definitions in its memory.
 models: the providers pi-ai knows and whether their credentials are set; with PROVIDER, its models.
 lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve checks that the packages of an
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
-Lean), show says where each one stands. harness lean-env --help has the details.
+Lean), show says where each one stands. harness lean-env --help has the details. The directory is --env-dir,
+SESHAT_LEAN_ENV_DIR or lean/env; every other command looks the host's environment up in SESHAT_LEAN_ENV_DIR or lean/env.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
@@ -1016,7 +1017,7 @@ async function resume(directory: string): Promise<number> {
 async function leanEnv(): Promise<number> {
   const controller = stoppable();
   return await leanEnvCommand(target, third, { find: values.find === true }, {
-    ...(values["env-dir"] !== undefined ? { root: resolve(values["env-dir"]) } : {}),
+    root: leanEnvDirectory(values["env-dir"] !== undefined ? resolve(values["env-dir"]) : undefined),
     signal: controller.signal,
     out: (line) => console.log(line),
     err: (line) => console.error(line),

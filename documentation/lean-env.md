@@ -85,7 +85,9 @@ into the file, because a later `resolve` without `--find` refuses a package with
 
 When everything agrees, it writes the environment's project into `lean/env/<name>/`
 (`lean/env/*/` is ignored by git: it is the output of a step that needs the network, and the lock
-rebuilds from the file):
+rebuilds from the file). What this page calls `lean/env/` is the directory of the environments:
+`--env-dir DIR` for `harness lean-env`, otherwise `SESHAT_LEAN_ENV_DIR` (for every command, a run
+included), otherwise `lean/env/` of the repository. The files written there are:
 
 | File | Content |
 |---|---|
@@ -154,7 +156,10 @@ Then the Lean server is pointed at the project: `LEAN_SERVER_PROJECT_DIR=$PWD/le
 
 The host profiles name the environment: `"leanEnv": "${env:LEAN_ENV:-base}"` in both
 `config/hosts/*.json`, so `LEAN_ENV=extended pnpm harness run ...` runs in `extended`, and a host
-without the key names none. `openRegistry` looks the environment up when it builds the registry:
+without the key names none. `openRegistry` looks the environment up when it builds the registry, in
+`lean/env/` or the directory `SESHAT_LEAN_ENV_DIR` names (the tests that run `harness` point it at a
+copy of the environment files with no project, so that an environment resolved or built on the
+machine changes none of their results):
 
 - **The project.** The lock is read from the project directory the Lean tools use: `LEAN_PROJECT_DIR`
   when it is set (a plain checkout of the bench has no lock, so its environment is unresolved), and

@@ -8,14 +8,17 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { promisify } from "node:util";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { check, demoBench, demoRun, killedAt, tempDir } from "./m0-helpers.ts";
+import { check, demoBench, demoRun, freshLeanEnvDir, killedAt, tempDir } from "./m0-helpers.ts";
 
 const run = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
 
+/** The Lean environments as a fresh checkout has them, whatever this machine resolved or built. */
+const LEAN_ENV_DIR = freshLeanEnvDir();
+
 /** Runs the CLI; an `undefined` in `env` removes that variable. */
 async function harness(args: string[], env: Record<string, string | undefined> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
-  const merged: Record<string, string | undefined> = { ...process.env, HARNESS_HOST: "", ...env };
+  const merged: Record<string, string | undefined> = { ...process.env, HARNESS_HOST: "", SESHAT_LEAN_ENV_DIR: LEAN_ENV_DIR, ...env };
   for (const [name, value] of Object.entries(merged)) if (value === undefined) delete merged[name];
   try {
     const { stdout, stderr } = await run(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: merged });

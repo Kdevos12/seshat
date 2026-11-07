@@ -5,16 +5,18 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { promisify } from "node:util";
 import { readEvents } from "@seshat/core";
-import { check, demoRun, ofType, tempDir } from "./m0-helpers.ts";
+import { check, demoRun, freshLeanEnvDir, ofType, tempDir } from "./m0-helpers.ts";
 import { scriptedJournal } from "./scripted-journal.ts";
 import { consortium } from "./turns-helpers.ts";
 
 const exec = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
+/** The Lean environments as a fresh checkout has them, whatever this machine resolved or built. */
+const LEAN_ENV_DIR = freshLeanEnvDir();
 
 async function harness(args: string[], env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await exec(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "", ...env } });
+    const { stdout, stderr } = await exec(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "", SESHAT_LEAN_ENV_DIR: LEAN_ENV_DIR, ...env } });
     return { code: 0, stdout, stderr };
   } catch (error) {
     const e = error as { code: number; stdout: string; stderr: string };
