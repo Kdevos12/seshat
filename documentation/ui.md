@@ -130,7 +130,9 @@ screen says so. Nothing is mapped by hand, so a provider the library adds works 
 A path inside the repository is refused (by real path: a link into the repository does not get round it), so a key cannot be committed. The interface creates the key directory with mode 0700 and changes the mode of that one directory only; a parent the person made keeps its mode. The file is read only if it is a plain file of the
 current user that no one else can read; otherwise the settings screen says to `chmod 600` it, and no command is started
 with keys the interface cannot trust. A stored key counts as credentials for the doctor and for the model list, and a
-stored key wins over the same variable in the server's own environment.
+stored key wins over the same variable in the server's own environment. That environment is the one the server starts its
+commands from (`startServer`'s `env`, the process's by default), so the doctor and the model list count the credentials a
+command would get, and a test that gives the server an environment of its own sees none of the machine's.
 
 **How a command receives it.** The process manager adds a stored key to the environment of the subprocess, under the variable
 the library reads: the command finds its credentials as it does when you export them yourself. A command gets only the key of

@@ -11,12 +11,12 @@ import { consortium } from "./turns-helpers.ts";
 
 const exec = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
-/** The Lean environments as a fresh checkout has them, whatever this machine resolved or built. */
+/** The Lean environments as a fresh checkout has them, whatever this machine resolved or built; the Lean server address answers nothing. */
 const LEAN_ENV_DIR = freshLeanEnvDir();
 
 async function harness(args: string[], env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await exec(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "", SESHAT_LEAN_ENV_DIR: LEAN_ENV_DIR, ...env } });
+    const { stdout, stderr } = await exec(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], { env: { ...process.env, HARNESS_HOST: "", SESHAT_LEAN_ENV_DIR: LEAN_ENV_DIR, LEAN_SERVER_API_URL: "http://127.0.0.1:9", ...env } });
     return { code: 0, stdout, stderr };
   } catch (error) {
     const e = error as { code: number; stdout: string; stderr: string };
