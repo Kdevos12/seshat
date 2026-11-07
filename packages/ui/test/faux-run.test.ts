@@ -10,8 +10,10 @@ const open: Started[] = [];
 after(async () => {
   for (const s of open) await s.server.close();
 });
+// The grace between the interrupt and SIGTERM is the real default: on a loaded machine the stopped run can take more than the two
+// seconds of the other tests to write RESULT.md, and SIGTERM would end it before.
 const faux = (env: Record<string, string> = {}) =>
-  started({ env: { PATH: process.env.PATH ?? "", ...env }, command: (argv) => ({ file: process.execPath, args: ["--disable-warning=ExperimentalWarning", FAUX, ...argv] }) });
+  started({ graceMs: 10_000, env: { PATH: process.env.PATH ?? "", ...env }, command: (argv) => ({ file: process.execPath, args: ["--disable-warning=ExperimentalWarning", FAUX, ...argv] }) });
 
 describe("a run started through the API with the faux provider", () => {
   it("formalizes, waits for the signature, runs, and the journal reader says proved", async () => {

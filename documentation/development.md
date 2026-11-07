@@ -30,11 +30,16 @@ pnpm test
   in-memory transport (`packages/orchestrator/test/fixtures/fake-sage.ts`), and a simulated
   lean-lsp-mcp (`packages/lean-lsp/test/fixtures/fake-lean-lsp-mcp.ts`, which checks every call
   against the arguments recorded from the real release); the command tests run `harness` as a
-  child process. They set `SESHAT_LEAN_ENV_DIR` to a copy of `lean/env/*.toml` without the projects
-  (`freshLeanEnvDir` in `m0-helpers.ts`), so that a test gives the same result whether or not this
-  machine has run `harness lean-env resolve` or `build`: a resolved environment would otherwise add
-  `+env:NAME@HASH` to every Lean tool's version, and a built one would become the default
-  `LEAN_PROJECT_DIR` ([lean-env.md](lean-env.md#in-a-run)).
+  child process. A test gives the same result whatever the machine has on it. The command tests set
+  `SESHAT_LEAN_ENV_DIR` to a copy of `lean/env/*.toml` without the projects (`freshLeanEnvDir` in
+  `m0-helpers.ts`): a resolved environment would otherwise add `+env:NAME@HASH` to every Lean tool's
+  version, and a built one would become the default `LEAN_PROJECT_DIR`
+  ([lean-env.md](lean-env.md#in-a-run)). They set `LEAN_SERVER_API_URL` to an address that answers
+  nothing unless a test starts its own fake server, so a Kimina server on the machine's default
+  address is never asked; and `cli.test.ts` sets `HARNESS_HOST=local`, so `solve` and `doctor` do not
+  take the `sandboxed` profile a `harness doctor` may have written. The interface's tests give the
+  server an environment and a config directory of their own (`packages/ui/test/helpers.ts`), so the
+  machine's model credentials and host profiles are not seen.
 - A change updates the documentation page that describes it, in the same commit.
 - The diagram in the README, "How research flows", shows the steps a statement goes through and the
   tools a prover can call, each marked built, written but waiting for a Lean server, or planned. A

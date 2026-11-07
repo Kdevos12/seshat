@@ -8,6 +8,7 @@ import { REPO_ROOT, type DoctorSystem } from "@seshat/orchestrator";
 import { createApp } from "./app.ts";
 import { type CommandFactory, ProcessManager } from "./jobs.ts";
 import { defaultKeyFile, KeyStore } from "./keys.ts";
+import { serverModels } from "./providers.ts";
 import { newToken } from "./security.ts";
 
 /** The address the server binds to. It is never configurable: a local interface is not a service. */
@@ -27,11 +28,12 @@ export interface ServerOptions {
   staticDir?: string;
   /** How a command is started; default the real `harness`. */
   command?: CommandFactory;
+  /** The providers; default pi-ai's own, with the credentials of `env` and the stored keys. */
   models?: Models;
   system?: DoctorSystem;
   configDir?: string;
   log?: (line: string) => void;
-  /** The environment the commands start from. Default the process's. */
+  /** The environment the commands start from, and whose credentials the providers count. Default the process's. */
   env?: Readonly<Record<string, string | undefined>>;
   graceMs?: number;
   pollMs?: number;
@@ -79,7 +81,8 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     staticDir: options.staticDir ?? STATIC_DIR,
     keys,
     manager,
-    ...(options.models !== undefined ? { models: options.models } : {}),
+    // The models see the credentials the commands get: the server's environment and the stored keys.
+    models: options.models ?? serverModels(keys, baseEnv),
     ...(options.system !== undefined ? { system: options.system } : {}),
     ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
     ...(options.log !== undefined ? { log: options.log } : {}),
