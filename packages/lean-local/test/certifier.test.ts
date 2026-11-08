@@ -5,7 +5,7 @@ import { basename, join, sep } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type CertificationRequest, CertifyFailedError, STANDARD_AXIOMS } from "@seshat/core";
-import { CERTIFY_PROGRAM, LakeCertifier, type LakeCertifierOptions, nameComponents } from "../src/index.ts";
+import { CERTIFY_PROGRAM, LakeCertifier, type LakeCertifierOptions, nameComponents, TARGET_MODULE } from "../src/index.ts";
 
 const FAKE_LAKE = fileURLToPath(new URL("./fixtures/fake-lake.ts", import.meta.url));
 const FAKE_SANDBOX = fileURLToPath(new URL("./fixtures/fake-sandbox.ts", import.meta.url));
@@ -13,6 +13,10 @@ const NODE = ["--disable-warning=ExperimentalWarning"];
 
 interface Call {
   args: string[];
+  /** The arguments after `env lean`, as the fake read them as Lean does. */
+  lean: { mode?: "--version" | "-o" | "--run"; out?: string; root?: string; input?: string; run?: string[] };
+  /** The module name Lean gives the file a compile (`-o`) read. */
+  module?: string;
   cwd: string;
   env: string[];
   request?: { reference: string; candidate: string; target: string[]; allowedAxioms: string[][] };
@@ -84,15 +88,25 @@ describe("LakeCertifier", () => {
 
     // The version, the candidate, then the reference, then the program; all in the Lean project.
     const seen = calls();
-    assert.deepEqual(seen.map((c) => c.args.slice(0, 4).map((a) => a.replace(/^.*[\\/]/, ""))), [
+    assert.deepEqual(seen.map((c) => [...c.args.slice(0, 2), c.lean.mode]), [
       ["env", "lean", "--version"],
-      ["env", "lean", "-o", "candidate.olean"],
-      ["env", "lean", "-o", "reference.olean"],
-      ["env", "lean", "--run", "Main.lean"],
+      ["env", "lean", "-o"],
+      ["env", "lean", "-o"],
+      ["env", "lean", "--run"],
     ]);
     for (const call of seen) assert.equal(call.cwd.replace(/^\/private/, ""), project.replace(/^\/private/, ""));
+    // Each compile's source is in its own directory, outside the project, so that directory is Lean's root
+    // (Lean v4.27.0 refuses a source outside it), and the two modules get the same name.
+    const compiles = seen.filter((c) => c.lean.mode === "-o");
+    for (const [i, kind] of ["candidate", "reference"].entries()) {
+      const { root, input, out } = compiles[i]?.lean ?? {};
+      assert.match(root ?? "", new RegExp(`${kind}-[^\\\\/]+$`), kind);
+      assert.equal(input, join(root ?? "", `${TARGET_MODULE}.lean`), kind);
+      assert.equal(out, join(root ?? "", `${TARGET_MODULE}.olean`), kind);
+    }
+    assert.deepEqual(compiles.map((c) => c.module), [TARGET_MODULE, TARGET_MODULE], "both modules have the same name");
     // The program is the repository's, as the certifier read it when it was made, in the directory of the replay.
-    assert.match(seen[3]?.args[3] ?? "", /replay-[^\\/]+[\\/]Main\.lean$/);
+    assert.match(seen[3]?.lean.run?.[0] ?? "", /replay-[^\\/]+[\\/]Main\.lean$/);
     assert.equal(seen[3]?.program, readFileSync(CERTIFY_PROGRAM, "utf8"));
   });
 
@@ -192,7 +206,7 @@ describe("LakeCertifier", () => {
     ]);
     assert.deepEqual(result.axioms, []);
     // The reference was compiled as well, to see that the errors are the candidate's; the program was not run.
-    assert.deepEqual(calls().map((c) => c.args[2]), ["--version", "-o", "-o"]);
+    assert.deepEqual(calls().map((c) => c.lean.mode), ["--version", "-o", "-o"]);
     assert.deepEqual(readdirSync(workDir), []);
   });
 
@@ -205,7 +219,7 @@ describe("LakeCertifier", () => {
     assert.match(error.message, /unknown module prefix 'FormalConjectures'/);
     assert.match(error.message, /Lean environment/);
     // The reference was compiled after the candidate's process had ended; the program was not run.
-    assert.deepEqual(calls().map((c) => c.args[2]), ["--version", "-o", "-o"]);
+    assert.deepEqual(calls().map((c) => c.lean.mode), ["--version", "-o", "-o"]);
     assert.deepEqual(readdirSync(workDir), []);
   });
 
@@ -214,8 +228,8 @@ describe("LakeCertifier", () => {
     const result = await certifier.certify(request(marker("compile-error")));
     assert.equal(result.verdict, "rejected");
     assert.deepEqual(
-      calls().filter((c) => c.args[2] === "-o").map((c) => c.args[4]?.replace(/^.*[\\/]/, "")),
-      ["candidate.lean", "reference.lean"],
+      calls().filter((c) => c.lean.mode === "-o").map((c) => c.lean.root?.replace(/^.*[\\/]/, "").replace(/-[^-]*$/, "")),
+      ["candidate", "reference"],
     );
   });
 
@@ -278,7 +292,7 @@ describe("LakeCertifier", () => {
     assert.equal((await failure(certifier.certify(request(""), { signal: before }))).reason, "aborted");
     const controller = new AbortController();
     const pending = failure(certifier.certify(request(marker("hang")), { signal: controller.signal, timeoutSec: 60 }));
-    await waitUntil(() => calls().some((c) => c.args[2] === "-o"));
+    await waitUntil(() => calls().some((c) => c.lean.mode === "-o"));
     controller.abort();
     const error = await pending;
     assert.equal(error.reason, "aborted");
@@ -319,13 +333,14 @@ describe("LakeCertifier", () => {
       await certifier.certify(request(""));
       await certifier.certify(request(""));
       const seen = calls();
-      assert.deepEqual(seen.map((c) => c.args.slice(2, 5).map((a) => a.replace(/^.*[\\/]/, ""))).slice(0, 3), [
+      assert.deepEqual(seen.map((c) => [c.lean.mode, c.lean.out, c.lean.input].filter((a) => a !== undefined).map((a) => a.replace(/^.*[\\/]/, ""))).slice(0, 3), [
         ["--version"],
         ["-o", "probe.olean", "probe.lean"],
-        ["-o", "candidate.olean", "candidate.lean"],
+        ["-o", `${TARGET_MODULE}.olean`, `${TARGET_MODULE}.lean`],
       ]);
+      assert.equal(seen[1]?.module, "probe", "the probe's directory is its root");
       assert.equal(seen[1]?.source, `${PROBE}\n`, "the probe file holds the import");
-      assert.equal(seen.filter((c) => c.args[2] === "--version").length, 1);
+      assert.equal(seen.filter((c) => c.lean.mode === "--version").length, 1);
       assert.equal(seen.filter((c) => c.args.some((a) => a.endsWith("probe.lean"))).length, 1);
       assert.deepEqual(readdirSync(workDir), [], "the probe's directory is removed");
     });
@@ -340,9 +355,9 @@ describe("LakeCertifier", () => {
       assert.equal(error.reason, "unavailable");
       assert.match(error.message, /unknown module prefix 'FormalConjectures'/);
       // No candidate was compiled, and the failure is not kept: the second call looked again.
-      const compiles = calls().filter((c) => c.args[2] === "-o");
+      const compiles = calls().filter((c) => c.lean.mode === "-o");
       assert.equal(compiles.length, 2);
-      assert.ok(compiles.every((c) => c.args[4]?.endsWith("probe.lean")));
+      assert.ok(compiles.every((c) => c.lean.input?.endsWith("probe.lean")));
       assert.deepEqual(readdirSync(workDir), []);
     });
 
@@ -350,7 +365,7 @@ describe("LakeCertifier", () => {
       const { certifier, calls } = setup({ probe: PROBE, env: { FAKE_LAKE_VERSION: "Lean (version 4.26.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)" } });
       const down = await certifier.health();
       assert.equal(down.ok, false);
-      assert.deepEqual(calls().map((c) => c.args[2]), ["--version"]);
+      assert.deepEqual(calls().map((c) => c.lean.mode), ["--version"]);
     });
   });
 
@@ -392,13 +407,13 @@ describe("LakeCertifier", () => {
       const controller = new AbortController();
       const first = failure(certifier.certify(request(""), { signal: controller.signal }));
       const second = certifier.certify(request(""));
-      await waitUntil(() => calls().some((c) => c.args[2] === "--version"));
+      await waitUntil(() => calls().some((c) => c.lean.mode === "--version"));
       const aborted = performance.now();
       controller.abort();
       assert.equal((await first).reason, "aborted");
       assert.ok(performance.now() - aborted < 1_000, "the first certification did not wait for the check");
       assert.equal((await second).verdict, "certified");
-      assert.equal(calls().filter((c) => c.args[2] === "--version").length, 1, "one check served the one that stayed");
+      assert.equal(calls().filter((c) => c.lean.mode === "--version").length, 1, "one check served the one that stayed");
     });
 
     it("starts a new check after the only one that waited has gone", { timeout: 20_000 }, async () => {
@@ -410,7 +425,7 @@ describe("LakeCertifier", () => {
       assert.equal((await first).reason, "aborted");
       const result = await certifier.certify(request(""));
       assert.equal(result.verdict, "certified");
-      assert.equal(calls().filter((c) => c.args[2] === "--version").length, 2, "the stopped check was not reused");
+      assert.equal(calls().filter((c) => c.lean.mode === "--version").length, 2, "the stopped check was not reused");
     });
   });
 
@@ -512,7 +527,7 @@ describe("LakeCertifier", () => {
     assert.equal((await certifier.certify(request(marker("tamper-program")))).verdict, "certified");
     assert.match(readFileSync(program, "utf8"), /^-- tampered/, "the compile rewrote the file");
     assert.equal((await certifier.certify(request(""))).verdict, "certified");
-    const runs = calls().filter((c) => c.args[2] === "--run");
+    const runs = calls().filter((c) => c.lean.mode === "--run");
     assert.equal(runs.length, 2);
     for (const run of runs) assert.equal(run.program, original, "the replay ran the program as it was read");
   });

@@ -22,6 +22,8 @@ const INPUT = {
 
 interface Logged {
   args: string[];
+  /** The arguments after `env lean`, as the fake read them. */
+  lean: { mode?: string; input?: string };
   source?: string;
 }
 
@@ -63,7 +65,7 @@ describe("the lake-certify factory", () => {
     const [entry] = await registry.health("lean.certify");
     assert.equal(entry?.ok, true, entry?.detail);
     assert.match(entry?.detail ?? "", /the probe file compiles/);
-    assert.equal(calls().find((c) => c.args[2] === "-o")?.source, "import FormalConjectures.Util.ProblemImports\n");
+    assert.equal(calls().find((c) => c.lean.mode === "-o")?.source, "import FormalConjectures.Util.ProblemImports\n");
   });
 
   it("is unhealthy, with Lean's reason, when the project cannot import the prelude, and then refuses a certification", async () => {
@@ -76,17 +78,17 @@ describe("the lake-certify factory", () => {
       registry.invoke("lean.certify", INPUT),
       (e: unknown) => e instanceof CapabilityError && e.code === "unavailable" && /unknown module prefix 'FormalConjectures'/.test(e.message),
     );
-    assert.ok(calls().every((c) => c.args[2] !== "-o" || c.args[4]?.endsWith("probe.lean")), "no candidate was compiled against the broken project");
+    assert.ok(calls().every((c) => c.lean.mode !== "-o" || c.lean.input?.endsWith("probe.lean")), "no candidate was compiled against the broken project");
   });
 
   it("lets the host change the probe or leave it out", async () => {
     const other = registryWith({ probe: "import Mathlib" });
     assert.equal((await other.registry.health("lean.certify"))[0]?.ok, true);
-    assert.equal(other.calls().find((c) => c.args[2] === "-o")?.source, "import Mathlib\n");
+    assert.equal(other.calls().find((c) => c.lean.mode === "-o")?.source, "import Mathlib\n");
     const none = registryWith({ probe: "" }, { FAKE_LAKE_BROKEN_IMPORTS: "1" });
     const [entry] = await none.registry.health("lean.certify");
     assert.equal(entry?.ok, true, "only the version is checked");
-    assert.deepEqual(none.calls().map((c) => c.args[2]), ["--version"]);
+    assert.deepEqual(none.calls().map((c) => c.lean.mode), ["--version"]);
   });
 });
 
