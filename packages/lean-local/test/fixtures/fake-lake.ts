@@ -3,8 +3,12 @@
  * certifier makes (documentation/certifier.md#the-process):
  *
  *   lake env lean --version
- *   lake env lean -o OUT.olean IN.lean          (the "object file" is a copy of the source)
- *   lake env lean --run PROGRAM request.json    (the verdict is chosen by a marker in the candidate)
+ *   lake env lean --root=DIR -o OUT.olean IN.lean  (the "object file" is a copy of the source)
+ *   lake env lean --run PROGRAM request.json       (the verdict is chosen by a marker in the candidate)
+ *
+ * As Lean v4.27.0 does, a compile with `-o` names the module from the source's path relative to the
+ * root directory (`--root`, `-R`, or else the working directory), and fails with exit code 1 when the
+ * source is outside it. The module name is in the log (`module`).
  *
  * A marker is a line `-- fake: <name>` in the file. Every call is appended to the file named by
  * FAKE_LAKE_LOG, as a line of JSON.
@@ -25,21 +29,65 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const args = process.argv.slice(2);
 const log = process.env.FAKE_LAKE_LOG;
+
+/** The arguments after `env lean`, read as Lean reads them. */
+interface LeanCall {
+  mode?: "--version" | "-o" | "--run";
+  out?: string;
+  root?: string;
+  input?: string;
+  /** For `--run`: the program, then its arguments. */
+  run?: string[];
+}
+function parse(rest: readonly string[]): LeanCall {
+  const call: LeanCall = {};
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i] as string;
+    if (arg === "--version") call.mode = "--version";
+    else if (arg === "-o") {
+      call.mode ??= "-o";
+      call.out = rest[++i] ?? "";
+    } else if (arg.startsWith("--o=")) {
+      call.mode ??= "-o";
+      call.out = arg.slice(4);
+    } else if (arg === "-R" || arg === "--root") call.root = rest[++i] ?? "";
+    else if (arg.startsWith("--root=")) call.root = arg.slice(7);
+    else if (arg === "--run") {
+      call.mode = "--run";
+      call.run = rest.slice(i + 1);
+      break;
+    } else if (arg.startsWith("-")) {
+      process.stderr.write(`fake lake: unknown option ${arg}\n`);
+      process.exit(2);
+    } else call.input = arg;
+  }
+  return call;
+}
+const lean = args[0] === "env" && args[1] === "lean" ? parse(args.slice(2)) : {};
+
+/** The module Lean names a compiled file: its path relative to the root, or undefined when it is not inside. */
+function moduleOf(input: string, root: string): string | undefined {
+  const path = relative(resolve(root), resolve(input));
+  if (path === "" || path.startsWith("..") || isAbsolute(path)) return undefined;
+  return path.replace(/\.lean$/, "").split(sep).join(".");
+}
+const module = lean.mode === "-o" && lean.input !== undefined ? moduleOf(lean.input, lean.root ?? process.cwd()) : undefined;
+
 // The request of a `--run` call is in the log, since the certifier removes the file afterwards.
-const request = args[2] === "--run" ? (JSON.parse(readFileSync(args[4] as string, "utf8")) as { reference: string; candidate: string; target: string[]; allowedAxioms: string[][] }) : undefined;
+const request = lean.mode === "--run" ? (JSON.parse(readFileSync(lean.run?.[1] as string, "utf8")) as { reference: string; candidate: string; target: string[]; allowedAxioms: string[][] }) : undefined;
 // The file a compile reads is in the log too, since the certifier removes its directory afterwards.
-const compiled = args[2] === "-o" && existsSync(args[4] as string) ? readFileSync(args[4] as string, "utf8") : undefined;
+const compiled = lean.mode === "-o" && lean.input !== undefined && existsSync(lean.input) ? readFileSync(lean.input, "utf8") : undefined;
 // The program of a `--run` call, likewise.
-const program = args[2] === "--run" && existsSync(args[3] as string) ? readFileSync(args[3] as string, "utf8") : undefined;
+const program = lean.mode === "--run" && existsSync(lean.run?.[0] as string) ? readFileSync(lean.run?.[0] as string, "utf8") : undefined;
 if (log !== undefined) {
   const { TMPDIR: tmpdir, HOME: home } = process.env;
   appendFileSync(
     log,
-    `${JSON.stringify({ args, cwd: process.cwd(), env: Object.keys(process.env).sort(), values: { tmpdir, home }, request, source: compiled, program })}\n`,
+    `${JSON.stringify({ args, lean, module, cwd: process.cwd(), env: Object.keys(process.env).sort(), values: { tmpdir, home }, request, source: compiled, program })}\n`,
   );
 }
 
@@ -56,7 +104,7 @@ const hang = (): never => {
 };
 
 if (args[0] !== "env" || args[1] !== "lean") fail(`fake lake: unexpected call: ${args.join(" ")}`);
-const [mode, first, second] = args.slice(2);
+const mode = lean.mode;
 
 if (mode === "--version") {
   const print = () => console.log(process.env.FAKE_LAKE_VERSION ?? "Lean (version 4.27.0, x86_64-unknown-linux-gnu, commit 0123456789ab, Release)");
@@ -65,8 +113,13 @@ if (mode === "--version") {
   else if (process.env.FAKE_LAKE_VERSION_DELAY_MS !== undefined) setTimeout(print, Number(process.env.FAKE_LAKE_VERSION_DELAY_MS));
   else print();
 } else if (mode === "-o") {
-  const out = first as string;
-  const input = second as string;
+  const out = lean.out as string;
+  const input = lean.input as string;
+  if (module === undefined) {
+    // What Lean v4.27.0 says on stderr, with exit code 1, for a source outside its root directory.
+    const root = resolve(lean.root ?? process.cwd());
+    fail(`input file '${input}' must be contained in root directory (${root}${sep})`, 1);
+  }
   const text = readFileSync(input, "utf8");
   const m = markers(text);
   if (process.env.FAKE_LAKE_BROKEN_IMPORTS === "1") {

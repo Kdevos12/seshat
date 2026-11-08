@@ -8,11 +8,15 @@ target's axioms itself and compares the target with the reference's as terms. Th
 [lean4checker](https://github.com/leanprover/lean4checker) and
 [SafeVerify](https://github.com/GasStationManager/SafeVerify).
 
-**Status.** The TypeScript side is written and tested against a fake `lake`. The Lean program,
-`lean/SeshatCertify/Main.lean`, has never been compiled, and nothing here has run against a real
-Lean: it was written in an environment without one, from the sources of Lean v4.27.0, lean4checker
-and SafeVerify. [To verify against Lean](#to-verify-against-lean) lists what the first run must
-check.
+**Status.** The TypeScript side is tested against a fake `lake`, and on 2026-11-08 the whole
+certification ran for the first time against a real Lean v4.27.0, in the built project
+`lean/env/base` ([what ran](#what-ran-against-a-real-lean)), without a sandbox and through the
+bubblewrap recipe below: the version check and the probe, both compiles, the replay by
+`lean/SeshatCertify` and the verdict. That first run found two faults, fixed since: Lean v4.27.0
+refuses to compile with `-o` a source outside its root directory (the working directory, here the
+project), so every certification failed at the probe; and the program did not compile (its `main`
+returned a `0` that Lean elaborated as a `Nat`). Only a one-line theorem of Mathlib was certified:
+[to verify against Lean](#to-verify-against-lean) lists what has not been run yet.
 
 ## What it answers
 
@@ -47,20 +51,32 @@ lean.certify` compiles a probe file before a run.
 bench (`projectDir`, the working directory of every call):
 
 1. once per certifier, `lake env lean --version`, which must report the pinned version, and then,
-   if the setting `probe` is not empty, `lake env lean -o probe.olean probe.lean` on a file that
-   holds it (the manifest sets `import FormalConjectures.Util.ProblemImports`, the prelude of the
+   if the setting `probe` is not empty, `lake env lean --root=DIR -o DIR/probe.olean DIR/probe.lean`
+   on a file that holds it, in a directory `DIR` of the check's own (the manifest sets `import FormalConjectures.Util.ProblemImports`, the prelude of the
    bench's files). A project that is not built, or is not the bench's checkout, fails here, and the
    certifier is unavailable with Lean's message. `pnpm harness health lean.certify` runs the same
    check. It is shared by the certifications that wait for it, and a failure is not kept: the next
    call looks again;
-2. `lake env lean -o candidate.olean candidate.lean`, in a directory of its own;
-3. `lake env lean -o reference.olean reference.lean`, the reference compiled again for each
+2. `lake env lean --root=DIR -o DIR/SeshatTarget.olean DIR/SeshatTarget.lean` on the candidate, in
+   a directory `DIR` of its own;
+3. the same on the reference, in another directory of its own, the reference compiled again for each
    certification, after the candidate's process has ended, whether or not the candidate compiled: a
    candidate is rejected for its errors only when the reference compiles, and when neither does the
    call fails (`failed`, "neither the candidate nor the reference compiles") instead of recording
    a rejection;
 4. `lake env lean --run Main.lean request.json`, with the program's copy and the request in the
    directory of the replay, which prints one line of JSON.
+
+**The module name.** With `-o`, Lean names the module it compiles from the source's path relative
+to its root directory, which is the working directory unless `--root` gives another, and it refuses
+a source outside it (`input file '…' must be contained in root directory (…)`, exit code 1). Every
+call runs in the Lean project, where `lake env` finds the bench's modules, and every source is in
+the call's own directory, outside the project: so each compile gives Lean that directory as its root,
+and the module is named after the file alone. The candidate and the reference are both written as
+`SeshatTarget.lean` (the module `SeshatTarget`, `TARGET_MODULE` in `certifier.ts`), so that their
+private names (`_private.SeshatTarget.0.…`) and hygienic names are the same and the comparison of
+the replay can match them; Lean's messages are given with the file called `candidate.lean` or
+`reference.lean`. The replay (`--run`) writes no object file and needs no root.
 
 Each call is a process group of its own, killed as a whole at the time limit or on abort (the
 version check and the probe too: a certification that is aborted does not wait for them, and when no
@@ -173,11 +189,11 @@ rewrite for later replays. It does not enforce, and without a sandbox nothing do
 memory, on disk or on processes (a compile that allocates without end takes the machine's memory
 until the time limit, and the out-of-memory killer may choose another victim), which files the
 process can read or write outside `{work}`, and which network it can reach. A sandbox command is
-how a host limits them. Whether `lake env` works with a read-only project, and whether the toolchain
-is reachable from inside a sandbox, depends on the sandbox and was not tried.
+how a host limits them. With recipe 1, `lake env` works with the project read-only and finds the
+toolchain ([what ran](#what-ran-against-a-real-lean)); the other recipes were not tried.
 
-**Recipes, none of them tried here** (no Lean and no sandbox tool in the environment this was written
-in): all three put the project read-only, leave `{work}` as the only place to write, and have no
+**Recipes**, of which only the first has run, with a real Lean
+([what ran](#what-ran-against-a-real-lean)): all three put the project read-only, leave `{work}` as the only place to write, and have no
 network. Check each with `pnpm harness health lean.certify`, which runs the version check and the
 probe through it, then a certification of a known proof.
 
@@ -316,7 +332,9 @@ claim and to the problem's outcome. In short:
 
 `packages/lean-local/test` runs `LakeCertifier` against a fake `lake`
 (`fixtures/fake-lake.ts`, a script that prints what the real one would: the version, a copy of the
-source as the object file, a verdict chosen by a marker in the candidate) and a fake sandbox
+source as the object file, a verdict chosen by a marker in the candidate; like Lean v4.27.0, it
+refuses to compile with `-o` a source outside `--root` or the working directory, and logs the module
+name it gives the file) and a fake sandbox
 (`fixtures/fake-sandbox.ts`, which tells the fake `lake` where it may write): certified and rejected
 candidates, a kernel refusal, a type that differs from the reference's, axioms outside the allowed
 set, a program that lies about them, a file that does not compile, a reference that does not, Lean
@@ -326,7 +344,8 @@ keeps it), an unavailable or wrong `lake`, a project that compiles nothing (the 
 rejected, and the probe says so before anything is compiled), the environment the child gets
 (exactly the variables listed above, with the harness's credentials, sockets and `HOME`-like
 variables set), a sandbox command with a directory of its own for each call, a compile that plants
-a directory or a named pipe where the next steps would write, a compile that rewrites the program,
+a directory or a named pipe where the next steps would write, each compile given its own directory as
+`--root` with the two modules named the same, a compile that rewrites the program,
 an object file that is a link, and a certifier that is not made without a sandbox or `unsandboxed`.
 `packages/lean-local/test/factory.test.ts` runs the factory through the registry with the
 manifest's own settings: the probe, and the fail-closed rule (the shipped profiles `local` and
@@ -336,7 +355,7 @@ and the contract. `packages/orchestrator/test/certify.test.ts` runs the certific
 loop with fake certifiers and with the registry, with M1, M6 and the fleet on among them
 ([m0-loop.md](m0-loop.md#tested-and-not-yet)), and
 `packages/graph/test/line.test.ts` has M2's twin refute a claim with a certifier. None of them has a
-Lean, a sandbox or a real `lake`: what those do is the list below.
+Lean, a sandbox or a real `lake`: what ran with those is [above](#what-ran-against-a-real-lean).
 
 ## Deployment
 
@@ -346,7 +365,7 @@ The certifier needs the bench's Lean project built, as `lean.check` does
 
 ```sh
 export LEAN_PROJECT_DIR=/path/to/formal-conjectures
-(cd lean/SeshatCertify && lake build)   # the first compile of the program; fix what it reports
+(cd lean/SeshatCertify && lake build)   # optional: the certifier interprets Main.lean with --run
 # lean.certify is unavailable until the host profile has a sandbox (or unsandboxed: true): add one,
 # in a copy of config/hosts/local.json, and pass it with --host
 pnpm harness health lean.certify
@@ -356,40 +375,64 @@ pnpm harness contract lean.certify --out certify-contract.json
 To run the program by hand on two files, from the project directory:
 
 ```sh
-lake env lean -o /tmp/ref.olean /tmp/ref.lean
-lake env lean -o /tmp/cand.olean /tmp/cand.lean
-echo '{"reference":"/tmp/ref.olean","candidate":"/tmp/cand.olean","target":["Ns","name"],"allowedAxioms":[["propext"],["Classical","choice"],["Quot","sound"]]}' > /tmp/request.json
+mkdir -p /tmp/ref /tmp/cand   # each holding SeshatTarget.lean, the reference's and the candidate's
+lake env lean --root=/tmp/ref -o /tmp/ref/SeshatTarget.olean /tmp/ref/SeshatTarget.lean
+lake env lean --root=/tmp/cand -o /tmp/cand/SeshatTarget.olean /tmp/cand/SeshatTarget.lean
+echo '{"reference":"/tmp/ref/SeshatTarget.olean","candidate":"/tmp/cand/SeshatTarget.olean","target":["Ns","name"],"allowedAxioms":[["propext"],["Classical","choice"],["Quot","sound"]]}' > /tmp/request.json
 lake env lean --run /path/to/seshat/lean/SeshatCertify/Main.lean /tmp/request.json
 ```
 
+## What ran against a real Lean
+
+On 2026-11-08, on a workstation with Lean v4.27.0 installed by elan (no `ELAN_HOME`, so `HOME` and
+`PATH` only), the project `lean/env/base` built (formal-conjectures and Mathlib), and bubblewrap:
+
+- `LakeCertifier` from a script, with `projectDir` that project, the probe
+  `import FormalConjectures.Util.ProblemImports`, `lean: v4.27.0`, and the reference of the first
+  real run (`problem/Solve.lean`, `theorem solve_target (n : ℕ) : n + 0 = n := by sorry` under
+  `import Mathlib`), target `solve_target`, the three standard axioms. Without a sandbox
+  (`unsandboxed: true`) and through recipe 1 below, the same answers:
+  - the health check: ok, the version, "the probe file compiles" (7 to 26 s; 11 to 14 s through
+    bubblewrap, depending on the disk cache);
+  - the run's candidate (`simp`): `certified`, axioms `["propext"]` (19 s; 55 s through bubblewrap);
+  - the reference itself as the candidate: `rejected`, "solve_target depends on axioms that are not
+    allowed: [sorryAx]";
+  - `0 + n = n` under the same name: `rejected`, "solve_target does not state what the reference
+    states";
+  - `exact foo`: `rejected`, "does not compile: candidate.lean:4:8:
+    error(lean.unknownIdentifier): Unknown identifier `foo`" (the reference compiled).
+- `pnpm harness health lean.certify --host sandboxed` (the profile `harness doctor` wrote, with
+  recipe 1) with `LEAN_PROJECT_DIR` set: ok in 7.5 s once the disk cache was warm; the first three
+  tries on a cold cache took longer than the registry's 15 seconds and were stopped, as
+  [the capability](#the-capability-and-its-settings) says.
+
+So, at v4.27.0: the program compiles under `lake env lean --run` (it was not built with `lake
+build`) and its `readModuleData`, `importModules (loadExts := false)`, `Environment.replay`,
+`CollectAxioms` and comparison work on these modules; `lean` ends with 1 for a file with errors;
+`lake env` works from a read-only project, with no network and the toolchain under the read-only
+root, and finds the built object files without fetching anything.
+
 ## To verify against Lean
 
-1. That `lean/SeshatCertify` builds at v4.27.0: `readModuleData`, `importModules` (and its named
-   argument `loadExts`), `Environment.replay`, `CollectAxioms.collect`, `Expr.getUsedConstants`,
-   `findSysroot`, `Name.str` and the `Json` functions, and the `BEq` instances of the constant
-   structures it compares with `==`, were read from Lean's sources, not run. Nor was any `match`
-   or `try` of the program: the narrowing of what it calls a rejection is as untested as the rest.
-2. That `lake env lean --run` interprets the program in a time that does not matter next to the
-   compile, and that `Environment.replay` of a module of a formal-conjectures file, and of a big
-   proof, takes the time and memory one expects.
-3. That `lean -o x.olean x.lean`, outside a package, gives the two files the same main module name,
-   so that the private names of a definition are the same in both; if it does not, a statement
-   that depends on a private definition is rejected by the comparison.
-4. That `lean` ends with 1 when the file has errors and 0 otherwise, and prints its messages on
-   stdout, as the certifier assumes, and that it ends with 1 and a message for a file whose imports
-   are not built (the certifier takes that for the project's fault when the reference fails too).
-5. That the object files of the bench's project are found by `lake env` from `LEAN_PROJECT_DIR`
-   without trying to fetch or build anything, which a sandbox without network does not allow.
-6. The contract's nine cases, and the reasons' texts they match.
-7. The sandbox: that one of the recipes above lets Lean run in the project (does `lake env` work with a
-   read-only project? is the toolchain reachable?), write only to `{work}` and stay within the memory
-   limit, and that `pnpm harness health lean.certify` passes through it.
-8. That a target built from its components (`Name.str` for each) is the name the file declares, for a bench
+1. The rest of the program's paths: a kernel refusal, an unsafe or partial constant, other imports,
+   a changed definition under the same statement, a target the candidate does not declare, a
+   reference that cannot be replayed; and a `lake build` of `lean/SeshatCertify`.
+2. That `Environment.replay` of a module of a formal-conjectures file, and of a big proof, takes
+   the time and memory one expects, and the time a bench problem's certification takes.
+3. That a statement depending on a `private` definition of the file is certified: the two files now
+   have the same module name (`SeshatTarget`, [above](#the-process)), so their private names should
+   be the same, but no such file has been run.
+4. That Lean ends with 1 and a message for a file whose imports are not built (the certifier takes
+   that for the project's fault when the reference fails too).
+5. The contract's nine cases, and the reasons' texts they match (`pnpm harness contract
+   lean.certify`); four of the same kinds ran above, not the contract.
+6. The sandbox's limits: that recipe 1 keeps a compile within its memory cap, and recipes 2 and 3 at
+   all.
+7. That a target built from its components (`Name.str` for each) is the name the file declares, for a bench
    name such as `Arxiv.«1609.08688».maximalLength_le` (the middle component a string, not a number),
    and for the negation theorem's name.
-9. The environment: that `lake env lean` works with the environment listed under
-   [the process](#the-process) (a `HOME` and `PATH`, and an `ELAN_HOME` when the toolchains are not
-   in `$HOME/.elan`), and what else, if anything, elan or lake need.
+8. A run that ends with a claim `proved` through the certifier (the run that found the faults above
+   ended before the fix).
 
 ## Not done yet
 

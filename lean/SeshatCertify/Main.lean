@@ -29,9 +29,9 @@ else, an axiom that is not allowed. Anything else that goes wrong (a request tha
 file that cannot be read, a reference that cannot be replayed, any other exception) prints nothing on
 stdout and exits with another code, since it says nothing about the candidate.
 
-This program has never been compiled: it was written against the sources of Lean v4.27.0 (and of
-lean4checker and SafeVerify) in an environment without Lean. `lake build` in this directory is the
-first thing to run with a Lean toolchain.
+It was written against the sources of Lean v4.27.0 (and of lean4checker and SafeVerify), and has
+run under `lake env lean --run` at v4.27.0 on a one-line Mathlib theorem
+(documentation/certifier.md, "What ran against a real Lean").
 -/
 
 open Lean
@@ -236,6 +236,7 @@ open SeshatCertify
 def main (args : List String) : IO UInt32 := do
   match args with
   | [requestFile] =>
+    -- The literals are typed: without it Lean v4.27.0 elaborates them as `Nat` inside `try`.
     try
       initSearchPath (← findSysroot)
       let text ← IO.FS.readFile requestFile
@@ -244,10 +245,10 @@ def main (args : List String) : IO UInt32 := do
       | .ok req =>
         let outcome ← certify req
         IO.println outcome.toJson.compress
-        return 0
+        return (0 : UInt32)
     catch e =>
       IO.eprintln s!"seshat-certify: {e}"
-      return 1
+      return (1 : UInt32)
   | _ =>
     IO.eprintln "usage: lean --run Main.lean <request.json>"
     return 2

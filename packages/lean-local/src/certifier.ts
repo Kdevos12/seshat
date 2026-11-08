@@ -33,6 +33,12 @@ const VERSION_TIMEOUT_MS = 60_000;
 /** Compiling the probe loads the project's modules, which takes longer on a cold disk cache. */
 const PROBE_TIMEOUT_MS = 300_000;
 const MAX_REASONS = 8;
+/**
+ * The module name of the compiled candidate and reference: both are compiled as `SeshatTarget.lean`,
+ * each in a directory of its own given to Lean as `--root`, so that the private names and the
+ * hygienic names of the two modules are the same, as the comparison of the replay needs.
+ */
+export const TARGET_MODULE = "SeshatTarget";
 const MAX_REASON_CHARS = 600;
 
 export interface LakeCertifierOptions {
@@ -227,20 +233,23 @@ export class LakeCertifier implements LeanCertifier {
     }
   }
 
-  /** Compiles a file to an object file, in a directory made for the compile: its path, or the errors Lean reported. */
+  /**
+   * Compiles a file to an object file, in a directory made for the compile: its path, or the errors
+   * Lean reported, with the file called `candidate.lean` or `reference.lean` in them.
+   */
   private async compile(kind: "candidate" | "reference", text: string, call: Call): Promise<{ olean: string } | { errors: string[] }> {
     const dir = await mkdtemp(join(call.root, `${kind}-`));
-    const source = join(dir, `${kind}.lean`);
-    const olean = join(dir, `${kind}.olean`);
+    const source = join(dir, `${TARGET_MODULE}.lean`);
+    const olean = join(dir, `${TARGET_MODULE}.olean`);
     await writeFile(source, text, "utf8");
-    const result = await this.lake(["env", "lean", "-o", olean, source], dir, call);
+    const result = await this.lake(compileArgs(dir, source, olean), dir, call);
     if (result.code === 0) {
       // The compile has ended, and may have written anything in its directory: only a file counts, not a link or a pipe.
       if (!(await isFile(olean))) throw new CertifyFailedError("failed", `lean compiled the ${kind} and wrote no object file (a regular file)`);
       return { olean };
     }
     // Lean ends with 1 when the file has errors; anything else (a signal, an out of memory) is not the file's doing.
-    if (result.code === 1) return { errors: errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`) };
+    if (result.code === 1) return { errors: errorsOf(`${result.stdout}\n${result.stderr}`.replaceAll(source, `${kind}.lean`), `${dir}/`) };
     throw new CertifyFailedError("failed", `lean ended with ${how(result)} while compiling the ${kind}${tail(result.stderr)}`);
   }
 
@@ -391,7 +400,7 @@ export class LakeCertifier implements LeanCertifier {
     const source = join(dir, "probe.lean");
     await writeFile(source, probe.endsWith("\n") ? probe : `${probe}\n`, "utf8");
     const shown = clip(probe.trim().split("\n").join(" ; "));
-    const result = await this.spawn(["env", "lean", "-o", join(dir, "probe.olean"), source], dir, PROBE_TIMEOUT_MS, signal);
+    const result = await this.spawn(compileArgs(dir, source, join(dir, "probe.olean")), dir, PROBE_TIMEOUT_MS, signal);
     if (result.stopped === "timeout") {
       throw new CertifyFailedError("unavailable", `lean did not compile the probe file (${shown}) in ${PROBE_TIMEOUT_MS / 1000} s`);
     }
@@ -399,6 +408,17 @@ export class LakeCertifier implements LeanCertifier {
     const why = result.code === 1 ? errorsOf(`${result.stdout}\n${result.stderr}`, `${dir}/`).join("; ") : `ended with ${how(result)}${tail(result.stderr)}`;
     throw new CertifyFailedError("unavailable", `lean cannot compile the probe file (${shown}), so the project is not usable: ${why}`);
   }
+}
+
+/**
+ * `lake env lean --root=DIR -o OLEAN SOURCE`. With `-o`, Lean (v4.27.0) names the module from the
+ * source's path relative to its root directory, which is the working directory unless `--root` says
+ * otherwise, and refuses a source outside it ("input file ... must be contained in root directory").
+ * Every call runs in the Lean project, so that `lake env` finds it, and the source is in the call's
+ * own directory: that directory is the root, and the module is named after the file alone.
+ */
+function compileArgs(dir: string, source: string, olean: string): string[] {
+  return ["env", "lean", `--root=${dir}`, "-o", olean, source];
 }
 
 /**

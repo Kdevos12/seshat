@@ -127,7 +127,8 @@ does `lean.lsp`, which runs lean-lsp-mcp on it ([lean-lsp.md](lean-lsp.md#instal
 `lean/SeshatCertify` replays the compiled files. For each candidate, in fresh processes of the
 project above:
 
-1. Compile the candidate and the reference with `lake env lean -o`.
+1. Compile the candidate and the reference with `lake env lean --root=DIR -o`, each as
+   `SeshatTarget.lean` in a directory `DIR` of its own, so that the two modules have the same name.
 2. Load the candidate's compiled module, import its imports, and replay its declarations through
    the kernel (`Lean.Environment.replay`, as lean4checker does).
 3. Check that the target exists, that its type equals the reference's target type as a term, with
@@ -136,7 +137,8 @@ project above:
 
 It is the capability `lean.certify`, on the host through `LEAN_PROJECT_DIR` (the project above).
 [certifier.md](certifier.md) has the process, the sandbox the compile should run in, the settings
-and the deployment. The Lean library has never been compiled.
+and the deployment. It has run against a real Lean v4.27.0 on one Mathlib theorem
+([certifier.md](certifier.md#what-ran-against-a-real-lean)), not on a bench problem.
 
 A run uses it without being asked when the host's profile lists `lean.certify` (the default
 profiles do): it certifies each problem's candidate, and the proofs and refutations the lines submit
