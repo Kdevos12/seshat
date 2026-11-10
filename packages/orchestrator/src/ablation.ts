@@ -11,6 +11,7 @@ import { LINES } from "./lines.ts";
 import { type LabeledDecision, labelDecisions, reliability, type SiteReliability } from "./reliability.ts";
 import { type RunLabel, runLabel } from "./run-label.ts";
 import { signTest } from "./probe.ts";
+import { type Protocol, pairedProtocol } from "./protocol.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
 import { buildReport, type RunReport } from "./report.ts";
 import { checkConfig, RunSetupError, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
@@ -77,7 +78,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
  * changes what the models see, so the arms would no longer differ by their lines alone), a configuration a run would refuse, a
  * suspended or unknown line, an option a line does not have, two arms with one name.
  */
-export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES): string[] {
+export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES, options: { baseline?: string } = {}): string[] {
   const problems: string[] = [];
   const refusal = ablationRefusal({ consortium: base.consortium });
   if (refusal !== undefined) problems.push(refusal);
@@ -92,6 +93,7 @@ export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemen
     if (arm.packetMode !== undefined && !PACKET_MODES.includes(arm.packetMode)) problems.push(`arm ${arm.name}: unknown packet mode ${String(arm.packetMode)}`);
     problems.push(...checkDecideSettings(arm.decide).map((p) => `arm ${arm.name}: ${p}`));
   }
+  if (options.baseline !== undefined && !names.has(options.baseline)) problems.push(`the baseline arm ${options.baseline} is not in the table`);
   for (const arm of arms) if (arm.versus !== undefined && !names.has(arm.versus)) problems.push(`arm ${arm.name} is compared with ${arm.versus}, which is not in the table`);
   return problems;
 }
@@ -151,6 +153,8 @@ export interface AblationResult {
   label: RunLabel;
   /** What the difficulty tiers come from: `M0` (its row has no split), a pilot run, or absent when the table has neither. */
   difficultyBasis?: string;
+  /** The paired protocol of plan change CA2 (documentation/ablate.md): intervals, dollars, the pairs against the baseline arm and the target. */
+  protocol?: Protocol;
   arms: ArmResult[];
 }
 
@@ -242,6 +246,9 @@ export interface AblationInput {
   notRun?: readonly string[];
   /** The outcomes of a pilot run, which the difficulty tiers come from. Default: the arm M0 when the table has one (its own row is not split). */
   pilot?: RunMeasures;
+  /** The arm the protocol sets the others against (default: the first) and the ratio of problems solved per dollar it must reach (default 1.5). */
+  baseline?: string;
+  target?: number;
   log?: (line: string) => void;
 }
 
@@ -256,7 +263,7 @@ const slug = (name: string): string => name.replace(/[^A-Za-z0-9._-]+/g, "_");
  * that stops early (the run budget, Lean down) is measured as it stands and says why.
  */
 export async function runAblation(input: AblationInput): Promise<AblationResult> {
-  const problems = ablationProblems(input.config, input.arms);
+  const problems = ablationProblems(input.config, input.arms, LINES, input.baseline !== undefined ? { baseline: input.baseline } : {});
   if (problems.length > 0) throw new RunSetupError(`the ablation cannot start: ${problems.join("; ")}`);
   if (input.arms.length === 0) throw new RunSetupError("the ablation has no configuration to run");
   const run = input.run ?? runBench;
@@ -341,6 +348,7 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     problems: input.problems.map((p) => p.id),
     ...(input.buildProblems !== undefined ? { buildProblems: input.buildProblems.map((p) => p.id) } : {}),
     ...(basisName !== undefined ? { difficultyBasis: basisName } : {}),
+    protocol: pairedProtocol(results.map((r) => ({ name: r.arm.name, measures: r.measures })), input.baseline, input.target),
     arms: results,
   };
   writeFileSync(join(input.dir, "ablation.json"), `${JSON.stringify(result, null, 2)}\n`);
