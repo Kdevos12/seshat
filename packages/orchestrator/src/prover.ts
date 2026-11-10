@@ -42,6 +42,8 @@ export interface ProverOptions {
   packetMode?: PacketMode;
   /** How a request that a transient error cut is sent again (`SessionOptions.retry`); absent: `REQUEST_RETRY`. */
   retry?: RetryPolicy;
+  /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
+  checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
   prices?: PriceBook;
   /** The problem's ledger. */
@@ -275,6 +277,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.packetMode !== undefined ? { packetMode: o.packetMode } : {}),
         ...(o.retry !== undefined ? { retry: o.retry } : {}),
         ...(o.prices !== undefined ? { prices: o.prices } : {}),
+        ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
