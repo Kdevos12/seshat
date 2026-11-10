@@ -12,6 +12,7 @@ import { Ledger } from "../src/budget.ts";
 import type { Workbench } from "../src/problem.ts";
 import { isTransient, type RequestRetry, type RetryPolicy } from "../src/retry.ts";
 import { runSession, type SessionOptions } from "../src/session.ts";
+import type { Turn } from "../src/turns.ts";
 import { check, demoRun, ofType } from "./m0-helpers.ts";
 
 /**
@@ -91,7 +92,21 @@ function failed(errorMessage: string): AssistantMessage {
 
 describe("transient errors", () => {
   it("are a cut stream, a reset or refused connection, a 5xx and a 429, not the request's own errors", () => {
-    for (const text of ["terminated", "fetch failed", "read ECONNRESET", "connect ECONNREFUSED 127.0.0.1:443", "socket hang up", "Connection error.", "503 Service Unavailable", "429 Rate limit reached", "502: bad gateway"]) {
+    for (const text of [
+      "terminated",
+      "fetch failed",
+      "read ECONNRESET",
+      "connect ECONNREFUSED 127.0.0.1:443",
+      "socket hang up",
+      "Connection error.",
+      "Request timed out.",
+      "Stream ended without finish_reason",
+      "503 Service Unavailable",
+      "429 Rate limit reached",
+      "502: bad gateway",
+      "Provider (529): overloaded",
+      "Overloaded",
+    ]) {
       assert.ok(isTransient(failed(text)), text);
     }
     for (const text of [
@@ -101,6 +116,13 @@ describe("transient errors", () => {
       "422 Invalid tool arguments",
       "insufficient_quota: you exceeded your quota",
       "prompt is too long: 250000 tokens > 200000 maximum",
+      "429 insufficient_quota: you exceeded your quota",
+      // Errors of the harness or of a test's model that only mention a timeout, a status or a cut: not the network's.
+      "timed out waiting for the refutation side to end",
+      "the harness failed: the server answered 500 times",
+      "No more faux responses queued",
+      "Faux response ended without a stop reason",
+      "the response stream ended without an answer",
     ]) {
       assert.ok(!isTransient(failed(text)), text);
     }
@@ -214,7 +236,7 @@ describe("a session whose response a transient error cuts", () => {
     assert.equal(result.retries, undefined);
   });
 
-  it("stops waiting when the problem is stopped, and charges nothing for the wait", async () => {
+  it("stops waiting when the problem is stopped: the cut response is the answer", async () => {
     fake.reset(1);
     const stop = new AbortController();
     const { result: pending, charges } = session({ signal: stop.signal, retry: { retries: 3, baseDelayMs: 60_000, maxDelayMs: 60_000 } });
@@ -225,23 +247,59 @@ describe("a session whose response a transient error cuts", () => {
     assert.ok(Date.now() - started < 10_000, "the wait was cut");
     assert.equal(result.stop, "aborted");
     assert.equal(fake.bodies.length, 1);
-    assert.equal(result.turns, 0);
-    assert.equal(charges.length, 1, "the cut response, charged when it was to be sent again; the wait is no response");
+    assert.equal(result.retries, undefined);
+    assert.deepEqual(charges.map((c) => c.retry), [undefined], "charged once, as an answer, and not as a retry that was never sent");
+  });
+
+  it("stops waiting when the consortium turn ends, and sends nothing after it", async () => {
+    fake.reset(1);
+    let ended: Turn["ended"];
+    const turn = { get ended() { return ended; } } as unknown as Turn;
+    const { result: pending } = session({ turn, retry: { retries: 3, baseDelayMs: 60_000, maxDelayMs: 60_000 } });
+    const timer = setTimeout(() => {
+      ended = { reason: "usd", detail: "the turn's dollars are spent" };
+    }, 300);
+    const started = Date.now();
+    const result = await pending;
+    clearTimeout(timer);
+    assert.ok(Date.now() - started < 10_000, "the wait was cut");
+    assert.equal(result.stop, "turn");
+    assert.equal(fake.bodies.length, 1, "no request after the turn's end");
   });
 });
 
 describe("a run whose model request a transient error cuts", () => {
   it("sends it again, records the retry in the journal and the report, and finds the proof", async () => {
-    const { result, events, dir } = await demoRun({ responses: [failed("terminated"), check("exact trivial_proof")] });
+    const { result, events, dir } = await demoRun({ responses: [failed("terminated"), check("exact trivial_proof")], retry: { retries: 3, baseDelayMs: 7, maxDelayMs: 7 } });
     assert.equal(result.problems[0]?.outcome, "candidate");
     const [attempt] = ofType(events, "attempt.finished");
     assert.deepEqual([attempt?.data.outcome, attempt?.data.stoppedBy, attempt?.data.turns, attempt?.data.retries], ["valid", "solved", 1, 1]);
     const charged = ofType(events, "attempt.charged");
-    assert.deepEqual(charged.map((c) => c.data.retry), [{ retry: 1, error: "terminated", delayMs: 2_000 }, undefined]);
+    assert.deepEqual(charged.map((c) => c.data.retry), [{ retry: 1, error: "terminated", delayMs: 7 }, undefined]);
     const sum = charged.reduce((total, c) => total + c.data.usd, 0);
     assert.ok(Math.abs((attempt?.data.usd ?? 0) - sum) < 1e-12, "the attempt's totals are the sum of its charges, the cut response's included");
     const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8")) as { retries?: { requests: number; attempts: number } };
     assert.deepEqual([report.retries?.requests, report.retries?.attempts], [1, 1]);
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Requests sent again after a transient error .*: 1 in 1 attempt\(s\)/);
+  });
+
+  it("does not send again a failure of the model's side that only says it timed out", { timeout: 30_000 }, async () => {
+    // A test's model that waits for something and gives up, as M2's graph test does: not the network's error. With a
+    // minute's wait before a send again, a retry would hold the test until its timeout.
+    let calls = 0;
+    const { events } = await demoRun({
+      responses: [
+        () => {
+          calls += 1;
+          throw new Error("timed out waiting for the refutation side to end");
+        },
+      ],
+      config: { sessions: 1 },
+      retry: { retries: 3, baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    });
+    assert.equal(calls, 1, "sent once");
+    const [attempt] = ofType(events, "attempt.finished");
+    assert.deepEqual([attempt?.data.stoppedBy, attempt?.data.retries], ["error", undefined]);
+    assert.ok(ofType(events, "attempt.charged").every((c) => c.data.retry === undefined));
   });
 });

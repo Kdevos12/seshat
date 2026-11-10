@@ -9,6 +9,7 @@ import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts
 import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
+import type { RetryPolicy } from "./retry.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
@@ -39,6 +40,8 @@ export interface ProverOptions {
   cacheRetention?: CacheRetention;
   /** How the session's requests are built from a line's context packet (`SessionOptions.packetMode`); absent: `prefix_tail`. */
   packetMode?: PacketMode;
+  /** How a request that a transient error cut is sent again (`SessionOptions.retry`); absent: `REQUEST_RETRY`. */
+  retry?: RetryPolicy;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
   prices?: PriceBook;
   /** The problem's ledger. */
@@ -270,6 +273,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(strategies.length > 0 ? { strategies } : {}),
         ...(o.cacheRetention !== undefined ? { cacheRetention: o.cacheRetention } : {}),
         ...(o.packetMode !== undefined ? { packetMode: o.packetMode } : {}),
+        ...(o.retry !== undefined ? { retry: o.retry } : {}),
         ...(o.prices !== undefined ? { prices: o.prices } : {}),
       });
     } catch (error) {

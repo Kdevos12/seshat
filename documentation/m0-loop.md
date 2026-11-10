@@ -246,21 +246,33 @@ refused connection, `fetch failed`, a 5xx or a 429. pi-ai turns these into a res
 only covers the request before its response starts streaming, and the harness leaves it at 0. So
 the session's stream function (`retryingStream`, `src/retry.ts`) sends such a request again, with
 the same context and options, so that the provider's prompt cache still answers its prefix: at
-most 3 more times, after 2, 4 and 8 seconds (`REQUEST_RETRY`; the session option `retry` sets
-another policy). The events of the sends reach the agent as one response, and the cut response
+most 3 more times, after 2, 4 and 8 seconds (`REQUEST_RETRY`; the option `retry` of `runBench`,
+`resumeBench` and the session sets another policy, and the tests' `demoRun` and `demoResume` use
+`TEST_RETRY`, which sends again at once, unless a test gives its own). The events of the sends reach the agent as one response, and the cut response
 is neither a turn nor in the history.
 
-`isTransient` decides: pi-ai's classifier (`isRetryableAssistantError`) and Node's socket error
-codes, after the request's own errors are taken out: a 4xx other than 408, 409 and 429 (a bad
-request, a refused key, DeepSeek's `402 Insufficient Balance`), a context too long
-(`isContextOverflow`), a quota or billing limit. Those, and an abort, end the session as before.
-A request is not sent again once the problem is stopped or aborted, once the consortium turn is
-over, or when the cut response's charge would leave the budget spent; the session then ends as
-it would have on that response (`aborted`, `turn`, `budget`). An abort during the wait ends it at
-once, as `aborted`. When the retries run out the session ends `error`, and its error says how many
-times the request was sent (`terminated (the request was sent 4 times)`).
+`isTransient` decides, on what the transport or the server says and nothing else: undici's
+`terminated` and `fetch failed`, `socket hang up`, Node's socket error codes (`ECONNRESET`,
+`ECONNREFUSED`, `EPIPE`, `ETIMEDOUT`...), the OpenAI SDK's `Connection error.` and `Request timed
+out.`, a stream that ended before its last event, a provider's `Overloaded`, and an HTTP error
+whose status is a 5xx, a 429 or a 408. The words are matched at the start of the message (the
+socket codes as whole words), and a status only where pi-ai writes it, at the start. Every other
+error ends the session as before: a 4xx (a bad request, a refused key, DeepSeek's `402
+Insufficient Balance`), a context too long (`isContextOverflow`), a quota or billing limit even
+with a 429 (pi-ai's `isRetryableAssistantError` refuses those), an abort, and an error of the
+harness or of a test's model that merely says "timed out" or quotes a number. pi-ai's classifier
+alone is too wide: it matches "timeout" or "500" anywhere in the text, and its first use here sent
+again a test model's `timed out waiting for ...`, which made a test of M2 wait 2 + 4 + 8 seconds.
 
-Each cut response whose request is sent again is charged, at what the provider reported of it
+A request is not sent again once the problem is stopped or aborted, once the consortium turn is
+over, or when the cut response's charge would leave the budget spent. This is asked before the
+wait, every 100 ms during it and immediately before the send, so that a stop, the turn's end or a
+spent budget ends the wait at once; the cut response is then the session's answer, charged as any
+answer, and the session ends as it would have on it (`aborted`, `turn`, `budget`). When the
+retries run out the session ends `error`, and its error says how many times the request was sent
+(`terminated (the request was sent 4 times)`).
+
+Each cut response whose request is sent again is charged when it is sent again, at what the provider reported of it
 (a cut stream usually reports no usage, so often nothing: the tokens it streamed are not known), and
 written as an `attempt.charged` with `retry` (`retry`, the send's number from 1; `error`, what cut
 the response; `delayMs`, the wait before the send). `attempt.finished` counts the session's
@@ -587,8 +599,9 @@ the provider (and kept when a run is resumed), and the dollars per solve of a fr
 as pi-ai's faux provider simulates the cache, and the cache reads of a session the harness failed in or a resumption cut ([lines.md](lines.md#the-context-packet)). What a real provider's cache does with it has not run.
 `retry.test.ts` covers [transient errors](#transient-errors): a fake OpenAI-compatible server that closes the socket in the
 middle of a streamed answer (undici's `terminated`), whose request is sent again with the same body and answered, or sent until
-the retries run out; a 400 not sent again and a 503 sent again; no send again once the budget is spent; an abort during the wait;
-the classifier; and a run with pi-ai's faux provider whose journal and report record the retry. A cut from DeepSeek's own API has
+the retries run out; a 400 not sent again and a 503 sent again; no send again once the budget is spent; a stop and a turn's end
+during the wait; the classifier, with errors that only mention a timeout or a status; a run with pi-ai's faux provider whose journal
+and report record the retry; and a run whose model fails with `timed out waiting for ...`, which is not sent again. A cut from DeepSeek's own API has
 been seen in the first real run, but no run has yet gone through a retry against a real provider.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
