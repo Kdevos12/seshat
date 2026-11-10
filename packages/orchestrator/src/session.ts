@@ -8,6 +8,7 @@ import { formatCheck, summarizeCheck } from "./feedback.ts";
 import type { SessionHooks } from "./line-runtime.ts";
 import type { PriceBook } from "./prices.ts";
 import { keepReasoning } from "./history.ts";
+import { maskOldChecks } from "./mask.ts";
 import { composePacket, type FrozenState } from "./packet.ts";
 import { REQUEST_RETRY, type RequestRetry, retryingStream, type RetryPolicy } from "./retry.ts";
 import type { Workbench } from "./problem.ts";
@@ -105,6 +106,11 @@ export interface SessionOptions {
    * tool-call loop and that the rewrite dropped (`keepReasoning`).
    */
   rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
+  /**
+   * Masks the check results older than the last four, in batches of four (plan change CA6, `mask.ts`): in what is sent, never in the
+   * journal. It runs before `rewriteHistory`, through the same hook. Absent: off.
+   */
+  maskOldChecks?: boolean;
   /** How the requests are built from a line's context packet; absent: `prefix_tail`. */
   packetMode?: PacketMode;
   /**
@@ -293,6 +299,8 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   };
   const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? [])];
 
+  const rewriteHistory: SessionOptions["rewriteHistory"] =
+    o.maskOldChecks === true ? async (messages) => (o.rewriteHistory === undefined ? maskOldChecks(messages) : await o.rewriteHistory(maskOldChecks(messages))) : o.rewriteHistory;
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
   const temperature = o.temperature;
@@ -365,14 +373,14 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // prefix frozen at the first request and that request's tail, in one user message of two
     // texts, so that every request of the session starts with the same bytes. pi wants this hook
     // never to throw: a failure ends the session with an error, and the request is aborted.
-    ...(packet !== undefined || o.rewriteHistory !== undefined
+    ...(packet !== undefined || rewriteHistory !== undefined
       ? {
           // Whatever rebuilds the history, the reasoning of the model's tool-call messages goes back with them
           // (documentation/lines.md, "The reasoning of a tool-call loop").
           transformContext: async (original: AgentMessage[]) => {
             const compiled = await rebuild(original);
             try {
-              return keepReasoning(original, o.rewriteHistory === undefined ? compiled : await o.rewriteHistory(compiled));
+              return keepReasoning(original, rewriteHistory === undefined ? compiled : await rewriteHistory(compiled));
             } catch (error) {
               lineFailed(error);
               agent.abort();

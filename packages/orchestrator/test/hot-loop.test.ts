@@ -4,6 +4,7 @@ import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { LeanCheckOptions, LeanCheckResult, LeanChecker, LeanSnippet } from "@seshat/core";
 import { BlobStore } from "@seshat/core";
 import { join } from "node:path";
+import { KEEP_CHECKS, maskedCount, MASK_BATCH } from "../src/mask.ts";
 import { PROVER_SYSTEM_TEMPLATE, promptHash, systemPrompt } from "../src/prompt.ts";
 import { call, check, DemoLean, demoRun, ofType, proofOf, say } from "./m0-helpers.ts";
 
@@ -162,5 +163,56 @@ describe("the edit tool (CA5)", () => {
     assert.deepEqual(seen[1]?.tools, ["lean_check", "lean_edit"]);
     assert.equal(promptHash(4000, []), promptHash(4000, [], PROVER_SYSTEM_TEMPLATE, false));
     assert.notEqual(promptHash(4000, []), promptHash(4000, [], PROVER_SYSTEM_TEMPLATE, true));
+  });
+});
+
+/** The messages of a request after the system message, one string each. */
+function serialized(context: TranscriptContext): string[] {
+  return context.messages.filter((m) => m.role !== "system").map((m) => JSON.stringify({ ...m, timestamp: 0 }));
+}
+
+describe("masked old checks (CA6)", () => {
+  it("masks all but the last four results, in batches of four", () => {
+    assert.deepEqual([KEEP_CHECKS, MASK_BATCH], [4, 4]);
+    assert.deepEqual([0, 4, 5, 7, 8, 11, 12, 15, 16].map((n) => maskedCount(n)), [0, 0, 0, 0, 4, 4, 8, 8, 12]);
+  });
+
+  it("keeps the prefix of the history byte-identical between two batches, and sends the one-line summaries", async () => {
+    const requests: string[][] = [];
+    const looking = (k: number) => (context: TranscriptContext) => (requests.push(serialized(context)), check(`bad_${k}`));
+    const { events } = await demoRun({
+      config: { maskOldChecks: true, sessions: 1, limits: { turns: 14, contextTokens: 1_000_000 } },
+      responses: Array.from({ length: 14 }, (_, k) => looking(k)),
+    });
+    // Request k (from 1) carries k-1 results. Batch one is requests 9 to 12 (8 to 11 results), batch two starts at request 13.
+    const results = (request: string[]) => request.map((m, k) => [k, m] as const).filter(([, m]) => m.includes('"role":"toolResult"'));
+    const masked = (request: string[]) => results(request).filter(([, m]) => m.includes("Earlier check, masked:")).length;
+    assert.deepEqual([1, 5, 8, 9, 12, 13, 14].map((k) => masked(requests[k - 1] ?? [])), [0, 0, 0, 4, 4, 8, 8]);
+    const first = requests[8] ?? []; // request 9: the first batch, 8 results
+    const edge = results(first)[3]?.[0] ?? -1; // the position of the 4th result: the last one masked
+    for (const k of [10, 11, 12]) {
+      // From one request to the next of a batch the history only grows: every earlier message is the same bytes.
+      const earlier = requests[k - 2] ?? [];
+      assert.deepEqual((requests[k - 1] ?? []).slice(0, earlier.length), earlier, `request ${k} starts with request ${k - 1}`);
+    }
+    const second = requests[12] ?? []; // request 13: the second batch
+    assert.deepEqual(second.slice(0, edge + 1), first.slice(0, edge + 1), "the prefix of the first batch is byte-identical in the second");
+    // The masked text is the summary: what the model was told, in one line.
+    const [, maskedText] = results(second)[0] ?? [0, ""];
+    assert.match(maskedText, /Earlier check, masked: 1 error\(s\), 0 hole\(s\)\./);
+    assert.doesNotMatch(maskedText, /unknown identifier/);
+    // The last four results of a request are whole.
+    assert.match(results(second).at(-1)?.[1] ?? "", /unknown identifier/);
+    // The journal is not rewritten: every check is in it, with its full submission.
+    assert.equal(ofType(events, "validation.finished").length, 14);
+  });
+
+  it("changes nothing without the option", async () => {
+    const requests: string[][] = [];
+    await demoRun({
+      config: { sessions: 1, limits: { turns: 10, contextTokens: 1_000_000 } },
+      responses: Array.from({ length: 10 }, (_, k) => (context: TranscriptContext) => (requests.push(serialized(context)), check(`bad_${k}`))),
+    });
+    assert.ok(requests.every((r) => r.every((m) => !m.includes("Earlier check, masked"))));
   });
 });
