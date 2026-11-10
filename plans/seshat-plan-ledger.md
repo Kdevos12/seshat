@@ -344,6 +344,35 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   a missing key no longer raises a missing variable but an unavailable implementation that names it); the `jev`
   implementation's version becomes `systemone-client-2`; the CLI reads `SESHAT_MODEL` as the default of `--model`.
   Documented in models-setup.md (new), decide.md, capabilities.md, quickstart.md.
+- First real run (2026-11-07/08, on `main`, local commits, not pushed when written): on the owner's 4-core
+  workstation, with Lean 4.27.0 and the environment `lean/env/base` built. What ran for real: `harness solve`
+  with the certifier through bubblewrap, which proved `theorem solve_target (n : ℕ) : n + 0 = n := by simp`
+  (`kernel_replay`); by hand, the certifier rejected a `sorry`, another statement and a compile error. The
+  fixes the run needed are the four entries below.
+- `42dd721` (2026-11-07): `packages/orchestrator` (`implementations.ts`): the environment variable
+  `SESHAT_LEAN_ENV_DIR` and the function `leanEnvDirectory`: the directory of the Lean environments, after
+  `--env-dir` and before the repository's `lean/env/`, for the registry and `harness lean-env`; the command tests
+  run against a fresh copy of `lean/env` (`freshLeanEnvDir`), so a machine that resolved or built an environment
+  gives the same results. A run without the variable is unchanged. Documented in lean-env.md and development.md.
+- `736266b` (2026-11-07): `packages/ui`: `startServer` counts the model credentials of its `env` option (the
+  process's by default) for the models it builds by default; it read `process.env` only. The command tests pin
+  `HARNESS_HOST=local` and `LEAN_SERVER_API_URL=http://127.0.0.1:9` (no host profile or Lean server of the machine);
+  the faux run that is stopped through the API has a stop grace of 10 s. `harness ui` is unchanged. Documented
+  in ui.md and development.md.
+- `1275474` (2026-11-08): `packages/lean-local`: the certifier compiles with `--root=<its directory>` (Lean 4.27
+  refuses with `-o` a source outside the root), and the candidate and the reference are both compiled as the
+  module `SeshatTarget`; `lean/SeshatCertify/Main.lean` types `main`'s exit codes as `UInt32` (it did not
+  compile). The first real certification, above. Documented in certifier.md and lean.md.
+- `b454f4f` (2026-11-10): `packages/library-builder`: the coding-agent builder reports an abort as `failed`
+  with the reason `the build was aborted` at every step it interrupts (the `git` rev-parse, ls-tree, clone,
+  checkout and remote removal before the agent, the agent, a gate left undecided by a killed `git` or `lake`);
+  it reported a clone killed on a slow disk as `cannot clone the project: `. A failed checkout of the base
+  commit or removal of the clone's remote now stops the build (their results were ignored). Documented in
+  library-builder.md.
+- Observed in the first real run, not fixed: the registry's fixed health limit of 15 s (`HEALTH_TIMEOUT_MS`,
+  `packages/registry/src/registry.ts`) is exceeded on a cold, loaded machine by `compute.sage/docker` (about
+  17 s under load, about 5 s idle) and `lean.certify/lake` (up to 26 s cold), which are then reported
+  unavailable; warm, both pass.
 
 ## Log
 
