@@ -376,6 +376,11 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `attempt.finished.retries?`, `SessionOptions.retry?`, `SessionOptions.onCharge(cost, retry?)`,
   `SessionResult.retries?`, `Ledger.wouldExhaust`, `RunReport.retries?`. The lines' one-shot calls do not
   retry yet. Not yet run against the real API. Documented in m0-loop.md, journal.md and ledger.md.
+- `b529ea8` (2026-11-10): `packages/orchestrator`: what is resent is decided on the transport's or the
+  server's words only (pi-ai's classifier matched "timed out" or "500" anywhere, so a test's own error was
+  resent with real waits and a graph test went from 6 s to 30 s); the wait is cut by a stop, the end of the
+  turn or a spent budget. Additive: `RunOptions.retry?`, `ResumeOptions.retry?`, `ProverOptions.retry?`; the
+  test helper `TEST_RETRY` (`m0-helpers.ts`), the default of `demoRun` and `demoResume`.
 - Observed in the first real run, not fixed: a run's budget can be taken by its first problem when the
   problem's allowance (`--budget-usd`, default 5) is above the run's (`--run-budget-usd`): with `--sample 3
   --run-budget-usd 1`, the first problem spent $0.92, the second the rest, and the third never started.
