@@ -39,6 +39,18 @@ export interface SolveFlags extends DoctorFlags {
   noCheck?: boolean;
   offpeak?: RunConfig["offpeak"];
   lines?: string[];
+  /** `--tool ID`: capabilities the provers get besides lean_check (CA17). */
+  tools?: string[];
+  /** `--auto-tool`: add the host's compute tool when the statement is finite, about a graph or about numbers. */
+  autoTool?: boolean;
+  /** `--intake`: test the statement before any paid session, and search the literature if the person agrees (Task 36). */
+  intake?: boolean;
+  /** `--lit`: the person agrees to the statement going to third parties, in a call that cannot ask. Implies `intake`. */
+  lit?: boolean;
+  /** `--private`: nothing goes outside; wins over everything. */
+  private?: boolean;
+  /** `--intake-usd`: the cap of the judge call. */
+  intakeUsd?: number;
 }
 
 /** What the commands need from the process: streams, the machine, and the models. Tests give their own. */
@@ -96,6 +108,9 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
   for (const line of renderDoctor(report)) io.out(line);
   return report.ok ? 0 : 1;
 }
+
+/** The compute tool of the host that `--auto-tool` adds. */
+const COMPUTE_TOOL = "compute.sage";
 
 /** The checks a solve cannot start without: the others are said, and the run goes on. */
 const NEEDED: ReadonlyArray<Check["id"]> = ["kimina", "credentials", "prices", "network"];
@@ -211,6 +226,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const registry: RunOptions["registry"] = (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) });
   const checkerRegistry = openRegistry({ host });
   const mode = statement.mode ?? classifyStatement(statement.text);
+  if (flags.autoTool === true && !checkerRegistry.offers(COMPUTE_TOOL)) io.out(`Note: --auto-tool has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
   try {
@@ -229,6 +245,23 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
+      ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),
+      ...(flags.autoTool === true && checkerRegistry.offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
+      ...(flags.private === true ? { private: true } : {}),
+      ...(flags.intake === true || flags.lit === true
+        ? {
+            intake: {
+              hygiene: true,
+              literature: true,
+              ...(flags.intakeUsd !== undefined ? { capUsd: flags.intakeUsd } : {}),
+              ...(flags.lit === true ? { consent: { allowed: true, via: "flag" as const } } : {}),
+            },
+            // Asked once, and only where a person can answer: a call that signs with --yes or is driven by a program has --lit or no.
+            ...(flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || process.stdin.isTTY)
+              ? { askConsent: () => (io.ask ?? terminalAsk)("The literature step would send the words of this statement to OpenAlex, arXiv, Semantic Scholar and zbMATH, and the hits to the model, to look for a paper that already settled it. Allow that? [y/N] ") }
+              : {}),
+          }
+        : {}),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
           if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");

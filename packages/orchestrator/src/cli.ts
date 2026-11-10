@@ -80,6 +80,7 @@ const usage = `usage:
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin]
+              [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -90,6 +91,11 @@ HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and do
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
+Intake (documentation/literature.md; off unless asked): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
+the literature (lit.search) for each bench problem, with one judge call under --intake-usd (default 0.05); a settled hit or a vacuous statement is a breakpoint in a run
+with a person. For solve the literature needs your agreement: asked once and journaled, or --lit (which also turns --intake on) in a call that cannot ask; no answer
+is no. --private sends nothing outside (it wins over --lit and --intake, and is refused with --decide-backend jev). solve --tool ID gives the provers that capability (as run
+does), and --auto-tool adds the host's compute tool (compute.sage) when the statement is finite, about a graph or about numbers.
 solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
 the proposition) or prose, or a file holding one. Prose is formalized by the cheapest model with a price, shown to you with test lemmas on its first
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
@@ -220,6 +226,11 @@ const { positionals, values } = parseArgs({
     "max-usd": { type: "string" },
     yes: { type: "boolean" },
     "ask-stdin": { type: "boolean" },
+    intake: { type: "boolean" },
+    lit: { type: "boolean" },
+    private: { type: "boolean" },
+    "intake-usd": { type: "string" },
+    "auto-tool": { type: "boolean" },
     port: { type: "string" },
     open: { type: "boolean" },
     lean: { type: "boolean" },
@@ -699,6 +710,17 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
   };
 }
 
+/** `--intake`, `--intake-usd` and `--private` of `harness run`: a bench problem is public, so the literature is on with `--intake` (documentation/literature.md). */
+function runIntakeFlags(): Pick<RunConfig, "intake" | "private"> {
+  const capUsd = number("intake-usd", values["intake-usd"], undefined);
+  if (values.lit === true) throw new UsageError("--lit is for harness solve: a bench problem is public, so --intake is all a run needs");
+  if (values.intake !== true) {
+    if (capUsd !== undefined) throw new UsageError("--intake-usd goes with --intake");
+    return values.private === true ? { private: true } : {};
+  }
+  return { intake: { literature: true, hygiene: true, consent: { allowed: true, via: "bench" }, ...(capUsd !== undefined ? { capUsd } : {}) }, ...(values.private === true ? { private: true } : {}) };
+}
+
 async function run(): Promise<number> {
   if (target !== undefined) throw new UsageError(`run takes no positional argument, got ${target}`);
   if (values.resume !== undefined) return await resume(values.resume);
@@ -729,7 +751,9 @@ async function run(): Promise<number> {
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    ...runIntakeFlags(),
   };
+  if (config.intake?.literature === true && process.env.BENCH_CHECKOUT === undefined) process.env.BENCH_CHECKOUT = resolve(checkout);
   const host = hostName(values.host);
   const runId = newId("run");
   const dir = resolve(values.out ?? join("runs", runId));
@@ -1072,6 +1096,12 @@ async function solve(): Promise<number> {
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
+      autoTool: values["auto-tool"] === true,
+      intake: values.intake === true || values.lit === true,
+      lit: values.lit === true,
+      private: values.private === true,
+      ...(number("intake-usd", values["intake-usd"], undefined) !== undefined ? { intakeUsd: number("intake-usd", values["intake-usd"], undefined) as number } : {}),
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
     },
