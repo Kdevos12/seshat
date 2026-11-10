@@ -7,6 +7,8 @@ writes [collaborator-log.md](collaborator-log.md), which wins for Tasks 6, 9 and
 
 Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests passing (1 skipped); Tasks 1 to 32 and atp.eprover merged.
 
+2026-11-10 UTC: the plan change `plans/plan-change-capabilities.md` (CA1 to CA26) is approved (Ruling 33) and is Tasks 33 to 44, built by the session of the thread "Augmenter les capacités de Seshat de 50 %" on `claude/project-thread-h60gyw`, which is merged into `main` by pull request, one per phase. Global Constraint 16 is amended (a gate in place of the ban on model-written procedural memory).
+
 ## Tasks
 
 | Task | What | Owner | State | Branch |
@@ -43,6 +45,18 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | merged (`0ab8147`) | `task/t30` | Review round 1 fixed (strict screen and signature for user Lean, bounded formalization spend, host in the resume command, sandbox probe runs the real recipe, Markdown escaping, shell quoting). Open: the signature is not cross-checked against the claim; an `afterStart` that throws leaves a started journal without a signature. Simulated only: no real bubblewrap, Docker, model or Lean. |
 | 31 | The local interface `harness ui` | main | merged (`d2732a1`) | `task/t31` | Review round 1 fixed (nonce-bound signature protocol, key scoping per provider, no cookie, digest over the whole bundle, redaction forms, process groups). Simulated only: fake subprocess, faux provider, one headless-browser smoke test; no person has used it in a real session. |
 | 32 | The heuristic bank, line M19 (HB1 to HB8) | main | merged (0614185), built by the thread "Concevoir une banque d'heuristiques", reviewed twice; M19 became a fleet option; not built: HB4 prepare, HB5b replay, decide prior, extra features | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
+| 33 | The graded bench, the paired protocol, loop telemetry (CA1 to CA3) | main | implementing | `claude/project-thread-h60gyw` | |
+| 34 | A cheaper hot loop: bounded checks, `lean_edit`, masking, the defaults sets `v1` and `v2` (CA4 to CA6) | main | implementing | `claude/project-thread-h60gyw` | |
+| 35 | The state card, the repeat rule, a run's budget in rounds (CA7, CA8) | main | not started | | after 34 |
+| 36 | Intake: `lit.search`, tools for `solve`, statement hygiene (CA16, CA17, CA21) | main | implementing | `claude/project-thread-h60gyw` | |
+| 37 | Blueprints and a tool-equipped prover per hole (CA9 to CA11) | main | not started | | after 34 and 35 |
+| 38 | Refinement rounds and the repair pass (CA12, CA13) | main | not started | | after 37 |
+| 39 | An informal proof first, roles, sampling settings per role (CA14, CA15, CA23) | main | not started | | after 38 |
+| 40 | `lean.search`, pushed by the harness (CA22) | main | not started | | after 34 |
+| 41 | Counterexamples on finite structures (CA18 to CA20) | main | not started | | |
+| 42 | The consolidation pass between runs (CA24) | main | not started | | after 35 |
+| 43 | The reverie line (CA25) | main | not started | | after 37, 41 and 42 |
+| 44 | Teacher memory (CA26) | main | not started | | last |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
@@ -60,6 +74,10 @@ with pi-ai's faux provider, a simulated Lean and fake servers (SageMath alone wa
 - Collaborator (Ruling 25): T6, then T9, then T11. What each needs from the main team, and what
   the main team needs from them: [collaborator-tasks.md](collaborator-tasks.md), "Between the
   teams".
+
+- Tasks 33 to 44 (Ruling 33), at most three workers at once: 33, 34 and 36 first (the measure, the
+  hot loop, the intake); then 35, 40 and 41; then 37 and 42; then 38 and 43; then 39 and 44; then the
+  defaults set `v2` with everything that passed its review, and a review of the whole branch.
 
 ## For the collaborator
 
