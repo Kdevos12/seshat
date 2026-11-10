@@ -92,7 +92,7 @@ describe("the intake step in an automatic run", () => {
     const gated = ofType(run.events, "budget.gated").filter((e) => e.data.site === "judge");
     assert.equal(gated.length, 1);
     assert.equal(gated[0]?.data.action, "launch");
-    assert.equal(ofType(run.events, "model_call.finished").filter((e) => e.data.site.startsWith("budget.")).length, 0);
+    assert.equal(ofType(run.events, "model_call.finished").filter((e) => (e.data.site ?? "").startsWith("budget.")).length, 0);
     assert.equal(ofType(run.events, "intake.finished")[0]?.data.state, "done");
   });
 
