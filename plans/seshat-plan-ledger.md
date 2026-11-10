@@ -369,6 +369,16 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   it reported a clone killed on a slow disk as `cannot clone the project: `. A failed checkout of the base
   commit or removal of the clone's remote now stops the build (their results were ignored). Documented in
   library-builder.md.
+- `a9d8e70` (2026-11-10): `packages/orchestrator` (`retry.ts`, `session.ts`, `prover.ts`, `budget.ts`,
+  `report.ts`) and `packages/core` (events, journal): a session sends a request again (3 more sends after 2, 4
+  and 8 s) when a transient error cuts its response, such as undici's `terminated`, which ended 3 of the first
+  4 attempts of the first real bench run on DeepSeek's API. Additive: `attempt.charged.retry?`,
+  `attempt.finished.retries?`, `SessionOptions.retry?`, `SessionOptions.onCharge(cost, retry?)`,
+  `SessionResult.retries?`, `Ledger.wouldExhaust`, `RunReport.retries?`. The lines' one-shot calls do not
+  retry yet. Not yet run against the real API. Documented in m0-loop.md, journal.md and ledger.md.
+- Observed in the first real run, not fixed: a run's budget can be taken by its first problem when the
+  problem's allowance (`--budget-usd`, default 5) is above the run's (`--run-budget-usd`): with `--sample 3
+  --run-budget-usd 1`, the first problem spent $0.92, the second the rest, and the third never started.
 - Observed in the first real run, not fixed: the registry's fixed health limit of 15 s (`HEALTH_TIMEOUT_MS`,
   `packages/registry/src/registry.ts`) is exceeded on a cold, loaded machine by `compute.sage/docker` (about
   17 s under load, about 5 s idle) and `lean.certify/lake` (up to 26 s cold), which are then reported
