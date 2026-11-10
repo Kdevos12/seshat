@@ -8,7 +8,7 @@ import { createM6, framingProblems, REMOVED_MARK, UNSOURCED_MARK } from "@seshat
 import type { Line } from "@seshat/lines";
 import { sessionPrompt, systemPrompt } from "../src/prompt.ts";
 import { DISCRETE } from "@seshat/bench";
-import { check, DEMO_FILE, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
+import { check, DEMO_FILE, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 
 type Message = TranscriptContext["messages"][number];
 
@@ -467,5 +467,18 @@ describe("M6 repeat rule (CA7)", () => {
       responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), say("n")],
     });
     assert.deepEqual(drifts(events).filter((d) => d.kind === "repeated_failure"), []);
+  });
+
+  it("counts again, in a resumed run, the failures the process before had seen", async () => {
+    const script = (): ReturnType<typeof check>[] => [check("bad"), check("bad 1"), say("notes"), check("bad 2"), check("bad 3"), check("bad 4")];
+    const config = { ...M6_ONLY, sessions: 3, lineOptions: { M6: FIVE } };
+    const whole = await demoRun({ config, responses: script() });
+    // The process ended after the first session: two sightings of the failure are in its checkpoint.
+    const cut = whole.events.findIndex((e) => e.type === "attempt.finished") + 1;
+    const used = whole.events.slice(0, cut).filter((e) => e.type === "attempt.charged").length;
+    const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, responses: script().slice(used) });
+    const shape = (events: readonly HarnessEvent[]) => drifts(events).filter((d) => d.kind === "repeated_failure").map((d) => [d.action, d.session, d.check]);
+    assert.deepEqual(shape(resumed.events), shape(whole.events));
+    assert.ok(shape(resumed.events).length >= 2);
   });
 });
