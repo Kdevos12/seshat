@@ -22,7 +22,7 @@ The provers can also be given SageMath, an external program installed with Docke
 ([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2, human-written skills and heuristic cards and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). With the fleet's option `heuristics`, each session can be given one heuristic card, a method of reasoning written by a person ("vary one parameter at a time"), drawn by family and card against a control share of sessions that get none, and `harness heuristics stats` counts what each family did against that control ([documentation/heuristics.md](documentation/heuristics.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
 draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
-([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance. A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); `harness ui` is a local web page (a loopback server with a per-session token, Host and Origin checks and a content security policy, a journal reader, provider settings with each key in a 0600 file outside the repository, and screens to start a problem, sign its statement, watch the spend and stop, read the result, continue, hint or steer, and see the read-only graph) that starts the same commands as subprocesses and cannot change a claim's status ([documentation/ui.md](documentation/ui.md); tested with a fake subprocess, the faux provider and one headless-browser smoke test, never with a real browser session by a person); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
+([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance. A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Before any paid session a run can take an intake step ([documentation/literature.md](documentation/literature.md)): the literature is searched (`lit.search`: OpenAlex, arXiv, Semantic Scholar, zbMATH, a bench checkout's metadata), one judge call under a cap of $0.05 says whether a hit proves, refutes or restricts the exact statement, a quote counts only when it is in the fetched text, and the statement itself is tested (vacuity, `plausible`, the first cases); a settled hit or a vacuous statement is a breakpoint in a run with a person, and `--private` sends nothing outside; none of it has run against a real site, model or Lean. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); `harness ui` is a local web page (a loopback server with a per-session token, Host and Origin checks and a content security policy, a journal reader, provider settings with each key in a 0600 file outside the repository, and screens to start a problem, sign its statement, watch the spend and stop, read the result, continue, hint or steer, and see the read-only graph) that starts the same commands as subprocesses and cannot change a claim's status ([documentation/ui.md](documentation/ui.md); tested with a fake subprocess, the faux provider and one headless-browser smoke test, never with a real browser session by a person); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
 Lean or a real model yet.
 
 ## How research flows
@@ -80,6 +80,7 @@ flowchart TB
   doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::wait
   resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
   viewhtml["harness view<br/>one static HTML page from the journal,<br/>no server, no network, all text escaped"]:::built
+  intake["Intake, before any paid session<br/>three queries, one judge call under $0.05, a quote that must be<br/>in the fetched text; vacuity, plausible, test lemmas; off with --private"]:::wait
   uipage["harness ui<br/>local page on 127.0.0.1: token, Host and Origin checks,<br/>escaped text, keys in a 0600 file, starts the commands"]:::built
 
   subgraph TOOLS["Capability registry"]
@@ -91,6 +92,7 @@ flowchart TB
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
+    litsearch["lit_search<br/>OpenAlex, arXiv, Semantic Scholar,<br/>zbMATH, bench metadata"]:::wait
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
     smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
     vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
@@ -228,6 +230,10 @@ flowchart TB
   provers --> leangoals
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
+  bench -->|"each problem, when intake is on"| intake
+  intake -->|"queries, hits as data"| litsearch
+  intake -->|"literature and hygiene nodes,<br/>never a status"| journal
+  intake -.->|"a settled hit or a vacuous statement:<br/>a breakpoint"| team
   fleet -.->|"cold start:<br/>capped pseudo-counts"| decide
   libbuilder -->|"every file it wrote"| libgate
   libgate -->|"new theorems"| certifier

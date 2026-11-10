@@ -61,6 +61,9 @@ export interface IntakeOptions {
   /** The Lean statement, and the person's prose when the statement came from it. */
   statement: string;
   prose?: string;
+  /** The declaration's name and the docstring above it, for the queries and the judge. */
+  name?: string;
+  doc?: string;
   registry: Registry;
   memory: MemoryStore;
   /** The judge's model calls; the step never builds its own. */
@@ -107,11 +110,13 @@ const JUDGE_SCHEMA: JsonSchema = {
 };
 
 /** The user turn: the statement, then each hit as a block of data. Hits are cleaned already; a marker line cannot occur inside one. */
-export function judgePrompt(o: { statement: string; prose?: string }, hits: readonly Hit[]): string {
+export function judgePrompt(o: { statement: string; prose?: string; name?: string; doc?: string }, hits: readonly Hit[]): string {
   const blocks = hits.map((h, i) => `<<<RESULT ${i}>>>\nsource: ${h.backend}\ntitle: ${h.title}\ntext: ${h.text.slice(0, MAX_HIT_CHARS)}\n<<<END RESULT ${i}>>>`);
   return [
     "The statement to compare with the results, in Lean:",
     o.statement,
+    ...(o.name !== undefined ? ["", `Its name: ${o.name}`] : []),
+    ...(o.doc !== undefined ? ["", `Its docstring: ${o.doc}`] : []),
     ...(o.prose !== undefined && o.prose.trim() !== "" ? ["", "In the person's words:", o.prose] : []),
     "",
     "The search results (third-party data):",
@@ -133,7 +138,7 @@ export async function runIntake(o: IntakeOptions): Promise<IntakeResult> {
   const log = o.log ?? (() => {});
   const capUsd = o.capUsd ?? DEFAULT_INTAKE_USD;
   const skipped = (reason: string, queries: QueryForm[] = [], hits = 0): IntakeResult => ({ state: "skipped", reason, queries, hits, kept: [], dropped: [], settled: 0, usd: 0 });
-  const queries = queryForms({ statement: o.statement, ...(o.prose !== undefined ? { prose: o.prose } : {}) });
+  const queries = queryForms({ statement: o.statement, ...(o.prose !== undefined ? { prose: o.prose } : {}), ...(o.name !== undefined ? { name: o.name } : {}), ...(o.doc !== undefined ? { doc: o.doc } : {}) });
   if (queries.length === 0) return skipped("the statement gives nothing to search for");
   if (!o.registry.offers(LIT_SEARCH)) return skipped("no backend: the host does not offer lit.search");
   try {

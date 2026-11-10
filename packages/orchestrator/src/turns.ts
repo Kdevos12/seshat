@@ -53,7 +53,7 @@ export function ablationRefusal(config: { consortium?: ConsortiumConfig | undefi
     : "a turn limit or --human cannot go with an ablation: a turn boundary changes what the models see, so the configs would no longer differ by their lines alone";
 }
 
-export type TurnReason = "tokens" | "usd" | "minutes" | "impasse" | "settled" | "disagreement";
+export type TurnReason = "tokens" | "usd" | "minutes" | "impasse" | "settled" | "disagreement" | "literature" | "vacuous";
 
 /** Why a turn is over. */
 export interface TurnEnd {

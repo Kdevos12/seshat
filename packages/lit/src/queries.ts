@@ -37,8 +37,20 @@ export function leanWords(lean: string): string {
   return words.filter((w) => !LEAN_NOISE.has(w.toLowerCase())).join(" ");
 }
 
-export function queryForms(s: { statement: string; prose?: string }): QueryForm[] {
-  const source = s.prose !== undefined && s.prose.trim() !== "" ? s.prose : leanWords(s.statement);
+/** The docstring that stands just before a declaration, in the text above it (a file's prefix): what a bench file says of its problem in words. */
+export function docstringBefore(prefix: string): string | undefined {
+  const found = /\/--([\s\S]*?)-\/\s*(?:@\[[^\]]*\]\s*)*$/.exec(prefix);
+  const doc = found?.[1]?.replace(/\s+/g, " ").trim();
+  return doc === undefined || doc === "" ? undefined : doc;
+}
+
+/**
+ * `statement` is the Lean statement (binders and type), `prose` the person's words, `name` the declaration's name (a bench problem is
+ * often named for its source), `doc` the docstring above it. Words come from the person's prose, or from the docstring, name and statement.
+ */
+export function queryForms(s: { statement: string; prose?: string; name?: string; doc?: string }): QueryForm[] {
+  const said = s.prose !== undefined && s.prose.trim() !== "" ? s.prose : s.doc;
+  const source = said !== undefined && said.trim() !== "" ? said : [leanWords(s.name ?? ""), leanWords(s.statement)].join(" ");
   const words = wordsOf(source).slice(0, 8).join(" ");
   const forms: QueryForm[] = [
     { form: "words", query: words },

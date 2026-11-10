@@ -7,6 +7,7 @@ export * from "./doctor.ts";
 export * from "./feedback.ts";
 export * from "./gate-report.ts";
 export * from "./implementations.ts";
+export * from "./intake.ts";
 export * from "./line-runtime.ts";
 export * from "./lines.ts";
 export * from "./llm.ts";
