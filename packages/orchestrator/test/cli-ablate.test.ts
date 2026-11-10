@@ -63,7 +63,7 @@ describe("the graded bench on the command line", () => {
   function gradedFile(): string {
     const fc = tempDir("mh-cli-fc-");
     mkdirSync(join(fc, "FormalConjectures"), { recursive: true });
-    writeFileSync(join(fc, "FormalConjectures", "T.lean"), "import FormalConjectures.Util.ProblemImports\n\n@[category textbook, AMS 11]\ntheorem t0 (n : ℕ) : n = n := by\n  sorry\n");
+    writeFileSync(join(fc, "FormalConjectures", "T.lean"), "import FormalConjectures.Util.ProblemImports\n\n@[category textbook, AMS 11]\ntheorem t0 (n : ℕ) : n = n := by\n  sorry\n\n@[category research solved, AMS 11,\nformal_proof using lean4 at \"https://example.org/p.lean\"]\ntheorem c0 (n : ℕ) : n = n := by\n  sorry\n");
     const putnam = tempDir("mh-cli-putnam-");
     mkdirSync(join(putnam, "lean4", "src"), { recursive: true });
     writeFileSync(join(putnam, "lean4", "src", "putnam_1.lean"), "import Mathlib\n\ntheorem putnam_1\n(n : ℕ)\n: n = n :=\nsorry\n");
