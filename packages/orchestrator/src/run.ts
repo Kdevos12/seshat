@@ -106,6 +106,8 @@ export interface RunConfig {
    * `harness solve`'s defaults set `v2` gives it the host's `checkTimeoutSec` (120).
    */
   checkTimeoutSec?: number;
+  /** The name of the defaults set the configuration was made from (`harness solve --defaults`, `student.ts`), for the record; it changes nothing. */
+  defaults?: string;
   /**
    * The sessions get the tool `lean_edit(region, old, new)` (plan change CA5, documentation/m0-loop.md, "The edit tool") and a prover prompt
    * that says to use `lean_check` for the first draft and `lean_edit` after it. Absent: off, and a run that records and prompts as it always did.
@@ -662,6 +664,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
       ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+      ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
