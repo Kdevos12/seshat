@@ -45,14 +45,14 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 30 | `harness solve`, `doctor`, `view`, RESULT.md (PB6, PB7, PB8) | main | merged (`0ab8147`) | `task/t30` | Review round 1 fixed (strict screen and signature for user Lean, bounded formalization spend, host in the resume command, sandbox probe runs the real recipe, Markdown escaping, shell quoting). Open: the signature is not cross-checked against the claim; an `afterStart` that throws leaves a started journal without a signature. Simulated only: no real bubblewrap, Docker, model or Lean. |
 | 31 | The local interface `harness ui` | main | merged (`d2732a1`) | `task/t31` | Review round 1 fixed (nonce-bound signature protocol, key scoping per provider, no cookie, digest over the whole bundle, redaction forms, process groups). Simulated only: fake subprocess, faux provider, one headless-browser smoke test; no person has used it in a real session. |
 | 32 | The heuristic bank, line M19 (HB1 to HB8) | main | merged (0614185), built by the thread "Concevoir une banque d'heuristiques", reviewed twice; M19 became a fleet option; not built: HB4 prepare, HB5b replay, decide prior, extra features | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
-| 33 | The graded bench, the paired protocol, loop telemetry (CA1 to CA3) | main | implementing | `claude/project-thread-h60gyw` | |
-| 34 | A cheaper hot loop: bounded checks, `lean_edit`, masking, the defaults sets `v1` and `v2` (CA4 to CA6) | main | implementing | `claude/project-thread-h60gyw` | |
-| 35 | The state card, the repeat rule, a run's budget in rounds (CA7, CA8) | main | not started | | after 34 |
-| 36 | Intake: `lit.search`, tools for `solve`, statement hygiene (CA16, CA17, CA21) | main | implementing | `claude/project-thread-h60gyw` | |
+| 33 | The graded bench, the paired protocol, loop telemetry (CA1 to CA3) | main | on the branch (`8c8c0cb`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | No bench index is committed: building `bench/graded-v1.json` needs a real Lean and the three sources (observed sizes: grade A 111, grade B 100 of 326 candidates, grade C 70; PutnamBench's head is on Lean 4.33.1, the bench pins 4.27.0). `splitCommands` in `@seshat/core` now reads a column-0 line that starts with a binder or a colon as the continuation of the declaration above (pinned by tests at the validator and the guards). The false-hole share reads `hole_verdict` nodes, which Task 37 writes. Simulated only. |
+| 34 | A cheaper hot loop: bounded checks, `lean_edit`, masking, the defaults sets `v1` and `v2` (CA4 to CA6) | main | on the branch (`c34c0c8`), reviewed; waits for the pull request into `main` | `claude/project-thread-h60gyw` | `harness solve --defaults v1` is `main` at `ae3b2a0`; `v2` (the default) adds `editTool`, `maskOldChecks` and the check timeout. Not built: `harness lean-server start` (Ruling 33). Open: `checkTimeoutSec` is part of the registry hash, so editing the host value makes a resume see a registry mismatch. Kimina's setting names and the memory reading are not checked against a real Kimina. Simulated only. |
+| 35 | The state card, the repeat rule, a run's budget in rounds (CA7, CA8) | main | implementing | `claude/project-thread-h60gyw` | after 34 |
+| 36 | Intake: `lit.search`, tools for `solve`, statement hygiene (CA16, CA17, CA21) | main | reviewed, fix round 1 | `claude/project-thread-h60gyw` | |
 | 37 | Blueprints and a tool-equipped prover per hole (CA9 to CA11) | main | not started | | after 34 and 35 |
 | 38 | Refinement rounds and the repair pass (CA12, CA13) | main | not started | | after 37 |
 | 39 | An informal proof first, roles, sampling settings per role (CA14, CA15, CA23) | main | not started | | after 38 |
-| 40 | `lean.search`, pushed by the harness (CA22) | main | not started | | after 34 |
+| 40 | `lean.search`, pushed by the harness (CA22) | main | implementing | `claude/project-thread-h60gyw` | after 34 |
 | 41 | Counterexamples on finite structures (CA18 to CA20) | main | not started | | |
 | 42 | The consolidation pass between runs (CA24) | main | not started | | after 35 |
 | 43 | The reverie line (CA25) | main | not started | | after 37, 41 and 42 |
@@ -406,6 +406,20 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `packages/registry/src/registry.ts`) is exceeded on a cold, loaded machine by `compute.sage/docker` (about
   17 s under load, about 5 s idle) and `lean.certify/lake` (up to 26 s cold), which are then reported
   unavailable; warm, both pass.
+- Task 34, on `claude/project-thread-h60gyw` at `c34c0c8` (2026-11-10): `packages/orchestrator`:
+  `SessionOptions.checkTimeoutSec?`, `editTool?`, `maskOldChecks?`; the body of `lean_check` is now `doCheck`,
+  shared with the new tool `lean_edit`; `RunConfig.checkTimeoutSec?`, `editTool?`, `maskOldChecks?`,
+  `defaults?`; `harness solve --defaults v1|v2`. `config/hosts/*.json`: the optional settings
+  `checkTimeoutSec`, `healthTimeoutMs` (it answers the health-limit observation above) and
+  `leanServerMemoryWarnMb`. Off for `harness run`. Documented in m0-loop.md and quickstart.md.
+- Task 33, on the same branch at `8c8c0cb` (2026-11-10): `packages/core`: optional `checks` and `holes` on
+  `attempt.finished`, optional `outputUsd` and `cacheReadUsd` on charges; `splitCommands`
+  (`lean-source.ts`) reads a column-0 line that starts with `(`, `{`, `[`, `⦃` or `:` as the continuation of
+  the declaration above. `packages/orchestrator`: `SessionResult.holes?`; `harness ablate --bench --grade
+  --target --allow-unchecked`; `measures.ts` gains `settledInLiterature` (nodes of kind `literature` with
+  `data.settled === true`, which Task 36 writes) and the false-hole share (nodes of kind `hole_verdict`
+  with `data.verdict === "statement_wrong"`, which Task 37 writes). `packages/bench`: `graded.ts`.
+  Documented in bench.md, ablate.md, journal.md and m0-loop.md.
 
 ## Log
 
@@ -836,3 +850,7 @@ say plainly that every session counts once there, unlike the draw (no discount, 
 (L4) a card id the bank does not have stops the problem before any prover starts (`beforeProvers`, `resumeProblem`);
 (L5) this ledger's Task 32 entries are in English; the interface changes above are complete.
 
+Tasks 33 to 44 (2026-11-10, the session of the thread "Augmenter les capacités de Seshat de 50 %"): Task 34 reviewed (spec and quality clean, four minors deferred), on the branch at `c34c0c8`, `pnpm check` 2676 tests, 0 fail. Task 33 reviewed, one fix round (the target is validated before any spend; the admitter probes Lean and reports an infrastructure failure instead of rejecting; an empty grade fails the build; the column-0 layout is pinned at the validator and the guards), merged at `8c8c0cb` with one conflict in `session.ts` (the holes counter now lives in `doCheck`), `pnpm check` 2704 tests, 0 fail. Task 36 reviewed (no Critical or Important finding; every trust check holds), fix round 1 on three minors. Tasks 35 and 40 are being written.
+Task 33: minor (deferred): the docstring of `measures.ts` is detached from `measureRun`; a comment in `events.ts` cites `documentation/report.md` (the page is m0-loop.md); `checks` counts every `lean_check` call, server errors included; the quantile is the upper median for an even n; the target verdict reads only the best-ratio arm; `loadIndex` parses the bench JSON twice.
+Task 34: minor (deferred): `checkTimeoutSec` is in the registry hash; `lean_edit` passes no strategy to `doCheck`; the memory reading's pattern may count unrelated processes; no test for an empty `old`, for `checkTimeoutSec < 1`, for masking with `lean_edit` results.
+Decision (2026-11-10): `--private` becomes a general switch after Tasks 36 and 40 are on the branch: an optional manifest field marks a capability that calls a third party, and a private run refuses those calls at the registry. Why: the plan change says that nothing leaves for a third party other than the model provider, and Task 36's flag covers the literature search and the third-party decision model only. Cost if wrong: one small task.
