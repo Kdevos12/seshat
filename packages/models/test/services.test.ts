@@ -83,7 +83,7 @@ describe("the OEIS, the LMFDB and FindStat as capabilities", () => {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
       const optional = Object.entries(profile.capabilities).flatMap(([id, binding]) => (binding.optional === true ? [id] : []));
       // decide.ask (Task 20) is optional too: off unless a run asks for it; so are the processes smt.z3, atp.vampire (Task 6) and atp.eprover.
-      assert.deepEqual(optional.sort(), [...CAPABILITIES, "decide.ask", "smt.z3", "atp.vampire", "atp.eprover"].sort(), host);
+      assert.deepEqual(optional.sort(), [...CAPABILITIES, "decide.ask", "lit.search", "smt.z3", "atp.vampire", "atp.eprover"].sort(), host);
     }
   });
 
