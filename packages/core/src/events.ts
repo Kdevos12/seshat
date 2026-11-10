@@ -683,6 +683,45 @@ export interface EventDataMap {
     trivial?: { by: string };
   };
   /**
+   * The statement may be sent to third parties for the intake step (literature search, `lit.search`), or may not: the answer, asked
+   * once before the step (documentation/literature.md, "Third parties"). Written by `human:NAME` when a person answered (`harness
+   * solve` asks once; `--lit` agrees in a call that cannot ask; absence is no), and by the orchestrator when no one is asked
+   * (`via: "bench"`: a bench problem is public; `via: "private"`: `--private` wins over everything). It changes no claim.
+   */
+  "intake.consented": {
+    problemId: string;
+    /** True: the statement may go to the backends. */
+    allowed: boolean;
+    via: "asked" | "flag" | "bench" | "private" | "default";
+  };
+  /**
+   * The intake step of a problem ended, before any paid session: it searched the literature and judged the hits, or was skipped
+   * with a reason. Written by the orchestrator only. The hits themselves are `literature` nodes (data `{backend, url, title, quote,
+   * verdict, settled}`); this event is the record of the step: the three queries, what was dropped and why (a quote that is not in the
+   * fetched text, an answer the judge did not give), and what the step cost. It changes no claim.
+   */
+  "intake.finished": {
+    problemId: string;
+    claimId: string;
+    state: "done" | "skipped";
+    /** Why the step did not run (`private`, `not agreed`, `budget`, `cap`, `no backend`, `failed: ...`). */
+    reason?: string;
+    /** The query forms sent: `{form, query}`. */
+    queries: Array<{ form: string; query: string }>;
+    /** Hits the backends returned, and hits that became `literature` nodes. */
+    hits: number;
+    kept: number;
+    /** Hits that were not kept, with the reason. */
+    dropped: Array<{ backend: string; url: string; title: string; why: string }>;
+    /** Kept hits that say `proves` or `refutes` with a screened quote. */
+    settled: number;
+    /** What the judge call cost, against the cap of the step. */
+    usd: number;
+    capUsd: number;
+    /** The judge's call, when one was made. */
+    modelCallId?: string;
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -735,6 +774,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "ladder.escalated",
   "memory.epoch_opened",
   "statement.signed",
+  "intake.consented",
+  "intake.finished",
   "decision.made",
   "budget.gated",
   "pack.installed",
