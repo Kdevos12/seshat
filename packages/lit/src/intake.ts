@@ -109,7 +109,7 @@ const JUDGE_SCHEMA: JsonSchema = {
   additionalProperties: false,
 };
 
-/** The user turn: the statement, then each hit as a block of data. Hits are cleaned already; a marker line cannot occur inside one. */
+/** The user turn: the statement, then each hit as a block of data. Hits are cleaned already, and `clean` turns every run of three or more `<` or `>` into two, so a title or text cannot carry a `<<<` or `>>>` marker and close or open a block. */
 export function judgePrompt(o: { statement: string; prose?: string; name?: string; doc?: string }, hits: readonly Hit[]): string {
   const blocks = hits.map((h, i) => `<<<RESULT ${i}>>>\nsource: ${h.backend}\ntitle: ${h.title}\ntext: ${h.text.slice(0, MAX_HIT_CHARS)}\n<<<END RESULT ${i}>>>`);
   return [

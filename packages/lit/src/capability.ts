@@ -61,16 +61,23 @@ export function litFactory(options: { fetch?: Fetch } = {}): ImplementationFacto
     if (problems.length > 0) throw new Error(`${spec.factory}: ${problems.join("; ")}`);
     const s = settings as unknown as Settings;
     const backends: Backend[] = [];
+    const rejected: { backend: BackendId; reason: string }[] = [];
     for (const id of BACKENDS) {
       const setting = s.backends?.[id];
       if (setting === undefined) continue;
-      const made = makeBackend(id, setting, {
+      let made: Backend | undefined;
+      try {
+        made = makeBackend(id, setting, {
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
         ...(s.timeoutSec !== undefined ? { timeoutMs: s.timeoutSec * 1000 } : {}),
         ...(s.minIntervalMs !== undefined ? { minIntervalMs: s.minIntervalMs } : {}),
         ...(s.maxBytes !== undefined ? { maxBytes: s.maxBytes } : {}),
         ...(s.userAgent !== undefined ? { userAgent: s.userAgent } : {}),
-      });
+        });
+      } catch (error) {
+        rejected.push({ backend: id, reason: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
       if (made !== undefined) backends.push(made);
     }
     return {
@@ -78,8 +85,9 @@ export function litFactory(options: { fetch?: Fetch } = {}): ImplementationFacto
         const { query, limit, backends: only } = input as unknown as LitSearchInput;
         if (query.trim() === "") throw new Error("give a query to search for");
         const chosen = only === undefined ? backends : backends.filter((b) => only.includes(b.id));
-        if (chosen.length === 0) throw new UnavailableError(`no backend of lit.search is enabled${only !== undefined ? ` among ${only.join(", ")}` : ""}: give one an address in the host profile`);
+        if (chosen.length === 0) throw new UnavailableError(`${rejected.map((r) => `${r.backend}: ${r.reason}; `).join("")}no backend of lit.search is enabled${only !== undefined ? ` among ${only.join(", ")}` : ""}: give one an address in the host profile`);
         const out: LitSearchOutput = { answers: [], hits: [] };
+        for (const r of rejected) if (only === undefined || only.includes(r.backend)) out.answers.push({ backend: r.backend, url: "", count: 0, error: `not enabled: ${r.reason}` });
         let reached = 0;
         for (const backend of chosen) {
           try {
@@ -96,7 +104,9 @@ export function litFactory(options: { fetch?: Fetch } = {}): ImplementationFacto
         return out as unknown as Json;
       },
       async health(): Promise<HealthCheck> {
-        return backends.length > 0 ? { ok: true, detail: `backends: ${backends.map((b) => b.id).join(", ")}` } : { ok: false, detail: "no backend is enabled" };
+        const bad = rejected.map((r) => `${r.backend} not enabled (${r.reason})`);
+        const detail = [...(backends.length > 0 ? [`backends: ${backends.map((b) => b.id).join(", ")}`] : []), ...bad].join("; ");
+        return backends.length > 0 ? { ok: true, detail } : { ok: false, detail: detail === "" ? "no backend is enabled" : detail };
       },
     };
   };
