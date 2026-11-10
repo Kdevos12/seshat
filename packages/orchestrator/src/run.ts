@@ -100,6 +100,12 @@ export interface RunConfig {
    * `prefix_tail` (absent: the default), `append_only`, or `recompiled`, the measurement arm of PE5.
    */
   packetMode?: PacketMode;
+  /**
+   * The seconds a prover's Lean check may take (plan change CA4, documentation/lean.md, "Bounded checks"); the validator's policy and
+   * the certifier keep their limits. Absent: the provers' checks run under the validator's policy (300 s), as they always did.
+   * `harness solve`'s defaults set `v2` gives it the host's `checkTimeoutSec` (120).
+   */
+  checkTimeoutSec?: number;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -300,6 +306,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.packetMode !== undefined && !PACKET_MODES.includes(config.packetMode)) {
     problems.push(`packetMode must be one of ${PACKET_MODES.join(", ")}, got ${String(config.packetMode)}`);
   }
+  if (config.checkTimeoutSec !== undefined && !(config.checkTimeoutSec >= 1)) problems.push(`checkTimeoutSec must be at least 1 second, got ${config.checkTimeoutSec}`);
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
@@ -644,6 +651,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only when given, so that a run without it records what it always did.
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+      ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1194,6 +1202,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           notesChars: config.notesChars,
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+          ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

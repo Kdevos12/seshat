@@ -107,6 +107,8 @@ export interface SessionOptions {
   rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
   /** How the requests are built from a line's context packet; absent: `prefix_tail`. */
   packetMode?: PacketMode;
+  /** The seconds a Lean check of this session may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy (300). */
+  checkTimeoutSec?: number;
   /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
   retry?: RetryPolicy;
 }
@@ -212,7 +214,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       submission = { aux: params.aux, proof: params.proof };
       if (strategy !== undefined) declared = strategy;
       try {
-        const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}) });
+        const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}), ...(o.checkTimeoutSec !== undefined ? { timeoutSec: o.checkTimeoutSec } : {}) });
         report = result.report;
         accepted ||= result.accepted;
         const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);

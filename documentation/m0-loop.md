@@ -203,6 +203,12 @@ regions into the file, keeps the file in the blob store, and runs the fast check
 `SKETCH_POLICY`, which lets `sorry` and `admit` reach Lean so that the goals of the holes come back
 ([validator.md](validator.md#holes)). Regions that contain marker lines are refused before Lean.
 
+A run may bound its provers' checks (`RunConfig.checkTimeoutSec`, a number of seconds; the host profile's
+`checkTimeoutSec` gives the value `harness solve` uses, [lean.md](lean.md#bounded-checks)). A check that passes
+the bound answers "Lean did not finish within the time limit", which costs the session one turn instead of the validator's
+300 seconds; the validator's own policy, the reference check and the certifier keep their limits. Absent, as in
+`harness run`, the provers' checks run under the validator's policy as they always did.
+
 A check of a file without holes that Lean answered is a validation, recorded as
 `validation.finished` (method `repl`). The first valid one makes the claim `computed`, ends the
 session and aborts the problem's other provers. A check with holes, a check that could not reach
