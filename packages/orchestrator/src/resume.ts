@@ -126,6 +126,8 @@ function configOf(recorded: unknown): RunConfig {
     ...(typeof r.defaults === "string" ? { defaults: r.defaults } : {}),
     ...(r.editTool === true ? { editTool: true } : {}),
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
+    ...(r.leanSearch === true ? { leanSearch: true } : {}),
+    ...(r.private === true ? { private: true } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"
       ? { prompts: { proverSystem: (r.prompts as { proverSystem: string }).proverSystem } }

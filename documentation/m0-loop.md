@@ -324,6 +324,10 @@ hook's own function if a caller gave one. Only what is sent to the model changes
 keep the full answers. A line's context packet that replaces the history has nothing to mask. The option is off in `harness run` and on
 in `harness solve`'s defaults set `v2`.
 
+The section that `RunConfig.leanSearch` appends to an answer ([lean.md](lean.md#search-pushed-by-the-harness)) is not in the summary
+that masking keeps, so a masked result drops it with the rest of its text; the whole results keep it, within its own bound of 1,200
+characters on top of the answer's.
+
 ## What the prover sees
 
 The answer to a check lists Lean's errors, the holes with their goals, and the other messages (such

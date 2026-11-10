@@ -46,7 +46,7 @@ const usage = `usage:
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--tool CAPABILITY]... [--lean-search] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
@@ -80,7 +80,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -133,6 +133,10 @@ lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
 Lean), show says where each one stands. harness lean-env --help has the details. The directory is --env-dir,
 SESHAT_LEAN_ENV_DIR or lean/env; every other command looks the host's environment up in SESHAT_LEAN_ENV_DIR or lean/env.
+--lean-search (run and solve; off by default, also in solve's defaults sets): after a check that did not accept the file, the harness searches Lean
+declarations for each unknown identifier and each hole's goal (capability lean.search: a remote service, a local index, a pattern search, as
+the host profile sets them up), checks every hit against the run's Lean, and adds the names and the signatures Lean printed to the check's answer
+(documentation/lean.md, "Search pushed by the harness"). The host must offer lean.search.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
@@ -227,6 +231,7 @@ const { positionals, values } = parseArgs({
     lean: { type: "boolean" },
     prose: { type: "boolean" },
     "no-check": { type: "boolean" },
+    "lean-search": { type: "boolean" },
     defaults: { type: "string" },
     "no-write": { type: "boolean" },
     rewrite: { type: "boolean" },
@@ -720,6 +725,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
+    ...(values["lean-search"] === true ? { leanSearch: true } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
 }
@@ -999,7 +1005,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "tool", "lean-search", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
@@ -1099,6 +1105,7 @@ async function solve(): Promise<number> {
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      leanSearch: values["lean-search"] === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
       ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),

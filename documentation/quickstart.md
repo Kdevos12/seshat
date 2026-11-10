@@ -103,7 +103,8 @@ Why: in the first real runs about 90% of the dollars were output tokens (the mod
 of 9 ended on a full context, and Lean checks ran into 900-second timeouts. `v2` makes each attempt cheaper and shorter; the certifier's
 limits and the validator's policy are unchanged, and Lean still decides everything. `harness run` keeps its own defaults: each of the three is an
 option there (`editTool`, `maskOldChecks`, `checkTimeoutSec` in the run configuration), so a recorded run replays as before. A later change of
-`solve`'s defaults adds its option to `v2`.
+`solve`'s defaults adds its option to `v2`. `harness solve --lean-search` (and `harness run --lean-search`) turns on the harness's search of Lean declarations after a
+check, which is in neither set yet ([lean.md](lean.md#search-pushed-by-the-harness)); the host must offer `lean.search` with a backend set up.
 
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
 not spent stays yours.

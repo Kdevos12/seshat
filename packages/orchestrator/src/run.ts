@@ -29,6 +29,7 @@ import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
+import { LEAN_SEARCH, LeanSearchPush, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
@@ -118,6 +119,18 @@ export interface RunConfig {
    * documentation/m0-loop.md, "Masked old checks"). The journal is not touched. Absent: off, and a run that records and sends what it always did.
    */
   maskOldChecks?: boolean;
+  /**
+   * After a check that did not accept the file, the harness searches Lean declarations for each unknown identifier and each hole's goal
+   * (capability `lean.search`), checks every hit against the run's Lean, and appends the names and the signatures Lean printed to the
+   * check's answer (plan change CA22, documentation/lean.md, "Search pushed by the harness"). The host must offer `lean.search`.
+   * Absent: off, and a run that records and answers what it always did.
+   */
+  leanSearch?: boolean;
+  /**
+   * Nothing leaves for a third party other than the model provider (Task 36 adds the same field and the `--private` flag). Here it keeps
+   * the backends of `lean.search` that send a query to a service off. Absent: not private.
+   */
+  private?: boolean;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -552,6 +565,23 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  if (config.leanSearch === true && !registry.offers(LEAN_SEARCH)) {
+    return await abandon(`leanSearch needs the capability ${LEAN_SEARCH}: host ${registry.host.host} does not offer it`, undefined, registry);
+  }
+  // The push of verified hits into the provers' check answers (plan change CA22): one for the run, so that a name is checked once per environment.
+  const leanSearch =
+    config.leanSearch === true
+      ? new LeanSearchPush({
+          checker: new RegistryLeanChecker(registry, { actor: LEAN_SEARCH }),
+          search: async (request, signal) => {
+            const found = await new RegistryLeanSearch(registry).search(
+              { ...request, ...(config.private === true ? { private: true } : {}) },
+              { actor: LEAN_SEARCH, ...(signal !== undefined ? { signal } : {}) },
+            );
+            return found?.hits.map((hit) => hit.name);
+          },
+        })
+      : undefined;
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
   // host cannot give is refused here, before `run.started` or `run.resumed` is written.
   const prices = new PriceBook(registry.host.models, o.wallClock);
@@ -667,6 +697,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+      ...(config.leanSearch === true ? { leanSearch: true } : {}),
+      ...(config.private === true ? { private: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1220,6 +1252,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(config.editTool === true ? { editTool: true } : {}),
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+          ...(leanSearch !== undefined ? { leanSearch } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

@@ -174,6 +174,59 @@ profiles do): it certifies each problem's candidate, and the proofs and refutati
 neither a sandbox command nor `unsandboxed: true` (neither default profile has one), the
 certifier is unavailable: every candidate stays a candidate and its problem says why.
 
+## Search pushed by the harness
+
+Plan change CA22, Task 40; `@seshat/lean-search`, the capability `lean.search` ([capabilities.md](capabilities.md#leansearch)), the option
+`RunConfig.leanSearch` (`harness run --lean-search`, `harness solve --lean-search`; off in `harness run` and in both `solve` defaults sets).
+Agents ignore lookup tools they must call, and hallucinated names are a third to a half of cheap models' errors: so the harness itself
+searches, and puts what it finds into the answer to the check.
+
+**When.** After a check that did not accept the file (the answer's `appendToCheck` hook of the session, `SessionOptions`; the same for
+`lean_check` and `lean_edit`), at most three queries, in this order: each `unknown identifier 'NAME'` or `unknown constant 'NAME'` of the
+report, with the missing name as the query (kind `name`); then each hole, with its goal as the query (kind `goal`; the last 500 characters,
+which hold the target). A query is made once a check. Each query asks `lean.search` for at most five hits. The three numbers are constants of
+`push.ts` (`MAX_QUERIES`, `MAX_HITS`) and `MAX_GOAL_QUERY_CHARS`.
+
+**Checked before it is shown.** A hit is a name that a backend says exists, perhaps in another Mathlib. For the candidates of one answer the
+harness makes one Lean call through the registry's `lean.check`, the same service the workbench uses: the imports of the checked file, then
+`#check NAME` for each name, with a limit of 30 s. A name that Lean answers with an error at its line is dropped. If the call fails, times out
+or throws, no hit is shown at all: an unverified name never reaches the model, and nothing of that call is remembered. A name that is
+verified, or found missing, is kept for the run by the imports it was checked under, so a name is checked once per run and environment.
+A name that is not the shape of a Lean name (one token, letters, digits, `_`, `'`, `.`, `!`, `?`, subscripts, `«»`) is dropped before it is
+ever put in a Lean file, so that a backend cannot send a command through the name.
+
+**What the model sees: Lean's text, not the backend's.** The section shows, for each hit, the name and signature that Lean printed for
+`#check`, on one line and cut at 300 characters. The text that a backend returned (a type, a doc string, a description) is third-party text.
+It ranks hits inside the local index and goes no further: the capability's answer holds names only, and the section is made from Lean's
+output alone. It never enters a system prompt, a lesson, a note or the memory, and the model is told the section is the harness's, checked
+with Lean. Global Constraint 16 (as amended): text from an external source never becomes part of a prompt or a lesson.
+
+**The section.** It is appended to the answer after Lean's own, titled "Declarations that exist in this environment", with the hits under
+the query that found them ("For unknown name `foo`:", "For hole 1:"), a name once. It is cut at a hit boundary at 1,200 characters
+(`MAX_SECTION_CHARS`, the title included), so an answer is at most `formatCheck`'s bound plus that. It is not in the check's one-line summary
+(`details.summary`), so [the masked form of an old check](m0-loop.md#masked-old-checks) does not keep it: the hits of a check that has aged out
+of the last four are gone with the rest of its text. The journal keeps the checks as before and no event is added: the search is a tool run
+of `lean.search` (actor `lean.search`) and the verification a tool run of `lean.check` (actor `lean.search`), neither attributed to the
+attempt, so the loop telemetry's check times stay the provers' own. A hit is not a claim and changes no status.
+
+**Backends** (the host profile's `lean.search` settings; each optional, any mix): `remote`, an HTTP service for natural-language and goal
+queries (`remoteUrl`, `LEAN_SEARCH_URL`); `local`, a file of declarations ranked by BM25 with no model (`index`, `LEAN_SEARCH_INDEX`: a JSON
+array or JSONL of `{name, type, doc?}`, for instance the export of the run's environment); `pattern`, a Loogle-like service (`patternUrl`,
+`LEAN_PATTERN_URL`), or a match of a goal's conclusion over the index when there is no address. The services are reached over https only, with
+no credentials in the address, no redirect, an answer read up to 256 KB and 8 s of waiting. A backend that fails is skipped and the others
+answer; with none set up the capability answers no hit.
+
+**`--private`.** `RunConfig.private` (Task 36 adds the flag `--private`; this task adds only the optional field, with the same meaning:
+nothing leaves for a third party other than the model provider) keeps `remote` and any `pattern` service off: the call says `private`, the
+implementation does not ask them, and `pattern` falls back to the index when there is one. The local index never leaves the machine. Without
+`private`, `remote` and `pattern` send the missing name, or a hole's goal (the statement being worked on), to the service: on for bench
+problems, to be asked for `solve` (plan change, question 1).
+
+**Not run.** Nothing here ran against a real Lean (the `#check` line and the lines Lean gives its messages are from its documentation as
+remembered; the verification reads the message at the line of each `#check`), a real search service (the request and the answer shape of
+`remote` and `pattern` are written from the services' documentation as remembered and may need an adapter, which is a replacement of the
+backend behind the same capability) or an index of Mathlib. The tests use a simulated Lean and fake services.
+
 ## To verify against Lean
 
 These depend on Lean's exact behaviour and are covered only by simulations so far. The contract
@@ -198,3 +251,6 @@ of `lean.check` checks each of them against a server
 9. For `lean.lsp`: what depends on the language server and on the search sites, listed in
    [lean-lsp.md](lean-lsp.md#to-verify-against-lean).
 10. The certifier, from building SeshatCertify on: [certifier.md](certifier.md#to-verify-against-lean).
+11. For `lean.search`: that `#check NAME` of a Mathlib name prints its signature as one info message at the line of the command and
+    that an unknown name is an error at that line; the real services' request and answer shapes; an index of Mathlib
+    ([above](#search-pushed-by-the-harness)).
