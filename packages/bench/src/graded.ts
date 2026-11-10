@@ -90,25 +90,38 @@ export function admissionSnippet(root: string, entry: ProblemEntry): string {
   return `${sketch.prefix}${sketch.header} sorry\n`;
 }
 
+/** The Lean environment itself failed (a probe that does not compile, a timeout, a missing `lake`): not a verdict on any statement, so the build stops. */
+export class AdmissionInfrastructureError extends Error {}
+
+/** A statement that must compile in any working environment: run once before any candidate. */
+const PROBE = "import Mathlib\n\ntheorem seshat_admission_probe : (1 : ℕ) + 1 = 2 := sorry\n";
+
 /**
  * An admitter that runs `lake env lean` in the Lean project of an environment (`lean/env/base` once built): admitted when Lean
- * prints no error. A missing `lake` is an error, never a rejection.
+ * prints no error. A known-good probe statement is run first: when it does not compile, the project is not built or not the right
+ * one, and the build stops with `AdmissionInfrastructureError` instead of rejecting every candidate. A timeout or a missing `lake`
+ * is the same kind of failure, never a rejection: only a statement Lean answers with an error for is rejected.
  */
 export function lakeAdmitter(project: string, options: { lake?: string; timeoutMs?: number } = {}): Admitter {
-  return (_entry, snippet) => {
+  const lake = options.lake ?? "lake";
+  const run = (snippet: string): boolean => {
     const dir = mkdtempSync(join(tmpdir(), "seshat-admit-"));
     const file = join(dir, "Statement.lean");
     try {
       writeFileSync(file, snippet);
-      execFileSync(options.lake ?? "lake", ["env", "lean", file], { cwd: project, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: options.timeoutMs ?? 300_000 });
+      execFileSync(lake, ["env", "lean", file], { cwd: project, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: options.timeoutMs ?? 300_000 });
       return true;
     } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") throw new Error(`cannot admit statements: ${options.lake ?? "lake"} is not installed`);
+      const e = error as { code?: string; killed?: boolean; signal?: string | null };
+      if (e.code === "ENOENT") throw new AdmissionInfrastructureError(`cannot admit statements: ${lake} is not installed`);
+      if (e.code === "ETIMEDOUT" || e.killed === true || e.signal != null) throw new AdmissionInfrastructureError(`Lean did not answer in time (${options.timeoutMs ?? 300_000} ms): the build stops, no statement is rejected for it`);
       return false;
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   };
+  if (!run(PROBE)) throw new AdmissionInfrastructureError(`the probe statement does not compile in ${project} (is the Lean environment built, with Mathlib?): no statement was judged`);
+  return (_entry, snippet) => run(snippet);
 }
 
 /** The candidates in the order of a seeded hash: the first `n` of it are `sample(candidates, n, seed)`. */
@@ -164,6 +177,7 @@ export function buildGraded(options: GradedOptions): GradedBench {
     for (const { entry, admission } of kept) {
       entries.push({ ...entry, grade, source, sourceCommit: src.rev, statementHash: sha256Hex(entry.statement), licence: src.licence, admission });
     }
+    if (kept.length === 0) throw new Error(`grade ${grade} has no ${options.admit === undefined ? "candidate" : "admitted entry"}: ${candidates[grade].length} candidate(s), ${rejected.length} rejected by Lean`);
     grades[grade] = { description, source, candidates: candidates[grade].length, entries: kept.length, rejected };
   }
   const body = { v: 1 as const, kind: "graded" as const, benchId: GRADED_ID, seed, sources, grades, entries };

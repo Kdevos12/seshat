@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { buildGraded, gradedIndex, isGraded, lakeAdmitter, readGraded, sample, writeGraded } from "../src/index.ts";
+import { AdmissionInfrastructureError, buildGraded, gradedIndex, isGraded, lakeAdmitter, readGraded, sample, writeGraded } from "../src/index.ts";
 
 const dir = (): string => mkdtempSync(join(tmpdir(), "mh-graded-"));
 
@@ -116,15 +116,35 @@ describe("buildGraded", () => {
 });
 
 describe("lakeAdmitter", () => {
-  it("admits when the fake lake exits 0 and rejects when Lean fails; a missing lake is an error", () => {
+  const fake = (script: string): { bin: string; lake: string } => {
     const bin = dir();
     const lake = join(bin, "lake");
-    writeFileSync(lake, '#!/bin/sh\ngrep -q BAD "$3" && { echo "error: unknown identifier" >&2; exit 1; }\nexit 0\n');
+    writeFileSync(lake, `#!/bin/sh\n${script}\n`);
     chmodSync(lake, 0o755);
+    return { bin, lake };
+  };
+  const entry = {} as never;
+
+  it("admits when the fake lake exits 0 and rejects the statement Lean errors on", () => {
+    const { bin, lake } = fake('grep -q BAD "$3" && { echo "error: unknown identifier" >&2; exit 1; }\nexit 0');
     const admit = lakeAdmitter(bin, { lake });
-    const entry = {} as never;
     assert.equal(admit(entry, "theorem a : True := sorry\n"), true);
     assert.equal(admit(entry, "theorem a : BAD := sorry\n"), false);
-    assert.throws(() => lakeAdmitter(bin, { lake: join(bin, "nope") })(entry, "x"), /not installed/);
+  });
+
+  it("stops the build when the probe does not compile, instead of rejecting every statement", () => {
+    const { bin, lake } = fake('echo "error: unknown package Mathlib" >&2; exit 1');
+    assert.throws(() => lakeAdmitter(bin, { lake }), (e: unknown) => e instanceof AdmissionInfrastructureError && /probe statement does not compile/.test((e as Error).message));
+  });
+
+  it("treats a timeout and a missing lake as infrastructure failures, not rejections", () => {
+    const slow = fake('case "$(cat "$3")" in *seshat_admission_probe*) exit 0;; esac\nsleep 5');
+    const admit = lakeAdmitter(slow.bin, { lake: slow.lake, timeoutMs: 300 });
+    assert.throws(() => admit(entry, "theorem a : True := sorry\n"), AdmissionInfrastructureError);
+    assert.throws(() => lakeAdmitter(slow.bin, { lake: join(slow.bin, "nope") }), /not installed/);
+  });
+
+  it("makes the build fail when a grade ends with no admitted entry", () => {
+    assert.throws(() => buildGraded({ fc: fcFixture(), putnam: putnamFixture(), seed: "s", sizeB: 2, sizeC: 2, admit: (e) => !e.id.includes("putnam_") }), /grade B has no admitted entry/);
   });
 });
