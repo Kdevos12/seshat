@@ -84,6 +84,11 @@ export interface ProverOptions {
    * is a child of the problem's with the probe's cap; running into that cap pauses it too.
    */
   probe?: { sessions: number };
+  /**
+   * True when the budget that ran out is only the slice a round of the run's budget gave the problem (`RunConfig.budgetRounds`): the prover then
+   * pauses with `slice`, its task stays running, and the problem asks for its next slice. Absent: a budget that runs out ends the prover.
+   */
+  slice?: () => boolean;
   /** The budget gate: asked before each session after a prover's first. A `skip` ends the prover with `gate`. */
   gate?: { minSessions: number; session(who: { prover: string; session: number }): Promise<{ action: string }> };
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
@@ -118,9 +123,9 @@ export interface ProverResume {
 /**
  * Why a prover stopped: it found the candidate, used its sessions, ran out of budget, was stopped,
  * kept failing, a line's `beforeSession` stopped it, the consortium turn ended (`turn`), the budget gate skipped its next session
- * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end).
+ * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end), or the problem's slice of the run's budget in rounds is spent (`slice`: a pause, not an end, plan change CA8).
  */
-export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate";
+export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate" | "slice";
 
 export interface ProverResult {
   name: string;
@@ -146,8 +151,8 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
     if (o.turn?.ended === undefined || !isTurnEnded(error)) throw error;
     result = { name: o.name, attempts: progress.attempts, stop: "turn" };
   }
-  // A prover that ran its probe has not ended either: the gate says whether it goes on.
-  if (result.stop === "probe") return result;
+  // A prover that ran its probe has not ended either: the gate says whether it goes on. Nor has one whose slice of the run's budget is spent.
+  if (result.stop === "probe" || result.stop === "slice") return result;
   o.onEnd?.(result);
   // The lines hear of a prover that ended, not of one the turn interrupted: it has not ended, it waits.
   if (result.stop !== "turn") await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
@@ -170,7 +175,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
   // The probe's cap is its own ledger's: running into it pauses the prover, running into the problem's budget ends it.
-  const budgetStop = (): ProverStop => (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
+  const budgetStop = (): ProverStop => o.slice?.() === true ? "slice" : (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
   const lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
   for (let session = (resumed?.session ?? 0) + 1; session <= lastSession; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
@@ -337,7 +342,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     const outcome = outcomeOf(result);
     if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
     const failure =
-      outcome === "invalid" && result.report !== undefined
+      // A session that the rotation's slice cut (`o.slice`) keeps the class of its last check too: that is how the rotation sees Lean progress in it.
+      (outcome === "invalid" || (outcome === "budget_exhausted" && o.slice !== undefined)) && result.report !== undefined
         ? failureClass(result.report, {
             statement: workbench.sketch.statement,
             ...(result.submission !== undefined ? { aux: result.submission.aux } : {}),

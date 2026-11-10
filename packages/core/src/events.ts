@@ -619,6 +619,31 @@ export interface EventDataMap {
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
    * nothing here touches a claim; the hash is what a run records so that it can be reproduced.
    */
+  /**
+   * A round of a run's budget in rounds began (`RunConfig.budgetRounds`, plan change CA8, documentation/scheduler.md, "The budget in rounds"):
+   * the problems it works, in the order they are given a slice, the most one of them may have spent in all (`capUsd`, `runUsd / (4K) * 2^round`),
+   * and where each stood at its start (`marks`, the measure its end is compared with: absent in round 0). `resumed` names the parked problems
+   * this round takes up again. A resumed run reads these events to continue the same rotation. Written by the orchestrator only.
+   */
+  "budget.round": {
+    round: number;
+    capUsd: number;
+    runUsd: number;
+    problems: string[];
+    marks?: { [problemId: string]: { proved: number; holes: number | null; depth: number } };
+    resumed?: string[];
+  };
+  /**
+   * A problem without Lean progress at the end of its round was parked: it waits until every other problem is solved or parked and budget
+   * remains. `usd` is what it had spent in all. Written by the orchestrator only; it changes no claim.
+   */
+  "problem.parked": {
+    problemId: string;
+    round: number;
+    usd: number;
+    capUsd: number;
+    reason: string;
+  };
   "pack.installed": {
     name: string;
     version: string;
@@ -728,6 +753,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "budget.gated",
   "pack.installed",
   "pack.removed",
+  "budget.round",
+  "problem.parked",
 ];
 
 /** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */
