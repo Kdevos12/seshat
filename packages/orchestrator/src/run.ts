@@ -45,6 +45,7 @@ import { PROMPT_VERSION, promptHash } from "./prompt.ts";
 import { promptTarget, screenPrompt } from "./prompt-screen.ts";
 import { createProverTasks, endProverTask, type ProverTask } from "./prover-tasks.ts";
 import { type ProverResult, type ProverResume, runProver } from "./prover.ts";
+import type { RetryPolicy } from "./retry.ts";
 import { type RunReport, writeReport } from "./report.ts";
 import {
   beginResumption,
@@ -209,6 +210,8 @@ export interface RunOptions {
   wallClock?: () => number;
   /** Waits for the off-peak option; default: a timer that the run's signal cuts short. A test advances its clock here. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** How the sessions send again a request that a transient error cut; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). A test sets short waits here. */
+  retry?: RetryPolicy;
   /**
    * The bench index file the run was given (`--bench`), written to `resume.json` with the checkout and the host so that RESULT.md can
    * name the exact command that resumes the run. Absent: the command names the checkout and the host alone.
@@ -378,6 +381,8 @@ export interface ResumeOptions {
   wallClock?: () => number;
   /** As `RunOptions.sleep`. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** As `RunOptions.retry`. */
+  retry?: RetryPolicy;
   /** The person the events of this process are on behalf of. */
   user?: string;
 }
@@ -413,6 +418,7 @@ export async function resumeBench(o: ResumeOptions): Promise<RunResult> {
       ...(o.turns !== undefined ? { turns: o.turns } : {}),
       ...(o.wallClock !== undefined ? { wallClock: o.wallClock } : {}),
       ...(o.sleep !== undefined ? { sleep: o.sleep } : {}),
+      ...(o.retry !== undefined ? { retry: o.retry } : {}),
       ...(o.user !== undefined ? { user: o.user } : {}),
     },
     recorded,
@@ -1188,6 +1194,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           notesChars: config.notesChars,
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+          ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,
           ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),

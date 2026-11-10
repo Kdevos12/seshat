@@ -295,7 +295,8 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // request draws and records nothing; the sampled settings (the temperature) and the cache policy go with a request that is sent.
     // A response that a transient error cut (the stream cut, a reset connection, a 5xx, a 429) is asked again with the
     // same context, so that the provider's cache still answers, after a wait; never once the turn is over, the problem
-    // stopped or the budget spent. The cut response is charged as it is sent again (documentation/m0-loop.md, "Transient errors").
+    // stopped or the budget spent, and the turn gate is read again immediately before each send. The cut response is
+    // charged as its request is sent again (documentation/m0-loop.md, "Transient errors").
     streamFn: (model, context, options) => {
       const over = o.turn?.ended;
       if (over !== undefined) return refusedStream(model, `the turn is over (${over.detail}): the request was not sent`);
@@ -306,15 +307,13 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
         send: () => o.models.streamSimple(model, context, sent),
         policy: o.retry ?? REQUEST_RETRY,
         signal: options?.signal,
-        retry: (cut, retry) => {
-          if (o.signal.aborted || o.turn?.ended !== undefined) return false;
-          const charge = messageCost(o.model, cut, o.prices);
-          if (o.ledger.wouldExhaust(charge.usd)) return false;
+        // Asked before the wait, during it and after it: a stop, the turn's end or a spent budget ends the wait at once,
+        // and the cut response is then the session's answer, charged as any answer.
+        mayResend: (cut) => !o.signal.aborted && o.turn?.ended === undefined && !o.ledger.wouldExhaust(messageCost(o.model, cut, o.prices).usd),
+        resend: (cut, retry) => {
           retries += 1;
-          addCharge(charge, retry);
-          return true;
+          addCharge(messageCost(o.model, cut, o.prices), retry);
         },
-        abandoned: (message) => refusedMessages.add(message),
       });
     },
     toolExecution: "sequential",

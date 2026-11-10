@@ -19,6 +19,13 @@ import { leanCertifyImplementation, leanCheckImplementation, loadCatalog, Regist
 import { FakeChecker, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import type { FakeSage } from "./fixtures/fake-sage.ts";
 import { DEFAULT_CONFIG, REPO_ROOT, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, type TurnProcess } from "../src/index.ts";
+import type { RetryPolicy } from "../src/retry.ts";
+
+/**
+ * The retry policy of the runs of these tests: a request that a transient error cut is sent again at once, so that no
+ * test waits the seconds of `REQUEST_RETRY` unless it asks for them (documentation/m0-loop.md, "Transient errors").
+ */
+export const TEST_RETRY: RetryPolicy = { retries: 3, baseDelayMs: 1, maxDelayMs: 1 };
 
 export const DEMO_FILE = `import FormalConjectures.Util.ProblemImports
 
@@ -242,6 +249,8 @@ export async function demoRun(options: {
   memoryFrom?: string;
   /** The Lean environment the registry is pinned to, as the CLI resolves it before the registry is built. */
   leanEnvironment?: RunOptions["leanEnvironment"];
+  /** How a request that a transient error cut is sent again. Default: `TEST_RETRY`. */
+  retry?: RetryPolicy;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
@@ -267,6 +276,7 @@ export async function demoRun(options: {
     ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
     ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
     ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
+    retry: options.retry ?? TEST_RETRY,
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }
@@ -294,6 +304,8 @@ export async function demoResume(options: {
   wallClock?: () => number;
   /** Waits for the off-peak option. */
   sleep?: RunOptions["sleep"];
+  /** How a request that a transient error cut is sent again. Default: `TEST_RETRY`. */
+  retry?: RetryPolicy;
 }): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
   const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
   faux.setResponses(options.responses);
@@ -312,6 +324,7 @@ export async function demoResume(options: {
     ...(options.turns !== undefined ? { turns: options.turns } : {}),
     ...(options.wallClock !== undefined ? { wallClock: options.wallClock } : {}),
     ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
+    retry: options.retry ?? TEST_RETRY,
   });
   return { result, events: readEvents(join(options.dir, "journal.jsonl")), faux, lean };
 }
