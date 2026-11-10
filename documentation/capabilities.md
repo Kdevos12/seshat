@@ -156,7 +156,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation of it that does not answer as `warn` and does not fail on it, also when the
   capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
   implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
-  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire`, `atp.eprover` and `decide.ask`, and no other capability.
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `lit.search`, `smt.z3`, `atp.vampire`, `atp.eprover` and `decide.ask`, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -329,6 +329,20 @@ address is the host's `baseUrl` setting (`OEIS_URL` in the repository's profiles
 through `RegistryOeis`, so its lookups are tool runs from `line:M11`. Its contract has 5 cases: a
 search by terms, one by number, one without an answer (`count` 0, not an error), and a call with
 neither or both of `terms` and `id` (refused before any request). It has not run against the site.
+
+## `lit.search`
+
+The literature, for the intake step of a run ([literature.md](literature.md)): a `query` goes to every backend the host profile
+enables (OpenAlex, arXiv, Semantic Scholar, zbMATH, and the docstrings and `formal_proof` attributes of a local bench checkout) and
+gives, for each backend, the request made and how many hits it returned or why it failed, and the hits: backend, link, title and the
+`text` the site gave (an abstract, a review, a docstring). Its exposure is `auto`: no prover has it as a tool, because everything it
+returns is text from a third party. It justifies no status. Its implementation `sources` (factory `lit`, version `backends-1`) is one
+implementation whose host settings choose the backends (`backends.ID.baseUrl`, or `dir` for `bench-metadata`; a backend with an empty
+setting is off), each with its `allowedHosts`: the address must be on that list, https is required (a loopback address is allowed for a
+test), a redirect is an error, an answer over `maxBytes` (1 MiB) is refused, only a text content type is read, one request at a time
+with a pause. A backend that fails is named in `answers` and the others still answer; the call is `unavailable` when none did.
+Replacing a backend is a change of the setting; replacing the whole implementation is another implementation id in the profile's `use`.
+Its contract has 3 cases (a query with hits, one without, a blank one) against a fake server; it has not run against any site.
 
 ## `lmfdb.query`
 
