@@ -9,6 +9,7 @@ import type { SessionHooks } from "./line-runtime.ts";
 import type { PriceBook } from "./prices.ts";
 import { keepReasoning } from "./history.ts";
 import { composePacket, type FrozenState } from "./packet.ts";
+import { REQUEST_RETRY, type RequestRetry, retryingStream, type RetryPolicy } from "./retry.ts";
 import type { Workbench } from "./problem.ts";
 import { WRAP_UP } from "./prompt.ts";
 import { isTurnEnded, type Turn } from "./turns.ts";
@@ -59,8 +60,11 @@ export interface SessionOptions {
   limits: SessionLimits;
   /** Charged with every model response. */
   ledger: Ledger;
-  /** Told of every model response's cost as it is charged, so that the journal keeps what a session that never finishes spent. */
-  onCharge?: (cost: TokenCost) => void;
+  /**
+   * Told of every model response's cost as it is charged, so that the journal keeps what a session that never finishes spent.
+   * A response that a transient error cut, and whose request was sent again, comes with `retry` (documentation/m0-loop.md, "Transient errors").
+   */
+  onCharge?: (cost: TokenCost, retry?: RequestRetry) => void;
   /** The problem's signal, aborted with `ABORT_SOLVED`, `ABORT_BUDGET` or `ABORT_STOPPED`. */
   signal: AbortSignal;
   /** When a limit ends the session, ask the model for its notes (one more response). */
@@ -103,6 +107,8 @@ export interface SessionOptions {
   rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
   /** How the requests are built from a line's context packet; absent: `prefix_tail`. */
   packetMode?: PacketMode;
+  /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
+  retry?: RetryPolicy;
 }
 
 export interface SessionResult {
@@ -118,6 +124,8 @@ export interface SessionResult {
   /** The strategy the model declared in its last `lean_check` that gave one. */
   declaredStrategy?: string;
   messages: AgentMessage[];
+  /** Requests sent again after a transient error cut their response; absent: none. */
+  retries?: number;
   /** The size of the tool declarations each request carried, in tokens (an upper bound: `estimateTokens` of their names, descriptions and parameters). */
   toolTokens?: number;
   error?: string;
@@ -153,6 +161,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     return "failed";
   };
   let requests = 0;
+  let retries = 0;
   let declared: string | undefined;
   // The prefix of the context packet, frozen at the session's first request that answers one.
   let frozen: FrozenState | undefined;
@@ -284,12 +293,29 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // The one place where a request is sent: the consortium turn is read here, immediately before the send, so that no
     // request goes out after the limit however the provers and lines interleave (documentation/human.md, "Turns"). A refused
     // request draws and records nothing; the sampled settings (the temperature) and the cache policy go with a request that is sent.
+    // A response that a transient error cut (the stream cut, a reset connection, a 5xx, a 429) is asked again with the
+    // same context, so that the provider's cache still answers, after a wait; never once the turn is over, the problem
+    // stopped or the budget spent. The cut response is charged as it is sent again (documentation/m0-loop.md, "Transient errors").
     streamFn: (model, context, options) => {
       const over = o.turn?.ended;
       if (over !== undefined) return refusedStream(model, `the turn is over (${over.detail}): the request was not sent`);
-      return o.models.streamSimple(model, context, cacheRetention === undefined && temperature === undefined
+      const sent = cacheRetention === undefined && temperature === undefined
         ? options
-        : { ...options, ...(cacheRetention !== undefined ? { cacheRetention } : {}), ...(temperature !== undefined ? { temperature } : {}) });
+        : { ...options, ...(cacheRetention !== undefined ? { cacheRetention } : {}), ...(temperature !== undefined ? { temperature } : {}) };
+      return retryingStream({
+        send: () => o.models.streamSimple(model, context, sent),
+        policy: o.retry ?? REQUEST_RETRY,
+        signal: options?.signal,
+        retry: (cut, retry) => {
+          if (o.signal.aborted || o.turn?.ended !== undefined) return false;
+          const charge = messageCost(o.model, cut, o.prices);
+          if (o.ledger.wouldExhaust(charge.usd)) return false;
+          retries += 1;
+          addCharge(charge, retry);
+          return true;
+        },
+        abandoned: (message) => refusedMessages.add(message),
+      });
     },
     toolExecution: "sequential",
     sessionId: o.attemptId,
@@ -331,7 +357,10 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     // A request the turn gate refused was never sent: no response, no charge, no zero-cost attempt record.
     if (refusedMessages.has(event.message)) return;
     turns += 1;
-    const charge = messageCost(o.model, event.message, o.prices);
+    addCharge(messageCost(o.model, event.message, o.prices));
+  });
+  /** Charges a response, an answer or a cut one, to the session, the ledger and the journal. */
+  function addCharge(charge: TokenCost, retry?: RequestRetry): void {
     cost.usd += charge.usd;
     cost.inputTokens += charge.inputTokens;
     cost.outputTokens += charge.outputTokens;
@@ -340,8 +369,9 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     if (charge.offPeakUsd !== undefined) cost.offPeakUsd = (cost.offPeakUsd ?? 0) + charge.offPeakUsd;
     if (charge.unchargedUsd !== undefined) cost.unchargedUsd = (cost.unchargedUsd ?? 0) + charge.unchargedUsd;
     o.ledger.charge(charge);
-    o.onCharge?.(charge);
-  });
+    if (retry === undefined) o.onCharge?.(charge);
+    else o.onCharge?.(charge, retry);
+  }
   const abort = () => agent.abort();
   o.signal.addEventListener("abort", abort, { once: true });
   try {
@@ -362,6 +392,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       report,
       submissions,
       ...(declared !== undefined ? { declaredStrategy: declared } : {}),
+      ...(retries > 0 ? { retries } : {}),
       messages: agent.state.messages,
       toolTokens: estimateTokens(JSON.stringify([leanCheck, ...(o.tools ?? [])].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))),
       ...(stop === "error" ? { error: failure ?? last?.errorMessage ?? "the model request failed" } : {}),

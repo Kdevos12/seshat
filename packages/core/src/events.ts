@@ -327,6 +327,13 @@ export interface EventDataMap {
    */
   "attempt.charged": TokenCost & {
     attemptId: string;
+    /**
+     * Present when the response was cut by a transient error (the stream cut, a reset connection, a 5xx, a 429)
+     * and its request was sent again with the same context: `retry` is the send's number (1 for the first one
+     * again), `error` what cut the response, `delayMs` the wait before the send. The charge is what the provider
+     * reported of the cut response, often nothing (documentation/m0-loop.md, "Transient errors"). Absent: an answer.
+     */
+    retry?: { retry: number; error: string; delayMs: number };
   };
   "attempt.finished": TokenCost & {
     attemptId: string;
@@ -339,6 +346,8 @@ export interface EventDataMap {
     error?: string;
     durationMs: number;
     turns: number;
+    /** The requests of the session sent again after a transient error, each with its `attempt.charged`. Absent: none. */
+    retries?: number;
     /**
      * The size of the tool declarations the session sent with every request (`lean_check`, the run's other tools, the tools its lines
      * opened), as an upper bound in tokens: the "tokens of tool definitions per request" of plan section 6. Absent in journals older
