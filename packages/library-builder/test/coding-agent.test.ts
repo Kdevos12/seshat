@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type BuildOptions, NoneBuilder, type LibraryBuildResult } from "../src/index.ts";
-import { harness, SPEC } from "./fixtures.ts";
+import type { CommandRunner } from "@seshat/lean-env";
+import { fakeRunner, harness, SPEC } from "./fixtures.ts";
 
 const OPTIONS: BuildOptions = { budget: { usd: 2, seconds: 60 }, timeoutSec: 60 };
 
@@ -197,6 +198,40 @@ describe("the coding-agent builder and Seshat's gate", () => {
     const pending = h.builder("hang").build(SPEC, { ...OPTIONS, signal: controller.signal });
     setTimeout(() => controller.abort(), 300);
     assert.match((await pending).reason, /aborted/);
+  });
+
+  it("reports an abort as an abort at every step it can interrupt, not as a failure of that step", async () => {
+    // The abort arrives while a step runs: the runner aborts and then starts the command, which is killed at once (code null, no output).
+    const steps: Array<{ step: string; matches: (command: string, args: readonly string[]) => boolean }> = [
+      { step: "rev-parse", matches: (c, a) => c === "git" && a.includes("rev-parse") },
+      { step: "ls-tree", matches: (c, a) => c === "git" && a.includes("ls-tree") },
+      { step: "clone", matches: (c, a) => c === "git" && a.includes("clone") },
+      { step: "checkout", matches: (c, a) => c === "git" && a.includes("checkout") },
+      { step: "remote", matches: (c, a) => c === "git" && a.includes("remote") },
+      { step: "gate lake build", matches: (c) => c === "lake" },
+    ];
+    for (const { step, matches } of steps) {
+      const controller = new AbortController();
+      const h = harness();
+      const inner = fakeRunner();
+      const run: CommandRunner = async (command, args, options) => {
+        if (!matches(command, args)) return await inner(command, args, options);
+        controller.abort();
+        return command === "lake" ? { code: null, output: "" } : await inner(command, args, options);
+      };
+      const result = await h.builder("good", { run }).build(SPEC, { ...OPTIONS, signal: controller.signal });
+      assert.equal(result.status, "failed", step);
+      assert.equal(result.reason, "the build was aborted", `${step}: ${result.reason}`);
+      if (step !== "gate lake build") assert.equal(result.provenance.command, undefined, `${step}: the agent did not start`);
+      assert.equal(h.certifier.calls.length, 0, step);
+    }
+    // A signal that is aborted before the build starts runs nothing.
+    const already = new AbortController();
+    already.abort();
+    const ran: string[] = [];
+    const result = await harness().builder("good", { run: async (command, args, options) => (ran.push(command), await fakeRunner()(command, args, options)) }).build(SPEC, { ...OPTIONS, signal: already.signal });
+    assert.equal(result.reason, "the build was aborted");
+    assert.deepEqual(ran, []);
   });
 
   it("refuses a spec with no test lemma for a definition, without starting the agent", async () => {

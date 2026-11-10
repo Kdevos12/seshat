@@ -37,6 +37,9 @@ export interface CodingAgentOptions {
 
 const GIT = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
 
+/** The reason of a build that was aborted, whatever step the abort interrupted. */
+const ABORTED = "the build was aborted";
+
 /**
  * The `coding-agent` builder (plan change LC4). It clones the project, runs an external CLI agent in the clone,
  * non-interactively, with the prompt on standard input and only the environment the settings name, and then judges what
@@ -86,6 +89,11 @@ export class CodingAgentBuilder implements LibraryBuilder {
 
     const problems = specProblems(spec);
     if (problems.length > 0) return result("failed", `the spec is not valid: ${problems.join("; ")}`);
+    // An abort kills whatever step is running, which then fails for that reason alone: every step checks the signal first, so an abort
+    // is reported as an abort and not as the failure of the step it interrupted (a clone killed half-way has nothing to say).
+    const aborted = (): boolean => options.signal?.aborted === true;
+    const abortedResult = (): LibraryBuildResult => result("failed", ABORTED);
+    if (aborted()) return abortedResult();
 
     const root = mkdtempSync(join(o.workRoot ?? tmpdir(), "seshat-build-"));
     try {
@@ -95,11 +103,13 @@ export class CodingAgentBuilder implements LibraryBuilder {
       mkdirSync(join(root, "gate-home"), { recursive: true });
       const git = async (args: readonly string[], cwd: string) => await run("git", [...GIT, ...args], { cwd, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
       const rev = await git(["rev-parse", "--verify", `${o.ref ?? "HEAD"}^{commit}`], o.repo);
+      if (aborted()) return abortedResult();
       if (rev.code !== 0) return result("failed", `the project ${o.repo} has no commit ${o.ref ?? "HEAD"}: ${rev.output.trim()}`);
       const base = rev.output.trim().split("\n").pop() as string;
       provenance.baseCommit = base;
       if (options.approvedBy !== undefined) provenance.approvedBy = options.approvedBy;
       const tree = await git(["ls-tree", "-r", "-z", "--full-tree", base], o.repo);
+      if (aborted()) return abortedResult();
       if (tree.code !== 0) return result("failed", `cannot list the project's tree: ${tree.output.trim()}`);
       const known = new Map<string, string>();
       for (const entry of tree.output.split("\0")) {
@@ -110,9 +120,14 @@ export class CodingAgentBuilder implements LibraryBuilder {
       // The agent's clone, and a home of its own that holds nothing. The clone keeps no remote: the project's path is not something to fetch from.
       const work = join(root, "agent");
       const cloned = await git(["clone", "--quiet", "--local", "--no-hardlinks", o.repo, work], root);
-      if (cloned.code === 0) await git(["checkout", "--quiet", "--detach", base], work);
-      if (cloned.code === 0) await git(["remote", "remove", "origin"], work);
+      if (aborted()) return abortedResult();
       if (cloned.code !== 0 || !existsSync(work)) return result("failed", `cannot clone the project: ${cloned.output.trim()}`);
+      const checkedOut = await git(["checkout", "--quiet", "--detach", base], work);
+      if (aborted()) return abortedResult();
+      if (checkedOut.code !== 0) return result("failed", `cannot check out ${base} in the clone: ${checkedOut.output.trim()}`);
+      const unlinked = await git(["remote", "remove", "origin"], work);
+      if (aborted()) return abortedResult();
+      if (unlinked.code !== 0) return result("failed", `cannot remove the clone's remote: ${unlinked.output.trim()}`);
 
       const prompt = renderPrompt(spec);
       const argv = renderCommand(o.settings, options.budget, options.timeoutSec);
@@ -130,7 +145,7 @@ export class CodingAgentBuilder implements LibraryBuilder {
       });
       provenance.agentOutput = agentRun.output;
       provenance.agentMs = agentRun.ms;
-      if (agentRun.aborted) return result("failed", "the build was aborted");
+      if (agentRun.aborted || aborted()) return abortedResult();
       if (agentRun.timedOut) return result("failed", `the agent did not finish within ${options.budget.seconds ?? options.timeoutSec} seconds`);
       if (agentRun.code === null) return result("failed", `the agent did not start: ${agentRun.output.trim().split("\n").pop() ?? ""}`);
       // The exit code is not a verdict: an agent that exits 1 after writing good files is judged by its files, and one that exits 0 by the same.
@@ -157,6 +172,8 @@ export class CodingAgentBuilder implements LibraryBuilder {
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
         ...(o.log !== undefined ? { log: o.log } : {}),
       });
+      // A gate the abort interrupted could not decide (a killed `lake build` or `git` says nothing about the files): that is the abort.
+      if (gate.verdict === "undecided" && aborted()) return abortedResult();
       const failedRule = gate.checks.find((c) => !c.ok);
       const status: BuildStatus = gate.verdict === "accepted" ? "accepted" : gate.verdict === "rejected" ? "rejected" : "failed";
       const reason =
