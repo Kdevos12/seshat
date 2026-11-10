@@ -37,6 +37,21 @@ here. The shares are of the claims the run made, so a configuration without M12 
 
 An arm is also a point in an experiment: it can carry a candidate prompt (`prompts`, which `harness optimize-prompts` measures through it, documentation/prompts.md), line options, a packet mode, decide settings, a model and a tool set, and name the arm it is compared against.
 
+## The paired protocol (CA2)
+
+Every table has a **Paired protocol** section (`protocol` in `ablation.json`; `protocol.ts` and `paired-stats.ts`): the same problems at the same dollars per problem in every arm, and these numbers, all read from the journals.
+
+- **Per arm.** Problems solved out of the problems, with the Wilson score interval (95%) of the share, the dollars spent, the dollars per solved problem, the problems solved per dollar, the wall-clock time (the journal's first event to its last, a resumed arm included), the certified refutations (counted apart from proofs) and the statements found settled in the literature (claims with a `literature` memory node whose `settled` is true, `{backend, url, title, quote, verdict, settled}`: zero until a task writes those nodes).
+- **Against the baseline arm.** The discordant pairs (solved only by this arm, solved only by the baseline), the exact two-sided McNemar test (twice the binomial tail of the smaller count over the `b + c` pairs, 1 with none), and the ratio of problems solved per dollar of this arm over the baseline's, on the problems both finished. Arms that did not finish the same problems are marked not comparable and get no verdict.
+- **The target line.** `Target met` when the best arm's ratio is at least `--target` (default 1.5) and it solves no fewer problems than the baseline, `Target not met` with the reason otherwise. With one arm there is no line.
+
+```sh
+harness ablate --checkout DIR --model PROVIDER/ID --bench bench/graded-v1.json --grade B --sample 60 \
+  --configs M0,M1 --baseline M0 --target 1.5
+```
+
+`--baseline ARM` names the arm the others are set against (default: the first; refused when it is not in the table) and `--target RATIO` the ratio to reach. Arms stay generic named configurations: the plan change's own baseline, `solve`'s defaults at `ae3b2a0` (the defaults set `v1` of Task 34), is an arm the controller wires once that set exists. The target is the owner's, "problem solving against cost", with the same cap per problem and no fewer problems solved on grades A and B: one table is one grade, so the line is read on a table of grade A and on one of grade B. With 60 paired problems a gain from 30% to 45% shows when the gains are nested (about 11 discordant pairs against 2). The statistics are tested against values computed independently of the code; nothing was run on real problems.
+
 ## Reliability of decisions (J4)
 
 `labelDecisions` gives each decision the outcome Lean gave it: for `prove.search.order` the answer is right when it names a tactic that closed a goal, for `fleet.cold_start` when it names the strategy of a valid attempt, and for the other sites when the claim came to be settled. `reliability` bins the probability of the answer (ten bins) and gives the expected calibration error per site and backend, and the mean rank of the candidate that succeeded. `agreement` compares two backends on the questions both answered (J5). No threshold on a probability is allowed until its site has a curve.
