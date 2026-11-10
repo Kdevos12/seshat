@@ -200,6 +200,20 @@ describe("structuralCheck", () => {
     );
   });
 
+  it("takes an aux declaration whose binders and statement are on column-0 lines as one declaration, and still refuses what follows it", () => {
+    const split = "theorem aux_x\n(n : ℕ)\n: n = n := rfl";
+    ok(split, "  simp");
+    ok(`${split}\n\nlemma aux_y (m : ℕ) : m = m := rfl`, "  simp");
+    // A command after it is a command of its own, and is judged as one.
+    refused(`${split}\naxiom aux_z : False`, "  simp", /'axiom' is not allowed/);
+    refused(`${split}\naxiom aux_z : False`, "  simp", /only theorem, lemma, def and abbrev are allowed here, found 'axiom'/);
+    refused(`${split}\nopen Lean in\nrun_cmd pure ()`, "  simp", /not allowed/);
+    refused(`${split}\ninstance : Inhabited ℕ := ⟨0⟩`, "  simp", /only theorem, lemma, def and abbrev are allowed here, found 'instance'/);
+    // What hides inside the continuation lines is still scanned.
+    refused("theorem aux_x\n(n : ℕ)\n: n = n := by sorry", "  simp", /'sorry' is not allowed/);
+    refused("theorem bad\n(n : ℕ)\n: n = n := rfl", "  simp", /must start with 'aux_'/);
+  });
+
   it("refuses shortcuts and meta-level code wherever they hide", () => {
     refused("", "  sorry", /proof: 'sorry' is not allowed/);
     refused("", "  native_decide", /'native_decide' is not allowed/);
