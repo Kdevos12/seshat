@@ -141,6 +141,8 @@ export interface SessionResult {
   retries?: number;
   /** The size of the tool declarations each request carried, in tokens (an upper bound: `estimateTokens` of their names, descriptions and parameters). */
   toolTokens?: number;
+  /** The open holes each Lean check left, in order (`attempt.finished.holes`). */
+  holes?: number[];
   error?: string;
 }
 
@@ -152,6 +154,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const cost: TokenCost = { usd: 0, inputTokens: 0, outputTokens: 0 };
   let turns = 0;
   let submissions = 0;
+  const holes: number[] = [];
   let submission: Submission | undefined;
   let report: ValidationReport | undefined;
   let accepted = false;
@@ -223,6 +226,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     try {
       const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}), ...(o.checkTimeoutSec !== undefined ? { timeoutSec: o.checkTimeoutSec } : {}) });
       report = result.report;
+      if (report.leanStatus === undefined) holes.push(report.sorries.length);
       accepted ||= result.accepted;
       const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);
       unreachable = lost ? unreachable + 1 : 0;
@@ -440,6 +444,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       submission,
       report,
       submissions,
+      ...(holes.length > 0 ? { holes } : {}),
       ...(declared !== undefined ? { declaredStrategy: declared } : {}),
       ...(retries > 0 ? { retries } : {}),
       messages: agent.state.messages,

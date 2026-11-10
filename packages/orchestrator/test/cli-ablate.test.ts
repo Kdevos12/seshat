@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { promisify } from "node:util";
+import { buildGraded, writeGraded } from "@seshat/bench";
 import { buildReport } from "../src/index.ts";
 import { compareProbe, probeDirOf } from "../src/probe.ts";
 import { measureRun } from "../src/measures.ts";
@@ -54,6 +55,57 @@ describe("harness ablate", () => {
     const c = await harness(["ablate", "--checkout", checkout, "--model", "faux/x", "--all", "--configs", "M99", "--out", join(tempDir("mh-cli-out-"), "a")]);
     assert.equal(c.code, 2);
     assert.match(c.stderr, /not a cumulative configuration/);
+  });
+});
+
+describe("the graded bench on the command line", () => {
+  /** A graded bench built from two fixture checkouts, without a Lean: every entry is unchecked. */
+  function gradedFile(): string {
+    const fc = tempDir("mh-cli-fc-");
+    mkdirSync(join(fc, "FormalConjectures"), { recursive: true });
+    writeFileSync(join(fc, "FormalConjectures", "T.lean"), "import FormalConjectures.Util.ProblemImports\n\n@[category textbook, AMS 11]\ntheorem t0 (n : ℕ) : n = n := by\n  sorry\n\n@[category research solved, AMS 11,\nformal_proof using lean4 at \"https://example.org/p.lean\"]\ntheorem c0 (n : ℕ) : n = n := by\n  sorry\n");
+    const putnam = tempDir("mh-cli-putnam-");
+    mkdirSync(join(putnam, "lean4", "src"), { recursive: true });
+    writeFileSync(join(putnam, "lean4", "src", "putnam_1.lean"), "import Mathlib\n\ntheorem putnam_1\n(n : ℕ)\n: n = n :=\nsorry\n");
+    const file = join(tempDir("mh-cli-graded-"), "graded-v1.json");
+    writeGraded(file, buildGraded({ fc, putnam, seed: "s", sizeB: 1, sizeC: 1 }));
+    return file;
+  }
+
+  it("needs a grade, refuses unchecked entries unless told otherwise, and refuses a grade for an ordinary index", async () => {
+    const file = gradedFile();
+    const checkout = tempDir("mh-cli-checkout-");
+    const args = ["ablate", "--checkout", checkout, "--model", "faux/x", "--all", "--bench", file, "--out", join(tempDir("mh-cli-out-"), "a")];
+    const none = await harness(args);
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /is a graded bench: choose a grade with --grade A, B or C/);
+    const unchecked = await harness([...args, "--grade", "B"]);
+    assert.equal(unchecked.code, 2);
+    assert.match(unchecked.stderr, /never admitted by a Lean.*--allow-unchecked/);
+    const wrong = await harness([...args, "--grade", "D"]);
+    assert.match(wrong.stderr, /one of A, B, C/);
+    const run = await harness(["run", "--checkout", checkout, "--model", "faux/x", "--all", "--bench", file, "--grade", "B"]);
+    assert.equal(run.code, 2);
+    assert.match(run.stderr, /never admitted/);
+    const plain = await harness(["ablate", "--checkout", checkout, "--model", "faux/x", "--all", "--grade", "B", "--out", join(tempDir("mh-cli-out-"), "a")]);
+    assert.equal(plain.code, 2);
+    assert.match(plain.stderr, /go with a graded bench/);
+  });
+
+  it("takes the baseline and the target of the protocol, refusing a baseline that is not an arm and a target that is not a ratio, before anything is spent", async () => {
+    const checkout = tempDir("mh-cli-checkout-");
+    const base = ["ablate", "--checkout", checkout, "--model", "faux/x", "--all", "--configs", "M0,M1"];
+    const baseline = await harness([...base, "--baseline", "nope", "--out", join(tempDir("mh-cli-out-"), "a")]);
+    assert.notEqual(baseline.code, 0);
+    assert.match(baseline.stderr, /the baseline arm nope is not in the table/);
+    const target = await harness([...base, "--target", "fast", "--out", join(tempDir("mh-cli-out-"), "a")]);
+    assert.equal(target.code, 2);
+    assert.match(target.stderr, /--target must be a number/);
+    for (const bad of ["0", "-1", "Infinity"]) {
+      const r = await harness([...base, `--target=${bad}`, "--out", join(tempDir("mh-cli-out-"), "a")]);
+      assert.notEqual(r.code, 0, `--target ${bad}`);
+      assert.match(r.stderr, /--target (is a ratio above 0|must be a number)/, `--target ${bad}`);
+    }
   });
 });
 

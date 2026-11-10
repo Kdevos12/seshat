@@ -342,3 +342,20 @@ describe("prepareSketch on every research-solved theorem of formal-conjectures",
     assert.deepEqual(failures, []);
   });
 });
+
+describe("a statement written with its binders at column 0 (PutnamBench style)", () => {
+  const source = `import Mathlib
+
+/-- Show that something. -/
+theorem putnam_x_a1
+(S : Set ℝ)
+(hS : S.ncard = 5)
+: ∃ T ⊆ S, T.ncard = 4 :=
+sorry
+`;
+  it("is one command, and its sketch cuts the statement", () => {
+    const sketch = prepareSketch(source, "putnam_x_a1");
+    assert.equal(sketch.statement.replace(/\s+/g, " "), "(S : Set ℝ) (hS : S.ncard = 5) : ∃ T ⊆ S, T.ncard = 4");
+    assert.equal(sketch.originalProof, "sorry");
+  });
+});

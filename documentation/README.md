@@ -25,6 +25,7 @@ simulated model and a simulated Lean.
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
+| The graded bench, the paired protocol and loop telemetry (Task 33, CA1 to CA3): `harness-bench graded`, `--grade`, the protocol section of `harness ablate`, the Loop section of the report | `@seshat/bench`, `@seshat/orchestrator` | Done, tested on fixture checkouts, a fake `lake` and scripted journals; no index committed, no real Lean admission, no paired run |
 | Capability registry, MCP boundary, `lean.check` and its contract | `@seshat/registry` | Done, tested with simulated servers |
 | `harness` command (capabilities, health, contract tests, models, runs, reports) | `@seshat/orchestrator` | Done |
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
@@ -123,7 +124,7 @@ blocks the Lean toolchain downloads and has no model credentials.
   `packs` and `remove`, level 2, the three-skill rule, the content hash a run records.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
   what it offers and refuses.
-- [bench.md](bench.md): the formal-conjectures bench and its index.
+- [bench.md](bench.md): the formal-conjectures bench and its index, and the graded bench (grades A, B, C; Task 33).
 - [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
   graphs and integers, evaluators, fingerprints, certified refutations, identification of
   sequences, the OEIS, LMFDB and FindStat as capabilities (line M11).
@@ -138,7 +139,7 @@ blocks the Lean toolchain downloads and has no model credentials.
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.
 - [ablate.md](ablate.md): `harness ablate`: the cumulative configurations and the experiments, what each column of the table measures,
-  the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`.
+  the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`; the paired protocol (Task 33): Wilson intervals, the exact McNemar test, problems solved per dollar and the target line.
 - [prompts.md](prompts.md): the prover's system prompt as a file, the strict screen a rewritten prompt passes, and `harness optimize-prompts`:
   GEPA-style rewriting on a dev split, the held-out and temporal gate, and the proposals a person merges.
 - [development.md](development.md): conventions, tests, commits.

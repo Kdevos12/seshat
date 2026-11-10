@@ -17,6 +17,7 @@ import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
+import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.ts";
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
 
 export interface ProblemLine {
@@ -37,6 +38,8 @@ export interface ProblemLine {
 
 /** What a run did, read from its journal alone. */
 export interface RunReport {
+  /** Where the dollars and minutes of the loop go (plan change CA3, documentation/report.md); absent when the run made no attempt. */
+  loop?: LoopTelemetry;
   runId: string;
   benchId: string;
   host: string;
@@ -365,6 +368,7 @@ export function rungSpend(events: readonly HarnessEvent[]): Map<string, { endedA
 }
 
 export function buildReport(events: readonly HarnessEvent[]): RunReport {
+  const loop = loopTelemetry(events);
   const started = events.find((e) => e.type === "run.started")?.data as EventDataMap["run.started"] | undefined;
   if (started === undefined) throw new Error("the journal has no run.started event");
   // A run that was resumed finishes again: its end is the last one, if no resumption came after it.
@@ -618,6 +622,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(lessons !== undefined ? { lessons } : {}),
     ...(heuristics !== undefined ? { heuristics } : {}),
     ...(archive !== undefined ? { archive } : {}),
+    ...(loop.attempts.length > 0 ? { loop } : {}),
   };
 }
 
@@ -803,6 +808,7 @@ export function renderRunReport(report: RunReport): string {
           ),
         ]
       : []),
+    ...(report.loop !== undefined ? ["", ...renderLoop(report.loop)] : []),
   ];
   return `${lines.join("\n")}\n`;
 }
