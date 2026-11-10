@@ -338,6 +338,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       turns: result.turns,
       ...(result.retries !== undefined ? { retries: result.retries } : {}),
       ...(result.toolTokens !== undefined ? { toolTokens: result.toolTokens } : {}),
+      checks: result.submissions,
+      ...(result.holes !== undefined ? { holes: result.holes } : {}),
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
