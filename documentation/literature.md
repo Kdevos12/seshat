@@ -53,3 +53,16 @@ documentation as remembered (zbMATH's the least sure) and are tested against a f
 
 A judge's verdict is an opinion of a model about text from a third party, and `settled` means "the literature says so, with a quote that is
 really there": it is not a proof, and nothing in the harness treats it as one.
+
+## Statement hygiene (CA21)
+
+Tests of the statement itself, at intake and before any paid proving (`packages/lit/src/hygiene.ts`). Each result is an evidence node of kind
+`hygiene` about the claim, data `{check, result, detail?, witness?}`, and none is a status.
+
+| Check | Results | What it does |
+|---|---|---|
+| `vacuity` | `satisfiable` (with the witness), `vacuous`, `unknown`, `skipped` | Lean is asked for one object that satisfies the hypotheses: the statement's number variables (`ℕ ℤ ℚ ℝ`) get small values, its hypothesis binders are discharged by `decide`, `norm_num`, `simp`, `omega`. When none does, Lean is asked for a proof that none exists; only that proof makes the statement `vacuous`. A statement the test cannot read (an instance binder, a binder that is not a number or a hypothesis about numbers, not in signature form) is `skipped` with the reason. |
+| `plausible` | `counterexample`, `no_counterexample`, `unavailable`, `skipped` | `example STATEMENT := by plausible`, read from Lean's answer; `unavailable` where the project has no such tactic. A counterexample is evidence to look at, not a refutation. |
+| `test_lemmas` | `passed`, `failed`, `skipped`, `inconclusive` | The first cases of the statement by `decide` (the induction package's `testLemmas`), which `solve` made only for a statement in prose; at intake, for every statement. |
+
+The statement text a check reads is the problem's (binders and type). All three run on a simulated Lean in the tests.
