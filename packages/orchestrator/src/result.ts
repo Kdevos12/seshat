@@ -1,3 +1,4 @@
+import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -102,6 +103,8 @@ export interface Result {
   errors: string[];
   /** What the certifier was: `null` for none, with the reason when the run recorded one. */
   certifier: { name: string | null; unavailable?: string };
+  /** The intake step of each problem that had one: the literature and the statement's hygiene, as data (Task 36). */
+  intake?: IntakeLine[];
   /** The signature of a prose statement (`harness solve`), when the run has one. */
   signature?: EventDataMap["statement.signed"] & { by: string; seq: number };
   spend: { usd: number; inputTokens: number; outputTokens: number; budgetUsd?: number; sites: SiteLine[]; rungs?: Record<string, number>; formalizationUsd?: number };
@@ -376,6 +379,7 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
       errors,
       certifier,
       ...(signature !== undefined ? { signature } : {}),
+      ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
       spend: {
         usd: report.usd,
         inputTokens: report.inputTokens,
@@ -553,6 +557,7 @@ export function renderResult(r: Result): string {
   if (r.evidence.length > 0) {
     lines.push("", "## Indicative evidence (not proofs)", "", "What tools, fingerprints and conjectures found. Marked as evidence: none of it changes a claim's status.", "", ...r.evidence.map((c) => `- [evidence] ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${md(c.text)}`));
   }
+  if (r.intake !== undefined) lines.push("", ...renderIntake(r.intake));
   // Failed.
   lines.push("", "## What was tried and failed", "");
   if (r.failed.length === 0 && r.errors.length === 0) lines.push("Nothing failed yet, or no session has ended.");

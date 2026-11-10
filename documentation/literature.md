@@ -66,3 +66,41 @@ Tests of the statement itself, at intake and before any paid proving (`packages/
 | `test_lemmas` | `passed`, `failed`, `skipped`, `inconclusive` | The first cases of the statement by `decide` (the induction package's `testLemmas`), which `solve` made only for a statement in prose; at intake, for every statement. |
 
 The statement text a check reads is the problem's (binders and type). All three run on a simulated Lean in the tests.
+
+## In a run
+
+The run's configuration has two new optional fields, recorded in `run.started` only when given (`harness run` and `harness solve` do what they
+did without them):
+
+- `intake`: `{literature?, hygiene?, capUsd?, consent?}` (`IntakeConfig`, `packages/orchestrator/src/intake.ts`). `literature` is the search and
+  the judge call; `hygiene` the three checks above; `capUsd` the cap (default $0.05, at most $1); `consent` how the statement was allowed to go
+  to third parties (below). A run that asks for the literature without a `consent` is refused: absence is not a yes.
+- `private`: the single place a run's privacy is read from (`RunConfig.private`, `config.json` and `run.started.config.private`).
+
+The step runs once for each problem, after the statement is checked and before the lines' `beforeProvers` and any prover: on the problem's
+budget (the judge call is a model call of the site `intake.judge`, charged like any other, and the budget gate is asked first with the site
+`judge`), under the problem's own claim. It is not run again when a run is resumed: `intake.finished` is the record. A failure of the step is
+a log line and the problem goes on.
+
+### Third parties
+
+The statement (the words of it, not its Lean syntax) goes to the backends and, with the hits, to the model of the judge call. So:
+
+- on a **bench problem** the step is on when asked (`consent: {allowed: true, via: "bench"}`): the bench's problems are public;
+- for **`harness solve`** it runs only when the person has agreed: asked once and journaled (`intake.consented`, `via: "asked"`), or in a call
+  that cannot ask (no terminal, `--yes`) by `--lit` (`via: "flag"`); no flag and no answer is no (`via: "default"`);
+- **`--private`** (`private: true`) sends nothing outside and wins over everything: the literature step is skipped with the reason `private`, the
+  consent is journaled as `via: "private"` and never allowed, and a run that also asks Jev for decisions is refused. The hygiene checks are Lean's
+  and stay on the machine.
+
+### What stops a run
+
+In a run with a person (`--human` or a turn limit) a settled hit ends the turn with the breakpoint `literature`, and a statement Lean proved
+vacuous with `vacuous` ([human.md](human.md#breakpoints)), before any session is paid for. In a fully automatic run both are recorded and the run
+goes on: the report (`report.md`, section "Intake") and `RESULT.md` list each problem's step, its sources (title, link, verdict, quote, with
+`settled` marked) and its hygiene, escaped as data.
+
+### Interface changes (Task 36)
+
+Events `intake.consented` and `intake.finished`; node kinds `literature` and `hygiene`; capability `lit.search`; `RunConfig.intake` and
+`RunConfig.private`; `RunOptions.prose`; the turn reasons `literature` and `vacuous`; `RunReport.intake` and `Result.intake`.
