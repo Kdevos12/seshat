@@ -642,6 +642,12 @@ the retries run out; a 400 not sent again and a 503 sent again; no send again on
 during the wait; the classifier, with errors that only mention a timeout or a status; a run with pi-ai's faux provider whose journal
 and report record the retry; and a run whose model fails with `timed out waiting for ...`, which is not sent again. A cut from DeepSeek's own API has
 been seen in the first real run, but no run has yet gone through a retry against a real provider.
+`hot-loop.test.ts` covers the cheaper hot loop (Task 34) with the faux provider and a simulated Lean: a check that passes its time limit and the
+limit each check is given (the reference keeps the validator's), the edit tool on none, one and several occurrences, before any check and on the
+aux region, the full submission it leaves in the journal, the prompt with and without the tool, and the masking (the counts of the batches,
+the history only growing inside a batch, the prefix byte-identical between two batches, the journal whole); `solve.test.ts` covers the defaults
+sets. A real Kimina's time limit and memory, and a real model's use of `lean_edit` and of masked results, have not run: whether they cut cost
+and context as the first runs suggest is to be measured.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line
