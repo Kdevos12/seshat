@@ -97,12 +97,12 @@ recorded in the run's configuration (`defaults` in `config.json` and in `run.sta
 | Set | What it is |
 |---|---|
 | `v1` | What `solve` did before the sets: the table above and nothing else. Kept so that a result can be compared with, or reproduced under, the older defaults. |
-| `v2` (default) | `v1` plus three options of `harness run`, which are off in `harness run` itself: `editTool` (the prover edits its last file with `lean_edit` instead of rewriting it, [m0-loop.md](m0-loop.md#the-edit-tool)), `maskOldChecks` (check results older than the last four are sent as their one-line summary, in batches of four, [m0-loop.md](m0-loop.md#masked-old-checks)) and `checkTimeoutSec` (the provers' Lean checks are bounded at the host's `checkTimeoutSec`, default 120 s, [lean.md](lean.md#bounded-checks)). |
+| `v2` (default) | `v1` plus five options of `harness run`, which are off in `harness run` itself: `editTool` (the prover edits its last file with `lean_edit` instead of rewriting it, [m0-loop.md](m0-loop.md#the-edit-tool)), `maskOldChecks` (check results older than the last four are sent as their one-line summary, in batches of four, [m0-loop.md](m0-loop.md#masked-old-checks)) and `checkTimeoutSec` (the provers' Lean checks are bounded at the host's `checkTimeoutSec`, default 120 s, [lean.md](lean.md#bounded-checks)), `stateCard` (each session opens with a card built from the journal, notes limited to 1500 characters, [m0-loop.md](m0-loop.md#the-state-card)) and `budgetRounds` (a run's budget shared in rounds among its problems, [scheduler.md](scheduler.md#the-budget-in-rounds)). |
 
 Why: in the first real runs about 90% of the dollars were output tokens (the model rewrote its whole Lean file at every check), 4 sessions
 of 9 ended on a full context, and Lean checks ran into 900-second timeouts. `v2` makes each attempt cheaper and shorter; the certifier's
 limits and the validator's policy are unchanged, and Lean still decides everything. `harness run` keeps its own defaults: each of the three is an
-option there (`editTool`, `maskOldChecks`, `checkTimeoutSec` in the run configuration), so a recorded run replays as before. A later change of
+option there (`editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds` in the run configuration), so a recorded run replays as before. A later change of
 `solve`'s defaults adds its option to `v2`.
 
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have

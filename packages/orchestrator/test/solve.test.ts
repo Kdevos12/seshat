@@ -234,7 +234,7 @@ describe("the defaults sets of solve", () => {
     });
     const { defaults: name, ...v2 } = studentConfig(base);
     assert.equal(name, "v2", "v2 is the default");
-    assert.deepEqual(v2, { ...v1, editTool: true, maskOldChecks: true, checkTimeoutSec: 120 });
+    assert.deepEqual(v2, { ...v1, editTool: true, maskOldChecks: true, checkTimeoutSec: 120, stateCard: true, budgetRounds: true });
     assert.deepEqual(DEFAULTS_SETS.v1, {});
   });
 
@@ -248,7 +248,7 @@ describe("the defaults sets of solve", () => {
     const v2 = options({ responses: [check("exact trivial_proof")] });
     const run = await solve(v2.o);
     const recorded = JSON.parse(readFileSync(join(run.dir, "config.json"), "utf8")) as Record<string, unknown>;
-    assert.deepEqual([recorded.defaults, recorded.editTool, recorded.maskOldChecks, recorded.checkTimeoutSec], ["v2", true, true, 120]);
+    assert.deepEqual([recorded.defaults, recorded.editTool, recorded.maskOldChecks, recorded.checkTimeoutSec, recorded.stateCard, recorded.budgetRounds], ["v2", true, true, 120, true, true]);
     const started = ofType(readEvents(join(run.dir, "journal.jsonl")), "run.started")[0];
     assert.equal((started?.data.config as Record<string, unknown>).defaults, "v2");
 
@@ -256,7 +256,7 @@ describe("the defaults sets of solve", () => {
     const old = await solve(v1.o);
     const kept = JSON.parse(readFileSync(join(old.dir, "config.json"), "utf8")) as Record<string, unknown>;
     assert.equal(kept.defaults, "v1");
-    for (const key of ["editTool", "maskOldChecks", "checkTimeoutSec"]) assert.equal(key in kept, false, `${key} is not in a v1 run`);
+    for (const key of ["editTool", "maskOldChecks", "checkTimeoutSec", "stateCard", "budgetRounds"]) assert.equal(key in kept, false, `${key} is not in a v1 run`);
     // v1 sends the prover's checks under the validator's policy, as before: both checks and the prompt are the merged ones.
     assert.equal(old.result?.problems[0]?.outcome, "proved");
   });
