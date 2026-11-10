@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadHostProfile } from "@seshat/registry";
 import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
+import { kiminaSettingsFor, leanMemoryCheck, leanServerMemoryFromPs } from "../src/lean-memory.ts";
 import { fauxModels, tempDir } from "./m0-helpers.ts";
 
 /** A machine described by what it has: commands on PATH, the answers of its servers. */
@@ -273,5 +274,51 @@ describe("student defaults", () => {
     assert.equal(checkAllowance(Number.NaN).length, 1);
     assert.equal(checkAllowance(1, 2).length, 1);
     assert.equal(checkAllowance(1, -1).length, 1);
+  });
+});
+
+describe("harness doctor: the memory of the Lean server (CA4)", () => {
+  const GB = 1024;
+  it("suggests Kimina settings that fit the machine's memory, more REPLs on a bigger one and never fewer than one", () => {
+    assert.deepEqual(kiminaSettingsFor(16 * GB), { MAX_REPLS: 2, MAX_REPL_USES: 50, MAX_REPL_MEM: "4G" });
+    assert.deepEqual(kiminaSettingsFor(64 * GB), { MAX_REPLS: 9, MAX_REPL_USES: 100, MAX_REPL_MEM: "4G" });
+    assert.equal(kiminaSettingsFor(2 * GB).MAX_REPLS, 1);
+    assert.equal(kiminaSettingsFor(4096 * GB).MAX_REPLS, 32);
+  });
+
+  it("prints the settings with the machine's memory, and warns when the server's memory passes the threshold", async () => {
+    const calm = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => 3 * GB });
+    const ok = byId(calm.report, "lean-memory");
+    assert.equal(ok.status, "ok");
+    assert.match(ok.detail, /MAX_REPLS=2, MAX_REPL_USES=50, MAX_REPL_MEM=4G/);
+    assert.equal(calm.report.ok, true);
+    const grown = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => 12 * GB });
+    const warn = byId(grown.report, "lean-memory");
+    assert.equal(warn.status, "warn");
+    assert.match(warn.detail, /takes 12 GB of memory, more than the 8\.0 GB/);
+    assert.equal(grown.report.ok, true, "a warning does not fail the machine");
+    assert.match(renderDoctor(grown.report).join("\n"), /Lean server memory/);
+  });
+
+  it("uses the host's threshold, and fails soft: no number, no warning; no memory, no advice", async () => {
+    assert.equal(leanMemoryCheck({ totalMb: 16 * GB, serverMb: 3 * GB, warnMb: 2 * GB }).status, "warn");
+    assert.equal(leanMemoryCheck({ totalMb: 16 * GB, serverMb: undefined, warnMb: 1 }).status, "ok");
+    const unreadable = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => { throw new Error("no ps"); } });
+    assert.equal(byId(unreadable.report, "lean-memory").status, "ok");
+    const none = await run(machine({ has: ALL }));
+    assert.equal(none.report.checks.some((c) => c.id === "lean-memory"), false);
+  });
+
+  it("reads the server's memory from the process table: the server and its REPLs, nothing else", () => {
+    const ps = [
+      "  2048000 python -m server --port 8000 (kimina-lean-server)",
+      "  3145728 /home/u/.elan/bin/repl",
+      "   500000 node dist/cli.js",
+      "  1048576 lake env repl",
+      "",
+    ].join("\n");
+    assert.equal(leanServerMemoryFromPs(ps), 6096);
+    assert.equal(leanServerMemoryFromPs("   500000 node dist/cli.js\n"), undefined);
+    assert.equal(leanServerMemoryFromPs(""), undefined);
   });
 });

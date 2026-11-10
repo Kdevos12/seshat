@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, totalmem } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import type { HostProfile } from "@seshat/registry";
+import { DEFAULT_LEAN_SERVER_MEMORY_WARN_MB } from "@seshat/registry";
+import { leanMemoryCheck, leanServerMemoryFromPs } from "./lean-memory.ts";
 import { PriceBook } from "./prices.ts";
 import { blendedPrice, cheapestModel } from "./student.ts";
 
@@ -17,7 +19,7 @@ import { blendedPrice, cheapestModel } from "./student.ts";
 export type CheckStatus = "ok" | "warn" | "missing";
 
 export interface Check {
-  id: "lean" | "kimina" | "credentials" | "prices" | "network" | "isolation";
+  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation";
   status: CheckStatus;
   title: string;
   /** What was found, in plain words. */
@@ -37,6 +39,13 @@ export interface DoctorSystem {
   http(url: string, timeoutMs?: number): Promise<{ status: number } | { error: string }>;
   /** The user and group of this process, for a container started as the same user. */
   ids(): { uid: number; gid: number } | undefined;
+  /** The machine's memory in all, in megabytes; absent or undefined: no memory advice. */
+  totalMemoryMb?(): number | undefined;
+  /**
+   * The resident memory of the Lean server, in megabytes; undefined when it cannot be read (the server is elsewhere, no such process,
+   * no `ps`): no number, no warning. Tests give their own, so that none needs a real server.
+   */
+  leanServerMemoryMb?(): Promise<number | undefined>;
 }
 
 export function realSystem(): DoctorSystem {
@@ -71,6 +80,18 @@ export function realSystem(): DoctorSystem {
       } catch (error) {
         const cause = (error as { cause?: { code?: string; message?: string } }).cause;
         return { error: cause?.code ?? cause?.message ?? (error instanceof Error ? error.message : String(error)) };
+      }
+    },
+    totalMemoryMb: () => Math.round(totalmem() / (1024 * 1024)),
+    async leanServerMemoryMb() {
+      // Only a server on this machine can be read, and only through the process table; any failure is no number.
+      try {
+        const given = process.env.LEAN_SERVER_API_URL;
+        if (given !== undefined && given !== "" && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(given)) return undefined;
+        const listed = await this.run("ps", ["-eo", "rss=,args="], 5000);
+        return listed.code === 0 ? leanServerMemoryFromPs(listed.stdout) : undefined;
+      } catch {
+        return undefined;
       }
     },
     ids() {
@@ -215,6 +236,14 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
     });
   } else {
     checks.push({ id: "kimina", status: "ok", title: "Kimina Lean server", detail: `${url} answers.` });
+  }
+
+  // The memory the Lean server needs: the settings that fit this machine, and a warning when the server has grown past the host's threshold.
+  const totalMb = system.totalMemoryMb?.();
+  if (totalMb !== undefined) {
+    const serverMb = await system.leanServerMemoryMb?.().catch(() => undefined);
+    const memory = leanMemoryCheck({ totalMb, serverMb, warnMb: profile.leanServerMemoryWarnMb ?? DEFAULT_LEAN_SERVER_MEMORY_WARN_MB });
+    checks.push({ id: "lean-memory", title: "Lean server memory", ...memory });
   }
 
   // 3. Model credentials, and 4. the price table.

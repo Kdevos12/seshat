@@ -123,6 +123,7 @@ run needs is missing.
 | Kimina Lean server | nothing answers at `LEAN_SERVER_API_URL` (default `http://localhost:8000`), it refuses the machine (401, 403), or it answers something else | to start one ([lean.md](lean.md)); to set `LEAN_SERVER_API_KEY` |
 | Model credentials | no provider has credentials | to set one provider's key (`pnpm harness models` lists the providers) |
 | Price table | the chosen model (`--model`, or the cheapest) has no price in the host profile or in pi-ai | to give it a `models` entry in the host profile ([m0-loop.md](m0-loop.md#prices)), or to choose a priced model |
+| Lean server memory | (a warning, never a failure) the Lean server on this machine takes more than the host profile's `leanServerMemoryWarnMb` (default 8 GB) | the Kimina settings that fit this machine's memory (`MAX_REPLS`, `MAX_REPL_USES`, `MAX_REPL_MEM`), and to restart the server with them when it has grown ([lean.md](lean.md#memory-of-the-lean-server)) |
 | Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
 | Certifier isolation | (a warning, not a failure) the host profile has no sandbox for the certifier and this machine has none | that results stay `computed` |
 
