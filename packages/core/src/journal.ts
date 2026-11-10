@@ -365,6 +365,25 @@ export class Journal {
         if (typeof d.hash !== "string" || !/^[0-9a-f]{64}$/.test(d.hash)) throw new Error(`${event.type}: pack ${d.name} needs the sha256 of its content`);
         return;
       }
+      case "intake.consented": {
+        const d = event.data;
+        if (typeof d.problemId !== "string" || d.problemId === "") throw new Error("intake.consented names the problem");
+        if (typeof d.allowed !== "boolean") throw new Error("intake.consented: allowed is true or false");
+        if (!["asked", "flag", "bench", "private", "default"].includes(d.via)) throw new Error(`intake.consented: via is asked, flag, bench, private or default, not ${String(d.via)}`);
+        if ((d.via === "asked" || d.via === "flag") && !actor.startsWith("human:")) throw new Error(`intake.consented: an answer of ${d.via} is a person's, written by human:NAME, not by ${actor}`);
+        if (d.via !== "asked" && d.via !== "flag") this.onlyOrchestrator(event.type, actor);
+        if (d.via === "private" && d.allowed) throw new Error("intake.consented: --private never allows");
+        return;
+      }
+      case "intake.finished": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (typeof d.problemId !== "string" || d.problemId === "") throw new Error("intake.finished names the problem");
+        if (d.state !== "done" && d.state !== "skipped") throw new Error(`intake.finished: state is done or skipped, not ${String(d.state)}`);
+        if (d.state === "skipped" && (typeof d.reason !== "string" || d.reason === "")) throw new Error("intake.finished: a skipped step says why");
+        if (!(d.usd >= 0) || !(d.capUsd >= 0)) throw new Error("intake.finished: usd and capUsd are non-negative numbers");
+        return;
+      }
       case "statement.signed": {
         const d = event.data;
         if (!actor.startsWith("human:")) throw new Error(`statement.signed is a person's signature, written by human:NAME, not by ${actor}`);

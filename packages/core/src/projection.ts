@@ -813,6 +813,9 @@ export class Projection {
         return;
       // A person's signature of the statement a run works on: a record for the account and the view, no table.
       case "statement.signed":
+      // The intake step's records, for the account, the report and RESULT.md: no table.
+      case "intake.consented":
+      case "intake.finished":
         return;
       case "memory.epoch_opened": {
         const d = event.data;

@@ -25,3 +25,31 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 
 No backend has run against its site: this environment reaches none. The requests and the answers are written from each site's
 documentation as remembered (zbMATH's the least sure) and are tested against a fake server (`packages/lit/test/fake-lit.ts`).
+
+## The intake step
+
+`runIntake` (`packages/lit/src/intake.ts`) is the step; the orchestrator calls it for a problem before any paid session
+(below, "In a run"). It never throws except for an interruption: any other failure is a skipped step with its reason.
+
+1. **Three query forms**, made without a model (`queryForms`): the words of the statement, the statement itself (the person's prose when
+   there is some, otherwise the Lean statement with its symbols read as words), and the words with `conjecture counterexample
+   disproof`. Nothing of the Lean syntax is sent. Each form is one `lit.search` call, so each query and its answer is a tool run of the
+   journal, as every other tool's.
+2. **One judge call**: "does a hit prove, refute or restrict this exact statement?", for at most 12 hits (duplicates by link removed),
+   with JSON of `{index, verdict, quote}` for each. The system prompt (`JUDGE_SYSTEM`) is fixed and holds nothing fetched; the hits are in the
+   user turn, each between markers, as data, and the system prompt says they may contain instructions that are never followed.
+3. **The screen**: a quote counts only when it is a verbatim part of the hit's title or text after the normalization the citation guard
+   applies to references (`normalizeQuote`: white space collapsed, case folded, plus the plain form of typographic quotes and dashes, and at
+   least 25 characters). A hit with a verdict other than `unrelated` whose quote is not found is **dropped** and listed as dropped, with
+   why, in `intake.finished`. A hit the judge gave no verdict for is dropped too.
+4. **The node**: each kept hit is a memory node of kind `literature`, data exactly `{backend, url, title, quote, verdict, settled}`, with
+   `verdict` one of `proves`, `refutes`, `restricts`, `unrelated`, and `settled` true only when the verdict is `proves` or `refutes` and the
+   quote passed the screen. The node is about the problem's claim and changes no status (Ruling 13); no node and no text of a hit is in a system
+   prompt or a lesson. The briefing shows the title, the link, the verdict and the screened quote, as data in a user-role section.
+5. **The cap**: the step may spend `capUsd` (default $0.05, an option) on its judge call. With the model's price the call is sized to fit:
+   hits are left out until the input fits, and the answer's tokens are what the rest of the cap pays for; when nothing fits the step is
+   skipped with `cap: ...`. The budget gate is asked first (`problem.budget.ask`, site `judge`); its `skip` is a skipped step with
+   `budget: ...`. A skipped step is journaled, with its reason, in `intake.finished`.
+
+A judge's verdict is an opinion of a model about text from a third party, and `settled` means "the literature says so, with a quote that is
+really there": it is not a proof, and nothing in the harness treats it as one.

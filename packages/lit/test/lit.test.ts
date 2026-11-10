@@ -7,20 +7,10 @@ import { fileURLToPath } from "node:url";
 import { CapabilityError, type HostProfile, loadCatalog, loadHostProfile, Registry, runContract } from "@seshat/registry";
 import { BACKENDS, benchMetadata, clean, Fetcher, LIT_MAX_LIMIT, litFactory, normalizeQuote, quoteIsIn, refusalOf, shown, type LitSearchOutput } from "../src/index.ts";
 import { ABSTRACT, type FakeLit, startFakeLit } from "./fake-lit.ts";
+import { hostAt } from "./helpers.ts";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const catalog = loadCatalog(join(REPO, "capabilities"));
-
-/** A host whose four remote backends are all at `url` (the fake serves each on its own path). */
-export function hostAt(url: string, extra: Record<string, unknown> = {}): HostProfile {
-  const backend = { baseUrl: url, allowedHosts: ["127.0.0.1"] };
-  return {
-    host: "test",
-    capabilities: {
-      "lit.search": { use: ["sources"], settings: { sources: { minIntervalMs: 0, backends: { openalex: backend, arxiv: backend, "semantic-scholar": backend, zbmath: backend }, ...extra } } },
-    },
-  } as unknown as HostProfile;
-}
 
 const registryAt = (url: string, extra: Record<string, unknown> = {}, fetch?: typeof globalThis.fetch): Registry =>
   new Registry({ catalog, host: hostAt(url, extra), factories: { lit: litFactory(fetch !== undefined ? { fetch } : {}) } });
