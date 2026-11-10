@@ -2,6 +2,7 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { GateSettings } from "@seshat/scheduler";
 import { DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { DEFAULT_CONFIG, type RunConfig } from "./run.ts";
+import { DEFAULT_CHECK_TIMEOUT_SEC } from "@seshat/registry";
 import type { PriceBook } from "./prices.ts";
 
 /**
@@ -9,6 +10,35 @@ import type { PriceBook } from "./prices.ts";
  * user has not learned the flag list and has a small budget. Every one of them is a value of an existing option of `harness run`;
  * nothing here is a new mechanism.
  */
+
+/**
+ * The defaults sets of `harness solve` (plan change CA4 to CA6, Task 34). A set is a list of overrides of `DEFAULT_CONFIG`, by name, and
+ * the name is recorded in the run's configuration (`RunConfig.defaults`).
+ *
+ * - `v1` is what `solve` did before the sets: nothing is added to the configuration. It stays reachable (`harness solve --defaults v1`),
+ *   and a test holds that its configuration is that of the commit the sets began from.
+ * - `v2` is `v1` plus the edit tool, the masking of old check results and the bounded checks. It is the default.
+ *
+ * A later task that changes `solve`'s defaults adds its option to `v2` here, one line for each option.
+ */
+export type DefaultsName = "v1" | "v2";
+
+export const DEFAULTS_NAMES: readonly DefaultsName[] = ["v1", "v2"];
+
+/** The set `harness solve` uses when `--defaults` is not given. */
+export const DEFAULT_DEFAULTS: DefaultsName = "v2";
+
+const V1: Partial<RunConfig> = {};
+
+export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunConfig>>>> = {
+  v1: V1,
+  v2: {
+    ...V1,
+    editTool: true,
+    maskOldChecks: true,
+    checkTimeoutSec: DEFAULT_CHECK_TIMEOUT_SEC,
+  },
+};
 
 /** The dollars a `solve` may spend when `--max-usd` is not given: small on purpose, and always there. */
 export const STUDENT_DEFAULT_MAX_USD = 2;
@@ -70,6 +100,10 @@ export interface StudentOptions {
   offpeak?: RunConfig["offpeak"];
   /** The dollars a turn may spend, in place of `STUDENT_TURN_SHARE` of the allowance. */
   turnUsd?: number;
+  /** The defaults set, `DEFAULT_DEFAULTS` when absent. */
+  defaults?: DefaultsName;
+  /** The host profile's `checkTimeoutSec`: replaces the set's value when the set bounds the checks (`v2`); `v1` ignores it. */
+  hostCheckTimeoutSec?: number;
   /** Overrides of the shared defaults of a run (provers, sessions, thinking level). */
   base?: Partial<RunConfig>;
 }
@@ -91,9 +125,14 @@ export function checkAllowance(maxUsd: number, turnUsd?: number): string[] {
 export function studentConfig(o: StudentOptions): RunConfig {
   const turn: TurnLimit = { usd: o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6 };
   const lines = o.lines ?? STUDENT_LINES;
+  const defaults = o.defaults ?? DEFAULT_DEFAULTS;
+  const set = DEFAULTS_SETS[defaults];
   return {
     ...DEFAULT_CONFIG,
+    ...set,
+    ...(set.checkTimeoutSec !== undefined && o.hostCheckTimeoutSec !== undefined ? { checkTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...o.base,
+    defaults,
     selection: o.selection,
     model: o.model,
     budget: { problemUsd: o.maxUsd, runUsd: o.maxUsd },

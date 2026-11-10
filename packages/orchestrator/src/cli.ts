@@ -79,7 +79,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin]
+              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -94,7 +94,8 @@ solve: a problem of your own with the defaults of a student (documentation/quick
 the proposition) or prose, or a file holding one. Prose is formalized by the cheapest model with a price, shown to you with test lemmas on its first
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
 whole budget, the formalization included; the budget gate, probe first and the classical lines M1 and M10 are on; a turn stops, with its
-account, at half the allowance (--turn-usd). RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
+account, at half the allowance (--turn-usd). --defaults picks the set of defaults: v2 (the default) adds the edit tool, the masking of old
+check results and bounded checks to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
 model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
 config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
 report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
@@ -225,6 +226,7 @@ const { positionals, values } = parseArgs({
     lean: { type: "boolean" },
     prose: { type: "boolean" },
     "no-check": { type: "boolean" },
+    defaults: { type: "string" },
     "no-write": { type: "boolean" },
     rewrite: { type: "boolean" },
     "allow-unpriced": { type: "boolean" },
@@ -1074,6 +1076,7 @@ async function solve(): Promise<number> {
       noCheck: values["no-check"] === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
+      ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );

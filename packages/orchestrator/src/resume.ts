@@ -123,6 +123,7 @@ function configOf(recorded: unknown): RunConfig {
     concurrency: whole("concurrency", r.concurrency),
     ...(r.cacheRetention === "none" || r.cacheRetention === "short" || r.cacheRetention === "long" ? { cacheRetention: r.cacheRetention } : {}),
     ...(r.packetMode === "prefix_tail" || r.packetMode === "append_only" || r.packetMode === "recompiled" ? { packetMode: r.packetMode } : {}),
+    ...(typeof r.defaults === "string" ? { defaults: r.defaults } : {}),
     ...(r.editTool === true ? { editTool: true } : {}),
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),

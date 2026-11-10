@@ -9,7 +9,7 @@ import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./im
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveResult } from "./solve.ts";
-import { cheapestModel, STUDENT_DEFAULT_MAX_USD, STUDENT_LINES } from "./student.ts";
+import { cheapestModel, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, STUDENT_DEFAULT_MAX_USD, STUDENT_LINES } from "./student.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
 
@@ -39,6 +39,8 @@ export interface SolveFlags extends DoctorFlags {
   noCheck?: boolean;
   offpeak?: RunConfig["offpeak"];
   lines?: string[];
+  /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
+  defaults?: string;
 }
 
 /** What the commands need from the process: streams, the machine, and the models. Tests give their own. */
@@ -161,6 +163,11 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const host = studentHost(flags.host, configDir);
   const profile = loadHostProfile(hostProfilePath(configDir, host));
   const prices = new PriceBook(profile.models);
+  const defaults = flags.defaults ?? DEFAULT_DEFAULTS;
+  if (!(DEFAULTS_NAMES as readonly string[]).includes(defaults)) {
+    io.err(`--defaults must be one of ${DEFAULTS_NAMES.join(", ")}, got ${JSON.stringify(defaults)}`);
+    return 2;
+  }
   const statement = readStatement(argument, flags);
   const maxUsd = flags.max ?? STUDENT_DEFAULT_MAX_USD;
   const user = personName(flags.as);
@@ -181,6 +188,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
+  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}.`);
   io.out(`Host: ${host}. Lines: ${(flags.lines ?? [...STUDENT_LINES]).join(", ")}, with the budget gate and the probe first.`);
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
@@ -229,6 +237,8 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
+      defaults: defaults as DefaultsName,
+      ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
           if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");

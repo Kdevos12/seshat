@@ -289,6 +289,10 @@ export interface SolveOptions {
   turnUsd?: number;
   offpeak?: RunConfig["offpeak"];
   lines?: StudentOptions["lines"];
+  /** The defaults set (`student.ts`); absent: the default one, `v2`. */
+  defaults?: StudentOptions["defaults"];
+  /** The host profile's `checkTimeoutSec`, for the sets that bound the checks. */
+  hostCheckTimeoutSec?: number;
   base?: StudentOptions["base"];
   prices?: PriceBook;
   /** The host profile the run uses, which the resume command names. */
@@ -418,6 +422,8 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     maxUsd: remaining,
     turnUsd,
     ...(o.lines !== undefined ? { lines: o.lines } : {}),
+    ...(o.defaults !== undefined ? { defaults: o.defaults } : {}),
+    ...(o.hostCheckTimeoutSec !== undefined ? { hostCheckTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
     ...(o.base !== undefined ? { base: o.base } : {}),
   });
