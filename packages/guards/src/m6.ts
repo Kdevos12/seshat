@@ -1,9 +1,9 @@
 import { LINE_TITLES } from "@seshat/lines";
 import type { AttemptAnnotation, Briefing, CheckDecision, CheckVeto, JsonObject, Line, ProblemContext, Proposal, SessionContext } from "@seshat/lines";
 import type { Json } from "@seshat/core";
-import { classifyFailure, classifyStrategy, type LeanState, leanState } from "@seshat/memory";
+import { classifyFailure, classifyStrategy, type LeanState, leanState, normalizeDetail } from "@seshat/memory";
 import { type CitationEnv, knownSorries, unresolvedReferences } from "./citations.ts";
-import { DEFAULT_WATCH, type DetectorKind, type Finding, noticeFor, type Observation, ProverWatch, SessionWatch } from "./detectors.ts";
+import { DEFAULT_WATCH, type DetectorKind, type Finding, noticeFor, type Observation, ProverWatch, REPEAT_DIRECTIVE_AT, REPEAT_STOP_AT, repeatDirective, repeatKey, RepeatCounter, SessionWatch } from "./detectors.ts";
 import { type DriftData, driftNodes, recordDrift } from "./drift.ts";
 import { categoryOf, framingProblems, isOpenConjecture, neutralQuestion } from "./framing.ts";
 import { scrubLeanOutput } from "./rawerrors.ts";
@@ -46,6 +46,11 @@ export const M6_OPTIONS = {
   detectors: true,
   /** `strategy_loop`: checks in a row with one strategy and no Lean progress. */
   repeats: DEFAULT_WATCH.repeats,
+  /**
+   * The mechanical repeat rule (plan change CA7): a (normalised first error, strategy) pair seen three times on a problem adds a directive to
+   * change approach to the answer of that check, and a fourth occurrence ends the session. Off by default, as `harness run`'s defaults do not change.
+   */
+  repeatRule: false,
   /** `session_loop`: sessions of one prover in a row with one strategy and no Lean progress. */
   sessionRepeats: 3,
   /** `length_growth`: the file's code this many times its size at the last progress... */
@@ -66,6 +71,8 @@ export interface WatchCheckpoint {
   prover: string;
   /** The session's number for the prover, from 1. */
   session: number;
+  /** The failures the session's checks added to the problem's repeat counts: [key, times] pairs. Absent: none (or the rule was off). */
+  repeats?: Array<[string, number]>;
   /** What the prover's watch observed: the strategy label of the session's last check, and the best Lean state of its checks. */
   watched?: { label: string; depth: number; errors: number; holes: number };
   /** The prover's last check, as `revisions` remembers it: the digest of the file, not the file (the submission's blob holds it). */
@@ -77,7 +84,7 @@ function isCheckpoint(data: Json): data is WatchCheckpoint & Json {
   return typeof data.attemptId === "string" && typeof data.prover === "string" && typeof data.session === "number";
 }
 
-const DETECTOR_KINDS: readonly string[] = ["statement_drift", "restated_target", "strategy_loop", "length_growth", "session_loop"];
+const DETECTOR_KINDS: readonly string[] = ["statement_drift", "restated_target", "strategy_loop", "length_growth", "session_loop", "repeated_failure"];
 
 const OWN_TITLES = ["The question", "Course change"];
 
@@ -105,6 +112,8 @@ interface SessionState {
   last?: LastCheck;
   /** The strategy label of the last check. */
   label?: string;
+  /** What this session added to the problem's repeat counts. */
+  repeats: Map<string, number>;
 }
 
 interface ProverState {
@@ -118,6 +127,8 @@ interface ProverState {
 interface RunState {
   sessions: Map<string, SessionState>;
   provers: Map<string, ProverState>;
+  /** The repeat rule's counts, by problem. */
+  repeats: Map<string, RepeatCounter>;
   /** Framing findings already recorded, by problem and section. */
   noted: Set<string>;
   /** The answers of `nearEquivalent`, by lemma and target. */
@@ -129,7 +140,7 @@ const RUNS = new WeakMap<object, RunState>();
 function runState(registry: object): RunState {
   let state = RUNS.get(registry);
   if (state === undefined) {
-    state = { sessions: new Map(), provers: new Map(), noted: new Set(), near: new Map() };
+    state = { sessions: new Map(), provers: new Map(), repeats: new Map(), noted: new Set(), near: new Map() };
     RUNS.set(registry, state);
   }
   return state;
@@ -152,6 +163,7 @@ function sessionState(run: RunState, session: SessionContext): SessionState {
     state = {
       watch: new SessionWatch({ repeats: count(options, "repeats"), lengthFactor: count(options, "lengthFactor"), lengthMinChars: count(options, "lengthMinChars") }),
       checks: 0,
+      repeats: new Map(),
     };
     run.sessions.set(session.attemptId, state);
   }
@@ -215,6 +227,46 @@ export function createM6(env: M6Env = {}): Line {
     return undefined;
   }
 
+  /** Counts one failure of the problem; the rule's answer is `repeatDecision`. */
+  function repeatCount(run: RunState, problemId: string, state: SessionState, error: string, label: string): { error: string; label: string; times: number } {
+    let counter = run.repeats.get(problemId);
+    if (counter === undefined) {
+      counter = new RepeatCounter();
+      run.repeats.set(problemId, counter);
+    }
+    const key = repeatKey(error, label);
+    state.repeats.set(key, (state.repeats.get(key) ?? 0) + 1);
+    return { error, label, times: counter.add(key) };
+  }
+
+  /** The third occurrence: a directive in the answer of that check. The fourth: the session ends, and the next one is told. */
+  function repeatDecision(session: SessionContext, run: RunState, index: number, r: { error: string; label: string; times: number }): CheckDecision | undefined {
+    if (r.times === REPEAT_DIRECTIVE_AT) {
+      recordDrift(session.memory, session.claimId, {
+        kind: "repeated_failure",
+        action: "noted",
+        detail: `the failure ${r.error} with the strategy ${r.label} was seen ${r.times} times: told to change approach`,
+        ...whereOf(session, index),
+        evidence: { error: r.error, strategy: r.label, times: r.times },
+      });
+      return { notice: repeatDirective(r.error, r.label, r.times) };
+    }
+    if (r.times >= REPEAT_STOP_AT) {
+      const detail = `the failure ${r.error} with the strategy ${r.label} was seen ${r.times} times on the problem`;
+      recordDrift(session.memory, session.claimId, {
+        kind: "repeated_failure",
+        action: "stopped_session",
+        detail,
+        ...whereOf(session, index),
+        evidence: { error: r.error, strategy: r.label, times: r.times },
+      });
+      const notice = noticeFor("repeated_failure", { error: r.error, strategy: r.label, times: r.times });
+      if (notice !== undefined) proverState(run, session.problemId, session.prover).notices.push(notice);
+      return { stop: detail };
+    }
+    return undefined;
+  }
+
   return {
     id: "M6",
     title: LINE_TITLES.M6,
@@ -245,6 +297,10 @@ export function createM6(env: M6Env = {}): Line {
         for (const node of problem.memory.nodes(WATCH_KIND, { claimId: problem.claimId })) {
           if (isCheckpoint(node.data)) checkpoints.set(node.data.attemptId, node.data);
         }
+        // The repeat rule counts over the whole problem: every finished session's checkpoint, whatever its prover.
+        const repeats = new RepeatCounter();
+        run.repeats.set(problem.problemId, repeats);
+        for (const checkpoint of checkpoints.values()) for (const [key, times] of checkpoint.repeats ?? []) repeats.add(key, times);
         const findings = driftNodes(problem.memory, problem.claimId).filter(
           (node) => (node.data.action === "stopped_session" || node.data.action === "restarted") && DETECTOR_KINDS.includes(node.data.kind),
         );
@@ -403,6 +459,10 @@ export function createM6(env: M6Env = {}): Line {
         state.label = label;
         if (!flag(options, "detectors")) return undefined;
 
+        // The repeat rule counts every failed check, whichever detector acts on it, so that a resumed run counts the same.
+        const repeat = flag(options, "repeatRule") && !check.accepted && failure !== undefined && failure.class !== "lean_unavailable" && failure.class !== "refused"
+          ? repeatCount(run, session.problemId, state, normalizeDetail(failure.detail), label)
+          : undefined;
         const restating = check.accepted ? undefined : await restatingLemma(session, aux, failure?.class, failure?.detail, run);
         const finding = state.watch.observe({
           index: check.index,
@@ -413,7 +473,7 @@ export function createM6(env: M6Env = {}): Line {
           accepted: check.accepted,
           ...(restating !== undefined ? { restating } : {}),
         });
-        if (finding === undefined) return undefined;
+        if (finding === undefined) return repeat === undefined ? undefined : repeatDecision(session, run, check.index, repeat);
         recordDrift(session.memory, session.claimId, { kind: finding.kind, action: "stopped_session", detail: finding.detail, ...whereOf(session, check.index), evidence: finding.evidence });
         proverState(run, session.problemId, session.prover).notices.push(finding.notice);
         return { stop: finding.detail };
@@ -435,11 +495,12 @@ export function createM6(env: M6Env = {}): Line {
         const watched = flag(options, "detectors") && best !== undefined && state?.label !== undefined;
         // What this session adds to the prover's state is checkpointed before the session is recorded as finished,
         // so that a resumed run can make the state again (a checkpoint of a session that was then cut is not read).
-        if (watched || (attempt.submission !== undefined && attempt.report !== undefined)) {
+        if (watched || state?.repeats.size || (attempt.submission !== undefined && attempt.report !== undefined)) {
           const checkpoint: WatchCheckpoint = {
             attemptId: attempt.attemptId,
             prover: attempt.prover,
             session: attempt.session,
+            ...(state !== undefined && state.repeats.size > 0 ? { repeats: [...state.repeats] } : {}),
             ...(watched ? { watched: { label: state?.label as string, depth: (best as LeanState).depth, errors: (best as LeanState).errors, holes: (best as LeanState).holes } } : {}),
             ...(attempt.submission !== undefined && attempt.report !== undefined ? { last: lastCheckOf(attempt.submission, attempt.report) } : {}),
           };

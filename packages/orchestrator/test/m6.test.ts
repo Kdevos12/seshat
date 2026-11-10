@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
@@ -418,5 +420,52 @@ describe("M6 and the claim's status", () => {
     const statuses = ofType(events, "claim.status_changed");
     assert.ok(statuses.length > 0);
     assert.ok(statuses.every((e) => e.actor !== "line:M6"));
+  });
+});
+
+describe("M6 repeat rule (CA7)", () => {
+  const FIVE = { repeats: 99, lengthMinChars: 100000, repeatRule: true };
+
+  it("tells the prover to change approach at the third occurrence of a failure, and ends the session at the fourth", async () => {
+    const answers: string[] = [];
+    const prompts: string[] = [];
+    const { events, dir } = await demoRun({
+      config: { ...M6_ONLY, sessions: 2, lineOptions: { M6: FIVE } },
+      responses: [
+        check("bad"),
+        (context) => { answers.push(lastResult(context)); return check("bad 1"); },
+        (context) => { answers.push(lastResult(context)); return check("bad 2"); },
+        (context) => { answers.push(lastResult(context)); return check("bad 3"); },
+        (context) => { prompts.push(opening(context)); return check("exact trivial_proof"); },
+      ],
+    });
+    assert.doesNotMatch(answers[0] ?? "", /Change approach/);
+    assert.match(answers[2] ?? "", /unknown identifier bad" with the strategy \w+ has now happened 3 times on this problem\. Change approach now/);
+    assert.deepEqual(ofType(events, "attempt.finished").map((a) => a.data.stoppedBy), ["line:M6", "solved"]);
+    const found = drifts(events).filter((d) => d.kind === "repeated_failure");
+    assert.deepEqual(found.map((d) => [d.action, d.check]), [["noted", 3], ["stopped_session", 4]]);
+    assert.match(found[1]?.detail ?? "", /^the failure unknown identifier bad with the strategy \w+ was seen 4 times on the problem$/);
+    assert.match(prompts[0] ?? "", /# Course change\nThe harness stopped your last session: the same failure \(unknown identifier bad\)/);
+    const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8")) as { repeatStops?: string[] };
+    assert.equal(report.repeatStops?.length, 1);
+    assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Sessions ended by the repeat rule \(1\)/);
+  });
+
+  it("counts over the sessions of the problem, not only within one", async () => {
+    const { events } = await demoRun({
+      config: { ...M6_ONLY, sessions: 3, lineOptions: { M6: FIVE } },
+      responses: [check("bad"), check("bad 1"), say("notes"), check("bad 2"), check("bad 3"), check("bad 4")],
+    });
+    const found = drifts(events).filter((d) => d.kind === "repeated_failure");
+    assert.deepEqual(found.map((d) => [d.action, d.session, d.check]), [["noted", 2, 1], ["stopped_session", 2, 2], ["stopped_session", 3, 1]]);
+    // Once the pair has been seen four times it ends every session that meets it again.
+  });
+
+  it("is off unless the option is on, and does nothing without M6", async () => {
+    const { events } = await demoRun({
+      config: { ...M6_ONLY, sessions: 1, lineOptions: { M6: { repeats: 99, lengthMinChars: 100000 } } },
+      responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), say("n")],
+    });
+    assert.deepEqual(drifts(events).filter((d) => d.kind === "repeated_failure"), []);
   });
 });
