@@ -42,6 +42,8 @@ export interface ProverOptions {
   packetMode?: PacketMode;
   /** How a request that a transient error cut is sent again (`SessionOptions.retry`); absent: `REQUEST_RETRY`. */
   retry?: RetryPolicy;
+  /** The sessions get the tool `lean_edit` (`SessionOptions.editTool`) and a prompt that says when to use it. */
+  editTool?: boolean;
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -147,7 +149,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const actor = `prover:${o.name}`;
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
-  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate);
+  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;
@@ -230,7 +232,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     let result: SessionResult;
     try {
       const opened: OpenedSession | undefined =
-        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
+        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...(o.editTool === true ? ["lean_edit"] : []), ...tools.map((t) => toolName(t.capability))]);
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
@@ -278,6 +280,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.retry !== undefined ? { retry: o.retry } : {}),
         ...(o.prices !== undefined ? { prices: o.prices } : {}),
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
+        ...(o.editTool === true ? { editTool: true } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the

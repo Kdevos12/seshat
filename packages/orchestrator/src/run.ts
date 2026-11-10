@@ -106,6 +106,11 @@ export interface RunConfig {
    * `harness solve`'s defaults set `v2` gives it the host's `checkTimeoutSec` (120).
    */
   checkTimeoutSec?: number;
+  /**
+   * The sessions get the tool `lean_edit(region, old, new)` (plan change CA5, documentation/m0-loop.md, "The edit tool") and a prover prompt
+   * that says to use `lean_check` for the first draft and `lean_edit` after it. Absent: off, and a run that records and prompts as it always did.
+   */
+  editTool?: boolean;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -454,7 +459,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(config.notesChars, config.tools.map(toolName), proverTemplate) };
+  const promptRecord = { version: promptVersion, hash: promptHash(config.notesChars, config.tools.map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -652,6 +657,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
       ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+      ...(config.editTool === true ? { editTool: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1203,6 +1209,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+          ...(config.editTool === true ? { editTool: true } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

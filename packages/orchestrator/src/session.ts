@@ -1,4 +1,4 @@
-import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool, type AgentToolResult, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type CacheRetention, createAssistantMessageEventStream, StringEnum, Type, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import type { Submission, TokenCost, ValidationReport } from "@seshat/core";
 import { estimateTokens } from "@seshat/context";
@@ -107,6 +107,11 @@ export interface SessionOptions {
   rewriteHistory?: (messages: AgentMessage[]) => AgentMessage[] | Promise<AgentMessage[]>;
   /** How the requests are built from a line's context packet; absent: `prefix_tail`. */
   packetMode?: PacketMode;
+  /**
+   * Gives the session the tool `lean_edit(region, old, new)` besides `lean_check` (plan change CA5, documentation/m0-loop.md, "The edit
+   * tool"): it replaces the one occurrence of `old` in the region as the session last checked it, and runs the same check. Absent: no such tool.
+   */
+  editTool?: boolean;
   /** The seconds a Lean check of this session may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy (300). */
   checkTimeoutSec?: number;
   /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
@@ -171,6 +176,83 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let opening: { message: AgentMessage; replaces: number } | undefined;
   const mode = o.packetMode ?? "prefix_tail";
 
+  /**
+   * One check of the file with these regions: the team's veto, the lines' guards, the workbench's check, the lines' look at it.
+   * `lean_check` runs it with the regions the model wrote, `lean_edit` with the regions that its edit made, so that the two are the
+   * same check and the journal stores the same full submission for both.
+   */
+  const doCheck = async (params: { aux: string; proof: string; strategy?: unknown }, signal?: AbortSignal): Promise<AgentToolResult<{ summary: string }>> => {
+    const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
+    const refused = o.veto?.({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
+    if (refused !== undefined) {
+      return { content: [{ type: "text", text: `Not checked (the team): ${refused}` }], details: { summary: "rejected by the team" }, isError: true };
+    }
+    if (o.lines?.beforeCheck !== undefined) {
+      try {
+        const veto = await o.lines.beforeCheck({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
+        // A rejected call is no check: Lean is not run, nothing is counted or recorded.
+        if (veto !== undefined) {
+          return {
+            content: [{ type: "text", text: `Not checked (line ${veto.line}): ${veto.reason}` }],
+            details: { summary: `rejected by line ${veto.line}` },
+            isError: true,
+          };
+        }
+      } catch (error) {
+        // A line that fails here ends the session with an error, not the check.
+        if (lineFailed(error) === "turn") {
+          return { content: [{ type: "text", text: "Not checked: the turn is over. The session ends here." }], details: { summary: "turn over" }, isError: true, terminate: true };
+        }
+        return {
+          content: [{ type: "text", text: "The harness failed while guarding this check. The session ends here." }],
+          details: { summary: "harness failure" },
+          isError: true,
+          terminate: true,
+        };
+      }
+    }
+    submissions += 1;
+    submission = { aux: params.aux, proof: params.proof };
+    if (strategy !== undefined) declared = strategy;
+    try {
+      const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}), ...(o.checkTimeoutSec !== undefined ? { timeoutSec: o.checkTimeoutSec } : {}) });
+      report = result.report;
+      accepted ||= result.accepted;
+      const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);
+      unreachable = lost ? unreachable + 1 : 0;
+      if (unreachable >= MAX_UNREACHABLE) failure = `Lean could not be reached ${unreachable} times in a row`;
+      if (o.lines?.afterCheck !== undefined) {
+        // A line that fails here ends the session with an error, not the check.
+        try {
+          const stop = await o.lines.afterCheck({
+            index: submissions,
+            submission,
+            ...(strategy !== undefined ? { strategy } : {}),
+            report,
+            ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
+            accepted: result.accepted,
+          });
+          if (stop !== undefined) lineStop = `line:${stop.line}`;
+        } catch (error) {
+          lineFailed(error);
+        }
+      }
+      return {
+        content: [{ type: "text", text: formatCheck(report) }],
+        details: { summary: summarizeCheck(report) },
+        ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
+      };
+    } catch (error) {
+      failure = `the harness failed during a check: ${messageOf(error)}`;
+      return {
+        content: [{ type: "text", text: "The harness failed while checking this file. The session ends here." }],
+        details: { summary: "harness failure" },
+        isError: true,
+        terminate: true,
+      };
+    }
+  };
+
   const leanCheck: AgentTool<ReturnType<typeof checkParameters>, { summary: string }> = {
     name: "lean_check",
     label: "Lean check",
@@ -180,78 +262,36 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       "axioms and the original statement, is accepted: the theorem is proved.",
     parameters: checkParameters(o.strategies ?? []),
     executionMode: "sequential",
+    execute: (_id, params, signal) => doCheck(params, signal),
+  };
+
+  const leanEdit: AgentTool<ReturnType<typeof editParameters>, { summary: string }> = {
+    name: "lean_edit",
+    label: "Lean edit",
+    description:
+      "Edits the file as you last checked it and checks the result, as lean_check does. region is aux or proof; old is text that occurs exactly " +
+      "once in that region as you last checked it; new replaces it. Use lean_check for the first draft and lean_edit for the changes after it: " +
+      "you write only what changes. If old does not occur, or occurs more than once, nothing is checked and the region's current text comes back.",
+    parameters: editParameters(),
+    executionMode: "sequential",
     execute: async (_id, params, signal) => {
-      const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
-      const refused = o.veto?.({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
-      if (refused !== undefined) {
-        return { content: [{ type: "text", text: `Not checked (the team): ${refused}` }], details: { summary: "rejected by the team" }, isError: true };
+      const refuse = (text: string, summary: string): AgentToolResult<{ summary: string }> => ({ content: [{ type: "text", text }], details: { summary }, isError: true });
+      if (submission === undefined) return refuse("Nothing to edit: no lean_check has run in this session yet. Send the first draft with lean_check(aux, proof).", "nothing to edit");
+      const region: "aux" | "proof" = params.region === "aux" ? "aux" : "proof";
+      const text = submission[region];
+      if (params.old === "") return refuse(`old is empty: give the text to replace, which must occur exactly once in the ${region} region. Its current text:\n${fenced(text)}`, "edit refused: old is empty");
+      const found = text.split(params.old).length - 1;
+      if (found !== 1) {
+        return refuse(
+          `${found === 0 ? "not found" : `found ${found} times`}: old must occur exactly once in the ${region} region as last checked. Nothing was checked. The ${region} region reads:\n${fenced(text)}`,
+          found === 0 ? "edit refused: not found" : `edit refused: found ${found} times`,
+        );
       }
-      if (o.lines?.beforeCheck !== undefined) {
-        try {
-          const veto = await o.lines.beforeCheck({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
-          // A rejected call is no check: Lean is not run, nothing is counted or recorded.
-          if (veto !== undefined) {
-            return {
-              content: [{ type: "text", text: `Not checked (line ${veto.line}): ${veto.reason}` }],
-              details: { summary: `rejected by line ${veto.line}` },
-              isError: true,
-            };
-          }
-        } catch (error) {
-          // A line that fails here ends the session with an error, not the check.
-          if (lineFailed(error) === "turn") {
-            return { content: [{ type: "text", text: "Not checked: the turn is over. The session ends here." }], details: { summary: "turn over" }, isError: true, terminate: true };
-          }
-          return {
-            content: [{ type: "text", text: "The harness failed while guarding this check. The session ends here." }],
-            details: { summary: "harness failure" },
-            isError: true,
-            terminate: true,
-          };
-        }
-      }
-      submissions += 1;
-      submission = { aux: params.aux, proof: params.proof };
-      if (strategy !== undefined) declared = strategy;
-      try {
-        const result = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}), ...(o.checkTimeoutSec !== undefined ? { timeoutSec: o.checkTimeoutSec } : {}) });
-        report = result.report;
-        accepted ||= result.accepted;
-        const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);
-        unreachable = lost ? unreachable + 1 : 0;
-        if (unreachable >= MAX_UNREACHABLE) failure = `Lean could not be reached ${unreachable} times in a row`;
-        if (o.lines?.afterCheck !== undefined) {
-          // A line that fails here ends the session with an error, not the check.
-          try {
-            const stop = await o.lines.afterCheck({
-              index: submissions,
-              submission,
-              ...(strategy !== undefined ? { strategy } : {}),
-              report,
-              ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
-              accepted: result.accepted,
-            });
-            if (stop !== undefined) lineStop = `line:${stop.line}`;
-          } catch (error) {
-            lineFailed(error);
-          }
-        }
-        return {
-          content: [{ type: "text", text: formatCheck(report) }],
-          details: { summary: summarizeCheck(report) },
-          ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
-        };
-      } catch (error) {
-        failure = `the harness failed during a check: ${messageOf(error)}`;
-        return {
-          content: [{ type: "text", text: "The harness failed while checking this file. The session ends here." }],
-          details: { summary: "harness failure" },
-          isError: true,
-          terminate: true,
-        };
-      }
+      const edited = text.replace(params.old, () => params.new);
+      return await doCheck(region === "aux" ? { aux: edited, proof: submission.proof } : { aux: submission.aux, proof: edited }, signal);
     },
   };
+  const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? [])];
 
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
@@ -291,7 +331,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     }
   };
   const agent = new Agent({
-    initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: [leanCheck, ...(o.tools ?? [])] },
+    initialState: { systemPrompt: o.systemPrompt, model: o.model, thinkingLevel: o.thinkingLevel, tools: sessionTools },
     // The one place where a request is sent: the consortium turn is read here, immediately before the send, so that no
     // request goes out after the limit however the provers and lines interleave (documentation/human.md, "Turns"). A refused
     // request draws and records nothing; the sampled settings (the temperature) and the cache policy go with a request that is sent.
@@ -395,7 +435,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       ...(declared !== undefined ? { declaredStrategy: declared } : {}),
       ...(retries > 0 ? { retries } : {}),
       messages: agent.state.messages,
-      toolTokens: estimateTokens(JSON.stringify([leanCheck, ...(o.tools ?? [])].map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))),
+      toolTokens: estimateTokens(JSON.stringify(sessionTools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))),
       ...(stop === "error" ? { error: failure ?? last?.errorMessage ?? "the model request failed" } : {}),
     };
   } finally {
@@ -434,6 +474,19 @@ function checkParameters(strategies: readonly string[]) {
           }),
         ),
       });
+}
+
+/** The arguments of `lean_edit`. */
+function editParameters() {
+  return Type.Object({
+    region: StringEnum(["aux", "proof"], { description: "The region to edit: aux or proof." }),
+    old: Type.String({ description: "The text to replace: it must occur exactly once in the region as you last checked it." }),
+    new: Type.String({ description: "The text that takes its place; an empty string deletes old." }),
+  });
+}
+
+function fenced(text: string): string {
+  return `\`\`\`lean\n${text}\n\`\`\``;
 }
 
 /** The text of a response, without its thinking. */

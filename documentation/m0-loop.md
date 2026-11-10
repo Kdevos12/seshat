@@ -291,6 +291,25 @@ responses cost (`retries` in `report.json`).
 The one-shot model calls of the lines (`model_call.finished`) are not sent again: a call that a
 transient error cut fails, and the line decides what to do, as before.
 
+### The edit tool
+
+The model rewrites its whole Lean file at every check, and output tokens were about 90% of the dollars of the first real runs. With
+`RunConfig.editTool` the session also has `lean_edit(region, old, new)` (plan change CA5):
+
+- `region` is `aux` or `proof`; it applies to the region **as last checked in this session** (the regions of the session's last
+  `lean_check` or `lean_edit` call, whatever Lean said of them);
+- exactly one occurrence of `old` must exist in it. With none the answer is `not found`, with several `found N times`, each with the region's
+  current text; an empty `old` is refused the same way. Nothing is checked, nothing is counted and nothing is recorded: the answer is an
+  error result, like a check the team vetoed;
+- on success it runs **the same check** as `lean_check` with the regions that the edit made (the team's veto, the lines' guards and
+  `afterCheck`, the workbench's check and its time limit), so the journal stores the full resulting submission exactly as a `lean_check`
+  with those two regions would: the tool run, the blob, the validation and everything that reads them are unchanged;
+- before any `lean_check` in the session it answers that there is nothing to edit (the file the session starts from is not a check).
+
+`lean_check(aux, proof)` stays, for the first draft. The prover's system prompt gains a section, "Editing", that says so, only when the
+option is on; without it the prompt is the merged prompt byte for byte, and the prompt hash in `run.started` is unchanged. The
+option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([quickstart.md](quickstart.md#defaults-sets)).
+
 ## What the prover sees
 
 The answer to a check lists Lean's errors, the holes with their goals, and the other messages (such
