@@ -28,6 +28,7 @@
     "@seshat/lean-kimina": "workspace:*",
     "@seshat/lean-local": "workspace:*",
     "@seshat/lean-lsp": "workspace:*",
+    "@seshat/lean-search": "workspace:*",
     "@seshat/lean-meta": "workspace:*",
     "@seshat/lessons": "workspace:*",
     "@seshat/library": "workspace:*",

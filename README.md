@@ -79,6 +79,7 @@ flowchart TB
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
   solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults v1 or v2: small cap, gate, M1 and M10"]:::built
   hotloop["Cheaper hot loop (solve defaults v2)<br/>lean_edit in place of a rewritten file, old check results<br/>masked in batches, bounded Lean checks"]:::wait
+  leanpush["Premises pushed (CA22, option leanSearch)<br/>after a check: a name search on each unknown identifier,<br/>a goal search on each hole; each hit checked with Lean"]:::wait
   signature["Signature of a prose statement<br/>formalized, shown with test lemmas,<br/>statement.signed before any spend"]:::wait
   doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::wait
   resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
@@ -91,6 +92,7 @@ flowchart TB
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
     leanlsp["lean_lsp<br/>Lean language server"]:::wait
+    leansearch["lean_search<br/>premise search: remote service,<br/>local index, pattern"]:::wait
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
@@ -233,6 +235,10 @@ flowchart TB
   provers --> leangoals
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
+  fast -->|"unknown identifiers,<br/>holes' goals"| leanpush
+  leanpush -->|"at most 3 queries,<br/>5 hits each; never private"| leansearch
+  leanpush -->|"#check of the names,<br/>one Lean call"| leancheck
+  leanpush -->|"verified names and Lean's<br/>signatures, appended to the answer"| provers
   fleet -.->|"cold start:<br/>capped pseudo-counts"| decide
   libbuilder -->|"every file it wrote"| libgate
   libgate -->|"new theorems"| certifier

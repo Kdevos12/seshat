@@ -187,6 +187,17 @@
           "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"
         }
       }
+    },
+    "lean.search": {
+      "use": ["search"],
+      "optional": true,
+      "settings": {
+        "search": {
+          "remoteUrl": "${env:LEAN_SEARCH_URL:-}",
+          "patternUrl": "${env:LEAN_PATTERN_URL:-}",
+          "index": "${env:LEAN_SEARCH_INDEX:-}"
+        }
+      }
     }
   }
 }
