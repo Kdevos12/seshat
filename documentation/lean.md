@@ -93,6 +93,20 @@ behaves as before:
 `healthTimeoutMs` and `leanServerMemoryWarnMb` are diagnostics: they are left out of the registry's hash, so changing them does not
 make a recorded run unresumable. `checkTimeoutSec` is in it.
 
+## Memory of the Lean server
+
+Kimina keeps REPLs with Mathlib loaded, and by default never recycles one (`MAX_REPL_USES` unset), so a long run grows the server until the
+machine swaps and checks time out. `harness doctor` ([quickstart.md](quickstart.md#harness-doctor)) prints the settings that fit the machine's
+memory (`kiminaSettingsFor` in `lean-memory.ts`): about 60% of the memory is the server's, one REPL per 4 GB of it (`MAX_REPLS`, at least 1 and
+at most 32), `MAX_REPL_MEM` the share of each, and `MAX_REPL_USES` 50 on a machine under 32 GB and 100 above. They are working figures, not
+measurements. It also warns when the server's resident memory passes the host's `leanServerMemoryWarnMb` (default 8 GB).
+
+The server's memory is read from the process table (`ps -eo rss=,args=`: the processes of a Kimina server and its `repl` processes, summed),
+and only when `LEAN_SERVER_API_URL` is empty or points at this machine. Any failure (no `ps`, a server elsewhere, no such process) gives no
+number, and no number gives no warning. The reader is a member of `DoctorSystem` (`leanServerMemoryMb`), so a test gives its own.
+`harness lean-server start`, which would start Kimina with these settings under a memory cap, is not built (Ruling 33): the advice comes first.
+The names of the settings are the plan's; whether the server reads them with a prefix of its own has not been checked against a real Kimina.
+
 ## Deployment for the bench
 
 The bench is pinned to formal-conjectures `bench-v1-lean4.27.0` ([bench.md](bench.md)), so the
