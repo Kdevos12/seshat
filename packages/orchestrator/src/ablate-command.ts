@@ -80,6 +80,8 @@ export async function ablateCommand(command: AblateCommand): Promise<AblationRes
     arms,
     dir: command.dir,
     ...(command.run !== undefined ? { run: command.run } : {}),
+    ...(command.baseline !== undefined ? { baseline: command.baseline } : {}),
+    ...(command.target !== undefined ? { target: command.target } : {}),
     ...(command.pilot !== undefined ? { pilot: command.pilot } : {}),
     ...(command.log !== undefined ? { log: command.log } : {}),
   });

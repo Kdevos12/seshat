@@ -867,6 +867,8 @@ async function ablate(): Promise<number> {
     ...(split !== undefined ? { split } : {}),
     ...(values["split-by"] !== undefined ? { splitBy: splitByFlag(values["split-by"]) } : {}),
     ...(values.pilot !== undefined ? { pilot: pilotMeasures(values.pilot) } : {}),
+    ...(values.baseline !== undefined ? { baseline: values.baseline } : {}),
+    ...(values.target !== undefined ? { target: number("target", values.target, undefined) as number } : {}),
     log: (line) => console.error(line),
     print: (line) => process.stdout.write(`${line}\n`),
   });
