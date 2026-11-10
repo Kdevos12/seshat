@@ -101,6 +101,11 @@ describe("the graded bench on the command line", () => {
     const target = await harness([...base, "--target", "fast", "--out", join(tempDir("mh-cli-out-"), "a")]);
     assert.equal(target.code, 2);
     assert.match(target.stderr, /--target must be a number/);
+    for (const bad of ["0", "-1", "Infinity"]) {
+      const r = await harness([...base, `--target=${bad}`, "--out", join(tempDir("mh-cli-out-"), "a")]);
+      assert.notEqual(r.code, 0, `--target ${bad}`);
+      assert.match(r.stderr, /--target (is a ratio above 0|must be a number)/, `--target ${bad}`);
+    }
   });
 });
 

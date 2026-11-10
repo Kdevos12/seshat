@@ -78,7 +78,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
  * changes what the models see, so the arms would no longer differ by their lines alone), a configuration a run would refuse, a
  * suspended or unknown line, an option a line does not have, two arms with one name.
  */
-export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES, options: { baseline?: string } = {}): string[] {
+export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES, options: { baseline?: string; target?: number } = {}): string[] {
   const problems: string[] = [];
   const refusal = ablationRefusal({ consortium: base.consortium });
   if (refusal !== undefined) problems.push(refusal);
@@ -93,6 +93,7 @@ export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemen
     if (arm.packetMode !== undefined && !PACKET_MODES.includes(arm.packetMode)) problems.push(`arm ${arm.name}: unknown packet mode ${String(arm.packetMode)}`);
     problems.push(...checkDecideSettings(arm.decide).map((p) => `arm ${arm.name}: ${p}`));
   }
+  if (options.target !== undefined && !(Number.isFinite(options.target) && options.target > 0)) problems.push(`--target is a ratio above 0, got ${options.target}`);
   if (options.baseline !== undefined && !names.has(options.baseline)) problems.push(`the baseline arm ${options.baseline} is not in the table`);
   for (const arm of arms) if (arm.versus !== undefined && !names.has(arm.versus)) problems.push(`arm ${arm.name} is compared with ${arm.versus}, which is not in the table`);
   return problems;
@@ -263,7 +264,7 @@ const slug = (name: string): string => name.replace(/[^A-Za-z0-9._-]+/g, "_");
  * that stops early (the run budget, Lean down) is measured as it stands and says why.
  */
 export async function runAblation(input: AblationInput): Promise<AblationResult> {
-  const problems = ablationProblems(input.config, input.arms, LINES, input.baseline !== undefined ? { baseline: input.baseline } : {});
+  const problems = ablationProblems(input.config, input.arms, LINES, { ...(input.baseline !== undefined ? { baseline: input.baseline } : {}), ...(input.target !== undefined ? { target: input.target } : {}) });
   if (problems.length > 0) throw new RunSetupError(`the ablation cannot start: ${problems.join("; ")}`);
   if (input.arms.length === 0) throw new RunSetupError("the ablation has no configuration to run");
   const run = input.run ?? runBench;
