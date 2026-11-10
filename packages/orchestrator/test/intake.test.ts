@@ -87,6 +87,15 @@ describe("the intake step in an automatic run", () => {
     assert.ok(!/%E2%88|%3A%3D/.test(sent), "no symbol of the statement was sent");
   });
 
+  it("asks the budget gate before the judge call, with a number of its own so that no model is asked to decide", async () => {
+    const run = await demoRun({ file: FILE, registry: registryFor(site), config: { intake, gate: {} }, responses: [judged("restricts"), check("exact trivial_proof")] });
+    const gated = ofType(run.events, "budget.gated").filter((e) => e.data.site === "judge");
+    assert.equal(gated.length, 1);
+    assert.equal(gated[0]?.data.action, "launch");
+    assert.equal(ofType(run.events, "model_call.finished").filter((e) => e.data.site.startsWith("budget.")).length, 0);
+    assert.equal(ofType(run.events, "intake.finished")[0]?.data.state, "done");
+  });
+
   it("drops a hit whose quote is not in the fetched text: it settles nothing and is journaled as dropped", async () => {
     const run = await demoRun({ file: FILE, registry: registryFor(site), config: { intake }, responses: [judged("proves", "A famous result proved this in nineteen ninety nine"), check("bad"), say("NOTES")] });
     const finished = ofType(run.events, "intake.finished")[0]?.data;
@@ -108,12 +117,13 @@ describe("the intake step in an automatic run", () => {
     assert.equal((JSON.parse(readFileSync(join(run.dir, "config.json"), "utf8")) as { private?: boolean }).private, true);
   });
 
-  it("does not send the statement when no one agreed: absence means no", async () => {
+  it("does not send the statement when no one agreed: absence means no, and the step is skipped with the reason", async () => {
     const before = site.requests.length;
-    const run = await demoRun({ file: FILE, registry: registryFor(site), config: { intake: { literature: true } }, responses: [check("exact trivial_proof")] }).catch((e: unknown) => e);
-    // A configuration that asks for the literature without saying how the person agreed is refused before anything runs.
-    assert.match(String(run), /intake.consent/);
+    const run = await demoRun({ file: FILE, registry: registryFor(site), config: { intake: { literature: true } }, responses: [check("exact trivial_proof")] });
     assert.equal(site.requests.length, before);
+    assert.deepEqual(ofType(run.events, "intake.consented").map((e) => [e.data.allowed, e.data.via]), [[false, "default"]]);
+    assert.match(ofType(run.events, "intake.finished")[0]?.data.reason ?? "", /^not agreed/);
+    assert.equal(ofType(run.events, "model_call.finished").filter((e) => e.data.site === "intake.judge").length, 0);
   });
 
   it("refuses --private together with Jev decisions, which would send proof states to a third party", async () => {

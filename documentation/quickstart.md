@@ -89,6 +89,17 @@ quoted (a newline, a backtick) gives the placeholder command instead.
 | Host | the one named, `HARNESS_HOST`, `sandboxed` when `doctor` has written it, then `local` | `--host` |
 | User | `--as`, `SESHAT_USER`, then the operating system's login name, which is then journaled (`user`, `human:NAME`) as it is; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
 
+Options that are off unless you ask (they do not change the defaults above):
+
+| Option | What it does |
+|---|---|
+| `--tool ID` (repeatable) | gives the provers that capability besides `lean_check`, as `harness run --tool` does (`--tool compute.sage`); a capability that is not `direct` or that the host does not offer stops the run before it spends |
+| `--auto-tool` | adds the host's compute tool (`compute.sage`) when the router files the statement as finite, about a graph or about numbers ([literature.md](literature.md#solve-options)); said before the run; nothing is added when the host does not offer it |
+| `--intake` | tests the statement before any paid session (vacuity, `plausible`, the first cases, now also for a Lean statement) and, if you agree, searches the literature ([literature.md](literature.md)) |
+| `--lit` | your agreement to send the words of the statement to OpenAlex, arXiv, Semantic Scholar and zbMATH, and the hits to the model, in a call that cannot ask; implies `--intake`. Without it `solve` asks once and journals your answer (`intake.consented`); with `--yes` or `--ask-stdin` and no `--lit` the answer is no |
+| `--private` | nothing goes outside; wins over `--lit` and `--intake` (the literature step is skipped, journaled as private) and is refused with `--decide-backend jev` |
+| `--intake-usd X` | the most the judge call may cost (default $0.05) |
+
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
 not spent stays yours.
 

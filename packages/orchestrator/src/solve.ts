@@ -26,6 +26,8 @@ import { messageCost } from "./budget.ts";
 import { shellQuote } from "./result.ts";
 import type { PriceBook } from "./prices.ts";
 import { resolveModel, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
+import { type IntakeConfig } from "./intake.ts";
+import { fileStatement } from "./solve-tools.ts";
 import { checkAllowance, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
 
 /**
@@ -310,6 +312,19 @@ export interface SolveOptions {
   codeRev?: string;
   runId?: string;
   lib?: Pick<RunOptions, "libraryRegistry" | "memoryFrom">;
+  /** `--tool ID` (CA17): capabilities the provers get besides lean_check. Default: none. */
+  tools?: readonly string[];
+  /**
+   * The host's compute tool (`compute.sage`), given to the provers when the router files the statement as finite, about a graph or about
+   * numbers (`fileStatement`). Absent: nothing is added. The caller passes it only when the host offers the capability.
+   */
+  autoTool?: string;
+  /** The intake step (Task 36): the statement's hygiene, and the literature when the person agrees. Absent: none, as before. */
+  intake?: IntakeConfig;
+  /** Asks the person once whether the statement may go to third parties; the answer is journaled. Absent: no answer, which is no. */
+  askConsent?: () => Promise<boolean>;
+  /** `--private`: nothing goes outside the machine and the model provider; wins over everything. */
+  private?: boolean;
 }
 
 export interface SolveResult {
@@ -379,7 +394,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   const problem = writeProblem(dir, lean);
   let testLemmasResult: TestLemmas | undefined;
   let trivial: { by: string } | undefined;
-  if (mode === "prose" && o.checker !== undefined) {
+  if ((mode === "prose" || o.intake?.hygiene === true) && o.checker !== undefined) {
     try {
       testLemmasResult = await testLemmas(o.checker, header, problem.entry.statement, 10, o.signal !== undefined ? { signal: o.signal } : {});
       if (testLemmasResult.result === "failed") notes.push(`Lean's \`decide\` refutes this statement on case ${testLemmasResult.failedAt}: it probably does not say what you mean`);
@@ -412,6 +427,14 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   const remaining = Math.round((o.maxUsd - (formalization?.usd ?? 0)) * 1e6) / 1e6;
   if (!(remaining > 0)) throw new SolveInputError(`formalizing the statement cost $${formalization?.usd.toFixed(4)}, all of the allowance $${o.maxUsd}: raise --max-usd`);
   const turnUsd = Math.min(remaining, o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6);
+  // The person's agreement to send the statement outside is asked once, here, after the signature, and journaled by the run.
+  let intake = o.intake;
+  if (intake?.literature === true && o.private !== true && intake.consent === undefined && o.askConsent !== undefined) {
+    intake = { ...intake, consent: { allowed: await o.askConsent(), via: "asked" } };
+  }
+  const filed = o.autoTool !== undefined ? fileStatement(problem.entry.statement) : undefined;
+  const tools = [...new Set([...(o.tools ?? []), ...(filed !== undefined && o.autoTool !== undefined ? [o.autoTool] : [])])];
+  if (filed !== undefined && o.autoTool !== undefined && !(o.tools ?? []).includes(o.autoTool)) show(`The statement is filed as ${filed}: the provers get ${o.autoTool}.`);
   const config = studentConfig({
     selection: { ids: [problem.entry.id] },
     model: o.model,
@@ -419,7 +442,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     turnUsd,
     ...(o.lines !== undefined ? { lines: o.lines } : {}),
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
-    ...(o.base !== undefined ? { base: o.base } : {}),
+    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
   });
   const result = await runBench({
     config,
@@ -438,6 +461,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(o.lib ?? {}),
     benchFile: problem.indexFile,
     user: o.user,
+    ...(prose !== undefined ? { prose } : {}),
     afterStart: (journal: Journal) => {
       journal.emit(
         "statement.signed",

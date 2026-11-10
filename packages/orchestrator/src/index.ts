@@ -22,6 +22,7 @@ export * from "./run.ts";
 export * from "./session.ts";
 export * from "./solve.ts";
 export * from "./solve-command.ts";
+export * from "./solve-tools.ts";
 export * from "./student.ts";
 export * from "./team-command.ts";
 export * from "./team.ts";

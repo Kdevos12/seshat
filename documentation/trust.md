@@ -93,6 +93,13 @@ outside the closed list, and one whose answer is not among its labels. The sites
 would amount to a verdict (fidelity, equivalence, status, progress) are refused by name. With the
 `jev` backend, proof states go to a third party: that is off unless the run asks.
 
+The intake step ([literature.md](literature.md)) cannot bypass it either. A `literature` node (a hit the judge says proves or refutes the
+statement, `settled: true`) and a `hygiene` node (a vacuity or `plausible` result) are evidence, written by the orchestrator, about a claim; neither
+changes its status, and only a Lean proof through `validate` does. What a site sends is hostile text: it is cleaned and bounded when read, a quote counts
+only when it is a verbatim part of that text, it is shown escaped as data in a user-role section and never enters a system prompt or a lesson, and a
+model's reading of it (the judge's verdict) is an opinion, not a check. The statement goes to third parties only for a bench problem, or when the person
+agreed (asked once and journaled, or `--lit`), and never with `--private`.
+
 The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
 to set, a task is `done` only when its claim already has the status its criterion asks for, and
 only the orchestrator writes them. A resumed run ([ledger.md](ledger.md#resume)) does not trust

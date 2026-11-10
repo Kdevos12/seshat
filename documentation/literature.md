@@ -104,3 +104,21 @@ goes on: the report (`report.md`, section "Intake") and `RESULT.md` list each pr
 
 Events `intake.consented` and `intake.finished`; node kinds `literature` and `hygiene`; capability `lit.search`; `RunConfig.intake` and
 `RunConfig.private`; `RunOptions.prose`; the turn reasons `literature` and `vacuous`; `RunReport.intake` and `Result.intake`.
+
+## Solve options
+
+`harness solve` ([quickstart.md](quickstart.md#harness-solve)) has the options `--intake`, `--lit`, `--private`, `--intake-usd`, `--tool ID` and
+`--auto-tool`; `harness run` has `--intake`, `--intake-usd` and `--private` (a bench problem is public, so `--intake` is the whole agreement; `--lit`
+is refused there, and `BENCH_CHECKOUT` is set to the run's checkout so that `bench-metadata` reads it). None is on by default, and none changes the
+defaults of either command: the controller adds them to a named defaults set later.
+
+- **The question** (`solve`): after the signature, and only when `--lit` is absent, `--yes` and `--ask-stdin` are, no terminal is there and `--private` is
+  not set, `solve` asks "Allow that? [y/N]" once; the answer, either way, is `intake.consented` with `via: "asked"`, written as `human:NAME`.
+- **`--tool ID`** (CA17): the capability is a tool of the provers (`RunConfig.tools`), checked and pinned as for `harness run --tool`.
+- **`--auto-tool`** (CA17): `fileStatement` (`solve-tools.ts`) files the problem's statement: `finite` when the router's domains include `finite`, `graph` when
+  the text mentions a graph (`SimpleGraph`, `Graph`, `Digraph`, `Subgraph`, `Matching`, `Clique`, `Colorable`, `Hamiltonian`, `Adj`), `number` when the router's
+  primary domain is arithmetic (`closed`, `presburger`, `linear_real`, `polynomial_identity`, `nonlinear_arith`) or every variable is a number; any other
+  statement is not filed. A filed statement gets `compute.sage` if the host offers it, and the run says so before it starts. The router has no `graph` or
+  `number` domain of its own: these two words are this task's reading of it.
+- **Test lemmas** (CA21): with `--intake` the first cases are tried for a Lean statement too and shown in the signature, and recorded again, with the other two
+  hygiene checks, as `hygiene` nodes when the run begins.

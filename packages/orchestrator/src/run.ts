@@ -71,7 +71,7 @@ import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { docstringBefore } from "@seshat/lit";
-import { checkIntake, type IntakeConfig, intakeStep } from "./intake.ts";
+import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -1160,7 +1160,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
               prices,
             }),
             price: perMillion,
-            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd }); return { action: a.action, reason: a.reason }; } } : {}),
+            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd, pSuccess: INTAKE_P_SUCCESS }); return { action: a.action, reason: a.reason }; } } : {}),
             checker: new RegistryLeanChecker(registry, { actor: "orchestrator" }),
             problemId: entry.id,
             claimId,

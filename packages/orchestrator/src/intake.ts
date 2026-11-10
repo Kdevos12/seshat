@@ -29,11 +29,18 @@ export interface IntakeConfig {
   capUsd?: number;
   /**
    * Whether the statement may go to third parties, and how that was decided: `bench` (a bench problem is public: on), `asked` (a person
-   * answered the question `harness solve` asks once), `flag` (`--lit`, in a call that cannot ask). Absent: no. Journaled as `intake.consented`.
+   * answered the question `harness solve` asks once), `flag` (`--lit`, in a call that cannot ask). Absent: no (the step is skipped with `not agreed`). Journaled as `intake.consented`.
    * `asked` and `flag` need the run's `user`, who is the person who answered.
    */
   consent?: { allowed: boolean; via: "asked" | "flag" | "bench" };
 }
+
+/**
+ * The chance the judge call pays (a hit that settles the problem), which the budget gate weighs the call's price by. The gate needs a number
+ * of the line's own, or it asks a model to decide, which would cost more than the call: 0.2 is a guess from the studies that most "solved"
+ * open problems are already in the literature, untested on this harness.
+ */
+export const INTAKE_P_SUCCESS = 0.2;
 
 /** The faults of an intake configuration. */
 export function checkIntake(intake: IntakeConfig | undefined, o: { user?: string | undefined } = {}): string[] {
@@ -41,7 +48,6 @@ export function checkIntake(intake: IntakeConfig | undefined, o: { user?: string
   const faults: string[] = [];
   if (intake.capUsd !== undefined && !(Number.isFinite(intake.capUsd) && intake.capUsd > 0 && intake.capUsd <= 1)) faults.push(`intake.capUsd must be above 0 and at most 1 dollar, got ${String(intake.capUsd)}`);
   if (intake.consent !== undefined && (intake.consent.via === "asked" || intake.consent.via === "flag") && o.user === undefined) faults.push(`intake.consent ${intake.consent.via} is a person's answer: the run needs its user`);
-  if (intake.literature === true && intake.consent === undefined) faults.push("intake.literature sends the statement to third parties: say how the person agreed (intake.consent), or the step is skipped with `not agreed`");
   return faults;
 }
 
