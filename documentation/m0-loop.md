@@ -583,6 +583,13 @@ A run with the line M12 (or one with a `ladder.escalated` event) adds a table of
 
 A run with the gate (`gate` in `report.json`) adds a paragraph and a table of its answers by site, and the avoided spend, an estimate of what the skipped launches would have cost, never a measured amount ([scheduler.md](scheduler.md#the-budget-gate)). It is read from the journal alone.
 
+A run that made an attempt ends its report with a **Loop** section (`loop` in `report.json`; `loop-telemetry.ts`, plan change CA3), read from the journal alone, to say where the dollars and minutes go:
+
+- per attempt (a session of a prover): the Lean checks it made (`attempt.finished.checks`, else its `lean.check` tool runs), the seconds a check took (median and 95th centile, from the tool runs' durations), the output tokens per check, the dollars by cache hit, cache miss and output, the context it ended with (the input tokens of its last request), and why it stopped (`stoppedBy`);
+- per problem: the rate of repeated failures (invalid attempts whose `failureDetail`, or `failureClass`, an earlier attempt of the problem already had, over the invalid attempts that name one), the open holes over time (the holes each check left, `attempt.finished.holes`, in the order the attempts ended) and, for the run, the share of proposed sub-lemmas that turned out false.
+
+The dollar split reads `outputUsd` and `cacheReadUsd` of the charges (the output tokens and the cache reads at the prices that charged the response); the rest is the cache-miss input and the cache writes. A journal written before these fields says "not recorded" and so does a run with no sub-lemma verdict: the share of sub-lemmas found false counts `node.recorded` events of kind `hole_verdict` whose `data.verdict` is `statement_wrong` (the verdict of CA11, which another task writes), over those that have a verdict. A check Lean could not answer adds no hole count. The percentiles are over the checks that finished (the index `floor(q n)` of the sorted seconds), and a check with no attempt (the reference check of a problem) is not counted.
+
 A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
 waits for the team says it is paused after turn N and where the account is, instead of "has not finished".
 
