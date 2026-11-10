@@ -79,6 +79,20 @@ The harness does not build a `KiminaChecker` itself: the registry does, through 
 `httpSlackMs`, `retries`; an empty `apiKey` sends no key) and the version pinned in
 `capabilities/lean.check/manifest.json` ([capabilities.md](capabilities.md#leancheck)).
 
+## Bounded checks
+
+Three optional settings of a host profile (`config/hosts/HOST.json`, top level) concern the Lean checks; a profile that gives none
+behaves as before:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `checkTimeoutSec` | 120 | The seconds a prover's Lean check may take, for a run that turns the bound on (`RunConfig.checkTimeoutSec`; `harness solve`'s defaults set `v2` does, `harness run` does not). It bounds the provers' checks only: the validator's policy (300 s) and the certifier keep their limits. A check that passes it answers "Lean did not finish within the time limit" and costs the session one turn, not 900 s. |
+| `healthTimeoutMs` | 15000 | How long `harness health` waits for one implementation; raise it for a cold laptop. |
+| `leanServerMemoryWarnMb` | 8192 | The resident memory of the Lean server past which `harness doctor` warns. |
+
+`healthTimeoutMs` and `leanServerMemoryWarnMb` are diagnostics: they are left out of the registry's hash, so changing them does not
+make a recorded run unresumable. `checkTimeoutSec` is in it.
+
 ## Deployment for the bench
 
 The bench is pinned to formal-conjectures `bench-v1-lean4.27.0` ([bench.md](bench.md)), so the

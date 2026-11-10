@@ -45,8 +45,25 @@ export interface HostProfile {
    * is charged at pi-ai's own numbers and ignores no setting.
    */
   models?: Record<string, ModelEntry>;
+  /**
+   * The time, in seconds, that a prover's Lean check may take (plan change CA4, documentation/lean.md, "Bounded checks"). It
+   * bounds the checks of the provers of a run that turns the bound on (`RunConfig.checkTimeoutSec`, which `harness solve`'s
+   * defaults set `v2` does) and nothing else: the validator's own policy and the certifier keep their limits. Absent: `DEFAULT_CHECK_TIMEOUT_SEC`.
+   */
+  checkTimeoutSec?: number;
+  /** The time, in milliseconds, that `harness health` waits for an implementation to answer. Absent: `DEFAULT_HEALTH_TIMEOUT_MS`. */
+  healthTimeoutMs?: number;
+  /** `harness doctor` warns when the Lean server's resident memory, in megabytes, passes this. Absent: `DEFAULT_LEAN_SERVER_MEMORY_WARN_MB`. */
+  leanServerMemoryWarnMb?: number;
   capabilities: Record<string, CapabilityBinding>;
 }
+
+/** What a prover's Lean check may take, in seconds, when the host says nothing. */
+export const DEFAULT_CHECK_TIMEOUT_SEC = 120;
+/** What `harness health` waits for an implementation, in milliseconds, when the host says nothing. */
+export const DEFAULT_HEALTH_TIMEOUT_MS = 15_000;
+/** The resident memory of the Lean server, in megabytes, past which `harness doctor` warns, when the host says nothing. */
+export const DEFAULT_LEAN_SERVER_MEMORY_WARN_MB = 8192;
 
 const PROFILE_SCHEMA: JsonSchema = {
   type: "object",
@@ -56,6 +73,9 @@ const PROFILE_SCHEMA: JsonSchema = {
     description: { type: "string" },
     leanEnv: { type: "string", minLength: 1 },
     models: MODELS_SCHEMA,
+    checkTimeoutSec: { type: "number", minimum: 1 },
+    healthTimeoutMs: { type: "integer", minimum: 1 },
+    leanServerMemoryWarnMb: { type: "number", minimum: 1 },
     capabilities: {
       type: "object",
       additionalProperties: {
@@ -123,6 +143,9 @@ export function checkHostProfile(profile: HostProfile, catalog: Catalog): string
  * `models` section (the settings a family ignores) changes what a run does, so it stays.
  */
 export function hostProfileHash(profile: HostProfile): string {
+  // The health limit and the memory threshold are diagnostics: changing them for a cold laptop must not make a run unresumable.
+  const { healthTimeoutMs: _health, leanServerMemoryWarnMb: _memory, ...kept } = profile;
+  profile = kept as HostProfile;
   if (profile.models === undefined) return hashJson(profile);
   const models = Object.fromEntries(
     Object.entries(profile.models).flatMap(([name, entry]) => (entry.ignores === undefined ? [] : [[name, { ignores: entry.ignores }]])),

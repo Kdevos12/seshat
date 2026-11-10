@@ -1,7 +1,7 @@
 import { hashJson, newId, type EventDataMap, type EventType, type Json } from "@seshat/core";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 import { describeCapability } from "./describe.ts";
-import { checkHostProfile, hostProfileHash, hostProfilePath, interpolate, loadHostProfile, type HostProfile } from "./host.ts";
+import { checkHostProfile, DEFAULT_HEALTH_TIMEOUT_MS, hostProfileHash, hostProfilePath, interpolate, loadHostProfile, type HostProfile } from "./host.ts";
 import {
   CatalogError,
   checkServer,
@@ -136,7 +136,6 @@ export class CapabilityError extends Error {
   }
 }
 
-const HEALTH_TIMEOUT_MS = 15_000;
 /** Past a tool's own time limit (`timeoutField`), the time it gets to stop and say so. */
 export const TOOL_TIMEOUT_MARGIN_MS = 15_000;
 const RELEASE_TIMEOUT_MS = 10_000;
@@ -468,7 +467,7 @@ export class Registry {
         let check: HealthCheck;
         try {
           const instance = await this.instance(capability, spec);
-          const signal = AbortSignal.timeout(HEALTH_TIMEOUT_MS);
+          const signal = AbortSignal.timeout(this.host.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS);
           check = instance.health ? await untilAborted(instance.health({ signal }), signal) : { ok: true, detail: "reachable; no health check" };
         } catch (error) {
           check = { ok: false, detail: messageOf(error) };
