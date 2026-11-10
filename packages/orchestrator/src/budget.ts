@@ -65,6 +65,11 @@ export class Ledger {
     return (this.limitUsd !== undefined && this.usd >= this.limitUsd) || (this.parent?.exhausted ?? false);
   }
 
+  /** Whether a charge of `usd` would leave this ledger or an ancestor exhausted: true for one that already is. */
+  wouldExhaust(usd: number): boolean {
+    return (this.limitUsd !== undefined && this.usd + usd >= this.limitUsd) || (this.parent?.wouldExhaust(usd) ?? false);
+  }
+
   /** Called once, when this ledger or an ancestor becomes exhausted. */
   onExhausted(listener: () => void): void {
     if (this.announced) listener();

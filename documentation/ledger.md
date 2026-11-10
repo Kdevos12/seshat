@@ -246,7 +246,8 @@ changes a status.
 
 An attempt's cost is in its `attempt.finished`. A session that is cut never writes it, so each model
 response of a session also writes `attempt.charged` (`attemptId`, `usd`, `inputTokens`,
-`outputTokens`), and the projection counts an unfinished attempt at the sum of its charges. A
+`outputTokens`; with `retry` for a response a transient error cut, whose request was sent again:
+[m0-loop.md](m0-loop.md#transient-errors)), and the projection counts an unfinished attempt at the sum of its charges. A
 resumed run starts its budgets from this. A session that does not finish is written at that sum
 too, never at zero: the resumption closes a cut session as `aborted`, and a session that the
 harness fails in (an error thrown out of it) ends `error`, at the cost it had been charged

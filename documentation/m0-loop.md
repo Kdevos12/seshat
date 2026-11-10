@@ -219,7 +219,7 @@ A session ends for one of these reasons, recorded as `stoppedBy` in `attempt.fin
 | `budget` | The problem's or the run's budget ran out. | `budget_exhausted` |
 | `solved` | One of its checks made the candidate. | `valid` |
 | `aborted` | Another prover found the candidate, or the run was stopped. | `aborted` |
-| `error` | A model request failed, Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
+| `error` | A model request failed (after its retries, for a [transient error](#transient-errors)), Lean could not be reached three times in a row, or the harness failed during a check (or a line's hook in the session). | `error` |
 | `line:<id>` | An enabled line's `afterCheck` stopped it ([lines.md](lines.md#the-hooks)); no notes are asked for. | `invalid` |
 | `turn` | The consortium turn ended: the session stops after the response in flight, and no notes are asked for. The notes it had go on with a line that says where the turn cut the session ([human.md](human.md#turns)). | `aborted` |
 | `interrupted` | The process ended in the middle of the session. Written by the orchestrator when the run is resumed, at the cost of the session's charges, with no carry ([ledger.md](ledger.md#resume)). | `aborted` |
@@ -235,6 +235,43 @@ For an `invalid` attempt, `failureClass` classifies its last check from Lean's m
 ([the table](m1-identity-memory.md#failure-classes)). The classes are the same with or without
 lines; the class `lean_error`, which stood for every error Lean reported, is gone. Only a run with M1 records
 the typed `failureDetail` besides the class.
+
+### Transient errors
+
+A model response can be cut by the transport or the server rather than refused for its request:
+the response body's stream closed in the middle (undici's `terminated`, which ended three of the
+first four attempts of the first real run, two of them after ten minutes of work), a reset or
+refused connection, `fetch failed`, a 5xx or a 429. pi-ai turns these into a response with
+`stopReason: "error"`, and pi's agent ends the session on it; pi-ai's own retry (`maxRetries`)
+only covers the request before its response starts streaming, and the harness leaves it at 0. So
+the session's stream function (`retryingStream`, `src/retry.ts`) sends such a request again, with
+the same context and options, so that the provider's prompt cache still answers its prefix: at
+most 3 more times, after 2, 4 and 8 seconds (`REQUEST_RETRY`; the session option `retry` sets
+another policy). The events of the sends reach the agent as one response, and the cut response
+is neither a turn nor in the history.
+
+`isTransient` decides: pi-ai's classifier (`isRetryableAssistantError`) and Node's socket error
+codes, after the request's own errors are taken out: a 4xx other than 408, 409 and 429 (a bad
+request, a refused key, DeepSeek's `402 Insufficient Balance`), a context too long
+(`isContextOverflow`), a quota or billing limit. Those, and an abort, end the session as before.
+A request is not sent again once the problem is stopped or aborted, once the consortium turn is
+over, or when the cut response's charge would leave the budget spent; the session then ends as
+it would have on that response (`aborted`, `turn`, `budget`). An abort during the wait ends it at
+once, as `aborted`. When the retries run out the session ends `error`, and its error says how many
+times the request was sent (`terminated (the request was sent 4 times)`).
+
+Each cut response whose request is sent again is charged, at what the provider reported of it
+(a cut stream usually reports no usage, so often nothing: the tokens it streamed are not known), and
+written as an `attempt.charged` with `retry` (`retry`, the send's number from 1; `error`, what cut
+the response; `delayMs`, the wait before the send). `attempt.finished` counts the session's
+`retries`, and its totals include the cut responses' charges. A session whose process ended
+before it finished is closed at its charges, and counts each of them as a turn, a cut response's
+too ([ledger.md](ledger.md#charges-and-carry)).
+The report says how many requests were sent again, in how many attempts, and what the cut
+responses cost (`retries` in `report.json`).
+
+The one-shot model calls of the lines (`model_call.finished`) are not sent again: a call that a
+transient error cut fails, and the line decides what to do, as before.
 
 ## What the prover sees
 
@@ -514,7 +551,7 @@ checks with their median and 90th percentile times (the count includes one refer
 problem). For each other tool, it gives the provers' calls by outcome, the attempts that made them,
 and how many of those attempts found a proof. It gives the spend by site (`prover.session` for the
 provers' sessions, the sites of the lines' one-shot calls), each with its share of the total
-([ledger.md](ledger.md#sites)). It also says what it does not measure: the fidelity of the formal statements, taken as
+([ledger.md](ledger.md#sites)), and the model requests sent again after a transient error ([Transient errors](#transient-errors)). It also says what it does not measure: the fidelity of the formal statements, taken as
 given by the bench, and novelty, since the bench's problems are solved ones.
 
 The prompt cache has its own paragraph and table (`cache` in `report.json`): the share of input tokens read from the
@@ -548,6 +585,11 @@ reached; certification, accepted and rejected; and a run aborted between problem
 `packet.test.ts` covers the cache in the cost: the cached input tokens in the journal and the report, the retention asked of
 the provider (and kept when a run is resumed), and the dollars per solve of a frozen packet prefix against a packet compiled again,
 as pi-ai's faux provider simulates the cache, and the cache reads of a session the harness failed in or a resumption cut ([lines.md](lines.md#the-context-packet)). What a real provider's cache does with it has not run.
+`retry.test.ts` covers [transient errors](#transient-errors): a fake OpenAI-compatible server that closes the socket in the
+middle of a streamed answer (undici's `terminated`), whose request is sent again with the same body and answered, or sent until
+the retries run out; a 400 not sent again and a 503 sent again; no send again once the budget is spent; an abort during the wait;
+the classifier; and a run with pi-ai's faux provider whose journal and report record the retry. A cut from DeepSeek's own API has
+been seen in the first real run, but no run has yet gone through a retry against a real provider.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line

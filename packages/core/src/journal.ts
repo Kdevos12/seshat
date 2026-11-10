@@ -222,6 +222,12 @@ export class Journal {
         for (const [name, value] of [["usd", d.usd], ["inputTokens", d.inputTokens], ["outputTokens", d.outputTokens]] as const) {
           if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error(`attempt ${d.attemptId}: ${name} must be a non-negative number`);
         }
+        if (d.retry !== undefined) {
+          const r = d.retry;
+          if (typeof r !== "object" || r === null || !Number.isInteger(r.retry) || r.retry < 1 || typeof r.error !== "string" || !(r.delayMs >= 0)) {
+            throw new Error(`attempt ${d.attemptId}: retry must be { retry: a positive integer, error: a string, delayMs: a non-negative number }`);
+          }
+        }
         return;
       }
       case "attempt.finished": {

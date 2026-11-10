@@ -95,6 +95,11 @@ export interface RunReport {
    */
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
   /**
+   * The sessions' requests sent again after a transient error cut their response (documentation/m0-loop.md, "Transient errors"):
+   * how many, in how many attempts, and what the cut responses were charged (in `usd` already). Absent when there was none.
+   */
+  retries?: { requests: number; attempts: number; usd: number };
+  /**
    * The spend by site, the biggest first: the provers' sessions under `prover.session`, the lines'
    * one-shot calls under the site they name, and `unknown` for a call recorded before the tags. It
    * shows what share of the budget each place takes, which caps what a cheaper way of deciding there
@@ -411,6 +416,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   };
   let offPeakUsd = 0;
   const waits = { deferred: 0, ranAnyway: 0, waitedMinutes: 0 };
+  const retries = { requests: 0, attempts: new Set<string>(), usd: 0 };
 
   for (const event of events) {
     switch (event.type) {
@@ -453,6 +459,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         cachedCharged.set(d.attemptId, (cachedCharged.get(d.attemptId) ?? 0) + (d.cachedInputTokens ?? 0));
         offPeakCharged.set(d.attemptId, (offPeakCharged.get(d.attemptId) ?? 0) + (d.offPeakUsd ?? 0));
         gap(d);
+        if (d.retry !== undefined) {
+          retries.requests += 1;
+          retries.attempts.add(d.attemptId);
+          retries.usd += d.usd;
+        }
         break;
       }
       case "attempt.finished": {
@@ -599,6 +610,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
     sites: siteSpend(events),
     ...(gateReport(events) !== undefined ? { gate: gateReport(events) as GateReport } : {}),
     ...(redundant !== undefined ? { redundancy: redundant } : {}),
@@ -729,6 +741,12 @@ export function renderRunReport(report: RunReport): string {
     ...(report.priceGaps !== undefined ? [priceGapsParagraph(report.priceGaps)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
+    ...(report.retries !== undefined
+      ? [
+          `Requests sent again after a transient error (a cut stream, a reset connection, a 5xx or a 429): ${report.retries.requests} ` +
+            `in ${report.retries.attempts} attempt(s); the cut responses were charged ${money(report.retries.usd)}.`,
+        ]
+      : []),
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +
       `${report.leanChecks.medianMs !== undefined ? `; median ${(report.leanChecks.medianMs / 1000).toFixed(1)} s` : ""}` +
       `${report.leanChecks.p90Ms !== undefined ? `, 90th percentile ${(report.leanChecks.p90Ms / 1000).toFixed(1)} s` : ""}.`,
