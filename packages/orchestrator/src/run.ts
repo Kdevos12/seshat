@@ -30,7 +30,8 @@ import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLi
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { CARD_NOTES_CHARS, MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
-import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
+import { type GateSettings, gateSettings, NO_PROGRESS, progressOf, TaskLedger } from "@seshat/scheduler";
+import { type Grant, markOf, NO_MARK, recordedRounds, Rotation } from "./rounds.ts";
 import { Breakpoints } from "./breakpoints.ts";
 import { BudgetGate } from "./budget-gate.ts";
 import { problemDecide } from "./decide.ts";
@@ -877,8 +878,61 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     return undefined;
   };
 
+  /**
+   * The run's budget in rounds (CA8): with a run budget and several problems, the problems take turns, a slice at a time. A run of one problem,
+   * or without a run budget, is worked as it always was.
+   */
+  let rounds: Rotation | undefined;
+  if (config.budgetRounds === true && config.budget.runUsd !== undefined) {
+    const { runUsd, problemUsd } = config.budget;
+    const k = o.problems.length;
+    if (resume === undefined && problemUsd > runUsd / k + 1e-9) {
+      log(`warning: the problem allowance ($${problemUsd}) is above its fair share of the run's budget ($${(runUsd / k).toFixed(4)} = $${runUsd} / ${k} problem${k === 1 ? "" : "s"}): one problem can still take more than its share, up to the round's cap`);
+    }
+    const earlier = resume === undefined ? undefined : recordedRounds(resume.events);
+    if (k > 1) {
+      rounds = new Rotation({
+        runUsd,
+        k,
+        concurrency: config.concurrency,
+        order: o.problems.map((p) => p.id),
+        journal,
+        measure: (id) => {
+          const claimId = journal.projection.problem(id)?.claim_id;
+          return claimId === undefined ? { ...NO_MARK } : markOf(memory !== undefined ? progressOf(memory, id, claimId) : NO_PROGRESS, journal.projection.attempts(claimId));
+        },
+        spent: (id) => journal.projection.problemSpend(id).usd,
+        found: (id) => {
+          const claimId = journal.projection.problem(id)?.claim_id;
+          const status = claimId === undefined ? undefined : journal.projection.claim(claimId)?.status;
+          return status === "computed" || status === "proved" || status === "refuted";
+        },
+        over: () => turn?.ended !== undefined || stopReason() !== undefined,
+        log,
+        ...(earlier !== undefined ? { recorded: earlier } : {}),
+        finished: new Set(results.map((r) => r.problemId)),
+      });
+    }
+  }
+
   const runProblem = async ({ entry, k, again }: QueuedProblem): Promise<void> => {
-    const result = await solveProblem(entry, again);
+    let grant: Grant | undefined;
+    let rotation = rounds;
+    if (rounds !== undefined) {
+      grant = await rounds.acquire(entry.id);
+      // The run is over for a problem that never began; one that was begun is taken up to its end, as it is without the rotation.
+      if (grant === undefined && again === undefined) {
+        rounds.done(entry.id);
+        return;
+      }
+      if (grant === undefined) rotation = undefined;
+    }
+    let result: ProblemResult | undefined;
+    try {
+      result = await solveProblem(entry, again, rotation, grant);
+    } finally {
+      rounds?.done(entry.id);
+    }
     if (result === undefined) {
       log(`[${k + 1}/${o.problems.length}] ${entry.fullName}: waits for the next turn`);
       return;
@@ -910,7 +964,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
    * and its registration, its tasks, its spend, the candidate it found and what its provers carried are
    * taken from the journal (documentation/ledger.md, "Resume").
    */
-  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem): Promise<ProblemResult | undefined> => {
+  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem, rotation?: Rotation, grant?: Grant): Promise<ProblemResult | undefined> => {
     const started = performance.now();
     const ledger = runLedger.child(config.budget.problemUsd);
     if (again !== undefined) ledger.seed(journal.projection.problemSpend(entry.id));
@@ -1187,8 +1241,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       }
       // The provers that have work: all of them in a fresh problem, the ones that are `ready` in a problem
       // that was begun, each with what it carried. The journal has to give that back before any prover starts.
-      const working = again === undefined ? proverTasks : proverTasks.filter((task) => tasks.get(task.taskId)?.status === "ready");
+      let working = again === undefined ? proverTasks : proverTasks.filter((task) => tasks.get(task.taskId)?.status === "ready");
       const carried = new Map<string, ProverResume>();
+      // The slice of the run's budget in rounds this problem is working (CA8): a child of the problem's ledger, which pauses the provers when spent.
+      let sliceLedger: Ledger | undefined;
       let resumeFailure: string | undefined;
       if (again !== undefined && !adopted) {
         try {
@@ -1244,7 +1300,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,
           ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
-          ledger: how.probe?.ledger ?? ledger,
+          ledger: how.probe?.ledger ?? sliceLedger ?? ledger,
+          ...(sliceLedger !== undefined ? { slice: () => sliceLedger !== undefined && sliceLedger.exhausted && !ledger.exhausted } : {}),
           ...(how.probe !== undefined ? { probe: { sessions: how.probe.sessions } } : {}),
           ...(gate !== undefined ? { gate } : {}),
           signal: controller.signal,
@@ -1257,7 +1314,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           },
           // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
           onEnd: (result) => {
-            if (result.stop === "turn" || result.stop === "probe") return;
+            if (result.stop === "turn" || result.stop === "probe" || result.stop === "slice") return;
             end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
           },
           ...(turn !== undefined ? { turn } : {}),
@@ -1282,16 +1339,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
        * the problem's budget, and the problem widens (the other provers start, the first goes on) only if the probe made Lean progress, or
        * the exploration floor lets it through. Without the gate every prover starts at once.
        */
+      /** How a prover starts: from `ready` as ever, or, when a slice of the rotation paused it, from where the journal says it stopped. */
+      const launch = (task: ProverTask): { begin: boolean; resumed: ProverResume | undefined } => {
+        const paused = tasks.get(task.taskId)?.status === "running";
+        return { begin: !paused, resumed: carried.get(task.taskId) ?? (paused ? proverResumeOf(journal, blobs, task.taskId) : undefined) };
+      };
       const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
         const [first, ...rest] = working;
-        if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))));
+        if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, launch(task)))));
         let stage = gate.stage;
         if (stage === "start" || stage === "probing") {
           const { capUsd } = gate.probe();
           const resumedFirst = carried.get(first.taskId);
           // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
           if (resumedFirst === undefined || resumedFirst.session < 1) {
-            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: ledger.child(capUsd) } }));
+            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
           }
           const widened = await gate.widen(working.length);
@@ -1323,10 +1385,25 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         const probed = proverResumeOf(journal, blobs, first.taskId);
         return Promise.all([
           settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed })),
-          ...rest.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))),
+          ...rest.map((task) => settleRun(startProver(task, launch(task)))),
         ]);
       };
-      const settled: PromiseSettledResult<ProverResult>[] = idle ? [] : await gated();
+      // Without the rotation a problem is worked until its allowance is spent. With it (CA8) the provers work one slice at a time: when the
+      // slice's allowance is spent they pause, the problem waits for its next round, and this loop goes on with the same provers from where
+      // the journal says they stopped. Nothing inside a slice differs from a problem worked alone.
+      let settled: PromiseSettledResult<ProverResult>[];
+      for (let current = grant; ; ) {
+        if (current !== undefined && !idle) sliceLedger = ledger.child(Math.max(0, Math.min(current.capUsd, config.budget.problemUsd) - ledger.usd));
+        settled = idle ? [] : await gated();
+        const paused =
+          rotation !== undefined && current !== undefined && !idle && workbench.candidate === undefined && !controller.signal.aborted && !ledger.exhausted && turn?.ended === undefined &&
+          settled.every((s) => s.status === "fulfilled") && settled.some((s) => s.status === "fulfilled" && s.value.stop === "slice");
+        if (!paused || rotation === undefined) break;
+        carried.clear();
+        working = proverTasks.filter((task) => !isFinalTaskStatus(tasks.get(task.taskId)?.status ?? "ready"));
+        current = await rotation.next(entry.id);
+        if (current === undefined) break;
+      }
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = workbench.attemptIds.length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
@@ -1425,12 +1502,17 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   let crashed: { error: unknown } | undefined;
   let turnSummary: TurnSummary | undefined;
   try {
-    await pool(
-      queue,
-      config.concurrency,
-      runProblem,
-      (next) => turn?.ended !== undefined || (next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined),
-    );
+    if (rounds !== undefined) {
+      rounds.begin();
+      await Promise.all(queue.map((q) => runProblem(q)));
+    } else {
+      await pool(
+        queue,
+        config.concurrency,
+        runProblem,
+        (next) => turn?.ended !== undefined || (next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined),
+      );
+    }
   } catch (error) {
     crashed = { error };
     stopped ??= "errors";

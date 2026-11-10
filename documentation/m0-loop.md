@@ -191,7 +191,7 @@ prompt asks the prover to rewrite them in full and keep what still helps.
 
 A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
 out, when the problem is aborted, after two sessions in a row ended with an error (the model or
-Lean could not be reached), or when a line's `beforeSession` stops it (`line`).
+Lean could not be reached), or when a line's `beforeSession` stops it (`line`). With the budget in rounds ([scheduler.md](scheduler.md#the-budget-in-rounds)) a prover whose slice of the budget is spent pauses with `slice`: its task stays running and the problem asks for its next slice.
 
 ## A session
 

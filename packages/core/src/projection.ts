@@ -377,6 +377,8 @@ const INHERITED_SKIPPED: readonly string[] = [
   // A decision is answered from its own run's journal: the same problem id in a chained run is another problem.
   "decision.made",
   "budget.gated",
+  "budget.round",
+  "problem.parked",
 ];
 
 /**
@@ -810,6 +812,10 @@ export class Projection {
       // The installed packs are a fold of these two events (`installedPacks` in @seshat/registry), not a table.
       case "pack.installed":
       case "pack.removed":
+        return;
+      // The rounds of a run's budget are read from the events by the orchestrator (`budget.round`, `problem.parked`): no table.
+      case "budget.round":
+      case "problem.parked":
         return;
       // A person's signature of the statement a run works on: a record for the account and the view, no table.
       case "statement.signed":
