@@ -5,6 +5,7 @@ import { fauxFactory, jevFactory } from "@seshat/decide";
 import { kiminaChecker, kiminaFactory } from "@seshat/lean-kimina";
 import { DEFAULT_ENV_ROOT, lookupEnvironment } from "@seshat/lean-env";
 import { leanLspFactory } from "@seshat/lean-lsp";
+import { leanSearchFactory } from "@seshat/lean-search";
 import { lakeCertifyFactory } from "@seshat/lean-local";
 import { leanMetaFactory, pantographFactory } from "@seshat/lean-meta";
 import { findstatFactory, lmfdbFactory, oeisFactory } from "@seshat/models";
@@ -30,6 +31,7 @@ export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   kimina: kiminaFactory(),
   "kimina-meta": leanMetaFactory((context) => kiminaChecker(context)),
   "lean-lsp": leanLspFactory(),
+  "lean-search": leanSearchFactory(),
   pantograph: pantographFactory(),
   "lake-certify": lakeCertifyFactory(),
   oeis: oeisFactory(),

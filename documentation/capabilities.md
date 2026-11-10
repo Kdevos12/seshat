@@ -156,7 +156,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation of it that does not answer as `warn` and does not fail on it, also when the
   capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
   implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
-  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire`, `atp.eprover` and `decide.ask`, and no other capability.
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire`, `atp.eprover`, `decide.ask` and `lean.search`, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -349,6 +349,28 @@ version `statistic-finder+client-1`) posts the collection and the data to the st
 takes the address from `baseUrl` (`FINDSTAT_URL`). Its contract has 2 cases: the number of
 inversions on the permutations of 1, 2 and 3, and values that no statistic has. The request and the
 answer are guesses from the site's documentation as remembered and have never been made.
+
+## `lean.search`
+
+Premise search for the harness's own use (plan change CA22): the missing name of an `unknown identifier`, or the goal of a hole, in; names
+out (`hits`, each with the backend that found it, the backends that answered in `used`, those left out or failed in `skipped` with why).
+It is `auto`: the model never calls it, the harness does, after a Lean check, and pushes the hits that Lean confirms into the check's
+answer ([lean.md](lean.md#search-pushed-by-the-harness)). It justifies no status. Its implementation `search` (factory `lean-search`,
+in `@seshat/lean-search`, version `backends-1`) runs the backends the host profile sets up, together, and merges their hits, each name once:
+
+| Backend | Setting | What it is |
+|---|---|---|
+| `remote` | `remoteUrl` (`LEAN_SEARCH_URL`) | an HTTP search service for natural-language and goal queries: `POST` of `{"query", "num_results"}`, answered as a list of declarations |
+| `local` | `index` (`LEAN_SEARCH_INDEX`) | a file of declarations (a JSON array or one object a line: `name`, `type`, optional `doc`) ranked by BM25, no model |
+| `pattern` | `patternUrl` (`LEAN_PATTERN_URL`) | a Loogle-like service (`GET` with `q`), or, when no address is set, a match of a goal's conclusion over the index |
+
+Each is optional; none set up is a capability that answers no hit (`harness health lean.search` says `warn`: the profiles mark it optional).
+A service is reached over https only, with no credentials in its address, no redirect followed, an answer read up to 256 KB and 8 s of
+waiting (`timeoutSec`, `maxResponseBytes`); one that fails is `skipped` and the others still answer. With `private` set no backend that
+sends the query to a third party is asked: `remote` is skipped, and `pattern` falls back to the index when there is one. The answer holds
+names only: what a backend says besides (types, doc strings) ranks inside the index and goes no further. Its contract has 2 cases (names
+for a name query, and a private call that asks no service), which need a backend set up. Not run against a real service or an index of
+Mathlib.
 
 ## `decide.ask`
 
