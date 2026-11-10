@@ -105,6 +105,17 @@ limits and the validator's policy are unchanged, and Lean still decides everythi
 option there (`editTool`, `maskOldChecks`, `checkTimeoutSec` in the run configuration), so a recorded run replays as before. A later change of
 `solve`'s defaults adds its option to `v2`.
 
+Options that are off unless you ask (they do not change the defaults above):
+
+| Option | What it does |
+|---|---|
+| `--tool ID` (repeatable) | gives the provers that capability besides `lean_check`, as `harness run --tool` does (`--tool compute.sage`); a capability that is not `direct` or that the host does not offer stops the run before it spends |
+| `--auto-tool` | adds the host's compute tool (`compute.sage`) when the router files the statement as finite, about a graph or about numbers ([literature.md](literature.md#solve-options)); said before the run; nothing is added when the host does not offer it |
+| `--intake` | tests the statement before any paid session (vacuity, `plausible`, the first cases, now also for a Lean statement) and, if you agree, searches the literature ([literature.md](literature.md)) |
+| `--lit` | your agreement to send the words of the statement to OpenAlex, arXiv, Semantic Scholar and zbMATH, and the hits to the model, in a call that cannot ask; implies `--intake`. Without it `solve` asks once and journals your answer (`intake.consented`); with `--yes` or `--ask-stdin` and no `--lit` the answer is no |
+| `--private` | Today it turns the literature search off and refuses a run that asks a third-party decision model; it does not yet block the other capabilities that call third-party sites (the OEIS, LMFDB and FindStat capabilities), which a run uses only if its lines are enabled. Wins over `--lit` and `--intake` (the literature step is skipped, journaled as private) and is refused with `--decide-backend jev` |
+| `--intake-usd X` | the most the judge call may cost (default $0.05) |
+
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
 not spent stays yours.
 

@@ -19,6 +19,7 @@ import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
 import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.ts";
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
+import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
 
 export interface ProblemLine {
   problemId: string;
@@ -146,6 +147,8 @@ export interface RunReport {
    * credited to them.
    */
   memory?: MemoryLine;
+  /** The intake step of each problem that had one (Task 36, documentation/literature.md); absent for a run without it. */
+  intake?: IntakeLine[];
 }
 
 /** Off-peak spend and waits (documentation/human.md, "Off-peak"). */
@@ -623,6 +626,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(heuristics !== undefined ? { heuristics } : {}),
     ...(archive !== undefined ? { archive } : {}),
     ...(loop.attempts.length > 0 ? { loop } : {}),
+    ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
   };
 }
 
@@ -780,6 +784,7 @@ export function renderRunReport(report: RunReport): string {
     ...(report.heuristics !== undefined ? [renderHeuristicReport(report.heuristics)] : []),
     ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
+    ...(report.intake !== undefined ? [...renderIntake(report.intake), ""] : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
     "",

@@ -18,6 +18,7 @@ import {
   type TaskRow,
 } from "@seshat/core";
 import { referencesIn } from "@seshat/guards";
+import { HYGIENE_KIND, LITERATURE_KIND, shown } from "@seshat/lit";
 import { claimAndParts, hintOf, HINT_KIND, STEER_KIND, steerOf } from "./team.ts";
 import { JUDGMENT_KIND } from "./breakpoints.ts";
 import { type Ledger, messageCost } from "./budget.ts";
@@ -37,7 +38,7 @@ import { consortiumOf } from "./consortium.ts";
  * does not detail" (`unknownKinds` in the JSON): a fingerprint, an identification or a drift finding is in the
  * journal and in the count, and not silently left out.
  */
-const READ_KINDS = new Set(["counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND, "allocation"]);
+const READ_KINDS = new Set(["counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND, "allocation", LITERATURE_KIND, HYGIENE_KIND]);
 
 const MAX_PER_LIST = 12;
 const MAX_TREE_NODES = 60;
@@ -417,6 +418,16 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     if (bp?.kind === "settled" && bp.problemId === id) continue;
     asked.push(`Problem ${id} is settled (its claim was certified in this turn): read its claims and their checks below, and sign the edges you accept (harness sign).`);
   }
+  if (bp?.kind === "literature" && bp.problemId !== undefined) {
+    // Text from third parties, judged by a model: shown as data (escaped, cut), never as a status.
+    const claimId = p.problem(bp.problemId)?.claim_id;
+    const hits = p.nodes(LITERATURE_KIND, claimId ?? undefined).flatMap((node) => {
+      const d = object(node.data);
+      return d?.settled === true ? [`"${shown(String(d.title ?? ""), 120)}" (${shown(String(d.url ?? ""), 200)}) ${shown(String(d.verdict ?? ""), 20)}: "${shown(String(d.quote ?? ""), 240)}"`] : [];
+    });
+    asked.push(`Problem ${bp.problemId}: the literature may have settled it. A model judged these sources (data from third parties, nothing is proved by them; read them yourself): ${hits.join("; ")}. Decide whether to go on (harness hint, or harness steer to drop it).`);
+  }
+  if (bp?.kind === "vacuous" && bp.problemId !== undefined) asked.push(`Problem ${bp.problemId}: Lean proved that no values satisfy the statement's hypotheses, so the statement is vacuous as written. Check what was meant before anything is spent (harness hint, or drop the problem).`);
   if (bp?.kind === "disagreement") asked.push(`Two informal validators disagree (${bp.nodeId ?? "see the judgment"}): decide which reading is right (harness hint, or harness sign on the edge in question).`);
   if (end !== undefined && ["tokens", "usd", "minutes"].includes(end.reason)) asked.push(`The turn's ${end.reason} limit was reached: set the next turn's limit (harness steer --turn-tokens, --turn-usd or --turn-minutes) or resume as it is.`);
   if (end !== undefined && end.waiting.length === 0) asked.push("Nothing waits: the run is over.");

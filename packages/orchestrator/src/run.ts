@@ -70,6 +70,8 @@ import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./acc
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
+import { docstringBefore } from "@seshat/lit";
+import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -159,6 +161,18 @@ export interface RunConfig {
    * stamps what the run learns with a prompt version of its own. Absent: the merged prompt, and a run that records what it always did.
    */
   prompts?: { proverSystem?: string };
+  /**
+   * The intake step (Task 36, documentation/literature.md): before any paid session of a problem, a search of the literature (a judge call
+   * under a cap, `literature` nodes, a breakpoint in a run with a person) and tests of the statement itself (vacuity, `plausible`, the first
+   * cases). Absent: no intake, and a run that records what it always did.
+   */
+  intake?: IntakeConfig;
+  /**
+   * `--private`: nothing of the problem is sent outside the machine and the model provider (documentation/literature.md, "Third
+   * parties"). It wins over every option that sends something: the literature step is skipped with the reason, and a run that also asks
+   * Jev for decisions is refused. The one place later tasks read it from. Absent or false: no restriction.
+   */
+  private?: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -242,6 +256,8 @@ export interface RunOptions {
    * records the person's signature of the statement here (documentation/quickstart.md). It may write events; it may not spend.
    */
   afterStart?: (journal: Journal) => void;
+  /** The person's words, when the statement was formalized from them (`harness solve`): the literature queries use them. */
+  prose?: string;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -455,6 +471,10 @@ interface QueuedProblem {
 async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> {
   const { config } = o;
   const problems = checkConfig(config);
+  problems.push(...checkIntake(config.intake, { user: o.user }));
+  if (config.private === true && sitesSentOutside(resolveDecideSettings(config.decide)).length > 0) {
+    problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
+  }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
   const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
@@ -689,6 +709,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only when given, so that a run without it records what it always did.
       ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
       ...(config.gate !== undefined ? { gate: config.gate as unknown as Json } : {}),
+      // Only when given, for the same reason; `private` is the single place the run's privacy is read from.
+      ...(config.intake !== undefined ? { intake: config.intake as unknown as Json } : {}),
+      ...(config.private === true ? { private: true } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -800,7 +823,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
   const libraryDefinitions = resume === undefined && o.libraryRegistry !== undefined ? registryDefinitions(o.libraryRegistry) : [];
-  if (enabled.lines.length > 0 || journal.chain !== undefined || libraryDefinitions.length > 0) {
+  if (enabled.lines.length > 0 || journal.chain !== undefined || libraryDefinitions.length > 0 || config.intake !== undefined) {
     memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
     if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
     if (libraryDefinitions.length > 0) log(`the run starts with ${seedDefinitions(memory, libraryDefinitions).length} definition(s) of the library registry`);
@@ -1127,6 +1150,62 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           } else {
             endProverTask(tasks, task, { stop: "aborted", sessions: config.sessions, budget });
           }
+        }
+      }
+
+      // The intake step (Task 36): the literature and the statement's hygiene, before any paid session. A problem whose step was written by
+      // the process before is not tested again.
+      if (config.intake !== undefined && memory !== undefined && !adopted && !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id)) {
+        try {
+          const intakeModel = await resolveModel(o.models, config.model);
+          const perMillion = (() => {
+            const host = prices.pricingOf(intakeModel);
+            return host !== undefined ? { inputPerM: host.cacheMiss, outputPerM: host.output } : { inputPerM: intakeModel.cost.input, outputPerM: intakeModel.cost.output };
+          })();
+          const step = await intakeStep({
+            config: config.intake,
+            private: config.private === true,
+            journal,
+            memory: memory.withActor("orchestrator"),
+            registry,
+            llm: lineLlm({
+              line: "intake" as LineId,
+              journal,
+              blobs,
+              models: o.models,
+              model: config.model,
+              resolveModel: (name) => (name === config.model ? Promise.resolve(intakeModel) : resolveModel(o.models, name)),
+              thinkingLevel: "off",
+              ledger,
+              problemId: entry.id,
+              signal: controller.signal,
+              ...(turn !== undefined ? { turn } : {}),
+              prices,
+            }),
+            price: perMillion,
+            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd, pSuccess: INTAKE_P_SUCCESS }); return { action: a.action, reason: a.reason }; } } : {}),
+            checker: new RegistryLeanChecker(registry, { actor: "orchestrator" }),
+            problemId: entry.id,
+            claimId,
+            statement: entry.statement,
+            ...(o.prose !== undefined ? { prose: o.prose } : {}),
+            name: entry.fullName,
+            ...(docstringBefore(problem.sketch.prefix) !== undefined ? { doc: docstringBefore(problem.sketch.prefix) as string } : {}),
+            header: problem.sketch.prefix,
+            ...(o.user !== undefined ? { user: o.user } : {}),
+            events: resume?.events ?? [],
+            signal: controller.signal,
+            log: (text) => log(`${entry.fullName}: ${text}`),
+          });
+          if (step.breakpoint !== undefined && turn !== undefined) {
+            // A run with a person stops here, before anything is spent on proving: the problem waits for the next turn.
+            turn.strike({ reason: step.breakpoint.reason, detail: `${entry.fullName}: ${step.breakpoint.detail}`, breakpoint: { kind: step.breakpoint.reason, problemId: entry.id } });
+            return undefined;
+          }
+          if (step.breakpoint !== undefined) log(`${entry.fullName}: ${step.breakpoint.detail} (recorded in the report; the run goes on)`);
+        } catch (error) {
+          if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
+          if (!controller.signal.aborted) log(`${entry.fullName}: the intake step failed and was left out: ${messageOf(error)}`);
         }
       }
 

@@ -1,0 +1,67 @@
+{
+  "capability": "lit.search",
+  "cases": [
+    {
+      "name": "a query with hits",
+      "purpose": "A query gives the hits of every backend asked, each with its link, title and the text the site gave, and one answer for each backend.",
+      "input": {
+        "query": "collatz conjecture"
+      },
+      "expect": [
+        {
+          "path": "answers",
+          "some": [
+            {
+              "path": "backend",
+              "equals": "arxiv"
+            },
+            {
+              "path": "count",
+              "equals": 1
+            }
+          ]
+        },
+        {
+          "path": "hits",
+          "some": [
+            {
+              "path": "backend",
+              "equals": "openalex"
+            },
+            {
+              "path": "title",
+              "matches": "^On the Collatz"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a query nobody answers",
+      "purpose": "A search without a hit is a result with no hits, not an error.",
+      "input": {
+        "query": "zzzz nothing about this",
+        "backends": [
+          "openalex"
+        ]
+      },
+      "expect": [
+        {
+          "path": "hits",
+          "length": 0
+        }
+      ]
+    },
+    {
+      "name": "a query of blanks",
+      "purpose": "A query with nothing to search for is refused by the implementation, before any request.",
+      "input": {
+        "query": "   "
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "give a query"
+      }
+    }
+  ]
+}

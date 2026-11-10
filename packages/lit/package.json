@@ -1,0 +1,16 @@
+{
+  "name": "@seshat/lit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Intake: literature search (lit.search), the screened quote, the judge call, statement hygiene (Task 36).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/lines": "workspace:*",
+    "@seshat/memory": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

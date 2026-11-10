@@ -315,6 +315,21 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lit:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/memory:
     dependencies:
       '@seshat/core':
@@ -401,6 +416,9 @@ importers:
       '@seshat/library-builder':
         specifier: workspace:*
         version: link:../library-builder
+      '@seshat/lit':
+        specifier: workspace:*
+        version: link:../lit
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

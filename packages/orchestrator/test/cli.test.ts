@@ -171,6 +171,8 @@ describe("harness run", () => {
       [["--checkout", checkout, "--model", "a/b", "--all", "--thinking", "deep"], /^--thinking must be one of off, minimal, low/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--cache-retention", "forever"], /^--cache-retention must be one of none, short, long/],
       [["somewhere", "--checkout", checkout, "--model", "a/b", "--all"], /^run takes no positional argument, got somewhere/],
+      [["--checkout", checkout, "--model", "a/b", "--all", "--lit"], /^--lit is for harness solve/],
+      [["--checkout", checkout, "--model", "a/b", "--all", "--intake-usd", "0.1"], /^--intake-usd goes with --intake/],
     ];
     const results = await Promise.all(options.map(([args]) => harness(["run", ...args])));
     options.forEach(([args, message], k) => {

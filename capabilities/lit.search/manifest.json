@@ -1,0 +1,164 @@
+{
+  "id": "lit.search",
+  "version": 1,
+  "title": "Search the literature",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "finding out, before any paid proving, whether a paper already proves, refutes or restricts a statement (the intake step of a run does this)",
+    "looking for the source and the known cases of a named conjecture"
+  ],
+  "whenNot": [
+    "proving anything: a hit is text from a third party and gives a lead, which only a Lean proof settles",
+    "a statement you cannot send to third parties: the run's --private option sends nothing outside",
+    "a quote you have not checked against the text of the hit"
+  ],
+  "exposure": "auto",
+  "input": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 400,
+        "description": "Words to search for, such as the keywords of the statement"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+        "description": "At most this many hits from each backend. 5 when not given"
+      },
+      "backends": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "openalex",
+            "arxiv",
+            "semantic-scholar",
+            "zbmath",
+            "bench-metadata"
+          ]
+        },
+        "description": "Ask only these backends; absent: every one the host profile enables"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "answers",
+      "hits"
+    ],
+    "properties": {
+      "answers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "backend",
+            "url",
+            "count"
+          ],
+          "properties": {
+            "backend": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "description": "The request that was made"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "type": "string",
+              "description": "Why the backend gave nothing"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "hits": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "backend",
+            "url",
+            "title",
+            "text"
+          ],
+          "properties": {
+            "backend": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string",
+              "description": "The text the backend gave, cleaned and bounded: the only text a quote may come from"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "timeoutMs": 120000,
+  "summary": [
+    "answers"
+  ],
+  "examples": [
+    {
+      "title": "a named conjecture",
+      "input": {
+        "query": "collatz conjecture",
+        "limit": 1
+      },
+      "output": {
+        "answers": [
+          {
+            "backend": "arxiv",
+            "url": "https://export.arxiv.org/api/query?search_query=all%3Acollatz%20conjecture&start=0&max_results=1",
+            "count": 1
+          }
+        ],
+        "hits": [
+          {
+            "backend": "arxiv",
+            "url": "https://arxiv.org/abs/0000.00000v1",
+            "title": "A title",
+            "text": "The abstract as the site gives it."
+          }
+        ]
+      },
+      "note": "The hit is made up for this page; the real ones are the sites'."
+    }
+  ],
+  "implementations": [
+    {
+      "id": "sources",
+      "version": "backends-1",
+      "kind": "inproc",
+      "factory": "lit",
+      "description": "The backends the host profile enables, each at its address with the hosts it may reach (https only, no redirect, an answer size limit, one request at a time with a pause). The requests and answers of OpenAlex, arXiv, Semantic Scholar and zbMATH are written from their documentation as remembered. Not run against any site: they are not reachable from the development environment.",
+      "environment": {
+        "sites": "api.openalex.org, export.arxiv.org, api.semanticscholar.org, api.zbmath.org, or the addresses OPENALEX_URL, ARXIV_URL, SEMANTIC_SCHOLAR_URL, ZBMATH_URL give (the host profile's allowedHosts must name the host); the bench checkout at BENCH_CHECKOUT"
+      }
+    }
+  ]
+}
