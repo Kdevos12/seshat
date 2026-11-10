@@ -59,6 +59,7 @@ Some tests run only when their data is on disk:
 | Live Kimina check | a running server | `LEAN_SERVER_API_URL` |
 | The contract of `lean.lsp` against lean-lsp-mcp | a built Lean project and `uvx` (or `LEAN_LSP_MCP_COMMAND`) | `LEAN_PROJECT_DIR`; `LEAN_LSP_SITES=1` adds the four cases that ask network sites |
 | `lean.lsp` against the real lean-lsp-mcp, its language server and sites canned (no Lean, no network) | a Python with `lean-lsp-mcp==0.31.0` and `leanclient==0.13.2` | `LEAN_LSP_MCP_PYTHON` |
+| `lean.search` against a real search service or an index of Mathlib, and its `#check` verification against a real Lean | a service at `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL`, or an index at `LEAN_SEARCH_INDEX`; a Kimina server | `pnpm harness contract lean.search` (needs a backend set up) |
 | Graph and group batteries read from SageMath (`@seshat/models`) | the `sagemath-mcp` executable | `SAGEMATH_MCP_COMMAND` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`

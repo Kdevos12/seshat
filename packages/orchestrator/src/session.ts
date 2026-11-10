@@ -118,6 +118,13 @@ export interface SessionOptions {
    * tool"): it replaces the one occurrence of `old` in the region as the session last checked it, and runs the same check. Absent: no such tool.
    */
   editTool?: boolean;
+  /**
+   * Text to append to the answer of a check that ran Lean (plan change CA22: the verified `lean.search` hits, `RunConfig.leanSearch`). It is
+   * called after the line hooks, with the check's report, and its answer goes after `formatCheck`'s own, in a section of its own; it is not part of
+   * `details.summary`, so the masked form of an old check (`mask.ts`) does not keep it. Undefined or a failure: the answer as it is.
+   * Absent: no such hook, and the answer is what it always was.
+   */
+  appendToCheck?: (report: ValidationReport, signal?: AbortSignal) => Promise<string | undefined>;
   /** The seconds a Lean check of this session may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy (300). */
   checkTimeoutSec?: number;
   /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
@@ -247,8 +254,9 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
           lineFailed(error);
         }
       }
+      const appended = o.appendToCheck === undefined || result.accepted || failure !== undefined || lineStop !== undefined ? undefined : await o.appendToCheck(report, signal).catch(() => undefined);
       return {
-        content: [{ type: "text", text: formatCheck(report) }],
+        content: [{ type: "text", text: appended === undefined || appended === "" ? formatCheck(report) : `${formatCheck(report)}\n\n${appended}` }],
         details: { summary: summarizeCheck(report) },
         ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
       };
