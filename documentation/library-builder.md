@@ -84,7 +84,10 @@ All of it is Seshat's, in order; the first rule that fails ends the build, and e
 | `certify` | **Every new theorem** goes through the certifier ([certifier.md](certifier.md)), with the axioms `propext`, `Classical.choice`, `Quot.sound`. The reference of an ordinary theorem is the file with its proof replaced by `sorry`. The reference of a **test lemma** is the file with that theorem replaced by the spec's statement and `sorry`, so the certifier compares the agent's theorem with a statement the agent did not write, as terms: a test lemma that was weakened is rejected. A theorem whose statement cannot be separated from its proof (no top-level `:=`) is rejected. A certifier that gives no verdict makes the build `failed`, not rejected. |
 
 The result is `accepted`, `rejected`, `failed` (the agent did not run to its end, timed out or was aborted, or a rule could not be decided)
-or `skipped` (`none`). `harness library build` exits 0 for the first and last and 1 for the others.
+or `skipped` (`none`). `harness library build` exits 0 for the first and last and 1 for the others. An abort is reported as
+`failed` with the reason `the build was aborted` whatever step it interrupts (the `git` calls before the agent, the agent, a gate
+that could not decide because its `git` or `lake` was killed), never as the failure of that step: a clone killed half-way says nothing.
+A failed checkout of the base commit or removal of the clone's remote also stops the build before the agent starts.
 
 The certifier is made for the gate's fresh checkout (`certifierFor(projectDir)`), because a new file imports its sibling modules, which
 exist only there. In `harness library build` that is a `LakeCertifier` with the config's `certifier` settings, with the same sandbox rule.
