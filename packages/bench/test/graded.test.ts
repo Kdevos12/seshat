@@ -1,0 +1,130 @@
+import assert from "node:assert/strict";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import { buildGraded, gradedIndex, isGraded, lakeAdmitter, readGraded, sample, writeGraded } from "../src/index.ts";
+
+const dir = (): string => mkdtempSync(join(tmpdir(), "mh-graded-"));
+
+/** A formal-conjectures fixture: textbook and test theorems (grade A), solved research ones with a formal proof elsewhere (grade C). */
+function fcFixture(): string {
+  const root = dir();
+  mkdirSync(join(root, "FormalConjectures", "Toy"), { recursive: true });
+  const theorems: string[] = [];
+  for (let i = 0; i < 4; i++) theorems.push(`@[category textbook, AMS 11]\ntheorem text_${i} (n : ℕ) : n + ${i} = ${i} + n := by\n  sorry\n`);
+  theorems.push(`@[category test, AMS 11]\ntheorem test_0 (n : ℕ) : n = n := by\n  sorry\n`);
+  theorems.push(`@[category textbook, AMS 30]\ntheorem analytic (n : ℕ) : n = n := by\n  sorry\n`);
+  theorems.push(`@[category textbook, AMS 11]\ntheorem proved_here (n : ℕ) : n = n := by\n  rfl\n`);
+  for (let i = 0; i < 5; i++) theorems.push(`@[category research solved, AMS 11,\nformal_proof using lean4 at "https://example.org/${i}.lean"]\ntheorem solved_${i} (n : ℕ) : n * ${i} = ${i} * n := by\n  sorry\n`);
+  theorems.push(`@[category research solved, AMS 11]\ntheorem solved_no_proof (n : ℕ) : n = n := by\n  sorry\n`);
+  writeFileSync(join(root, "FormalConjectures", "Toy", "Toy.lean"), `import FormalConjectures.Util.ProblemImports\n\nnamespace Toy\n\n${theorems.join("\n")}\nend Toy\n`);
+  writeFileSync(join(root, "lean-toolchain"), "leanprover/lean4:v4.27.0\n");
+  writeFileSync(join(root, "LICENSE"), "                                 Apache License\n                           Version 2.0, January 2004\n");
+  return root;
+}
+
+/** A PutnamBench fixture: one file per problem, binders at column 0, three of them with an unproved answer definition. */
+function putnamFixture(): string {
+  const root = dir();
+  mkdirSync(join(root, "lean4", "src"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    const answer = i % 4 === 0 ? `abbrev putnam_${i}_solution : ℕ := sorry\n\n` : "";
+    writeFileSync(join(root, "lean4", "src", `putnam_${i}.lean`), `import Mathlib\n\n${answer}/-- Problem ${i}. -/\ntheorem putnam_${i}\n(n : ℕ)\n(h : n > ${i})\n: n + 0 = n :=\nsorry\n`);
+  }
+  writeFileSync(join(root, "lean4", "lean-toolchain"), "leanprover/lean4:v4.27.0\n");
+  writeFileSync(join(root, "lean4", "LICENSE"), "Apache License\n");
+  return root;
+}
+
+describe("buildGraded", () => {
+  const fc = fcFixture();
+  const putnam = putnamFixture();
+
+  it("draws the three grades from local checkouts and records what a run needs to know", () => {
+    const bench = buildGraded({ fc, putnam, seed: "s1", sizeB: 5, sizeC: 3 });
+    const of = (g: string) => bench.entries.filter((e) => e.grade === g);
+    assert.equal(of("A").length, 5, "textbook and test theorems with discrete codes, none proved in the file");
+    assert.equal(of("B").length, 5);
+    assert.equal(of("C").length, 3);
+    assert.equal(bench.grades.B.candidates, 9, "the three problems whose answer is still sorry are not candidates");
+    assert.equal(isGraded(bench), true);
+    const entry = of("B")[0];
+    assert.ok(entry);
+    assert.equal(entry.source, "putnambench");
+    assert.equal(entry.sourceCommit, bench.sources.putnambench?.rev);
+    assert.equal(entry.licence, "Apache-2.0");
+    assert.match(entry.statementHash, /^[0-9a-f]{64}$/);
+    assert.equal(entry.category, "competition");
+    assert.equal(bench.sources.putnambench?.lean, "leanprover/lean4:v4.27.0");
+    assert.ok(bench.entries.every((e) => e.admission === "unchecked"), "no Lean: every entry is unchecked");
+  });
+
+  it("gives the same sample for the same seed and another for another seed; the sample is the seeded prefix", () => {
+    const ids = (seed: string) => buildGraded({ fc, putnam, seed, sizeB: 4, sizeC: 3 }).entries.filter((e) => e.grade === "B").map((e) => e.id);
+    assert.deepEqual(ids("s1"), ids("s1"));
+    assert.notDeepEqual(ids("s1"), ids("s2"));
+    assert.equal(buildGraded({ fc, putnam, seed: "s1" }).hash, buildGraded({ fc, putnam, seed: "s1" }).hash);
+    const bench = buildGraded({ fc, putnam, seed: "s1", sizeB: 4 });
+    const all = buildGraded({ fc, putnam, seed: "s1", sizeB: 100 }).entries.filter((e) => e.grade === "B");
+    assert.deepEqual(bench.entries.filter((e) => e.grade === "B").map((e) => e.id), sample(all, 4, "s1\nB").map((e) => e.id));
+  });
+
+  it("admits only statements Lean reads, and fills the sample from the next ones when one is left out", () => {
+    const seen: string[] = [];
+    const bench = buildGraded({
+      fc,
+      putnam,
+      seed: "s1",
+      sizeB: 4,
+      sizeC: 2,
+      admit: (entry, snippet) => {
+        seen.push(snippet);
+        return !entry.fullName.endsWith("_5") && !entry.fullName.endsWith("solved_1");
+      },
+    });
+    const b = bench.entries.filter((e) => e.grade === "B");
+    assert.equal(b.length, 4);
+    assert.ok(b.every((e) => e.admission === "admitted" && !e.id.includes("putnam_5")));
+    assert.equal(bench.grades.B.rejected.length <= 1, true);
+    assert.ok(bench.entries.filter((e) => e.grade === "C").every((e) => !e.fullName.endsWith("solved_1")));
+    const snippet = seen.find((s) => s.includes("putnam_"));
+    assert.ok(snippet?.trimEnd().endsWith("sorry"), "the snippet is the file up to the theorem, its proof sorry");
+  });
+
+  it("is refused by a run until its entries are admitted, unless told otherwise", () => {
+    const bench = buildGraded({ fc, putnam, seed: "s1", sizeB: 3 });
+    assert.throws(() => gradedIndex(bench, "B"), /never admitted/);
+    const index = gradedIndex(bench, "B", { allowUnchecked: true });
+    assert.equal(index.benchId, "graded-v1/B");
+    assert.equal(index.problems.length, 3);
+    assert.equal(index.source.repo, bench.sources.putnambench?.repo);
+    assert.ok(!("grade" in (index.problems[0] as object)));
+    assert.throws(() => gradedIndex(bench, "D"), /one of A, B, C/);
+    const admitted = buildGraded({ fc, putnam, seed: "s1", sizeB: 3, admit: () => true });
+    assert.equal(gradedIndex(admitted, "B").problems.length, 3);
+  });
+
+  it("writes a file whose hash is checked when it is read", () => {
+    const file = join(dir(), "graded-v1.json");
+    const bench = buildGraded({ fc, putnam, seed: "s1", sizeB: 3 });
+    writeGraded(file, bench);
+    assert.equal(readGraded(file).hash, bench.hash);
+    writeFileSync(file, JSON.stringify({ ...bench, seed: "other" }));
+    assert.throws(() => readGraded(file), /hash does not match/);
+  });
+});
+
+describe("lakeAdmitter", () => {
+  it("admits when the fake lake exits 0 and rejects when Lean fails; a missing lake is an error", () => {
+    const bin = dir();
+    const lake = join(bin, "lake");
+    writeFileSync(lake, '#!/bin/sh\ngrep -q BAD "$3" && { echo "error: unknown identifier" >&2; exit 1; }\nexit 0\n');
+    chmodSync(lake, 0o755);
+    const admit = lakeAdmitter(bin, { lake });
+    const entry = {} as never;
+    assert.equal(admit(entry, "theorem a : True := sorry\n"), true);
+    assert.equal(admit(entry, "theorem a : BAD := sorry\n"), false);
+    assert.throws(() => lakeAdmitter(bin, { lake: join(bin, "nope") })(entry, "x"), /not installed/);
+  });
+});
