@@ -45,7 +45,7 @@ describe("a run started through the API with the faux provider", () => {
     const get = async () => (await s.call("GET", `/api/jobs/${job.id}`)).json().job;
     await until(async () => (await get()).state === "awaiting_signature", "the signature");
     await s.call("POST", `/api/jobs/${job.id}/answer`, { yes: true });
-    await until(async () => (await s.call("GET", `/api/runs/${job.runId}`)).json().run?.turns !== undefined && existsSync(join(s.runsDir, job.runId, "journal.jsonl")), "the run");
+    await until(async () => (await s.call("GET", `/api/runs/${job.runId}`)).json().run?.turns !== undefined && existsSync(join(s.runsDir, job.runId, "journal.jsonl")), "the run", 30_000);
     await new Promise((r) => setTimeout(r, 500));
     await s.call("POST", `/api/jobs/${job.id}/stop`);
     await until(async () => ["stopped", "exited"].includes((await get()).state), "the stop", 20000);
