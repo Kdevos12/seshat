@@ -100,6 +100,11 @@ export interface RunReport {
    */
   retries?: { requests: number; attempts: number; usd: number };
   /**
+   * The sessions that the repeat rule of line M6 ended (plan change CA7, documentation/guards.md): the reason each journaled, which names the
+   * failure and the strategy. Absent when there was none.
+   */
+  repeatStops?: string[];
+  /**
    * The spend by site, the biggest first: the provers' sessions under `prover.session`, the lines'
    * one-shot calls under the site they name, and `unknown` for a call recorded before the tags. It
    * shows what share of the budget each place takes, which caps what a cheaper way of deciding there
@@ -387,6 +392,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
+  const repeatStops: string[] = [];
   const capabilities = new Map<string, string>();
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
@@ -479,6 +485,13 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         outputTokens += d.outputTokens;
         cachedInputTokens += Math.max(d.cachedInputTokens ?? 0, cachedCharged.get(d.attemptId) ?? 0);
         offPeakUsd += Math.max(d.offPeakUsd ?? 0, offPeakCharged.get(d.attemptId) ?? 0);
+        break;
+      }
+      case "node.recorded": {
+        const d = event.data.data;
+        if (event.data.kind === "drift" && typeof d === "object" && d !== null && !Array.isArray(d) && d.kind === "repeated_failure" && d.action === "stopped_session" && typeof d.detail === "string") {
+          repeatStops.push(d.detail);
+        }
         break;
       }
       case "model_call.finished": {
@@ -610,6 +623,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(repeatStops.length > 0 ? { repeatStops } : {}),
     ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
     sites: siteSpend(events),
     ...(gateReport(events) !== undefined ? { gate: gateReport(events) as GateReport } : {}),
@@ -741,6 +755,9 @@ export function renderRunReport(report: RunReport): string {
     ...(report.priceGaps !== undefined ? [priceGapsParagraph(report.priceGaps)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
+    ...(report.repeatStops !== undefined
+      ? [`Sessions ended by the repeat rule (${report.repeatStops.length}): ${report.repeatStops.slice(0, 5).join("; ")}${report.repeatStops.length > 5 ? `; and ${report.repeatStops.length - 5} more` : ""}.`]
+      : []),
     ...(report.retries !== undefined
       ? [
           `Requests sent again after a transient error (a cut stream, a reset connection, a 5xx or a 429): ${report.retries.requests} ` +

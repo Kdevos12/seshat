@@ -161,6 +161,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let wrappingUp = false;
   let last: AssistantMessage | undefined;
   let lineStop: `line:${string}` | undefined;
+  let lineNotice: string | undefined;
   /**
    * A line's hook failed. A line that wanted a model call after the consortium turn ended has not failed:
    * the session stops with `turn` instead of with an error.
@@ -227,6 +228,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       const lost = report.leanStatus === "server_error" && report.messages.length === 0 && !(signal?.aborted ?? false);
       unreachable = lost ? unreachable + 1 : 0;
       if (unreachable >= MAX_UNREACHABLE) failure = `Lean could not be reached ${unreachable} times in a row`;
+      lineNotice = undefined;
       if (o.lines?.afterCheck !== undefined) {
         // A line that fails here ends the session with an error, not the check.
         try {
@@ -238,13 +240,14 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
             ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
             accepted: result.accepted,
           });
-          if (stop !== undefined) lineStop = `line:${stop.line}`;
+          if (stop?.reason !== undefined) lineStop = `line:${stop.line}`;
+          else if (stop?.notice !== undefined) lineNotice = stop.notice;
         } catch (error) {
           lineFailed(error);
         }
       }
       return {
-        content: [{ type: "text", text: formatCheck(report) }],
+        content: [{ type: "text", text: lineNotice === undefined ? formatCheck(report) : `${formatCheck(report)}\n\n${lineNotice}` }],
         details: { summary: summarizeCheck(report) },
         ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
       };
