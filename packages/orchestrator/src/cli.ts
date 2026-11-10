@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
+import { type BenchIndex, describeCheckout, gradedIndex, isGraded, readGraded, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
 import { BlobStore, type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
 import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { type GateSettings, gateSettings } from "@seshat/scheduler";
@@ -44,7 +44,7 @@ const usage = `usage:
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
+              [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
@@ -54,6 +54,7 @@ const usage = `usage:
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
+              [--baseline ARM] [--target RATIO]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
@@ -232,6 +233,9 @@ const { positionals, values } = parseArgs({
     ledger: { type: "string" },
     "reuse-gates": { type: "boolean" },
     pilot: { type: "string" },
+    grade: { type: "string" },
+    "allow-unchecked": { type: "boolean" },
+    baseline: { type: "string" },
     "chunk-k": { type: "string" },
     "probe-every": { type: "string" },
     "probe-size": { type: "string" },
@@ -414,6 +418,25 @@ function isCacheRetention(value: string): value is CacheRetention {
 }
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * The bench a command reads: an index, or one grade of the graded bench (`--bench bench/graded-v1.json --grade B`, documentation/bench.md).
+ * A graded bench needs a grade, an index refuses one; entries no Lean admitted are refused without `--allow-unchecked`.
+ */
+function loadIndex(): BenchIndex {
+  const path = values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json");
+  const graded = isGraded(JSON.parse(readFileSync(path, "utf8")));
+  if (!graded) {
+    if (values.grade !== undefined || values["allow-unchecked"] === true) throw new UsageError("--grade and --allow-unchecked go with a graded bench (--bench FILE)");
+    return readIndex(path);
+  }
+  if (values.grade === undefined) throw new UsageError(`${path} is a graded bench: choose a grade with --grade A, B or C`);
+  try {
+    return gradedIndex(readGraded(path), values.grade, { allowUnchecked: values["allow-unchecked"] === true });
+  } catch (error) {
+    throw new UsageError(messageOf(error));
+  }
+}
 
 /** The problems a run works on, and how they were chosen. */
 function selectProblems(index: BenchIndex): { problems: ProblemEntry[]; selection: Json } {
@@ -711,7 +734,7 @@ async function run(): Promise<number> {
   if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {
@@ -796,7 +819,7 @@ async function probe(): Promise<number> {
   if (!existsSync(values.checkout)) throw new InputError(`no directory ${values.checkout}`);
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const source = readInput(() => linesOfRun(resolve(memoryDir)));
   const lines = values.lines !== undefined ? selectLines() : source.lines;
   const options = values["line-option"] !== undefined ? lineOptions(values["line-option"]) : source.lineOptions;
@@ -816,7 +839,7 @@ async function ablate(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const list = (text: string | undefined): string[] | undefined => (text === undefined ? undefined : text.split(",").map((x) => x.trim()).filter((x) => x !== ""));
   const split = number("split", values.split, undefined);
@@ -869,7 +892,7 @@ async function optimizePrompts(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const consortium = consortiumFlags();
   const offpeak = offpeakFlags();
@@ -987,7 +1010,7 @@ async function resume(directory: string): Promise<number> {
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const dir = resolve(directory);
   if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {
     console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);

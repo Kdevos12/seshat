@@ -66,6 +66,13 @@ export interface TokenCost {
    * table is authoritative (documentation/m0-loop.md, "Prices"), and the report shows how much it left out. Absent otherwise.
    */
   unchargedUsd?: number;
+  /**
+   * Of `usd`, the dollars of the output tokens, and of the cache reads (the cache-hit price), at the prices that charged the
+   * response (the loop telemetry of the report, documentation/report.md): what is left is the cache-miss input and cache writes.
+   * Absent in journals written before the fields, and when the response had no such tokens.
+   */
+  outputUsd?: number;
+  cacheReadUsd?: number;
 }
 
 /**
@@ -354,6 +361,10 @@ export interface EventDataMap {
      * than the field, and for a session that did not start.
      */
     toolTokens?: number;
+    /** The Lean checks the session made (`lean_check` calls that reached Lean). Absent in journals older than the field. */
+    checks?: number;
+    /** The open holes (Lean's `sorry` goals) each of those checks left, in order; a check Lean could not answer adds none. Absent in older journals. */
+    holes?: number[];
     /** The strategy classified from what the attempt submitted. */
     strategy?: string;
     /** The strategy the model declared in its last `lean_check` that gave one; replaces the one given at the start. */
