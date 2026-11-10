@@ -39,8 +39,8 @@ export const MAX_TITLE_CHARS = 300;
 const isRecord = (v: unknown): v is Record<string, Json> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** A link a site gave, kept only when it is an https address; otherwise the backend's own address stands. */
-function linkOr(given: unknown, allowedHosts: readonly string[], fallback: string): string {
+/** A link a site gave, kept only when it is an https address; otherwise the backend's own address stands. A hit's link is displayed escaped and never fetched, so its host is not checked against the allowed hosts. */
+function linkOr(given: unknown, fallback: string): string {
   const candidate = str(given);
   if (candidate === "") return fallback;
   try {
@@ -49,7 +49,6 @@ function linkOr(given: unknown, allowedHosts: readonly string[], fallback: strin
   } catch {
     // fall through
   }
-  void allowedHosts;
   return fallback;
 }
 
@@ -89,7 +88,7 @@ export function openalex(s: RemoteSettings): Backend {
       if (list === undefined) throw new LitError(`${url}: the answer has no list of results`);
       const hits = list.flatMap((raw): Hit[] => {
         if (!isRecord(raw)) return [];
-        return [{ backend: "openalex", url: linkOr(raw.doi ?? raw.id, s.allowedHosts, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(abstractOf(raw.abstract_inverted_index), MAX_TEXT_CHARS) }];
+        return [{ backend: "openalex", url: linkOr(raw.doi ?? raw.id, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(abstractOf(raw.abstract_inverted_index), MAX_TEXT_CHARS) }];
       });
       return { url, hits: done(hits, limit) };
     },
@@ -106,7 +105,7 @@ export function semanticScholar(s: RemoteSettings): Backend {
       const json = await s.fetcher.json(url, signal);
       const list = isRecord(json) && Array.isArray(json.data) ? json.data : undefined;
       if (list === undefined) throw new LitError(`${url}: the answer has no list in data`);
-      const hits = list.flatMap((raw): Hit[] => (isRecord(raw) ? [{ backend: "semantic-scholar", url: linkOr(raw.url, s.allowedHosts, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(str(raw.abstract), MAX_TEXT_CHARS) }] : []));
+      const hits = list.flatMap((raw): Hit[] => (isRecord(raw) ? [{ backend: "semantic-scholar", url: linkOr(raw.url, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(str(raw.abstract), MAX_TEXT_CHARS) }] : []));
       return { url, hits: done(hits, limit) };
     },
   };
@@ -129,7 +128,7 @@ export function zbmath(s: RemoteSettings): Backend {
         const links = Array.isArray(raw.links) ? raw.links.flatMap((l) => (isRecord(l) ? [str(l.url)] : [])) : [];
         const id = typeof raw.id === "number" || typeof raw.id === "string" ? String(raw.id) : "";
         const own = /^[\w.-]+$/.test(id) ? `${s.baseUrl.replace(/^(https?:\/\/)api\./, "$1")}/${id}` : s.baseUrl;
-        return [{ backend: "zbmath", url: linkOr(links[0] ?? own, s.allowedHosts, s.baseUrl), title: clean(title, MAX_TITLE_CHARS), text: clean(reviews.join(" "), MAX_TEXT_CHARS) }];
+        return [{ backend: "zbmath", url: linkOr(links[0] ?? own, s.baseUrl), title: clean(title, MAX_TITLE_CHARS), text: clean(reviews.join(" "), MAX_TEXT_CHARS) }];
       });
       return { url, hits: done(hits, limit) };
     },
@@ -166,7 +165,7 @@ export function arxiv(s: RemoteSettings): Backend {
       const url = `${s.baseUrl}/api/query?search_query=${encodeURIComponent(`all:${query}`)}&start=0&max_results=${limit}`;
       const xml = await s.fetcher.text(url, signal);
       if (!/<feed[\s>]/.test(xml)) throw new LitError(`${url}: the answer is not an Atom feed`);
-      const hits = atomEntries(xml).map((e): Hit => ({ backend: "arxiv", url: linkOr(e.id.trim().replace(/^http:/, "https:"), s.allowedHosts, s.baseUrl), title: clean(e.title, MAX_TITLE_CHARS), text: clean(e.summary, MAX_TEXT_CHARS) }));
+      const hits = atomEntries(xml).map((e): Hit => ({ backend: "arxiv", url: linkOr(e.id.trim().replace(/^http:/, "https:"), s.baseUrl), title: clean(e.title, MAX_TITLE_CHARS), text: clean(e.summary, MAX_TEXT_CHARS) }));
       return { url, hits: done(hits, limit) };
     },
   };

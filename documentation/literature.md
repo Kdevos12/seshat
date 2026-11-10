@@ -16,7 +16,9 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 - Only the hosts of a backend's `allowedHosts` are reached, over https (a loopback address only for a test); an address with
   credentials, a redirect, an answer over the size limit and an answer of a type that is not text are refused.
 - A hit's title and text are cleaned when read: control, bidirectional and zero-width characters are removed, white space is one space,
-  the length is bounded. A link a site gives is kept only when it is https; otherwise the backend's own address stands in its place.
+  the length is bounded. A link a site gives is kept only when it is https; otherwise the backend's own address stands in its place. A hit's link is displayed escaped and never fetched, so it is not checked against `allowedHosts`.
+  Runs of three or more `<` or `>` become two, so that a title cannot forge the `<<<RESULT n>>>` markers that delimit a hit in the judge's prompt.
+- A backend whose setting is refused (an address outside its `allowedHosts`, say) is not enabled: it is named with its reason in the call's `answers` and the health check's detail, and the other backends keep working.
 - Where a person reads a hit (briefing, report, RESULT.md) it goes through `shown`, which also escapes `&`, `<`, `>`, `|`, brackets and
   backticks.
 - A hit's text is data. It never enters a system prompt or a lesson, and no hit changes a claim's status.
@@ -89,9 +91,10 @@ The statement (the words of it, not its Lean syntax) goes to the backends and, w
 - on a **bench problem** the step is on when asked (`consent: {allowed: true, via: "bench"}`): the bench's problems are public;
 - for **`harness solve`** it runs only when the person has agreed: asked once and journaled (`intake.consented`, `via: "asked"`), or in a call
   that cannot ask (no terminal, `--yes`) by `--lit` (`via: "flag"`); no flag and no answer is no (`via: "default"`);
-- **`--private`** (`private: true`) sends nothing outside and wins over everything: the literature step is skipped with the reason `private`, the
+- **`--private`** (`private: true`) wins over everything: the literature step is skipped with the reason `private`, the
   consent is journaled as `via: "private"` and never allowed, and a run that also asks Jev for decisions is refused. The hygiene checks are Lean's
   and stay on the machine.
+  `--private` today turns the literature search off and refuses a run that asks a third-party decision model; it does not yet block the other capabilities that call third-party sites (the OEIS, LMFDB and FindStat capabilities), which a run uses only if its lines are enabled.
 
 ### What stops a run
 

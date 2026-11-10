@@ -9,8 +9,9 @@
 // eslint-disable-next-line no-control-regex
 const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
 
+/** Runs of three or more `<` or `>` become two: the judge's prompt delimits each hit with `<<<` and `>>>` markers, which fetched text must not forge. */
 export function clean(text: string, maxChars: number): string {
-  return text.replace(INVISIBLE, "").replace(/\s+/g, " ").trim().slice(0, maxChars);
+  return text.replace(INVISIBLE, "").replace(/<{3,}/g, "<<").replace(/>{3,}/g, ">>").replace(/\s+/g, " ").trim().slice(0, maxChars);
 }
 
 export function shown(text: string, maxChars = 300): string {

@@ -98,7 +98,7 @@ statement, `settled: true`) and a `hygiene` node (a vacuity or `plausible` resul
 changes its status, and only a Lean proof through `validate` does. What a site sends is hostile text: it is cleaned and bounded when read, a quote counts
 only when it is a verbatim part of that text, it is shown escaped as data in a user-role section and never enters a system prompt or a lesson, and a
 model's reading of it (the judge's verdict) is an opinion, not a check. The statement goes to third parties only for a bench problem, or when the person
-agreed (asked once and journaled, or `--lit`), and never with `--private`.
+agreed (asked once and journaled, or `--lit`), and never with `--private`. `--private` today turns the literature search off and refuses a run that asks a third-party decision model; it does not yet block the other capabilities that call third-party sites (the OEIS, LMFDB and FindStat capabilities), which a run uses only if its lines are enabled.
 
 The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
 to set, a task is `done` only when its claim already has the status its criterion asks for, and

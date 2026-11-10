@@ -157,7 +157,7 @@
       "factory": "lit",
       "description": "The backends the host profile enables, each at its address with the hosts it may reach (https only, no redirect, an answer size limit, one request at a time with a pause). The requests and answers of OpenAlex, arXiv, Semantic Scholar and zbMATH are written from their documentation as remembered. Not run against any site: they are not reachable from the development environment.",
       "environment": {
-        "sites": "api.openalex.org, export.arxiv.org, api.semanticscholar.org, api.zbmath.org, or the addresses OPENALEX_URL, ARXIV_URL, SEMANTIC_SCHOLAR_URL, ZBMATH_URL give; the bench checkout at BENCH_CHECKOUT"
+        "sites": "api.openalex.org, export.arxiv.org, api.semanticscholar.org, api.zbmath.org, or the addresses OPENALEX_URL, ARXIV_URL, SEMANTIC_SCHOLAR_URL, ZBMATH_URL give (the host profile's allowedHosts must name the host); the bench checkout at BENCH_CHECKOUT"
       }
     }
   ]
