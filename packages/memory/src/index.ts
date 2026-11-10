@@ -1,4 +1,5 @@
 export * from "./beta.ts";
+export * from "./card.ts";
 export * from "./classes.ts";
 export * from "./definitions.ts";
 export * from "./draw.ts";

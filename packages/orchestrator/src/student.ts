@@ -17,7 +17,7 @@ import type { PriceBook } from "./prices.ts";
  *
  * - `v1` is what `solve` did before the sets: nothing is added to the configuration. It stays reachable (`harness solve --defaults v1`),
  *   and a test holds that its configuration is that of the commit the sets began from.
- * - `v2` is `v1` plus the edit tool, the masking of old check results and the bounded checks. It is the default.
+ * - `v2` is `v1` plus the edit tool, the masking of old check results, the bounded checks, the state card and the budget in rounds. It is the default.
  *
  * A later task that changes `solve`'s defaults adds its option to `v2` here, one line for each option.
  */
@@ -37,6 +37,8 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
     editTool: true,
     maskOldChecks: true,
     checkTimeoutSec: DEFAULT_CHECK_TIMEOUT_SEC,
+    stateCard: true,
+    budgetRounds: true,
   },
 };
 

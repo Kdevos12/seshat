@@ -2,7 +2,7 @@ import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { AttemptAnnotation } from "@seshat/lines";
-import type { FailureClass } from "@seshat/memory";
+import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
@@ -46,6 +46,14 @@ export interface ProverOptions {
   editTool?: boolean;
   /** The sessions mask their old check results (`SessionOptions.maskOldChecks`). */
   maskOldChecks?: boolean;
+  /**
+   * The next session's opening message carries the state card (plan change CA7, documentation/m0-loop.md, "The state card"), and the
+   * prover records what the card needs (the typed detail of the failure, the lemmas Lean accepted). The caller limits `notesChars` to
+   * `CARD_NOTES_CHARS`. Absent: off, and the prompts and the journal are what they always were.
+   */
+  stateCard?: boolean;
+  /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
+  stateCardChars?: number;
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -152,6 +160,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
+  const cardStore = o.stateCard === true ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;
@@ -240,6 +249,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const team = teamBriefing(journal.projection, workbench.claimId);
       const sections = [...(opened?.sections ?? []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
+      // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
+      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars });
       result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {
@@ -262,6 +273,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           lastCheck,
           session,
           sessions: o.sessions,
+          ...(card !== undefined ? { card } : {}),
           ...(sections.length > 0 ? { sections } : {}),
         }),
         workbench,
@@ -323,6 +335,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       notes = clipNotes(notes === undefined ? cut : `${notes}\n${cut}`, o.notesChars);
     }
     const outcome = outcomeOf(result);
+    if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
     const failure =
       outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {
@@ -340,6 +353,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       attemptId,
       outcome,
       ...(failure !== undefined ? { failureClass: failure } : {}),
+      ...(cardStore !== undefined && outcome === "invalid" && result.report !== undefined ? failureDetailOf(result.report, workbench.sketch.statement, result.submission?.aux) : {}),
       stoppedBy: result.stop,
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
@@ -425,6 +439,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     }
   }
   return done(lastSession < o.sessions ? "probe" : "sessions");
+}
+
+/** The typed detail of a session's last check, for the card; a line's own `failureDetail` comes after it and wins. */
+function failureDetailOf(report: NonNullable<SessionResult["report"]>, statement: string, aux: string | undefined): { failureDetail?: string } {
+  const failure = classifyFailure(report, { statement, ...(aux !== undefined ? { aux } : {}) });
+  return failure === undefined ? {} : { failureDetail: failure.detail };
 }
 
 function outcomeOf(result: SessionResult): AttemptOutcome {

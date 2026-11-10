@@ -57,6 +57,8 @@ export interface SessionContext {
   sessions: number;
   /** The enabled lines' briefings, each a titled section after the last check. */
   sections?: ReadonlyArray<{ title: string; text: string }>;
+  /** The state card (plan change CA7): where the problem stands, written by code from the journal. Shown as data; absent: no such section. */
+  card?: string;
 }
 
 /** The first message of a session: the theorem, the notes, the file, the last check, and the lines' sections. */
@@ -64,9 +66,10 @@ export function sessionPrompt(c: SessionContext): string {
   const notes = c.notes ?? "(none: this is your first session on this theorem)";
   const lastCheck = c.lastCheck ?? "(the file has not been checked yet)";
   const sections = (c.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
+  const card = c.card === undefined ? "" : `\n# Where the problem stands\n${c.card}\n`;
   return `Theorem: ${c.theorem}
 This is session ${c.session} of at most ${c.sessions}.
-
+${card}
 # Your notes from the previous sessions
 ${notes}
 

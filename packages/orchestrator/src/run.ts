@@ -28,7 +28,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
@@ -118,6 +118,18 @@ export interface RunConfig {
    * documentation/m0-loop.md, "Masked old checks"). The journal is not touched. Absent: off, and a run that records and sends what it always did.
    */
   maskOldChecks?: boolean;
+  /**
+   * The next session's opening message carries the state card, built by code from the journal, and the model's own notes are limited to
+   * `CARD_NOTES_CHARS` characters (plan change CA7, documentation/m0-loop.md, "The state card"). Absent: off, and a run that records and
+   * prompts as it always did.
+   */
+  stateCard?: boolean;
+  /**
+   * With a run budget and more than one problem, the problems are worked round-robin with a cap that doubles from round to round, and a
+   * problem without Lean progress at the end of its round is parked (plan change CA8, documentation/scheduler.md, "The budget in rounds").
+   * Absent: off, and a problem is worked until its allowance is spent, as it always was.
+   */
+  budgetRounds?: boolean;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -171,6 +183,11 @@ export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
   concurrency: 1,
   tools: [],
 };
+
+/** The limit of a prover's notes: the run's, or `CARD_NOTES_CHARS` when the state card carries the rest. */
+function effectiveNotesChars(config: Pick<RunConfig, "notesChars" | "stateCard">): number {
+  return config.stateCard === true ? Math.min(config.notesChars, CARD_NOTES_CHARS) : config.notesChars;
+}
 
 export interface RunOptions {
   config: RunConfig;
@@ -466,7 +483,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(config.notesChars, config.tools.map(toolName), proverTemplate, config.editTool === true) };
+  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), config.tools.map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -667,6 +684,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+      ...(config.stateCard === true ? { stateCard: true } : {}),
+      ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1214,7 +1233,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           thinkingLevel: config.thinkingLevel,
           sessions: config.sessions,
           limits: config.limits,
-          notesChars: config.notesChars,
+          notesChars: effectiveNotesChars(config),
+          ...(config.stateCard === true ? { stateCard: true } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
