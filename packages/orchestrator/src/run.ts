@@ -111,6 +111,11 @@ export interface RunConfig {
    * that says to use `lean_check` for the first draft and `lean_edit` after it. Absent: off, and a run that records and prompts as it always did.
    */
   editTool?: boolean;
+  /**
+   * The sessions send the model the one-line summary in place of a check result older than the last four, in batches of four (plan change CA6,
+   * documentation/m0-loop.md, "Masked old checks"). The journal is not touched. Absent: off, and a run that records and sends what it always did.
+   */
+  maskOldChecks?: boolean;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -658,6 +663,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
       ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
+      ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1210,6 +1216,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(config.editTool === true ? { editTool: true } : {}),
+          ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

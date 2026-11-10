@@ -310,6 +310,20 @@ The model rewrites its whole Lean file at every check, and output tokens were ab
 option is on; without it the prompt is the merged prompt byte for byte, and the prompt hash in `run.started` is unchanged. The
 option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([quickstart.md](quickstart.md#defaults-sets)).
 
+### Masked old checks
+
+In a long session the answers to old checks fill the context. With `RunConfig.maskOldChecks` (plan change CA6; `mask.ts`) the session keeps the
+last four check results whole and sends the older ones as their one-line summary (`summarizeCheck`: `Earlier check, masked: 3 error(s), 0 hole(s).`).
+A "check result" is the answer of a `lean_check` or `lean_edit` that ran Lean; a refusal, a veto and a miss of an edit are not counted.
+
+The masking goes in batches of four, so that the cached prefix of the request survives: nothing changes until four more results are
+maskable, that is, with `n` results in the history `4 * floor((n - 4) / 4)` of the oldest are masked (none below 8, four from 8 to 11, eight
+from 12 to 15). A masked result depends on itself alone, so between two batches the history only grows at its end, and from one batch to the next
+the part that was masked stays byte for byte the same (the tests hold both). It goes through the session's `rewriteHistory` hook, before the
+hook's own function if a caller gave one. Only what is sent to the model changes: the session's messages, the transcript and the journal
+keep the full answers. A line's context packet that replaces the history has nothing to mask. The option is off in `harness run` and on
+in `harness solve`'s defaults set `v2`.
+
 ## What the prover sees
 
 The answer to a check lists Lean's errors, the holes with their goals, and the other messages (such

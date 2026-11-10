@@ -124,6 +124,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.cacheRetention === "none" || r.cacheRetention === "short" || r.cacheRetention === "long" ? { cacheRetention: r.cacheRetention } : {}),
     ...(r.packetMode === "prefix_tail" || r.packetMode === "append_only" || r.packetMode === "recompiled" ? { packetMode: r.packetMode } : {}),
     ...(r.editTool === true ? { editTool: true } : {}),
+    ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"
       ? { prompts: { proverSystem: (r.prompts as { proverSystem: string }).proverSystem } }

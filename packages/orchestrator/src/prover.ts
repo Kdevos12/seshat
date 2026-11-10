@@ -44,6 +44,8 @@ export interface ProverOptions {
   retry?: RetryPolicy;
   /** The sessions get the tool `lean_edit` (`SessionOptions.editTool`) and a prompt that says when to use it. */
   editTool?: boolean;
+  /** The sessions mask their old check results (`SessionOptions.maskOldChecks`). */
+  maskOldChecks?: boolean;
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -281,6 +283,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.prices !== undefined ? { prices: o.prices } : {}),
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
         ...(o.editTool === true ? { editTool: true } : {}),
+        ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
