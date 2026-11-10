@@ -52,6 +52,7 @@ export function renderAblation(result: AblationResult): string {
     "",
     "Solved: problems with a Lean-checked proof, certified or a candidate; the dollars and tokens per solve divide by it. A configuration that is set against another is read below.",
     "",
+    ...protocol(result),
     "## Does it beat the one before it",
     "",
     ...arms.flatMap((a) =>
@@ -79,6 +80,42 @@ export function renderAblation(result: AblationResult): string {
     ...extras(arms),
   ];
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+}
+
+const minutes = (ms: number): string => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${(ms / 1000).toFixed(0)} s`);
+
+/** The paired protocol (plan change CA2): per arm, then against the baseline arm; the target line last. */
+function protocol(result: AblationResult): string[] {
+  const p = result.protocol;
+  if (p === undefined) return [];
+  const range = (x: { low: number; high: number }) => `${(x.low * 100).toFixed(0)}% to ${(x.high * 100).toFixed(0)}%`;
+  const out = [
+    "## Paired protocol",
+    "",
+    `The same ${result.problems.length} problem(s) at ${money(result.budget.problemUsd, 2)} per problem in every arm; the baseline is ${p.baseline}. The interval is Wilson's, 95%, of the share solved.`,
+    "",
+    ...table(
+      ["Arm", "Solved", "95% interval", "Dollars", "$ per solved", "Solved per $", "Wall-clock", "Certified refutations", "Settled in the literature"],
+      p.arms.map((a) => [a.name, `${a.solved}/${a.problems}`, range(a.interval), money(a.usd), money(a.usdPerSolved), a.solvedPerUsd === undefined ? "none" : a.solvedPerUsd.toFixed(2), minutes(a.wallMs), String(a.refuted), String(a.settledInLiterature)]),
+    ),
+    "",
+  ];
+  const against = p.arms.filter((a) => a.versus !== undefined);
+  if (against.length > 0) {
+    out.push(
+      ...table(
+        ["Arm", "Only this arm", `Only ${p.baseline}`, "McNemar p (exact, two-sided)", "Solved per $, ratio"],
+        against.map((a) => {
+          const v = a.versus as NonNullable<typeof a.versus>;
+          return [a.name, String(v.onlyThis), String(v.onlyBaseline), `${v.p.toFixed(4)}${v.comparable ? "" : " (not the same problems)"}`, v.ratio === undefined ? "none" : v.ratio.toFixed(2)];
+        }),
+      ),
+      "",
+    );
+  }
+  if (p.verdict !== undefined) out.push(p.verdict.line, "");
+  out.push("Wall-clock is the journal's first event to its last. Settled in the literature counts claims with a `literature` node whose `settled` is true: zero until that node is written.", "");
+  return out;
 }
 
 function difficulty(result: AblationResult): string[] {

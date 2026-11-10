@@ -71,7 +71,7 @@ function attributeValue(attributes: string, pattern: RegExp): string | undefined
  * Every theorem or lemma that has a `category` attribute, in file order. Theorems the sketch cannot
  * cut (a proof by pattern matching, for instance) go to `errors`.
  */
-export function scanFile(root: string, path: string, errors: string[] = []): ProblemEntry[] {
+export function scanFile(root: string, path: string, errors: string[] = [], fallbackCategory?: string): ProblemEntry[] {
   const original = readFileSync(path, "utf8");
   const source = toPlainHeader(original);
   const rel = relative(root, path).split(sep).join("/");
@@ -95,7 +95,7 @@ export function scanFile(root: string, path: string, errors: string[] = []): Pro
     }
     if (head.keyword !== "theorem" && head.keyword !== "lemma") continue;
     const attributes = command.text.slice(0, head.keywordOffset);
-    const category = attributeValue(attributes, /\bcategory\s+([A-Za-z_ ]+?)\s*[,\]]/);
+    const category = attributeValue(attributes, /\bcategory\s+([A-Za-z_ ]+?)\s*[,\]]/) ?? fallbackCategory;
     if (category === undefined) continue;
     const fullName = [...(scopes[k] ?? []), head.name].join(".").replace(/^(?:.*\.)?_root_\./, "");
     let sketch: ReturnType<typeof prepareSketch>;
@@ -142,13 +142,16 @@ export interface ScanResult {
   errors: string[];
 }
 
-/** Scans `<root>/FormalConjectures`, the problem statements of a formal-conjectures checkout. */
-export function scanCheckout(root: string): ScanResult {
+/**
+ * Scans `<root>/FormalConjectures`, the problem statements of a formal-conjectures checkout. With `options`, scans another
+ * directory of the checkout and gives the theorems that carry no `category` attribute that category (PutnamBench, graded bench).
+ */
+export function scanCheckout(root: string, options: { dir?: string; fallbackCategory?: string } = {}): ScanResult {
   const problems: ProblemEntry[] = [];
   const errors: string[] = [];
-  for (const path of leanFiles(join(root, "FormalConjectures"))) {
+  for (const path of leanFiles(join(root, options.dir ?? "FormalConjectures"))) {
     try {
-      problems.push(...scanFile(root, path, errors));
+      problems.push(...scanFile(root, path, errors, options.fallbackCategory));
     } catch (error) {
       errors.push(`${relative(root, path)}: ${(error as Error).message}`);
     }

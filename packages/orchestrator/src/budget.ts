@@ -97,12 +97,19 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
   let usd: number;
   let savedUsd: number;
   let offPeak = false;
+  let outputUsd: number;
+  let cacheReadUsd: number;
   if (pricing !== undefined) {
     const priced = priceUsage(pricing, usage, prices?.now() ?? Date.now());
     usd = priced.usd;
     savedUsd = priced.savedUsd;
     offPeak = priced.offPeak;
+    const factor = offPeak ? (pricing.calendar?.offPeakMultiplier ?? 1) : 1;
+    outputUsd = (usage.output * pricing.output * factor) / 1e6;
+    cacheReadUsd = (usage.cacheRead * pricing.cacheHit * factor) / 1e6;
   } else {
+    outputUsd = (usage.output * model.cost.output) / 1e6;
+    cacheReadUsd = (usage.cacheRead * model.cost.cacheRead) / 1e6;
     usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
     // pi-ai's table: a cache read costs `cacheRead` per million where a miss costs `input`.
     // Net of the write premium, as the table's.
@@ -114,6 +121,8 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
     outputTokens: usage.output,
     ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
     ...(savedUsd !== 0 ? { savedUsd } : {}),
+    ...(outputUsd > 0 ? { outputUsd } : {}),
+    ...(cacheReadUsd > 0 ? { cacheReadUsd } : {}),
     ...(offPeak && usd > 0 ? { offPeakUsd: usd } : {}),
     // The table wins over a reported cost, so that a corrected price is the price; the difference is kept for the report.
     ...(pricing !== undefined && usage.cost.total > usd + 1e-12 ? { unchargedUsd: usage.cost.total - usd } : {}),
