@@ -3,7 +3,7 @@ import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
-import type { FailureClass } from "@seshat/memory";
+import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
@@ -49,6 +49,14 @@ export interface ProverOptions {
   maskOldChecks?: boolean;
   /** The run's push of verified `lean.search` hits into the check answers (`SessionOptions.appendToCheck`); absent: none. */
   leanSearch?: LeanSearchPush;
+  /**
+   * The next session's opening message carries the state card (plan change CA7, documentation/m0-loop.md, "The state card"), and the
+   * prover records what the card needs (the typed detail of the failure, the lemmas Lean accepted). The caller limits `notesChars` to
+   * `CARD_NOTES_CHARS`. Absent: off, and the prompts and the journal are what they always were.
+   */
+  stateCard?: boolean;
+  /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
+  stateCardChars?: number;
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -79,6 +87,11 @@ export interface ProverOptions {
    * is a child of the problem's with the probe's cap; running into that cap pauses it too.
    */
   probe?: { sessions: number };
+  /**
+   * True when the budget that ran out is only the slice a round of the run's budget gave the problem (`RunConfig.budgetRounds`): the prover then
+   * pauses with `slice`, its task stays running, and the problem asks for its next slice. Absent: a budget that runs out ends the prover.
+   */
+  slice?: () => boolean;
   /** The budget gate: asked before each session after a prover's first. A `skip` ends the prover with `gate`. */
   gate?: { minSessions: number; session(who: { prover: string; session: number }): Promise<{ action: string }> };
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
@@ -113,9 +126,9 @@ export interface ProverResume {
 /**
  * Why a prover stopped: it found the candidate, used its sessions, ran out of budget, was stopped,
  * kept failing, a line's `beforeSession` stopped it, the consortium turn ended (`turn`), the budget gate skipped its next session
- * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end).
+ * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end), or the problem's slice of the run's budget in rounds is spent (`slice`: a pause, not an end, plan change CA8).
  */
-export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate";
+export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate" | "slice";
 
 export interface ProverResult {
   name: string;
@@ -141,8 +154,8 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
     if (o.turn?.ended === undefined || !isTurnEnded(error)) throw error;
     result = { name: o.name, attempts: progress.attempts, stop: "turn" };
   }
-  // A prover that ran its probe has not ended either: the gate says whether it goes on.
-  if (result.stop === "probe") return result;
+  // A prover that ran its probe has not ended either: the gate says whether it goes on. Nor has one whose slice of the run's budget is spent.
+  if (result.stop === "probe" || result.stop === "slice") return result;
   o.onEnd?.(result);
   // The lines hear of a prover that ended, not of one the turn interrupted: it has not ended, it waits.
   if (result.stop !== "turn") await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
@@ -155,6 +168,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
+  const cardStore = o.stateCard === true ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;
@@ -164,7 +178,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
   // The probe's cap is its own ledger's: running into it pauses the prover, running into the problem's budget ends it.
-  const budgetStop = (): ProverStop => (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
+  const budgetStop = (): ProverStop => o.slice?.() === true ? "slice" : (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
   const lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
   for (let session = (resumed?.session ?? 0) + 1; session <= lastSession; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
@@ -243,6 +257,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const team = teamBriefing(journal.projection, workbench.claimId);
       const sections = [...(opened?.sections ?? []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
+      // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
+      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;
       result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {
@@ -265,6 +281,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           lastCheck,
           session,
           sessions: o.sessions,
+          ...(card !== undefined ? { card } : {}),
           ...(sections.length > 0 ? { sections } : {}),
         }),
         workbench,
@@ -327,6 +344,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       notes = clipNotes(notes === undefined ? cut : `${notes}\n${cut}`, o.notesChars);
     }
     const outcome = outcomeOf(result);
+    if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
     const failure =
       outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {
@@ -344,6 +362,14 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       attemptId,
       outcome,
       ...(failure !== undefined ? { failureClass: failure } : {}),
+      ...(cardStore !== undefined && outcome === "invalid" && result.report !== undefined ? failureDetailOf(result.report, workbench.sketch.statement, result.submission?.aux) : {}),
+      // A session the rotation's slice cut is no failure, but the rotation reads its last check's class to see Lean progress in it.
+      ...(outcome === "budget_exhausted" && o.slice !== undefined && result.report !== undefined
+        ? (() => {
+            const cls = failureClass(result.report, { statement: workbench.sketch.statement, ...(result.submission !== undefined ? { aux: result.submission.aux } : {}) });
+            return cls === undefined ? {} : { lastCheckClass: cls };
+          })()
+        : {}),
       stoppedBy: result.stop,
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
@@ -431,6 +457,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     }
   }
   return done(lastSession < o.sessions ? "probe" : "sessions");
+}
+
+/** The typed detail of a session's last check, for the card; a line's own `failureDetail` comes after it and wins. */
+function failureDetailOf(report: NonNullable<SessionResult["report"]>, statement: string, aux: string | undefined): { failureDetail?: string } {
+  const failure = classifyFailure(report, { statement, ...(aux !== undefined ? { aux } : {}) });
+  return failure === undefined ? {} : { failureDetail: failure.detail };
 }
 
 function outcomeOf(result: SessionResult): AttemptOutcome {

@@ -44,7 +44,7 @@ export function chooseProbeSet(problems: readonly ProblemEntry[], options: { siz
 const DROPPED = new Set<EventType>([
   "run.finished", "run.resumed", "problem.finished", "attempt.started", "attempt.finished", "attempt.charged", "model_call.finished", "lesson.recorded",
   "turn.started", "turn.ended", "turn.deferred", "task.created", "task.assigned", "task.status_changed", "task.routed", "ladder.escalated",
-  "memory.epoch_opened", "decision.made", "budget.gated", "pack.installed", "pack.removed",
+  "memory.epoch_opened", "decision.made", "budget.gated", "pack.installed", "pack.removed", "budget.round", "problem.parked",
 ]);
 /** Fields that name a record of a dropped event. */
 const REFERENCES = ["attemptId", "taskId", "provenance", "drawn", "included", "withheld"];

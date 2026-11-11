@@ -128,6 +128,8 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
     ...(r.private === true ? { private: true } : {}),
+    ...(r.stateCard === true ? { stateCard: true } : {}),
+    ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"
       ? { prompts: { proverSystem: (r.prompts as { proverSystem: string }).proverSystem } }

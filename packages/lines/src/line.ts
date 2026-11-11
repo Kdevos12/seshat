@@ -491,6 +491,11 @@ export interface CheckVeto {
 export interface CheckDecision {
   /** End the session, for this reason. Its attempt ends `stoppedBy: "line:<id>"`. */
   stop?: string;
+  /**
+   * Text added to the answer of the check that was just made, which the model reads next (the repeat rule's directive, plan change CA7).
+   * Made of the line's own words, labels and counts. Ignored when `stop` is given: the session ends.
+   */
+  notice?: string;
 }
 
 /** A session that has ended, for `afterAttempt`. */

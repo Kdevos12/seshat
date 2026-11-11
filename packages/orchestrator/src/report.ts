@@ -109,6 +109,13 @@ export interface RunReport {
    */
   retries?: { requests: number; attempts: number; usd: number };
   /**
+   * The sessions that the repeat rule of line M6 ended (plan change CA7, documentation/guards.md): the reason each journaled, which names the
+   * failure and the strategy. Absent when there was none.
+   */
+  repeatStops?: string[];
+  /** The run's budget in rounds (plan change CA8): the rounds that began and the problems parked, with the round and what they had spent. Absent when the run had none. */
+  rounds?: { rounds: number; capUsd: number; parked: Array<{ problemId: string; round: number; usd: number }> };
+  /**
    * The spend by site, the biggest first: the provers' sessions under `prover.session`, the lines'
    * one-shot calls under the site they name, and `unknown` for a call recorded before the tags. It
    * shows what share of the budget each place takes, which caps what a cheaper way of deciding there
@@ -399,6 +406,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
+  const repeatStops: string[] = [];
+  const rotation = { rounds: 0, capUsd: 0, parked: [] as Array<{ problemId: string; round: number; usd: number }> };
   const capabilities = new Map<string, string>();
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
   // The search's own runs (actor `lean.search`): its requests, and the Lean checks that verify its hits. They are not the provers' checks.
@@ -494,6 +503,20 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         outputTokens += d.outputTokens;
         cachedInputTokens += Math.max(d.cachedInputTokens ?? 0, cachedCharged.get(d.attemptId) ?? 0);
         offPeakUsd += Math.max(d.offPeakUsd ?? 0, offPeakCharged.get(d.attemptId) ?? 0);
+        break;
+      }
+      case "budget.round":
+        rotation.rounds += 1;
+        rotation.capUsd = event.data.capUsd;
+        break;
+      case "problem.parked":
+        rotation.parked.push({ problemId: event.data.problemId, round: event.data.round, usd: event.data.usd });
+        break;
+      case "node.recorded": {
+        const d = event.data.data;
+        if (event.data.kind === "drift" && typeof d === "object" && d !== null && !Array.isArray(d) && d.kind === "repeated_failure" && d.action === "stopped_session" && typeof d.detail === "string") {
+          repeatStops.push(d.detail);
+        }
         break;
       }
       case "model_call.finished": {
@@ -636,6 +659,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(repeatStops.length > 0 ? { repeatStops } : {}),
+    ...(rotation.rounds > 0 ? { rounds: rotation } : {}),
     ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
     sites: siteSpend(events),
     ...(gateReport(events) !== undefined ? { gate: gateReport(events) as GateReport } : {}),
@@ -769,6 +794,15 @@ export function renderRunReport(report: RunReport): string {
     ...(report.priceGaps !== undefined ? [priceGapsParagraph(report.priceGaps)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
+    ...(report.rounds !== undefined
+      ? [
+          `The run's budget in rounds: ${report.rounds.rounds} round(s), the last allowing each problem ${money(report.rounds.capUsd)} in all; ${report.rounds.parked.length} parking(s)` +
+            `${report.rounds.parked.length > 0 ? ` (${report.rounds.parked.slice(0, 5).map((p) => `${p.problemId} in round ${p.round} at ${money(p.usd)}`).join("; ")}${report.rounds.parked.length > 5 ? "; and more" : ""})` : ""}.`,
+        ]
+      : []),
+    ...(report.repeatStops !== undefined
+      ? [`Sessions ended by the repeat rule (${report.repeatStops.length}): ${report.repeatStops.slice(0, 5).join("; ")}${report.repeatStops.length > 5 ? `; and ${report.repeatStops.length - 5} more` : ""}.`]
+      : []),
     ...(report.retries !== undefined
       ? [
           `Requests sent again after a transient error (a cut stream, a reset connection, a 5xx or a 429): ${report.retries.requests} ` +

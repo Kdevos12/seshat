@@ -191,7 +191,7 @@ prompt asks the prover to rewrite them in full and keep what still helps.
 
 A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
 out, when the problem is aborted, after two sessions in a row ended with an error (the model or
-Lean could not be reached), or when a line's `beforeSession` stops it (`line`).
+Lean could not be reached), or when a line's `beforeSession` stops it (`line`). With the budget in rounds ([scheduler.md](scheduler.md#the-budget-in-rounds)) a prover whose slice of the budget is spent pauses with `slice`: its task stays running and the problem asks for its next slice.
 
 ## A session
 
@@ -309,6 +309,26 @@ The model rewrites its whole Lean file at every check, and output tokens were ab
 `lean_check(aux, proof)` stays, for the first draft. The prover's system prompt gains a section, "Editing", that says so, only when the
 option is on; without it the prompt is the merged prompt byte for byte, and the prompt hash in `run.started` is unchanged. The
 option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([quickstart.md](quickstart.md#defaults-sets)).
+
+### The state card
+
+A session that starts on long notes starts on what the model chose to remember. With `RunConfig.stateCard` (plan change CA7; `card.ts` of
+`@seshat/memory`) the opening message of each session also carries a card that code builds from the journal: no model call, no clock, no
+randomness, so the same journal gives the same card, byte for byte. `stateCard(store, claimId, {maxChars})` is exported from `@seshat/memory`,
+beside the projection, and returns the structured card (`goal`, `holes`, `lemmas`, `approaches`, `timeouts`, as `StateCardData`, which `stateCardData` gives alone) with its bounded `text` (`renderStateCard` makes the text from the data), so that a later pass (a consolidation pass, an idea generator) calls it without the run loop. The card holds, in this
+order: the goal's statement id and status; the holes (the claims joined to the goal by `decomposes_into`) with their goal text and status; the
+lemmas Lean accepted, by name (the `aux_` lemmas of the last session's check with no error and no `sorry`, recorded as an `accepted_lemmas`
+node when the option is on); the failed approaches as (strategy label, failure class, first error normalised) with a count, the most frequent
+first; the timeouts with their count. A session counts once, by the class and typed detail of its last check (`failureDetail`, which the prover
+records itself when the option is on and M1 does not); the normalisation is `normalizeDetail`, the one the failure memory uses. A session with no
+strategy label (no M1) shows `unlabelled`. A timeout is counted on its own line, and a check Lean never answered says nothing about an approach.
+
+The card has a hard bound in characters (`stateCardChars`, default 3000): when it is over, the least frequent approaches are cut first and the
+card says how many were cut. Its text comes from the model's proofs and Lean's messages, so it is data, in the user-role opening message under
+"Where the problem stands", never in the system prompt. With the card on, the notes the model writes are limited to 1500 characters
+(`CARD_NOTES_CHARS`; the system prompt says so and the prompt hash records it). Off, nothing changes: no section, no node, the merged prompts
+byte for byte. The option is off in `harness run` and on in `harness solve`'s defaults set `v2`. Tested in `memory/test/card.test.ts` (the
+order, counts, the bound, the accepted lemmas) and `orchestrator/test/state-card.test.ts` (the opening message, the limit, off).
 
 ### Masked old checks
 

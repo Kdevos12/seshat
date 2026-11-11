@@ -3,7 +3,7 @@ import { betterOf, improves, type LeanState } from "@seshat/memory";
 import type { DriftKind } from "./drift.ts";
 
 /** The drift detectors (plan §9): what they find, and when they stop a session. */
-export type DetectorKind = Extract<DriftKind, "statement_drift" | "restated_target" | "strategy_loop" | "length_growth" | "session_loop">;
+export type DetectorKind = Extract<DriftKind, "statement_drift" | "restated_target" | "strategy_loop" | "length_growth" | "session_loop" | "repeated_failure">;
 
 export interface Finding {
   kind: DetectorKind;
@@ -94,6 +94,16 @@ export function noticeFor(kind: DetectorKind, evidence: { readonly [key: string]
       return (
         `The harness stopped your last session: the file grew from ${from} to ${to} characters and no subgoal was closed. ` +
         "Cut it back to the part that works and close one hole before you add more."
+      );
+    }
+    case "repeated_failure": {
+      const label = text("strategy");
+      const times = num("times");
+      const error = text("error");
+      if (label === undefined || times === undefined || error === undefined) return undefined;
+      return (
+        `The harness stopped your last session: the same failure (${error}) with the strategy ${label} came back ${times} times on this problem. ` +
+        "Do not go on with that approach; try a different one."
       );
     }
     case "session_loop": {
@@ -227,5 +237,43 @@ export class ProverWatch {
       bestErrors: this.#best?.errors ?? 0,
       bestHoles: this.#best?.holes ?? 0,
     });
+  }
+}
+
+/** The failure that came back, as the repeat rule counts it: the normalised first error and the strategy label. */
+export function repeatKey(failureClass: string, error: string, label: string): string {
+  return JSON.stringify([failureClass, error, label]);
+}
+
+/**
+ * Whether a failure class is an error the repeat rule counts. `holes` is a state of progress (a sorry left is the sketch working), `other` has
+ * no specific detail to compare, and `refused` and `lean_unavailable` say nothing about the proof. Real error classes and timeouts count.
+ */
+export function repeatCounts(failureClass: string): boolean {
+  return failureClass !== "holes" && failureClass !== "other" && failureClass !== "refused" && failureClass !== "lean_unavailable";
+}
+
+/** The times a failure is seen on a problem before the repeat rule tells the prover to change approach, and the one on which the session ends. */
+export const REPEAT_DIRECTIVE_AT = 3;
+export const REPEAT_STOP_AT = REPEAT_DIRECTIVE_AT + 1;
+
+/** The directive the answer of the third occurrence carries. Made of this page's words, a typed error and a label. */
+export function repeatDirective(error: string, label: string, times: number): string {
+  return `The harness notes: the failure "${error}" with the strategy ${label} has now happened ${times} times on this problem. Change approach now: use a different strategy, not a variation of this one. If it happens once more, this session ends.`;
+}
+
+/**
+ * The mechanical repeat rule (plan change CA7): how many times each (normalised first error, strategy label) pair was seen on a problem. The
+ * third occurrence gives a directive to change approach; the fourth ends the session. The error is the typed detail of `classifyFailure`,
+ * the normalisation the failure memory uses; the rule writes no second one.
+ */
+export class RepeatCounter {
+  readonly counts = new Map<string, number>();
+
+  /** Counts one occurrence and returns the new count. */
+  add(key: string, by = 1): number {
+    const n = (this.counts.get(key) ?? 0) + by;
+    this.counts.set(key, n);
+    return n;
   }
 }
