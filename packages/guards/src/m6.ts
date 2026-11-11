@@ -457,12 +457,12 @@ export function createM6(env: M6Env = {}): Line {
         state.checks = check.index;
         state.last = lastCheckOf(check.submission, check.report);
         state.label = label;
-        if (!flag(options, "detectors")) return undefined;
-
-        // The repeat rule counts every failed check, whichever detector acts on it, so that a resumed run counts the same.
+        // The repeat rule counts every failed check, whichever detector acts on it, so that a resumed run counts the same. It is a rule of its
+        // own: it works with the drift detectors switched off (`harness solve`'s set v2 enables M6 for it alone).
         const repeat = flag(options, "repeatRule") && !check.accepted && failure !== undefined && repeatCounts(failure.class)
           ? repeatCount(run, session.problemId, state, failure.class, normalizeDetail(failure.detail), label)
           : undefined;
+        if (!flag(options, "detectors")) return repeat === undefined ? undefined : repeatDecision(session, run, check.index, repeat);
         const restating = check.accepted ? undefined : await restatingLemma(session, aux, failure?.class, failure?.detail, run);
         const finding = state.watch.observe({
           index: check.index,

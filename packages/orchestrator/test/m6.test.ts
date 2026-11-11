@@ -451,6 +451,16 @@ describe("M6 repeat rule (CA7)", () => {
     assert.match(readFileSync(join(dir, "report.md"), "utf8"), /Sessions ended by the repeat rule \(1\)/);
   });
 
+  it("runs with the detectors off: the repeat rule alone, as solve's v2 sets it", async () => {
+    const { events } = await demoRun({
+      config: { ...M6_ONLY, sessions: 1, lineOptions: { M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } } },
+      responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("bad 4")],
+    });
+    const found = drifts(events).filter((d) => d.kind === "repeated_failure");
+    assert.deepEqual(found.map((d) => [d.action, d.check]), [["noted", 3], ["stopped_session", 4]]);
+    assert.deepEqual(drifts(events).filter((d) => d.kind !== "repeated_failure"), []);
+  });
+
   it("counts over the sessions of the problem, not only within one", async () => {
     const { events } = await demoRun({
       config: { ...M6_ONLY, sessions: 3, lineOptions: { M6: FIVE } },
