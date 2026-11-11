@@ -8,6 +8,8 @@ import type { Llm, ProblemContext, ValidateRequest, ValidateResult } from "@sesh
 import { MemoryStore } from "@seshat/memory";
 import { CapabilityError, type Registry } from "@seshat/registry";
 import {
+  countedLlm,
+  GRAPH_HUNT,
   type GraphHitData,
   type GraphSearchData,
   type GraphSearchRunner,
@@ -56,8 +58,8 @@ function simulatedLean(accept: (n: number, edges: Array<[number, number]>) => bo
   };
 }
 
-async function setup(input: { answers?: Answer[]; options?: Partial<M11Options>; validate?: (r: ValidateRequest) => ValidateResult; statement?: string; sage?: boolean; graphSearch?: GraphSearchRunner; seed?: number }) {
-  const memory = openMemory();
+async function setup(input: { answers?: Answer[]; options?: Partial<M11Options>; validate?: (r: ValidateRequest) => ValidateResult; statement?: string; sage?: boolean; sageOutput?: string; graphSearch?: GraphSearchRunner; seed?: number; memory?: MemoryStore }) {
+  const memory = input.memory ?? openMemory();
   const statement = input.statement ?? HAM;
   const { claimId } = await memory.ensureClaim({ statement, origin: "bench:test" });
   const answers = input.answers ?? [];
@@ -75,12 +77,15 @@ async function setup(input: { answers?: Answer[]; options?: Partial<M11Options>;
   const logs: string[] = [];
   const requests: ValidateRequest[] = [];
   const sageCalls: string[] = [];
+  const sageTimeouts: Array<number | undefined> = [];
   const registry = {
     hash: "0".repeat(64),
     offers: (id: string) => id === "compute.sage" && input.sage === true,
-    invoke: async (name: string, request: { code?: string }) => {
+    invoke: async (name: string, request: { code?: string; timeout?: number }) => {
       if (name !== "compute.sage" || input.sage !== true) throw new CapabilityError("unavailable", name, "not offered");
       sageCalls.push(request.code ?? "");
+      sageTimeouts.push(request.timeout);
+      if (input.sageOutput !== undefined) return { output: { result: input.sageOutput } };
       if (!(request.code ?? "").includes('nauty_geng("9')) return { output: { result: "[]" } };
       return { output: { result: `['${toGraph6(9, Array.from({ length: 8 }, (_, i) => [i, i + 1] as [number, number])).replace(/\\/g, "\\\\")}']` } };
     },
@@ -107,7 +112,7 @@ async function setup(input: { answers?: Answer[]; options?: Partial<M11Options>;
   } as unknown as ProblemContext;
   const line = createM11(input.graphSearch !== undefined ? { graphSearch: input.graphSearch } : {});
   const run = () => (line.hooks.beforeProvers as (p: ProblemContext) => Promise<void>)(problem);
-  return { problem, memory, claimId, logs, requests, run, asked: () => asked, sageCalls };
+  return { problem, memory, claimId, logs, requests, run, asked: () => asked, sageCalls, sageTimeouts };
 }
 
 const hits = (memory: MemoryStore, claimId: string) => memory.nodes("graph_hit", { claimId }).map((n) => n.data as unknown as GraphHitData);
@@ -151,7 +156,7 @@ describe("statements about graphs, with the option on", () => {
     assert.equal(t.requests.length, 2);
     assert.equal(t.memory.edges({ from: t.claimId, kinds: ["refuted_by"] }).length, 0);
     assert.equal(t.memory.claim(t.claimId)?.status, "open");
-    assert.match(describeGraphFindings(t.memory, t.claimId) ?? "", /did not accept/);
+    assert.match(describeGraphFindings(t.memory, t.claimId) ?? "", /Lean has not confirmed it \(instance/);
   });
 
   it("records no counterexample up to N as evidence with its filters, never as a status", async () => {
@@ -242,5 +247,107 @@ describe("the sandbox of the predicate", () => {
     const run = await runProgram("(g) => { while (true) {} }", graphBattery(1).objects, { callMs: 50 });
     assert.deepEqual(run.verdicts, [null]);
     assert.match(run.notes[0] ?? "", /timeout/);
+  });
+});
+
+describe("the reach of the Lean recheck", () => {
+  const smallHits = { predicate: "(g) => g.n >= 3 && g.edges.length >= g.n - 1", filter: { connected: true, minVertices: 1, maxVertices: 5, minEdges: 0 } };
+
+  it("sends the smallest hits first, at most three", async () => {
+    const t = await setup({ answers: [smallHits], validate: simulatedLean(() => false) });
+    await t.run();
+    const sizes = t.requests.map((r) => [Number(/Fin (\d+)\)/.exec(r.aux ?? "")?.[1]), (r.aux ?? "").match(/\(\d+, \d+\)/g)?.length ?? 0]);
+    assert.equal(sizes.length, 6);
+    assert.deepEqual(sizes[0], [3, 8]);
+    assert.ok(sizes.every(([n], i) => i === 0 || (n as number) >= (sizes[i - 1]?.[0] as number)));
+    assert.equal(hits(t.memory, t.claimId).length, 3);
+  });
+
+  it("does not send a graph above the vertex limit: unconfirmed, too_large", async () => {
+    const t = await setup({ answers: [{ predicate: "(g) => g.n === 9", filter: { connected: true, minVertices: 9, maxVertices: 9, minEdges: 0 } }], sage: true });
+    await t.run();
+    assert.equal(t.requests.length, 0);
+    const [hit] = hits(t.memory, t.claimId);
+    assert.equal(hit?.confirmation, "unconfirmed");
+    assert.equal(hit?.errorClass, "too_large");
+    assert.ok(GRAPH_HUNT.leanVertices < 9);
+  });
+
+  it("tells the provers, for an unconfirmed hit, the witness, the definitions, the error class and that it is evidence; bounded", async () => {
+    const t = await setup({ answers: [{ predicate: CONNECTED_NO_HAM_PATH, filter: { connected: true, minVertices: 1, maxVertices: 4, minEdges: 0 } }], validate: simulatedLean(() => false) });
+    await t.run();
+    const text = describeGraphFindings(t.memory, t.claimId) ?? "";
+    assert.match(text, /^Evidence, not a verdict\. A program found this graph: 4 vertices 0\.\.3, edges /);
+    assert.match(text, /Lean has not confirmed it \(instance/);
+    assert.match(text, /candidate route/);
+    assert.match(text, /abbrev aux_g_[0-9a-f]{12} : SimpleGraph \(Fin 4\)/);
+    assert.match(text, /aux_gd_[0-9a-f]{12}/);
+    assert.doesNotMatch(text, /is false as written/);
+    assert.ok(text.length <= GRAPH_HUNT.briefingChars + 10);
+  });
+
+  it("prints where the certificate is, and the report lists the hit", async () => {
+    const t = await setup({ answers: [{ predicate: CONNECTED_NO_HAM_PATH, filter: { connected: true, minVertices: 1, maxVertices: 4, minEdges: 0 } }], validate: simulatedLean(() => true) });
+    await t.run();
+    const [hit] = hits(t.memory, t.claimId);
+    assert.ok(t.logs.some((l) => l.includes(`certificate of the graph`) && l.includes(hit?.certificate ?? "?") && l.includes("blobs")));
+    assert.match(hit?.description ?? "", /confirmed by Lean, certificate [0-9a-f]{12}/);
+  });
+});
+
+describe("the 10-vertex path", () => {
+  it("gives the compute call its timeout and the filter to geng", async () => {
+    const t = await setup({ answers: [{ predicate: "(g) => false", filter: { connected: true, minVertices: 9, maxVertices: 9, minEdges: 8, maxEdges: 12 } }], sage: true });
+    await t.run();
+    assert.deepEqual(t.sageTimeouts, [GRAPH_HUNT.sageTimeoutSec]);
+    assert.match(t.sageCalls[0] ?? "", /nauty_geng\("9 -c 8:12"\)/);
+  });
+
+  it("refuses a battery over the cap after one call and records why", async () => {
+    const many = `[${Array.from({ length: 20_001 }, () => "'Bw'").join(", ")}]`;
+    const t = await setup({ answers: [{ predicate: "(g) => false", filter: { connected: true, minVertices: 9, maxVertices: 10, minEdges: 0 } }], sage: true, sageOutput: many });
+    await t.run();
+    assert.equal(t.sageCalls.length, 1);
+    const [s] = searches(t.memory, t.claimId);
+    assert.equal(s?.outcome, "not_run");
+    assert.match(s?.notes.join(" ") ?? "", /more than 20000 graphs/);
+  });
+});
+
+describe("a search that fails or is cut", () => {
+  const answer = { predicate: "(g) => false", score: "(g) => 0", filter: { connected: false, minVertices: 1, maxVertices: 3, minEdges: 0 } };
+
+  it("leaves a graph_search record with the seed, and a resumed process runs the search again without the lists", async () => {
+    const memory = openMemory();
+    const failing = await setup({ answers: [answer], memory, graphSearch: async () => { throw new Error("cap reached"); } });
+    await failing.run();
+    const first = searches(memory, failing.claimId);
+    assert.deepEqual(first.map((r) => [r.method, r.outcome, r.final]), [["battery", "none_found", false], ["local_search", "failed", false]]);
+    assert.equal(typeof first[1]?.seed, "number");
+    assert.match(first[1]?.reason ?? "", /cap reached/);
+    let ran = 0;
+    const resumed = await setup({ answers: [answer], memory, graphSearch: async () => { ran++; return { hits: [], effort: { steps: 1 }, notes: [] }; } });
+    // The same claim in the same memory.
+    await resumed.run();
+    assert.equal(ran, 1);
+    const all = searches(memory, failing.claimId);
+    assert.equal(all.filter((r) => r.method === "battery").length, 1, "the lists were not tried again");
+    assert.equal(all.at(-1)?.final, true);
+    await resumed.run();
+    assert.equal(ran, 1, "a final record ends the work");
+  });
+});
+
+describe("the cap of model requests", () => {
+  it("refuses the request after the cap", async () => {
+    let made = 0;
+    const base = { complete: async () => { made++; return { text: "", cost: { usd: 0 }, model: "p/m", modelCallId: "m" }; }, completeJson: async () => { made++; return { value: {}, text: "", cost: { usd: 0 }, model: "p/m", modelCallIds: [] } as never; } } as unknown as Llm;
+    const { llm, left } = countedLlm(base, GRAPH_HUNT.modelRequests);
+    for (let i = 0; i < GRAPH_HUNT.modelRequests; i++) await llm.complete({ prompt: "x" });
+    assert.equal(left(), 0);
+    await assert.rejects(llm.complete({ prompt: "x" }), /cap of 6 model requests/);
+    await assert.rejects(llm.completeJson?.({ prompt: "x", schema: { type: "object" } }) as Promise<unknown>, /cap of 6/);
+    assert.equal(made, 6);
+    assert.equal(GRAPH_HUNT.modelRequests, 6);
   });
 });

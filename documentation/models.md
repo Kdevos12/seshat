@@ -543,7 +543,7 @@ and 10 vertices through SageMath's nauty generator (`geng`, with `-c` and the ed
 `compute.sage`; without it the filter is cut to 8 vertices and the record says so. A battery holds at most
 20 000 graphs: a vertex count whose list would pass it is not listed, and the record's filter says which vertex counts were covered.
 
-**A hit is evidence until Lean accepts it.** For the first `GRAPH_HUNT.hits` (3) graphs the predicate accepts, the harness writes the negation
+**A hit is evidence until Lean accepts it.** For the first `GRAPH_HUNT.hits` (3) graphs the predicate accepts, smallest first (fewest vertices, then edges), and only up to `GRAPH_HUNT.leanVertices` (8) vertices (a larger hit is recorded unconfirmed with the class `too_large` and not sent), the harness writes the negation
 of the claim from the witness's edge list ([the templates](finite-lean.md)) and submits it through `validate`, as it does for
 a magma. Only that can change a status, and the claim becomes `refuted` only after the certifier replays it. The
 `graph_hit` node says `confirmed` (and a `refuted_by` edge, `computed`, joins it to the claim) or `unconfirmed`, with the
@@ -552,9 +552,20 @@ no more, and the briefing says so. The certificate is a blob of the run's store 
 the node's `certificate`: the edge list, the graph6 string, the predicate and score programs and their hash, the filters, the seed,
 the Lean refutation's attempts and a `.lean` text that uses the library.
 
+**What an unconfirmed hit tells the provers** (`describeGraphFindings`, at most 2500 characters): "Evidence, not a verdict", the vertex count and edge list
+(at most 60 edges), the Lean error class, the names and text of the harness's auxiliary definitions for that graph, and "proving the negation of the claim at
+this graph is a candidate route". It never says the statement is false. **The refutation does not use the templates** of `lean/SeshatLib/Finite` and may
+fail for a claim stated with `G.Connected` or a Hamiltonian walk: [finite-lean.md](finite-lean.md#what-the-templates-are-for-and-what-the-recheck-reaches) says which claims are expected to be confirmed and which are not.
+The progress log prints the certificate's blob hash and path when a hit is recorded, and RESULT.md lists `graph_hit` nodes under the counter-examples (the graph, confirmed or not, the certificate's hash) and `graph_search` nodes under the indicative evidence.
+
 **"No counterexample" is evidence.** When every graph got a verdict and none is a counterexample, a `graph_search` node records
 the exact filters, the battery's id, size and digest and the program's hash, with the note that it is no proof and does not say the statement is true. If
 some graphs got no verdict (a program that timed out or threw), the outcome is `incomplete`.
+
+**Resuming.** A `graph_search` record has `final`. A `final: true` record for the statement ends the work. A battery record with `final: false` (a search was to follow) makes a
+resumed process skip the lists and run the search; a search that threw (outcome `failed`, with the reason, the seed and the bounds) or was cut by an abort or the budget (`cut`) is `final: false` and is run again.
+The 10-vertex lists: one call of SageMath's generator for each vertex count above 8, stopped by `itertools.islice` after the remaining capacity plus one graph (so "more than 20 000 graphs" is known after one partial enumeration, and
+the record says so), with `-c` and the edge range given to `geng` and a time limit of `GRAPH_HUNT.sageTimeoutSec` (300) seconds; the answer is at most 20 001 graph6 strings (about 200 kB), and if the server cuts it the call fails and the record says that.
 
 **Beyond the lists.** When nothing was found and the model gave a score, the search of `@seshat/induction` runs (a local
 search, then families), within `GRAPH_SEARCH_BOUNDS` (steps, restarts, wall time, at most 12 vertices). Its seed comes from the
@@ -710,9 +721,9 @@ a refutation of a claim over `Type*` can ever pass; it takes a minute on a Lean 
 2. **The files of the Lean evaluator.** The text of the files (`abbrev`, the `Fin` instance from a
    `List`, `decide` on the instantiated statement) is written from what Lean 4 and Mathlib accept,
    and `pnpm harness contract lean.check` does not cover it.
-4. **The negation of a claim about graphs.** The forms of `graphNegationProofs`, and the templates they stand on: the list in [finite-lean.md](finite-lean.md#to-verify-on-a-real-lean).
 3. **The proofs of the negation of a claim over `Type`, and of a number.** The forms above with `Fin
    n`, and `@hall 7` for a number, which are tested only against a simulated Lean.
+4. **The negation of a claim about graphs.** The forms of `graphNegationProofs`, and the templates they stand on: the list in [finite-lean.md](finite-lean.md#to-verify-on-a-real-lean).
 
 ## What is not done
 

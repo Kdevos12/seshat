@@ -24,6 +24,30 @@ Lean 4.27 is **to verify on a real Lean**, and nothing here uses it.
 The files are modules `SeshatLib.Finite.Graph` and `SeshatLib.Finite.Witness` of the library tree (`lean/`); the lake project that
 builds `SeshatLib` ([lean-env.md](lean-env.md)) is not part of this task.
 
+## What the templates are for, and what the recheck reaches
+
+**The refutation the harness submits does not use these templates.** It proves `¬ (type_of% @claim)` by instantiating the claim at the
+witness and `decide`, with the graph written out as two `abbrev`s in the auxiliary region (a copy of `ofEdges`'s body, since the check
+cannot import the library). The templates serve two other purposes: the certificate's Lean text (`graphCertificateLean`), and a prover that
+writes the refutation by hand, who can use `ofEdges`, `HasHamPath` and the others where the library is built into the environment.
+
+`decide` needs a `Decidable` instance for each predicate of the claim, and the kernel has to evaluate it. What is expected to be confirmed
+automatically (not yet verified on a real Lean): claims made of `G.Adj`, `Fintype.card`, quantifiers over the vertices, `G.degree`, `G.edgeFinset.card`,
+equalities and inequalities of numbers. What is **not** expected to be: claims stated with `G.Connected`, `G.Reachable`, `G.Walk` and
+`Walk.IsPath` or `Walk.IsHamiltonian` (an existential over walks), colourings and `chromaticNumber`. Mathlib may give some of them a
+`Decidable` instance; if it does not, or the kernel is too slow, the hit stays **unconfirmed**: an evidence node with the class of Lean's error.
+The first follow-up on a real Lean is the bridge: lemmas that prove `ConnectedSmall`, `HasHamPath`, `IsPathList` and `IsIndepSet` equivalent to
+Mathlib's predicates, so that a claim can be rewritten into the decidable form before `decide`.
+
+A graph with more than `GRAPH_HUNT.leanVertices` (8) vertices is not sent at all: it stays unconfirmed with the class `too_large`
+(`decide` on a claim about orderings or walks is a search of up to n! cases in the kernel; 8 is the size of the lists the code builds).
+Hits are sent smallest first (fewest vertices, then fewest edges), at most three.
+
+**An unconfirmed hit still goes to the provers.** The briefing ([models.md](models.md#statements-about-graphs)) gives the witness (vertex count and
+edge list), the names and text of the auxiliary definitions for that graph, the class of Lean's error, and says that a program found the graph, Lean has not
+confirmed it, and proving the negation at this graph is a candidate route. It is labelled evidence and never says the statement is false; it is cut at
+`GRAPH_HUNT.briefingChars` (2500) characters, and lists at most `GRAPH_HUNT.briefingEdges` (60) edges.
+
 ## The generator
 
 `packages/models/src/graph-lean.ts`:
