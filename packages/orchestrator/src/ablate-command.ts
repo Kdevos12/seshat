@@ -5,7 +5,7 @@ import { readEvents, sha256Hex } from "@seshat/core";
 import { type AblationInput, type AblationResult, type Arm, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
 import { renderAblation, renderChunks } from "./ablation-table.ts";
 import { analyseChunks, attemptsByProver } from "./chunks.ts";
-import { allLines, experiment, experimentArms } from "./experiments.ts";
+import { allLines, experiment, type ExperimentContext, experimentArms } from "./experiments.ts";
 import { RunSetupError } from "./run.ts";
 import { runLabel } from "./run-label.ts";
 
@@ -48,6 +48,8 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
   /** The lines an experiment's arms share; default every line. */
   lines?: readonly string[];
   models?: readonly string[];
+  /** The host profile the arms that are what `solve` would do take their capabilities and check timeout from (`solve-defaults`). */
+  host?: ExperimentContext["host"];
   /** The number of problems the memory is built on before the arms are measured on the others. */
   split?: number;
   splitBy?: SplitBy;
@@ -55,10 +57,10 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
 }
 
 /** The arms a command asks for: the cumulative configurations, or the arms of one experiment. */
-export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "lines" | "models">): Arm[] {
+export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "lines" | "models" | "host">): Arm[] {
   if (command.experiment !== undefined) {
     if (command.configs !== undefined) throw new RunSetupError("choose the configurations with --configs or an --experiment, not both");
-    return experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])] });
+    return experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])], ...(command.host !== undefined ? { host: command.host } : {}) });
   }
   if (command.lines !== undefined || command.models !== undefined) throw new RunSetupError("--lines and --models go with --experiment");
   return cumulativeArms(command.configs !== undefined && command.configs.length > 0 ? [...command.configs] : cumulativeNames());
