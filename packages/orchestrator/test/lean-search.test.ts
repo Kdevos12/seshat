@@ -4,6 +4,7 @@ import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { LeanCheckOptions, LeanCheckResult, LeanChecker, LeanSnippet } from "@seshat/core";
 import { LEAN_SEARCH, leanSearchFactory, MAX_QUERIES, MAX_SECTION_CHARS, SECTION_TITLE, type Fetch } from "@seshat/lean-search";
 import { type HostProfile, leanCheckImplementation, loadCatalog, Registry } from "@seshat/registry";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULTS_SETS, readRecordedRun, REPO_ROOT, type RunOptions, studentConfig } from "../src/index.ts";
 import { check, DemoLean, demoRun, ofType } from "./m0-helpers.ts";
@@ -41,9 +42,9 @@ class SearchLean implements LeanChecker {
 const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
 
 /** A host that offers lean.search served by the real factory, with a remote service made of `fetch` and an index of `index`. */
-function searchRegistry(fetchFake: Fetch | undefined, settings: Record<string, string> = { remoteUrl: "https://search.example/api" }) {
+function searchRegistry(fetchFake: Fetch | undefined, settings: Record<string, string | string[]> = { remoteUrl: "https://search.example/api" }) {
   return (lean: LeanChecker) => {
-    const host: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] }, "lean.search": { use: ["search"], settings: { search: settings } } } };
+    const host: HostProfile = { host: "test", capabilities: { "lean.check": { use: ["kimina"] }, "lean.search": { use: ["search"], settings: { search: { allowedHosts: ["search.example"], ...settings } } } } };
     return (journal: Parameters<RunOptions["registry"]>[0], blobs: Parameters<RunOptions["registry"]>[1]) =>
       new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean), "lean-search": leanSearchFactory(fetchFake !== undefined ? { fetch: fetchFake } : {}) }, journal, blobs });
   };
@@ -102,18 +103,20 @@ describe("lean.search pushed by the harness (CA22)", () => {
     assert.ok(MAX_QUERIES === 3);
   });
 
-  it("shows no hit when Lean cannot check the names", async () => {
-    const lean = new SearchLean();
-    lean.failure = "server_error";
-    const fake = service([{ name: "Nat.add_zero" }]);
-    const seen: string[][] = [];
-    await demoRun({
-      lean,
-      registry: searchRegistry(fake.fetch),
-      config: { leanSearch: true, sessions: 1 },
-      responses: [check("bad"), (context: TranscriptContext) => (seen.push(textOf(context)), check("exact trivial_proof"))],
-    });
-    assert.doesNotMatch(seen[0]?.[0] ?? "", /Declarations that exist|Nat\.add_zero/);
+  it("shows no hit when Lean cannot check the names: the answer is the one without the option", async () => {
+    const answers: string[][] = [[], []];
+    for (const [k, on] of [false, true].entries()) {
+      const lean = new SearchLean();
+      lean.failure = "server_error";
+      await demoRun({
+        lean,
+        registry: searchRegistry(service([{ name: "Nat.add_zero" }]).fetch),
+        config: { ...(on ? { leanSearch: true } : {}), sessions: 1 },
+        responses: [check("bad"), (context: TranscriptContext) => (answers[k]?.push(...textOf(context)), check("exact trivial_proof"))],
+      });
+    }
+    assert.ok((answers[0]?.[0] ?? "").length > 0);
+    assert.deepEqual(answers[1], answers[0]);
   });
 
   it("is a no-op when nothing is found: the answer is byte-identical to the one without the option", async () => {
@@ -192,7 +195,8 @@ describe("lean.search pushed by the harness (CA22)", () => {
       const section = (text: string) => text.slice(text.indexOf(SECTION_TITLE));
       // Whole results keep their section, within the bound; the masked ones are one line and keep none of it.
       const whole = last.filter((t) => t.includes(SECTION_TITLE));
-      assert.ok(whole.length >= 4 && whole.length < 4 + 4, String(whole.length));
+      // The names of an answer in view are not shown again, so only the answers whose earlier section was masked bring one back.
+      assert.ok(whole.length >= 1 && whole.length < 4 + 4, String(whole.length));
       for (const text of whole) assert.ok(section(text).length <= MAX_SECTION_CHARS, String(section(text).length));
       const masked = last.filter((t) => t.startsWith("Earlier check, masked:"));
       assert.ok(masked.length >= 4);
@@ -202,5 +206,46 @@ describe("lean.search pushed by the harness (CA22)", () => {
     } finally {
       for (const name of Object.keys(many)) delete SIGNATURES[name];
     }
+  });
+
+  it("sends the same unknown name once and appends its section once; another query is a new request", async () => {
+    const fake = service([{ name: "Nat.add_zero" }]);
+    const seen: string[][] = [];
+    const looking = (proof: string) => (context: TranscriptContext) => (seen.push(textOf(context)), check(proof));
+    await demoRun({
+      lean: new SearchLean(),
+      registry: searchRegistry(fake.fetch),
+      config: { leanSearch: true, sessions: 1, limits: { turns: 6, contextTokens: 1_000_000 } },
+      responses: [check("bad"), looking("bad"), looking("bad"), looking("sorry"), looking("exact trivial_proof")],
+    });
+    const last = seen.at(-1) ?? [];
+    assert.deepEqual(last.map((t) => t.includes(SECTION_TITLE)), [true, false, false, false]);
+    // The hole's goal is a new query (one more request); the name it finds is in view already, so no new section.
+    assert.deepEqual(fake.requests.map((r) => JSON.parse(r).query), ["bad", "n : ℕ\n⊢ n + 0 = n"]);
+  });
+
+  it("keeps the provers' check count the same with the search on, and reports the search's own Lean time apart", async () => {
+    const reports: Array<{ leanChecks: { total: number }; leanSearch?: { requests: number; checks: number } }> = [];
+    for (const on of [false, true]) {
+      const { dir } = await demoRun({
+        lean: new SearchLean(),
+        registry: searchRegistry(service([{ name: "Nat.add_zero" }]).fetch),
+        config: { ...(on ? { leanSearch: true } : {}), sessions: 1 },
+        responses: [check("bad"), check("exact trivial_proof")],
+      });
+      reports.push(JSON.parse(readFileSync(join(dir, "report.json"), "utf8")));
+    }
+    assert.equal(reports[1]?.leanChecks.total, reports[0]?.leanChecks.total);
+    assert.equal(reports[0]?.leanSearch, undefined);
+    assert.deepEqual([reports[1]?.leanSearch?.requests, reports[1]?.leanSearch?.checks], [1, 1]);
+  });
+
+  it("says once, at the start, that there is no usable backend", async () => {
+    const logs: string[] = [];
+    await demoRun({ lean: new SearchLean(), registry: searchRegistry(undefined, {}), config: { leanSearch: true, sessions: 1 }, responses: [check("exact trivial_proof")], log: (l) => logs.push(l) });
+    assert.equal(logs.filter((l) => /leanSearch is on, but lean\.search has no usable backend on host test: no backend is set up/.test(l)).length, 1);
+    const quiet: string[] = [];
+    await demoRun({ lean: new SearchLean(), registry: searchRegistry(service([]).fetch), config: { leanSearch: true, sessions: 1 }, responses: [check("exact trivial_proof")], log: (l) => quiet.push(l) });
+    assert.equal(quiet.filter((l) => /no usable backend/.test(l)).length, 0);
   });
 });

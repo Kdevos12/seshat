@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { headerOf, LeanSearchPush, MAX_HITS, MAX_QUERIES, MAX_SECTION_CHARS, MAX_SIGNATURE_CHARS, queriesOf, SECTION_TITLE } from "../src/index.ts";
+import { isDeclarationName, headerOf, LeanSearchPush, MAX_HITS, MAX_QUERIES, MAX_SECTION_CHARS, MAX_SIGNATURE_CHARS, queriesOf, SECTION_TITLE } from "../src/index.ts";
 import { NamesLean, reportOf } from "./helpers.ts";
 
 /** A search that answers from a table, and records its requests. */
-function table(answers: Record<string, string[]>) {
+function table(answers: Record<string, string[]>, complete = true) {
   const requests: Array<{ query: string; kind: string; limit: number }> = [];
-  return { requests, search: async (request: { query: string; kind: "name" | "goal"; limit: number }) => (requests.push(request), answers[request.query]) };
+  return {
+    requests,
+    search: async (request: { query: string; kind: "name" | "goal"; limit: number }) => {
+      requests.push(request);
+      const names = answers[request.query];
+      return names === undefined ? undefined : { names, complete };
+    },
+  };
 }
 
 describe("the queries of a check", () => {
@@ -111,5 +118,77 @@ describe("the section pushed into a check's answer", () => {
     const section = await new LeanSearchPush({ search: table({ foo: hostile }).search, checker: lean }).section(reportOf({ unknown: ["foo"] }));
     assert.doesNotMatch(section ?? "", /ignore previous|#eval/);
     assert.doesNotMatch(lean.calls[0]?.code ?? "", /eval|ignore/);
+  });
+
+  it("sends a query once a run, shows a name once while its answer is in view, and again once that answer is masked", async () => {
+    const lean = new NamesLean(SIG);
+    const { search, requests } = table({ foo: ["Nat.add_comm"], bar: ["Nat.add_zero"] });
+    // The answer to check i is masked once the session has made i + 2 checks, here.
+    const push = new LeanSearchPush({ search, checker: lean, masked: (shownAt, now) => shownAt + 2 <= now });
+    const session = push.forSession();
+    const sections = [];
+    for (const name of ["foo", "foo", "foo", "foo", "bar"]) sections.push(await session(reportOf({ unknown: [name] })));
+    assert.match(sections[0] ?? "", /Nat\.add_comm/);
+    assert.equal(sections[1], undefined, "in view: nothing new, no section");
+    assert.match(sections[2] ?? "", /Nat\.add_comm/, "its answer is masked now: it can come back");
+    assert.equal(sections[3], undefined);
+    assert.match(sections[4] ?? "", /Nat\.add_zero/, "a different name makes a new request");
+    assert.deepEqual(requests.map((r) => r.query), ["foo", "bar"]);
+    assert.equal(lean.calls.length, 2, "Lean checked each name once");
+    // Another session has its own view, and the run's cache of the search.
+    assert.match((await push.forSession()(reportOf({ unknown: ["foo"] }))) ?? "", /Nat\.add_comm/);
+    assert.equal(requests.length, 2);
+  });
+
+  it("without a masking rule a name is shown once a session", async () => {
+    const { search } = table({ foo: ["Nat.add_comm"] });
+    const session = new LeanSearchPush({ search, checker: new NamesLean(SIG) }).forSession();
+    assert.ok((await session(reportOf({ unknown: ["foo"] }))) !== undefined);
+    for (let k = 0; k < 6; k += 1) assert.equal(await session(reportOf({ unknown: ["foo"] })), undefined);
+  });
+
+  it("does not keep a partial or failed search: the next check asks again", async () => {
+    let calls = 0;
+    const answers: Array<{ names: string[]; complete: boolean } | undefined> = [undefined, { names: ["Nat.add_comm"], complete: false }, { names: ["Nat.add_comm"], complete: true }, { names: ["Nat.add_zero"], complete: true }];
+    const push = new LeanSearchPush({ search: async () => answers[calls++], checker: new NamesLean(SIG) });
+    const report = reportOf({ unknown: ["foo"] });
+    assert.equal(await push.section(report), undefined);
+    assert.match((await push.section(report)) ?? "", /Nat\.add_comm/);
+    assert.match((await push.section(report)) ?? "", /Nat\.add_comm/);
+    assert.equal(calls, 3);
+    await push.section(report);
+    assert.equal(calls, 3, "the complete answer is kept");
+  });
+
+  it("caches 'unknown' only when Lean says the name is unknown", async () => {
+    // A Lean that fails the whole file (say, an import) with an error that names no identifier, and later answers properly.
+    let broken = true;
+    const checker = {
+      implementation: "x",
+      version: "0",
+      calls: 0,
+      async check(snippets: ReadonlyArray<{ id: string }>) {
+        this.calls += 1;
+        return snippets.map((s) => ({
+          id: s.id,
+          status: "lean_error" as const,
+          timeMs: 1,
+          sorries: [],
+          messages: broken ? [{ severity: "error" as const, pos: { line: 1, column: 0 }, text: "unknown module prefix 'Mathlib'" }] : [{ severity: "info" as const, pos: { line: 2, column: 0 }, text: SIG["Nat.add_comm"] }],
+        }));
+      },
+    };
+    const push = new LeanSearchPush({ search: table({ foo: ["Nat.add_comm"] }).search, checker });
+    assert.equal(await push.section(reportOf({ unknown: ["foo"] })), undefined);
+    broken = false;
+    assert.match((await push.section(reportOf({ unknown: ["foo"] }))) ?? "", /Nat\.add_comm/);
+    assert.equal(checker.calls, 2, "the first answer cached nothing");
+  });
+});
+
+describe("the shape of a name", () => {
+  it("takes guillemets only as whole parts, and refuses an unbalanced one", () => {
+    for (const ok of ["Nat.add_comm", "Arxiv.«1609.08688».maximalLength_le", "«weird-name»", "x'", "f.1".replace(".1", ".a₁")]) assert.equal(isDeclarationName(ok), true, ok);
+    for (const bad of ["«x", "x»", "a«b»", "«a b»", "a..b", "a.", "x\n#eval 1", "«x»»", "«»"]) assert.equal(isDeclarationName(bad), false, bad);
   });
 });

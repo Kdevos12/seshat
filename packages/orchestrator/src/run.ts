@@ -29,7 +29,8 @@ import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
-import { LEAN_SEARCH, LeanSearchPush, RegistryLeanSearch } from "@seshat/lean-search";
+import { maskedCount } from "./mask.ts";
+import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
@@ -573,15 +574,23 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     config.leanSearch === true
       ? new LeanSearchPush({
           checker: new RegistryLeanChecker(registry, { actor: LEAN_SEARCH }),
+          // A name is hidden again only once the answer that showed it has been masked in the history (`mask.ts`); without masking, never.
+          ...(config.maskOldChecks === true ? { masked: (shownAt: number, now: number) => shownAt <= maskedCount(now) } : {}),
           search: async (request, signal) => {
             const found = await new RegistryLeanSearch(registry).search(
               { ...request, ...(config.private === true ? { private: true } : {}) },
               { actor: LEAN_SEARCH, ...(signal !== undefined ? { signal } : {}) },
             );
-            return found?.hits.map((hit) => hit.name);
+            // A backend that failed makes the answer partial, and a partial answer is not kept; one a private run left out by design is not a failure.
+            return found === undefined ? undefined : { names: found.hits.map((hit) => hit.name), complete: found.skipped.every((s) => s.reason === PRIVATE_REASON) };
           },
         })
       : undefined;
+  if (leanSearch !== undefined) {
+    // Said once, at the start: a search with no backend, or none usable, changes nothing and would otherwise do so silently.
+    const entry = (await registry.health(LEAN_SEARCH))[0];
+    if (entry === undefined || !entry.ok) log(`warning: leanSearch is on, but ${LEAN_SEARCH} has no usable backend on host ${registry.host.host}: ${entry?.detail ?? "none is set up"}; no hit will be added to the checks' answers`);
+  }
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
   // host cannot give is refused here, before `run.started` or `run.resumed` is written.
   const prices = new PriceBook(registry.host.models, o.wallClock);

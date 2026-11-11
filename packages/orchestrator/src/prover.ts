@@ -287,7 +287,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
         ...(o.editTool === true ? { editTool: true } : {}),
         ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
-        ...(o.leanSearch !== undefined ? { appendToCheck: (report, checkSignal) => (o.leanSearch as LeanSearchPush).section(report, checkSignal) } : {}),
+        ...(o.leanSearch !== undefined ? { appendToCheck: (o.leanSearch as LeanSearchPush).forSession() } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the

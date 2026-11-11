@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type HostProfile, type ImplementationFactory, loadCatalog, loadHostProfile, Registry, runContract } from "@seshat/registry";
-import { Journal, readEvents } from "@seshat/core";
+import { Journal, type Json, readEvents } from "@seshat/core";
 import { leanSearchFactory, RegistryLeanSearch } from "../src/index.ts";
 import { fakeService, json } from "./helpers.ts";
 
@@ -19,8 +19,10 @@ writeFileSync(
   ['{"name":"Nat.add_comm","type":"∀ (n m : ℕ), n + m = m + n","doc":"Addition commutes."}', '{"name":"Nat.add_zero","type":"∀ (n : ℕ), n + 0 = n"}', '{"name":"Nat.mul_comm","type":"∀ (n m : ℕ), n * m = m * n"}'].join("\n"),
 );
 
-function registryOf(settings: Record<string, string | number>, factory: ImplementationFactory, journal?: Journal): Registry {
-  const host: HostProfile = { host: "test", capabilities: { "lean.search": { use: ["search"], settings: { search: settings } } } };
+const HOSTS = ["remote.example", "pattern.example"];
+
+function registryOf(settings: Record<string, Json>, factory: ImplementationFactory, journal?: Journal): Registry {
+  const host: HostProfile = { host: "test", capabilities: { "lean.search": { use: ["search"], settings: { search: { allowedHosts: HOSTS, ...settings } } } } };
   return new Registry({ catalog, host, factories: { "lean-search": factory }, ...(journal !== undefined ? { journal } : {}) });
 }
 
@@ -87,8 +89,28 @@ describe("lean.search as a capability", () => {
   it("refuses a setting it does not know, and a service that is not https", async () => {
     const registry = registryOf({ nonsense: 1 }, leanSearchFactory());
     assert.equal(await new RegistryLeanSearch(registry).search({ query: "x", kind: "name" }), undefined);
-    const http = registryOf({ remoteUrl: "http://remote.example/s" }, leanSearchFactory());
-    assert.equal(await new RegistryLeanSearch(http).search({ query: "x", kind: "name" }), undefined);
+    // An address that cannot be used makes that backend unavailable, with its reason; the others go on.
+    const service = fakeService(() => json([{ name: "Remote.only" }]));
+    const http = registryOf({ remoteUrl: "http://remote.example/s", index: indexFile }, leanSearchFactory({ fetch: service.fetch }));
+    const found = await new RegistryLeanSearch(http).search({ query: "add_comm", kind: "name" });
+    assert.match(found?.skipped[0]?.reason ?? "", /not https/);
+    assert.equal(found?.hits[0]?.name, "Nat.add_comm");
+    assert.equal(service.requests.length, 0);
+  });
+
+  it("uses a service only at an allowed host: another host, or none allowed, makes the backend unavailable and sends nothing", async () => {
+    const service = fakeService(() => json([{ name: "Remote.only" }]));
+    const elsewhere = registryOf({ remoteUrl: "https://evil.example/s", patternUrl: "https://pattern.example/p", index: indexFile }, leanSearchFactory({ fetch: service.fetch }));
+    const found = await new RegistryLeanSearch(elsewhere).search({ query: "add_comm", kind: "name" });
+    assert.deepEqual(found?.skipped.map((s) => s.backend), ["remote"]);
+    assert.match(found?.skipped[0]?.reason ?? "", /host evil\.example is not among the allowed hosts of this profile \(remote\.example, pattern\.example\)/);
+    assert.ok(found?.used.includes("local"));
+    assert.ok(service.requests.every((r) => !r.url.startsWith("https://evil.example")));
+    const none = registryOf({ allowedHosts: [], remoteUrl: "https://remote.example/s" }, leanSearchFactory({ fetch: service.fetch }));
+    assert.match((await new RegistryLeanSearch(none).search({ query: "x", kind: "name" }))?.skipped[0]?.reason ?? "", /allowed hosts of this profile \(none\)/);
+    const health = await elsewhere.health("lean.search");
+    assert.equal(health[0]?.ok, false);
+    assert.match(health[0]?.detail ?? "", /not usable: remote: /);
   });
 
   it("keeps its contract against an index, and is offered by both profiles", async () => {
