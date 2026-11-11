@@ -95,7 +95,7 @@ to several for `decomposes_into`; its kinds are `implies`, `equiv`, `special_cas
 `instance_of`. Its `link` names the Lean lemma that makes it true, for the kinds a lemma can check
 (all but `uses`, `derived_from` and `cites`). A node is a record of any other kind (a lemma, a
 lesson, a fingerprint...): its `kind` is a short lowercase word, its `data` belongs to the package
-that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it.
+that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it. Line M11 with the option `graphs` writes two kinds, both additive ([models.md](models.md#statements-about-graphs)): `graph_hit` (a graph a program called a counterexample, its certificate's blob hash, `confirmation` `confirmed` or `unconfirmed` and, for the latter, the class of Lean's error) and `graph_search` (what a search covered: its filters, the battery's size and digest, the program's hash, the seed and bounds of a local search, the outcome `none_found`, `incomplete`, `hit` or `not_run`; evidence, never a status).
 
 A `model_call.finished` records a one-shot model call a mechanism made outside a prover session
 (a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs. Its
