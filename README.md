@@ -55,6 +55,7 @@ flowchart TB
   orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
+  graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
@@ -171,6 +172,9 @@ flowchart TB
   m11 -->|"sequences"| oeis
   m11 -->|"negation proofs"| fast
   m11 -->|"nodes, computed edges"| journal
+  m11 -->|"statements about graphs,<br/>option M11.graphs"| graphhunt
+  graphhunt -->|"nauty graphs to 10 vertices"| sage
+  graphhunt -->|"negation from the witness"| fast
   bench -->|"problems, when<br/>M8 is on"| m8
   llm -->|"hypotheses as programs,<br/>step DAGs, programs"| m8
   m8 -->|"columns and hypotheses<br/>run in"| sandbox
@@ -330,7 +334,7 @@ loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits
 like the fast check. M11: a statement of magmas or of a number is tried on batteries of small
 objects, a counter-model becomes a proof of the negation that Lean must check, and the verdicts
 give candidate edges between claims and a lookup of the numbers where it holds as a sequence
-([documentation/models.md](documentation/models.md)); it waits for a Lean server too. M6 adds the
+([documentation/models.md](documentation/models.md)); it waits for a Lean server too. With its option `graphs` (off by default) M11 also reads statements about simple graphs: a program the model writes (run in the sandbox) is tried on every graph up to isomorphism to 8 vertices, and to 10 through SageMath's nauty when the host has it; a hit becomes a Lean refutation from the templates of `lean/SeshatLib/Finite`, through `validate`, and stays evidence until Lean accepts it; "none found up to N vertices" is evidence with its filters, never a status; a local search on a model-written score and M16's program search for families go beyond the lists ([documentation/models.md](documentation/models.md#statements-about-graphs), [documentation/finite-lean.md](documentation/finite-lean.md)); the Lean templates have never been compiled, and SageMath's generator and a real model have not run. M6 adds the
 guards against hallucination and the drift detectors: neutral framing, citations that must
 resolve, no raw error text, anchored revisions, and sessions stopped when they loop
 ([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what each session

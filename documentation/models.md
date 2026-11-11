@@ -514,13 +514,62 @@ been made to a real site. The OEIS address and JSON fields (`number`, `data`, `n
 LMFDB requests and answers are guesses from theirs and are the most likely to need adjusting, which
 the contracts will show on the first host that reaches them.
 
+## Statements about graphs
+
+Plan change CA18 to CA20 (Task 41). The option `graphs` of the line (`--line-option M11.graphs=true`) is
+off by default: with it off, `harness run` and `harness solve` behave as before, a statement about
+graphs is left alone and nothing is spent. The orchestrator registers the line with the search of
+`@seshat/induction` (`createM11({graphSearch})`), since this package cannot import that one.
+
+**The rule that says a statement is about graphs** (`recognizeGraphStatement`, tried only when the statement
+is not one of magmas or of a number): a signature that mentions `SimpleGraph`, whose first binder is the type of
+the vertices (`(V : Type)`, `{V : Type*}`...), then instance binders and exactly one `(G : SimpleGraph V)`, then
+instance binders (`[DecidableRel G.Adj]`) and named hypotheses (`(h : G.Connected)`). A second variable of
+another type, a second graph, or a token the validator refuses is left alone, with the reason in the log. Nothing
+is asked of the model before the statement is read.
+
+**The programs.** One request to the model (site `models.graph.programs`, through the problem's `llm`, so the
+spend is the problem's and the budget gate applies) gives a `predicate` (a JavaScript function of a graph
+`{n, edges}` that returns true exactly when the graph is a counterexample), an optional `score` (a number, 1 or more
+exactly for a counterexample) and a `filter` (explicit data: connected only, vertex range, edge range). A predicate that gives no verdict on the
+graphs of up to 3 vertices is asked for again, twice at most. The bound is the constant `GRAPH_HUNT.modelRequests` (6
+requests for a problem, the search's rounds included; a request whose answer is malformed is retried once by
+`completeJson`, so up to 12 calls are charged). Programs run in the sandbox ([below](#the-sandbox): no network, no
+file, no process, a time per call and in all); the program of the local search and the families runs in
+[induction's](induction.md#graph-search-beyond-the-lists), the generalization of this one.
+
+**The batteries.** Every graph up to isomorphism that passes the filter: from `graphsUpToIso` up to 8 vertices, and for 9
+and 10 vertices through SageMath's nauty generator (`geng`, with `-c` and the edge range) when the host offers
+`compute.sage`; without it the filter is cut to 8 vertices and the record says so. A battery holds at most
+20 000 graphs: a vertex count whose list would pass it is not listed, and the record's filter says which vertex counts were covered.
+
+**A hit is evidence until Lean accepts it.** For the first `GRAPH_HUNT.hits` (3) graphs the predicate accepts, the harness writes the negation
+of the claim from the witness's edge list ([the templates](finite-lean.md)) and submits it through `validate`, as it does for
+a magma. Only that can change a status, and the claim becomes `refuted` only after the certifier replays it. The
+`graph_hit` node says `confirmed` (and a `refuted_by` edge, `computed`, joins it to the claim) or `unconfirmed`, with the
+class of Lean's error (`instance`, `decide_false`, `timeout`, `syntax`, `refused`, `other`); an unconfirmed hit is evidence and
+no more, and the briefing says so. The certificate is a blob of the run's store (`blobs/`, there is no other file convention in this line), named by
+the node's `certificate`: the edge list, the graph6 string, the predicate and score programs and their hash, the filters, the seed,
+the Lean refutation's attempts and a `.lean` text that uses the library.
+
+**"No counterexample" is evidence.** When every graph got a verdict and none is a counterexample, a `graph_search` node records
+the exact filters, the battery's id, size and digest and the program's hash, with the note that it is no proof and does not say the statement is true. If
+some graphs got no verdict (a program that timed out or threw), the outcome is `incomplete`.
+
+**Beyond the lists.** When nothing was found and the model gave a score, the search of `@seshat/induction` runs (a local
+search, then families), within `GRAPH_SEARCH_BOUNDS` (steps, restarts, wall time, at most 12 vertices). Its seed comes from the
+run's, the problem's and the line's name, and is journaled in the `graph_search` node with the bounds, so the search replays. A graph it
+returns goes through the same recheck by Lean.
+
+Not run: the Lean templates against a real Lean, SageMath's generator, a real model. The proofs the simulated Lean accepts in the tests are the ones it was told to accept.
+
 ## The line
 
 `M11` is the line ([lines.md](lines.md)). `packages/orchestrator/src/lines.ts` registers it, so
 `harness run --lines M11` runs it; it needs no other line, and it compares the variants of the
 problem's claim when a line such as M2 has recorded them. It looks sequences up in the table and in
 the OEIS through the registry's `oeis.search`, as `line:M11`; `createM11({oeis})` makes one that asks
-another `OeisSource` instead. It makes no model call.
+another `OeisSource` instead. It makes no model call, except for the option `graphs` (off by default), which asks the model for programs about graphs ([below](#statements-about-graphs)).
 
 | Hook | What it does |
 |---|---|
@@ -661,14 +710,15 @@ a refutation of a claim over `Type*` can ever pass; it takes a minute on a Lean 
 2. **The files of the Lean evaluator.** The text of the files (`abbrev`, the `Fin` instance from a
    `List`, `decide` on the instantiated statement) is written from what Lean 4 and Mathlib accept,
    and `pnpm harness contract lean.check` does not cover it.
+4. **The negation of a claim about graphs.** The forms of `graphNegationProofs`, and the templates they stand on: the list in [finite-lean.md](finite-lean.md#to-verify-on-a-real-lean).
 3. **The proofs of the negation of a claim over `Type`, and of a number.** The forms above with `Fin
    n`, and `@hall 7` for a number, which are tested only against a simulated Lean.
 
 ## What is not done
 
 - The adapters for SageMath have not run against a real SageMath.
-- A statement about groups, graphs or any other structure has no Lean evaluator: a program in
-  JavaScript is the evaluator for those.
+- A statement about groups or any other structure has no Lean evaluator: a program in
+  JavaScript is the evaluator for those. A statement about graphs is tried by a model-written program, and its hits are checked by Lean ([above](#statements-about-graphs)); that check, and the templates it uses, have never run against a real Lean.
 - Magmas of size 4 are sampled, never listed. Groups of order 16 and above are partly built.
 - No run of the line has used a real model or a real Lean. The proofs of negations that its tests
   accept are the ones the simulated Lean was told to accept; whether Lean accepts them is the first

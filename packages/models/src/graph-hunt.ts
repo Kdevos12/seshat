@@ -35,7 +35,17 @@ export const GRAPH_HUNT = {
 } as const;
 
 /** The bounds of the search beyond the lists (CA20): names, and the values the line uses. */
-export const GRAPH_SEARCH_BOUNDS = {
+export interface GraphSearchBounds {
+  steps: number;
+  restarts: number;
+  wallMs: number;
+  maxVertices: number;
+  neighbors: number;
+  familyParameters: readonly number[];
+  hitScore: number;
+}
+
+export const GRAPH_SEARCH_BOUNDS: GraphSearchBounds = {
   /** Steps of one climb, restarts, and the wall time of the whole search in milliseconds. */
   steps: 120,
   restarts: 6,
@@ -48,7 +58,7 @@ export const GRAPH_SEARCH_BOUNDS = {
   familyParameters: [1, 2, 3, 4, 5, 6, 7, 8],
   /** A graph whose score reaches this is a counterexample. */
   hitScore: 1,
-} as const;
+};
 
 /** The explicit data that choose the graphs a program is tried on; recorded with every result. */
 export type GraphFilter = {
@@ -139,7 +149,7 @@ export interface GraphSearchInput {
   filter: GraphFilter;
   /** The seed of every draw, taken from the run's; journaled with the result. */
   seed: number;
-  bounds: typeof GRAPH_SEARCH_BOUNDS;
+  bounds: GraphSearchBounds;
   /** The model, through the line's access: every request is counted against the problem's cap. */
   llm: Llm;
   requestsLeft: () => number;
