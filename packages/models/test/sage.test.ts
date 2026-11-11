@@ -60,6 +60,24 @@ describe("batteries read from SageMath", () => {
     assert.deepEqual(battery.generator, { name: "sage-geng", params: { vertices: 7, flags: "" } });
   });
 
+  it("with a cap, reads one slice of the generator, with the timeout, the connectivity flag and the edge range", async () => {
+    const asked: Array<{ code: string; timeoutSec: number | undefined }> = [];
+    const run: SageRun = async (code, options) => {
+      asked.push({ code, timeoutSec: options?.timeoutSec });
+      return "['Bw', 'BW']";
+    };
+    const battery = await sageGraphBattery(run, { vertices: 3, flags: "-c", edges: { min: 2, max: 3 } }, undefined, { maxObjects: 50, timeoutSec: 300 });
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0]?.timeoutSec, 300);
+    assert.match(asked[0]?.code ?? "", /islice\(graphs\.nauty_geng\("3 -c 2:3"\), 51\)/);
+    assert.equal(battery.id, "graphs:geng:3 -c 2:3");
+    assert.deepEqual(battery.generator.params, { vertices: 3, flags: "-c", edges: [2, 3] });
+    // Over the cap: refused after the one call.
+    const calls: string[] = [];
+    await assert.rejects(sageGraphBattery(async (code) => { calls.push(code); return "['Bw', 'BW', 'Bo']"; }, { vertices: 3 }, undefined, { maxObjects: 2 }), /more than 2 graphs/);
+    assert.equal(calls.length, 1);
+  });
+
   it("passes geng's flags, and refuses anything else", async () => {
     const asked: string[] = [];
     const battery = await sageGraphBattery(async (code) => {
