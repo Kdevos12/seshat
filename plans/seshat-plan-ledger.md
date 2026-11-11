@@ -53,8 +53,8 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 38 | Refinement rounds and the repair pass (CA12, CA13) | main | not started | | after 37 |
 | 39 | An informal proof first, roles, sampling settings per role (CA14, CA15, CA23) | main | not started | | after 38 |
 | 40 | `lean.search`, pushed by the harness (CA22) | main | on the branch (`922341a`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | Off by default (`--lean-search`); not yet in `v2`. Only the name and the signature Lean printed for `#check` are shown; backend text never is. Without `--private` a hole's goal goes to the remote and pattern services (consent for `solve` is Task 36b). The wire formats of the two services and the allowed hosts in the profiles are guesses. Not run against a real Lean, search service or index. |
-| 41 | Counterexamples on finite structures (CA18 to CA20) | main | reviewed, fix round 1 | `claude/project-thread-h60gyw` | |
-| 42 | The consolidation pass between runs (CA24) | main | not started | | after 35 |
+| 41 | Counterexamples on finite structures (CA18 to CA20) | main | on the branch (`a4f4c39`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | Off by default (option `graphs` of line M11); not in `v2`. A hit of a program or of Sage is evidence; the claim is `refuted` only when Lean proves the negation of the run's own statement through `validate`. The Lean recheck covers graphs of at most 8 vertices and rests on `decide` over the claim's own predicates, so hits on Mathlib's `Connected` or on Hamiltonian cycles will often stay unconfirmed; a hit Lean did not confirm is told to the provers as labelled evidence. The templates of `lean/SeshatLib/Finite` have never been compiled: to check on a real Lean the shape of `loopless` on the pinned Mathlib, instance resolution through the graph abbreviation, and the kernel's time on `decide` for Mathlib's `Connected`. First follow-up on a real Lean: bridge lemmas to Mathlib's predicates. Not run against a real Lean, Sage or model. |
+| 42 | The consolidation pass between runs (CA24) | main | implementing | `claude/project-thread-h60gyw` | after 35 |
 | 43 | The reverie line (CA25) | main | not started | | after 37, 41 and 42 |
 | 44 | Teacher memory (CA26) | main | not started | | last |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
@@ -438,6 +438,12 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `packages/guards`: M6's options `repeatRule` and `detectors`. `packages/orchestrator`: `RunConfig.stateCard?`,
   `budgetRounds?`; `rounds.ts`; a check's answer is Lean's text, then the `lean.search` section, then a line's notice.
   Documented in m0-loop.md, guards.md, scheduler.md, journal.md.
+- Task 41, on the same branch at `a4f4c39` (2026-11-11): line M11 gains the option `graphs` (off by default) and the
+  services `graphSearch` and `sage`; new memory node kinds `graph_hit` and `graph_search` (`documentation/journal.md`); a
+  `refuted_by` edge is `computed` only after Lean accepted the negation; `packages/models` exports `splitSignature`,
+  `Binder` and `TYPE_SORT`, and `sageGraphBattery` takes an optional `maxObjects`; `packages/orchestrator/src/lines.ts`
+  registers M11 with the graph search; new Lean files `lean/SeshatLib/Finite/Graph.lean` and `Witness.lean`
+  (`documentation/finite-lean.md`). No defaults set changed.
 
 ## Log
 
@@ -876,3 +882,6 @@ Tasks 33 to 44 (2026-11-11): Task 36 merged at `75638fd` (review: no Critical or
 Task 36: minor (deferred): the judge call without a budget gate; the test lemmas run twice with `--intake`; `run.ts` grew by the intake block; `--auto-tool` names `compute.sage` in code.
 Task 40: minor (deferred): the push counts checks only when it is called while masking counts every check; `allowedHosts` is compared case-sensitively; a candidate that Lean answers with neither a signature nor an unknown-identifier error is verified again at every check; a shared guarded HTTP client for `lean-search`, `lit` and `decide`.
 Task 35: minor (deferred): the rotation's wiring grew `run.ts` by about 140 lines; `solve-command.ts` prints the lines of `v2` from its own copy of the rule.
+
+Tasks 33 to 44 (2026-11-11, later): Task 41 merged at `a4f4c39` (review: trust path sound, three Important findings: the Sage time limit is now applied and the 10-vertex battery no longer lists the graphs again for each slice; a search that throws now leaves its node, so a resume does not skip it; the submitted refutation relies on `decide` over the claim's own predicates, so a hit on a claim about Mathlib's `Connected` or a Hamiltonian cycle will often stay unconfirmed until bridge lemmas exist: documented, and an unconfirmed hit is handed to the provers as labelled evidence, smallest hits first, at most 8 vertices), `pnpm check` 2856 tests, 0 fail, 1 skipped. Task 36b (the third-party policy behind `--private`) reviewed: no path that sends in a private run or without consent was found; its fix round adds the tests the review asked for (a private run with M11 calling `oeis.search`, the forced form of `lit.search`, a resumed consent) and strips control characters from the consent question. Tasks 37 and 42 are being written.
+Task 41: minor (deferred): `graph-hunt.ts` mixes the battery, the prompt, the records and the briefing (split at the final review); no test tries a socket or a file read in the sandbox; a search that always throws is retried at every resume or turn with no counter; a hit's report line is clipped at 240 characters, which can cut the certificate hash; the capped Sage path relies on the compute capability returning the last expression; the briefing of an unconfirmed hit carries 160 characters of Lean's reason besides the class.
