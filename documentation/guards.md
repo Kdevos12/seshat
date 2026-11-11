@@ -186,6 +186,7 @@ the proof; none of those is counted.
 - The **fourth** occurrence (and any after it) ends the session (`stoppedBy: line:M6`), records a `drift` node of action `stopped_session` with
   the reason in `detail` (`the failure ... with the strategy ... was seen 4 times on the problem`), and the next session is told in "Course
   change". The run's report lists these reasons ("Sessions ended by the repeat rule").
+- A probe of the budget gate ([scheduler.md](scheduler.md#the-budget-gate)) whose session this rule ended is not finished: it runs one more session, the one that is told, before the gate judges it.
 - Other detectors act first when they have a finding on the same check, but the pair is counted all the same.
 
 The option `repeatRule` is off by default, so a run with `--lines M6` is what it was; it is on only where a configuration sets it. It is active

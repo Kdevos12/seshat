@@ -111,6 +111,49 @@ describe("the budget gate: before a session", () => {
     assert.equal(ofType(events, "attempt.started").length, 2);
   });
 
+  describe("a probe session the repeat rule ended", () => {
+    const REPEAT = { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true };
+    const config = { ...WIDE, lines: ["M6"], lineOptions: { M6: REPEAT }, gate: { floor: 0 } };
+    const stops = (events: readonly HarnessEvent[]) => ofType(events, "attempt.finished").map((a) => a.data.stoppedBy);
+
+    it("runs one more session, told to change approach, before the gate judges: it can solve the problem", async () => {
+      const { events, result } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("exact trivial_proof")],
+        config,
+      });
+      assert.deepEqual(stops(events), ["line:M6", "solved"]);
+      assert.equal(result.problems[0]?.outcome, "candidate");
+      assert.equal(gates(events)[0]?.action, "probe");
+    });
+
+    it("gets no third: a second stop by the repeat rule ends the probe, and the gate judges as before", async () => {
+      const { events, result } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("bad 4"), check("bad 5")],
+        config,
+      });
+      assert.deepEqual(stops(events), ["line:M6", "line:M6"]);
+      assert.equal(ofType(events, "attempt.started").length, 2);
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(result.problems[0]?.outcome, "unsolved");
+    });
+
+    it("keeps the probe's spending within its cap", async () => {
+      const { events } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("bad 4"), check("bad 5")],
+        pricePerMillion: 5,
+        config,
+      });
+      const usd = ofType(events, "attempt.finished").reduce((sum, a) => sum + (a.data.usd ?? 0), 0);
+      assert.ok(usd <= 0.1 + 0.02, `the probe spent ${usd}`);
+    });
+
+    it("is not given to a probe another cause stopped", async () => {
+      const { events } = await demoRun({ responses: [check("bad"), say("notes")], config });
+      assert.deepEqual(stops(events), ["model"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+  });
+
   it("is off without the option: no answer, no probe, the provers start together as before", async () => {
     const { events } = await demoRun({ responses: [check("bad"), say("n"), check("bad"), say("n")], config: { provers: 2, sessions: 1 } });
     assert.deepEqual(gates(events), []);

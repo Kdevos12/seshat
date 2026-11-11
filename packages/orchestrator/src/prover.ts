@@ -189,7 +189,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
 
   // The probe's cap is its own ledger's: running into it pauses the prover, running into the problem's budget ends it.
   const budgetStop = (): ProverStop => o.slice?.() === true ? "slice" : (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
-  const lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
+  let lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
+  let probeExtended = false;
   for (let session = (resumed?.session ?? 0) + 1; session <= lastSession; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done(budgetStop());
@@ -459,6 +460,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     o.transcript?.(attemptId, result.messages);
 
     if (result.stop === "turn") return done("turn");
+    // A probe session the repeat rule ended has not told the gate anything: the session that is told to change approach runs, once, under the probe's ledger.
+    if (o.probe !== undefined && !probeExtended && outcome !== "valid" && result.lineCause === "repeated_failure" && lastSession < o.sessions && session === lastSession) {
+      probeExtended = true;
+      lastSession += 1;
+    }
     switch (outcome) {
       case "valid":
         return done("solved");

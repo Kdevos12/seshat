@@ -133,6 +133,8 @@ export interface SessionOptions {
 
 export interface SessionResult {
   stop: SessionStop;
+  /** Why the line that ended the session did (`stop` is `line:<id>`): `repeated_failure` for M6's repeat rule. */
+  lineCause?: string;
   turns: number;
   cost: TokenCost;
   /** The model's final message, when it ended the session itself or was asked for its notes. */
@@ -171,6 +173,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let wrappingUp = false;
   let last: AssistantMessage | undefined;
   let lineStop: `line:${string}` | undefined;
+  let lineCause: string | undefined;
   let lineNotice: string | undefined;
   /**
    * A line's hook failed. A line that wanted a model call after the consortium turn ended has not failed:
@@ -251,7 +254,10 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
             ...(result.validationId !== undefined ? { validationId: result.validationId } : {}),
             accepted: result.accepted,
           });
-          if (stop?.reason !== undefined) lineStop = `line:${stop.line}`;
+          if (stop?.reason !== undefined) {
+            lineStop = `line:${stop.line}`;
+            lineCause = stop.cause;
+          }
           else if (stop?.notice !== undefined) lineNotice = stop.notice;
         } catch (error) {
           lineFailed(error);
@@ -449,6 +455,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     }
     return {
       stop,
+      ...(stop === lineStop && lineCause !== undefined ? { lineCause } : {}),
       turns,
       cost,
       notes,
