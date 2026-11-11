@@ -62,7 +62,7 @@ the run is paused, and `harness resume` goes on. The configuration is recorded (
 The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
 (`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), when the Lean server cannot import the libraries of the environment that line M17 puts the run in
 (`lean_environment`; a run in an environment through the host's `LEAN_ENV` alone is not probed: [lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)), or after three problems in
-a row ended with a harness error (`errors`). The reason is in `run.finished`.
+a row ended with a harness error (`errors`), or at once when the model provider refuses a request for good (`provider_refused`: a status 401, 402 or 403, an empty balance, a key it does not accept; a 429, a 5xx or a timeout is not one). The reason is in `run.finished`; `RunResult.providerRefusal` carries the provider's text.
 
 A run whose process ended without a `run.finished` (a kill, a crash, a usage limit) is continued by
 `resumeBench`, from its journal and the run directory alone: it checks that what resumes is what

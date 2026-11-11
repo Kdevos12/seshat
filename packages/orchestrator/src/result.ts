@@ -151,6 +151,7 @@ export function stopWords(reason: string): string {
     budget_exhausted: "the dollar budget ran out",
     aborted: "the run was stopped (Ctrl-C, a kill, or a problem cut before its end)",
     errors: "three problems in a row ended with a harness error, or the run crashed",
+    provider_refused: "the model provider refused the request (a balance, a key): the run stopped",
     lean_unavailable: "the Lean server could not be reached",
     lean_environment: "the Lean server cannot import the libraries of the run's environment",
     tokens: "the turn's token limit was reached",

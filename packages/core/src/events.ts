@@ -163,7 +163,8 @@ export interface EventDataMap {
     /**
      * Why the run stopped before its last problem: `aborted`, `budget_exhausted`, `lean_unavailable`,
      * `lean_environment` (the Lean server cannot import the environment's libraries), or
-     * `errors` (problems ended with a harness error in a row).
+     * `errors` (problems ended with a harness error in a row), or
+     * `provider_refused` (the model provider refused the request for good: a balance, a key).
      */
     stopped?: string;
   };

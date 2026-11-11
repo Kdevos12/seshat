@@ -1,6 +1,7 @@
 import type { AblationResult, ArmResult } from "./ablation.ts";
 import type { CacheStat } from "./cache-report.ts";
 import type { Share } from "./measures.ts";
+import { refusalLine } from "./provider-errors.ts";
 import { labelLines, type RunLabel } from "./run-label.ts";
 import { agreement } from "./reliability.ts";
 
@@ -25,6 +26,13 @@ export function renderAblation(result: AblationResult): string {
   const out: string[] = [
     "# Ablation",
     "",
+    ...(result.refusal === undefined
+      ? []
+      : [
+          `**This comparison is not valid.** ${refusalLine(result.refusal.reason)} (arm ${result.refusal.arm}). ` +
+            `${result.refusal.arm}${result.refusal.notRun.length > 0 ? ` and ${result.refusal.notRun.join(", ")}` : ""} did not reach the model for good, so no arm is set against another, and there is no verdict on the target.`,
+          "",
+        ]),
     ...labelLines(result.label),
     `Bench ${result.benchId}; model ${result.model}; ${result.problems.length} problem(s)${result.buildProblems !== undefined ? ` measured on a memory built on ${result.buildProblems.length} others` : ""}; ` +
       `${result.provers} prover(s) of at most ${result.sessions} session(s) and ${money(result.budget.problemUsd, 2)} per problem in every configuration. `,
@@ -52,6 +60,8 @@ export function renderAblation(result: AblationResult): string {
     "",
     "Solved: problems with a Lean-checked proof, certified or a candidate; the dollars and tokens per solve divide by it. A configuration that is set against another is read below.",
     "",
+    ...(result.refusal === undefined ? [] : ["The arms above finished before the refusal; their rows are kept as they stand."]),
+    ...(result.refusal === undefined ? [] : [""]),
     ...protocol(result),
     "## Does it beat the one before it",
     "",

@@ -29,6 +29,7 @@ import { buildReport, renderRunReport } from "./report.ts";
 import { writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, solveCommand } from "./solve-command.ts";
+import { refusalLine } from "./provider-errors.ts";
 import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
@@ -906,7 +907,7 @@ async function ablate(): Promise<number> {
   };
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
   const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, hostName(values.host))) : undefined;
-  await ablateCommand({
+  const ablated = await ablateCommand({
     ...(hostProfile !== undefined ? { host: { capabilities: hostProfile.capabilities, ...(hostProfile.checkTimeoutSec !== undefined ? { checkTimeoutSec: hostProfile.checkTimeoutSec } : {}) } } : {}),
     template: runTemplate(index, checkout, stoppable()),
     config,
@@ -925,6 +926,10 @@ async function ablate(): Promise<number> {
     print: (line) => process.stdout.write(`${line}\n`),
   });
   console.log(`Ablation directory: ${dir}`);
+  if (ablated.refusal !== undefined) {
+    console.error(`${refusalLine(ablated.refusal.reason)}: the comparison is not valid`);
+    return 1;
+  }
   return 0;
 }
 
