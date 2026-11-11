@@ -37,6 +37,7 @@ code and long descriptions live in their own files.
 | `produces`, `certificate` | Claim statuses a result can justify; `proved` and `refuted` need a `certificate` saying what makes the result trustworthy. |
 | `timeoutMs` | Default time limit of one call. |
 | `timeoutField` | A number field of the input, in seconds, that sets the tool's own time limit; the registry then allows that plus 15 seconds. |
+| `thirdParty` | Optional. What the capability sends to a party other than the model provider, see [Third parties](#third-parties). Absent: nothing leaves the machine. |
 | `stateful` | `true` when calls keep state between them, such as the variables of a computer algebra session ([scopes](#scopes)). |
 | `summary` | Paths of the output recorded in each tool run, such as `results.*.status`. |
 | `examples` | Inputs with their outputs, shown to models. |
@@ -55,6 +56,42 @@ are unique, every example and every contract input is valid for the schemas, sum
 expectation paths parse, every regular expression compiles, the MCP implementations of a stateful
 capability name their scope argument (and only theirs do), and `timeoutField` is a number field of
 the input with both bounds. All problems of the catalog are reported together.
+
+### Third parties
+
+A capability that sends content of the problem to a party other than the model provider says so in
+its manifest, in the optional field `thirdParty`:
+
+```json
+"thirdParty": { "sends": "the terms of a sequence, or its number, to the OEIS" }
+```
+
+| Field | Meaning |
+|---|---|
+| `sends` | What leaves, in a few words. It is what the refusal and the consent question say. |
+| `implementations` | The implementations that send it; absent: every one does. The others stay usable in a private run (`decide.ask`: `jev` sends, `faux` does not). |
+| `privateInput` | Input fields that make the call stay on the machine, when the capability can answer locally (`lean.search`: `{"private": true}`; `lit.search`: `{"backends": ["bench-metadata"]}`). Absent: the capability cannot work locally. |
+
+The marked capabilities are `oeis.search`, `lmfdb.query`, `findstat.identify`, `lit.search`,
+`lean.search` and `decide.ask`; [trust.md](trust.md#third-parties) says what each sends and what governs it. The
+field is additive: a manifest, or a pack, without it loads as before and sends nothing outside as far as the
+harness knows (a pack's manifest is its author's word, which is one more reason a pack is `deferred`
+and asked for by name).
+
+The rule is the registry's, in one place. A run calls `registry.restrictThirdParties({ private: true })` once, from
+`--private`, and `{ local: ["lean.search"] }` when the person did not agree to the statement going outside
+([lean.md](lean.md#search-pushed-by-the-harness)); the policy only ever tightens. From then on, in `invoke`, before any
+implementation is reached:
+
+- a capability with `privateInput` is called with those fields added to the input, whatever the caller gave, so no caller can forget it;
+- otherwise the call goes only to the implementations that do not send, and with none left it is refused with the error
+  code `private`, whose message names `--private`. The refusal is a tool run that never reached an implementation: `tool_run.started`
+  and `tool_run.finished` with the outcome `error` and the summary `error: "private"`. `registry.thirdPartyRefusal(id)` says in advance,
+  without calling, whether every call would be refused (`harness solve --private --tool oeis.search` stops on it, before any spend).
+
+A refusal is not `unavailable`: a caller does not retry it and a model's tool does not mark the tool as gone for the session. The lines
+that call a third-party capability (`RegistryOeis`, the tools given with `--tool`) already go on without an answer they cannot get, and
+take the refusal the same way.
 
 ### Schemas
 
@@ -181,6 +218,7 @@ are `CapabilityError`s:
 |---|---|---|
 | `unknown_capability` | No such manifest. | none |
 | `invalid_input` | The input breaks the schema, or a call of a stateful capability has no scope. | none |
+| `private` | The run is private (`--private`), or a person did not agree to the statement going outside, and the capability sends it to a third party and cannot work locally ([third parties](#third-parties)). | `error`, with the summary `error: "private"`; no implementation was called |
 | `unavailable` | The host does not offer the capability, or no implementation could be reached. | `error`, for each one tried |
 | `timeout` | The time limit passed. | `timeout` |
 | `aborted` | The caller's signal aborted, for instance when a budget ran out. | `aborted` |

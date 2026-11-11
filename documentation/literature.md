@@ -92,9 +92,9 @@ The statement (the words of it, not its Lean syntax) goes to the backends and, w
 - for **`harness solve`** it runs only when the person has agreed: asked once and journaled (`intake.consented`, `via: "asked"`), or in a call
   that cannot ask (no terminal, `--yes`) by `--lit` (`via: "flag"`); no flag and no answer is no (`via: "default"`);
 - **`--private`** (`private: true`) wins over everything: the literature step is skipped with the reason `private`, the
-  consent is journaled as `via: "private"` and never allowed, and a run that also asks Jev for decisions is refused. The hygiene checks are Lean's
+  consent is journaled as `via: "private"` and never allowed (it also governs `lean.search`: without a yes, the registry keeps it to its local backends), and a run that also asks Jev for decisions is refused. The hygiene checks are Lean's
   and stay on the machine.
-  `--private` today turns the literature search off and refuses a run that asks a third-party decision model; it does not yet block the other capabilities that call third-party sites (the OEIS, LMFDB and FindStat capabilities), which a run uses only if its lines are enabled.
+  `--private` is one rule for every capability that sends content of the problem to a third party, enforced by the registry ([trust.md](trust.md#third-parties)); it also turns the literature search off and refuses a run that asks a third-party decision model.
 
 ### What stops a run
 

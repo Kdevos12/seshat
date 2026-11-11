@@ -21,6 +21,7 @@ import {
   verifyChain,
 } from "@seshat/core";
 import type { JsonObject, ResumedProblem } from "@seshat/lines";
+import type { IntakeConfig } from "./intake.ts";
 import { messageOf } from "@seshat/registry";
 import type { TaskLedger } from "@seshat/scheduler";
 import { chargedTotals } from "./budget.ts";
@@ -94,6 +95,23 @@ function problemIdsOf(dir: string): string[] | undefined {
   }
 }
 
+/**
+ * The intake section as `runBench` recorded it, with its consent: a resumed run applies the answer on third parties the run was started with
+ * (a no keeps `lean.search` local), so it must be read back. Only the fields the section has are kept.
+ */
+function intakeOf(recorded: unknown): IntakeConfig | undefined {
+  if (typeof recorded !== "object" || recorded === null || Array.isArray(recorded)) return undefined;
+  const r = recorded as Record<string, unknown>;
+  const consent = r.consent as { allowed?: unknown; via?: unknown } | undefined;
+  const validConsent = consent !== undefined && typeof consent.allowed === "boolean" && (consent.via === "asked" || consent.via === "flag" || consent.via === "bench");
+  return {
+    ...(r.literature === true ? { literature: true } : {}),
+    ...(r.hygiene === true ? { hygiene: true } : {}),
+    ...(typeof r.capUsd === "number" ? { capUsd: r.capUsd } : {}),
+    ...(validConsent ? { consent: { allowed: consent.allowed as boolean, via: consent.via as "asked" | "flag" | "bench" } } : {}),
+  };
+}
+
 /** The run's configuration, as `runBench` recorded it in `run.started`. */
 function configOf(recorded: unknown): RunConfig {
   const missing = (what: string): never => {
@@ -130,6 +148,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
+    ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"
       ? { prompts: { proverSystem: (r.prompts as { proverSystem: string }).proverSystem } }
