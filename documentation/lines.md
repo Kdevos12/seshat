@@ -457,6 +457,8 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
 The result gives the verdict, the `validation.finished` id when the check was recorded, the claim's
 status after the check, the reasons, and the validator's report.
 
+`ProblemContext.holeSession` and `holePreflight` (M12 only, optional): a session with tools on a claim's small file, and the pre-flight tests of a claim ([scheduler.md](scheduler.md#hole-sessions-plan-change-ca10)). `TaskBudget.turns` is the bound of a session in responses.
+
 ## Scheduling
 
 One line may give the `schedule` hook (M12). The orchestrator runs a step at two points of a problem:
