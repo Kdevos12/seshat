@@ -262,7 +262,7 @@ export function createM6(env: M6Env = {}): Line {
       });
       const notice = noticeFor("repeated_failure", { error: r.error, strategy: r.label, times: r.times });
       if (notice !== undefined) proverState(run, session.problemId, session.prover).notices.push(notice);
-      return { stop: detail };
+      return { stop: detail, cause: "repeated_failure" };
     }
     return undefined;
   }

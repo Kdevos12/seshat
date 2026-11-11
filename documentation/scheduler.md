@@ -272,6 +272,8 @@ progress, so M18's variants hasten the move to the next rung; a proved variant i
 
 Task 29 (PB1 to PB5 of `plans/plan-change-proportional-budgets.md`, Ruling 31). Before this, a problem spent its whole budget whatever its chance of success was: every prover started at once and every session ran until the budget stopped it. The gate puts a price against a chance before each paid launch. It is **off by default** (`harness run --gate`, `RunConfig.gate`); without it nothing here applies and the run is as it was. The rule and the probe live in `@seshat/scheduler` (`gate.ts`), the orchestrator applies them (`budget-gate.ts`), and the answer is journaled as `budget.gated` ([journal.md](journal.md)).
 
+**A probe the repeat rule stopped.** A probe whose one session was ended by M6's repeat rule ([guards.md](guards.md#the-repeat-rule); the session result carries `lineCause: "repeated_failure"`) runs one more session, the one that is told to change approach, under the same probe ledger, so the probe's cap in dollars is unchanged; only then does the gate judge it. At most one such session per probe: a second stop by the repeat rule, or a stop by any other cause, leaves the probe as it was.
+
 **The rule (PB1).** A launch has an estimate (dollars, from the mean cost of the sessions already paid on the problem, or a first guess when there are none) and the claim's chance of success, a Thompson draw from its success posterior ([fleet.md](fleet.md#posteriors)). The launch goes ahead when
 
 ```

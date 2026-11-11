@@ -221,7 +221,7 @@ export interface SessionHooks {
   /** Before each check: the line that rejects the call, and why. */
   beforeCheck?: (proposal: Proposal) => Promise<{ line: LineId; reason: string } | undefined>;
   /** After each check: the line that stops the session, and why. */
-  afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason?: string; notice?: string } | undefined>;
+  afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason?: string; cause?: string; notice?: string } | undefined>;
 }
 
 /** The lines of one problem: each line's context, and the hooks at each point of the problem. */
@@ -605,7 +605,7 @@ export class ProblemLines {
                 const decision = await call(id, "afterCheck", () => hook(this.sessionContext(entry, info), check));
                 if (decision?.stop !== undefined) {
                   this.log(`${info.prover} session ${info.session}: line ${id} stops it: ${decision.stop}`);
-                  return { line: id, reason: decision.stop };
+                  return { line: id, reason: decision.stop, ...(decision.cause !== undefined ? { cause: decision.cause } : {}) };
                 }
                 if (decision?.notice !== undefined) {
                   notices.push(decision.notice);
