@@ -365,7 +365,7 @@ in `@seshat/lean-search`, version `backends-1`) runs the backends the host profi
 | `pattern` | `patternUrl` (`LEAN_PATTERN_URL`) | a Loogle-like service (`GET` with `q`), or, when no address is set, a match of a goal's conclusion over the index |
 
 Each is optional; none set up is a capability that answers no hit (`harness health lean.search` says `warn`: the profiles mark it optional).
-A service is reached over https only, with no credentials in its address, no redirect followed, an answer read up to 256 KB and 8 s of
+A service is reached over https only, at a host of the `allowedHosts` setting (none listed: no service), with no credentials in its address, no redirect followed, an answer read up to 256 KB and 8 s of
 waiting (`timeoutSec`, `maxResponseBytes`); one that fails is `skipped` and the others still answer. With `private` set no backend that
 sends the query to a third party is asked: `remote` is skipped, and `pattern` falls back to the index when there is one. The answer holds
 names only: what a backend says besides (types, doc strings) ranks inside the index and goes no further. Its contract has 2 cases (names
