@@ -93,7 +93,7 @@ HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and do
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
-Intake (documentation/literature.md; off unless asked): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
+Intake (documentation/literature.md; off unless asked, except in solve with --defaults v2, which turns on the intake, --auto-tool and --lean-search; --no-intake, --no-auto-tool and --no-lean-search turn one off and only matter with v2): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
 the literature (lit.search) for each bench problem, with one judge call under --intake-usd (default 0.05); a settled hit or a vacuous statement is a breakpoint in a run
 with a person. For solve the literature needs your agreement: asked once and journaled, or --lit (which also turns --intake on) in a call that cannot ask; no answer
 is no. --private sends nothing to a third party (documentation/trust.md; a pack whose manifest does not declare thirdParty is not checked): the literature is off, lean.search keeps to its local backends, the OEIS, LMFDB and FindStat capabilities are refused, a run that asks a third-party decision model is refused, and solve --tool naming one of them stops before any spend (it wins over --lit and --intake). With --lean-search, solve asks the same one question as for the literature (--lit is the yes; --yes alone is no, and lean.search then stays local). solve --tool ID gives the provers that capability (as run
@@ -103,7 +103,7 @@ the proposition) or prose, or a file holding one. Prose is formalized by the che
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
 whole budget, the formalization included; the budget gate, probe first and the classical lines M1 and M10 are on; a turn stops, with its
 account, at half the allowance (--turn-usd). --defaults picks the set of defaults: v2 (the default) adds the edit tool, the masking of old
-check results and bounded checks to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
+check results, bounded checks, the intake gate, the compute tool and lean.search (when the host offers them) to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
 model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
 config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
 report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run

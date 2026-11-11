@@ -177,7 +177,7 @@ certifier is unavailable: every candidate stays a candidate and its problem says
 ## Search pushed by the harness
 
 Plan change CA22, Task 40; `@seshat/lean-search`, the capability `lean.search` ([capabilities.md](capabilities.md#leansearch)), the option
-`RunConfig.leanSearch` (`harness run --lean-search`, `harness solve --lean-search`; off in `harness run` and in both `solve` defaults sets).
+`RunConfig.leanSearch` (`harness run --lean-search`, `harness solve --lean-search`; off in `harness run`; on in `harness solve`'s set `v2` when the host offers `lean.search`, through `SOLVE_SWITCHES`, and off in `v1`).
 Agents ignore lookup tools they must call, and hallucinated names are a third to a half of cheap models' errors: so the harness itself
 searches, and puts what it finds into the answer to the check.
 
@@ -237,7 +237,7 @@ service, so `lean.search` is marked `thirdParty` with the private form `{"privat
 that input to every call of a run that is private (`RunConfig.private`, `--private`) or that has no journaled yes: the call says `private`, the
 implementation does not ask them, and `pattern` falls back to the index when there is one. A caller cannot forget it, and a direct registry call
 without the field sends nothing either. The local index never leaves the machine. Without either, in `harness run` (bench problems are public) the
-services are on. In `harness solve`, `--lean-search` brings the question asked once for the literature, worded with the hosts the profile allows;
+services are on. In `harness solve`, `--lean-search` (and the defaults set `v2`, which turns it on when the host offers `lean.search`; `--no-lean-search` turns it off) brings the question asked once for the literature, worded with the hosts the profile allows;
 the answer is journaled as `intake.consented`, `--lit` is the non-interactive yes, `--yes` or `--ask-stdin` without `--lit` is no, and a resumed run
 reads the journaled answer. With a no, `lean.search` runs with its local backends only.
 

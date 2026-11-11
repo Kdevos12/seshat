@@ -97,14 +97,25 @@ recorded in the run's configuration (`defaults` in `config.json` and in `run.sta
 | Set | What it is |
 |---|---|
 | `v1` | What `solve` did before the sets: the table above and nothing else. Kept so that a result can be compared with, or reproduced under, the older defaults. |
-| `v2` (default) | `v1` plus five options of `harness run`, which are off in `harness run` itself, and one line: `editTool` (the prover edits its last file with `lean_edit` instead of rewriting it, [m0-loop.md](m0-loop.md#the-edit-tool)), `maskOldChecks` (check results older than the last four are sent as their one-line summary, in batches of four, [m0-loop.md](m0-loop.md#masked-old-checks)) and `checkTimeoutSec` (the provers' Lean checks are bounded at the host's `checkTimeoutSec`, default 120 s, [lean.md](lean.md#bounded-checks)), `stateCard` (each session opens with a card built from the journal, notes limited to 1500 characters, [m0-loop.md](m0-loop.md#the-state-card)) and `budgetRounds` (a run's budget shared in rounds among its problems, [scheduler.md](scheduler.md#the-budget-in-rounds); it acts only on a run of several problems and does nothing for `solve`'s one problem). `v2` also adds line M6 with its mechanical repeat rule only (no detector, no model call, [guards.md](guards.md)): the third occurrence of the same failure tells the prover to change approach and the fourth ends the session. |
+| `v2` (default) | `v1` plus five options of `harness run`, which are off in `harness run` itself, and one line: `editTool` (the prover edits its last file with `lean_edit` instead of rewriting it, [m0-loop.md](m0-loop.md#the-edit-tool)), `maskOldChecks` (check results older than the last four are sent as their one-line summary, in batches of four, [m0-loop.md](m0-loop.md#masked-old-checks)) and `checkTimeoutSec` (the provers' Lean checks are bounded at the host's `checkTimeoutSec`, default 120 s, [lean.md](lean.md#bounded-checks)), `stateCard` (each session opens with a card built from the journal, notes limited to 1500 characters, [m0-loop.md](m0-loop.md#the-state-card)) and `budgetRounds` (a run's budget shared in rounds among its problems, [scheduler.md](scheduler.md#the-budget-in-rounds); it acts only on a run of several problems and does nothing for `solve`'s one problem). `v2` also adds line M6 with its mechanical repeat rule only (no detector, no model call, [guards.md](guards.md)): the third occurrence of the same failure tells the prover to change approach and the fourth ends the session. Three more additions are `solve`'s own switches, not `RunConfig` fields of the set (`SOLVE_SWITCHES` in `student.ts`, beside `DEFAULTS_SETS`; `harness doctor` and the line `solve` prints at its start list them from that table): the **intake gate** (the statement's hygiene tests, and the literature only with your yes, [literature.md](literature.md)), **`compute.sage`** for a statement filed as finite, about a graph or about numbers (only when the host offers it), and **`lean.search`** (only when the host offers it; remote services only with your yes, [lean.md](lean.md#search-pushed-by-the-harness)). A host that offers neither the compute tool nor `lean.search` gets one line saying so and the run goes on without it. |
 
 Why: in the first real runs about 90% of the dollars were output tokens (the model rewrote its whole Lean file at every check), 4 sessions
 of 9 ended on a full context, and Lean checks ran into 900-second timeouts. `v2` makes each attempt cheaper and shorter; the certifier's
 limits and the validator's policy are unchanged, and Lean still decides everything. `harness run` keeps its own defaults: each of the three is an
 option there (`editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds` in the run configuration), so a recorded run replays as before. A later change of
-`solve`'s defaults adds its option to `v2`. `harness solve --lean-search` (and `harness run --lean-search`) turns on the harness's search of Lean declarations after a
-check, which is in neither set yet ([lean.md](lean.md#search-pushed-by-the-harness)); the host must offer `lean.search` with a backend set up.
+`solve`'s defaults adds its option to `v2`.
+
+In a plain `v2` solve the one question about third parties is therefore asked, once, after the signature, wherever a person can answer, because the
+intake's literature and `lean.search` both want the answer (`--lit` is the yes; `--yes` or `--ask-stdin` without `--lit` is no; `--private` wins over
+both; a resumed run reads the journaled answer). With a no the hygiene tests still run (they send nothing outside), the literature is skipped and
+`lean.search` keeps to its local index and pattern search: nothing goes to a third party. Each addition can be turned off alone: `--no-intake`,
+`--no-auto-tool`, `--no-lean-search` (they matter only with `v2`; a flag and its `--no-` cannot both be given). `--defaults v1` turns none of them on, and the
+explicit flags `--intake`, `--lit`, `--auto-tool` and `--lean-search` still turn one on under `v1`.
+
+The intake's judge call is proportionate to the allowance: when `--intake-usd` is not given, its cap is the smaller of the default ($0.05) and 5% of the
+run's allowance (`--max-usd`), so a $0.40 run spends at most $0.02 on it. The test lemmas that `solve` runs to show them before the signature are the ones the intake
+records: they are not run a second time. Not run on a real Lean, model, search service or literature site: the target of the plan change (at least 1.5 times the
+problems solved per dollar of `v1`) has no number until `harness ablate --experiment solve-defaults` runs on real problems ([ablate.md](ablate.md)).
 
 Options that are off unless you ask (they do not change the defaults above):
 
