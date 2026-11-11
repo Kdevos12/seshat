@@ -1,14 +1,14 @@
 import { M10 } from "@seshat/classical";
 import { M4 } from "@seshat/context";
 import { fleet } from "@seshat/fleet";
-import { M13, M16, M8 } from "@seshat/induction";
+import { graphSearch, M13, M16, M8 } from "@seshat/induction";
 import { M17 } from "@seshat/lean-env";
 import { m2Line } from "@seshat/graph";
 import { M6 } from "@seshat/guards";
 import { M5 } from "@seshat/lessons";
 import { M3 } from "@seshat/library";
 import type { LineRegistry } from "@seshat/lines";
-import { M11 } from "@seshat/models";
+import { createM11 } from "@seshat/models";
 import { M14 } from "@seshat/repair";
 import { m12Line, m15Line, m18Line } from "@seshat/scheduler";
 import { M1 } from "./m1.ts";
@@ -18,4 +18,7 @@ import { M1 } from "./m1.ts";
  * implemented is not here: a run that enables it stops before it starts, and says so. The task
  * that implements a line adds it here.
  */
+/** M11 with the search beyond the lists of graphs (CA20), which lives in @seshat/induction: `@seshat/models` cannot import it. Only the option `M11.graphs` makes it run. */
+const M11 = createM11({ graphSearch });
+
 export const LINES: LineRegistry = { M1, M10, M11, M12: m12Line, M15: m15Line, M17, M18: m18Line, M2: m2Line, M3, M4, M6, M8, M13, M14, M16, M5, fleet };
