@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, type AttemptOutcome, Journal, newId } from "@seshat/core";
-import { acceptedLemmas, MemoryStore, recordAcceptedLemmas, stateCard } from "../src/index.ts";
+import { acceptedLemmas, MemoryStore, recordAcceptedLemmas, renderStateCard, stateCard, stateCardData, type StateCardData } from "../src/index.ts";
 
 function open(): { memory: MemoryStore; journal: Journal } {
   const dir = mkdtempSync(join(tmpdir(), "mh-card-"));
@@ -49,7 +49,7 @@ describe("the state card", () => {
       messages: [{ severity: "warning", text: "declaration uses 'sorry'", pos: { line: 3, column: 0 } }] as never,
       sorries: [],
     });
-    const card = stateCard(memory, claimId) as string;
+    const card = stateCard(memory, claimId)?.text as string;
     const lines = card.split("\n");
     assert.match(lines[1] as string, /^Goal: statement st0_\w+, status open\.$/);
     const at = (re: RegExp) => lines.findIndex((l) => re.test(l));
@@ -59,26 +59,37 @@ describe("the state card", () => {
     assert.ok(at(/^- 2 x induction \/ unsolved_goals \/ unsolved goals at case succ$/) > at(/^Lemmas/));
     assert.ok(at(/^- 1 x automation \/ tactic_failed \/ omega failed$/) > at(/^- 2 x induction/));
     assert.equal(lines.at(-1), "Timeouts: 2.");
-    assert.equal(card, stateCard(memory, claimId), "the same journal gives the same card");
+    assert.equal(card, stateCard(memory, claimId)?.text, "the same journal gives the same card");
+    const data = stateCard(memory, claimId);
+    assert.deepEqual(
+      { goal: data?.goal.status, holes: data?.holes.map((h) => [h.statement, h.status]), lemmas: data?.lemmas, timeouts: data?.timeouts },
+      { goal: "open", holes: [["(m : ℕ) : 0 + m = m", "open"]], lemmas: ["aux_a"], timeouts: 2 },
+    );
+    assert.deepEqual(data?.approaches, [
+      { strategy: "induction", failureClass: "unsolved_goals", detail: "unsolved goals at case succ", count: 2 },
+      { strategy: "automation", failureClass: "tactic_failed", detail: "omega failed", count: 1 },
+    ]);
+    assert.equal(data?.holes[0]?.claimId, hole.claimId);
+    assert.equal(renderStateCard(stateCardData(memory, claimId) as StateCardData), card, "the rendering of the data is the text of the card");
   });
 
   it("cuts the least frequent approaches first within its bound, and says how many", async () => {
     const { memory, journal } = open();
     const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test" });
     for (let k = 0; k < 40; k++) for (let j = 0; j <= k % 5; j++) attempt(journal, claimId, { ...FAIL, failureDetail: `unknown identifier Nat.thing${k}` , failureClass: "unknown_identifier" });
-    const card = stateCard(memory, claimId, { maxChars: 1000 }) as string;
+    const card = stateCard(memory, claimId, { maxChars: 1000 })?.text as string;
     assert.ok(card.length <= 1000);
     assert.match(card, /- \d+ less frequent failed approaches not shown/);
     const shown = card.split("\n").filter((l) => /^- \d+ x /.test(l));
     const counts = shown.map((l) => Number(/^- (\d+)/.exec(l)?.[1]));
     assert.deepEqual(counts, [...counts].sort((a, b) => b - a));
-    assert.ok(stateCard(memory, claimId, { maxChars: 200 })!.length <= 200);
+    assert.ok(stateCard(memory, claimId, { maxChars: 200 })!.text.length <= 200);
   });
 
   it("is a card for a claim nothing was tried on, and nothing for an unknown claim", async () => {
     const { memory } = open();
     const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test" });
-    assert.match(stateCard(memory, claimId) as string, /No session has checked a file on it yet\./);
+    assert.match(stateCard(memory, claimId)?.text as string, /No session has checked a file on it yet\./);
     assert.equal(stateCard(memory, "clm_unknown"), undefined);
   });
 

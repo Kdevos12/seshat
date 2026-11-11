@@ -315,7 +315,7 @@ option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([q
 A session that starts on long notes starts on what the model chose to remember. With `RunConfig.stateCard` (plan change CA7; `card.ts` of
 `@seshat/memory`) the opening message of each session also carries a card that code builds from the journal: no model call, no clock, no
 randomness, so the same journal gives the same card, byte for byte. `stateCard(store, claimId, {maxChars})` is exported from `@seshat/memory`,
-beside the projection, so that a later pass (a consolidation pass, an idea generator) calls it without the run loop. The card holds, in this
+beside the projection, and returns the structured card (`goal`, `holes`, `lemmas`, `approaches`, `timeouts`, as `StateCardData`, which `stateCardData` gives alone) with its bounded `text` (`renderStateCard` makes the text from the data), so that a later pass (a consolidation pass, an idea generator) calls it without the run loop. The card holds, in this
 order: the goal's statement id and status; the holes (the claims joined to the goal by `decomposes_into`) with their goal text and status; the
 lemmas Lean accepted, by name (the `aux_` lemmas of the last session's check with no error and no `sorry`, recorded as an `accepted_lemmas`
 node when the option is on); the failed approaches as (strategy label, failure class, first error normalised) with a count, the most frequent
