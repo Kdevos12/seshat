@@ -30,7 +30,7 @@ import { writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, solveCommand } from "./solve-command.ts";
 import { refusalLine } from "./provider-errors.ts";
-import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
+import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
@@ -113,7 +113,7 @@ report: prints the report of a run from its journal, and rewrites RESULT.md besi
 rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
 RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
-(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
+(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. solve-defaults runs on the host solve takes unless --host or HARNESS_HOST is given. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
 would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
 optimize-prompts: GEPA-style rewriting of the prover's system prompt (documentation/prompts.md). It splits the problems into dev, a held-out
@@ -375,7 +375,7 @@ async function main(): Promise<number> {
   }
   let registry: Registry;
   try {
-    registry = openRegistry({ host: hostName(values.host) });
+    registry = openRegistry({ host: command === "ablate" ? ablateHost(values.experiment, values.host) : hostName(values.host) });
   } catch (error) {
     if (error instanceof CatalogError) {
       console.error(error.message);
@@ -832,8 +832,7 @@ async function run(): Promise<number> {
 }
 
 /** What every run of a command needs besides its configuration, its problems and its directory. */
-function runTemplate(index: BenchIndex, checkout: string, controller: AbortController): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
-  const host = hostName(values.host);
+function runTemplate(index: BenchIndex, checkout: string, controller: AbortController, host: string = hostName(values.host)): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
   const codeRev = codeRevision();
   return {
     index,
@@ -906,10 +905,12 @@ async function ablate(): Promise<number> {
     ...(values.private === true ? { private: true } : {}),
   };
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
-  const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, hostName(values.host))) : undefined;
+  const host = ablateHost(values.experiment, values.host);
+  if (values.experiment === "solve-defaults") console.error(`ablate: the arms run on the host ${host}${values.host || process.env.HARNESS_HOST ? "" : " (the one solve takes)"}`);
+  const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, host)) : undefined;
   const ablated = await ablateCommand({
     ...(hostProfile !== undefined ? { host: { capabilities: hostProfile.capabilities, ...(hostProfile.checkTimeoutSec !== undefined ? { checkTimeoutSec: hostProfile.checkTimeoutSec } : {}) } } : {}),
-    template: runTemplate(index, checkout, stoppable()),
+    template: runTemplate(index, checkout, stoppable(), host),
     config,
     problems,
     dir,

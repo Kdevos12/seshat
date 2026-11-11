@@ -1,3 +1,5 @@
+import { hostName } from "./implementations.ts";
+import { studentHost } from "./solve-command.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ProblemEntry, sample, stemOf } from "@seshat/bench";
@@ -116,4 +118,12 @@ function modelOf(dir: string): string {
   const first = readEvents(join(dir, "journal.jsonl"))[0];
   const config = first?.type === "run.started" ? (first.data.config as { model?: unknown } | null) : null;
   return typeof config?.model === "string" ? config.model : "";
+}
+
+/**
+ * The host the arms of an ablation run on: the one named, `HARNESS_HOST`, then the default of the command (`hostName`: `local`), except for
+ * `solve-defaults`, whose arms are what `solve` does and so take the host `solve` takes (`studentHost`: the isolated profile `doctor` wrote, when it exists).
+ */
+export function ablateHost(experiment: string | undefined, explicit: string | undefined, configDir?: string): string {
+  return experiment === "solve-defaults" ? studentHost(explicit, configDir) : hostName(explicit);
 }

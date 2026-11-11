@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type ProblemEntry } from "@seshat/bench";
-import { ablateCommand, chunksCommand, commandArms, splitBench } from "../src/ablate-command.ts";
+import { ablateCommand, ablateHost, chunksCommand, commandArms, splitBench } from "../src/ablate-command.ts";
 import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
 import { consortium } from "./turns-helpers.ts";
 import { scriptedRun, type ScriptedSpec } from "./ablate-helpers.ts";
@@ -110,5 +110,28 @@ describe("harness chunks", () => {
     assert.match(out.join(""), /Cost to first success/);
     assert.throws(() => chunksCommand([tempDir("mh-chunks-empty-")], () => undefined), /no journal/);
     assert.throws(() => chunksCommand([], () => undefined), /needs a run directory/);
+  });
+});
+
+describe("the host of the solve-defaults arms", () => {
+  it("is the one solve takes, and every other experiment keeps its default", () => {
+    const saved = process.env.HARNESS_HOST;
+    delete process.env.HARNESS_HOST;
+    const withProfile = tempDir("mh-hosts-");
+    const without = tempDir("mh-hosts-");
+    mkdirSync(join(withProfile, "hosts"), { recursive: true });
+    writeFileSync(join(withProfile, "hosts", "sandboxed.json"), "{}");
+    try {
+      assert.equal(ablateHost("solve-defaults", undefined, withProfile), "sandboxed");
+      assert.equal(ablateHost("solve-defaults", undefined, without), "local");
+      assert.equal(ablateHost("solve-defaults", "mine", withProfile), "mine");
+      assert.equal(ablateHost("ladder", undefined, withProfile), "local");
+      assert.equal(ablateHost(undefined, undefined, withProfile), "local");
+      process.env.HARNESS_HOST = "fromenv";
+      assert.equal(ablateHost("solve-defaults", undefined, withProfile), "fromenv");
+    } finally {
+      if (saved === undefined) delete process.env.HARNESS_HOST;
+      else process.env.HARNESS_HOST = saved;
+    }
   });
 });
