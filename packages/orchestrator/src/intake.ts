@@ -30,7 +30,9 @@ export interface IntakeConfig {
   /**
    * Whether the statement may go to third parties, and how that was decided: `bench` (a bench problem is public: on), `asked` (a person
    * answered the question `harness solve` asks once), `flag` (`--lit`, in a call that cannot ask). Absent: no (the step is skipped with `not agreed`). Journaled as `intake.consented`.
-   * `asked` and `flag` need the run's `user`, who is the person who answered.
+   * `asked` and `flag` need the run's `user`, who is the person who answered. Absent from an `intake`
+   * config, the answer is no (journaled with `via: "default"`: nobody was asked, as with `--yes` or a program that drives `harness solve`), and it
+   * also governs `lean.search` and `lit.search`: the registry keeps them to their local forms without a yes. A run with no `intake` at all says nothing and keeps them on.
    */
   consent?: { allowed: boolean; via: "asked" | "flag" | "bench" };
 }
@@ -63,6 +65,8 @@ export interface IntakeStepOptions {
   config: IntakeConfig | undefined;
   /** True: nothing goes outside, whatever else is asked (`RunConfig.private`). */
   private: boolean;
+  /** `RunConfig.leanSearch`: the answer on third parties also governs `lean.search`, so it is journaled even when the literature is not asked. */
+  leanSearch?: boolean;
   journal: Journal;
   memory: IntakeOptions["memory"];
   registry: IntakeOptions["registry"];
@@ -96,7 +100,7 @@ export async function intakeStep(o: IntakeStepOptions): Promise<IntakeStep> {
   const out: IntakeStep = { hygiene: [] };
   const wantsLiterature = config.literature === true;
   const consented = (o.events ?? []).some((e) => e.type === "intake.consented" && e.data.problemId === o.problemId);
-  if ((wantsLiterature || o.private) && !consented) {
+  if ((wantsLiterature || o.private || o.leanSearch === true) && !consented) {
     const consent = config.consent;
     const decision: EventDataMap["intake.consented"] = o.private
       ? { problemId: o.problemId, allowed: false, via: "private" }

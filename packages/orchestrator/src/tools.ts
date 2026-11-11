@@ -31,6 +31,8 @@ export function checkTools(registry: Registry, ids: readonly string[]): string[]
       problems.push(`${id} is not a direct capability (its exposure is ${capability.manifest.exposure})`);
     }
     if (!registry.offers(id)) problems.push(`host ${registry.host.host} does not offer ${id}`);
+    const refusal = registry.thirdPartyRefusal(id);
+    if (refusal !== undefined) problems.push(refusal);
     if (names.has(toolName(id))) problems.push(`${id}: the tool name ${toolName(id)} is taken`);
     names.add(toolName(id));
   }

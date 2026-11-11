@@ -232,7 +232,7 @@ export class Registry {
   }
 
   private refusalText(id: string, sends: string): string {
-    return `${id} sends ${sends} to a third party, and ${this.privateRun ? "this run is private (--private)" : "the statement was not allowed to go outside"}`;
+    return `${id} sends ${sends} outside, and ${this.privateRun ? "this run is private (--private)" : "the statement was not allowed to go outside"}`;
   }
 
   /** The name, version and content hash of each pack, in name order: what a run records to be reproducible. */
