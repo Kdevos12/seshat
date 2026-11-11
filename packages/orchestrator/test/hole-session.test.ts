@@ -191,6 +191,71 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.doesNotMatch(prompt, /waiting for the lemmas it uses to be proved/);
   });
 
+  /** The blueprint of `BP_AUX` with the given first session (on aux_right) and second session (on aux_left); returns the claim ids as well. */
+  async function sessionsOn(first: ReturnType<typeof say>[], second: ReturnType<typeof say>[], lean: DemoLean, options: Record<string, unknown> = {}) {
+    const run = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { ...OPTIONS, holeSessions: 1, rounds: 1, ...options } } },
+      lean,
+      responses: [check(BP_PROOF, BP_AUX), say("Three lemmas are left."), ...first, ...second, say("Going on.")],
+    });
+    const [right, left] = ofType(run.events, "claim.created").filter((e) => e.actor === "line:M12" && !(e.data.gloss ?? "").startsWith("link lemma")).map((e) => e.data.claimId as string);
+    return { ...run, right: right as string, left: left as string };
+  }
+  const TAMPERED = "lemma aux_left (n : ℕ) : n = n := by\n  sorry";
+
+  it("does not count the work as done when a session changes a stub's statement, or adds an axiom, and changes no status", { timeout: 60000 }, async () => {
+    const axiomAnswer = (code: string) =>
+      code.includes("axiom my_axiom") && code.includes("exact dep_ok") ? { axioms: ["propext", "sorryAx", "my_axiom"], sorries: [{ pos: { line: code.split("\n").findIndex((l) => l.includes("sorry")) + 1, column: 2 }, goal: "" }] } : blueprintAnswer(code);
+    const cases: Array<[string, string, (code: string) => ReturnType<typeof blueprintAnswer>, RegExp]> = [
+      ["a stub's statement changed", TAMPERED, blueprintAnswer, /given lemma/],
+      ["an axiom added", `${LEFT_STUB}\n\naxiom my_axiom : False`, axiomAnswer, /my_axiom/],
+    ];
+    for (const [name, aux, answer, reason] of cases) {
+      const { events, right, left } = await sessionsOn([check("exact dep_ok", aux), say("I stop here.")], [check("exact hole_ok")], new DemoLean(answer));
+      assert.ok(!nodes(events, "m12_session").some((n) => n.workDone === true), `${name}: no work is done`);
+      assert.deepEqual(statusOf(events, right), [], `${name}: aux_right keeps its status`);
+      assert.ok(!nodes(events, "derivation").some((d) => d.claimId === right), `${name}: aux_right is never validated`);
+      assert.deepEqual(ofType(events, "edge.status_changed").map((e) => e.data.to), ["lean_checked"], `${name}: no link lemma was checked`);
+      assert.deepEqual(statusOf(events, left), ["computed"], `${name}: the other hole went on`);
+      assert.ok(reason.source.length > 0);
+    }
+  });
+
+  it("never validates a hole whose dependency is refuted or dropped", { timeout: 60000 }, async () => {
+    // aux_right's session ends with the check that does its work on the stub, so the next response is aux_left's session.
+    const dropped = await sessionsOn([check("exact dep_ok", LEFT_STUB)], [say("I cannot do this.")], new DemoLean(blueprintAnswer));
+    const refuted = await sessionsOn([check("exact dep_ok", LEFT_STUB)], [call("hole_verdict", { verdict: "statement_wrong", argument: "false", negation_proof: "exact neg_ok" })], new DemoLean(blueprintAnswer));
+    for (const [name, run] of [["dropped", dropped], ["refuted", refuted]] as const) {
+      assert.ok(nodes(run.events, "m12_session").some((n) => n.workDone === true), `${name}: aux_right's work was done on the stub`);
+      assert.deepEqual(statusOf(run.events, run.right), [], `${name}: aux_right never leaves open`);
+      assert.ok(!nodes(run.events, "derivation").some((d) => d.claimId === run.right), `${name}: aux_right is never validated`);
+      assert.ok(!statusOf(run.events, run.left).includes("computed"), `${name}: aux_left is not accepted`);
+    }
+    assert.deepEqual(nodes(dropped.events, "hole_verdict").filter((v) => v.claimId === dropped.left).map((v) => v.verdict), ["too_hard"]);
+    assert.deepEqual(nodes(refuted.events, "hole_verdict").filter((v) => v.claimId === refuted.left).map((v) => [v.verdict, v.negationValidated]), [["statement_wrong", true]]);
+    assert.deepEqual(statusOf(refuted.events, refuted.left), [], "a negation Lean accepted is a verdict node, not a status of the hole");
+  });
+
+  it("bounds a session by the option holeTurns", { timeout: 60000 }, async () => {
+    const { events, prompts } = await oneHole(named(HARD_AUX), check("exact bad_one"), { holeTurns: 2 }, [check("exact bad_two")]);
+    assert.equal(ofType(events, "model_call.finished").filter((m) => m.data.site === "scheduler.hole").length, 2, "two responses, then the session stops");
+    assert.equal(prompts.length, 1, "the third response went to the outer session, not to the hole session");
+    assert.equal(nodes(events, "m12_session")[0]?.turns, 2);
+    assert.deepEqual(nodes(events, "hole_verdict").map((v) => v.verdict), ["too_hard"]);
+  });
+
+  it("records a plausible counterexample at pre-flight as suspect_false evidence and changes no status", { timeout: 60000 }, async () => {
+    const answer = (code: string) =>
+      code.includes("\n  plausible") ? { messages: [{ severity: "error" as const, pos: { line: 5, column: 2 }, text: "Found a counter-example!\nn := 3" }] } : blueprintAnswer(code);
+    const { events } = await oneHole(named(HARD_AUX), say("I cannot do this."), {}, [], new DemoLean(answer));
+    const suspects = nodes(events, "suspect_false");
+    assert.equal(suspects.length, 1);
+    assert.equal(suspects[0]?.source, "plausible");
+    assert.deepEqual(statusOf(events, holeOf(events)), [], "no status changed");
+    assert.ok(nodes(events, "hole_verdict").every((v) => v.verdict !== "proved"));
+  });
+
   it("ends a session that says nothing, or says it is too hard, with the verdict too_hard", { timeout: 60000 }, async () => {
     for (const session of [say("I cannot do this."), call("hole_verdict", { verdict: "too_hard" })]) {
       const { events, faux } = await oneHole(named(HARD_AUX), session);
