@@ -47,13 +47,13 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 32 | The heuristic bank, line M19 (HB1 to HB8) | main | merged (0614185), built by the thread "Concevoir une banque d'heuristiques", reviewed twice; M19 became a fleet option; not built: HB4 prepare, HB5b replay, decide prior, extra features | `claude/project-thread-7os98j` | HB5 item 4 on hold (Global Constraint 16) |
 | 33 | The graded bench, the paired protocol, loop telemetry (CA1 to CA3) | main | on the branch (`8c8c0cb`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | No bench index is committed: building `bench/graded-v1.json` needs a real Lean and the three sources (observed sizes: grade A 111, grade B 100 of 326 candidates, grade C 70; PutnamBench's head is on Lean 4.33.1, the bench pins 4.27.0). `splitCommands` in `@seshat/core` now reads a column-0 line that starts with a binder or a colon as the continuation of the declaration above (pinned by tests at the validator and the guards). The false-hole share reads `hole_verdict` nodes, which Task 37 writes. Simulated only. |
 | 34 | A cheaper hot loop: bounded checks, `lean_edit`, masking, the defaults sets `v1` and `v2` (CA4 to CA6) | main | on the branch (`c34c0c8`), reviewed; waits for the pull request into `main` | `claude/project-thread-h60gyw` | `harness solve --defaults v1` is `main` at `ae3b2a0`; `v2` (the default) adds `editTool`, `maskOldChecks` and the check timeout. Not built: `harness lean-server start` (Ruling 33). Open: `checkTimeoutSec` is part of the registry hash, so editing the host value makes a resume see a registry mismatch. Kimina's setting names and the memory reading are not checked against a real Kimina. Simulated only. |
-| 35 | The state card, the repeat rule, a run's budget in rounds (CA7, CA8) | main | implementing | `claude/project-thread-h60gyw` | after 34 |
-| 36 | Intake: `lit.search`, tools for `solve`, statement hygiene (CA16, CA17, CA21) | main | reviewed, fix round 1 | `claude/project-thread-h60gyw` | |
-| 37 | Blueprints and a tool-equipped prover per hole (CA9 to CA11) | main | not started | | after 34 and 35 |
+| 35 | The state card, the repeat rule, a run's budget in rounds (CA7, CA8) | main | on the branch (`1178091`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | `v2` now sets `stateCard` and `budgetRounds` and adds line M6 with the repeat rule alone (no detector, no model call). `budgetRounds` acts only on a run of several problems. The repeat key holds the failure class; `holes`, `other` and refused checks are not counted. The card counts failures per session (the journal has no per-check data). Simulated only. |
+| 36 | Intake: `lit.search`, tools for `solve`, statement hygiene (CA16, CA17, CA21) | main | on the branch (`75638fd`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | Off by default (`--intake`, `--lit`, `--tool`, `--auto-tool`, `--private`); not yet in `v2`. `--private` covers the literature step and the third-party decision model; the general rule is Task 36b. Open: without the budget gate the judge call is bounded only by its own cap; with `--intake` the test lemmas run twice. Not run against a real site (zbMATH's shape least certain), model or Lean (`plausible`, the vacuity tactics). |
+| 37 | Blueprints and a tool-equipped prover per hole (CA9 to CA11) | main | implementing | `claude/project-thread-h60gyw` | after 34 and 35 |
 | 38 | Refinement rounds and the repair pass (CA12, CA13) | main | not started | | after 37 |
 | 39 | An informal proof first, roles, sampling settings per role (CA14, CA15, CA23) | main | not started | | after 38 |
-| 40 | `lean.search`, pushed by the harness (CA22) | main | implementing | `claude/project-thread-h60gyw` | after 34 |
-| 41 | Counterexamples on finite structures (CA18 to CA20) | main | not started | | |
+| 40 | `lean.search`, pushed by the harness (CA22) | main | on the branch (`922341a`), reviewed, one fix round; waits for the pull request into `main` | `claude/project-thread-h60gyw` | Off by default (`--lean-search`); not yet in `v2`. Only the name and the signature Lean printed for `#check` are shown; backend text never is. Without `--private` a hole's goal goes to the remote and pattern services (consent for `solve` is Task 36b). The wire formats of the two services and the allowed hosts in the profiles are guesses. Not run against a real Lean, search service or index. |
+| 41 | Counterexamples on finite structures (CA18 to CA20) | main | reviewed, fix round 1 | `claude/project-thread-h60gyw` | |
 | 42 | The consolidation pass between runs (CA24) | main | not started | | after 35 |
 | 43 | The reverie line (CA25) | main | not started | | after 37, 41 and 42 |
 | 44 | Teacher memory (CA26) | main | not started | | last |
@@ -420,6 +420,24 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `data.settled === true`, which Task 36 writes) and the false-hole share (nodes of kind `hole_verdict`
   with `data.verdict === "statement_wrong"`, which Task 37 writes). `packages/bench`: `graded.ts`.
   Documented in bench.md, ablate.md, journal.md and m0-loop.md.
+- Task 36, on `claude/project-thread-h60gyw` at `75638fd` (2026-11-11): new package `@seshat/lit` and capability `lit.search`
+  (`config/hosts/*.json`: its backends and `allowedHosts`). `packages/core`: the events `intake.consented` and
+  `intake.finished` (no-ops in the projection). Node kinds `literature` (data `{backend, url, title, quote, verdict, settled}`)
+  and `hygiene`. `packages/orchestrator`: `RunConfig.intake?`, `RunConfig.private?`, `RunOptions.prose?`, the turn reasons
+  `literature` and `vacuous`, `RunReport.intake?`, `Result.intake?`; `harness solve --tool --auto-tool --intake --lit --private
+  --intake-usd`, `harness run --intake --private`. Documented in literature.md, journal.md, trust.md, quickstart.md.
+- Task 40, on the same branch at `922341a` (2026-11-11): new package `@seshat/lean-search` and capability `lean.search`
+  (`config/hosts/*.json`: `remoteUrl`, `patternUrl`, `indexPath`, `allowedHosts`). `packages/orchestrator`:
+  `SessionOptions.appendToCheck?` (text appended to a check's answer), `ProverOptions.leanSearch?`, `RunConfig.leanSearch?`,
+  `--lean-search` on `run` and `solve`; the report's line "Lean search". `RunConfig.private` is the one field of Task 36.
+  Documented in lean.md, capabilities.md, journal.md.
+- Task 35, on the same branch at `1178091` (2026-11-11): `packages/memory`: `stateCard`, `stateCardData`, `renderStateCard`
+  (`card.ts`), the card as data and text. `packages/core`: the events `budget.round` and `problem.parked`, optional
+  `lastCheckClass` on `attempt.finished` (projection column `last_check_class`, projection version 11). `packages/lines`: a
+  line's `afterCheck` may return a `notice` (text appended to the check's answer) without stopping the session.
+  `packages/guards`: M6's options `repeatRule` and `detectors`. `packages/orchestrator`: `RunConfig.stateCard?`,
+  `budgetRounds?`; `rounds.ts`; a check's answer is Lean's text, then the `lean.search` section, then a line's notice.
+  Documented in m0-loop.md, guards.md, scheduler.md, journal.md.
 
 ## Log
 
@@ -854,3 +872,7 @@ Tasks 33 to 44 (2026-11-10, the session of the thread "Augmenter les capacités 
 Task 33: minor (deferred): the docstring of `measures.ts` is detached from `measureRun`; a comment in `events.ts` cites `documentation/report.md` (the page is m0-loop.md); `checks` counts every `lean_check` call, server errors included; the quantile is the upper median for an even n; the target verdict reads only the best-ratio arm; `loadIndex` parses the bench JSON twice.
 Task 34: minor (deferred): `checkTimeoutSec` is in the registry hash; `lean_edit` passes no strategy to `doCheck`; the memory reading's pattern may count unrelated processes; no test for an empty `old`, for `checkTimeoutSec < 1`, for masking with `lean_edit` results.
 Decision (2026-11-10): `--private` becomes a general switch after Tasks 36 and 40 are on the branch: an optional manifest field marks a capability that calls a third party, and a private run refuses those calls at the registry. Why: the plan change says that nothing leaves for a third party other than the model provider, and Task 36's flag covers the literature search and the third-party decision model only. Cost if wrong: one small task.
+Tasks 33 to 44 (2026-11-11): Task 36 merged at `75638fd` (review: no Critical or Important finding; fix round on forged delimiters in fetched text, one bad backend no longer disabling the others, the stated scope of `--private`), `pnpm check` 2751 tests, 0 fail. Task 40 merged at `922341a` (review: two Important findings fixed: a cache of search results with no repeat of a name still in view, the verification's Lean runs kept out of the provers' check totals; hardening of names, of the "unknown" cache and of allowed hosts), 2801 tests, 0 fail. Task 35 merged at `1178091` (review: three Important findings fixed: the repeat key holds the failure class and no longer counts holes or unclassified errors, a slice-cut session no longer records a failure class, the card returns data and text), 2825 tests, 0 fail. Task 41 is in its fix round; Task 36b (the third-party policy) and Task 37 are being written.
+Task 36: minor (deferred): the judge call without a budget gate; the test lemmas run twice with `--intake`; `run.ts` grew by the intake block; `--auto-tool` names `compute.sage` in code.
+Task 40: minor (deferred): the push counts checks only when it is called while masking counts every check; `allowedHosts` is compared case-sensitively; a candidate that Lean answers with neither a signature nor an unknown-identifier error is verified again at every check; a shared guarded HTTP client for `lean-search`, `lit` and `decide`.
+Task 35: minor (deferred): the rotation's wiring grew `run.ts` by about 140 lines; `solve-command.ts` prints the lines of `v2` from its own copy of the rule.
