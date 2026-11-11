@@ -95,6 +95,29 @@ describe("a run's budget in rounds (CA8)", () => {
     assert.equal(lines.filter((l) => /fair share/.test(l)).length, 1);
   });
 
+  it("runs two slices at a time with concurrency 2, within the caps, and ends where concurrency 1 does", async () => {
+    // Every response fails the same way, so the order the two workers draw them in does not matter.
+    const responses = Array.from({ length: 60 }, (_, k) => check(`bad ${k}`));
+    const cfg = { sessions: 20, budget: { problemUsd: 5, runUsd: 3 }, budgetRounds: true };
+    const one = await demoRun({ pricePerMillion: PRICE, problems: 3, file: THREE, config: { ...cfg, concurrency: 1 }, responses });
+    const two = await demoRun({ pricePerMillion: PRICE, problems: 3, file: THREE, config: { ...cfg, concurrency: 2 }, responses });
+    let open = 0;
+    let most = 0;
+    for (const e of two.events) {
+      if (e.type === "attempt.started") most = Math.max(most, ++open);
+      if (e.type === "attempt.finished") open--;
+    }
+    assert.ok(most >= 1 && most <= 2, `at most two slices at once, saw ${most}`);
+    const shape = (events: typeof one.events) => ofType(events, "budget.round").map((e) => [e.data.round, e.data.capUsd, [...e.data.problems].sort()]);
+    assert.deepEqual(shape(two.events), shape(one.events), "the same rounds and caps");
+    assert.deepEqual(two.result.problems.map((p) => p.outcome).sort(), one.result.problems.map((p) => p.outcome).sort());
+    assert.equal(two.result.stopped, one.result.stopped);
+    // The response that crosses a cap is paid for, as with concurrency 1.
+    assert.ok(two.result.usd <= 3.05 && Math.abs(two.result.usd - one.result.usd) < 0.05, "the run cap holds, as with concurrency 1");
+    const caps = ofType(two.events, "budget.round").map((e) => e.data.capUsd);
+    for (const p of two.result.problems) assert.ok(p.usd <= (caps.at(-1) ?? 0) * 3 + 0.6, `${p.problemId} within its rounds`);
+  });
+
   it("reads the rotation back from the journal", async () => {
     const { events } = await demoRun({
       pricePerMillion: PRICE, problems: 3, file: THREE, config: { ...config, budgetRounds: true },
