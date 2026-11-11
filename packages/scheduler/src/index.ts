@@ -22,3 +22,4 @@ export * from "./archive-report.ts";
 export * from "./schemas.ts";
 export * from "./m15.ts";
 export * from "./gate.ts";
+export * from "./hole-work.ts";

@@ -52,6 +52,33 @@ export interface SessionRecord {
   /** Why it failed, a few lines. */
   reasons: string[];
   validationId?: string;
+  /** A hole session (blueprints, CA10): why it ended (`SessionStop`) and its model responses. */
+  stop?: string;
+  turns?: number;
+  /**
+   * The hole's work was done on the small file (no Lean error, every `sorry` in a dependency stub): the proof and the helper lemmas it used, as the blob of
+   * `{aux, proof}`, and the hash of that text. It is a fact about a file, not a status: the claim becomes `computed` only through `validate`.
+   */
+  workDone?: boolean;
+  work?: string;
+  workHash?: string;
+  /** The session's verdict (`hole_verdict` nodes carry the same). */
+  verdict?: "proved" | "statement_wrong" | "too_hard";
+  /** `statement_wrong`: Lean accepted the proof of the negation through `validate`; and the prover's argument. The `hole_verdict` node is made again from these if a cut lost it. */
+  negationValidated?: boolean;
+  argument?: string;
+}
+
+/** The pre-flight of a hole, before any paid session (CA11): what the battery, `plausible` and the battery on the negation found. An evidence node. */
+export const PREFLIGHT_KIND = "m12_preflight";
+
+export interface PreflightRecord {
+  problemId: string;
+  claimId: string;
+  proved: boolean;
+  refuted: boolean;
+  plausible?: string;
+  notes: string[];
 }
 
 /** A subsumption the scheduler tried: an `instance_of` edge between two claims, and whether Lean checked it. */
