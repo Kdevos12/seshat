@@ -6,3 +6,4 @@ export * from "./m5.ts";
 export * from "./records.ts";
 export * from "./report.ts";
 export * from "./select.ts";
+export * from "./consolidate.ts";

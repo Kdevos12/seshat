@@ -39,6 +39,8 @@ export interface SolveFlags extends DoctorFlags {
   noCheck?: boolean;
   /** `--lean-search`: `RunConfig.leanSearch` on top of the defaults set (it is in none of them). */
   leanSearch?: boolean;
+  /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
+  consolidation?: boolean;
   offpeak?: RunConfig["offpeak"];
   lines?: string[];
   /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
@@ -316,7 +318,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
-      ...(flags.leanSearch === true ? { base: { leanSearch: true } } : {}),
+      ...(flags.leanSearch === true || flags.consolidation === true ? { base: { ...(flags.leanSearch === true ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}) } } : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),

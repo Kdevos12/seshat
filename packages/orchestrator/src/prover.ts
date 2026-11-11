@@ -4,6 +4,7 @@ import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, n
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
+import { pageForSession } from "./consolidation-show.ts";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
@@ -57,6 +58,11 @@ export interface ProverOptions {
   stateCard?: boolean;
   /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
   stateCardChars?: number;
+  /**
+   * The page of an earlier consolidation pass is shown to the sessions, drawn like a lesson (`RunConfig.consolidation`, documentation/consolidation.md).
+   * `seed` is the run's draw seed. Absent: off.
+   */
+  consolidation?: { seed: string | number; problemId: string };
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -169,6 +175,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
   const cardStore = o.stateCard === true ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
+  const pageStore = o.consolidation === undefined ? undefined : new MemoryStore({ journal, blobs: o.blobs, actor: "orchestrator" });
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;
@@ -201,6 +208,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     let model = o.model;
     let thinkingLevel = o.thinkingLevel;
     let temperature: number | undefined;
+    let pageSection: { title: string; text: string } | undefined;
     if (o.lines !== undefined) {
       const plan = await o.lines.beforeSession(info);
       if (plan.stop !== undefined) return done("line");
@@ -223,6 +231,13 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
       if (o.ledger.exhausted) return done(budgetStop());
       if (o.turn?.ended !== undefined) return done("turn");
+    }
+    if (pageStore !== undefined && o.consolidation !== undefined) {
+      const shown = pageForSession(pageStore, { claimId: workbench.claimId, problemId: o.consolidation.problemId, prover: o.name, session, seed: o.consolidation.seed });
+      if (shown.included !== undefined && shown.withheld !== undefined && shown.included.length + shown.withheld.length > 0) {
+        info = { ...info, included: [...(info.included ?? []), ...shown.included], withheld: [...(info.withheld ?? []), ...shown.withheld] };
+      }
+      pageSection = shown.section;
     }
     attempts += 1;
     progress.attempts = attempts;
@@ -255,7 +270,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
-      const sections = [...(opened?.sections ?? []), ...team];
+      const sections = [...(opened?.sections ?? []), ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
       const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;

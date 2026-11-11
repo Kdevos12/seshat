@@ -16,8 +16,8 @@ export interface LessonsOptions {
   out: (line: string) => void;
 }
 
-const line = (l: { nodeId: string; text: string; type: string; claims: string[]; support: string[] }): string =>
-  `${l.nodeId}  [${l.type}] ${l.text}  (${l.claims.length} claim(s), ${l.support.length} attempt(s))`;
+const line = (l: { nodeId: string; text: string; type: string; claims: string[]; support: string[]; flagged?: { reason: string } }): string =>
+  `${l.nodeId}  [${l.type}${l.flagged !== undefined ? ", flagged" : ""}] ${l.text}  (${l.claims.length} claim(s), ${l.support.length} attempt(s))${l.flagged !== undefined ? `  flagged by the consolidation pass: ${l.flagged.reason}` : ""}`;
 
 export function lessonsCommand(action: "pending" | "approve" | "reject", dir: string, o: LessonsOptions & { id?: string | undefined }): number {
   const journal = openForAnswers(resolve(dir));

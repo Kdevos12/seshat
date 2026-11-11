@@ -151,6 +151,15 @@ directory: a problem is `proved` or `refuted` only by this run's own certificati
 of an earlier proof is the stored proof sent through `validate` in the new run. A status that came from
 another environment counts for nothing, and the journal refuses to cite its validations.
 
+## Learned records and the consolidation pass
+
+The consolidation pass ([consolidation.md](consolidation.md)) writes cards and pages, which are unverified artifacts: stamped (Global Constraint 16),
+never a fact, never a claim's status, never an edge. A page is written by one model call whose input holds the state card and the problem's events
+by id; text from an external source (a literature quote or title, a tool's output body, a search result) is never in that input, so it cannot
+become part of the page. A sentence of the page is kept only if it cites at least one event and every event it cites is in the list the model was
+given for that problem; the rest is dropped and counted. The page reaches a session only in the first user message, labelled unverified, drawn and
+judged by its effect, never in a system prompt. Only the pass writes the node kinds: the journal refuses them from another actor.
+
 ## Definitions
 
 A definition that a coding agent wrote (the library builder, [library-builder.md](library-builder.md)) is
