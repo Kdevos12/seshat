@@ -175,7 +175,7 @@ tactics' behaviour on real holes.
 
 Each hole session ends with one verdict, a memory node of kind `hole_verdict` (`HOLE_VERDICT_KIND` of `@seshat/core`, re-exported by `loop-telemetry.ts`) with `data.verdict`, `claimId`, `sessionId` (`<task>:<n>`, or `<task>:preflight`), `taskId`, `problemId`:
 
-- `proved`: the work is done (above), or the battery proved the hole;
+- `proved`: the work is done (above) on a hole with dependencies, or `validate` accepted the proof of a hole with none, or the battery proved the hole. A hole with no dependency whose file is done but which `validate` refused (a forbidden tactic, an axiom) is `too_hard`, with the validator's reasons in the session record;
 - `statement_wrong`: the prover says so through `hole_verdict`. If it gives a Lean proof of the negation (`negation_proof`), the line sends it through `validate` with the negation flag; only when it passes is the node marked `negationValidated` and the claim's negation `computed` (a valid negation validation; the certifier alone makes it `refuted`);
   the hole then gets no more sessions. If it gives only an argument, a tool's counterexample, or a proof Lean refuses, the verdict is still recorded, with a **`suspect_false` evidence node** on the claim (`checked: false`), and **no status changes**;
 - `too_hard`: the session ended (turns, budget, or the model stopping) with no proof, or the model said so. A session that ends without saying anything is `too_hard`. A `proved` that the model says without a last check that shows it is `too_hard`.

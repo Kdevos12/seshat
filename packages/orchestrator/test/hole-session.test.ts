@@ -101,6 +101,21 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.ok(limits.includes(11), `a check ran under 11 s: ${JSON.stringify(limits)}`);
   });
 
+  it("makes a hole with no dependency proved only when validate accepts its proof, and too_hard with the validator's reasons when it refuses", { timeout: 60000 }, async () => {
+    const answer = (code: string) => (code.includes("exact bad_axiom") ? { axioms: ["evil_axiom"] } : blueprintAnswer(code));
+    const refused = await oneHole(named(HARD_AUX), check("exact bad_axiom"), {}, [], new DemoLean(answer));
+    assert.deepEqual(nodes(refused.events, "hole_verdict").map((v) => v.verdict), ["too_hard"]);
+    const session = nodes(refused.events, "m12_session")[0];
+    assert.equal(session?.ok, false);
+    assert.equal(session?.verdict, "too_hard");
+    assert.match(String((session?.reasons as string[] | undefined)?.[0]), /validate did not accept the proof, so the work was not accepted/);
+    assert.deepEqual(statusOf(refused.events, holeOf(refused.events)), [], "no status changed");
+    assert.ok(!ofType(refused.events, "task.status_changed").some((e) => String(e.data.reason).includes("waits for its dependencies")));
+    const accepted = await oneHole(named(HARD_AUX), check("exact hole_ok"));
+    assert.deepEqual(nodes(accepted.events, "hole_verdict").map((v) => v.verdict), ["proved"]);
+    assert.deepEqual(statusOf(accepted.events, holeOf(accepted.events)), ["computed"]);
+  });
+
   it("ends a session that says nothing, or says it is too hard, with the verdict too_hard", { timeout: 60000 }, async () => {
     for (const session of [say("I cannot do this."), call("hole_verdict", { verdict: "too_hard" })]) {
       const { events, faux } = await oneHole(named(HARD_AUX), session);
