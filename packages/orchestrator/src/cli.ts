@@ -303,7 +303,7 @@ const { positionals, values } = parseArgs({
 const [command, target, third] = positionals;
 
 /** The commands that start work with a model of their choosing; a resume keeps the model its run began with. */
-const MODEL_COMMANDS = new Set(["consolidate", "run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
+const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
 // The model of these commands, when --model is not given: SESHAT_MODEL (documentation/models-setup.md). Not for a resume,
 // which refuses --model.
 const envModel = process.env.SESHAT_MODEL?.trim();
