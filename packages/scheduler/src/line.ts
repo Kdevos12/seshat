@@ -7,7 +7,7 @@ import {
   type Briefing, completeJson, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
-import { linkProof, readSketch, type SketchReading } from "./holes.ts";
+import { linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import {
@@ -38,6 +38,12 @@ export const M12_OPTIONS = {
   ladder: true,
   /** The fractions of the problem's budget spent without progress that move it up: the first rung, the second... */
   fractions: [0.3, 0.6] as number[],
+  /** Read a sketch as a blueprint: its holes may depend on each other (`-- uses:`), each hole is worked in a session with tools on a small file, and ends with a verdict (CA9 to CA11). */
+  blueprints: false,
+  /** Model responses in a hole's session (blueprints only). */
+  holeTurns: 12,
+  /** Sessions of a hole's task before it fails (blueprints only; a session is a whole tool loop, so fewer than `innerSessions`). */
+  holeSessions: 2,
   /** Seeds the scheduler's draws. Null: the run's seed. */
   seed: null,
 } satisfies JsonObject;
@@ -52,6 +58,9 @@ interface Settings {
   weight: number;
   subsumption: boolean;
   subsumeFacts: number;
+  blueprints: boolean;
+  holeTurns: number;
+  holeSessions: number;
   seed: string | number | null;
 }
 
@@ -72,6 +81,9 @@ function settings(options: Readonly<JsonObject>): Settings {
     weight: num("weightRatio", 0),
     subsumption: flag("subsumption"),
     subsumeFacts: num("subsumeFacts", 1),
+    blueprints: flag("blueprints"),
+    holeTurns: num("holeTurns", 1),
+    holeSessions: num("holeSessions", 1),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -92,6 +104,9 @@ interface Work {
   swept: Set<string>;
   meta: LeanMeta;
 }
+
+/** What reading a sketch is asked: a blueprint, when the option is on (CA9). */
+const readOptions = (s: Settings, target: string | undefined): ReadOptions => (s.blueprints ? { blueprint: true, ...(target !== undefined ? { target } : {}) } : {});
 
 function sessionRecords(problem: ProblemContext): SessionRecord[] {
   return problem.memory
@@ -234,7 +249,7 @@ export function createM12Line(): Line {
         continue;
       }
       const submission = JSON.parse(stored) as { aux: string; proof: string };
-      const reading: SketchReading = readSketch(submission);
+      const reading: SketchReading = readSketch(submission, readOptions(s, parent.statement));
       const names = reading.holes.map((h) => h.name);
       const unsafe = reading.holes.map((h) => ({ name: h.name, reasons: leanTextProblems(h.statement) })).find((h) => h.reasons.length > 0);
       if (unsafe !== undefined) {
@@ -264,6 +279,10 @@ export function createM12Line(): Line {
         );
         problem.log(`sketch of ${record.attemptId}: the decomposition into ${names.join(", ")} is ${check.checked ? "checked" : `not checked (${check.reason})`}`);
       }
+      // A blueprint: each hole that declares dependencies gets a `decomposes_into` edge to them. Its link lemma, `(dependencies) -> (the hole)`,
+      // is checked when the hole's work is done (`workDone`), and only then does the edge propagate: the hole is derived from its
+      // dependencies' accepted proofs, in dependency order, whenever they are accepted.
+      if (record.blueprint === true) dependencyEdges(problem, reading, holes);
       // The known facts the new holes are instances of close them without a model.
       if (s.subsumption) {
         for (const claimId of holes) {
@@ -275,6 +294,18 @@ export function createM12Line(): Line {
       await propagate(problem, work);
       problem.memory.updateNode(nodeId, { registered: true, names, holes, ...(edge !== undefined ? { edgeId: edge.edgeId } : {}) }, "the sketch is registered");
       ensureTasks(problem, s);
+    }
+  }
+
+  /** The `decomposes_into` edges of a blueprint's dependencies: from a hole to the holes it declares, unchecked until its work is done. */
+  function dependencyEdges(problem: ProblemContext, reading: SketchReading, holes: readonly string[]): void {
+    for (const [k, hole] of reading.holes.entries()) {
+      const deps = hole.uses.flatMap((name) => holes[reading.holes.findIndex((h) => h.name === name)] ?? []);
+      if (deps.length === 0 || deps.length !== hole.uses.length) continue;
+      const from = holes[k] as string;
+      if (problem.memory.edges({ from, kinds: ["decomposes_into"] }).some((e) => e.to.length === deps.length && deps.every((d) => e.to.includes(d)))) continue;
+      const link = linkFor("decomposes_into", { id: from, statement: problem.memory.claim(from)?.statement ?? hole.statement }, deps.map((id) => ({ id, statement: problem.memory.claim(id)?.statement ?? "" })));
+      if (link !== undefined) problem.memory.addEdge({ kind: "decomposes_into", from, to: deps, link, note: `${hole.name} uses ${hole.uses.join(", ")}` });
     }
   }
 
@@ -428,7 +459,8 @@ export function createM12Line(): Line {
         if (work === undefined || !s.subgoals || attempt.submission === undefined) return undefined;
         // Only the record, which is cheap and has no Lean in it: the claims and the edge are made between sessions (`registerAll`).
         if (sketchRecords(problem).some(({ record }) => record.attemptId === attempt.attemptId)) return undefined;
-        const reading = readSketch(attempt.submission);
+        const target = problem.memory.claim(problem.claimId)?.statement;
+        const reading = readSketch(attempt.submission, readOptions(s, target));
         if (reading.holes.length === 0) return undefined;
         const report = attempt.report;
         const healthy = reading.problem === undefined && report !== undefined && report.holes && !report.messages.some((m) => m.severity === "error") && !report.editsOutsideRegions;
@@ -439,6 +471,8 @@ export function createM12Line(): Line {
           names: reading.holes.map((h) => h.name),
           healthy,
           ...(reading.problem !== undefined ? { problem: reading.problem } : {}),
+          ...(reading.failureClass !== undefined ? { failureClass: reading.failureClass } : {}),
+          ...(s.blueprints ? { blueprint: true, uses: reading.holes.map((h) => h.uses) } : {}),
           registered: false,
           holes: [],
         };

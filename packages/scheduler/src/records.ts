@@ -20,6 +20,12 @@ export interface SketchRecord {
   healthy: boolean;
   /** Why the sketch cannot be split, when it cannot. */
   problem?: string;
+  /** `restates_target` when a blueprint is refused because a hole states the target again (CA9). */
+  failureClass?: string;
+  /** The sketch was read as a blueprint (option `blueprints`): its holes may declare dependencies. */
+  blueprint?: boolean;
+  /** For a blueprint, the holes each hole declares it may use (`-- uses:`), as names, parallel to `names`. */
+  uses?: string[][];
   /**
    * False when the session just ended and the scheduler has not yet made the claims and the edge (that work
    * is Lean's, and starts between sessions, so that a record written by a session that ended is all a cut can lose).
