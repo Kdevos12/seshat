@@ -12,7 +12,7 @@ import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { type GateSettings, gateSettings } from "@seshat/scheduler";
 import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
-import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
+import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
@@ -54,7 +54,7 @@ const usage = `usage:
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
-              [--baseline ARM] [--target RATIO]
+              [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
@@ -889,9 +889,13 @@ async function ablate(): Promise<number> {
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    // A bench problem is public, so the third parties of the arms that take them follow the bench rule: on, off with --private.
+    ...(values.private === true ? { private: true } : {}),
   };
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
+  const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, hostName(values.host))) : undefined;
   await ablateCommand({
+    ...(hostProfile !== undefined ? { host: { capabilities: hostProfile.capabilities, ...(hostProfile.checkTimeoutSec !== undefined ? { checkTimeoutSec: hostProfile.checkTimeoutSec } : {}) } } : {}),
     template: runTemplate(index, checkout, stoppable()),
     config,
     problems,

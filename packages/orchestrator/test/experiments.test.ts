@@ -2,14 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ablationProblems, armConfig, compareArms } from "../src/ablation.ts";
 import { allLines, DECIDE_SITES, EXPERIMENTS, experimentArms, experimentNames } from "../src/experiments.ts";
-import { DEFAULT_CONFIG, type RunConfig, RunSetupError } from "../src/index.ts";
+import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
+import { type ProblemEntry } from "@seshat/bench";
+import { runAblation } from "../src/ablation.ts";
+import { renderAblation } from "../src/ablation-table.ts";
+import { COMPUTE_TOOL, INTAKE_ALLOWANCE_SHARE, studentConfig } from "../src/student.ts";
+import { scriptedRun } from "./ablate-helpers.ts";
+import { tempDir } from "./m0-helpers.ts";
 
 const base: RunConfig = { ...DEFAULT_CONFIG, selection: { all: true }, model: "faux/prover", thinkingLevel: "off", provers: 1, sessions: 2 };
 void compareArms;
 
 describe("the experiments", () => {
   it("name every amendment's experiment", () => {
-    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "gate", "heuristics", "m17"]);
+    assert.deepEqual(experimentNames(), ["ladder", "packet-mode", "renderings", "queries", "seeds", "lessons", "cegis", "lsp", "decide", "gate", "heuristics", "solve-defaults", "m17"]);
     assert.ok(EXPERIMENTS.every((e) => e.notRun.length > 0 && e.amendment.length > 0));
   });
 
@@ -76,5 +82,83 @@ describe("the experiments", () => {
 
   it("refuse a name that is not an experiment", () => {
     assert.throws(() => experimentArms("nothing"), RunSetupError);
+  });
+});
+
+/** What differs between an arm and what `solve` builds, by design: the arm takes the table's selection, budget, consortium and model; the person's yes is the bench's. */
+const TABLE_OR_PERSON_FIELDS = ["selection", "budget", "consortium", "model"] as const;
+const withoutTableFields = (c: RunConfig): Record<string, unknown> => {
+  const copy: Record<string, unknown> = { ...c };
+  for (const k of TABLE_OR_PERSON_FIELDS) delete copy[k];
+  if (copy.intake !== undefined) {
+    const { consent: _consent, ...intake } = copy.intake as Record<string, unknown>;
+    copy.intake = intake;
+  }
+  return copy;
+};
+const tableBase: RunConfig = { ...DEFAULT_CONFIG, selection: { all: true }, model: "faux/prover", budget: { problemUsd: 1, runUsd: 1 } };
+const offersAll = { capabilities: { "compute.sage": {}, "lean.search": {} } };
+
+describe("the solve-defaults experiment", () => {
+  const arms = experimentArms("solve-defaults", { host: offersAll });
+  const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
+
+  it("sets solve-v2 against solve-v1, the baseline", () => {
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"]]);
+  });
+
+  for (const defaults of ["v1", "v2"] as const) {
+    it(`gives the ${defaults} arm what solve builds, but for the table's fields and the person's yes`, () => {
+      const additions: Partial<RunConfig> =
+        defaults === "v2"
+          ? { autoTool: "compute.sage", leanSearch: true, intake: { hygiene: true, literature: true, consent: { allowed: true, via: "asked" }, capShare: INTAKE_ALLOWANCE_SHARE } }
+          : {};
+      assert.equal(COMPUTE_TOOL, "compute.sage");
+      const solved = studentConfig({ selection: { all: true }, model: "faux/prover", maxUsd: 1, defaults, base: additions });
+      const fromArm = armConfig(tableBase, arm(`solve-${defaults}`));
+      assert.deepEqual(withoutTableFields(fromArm), withoutTableFields(solved));
+    });
+  }
+
+  it("leaves the additions out of solve-v1", () => {
+    const v1 = armConfig(tableBase, arm("solve-v1"));
+    assert.equal(v1.intake, undefined);
+    assert.equal(v1.autoTool, undefined);
+    assert.equal(v1.leanSearch, undefined);
+    assert.deepEqual(withoutTableFields(v1), withoutTableFields(studentConfig({ selection: { all: true }, model: "faux/prover", maxUsd: 1, defaults: "v1", base: {} })));
+  });
+
+  it("gives solve-v2 the intake but not a capability the host does not offer", () => {
+    const bare = experimentArms("solve-defaults", { host: { capabilities: {} } }).find((a) => a.name === "solve-v2");
+    const config = armConfig(base, bare ?? assert.fail("solve-v2"));
+    assert.equal(config.autoTool, undefined);
+    assert.equal(config.leanSearch, undefined);
+    assert.equal(config.intake?.consent?.allowed, true);
+    assert.equal(armConfig(base, arm("solve-v2")).autoTool, "compute.sage");
+    assert.equal(armConfig(base, arm("solve-v2")).leanSearch, true);
+  });
+
+  const problems = ["p1", "p2"].map((id) => ({ id, path: "Bench.lean" }) as unknown as ProblemEntry);
+  const template = { index: { benchId: "scripted" }, checkout: "/nowhere", models: {} } as unknown as RunOptions;
+  const run = (seen: RunOptions[]) => async (o: RunOptions): Promise<RunResult> => {
+    seen.push(o);
+    const scripted = scriptedRun({ problems: [{ id: "p1", outcome: "proved", attempts: [{ outcome: "valid", usd: 0.4 }] }, { id: "p2", outcome: "unsolved", attempts: [{ usd: 0.5 }] }] }, o.dir);
+    const report = buildReport(scripted.events);
+    return { runId: report.runId, dir: o.dir, problems: [], usd: report.usd, report };
+  };
+
+  it("renders the paired protocol with solve-v1 as the baseline", async () => {
+    const result = await runAblation({ template, config: base, problems, arms, dir: tempDir("mh-solve-defaults-"), run: run([]) });
+    assert.equal(result.protocol?.baseline, "solve-v1");
+    const table = renderAblation(result);
+    assert.match(table, /## Paired protocol/);
+    assert.match(table, /the baseline is solve-v1/);
+  });
+
+  it("keeps private in the solve-v2 run's configuration", async () => {
+    const seen: RunOptions[] = [];
+    await runAblation({ template, config: { ...base, private: true }, problems, arms, dir: tempDir("mh-solve-defaults-"), run: run(seen) });
+    assert.equal(seen.length, 2);
+    assert.ok(seen.every((o) => o.config.private === true));
   });
 });

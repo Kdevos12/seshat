@@ -28,9 +28,7 @@ import type { PriceBook } from "./prices.ts";
 import { resolveModel, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 import { type IntakeConfig } from "./intake.ts";
 
-/** The share of a `solve`'s allowance the intake's judge call may cost at most (documentation/literature.md). */
-export const INTAKE_ALLOWANCE_SHARE = 0.05;
-import { checkAllowance, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
+import { checkAllowance, INTAKE_ALLOWANCE_SHARE, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
 
 /**
  * `harness solve` (plan change PB6, documentation/quickstart.md): a problem of one's own, with the least friction. The statement is a Lean
