@@ -39,8 +39,9 @@ function journalOf(options: { split?: boolean; verdicts?: boolean } = {}): strin
   attempt("a3", "t1", [5000], { outcome: "invalid", stoppedBy: "model", failureDetail: "unsolved goals", checks: 1, holes: [1] });
   attempt("a4", "t2", [1000], { outcome: "valid", stoppedBy: "solved", checks: 1, holes: [0] });
   if (options.verdicts === true) {
-    for (const [nodeId, verdict] of [["n1", "statement_wrong"], ["n2", "proof_too_hard"], ["n3", "proof_too_hard"], ["n4", "statement_wrong"]] as const) {
-      j.emit("node.recorded", { nodeId, kind: "hole_verdict", data: { verdict } }, "line:M12");
+    // n1 and n4 have a Lean-checked negation; n5 is only a suspicion, which is not counted as false.
+    for (const [nodeId, verdict, negationValidated] of [["n1", "statement_wrong", true], ["n2", "proof_too_hard", false], ["n3", "proof_too_hard", false], ["n4", "statement_wrong", true], ["n5", "statement_wrong", false]] as const) {
+      j.emit("node.recorded", { nodeId, kind: "hole_verdict", data: { verdict, ...(negationValidated ? { negationValidated } : {}) } }, "line:M12");
     }
   }
   j.close();
@@ -86,8 +87,8 @@ describe("loop telemetry", () => {
 
   it("counts the proposed sub-lemmas found false from verdict nodes, and says not recorded without them", () => {
     const some = loopTelemetry(readEvents(join(journalOf({ verdicts: true }), "journal.jsonl")));
-    assert.deepEqual(some.holes, { verdicts: 4, wrong: 2, share: 0.5 });
-    assert.match(renderLoop(some).join("\n"), /turned out false: 2 of 4 \(50%\)/);
+    assert.deepEqual(some.holes, { verdicts: 5, wrong: 2, share: 0.4, suspected: 1 });
+    assert.match(renderLoop(some).join("\n"), /turned out false \(a Lean-checked negation\): 2 of 5 \(40%\)\. Suspected false, unverified: 1/);
     const none = loopTelemetry(readEvents(join(journalOf(), "journal.jsonl")));
     assert.equal(none.holes, undefined);
     assert.match(renderLoop(none).join("\n"), /turned out false: not recorded/);

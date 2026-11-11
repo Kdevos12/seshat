@@ -23,7 +23,7 @@ order of their numbers. The hooks of the enabled lines run in this order.
 | `M10` | classical battery per subgoal before any model, domain router, ATP and SMT | `@seshat/classical` ([classical.md](classical.md#the-line)) | built, not run against a real Lean, z3-checked translation only |
 | `M2` | variant graph and logical propagation, the prove/refute twin ([graph.md](graph.md)) | `@seshat/graph` | built, not run against Lean |
 | `M11` | small models and fingerprints: certified refutations, candidate equivalences; with the option `graphs`, counterexamples on graphs ([models.md](models.md#the-line), [graphs](models.md#statements-about-graphs)) | `@seshat/models` | built, not run against Lean |
-| `M12` | saturation kernel and subgoal scheduler: given-clause loop, weighted proof numbers, subsumption through Lean-checked instances, named holes as claims worked by inner provers, the escalation ladder ([scheduler.md](scheduler.md)) | `@seshat/scheduler` | built, not run against Lean |
+| `M12` | saturation kernel and subgoal scheduler: given-clause loop, weighted proof numbers, subsumption through Lean-checked instances, named holes as claims worked by inner provers, blueprints (holes that depend on each other, option `blueprints`), the escalation ladder ([scheduler.md](scheduler.md)) | `@seshat/scheduler` | built, not run against Lean |
 | `M18` | curriculum of variants, rung 1 of the ladder: special cases and weakenings of a hard problem, solved first with a capped share of its budget, their proofs reaching later briefings ([curriculum.md](curriculum.md)) | `@seshat/scheduler` | built, not run against Lean or a model |
 | `M15` | diversity archive of alternative decompositions, rung 2 of the ladder: cells by depth, mechanism and region, a Thompson pick of the one a session extends, schemas of closed decompositions offered to other problems through the randomized inclusion ([archive.md](archive.md), [schemas.md](schemas.md)) | `@seshat/scheduler`, `@seshat/library` | built, not run against Lean or a model |
 | `M4` | context compiler: a frozen prefix and a tail per request, premise selection, citable ids, `expand` and `graph_query` ([context.md](context.md)) | `@seshat/context` | built, not run against Lean or a model |
@@ -456,6 +456,8 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
 
 The result gives the verdict, the `validation.finished` id when the check was recorded, the claim's
 status after the check, the reasons, and the validator's report.
+
+`ProblemContext.holeSession` and `holePreflight` (M12 only, optional): a session with tools on a claim's small file, and the pre-flight tests of a claim ([scheduler.md](scheduler.md#hole-sessions-plan-change-ca10)). `TaskBudget.turns` is the bound of a session in responses.
 
 ## Scheduling
 

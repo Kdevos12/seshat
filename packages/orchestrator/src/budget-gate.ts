@@ -22,6 +22,9 @@ import type { Ledger } from "./budget.ts";
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
 export const PROGRESS_DEPTH = 5;
 
+/** The length, in model responses, of the session the mean cost (or the first guess) stands for: a task bounded in turns is priced in proportion (12 is M12's `holeTurns`). */
+const USUAL_SESSION_TURNS = 12;
+
 type Gated = EventDataMap["budget.gated"];
 
 export interface BudgetGateOptions {
@@ -152,8 +155,10 @@ export class BudgetGate {
    * What a task costs if it uses its sessions: the sessions times what a session costs. The chance of success is not in the price: the
    * rule weighs the price by it (`share x remaining x pSuccess`), and counting it here too would count it twice.
    */
-  taskUsd(sessions: number): number {
-    return this.sessionUsd() * Math.max(1, sessions);
+  taskUsd(sessions: number, turns?: number): number {
+    // A session that is bounded in turns costs in proportion to its bound: the mean (or the first guess) is for a session of the usual length.
+    const scale = turns === undefined ? 1 : Math.max(1, turns) / USUAL_SESSION_TURNS;
+    return this.sessionUsd() * Math.max(1, sessions) * scale;
   }
 
   /**
@@ -317,9 +322,9 @@ export class BudgetGate {
     return this.write(verdict, who, decisionId);
   }
 
-  /** Before a line's task is worked (`budget.line` where there are no numbers). `sessions` is the task's budget in sessions. */
-  async task(who: { taskId: string; sessions?: number }): Promise<GateOutcome> {
-    const query = this.query("task", this.taskUsd(who.sessions ?? 1), `task:${who.taskId}:${this.round("task", who.taskId)}`);
+  /** Before a line's task is worked (`budget.line` where there are no numbers). `sessions` is the task's budget in sessions, `turns` the bound of a session in model responses when it has one. */
+  async task(who: { taskId: string; sessions?: number; turns?: number }): Promise<GateOutcome> {
+    const query = this.query("task", this.taskUsd(who.sessions ?? 1, who.turns), `task:${who.taskId}:${this.round("task", who.taskId)}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(verdict, { taskId: who.taskId }, decisionId);

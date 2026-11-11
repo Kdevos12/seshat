@@ -64,6 +64,8 @@ export interface TaskBudget {
   usd?: number;
   /** Sessions of a prover. */
   sessions?: number;
+  /** The most model responses in one session, when the task's sessions are bounded in turns (M12's hole sessions); the gate prices a session by it. */
+  turns?: number;
 }
 
 /** The claim statuses a criterion can ask for. */
@@ -146,7 +148,7 @@ export function budgetProblems(value: unknown): string[] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return ["the budget must be an object"];
   const problems: string[] = [];
   for (const [key, limit] of Object.entries(value)) {
-    if (key !== "usd" && key !== "sessions") problems.push(`the budget has no limit named ${key}`);
+    if (key !== "usd" && key !== "sessions" && key !== "turns") problems.push(`the budget has no limit named ${key}`);
     else if (typeof limit !== "number" || !Number.isFinite(limit) || limit < 0) problems.push(`budget.${key} must be a non-negative number`);
   }
   return problems;
