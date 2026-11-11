@@ -76,6 +76,8 @@ import { RunSetupError } from "./setup-error.ts";
 import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
+import { fileStatement } from "./solve-tools.ts";
+import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
@@ -98,6 +100,13 @@ export interface RunConfig {
   concurrency: number;
   /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
   tools: string[];
+  /**
+   * A `direct` capability (the host's compute tool, `compute.sage`) that a problem's sessions get besides `tools` when the router files
+   * the problem's statement as finite, about a graph or about numbers (`fileStatement`, documentation/literature.md, "Solve options"). It is
+   * checked and pinned at the start of the run like a tool, and recorded as `autoTool` in `run.started`; the problems that are not filed do
+   * not get it. Absent: none, and a run that records and prompts as it always did.
+   */
+  autoTool?: string;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -286,6 +295,11 @@ export interface RunOptions {
   afterStart?: (journal: Journal) => void;
   /** The person's words, when the statement was formalized from them (`harness solve`): the literature queries use them. */
   prose?: string;
+  /**
+   * Test lemmas the caller already ran for a problem's statement, by problem id (`harness solve` runs them to show them before the signature):
+   * the intake step records them and does not run them again.
+   */
+  testLemmas?: ReadonlyMap<string, TestLemmas>;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -364,6 +378,7 @@ export function checkConfig(config: RunConfig): string[] {
   }
   if (config.checkTimeoutSec !== undefined && !(config.checkTimeoutSec >= 1)) problems.push(`checkTimeoutSec must be at least 1 second, got ${config.checkTimeoutSec}`);
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
+  if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -516,7 +531,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), config.tools.map(toolName), proverTemplate, config.editTool === true) };
+  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...config.tools, ...(config.autoTool !== undefined ? [config.autoTool] : [])].map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -686,11 +701,15 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // certification of the run: the run says so now, and the journal records why.
   const unusable = o.certifier === undefined && certifier !== undefined ? await registry.usable(LEAN_CERTIFY) : undefined;
   const certifierDown = unusable !== undefined && !unusable.ok ? unusable.detail : undefined;
-  const toolProblems = checkTools(registry, config.tools);
+  const autoIds = config.autoTool !== undefined ? [config.autoTool] : [];
+  const toolProblems = checkTools(registry, [...config.tools, ...autoIds]);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
   // A tool that cannot be reached now would answer every prover's call with an error.
-  const pinned = await pinTools(registry, config.tools);
-  if (pinned.problems.length > 0) return await abandon(pinned.problems.join("; "), undefined, registry);
+  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds]);
+  if (pinnedAll.problems.length > 0) return await abandon(pinnedAll.problems.join("; "), undefined, registry);
+  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`): pinned together, recorded apart.
+  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => t.capability !== config.autoTool) };
+  const pinnedAuto = pinnedAll.tools.find((t) => t.capability === config.autoTool);
   // The statement identity of the run is the one an enabled line gives; without one, the text's.
   const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
   let identity: StatementIdentity | undefined;
@@ -750,6 +769,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
+      ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
@@ -1310,6 +1330,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             price: perMillion,
             ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd, pSuccess: INTAKE_P_SUCCESS }); return { action: a.action, reason: a.reason }; } } : {}),
             checker: new RegistryLeanChecker(registry, { actor: "orchestrator" }),
+            allowanceUsd: config.budget.problemUsd,
+            ...(o.testLemmas?.get(entry.id) !== undefined ? { testLemmas: o.testLemmas.get(entry.id) as TestLemmas } : {}),
             problemId: entry.id,
             claimId,
             statement: entry.statement,
@@ -1393,6 +1415,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         adopted ||
         resumeFailure !== undefined ||
         (lines !== undefined && (lineFailure !== undefined || workbench.candidate !== undefined || controller.signal.aborted));
+      // The compute tool a problem gets only when the router files its statement (`RunConfig.autoTool`).
+      const autoToolFiled = pinnedAuto !== undefined ? fileStatement(entry.statement) : undefined;
+      if (autoToolFiled !== undefined && pinnedAuto !== undefined) log(`${entry.fullName}: the statement is filed as ${autoToolFiled}: the provers get ${pinnedAuto.capability}`);
       /**
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
        * prover that was started before carries; `probe` makes it a probe: `sessions` sessions under a ledger of its own, then it pauses.
@@ -1438,7 +1463,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(gate !== undefined ? { gate } : {}),
           signal: controller.signal,
           transcript,
-          tools: pinned.tools,
+          tools: autoToolFiled !== undefined && pinnedAuto !== undefined ? [...pinned.tools, pinnedAuto] : pinned.tools,
           stamp: (modelId) => stampProvenance(provenance, { modelId }),
           onAttemptEnd: (attempt) => {
             void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });

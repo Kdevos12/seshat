@@ -108,6 +108,7 @@ function intakeOf(recorded: unknown): IntakeConfig | undefined {
     ...(r.literature === true ? { literature: true } : {}),
     ...(r.hygiene === true ? { hygiene: true } : {}),
     ...(typeof r.capUsd === "number" ? { capUsd: r.capUsd } : {}),
+    ...(typeof r.capShare === "number" ? { capShare: r.capShare } : {}),
     ...(validConsent ? { consent: { allowed: consent.allowed as boolean, via: consent.via as "asked" | "flag" | "bench" } } : {}),
   };
 }
@@ -145,6 +146,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.editTool === true ? { editTool: true } : {}),
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
+    ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
