@@ -101,3 +101,35 @@ export function readWork(submission: Submission, report: ValidationReport, deps:
   if (hasHole(submission.proof)) return refuse("the proof has a sorry");
   return { done: true, helpers: helpers.join("\n\n") };
 }
+
+/** The most characters of the claim's header a hole's prompt shows whole; a longer header is cut after its first lines. */
+export const HOLE_HEADER_CHARS = 2500;
+/** The most characters, in all, of the earlier sessions' failure reasons a hole's prompt repeats (the newest first kept). */
+export const HOLE_HISTORY_CHARS = 900;
+
+/** The header as the prompt shows it: whole when short, else its first lines (the imports and opens come first) and a line saying the rest is cut. */
+export function cutHeader(header: string, max: number = HOLE_HEADER_CHARS): string {
+  if (header.length <= max) return header;
+  const lines = header.split("\n");
+  const kept: string[] = [];
+  let size = 0;
+  for (const line of lines) {
+    if (size + line.length + 1 > max) break;
+    kept.push(line);
+    size += line.length + 1;
+  }
+  return `${kept.join("\n")}\n-- (${lines.length - kept.length} more line${lines.length - kept.length === 1 ? "" : "s"} of the header are cut here)`;
+}
+
+/** The earlier sessions' failure lines, oldest first, whose total size is at most `max`: the newest are kept, a line that does not fit is dropped. */
+export function boundHistory(entries: readonly string[], max: number = HOLE_HISTORY_CHARS): string[] {
+  const kept: string[] = [];
+  let size = 0;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i] as string;
+    if (size + entry.length + 1 > max) break;
+    kept.unshift(entry);
+    size += entry.length + 1;
+  }
+  return kept;
+}

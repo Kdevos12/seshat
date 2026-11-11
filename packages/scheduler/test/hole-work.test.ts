@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ValidationReport } from "@seshat/core";
-import { readWork, stubsRegion } from "../src/index.ts";
+import { HOLE_HEADER_CHARS, HOLE_HISTORY_CHARS, boundHistory, cutHeader, readWork, stubsRegion } from "../src/index.ts";
 
 const dep = { name: "aux_a", statement: "(n : Nat) : n + 0 = n" };
 const report = (over: Partial<ValidationReport> = {}): ValidationReport => ({
@@ -58,4 +58,20 @@ test("Lean's own report is read: an added axiom, or a sorry outside the stubs, i
   // a sorry Lean reports in the helper
   const inHelper = report({ checked: file, sorries: [{ pos: { line: lineOf("lemma helper"), column: 0 }, goal: "" }] });
   assert.match(readWork({ aux, proof: "exact helper n" }, inHelper, [dep]).reason ?? "", /sorry outside the given lemmas/);
+});
+
+test("the header is shown whole when short and cut after its first lines when long, and the history is bounded", () => {
+  const short = "import Mathlib\nopen Nat\n";
+  assert.equal(cutHeader(short), short);
+  const long = ["import Mathlib", "open Nat", ...Array.from({ length: 400 }, (_, i) => `def d${i} : Nat := ${i}`)].join("\n");
+  const cut = cutHeader(long);
+  assert.ok(cut.startsWith("import Mathlib\nopen Nat\n"), "the imports stay");
+  assert.ok(cut.length <= HOLE_HEADER_CHARS + 80);
+  assert.match(cut, /more lines of the header are cut here/);
+  assert.doesNotMatch(cut, /d399/);
+  const entries = Array.from({ length: 10 }, (_, i) => `- session ${i + 1}: ${"x".repeat(300)}`);
+  const kept = boundHistory(entries);
+  assert.ok(kept.join("\n").length <= HOLE_HISTORY_CHARS);
+  assert.ok(kept.length >= 1 && kept.at(-1) === entries.at(-1), "the newest is kept");
+  assert.deepEqual(boundHistory(["- session 1: a"]), ["- session 1: a"]);
 });
