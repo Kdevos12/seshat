@@ -28,6 +28,12 @@ export interface IntakeConfig {
   /** The most the judge call may cost per problem, in dollars. Default $0.05. */
   capUsd?: number;
   /**
+   * The share of the problem's budget the judge call may cost, when `capUsd` is not given: the cap is the smaller of the default and this
+   * share of `budget.problemUsd` (`harness solve` gives 0.05, so that the intake is proportionate to a small allowance, documentation/literature.md).
+   * Absent: the default alone. `capUsd`, given on purpose, wins.
+   */
+  capShare?: number;
+  /**
    * Whether the statement may go to third parties, and how that was decided: `bench` (a bench problem is public: on), `asked` (a person
    * answered the question `harness solve` asks once), `flag` (`--lit`, in a call that cannot ask). Absent: no (the step is skipped with `not agreed`). Journaled as `intake.consented`.
    * `asked` and `flag` need the run's `user`, who is the person who answered. Absent from an `intake`
@@ -53,6 +59,13 @@ export function checkIntake(intake: IntakeConfig | undefined, o: { user?: string
   return faults;
 }
 
+/** The most the judge call may cost: `capUsd` as given, else the smaller of the default and `capShare` of the problem's budget. */
+export function intakeCapUsd(config: IntakeConfig, allowanceUsd?: number): number {
+  if (config.capUsd !== undefined) return config.capUsd;
+  if (config.capShare !== undefined && allowanceUsd !== undefined) return Math.min(DEFAULT_INTAKE_USD, Math.round(config.capShare * allowanceUsd * 1e6) / 1e6);
+  return DEFAULT_INTAKE_USD;
+}
+
 export interface IntakeStep {
   /** What ended the turn, in a run with a person; absent when nothing stops. */
   breakpoint?: { reason: "literature" | "vacuous"; detail: string };
@@ -76,6 +89,10 @@ export interface IntakeStepOptions {
   price?: IntakeOptions["price"];
   ask?: IntakeOptions["ask"];
   checker?: LeanChecker;
+  /** The problem's budget in dollars, for `config.capShare`. */
+  allowanceUsd?: number;
+  /** The test lemmas the caller already ran for this statement (`harness solve` runs them to show them before the signature): not run again. */
+  testLemmas?: TestLemmas;
   problemId: string;
   claimId: string;
   statement: string;
@@ -135,7 +152,7 @@ export async function intakeStep(o: IntakeStepOptions): Promise<IntakeStep> {
       () => vacuityTest(o.checker as LeanChecker, o.header, o.statement, options),
       () => plausibleTest(o.checker as LeanChecker, o.header, o.statement, options),
       async (): Promise<HygieneData> => {
-        const t: TestLemmas = await testLemmas(o.checker as LeanChecker, o.header, o.statement, 10, options);
+        const t: TestLemmas = o.testLemmas ?? (await testLemmas(o.checker as LeanChecker, o.header, o.statement, 10, options));
         return { check: "test_lemmas", result: t.result, detail: t.result === "failed" ? `Lean's decide refutes the statement on case ${t.failedAt}` : (t.note ?? `${t.tried} case(s) tried`) };
       },
     ]) {
@@ -148,7 +165,7 @@ export async function intakeStep(o: IntakeStepOptions): Promise<IntakeStep> {
     }
   }
 
-  const capUsd = config.capUsd ?? DEFAULT_INTAKE_USD;
+  const capUsd = intakeCapUsd(config, o.allowanceUsd);
   if (wantsLiterature) {
     const literature: IntakeResult = allowed
       ? await runIntake({
