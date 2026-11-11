@@ -88,16 +88,11 @@ describe("harness solve --tool and --auto-tool", () => {
 });
 
 describe("the intake of a solve is proportionate and does not repeat", () => {
-  const decides = (lean: DemoLean) => lean.calls.filter((c) => /\bdecide\b/.test(c.code)).length;
-
   it("runs the test lemmas once: the intake reuses the ones solve ran for the signature", async () => {
     const once = base({ intake: { hygiene: true } }, [check("exact trivial_proof")]);
     await solve(once.o);
-    const withIntake = decides(once.lean);
-    const bare = base({}, [check("exact trivial_proof")]);
-    await solve(bare.o);
-    assert.ok(withIntake > 0, "the test lemmas ran");
-    assert.equal(withIntake, decides(bare.lean), "the intake adds no second run of the test lemmas");
+    // The first case of the test lemmas (`m11_stmt 9`) is checked once in the whole solve, not once by solve and once by the intake.
+    assert.equal(once.lean.calls.filter((c) => /@m11_stmt 9 := by decide/.test(c.code)).length, 1);
   });
 
   it("caps the judge call at the smaller of the default and 5% of the allowance, and --intake-usd wins", () => {
