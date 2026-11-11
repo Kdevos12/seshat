@@ -12,7 +12,7 @@ import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { type GateSettings, gateSettings } from "@seshat/scheduler";
 import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
-import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
+import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
@@ -55,7 +55,7 @@ const usage = `usage:
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
-              [--baseline ARM] [--target RATIO]
+              [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
@@ -84,6 +84,7 @@ const usage = `usage:
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--lean-search] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
+              [--no-intake] [--no-auto-tool] [--no-lean-search]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -94,7 +95,7 @@ HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and do
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
-Intake (documentation/literature.md; off unless asked): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
+Intake (documentation/literature.md; off unless asked, except in solve with --defaults v2, which turns on the intake, --auto-tool and --lean-search; --no-intake, --no-auto-tool and --no-lean-search turn one off and only matter with v2): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
 the literature (lit.search) for each bench problem, with one judge call under --intake-usd (default 0.05); a settled hit or a vacuous statement is a breakpoint in a run
 with a person. For solve the literature needs your agreement: asked once and journaled, or --lit (which also turns --intake on) in a call that cannot ask; no answer
 is no. --private sends nothing to a third party (documentation/trust.md; a pack whose manifest does not declare thirdParty is not checked): the literature is off, lean.search keeps to its local backends, the OEIS, LMFDB and FindStat capabilities are refused, a run that asks a third-party decision model is refused, and solve --tool naming one of them stops before any spend (it wins over --lit and --intake). With --lean-search, solve asks the same one question as for the literature (--lit is the yes; --yes alone is no, and lean.search then stays local). solve --tool ID gives the provers that capability (as run
@@ -104,7 +105,7 @@ the proposition) or prose, or a file holding one. Prose is formalized by the che
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
 whole budget, the formalization included; the budget gate, probe first and the classical lines M1 and M10 are on; a turn stops, with its
 account, at half the allowance (--turn-usd). --defaults picks the set of defaults: v2 (the default) adds the edit tool, the masking of old
-check results and bounded checks to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
+check results, bounded checks, the intake gate, the compute tool and lean.search (when the host offers them) to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
 model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
 config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
 report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
@@ -239,6 +240,9 @@ const { positionals, values } = parseArgs({
     private: { type: "boolean" },
     "intake-usd": { type: "string" },
     "auto-tool": { type: "boolean" },
+    "no-intake": { type: "boolean" },
+    "no-auto-tool": { type: "boolean" },
+    "no-lean-search": { type: "boolean" },
     port: { type: "string" },
     open: { type: "boolean" },
     lean: { type: "boolean" },
@@ -897,9 +901,13 @@ async function ablate(): Promise<number> {
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    // A bench problem is public, so the third parties of the arms that take them follow the bench rule: on, off with --private.
+    ...(values.private === true ? { private: true } : {}),
   };
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
+  const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, hostName(values.host))) : undefined;
   await ablateCommand({
+    ...(hostProfile !== undefined ? { host: { capabilities: hostProfile.capabilities, ...(hostProfile.checkTimeoutSec !== undefined ? { checkTimeoutSec: hostProfile.checkTimeoutSec } : {}) } } : {}),
     template: runTemplate(index, checkout, stoppable()),
     config,
     problems,
@@ -1143,6 +1151,9 @@ async function solve(): Promise<number> {
       noCheck: values["no-check"] === true,
       ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
       autoTool: values["auto-tool"] === true,
+      noIntake: values["no-intake"] === true,
+      noAutoTool: values["no-auto-tool"] === true,
+      noLeanSearch: values["no-lean-search"] === true,
       intake: values.intake === true || values.lit === true,
       lit: values.lit === true,
       private: values.private === true,

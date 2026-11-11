@@ -9,7 +9,7 @@ import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./im
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
-import { cheapestModel, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, STUDENT_DEFAULT_MAX_USD, STUDENT_LINES } from "./student.ts";
+import { cheapestModel, COMPUTE_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
 
@@ -53,6 +53,10 @@ export interface SolveFlags extends DoctorFlags {
   intake?: boolean;
   /** `--lit`: the person agrees to the statement going to third parties, in a call that cannot ask. Implies `intake`. */
   lit?: boolean;
+  /** `--no-intake`, `--no-auto-tool`, `--no-lean-search`: turn one addition of the set off (they matter with `v2`, which turns them on). */
+  noIntake?: boolean;
+  noAutoTool?: boolean;
+  noLeanSearch?: boolean;
   /** `--private`: nothing goes outside; wins over everything. */
   private?: boolean;
   /** `--intake-usd`: the cap of the judge call. */
@@ -136,7 +140,7 @@ export function consentQuestion(profile: HostProfile, o: { literature: boolean; 
   if (o.leanSearch) {
     const hosts = profile.capabilities["lean.search"]?.settings?.search?.allowedHosts;
     const names = Array.isArray(hosts) && hosts.length > 0 ? hosts.map(plainName).join(", ") : "the search services the host profile sets";
-    parts.push(`--lean-search would send the unknown names and the goals of your proof attempts to ${names} (without it, only a local index and pattern search are used)`);
+    parts.push(`lean.search would send the unknown names and the goals of your proof attempts to ${names} (without it, only a local index and pattern search are used)`);
   }
   return `This run could send content of your problem outside this machine and the model provider: ${parts.join("; and ")}. Allow that? [y/N] `;
 }
@@ -166,8 +170,32 @@ export function consentOptions(flags: SolveFlags, io: Pick<CommandIo, "ask">, pr
   };
 }
 
-/** The compute tool of the host that `--auto-tool` adds. */
-const COMPUTE_TOOL = "compute.sage";
+/** What the host lets the switches do: the compute tool and `lean.search` only if the host offers them, and one line for each that it does not. */
+export function resolveAdditions(flags: SolveFlags, defaults: string, switches: { autoTool: boolean; leanSearch: boolean }, host: string, offers: (capability: string) => boolean): { autoTool: boolean; leanSearch: boolean; notes: string[] } {
+  const notes: string[] = [];
+  const autoTool = switches.autoTool && offers(COMPUTE_TOOL);
+  const leanSearch = switches.leanSearch && offers(SEARCH_CAPABILITY);
+  if (switches.autoTool && !autoTool) notes.push(`Note: ${flags.autoTool === true ? "--auto-tool" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
+  if (switches.leanSearch && !leanSearch) notes.push(`Note: ${flags.leanSearch === true ? "--lean-search" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${SEARCH_CAPABILITY}; the run goes on without it.`);
+  return { autoTool, leanSearch, notes };
+}
+
+/** What `solve` does at its own level under a set and the flags: the set's switches (`SOLVE_SWITCHES`), the explicit flags on, the `--no-...` flags off. */
+export function effectiveSwitches(flags: SolveFlags, defaults: DefaultsName): { intake: boolean; autoTool: boolean; leanSearch: boolean } | { conflict: string } {
+  const set = SOLVE_SWITCHES[defaults];
+  for (const [on, off, name] of [
+    [flags.intake === true || flags.lit === true, flags.noIntake === true, "--intake (or --lit)/--no-intake"],
+    [flags.autoTool === true, flags.noAutoTool === true, "--auto-tool/--no-auto-tool"],
+    [flags.leanSearch === true, flags.noLeanSearch === true, "--lean-search/--no-lean-search"],
+  ] as const) {
+    if (on && off) return { conflict: `${name} cannot both be given` };
+  }
+  return {
+    intake: flags.intake === true || flags.lit === true || (set.intake && flags.noIntake !== true),
+    autoTool: flags.autoTool === true || (set.autoTool && flags.noAutoTool !== true),
+    leanSearch: flags.leanSearch === true || (set.leanSearch && flags.noLeanSearch !== true),
+  };
+}
 
 /** The checks a solve cannot start without: the others are said, and the run goes on. */
 const NEEDED: ReadonlyArray<Check["id"]> = ["kimina", "credentials", "prices", "network"];
@@ -258,8 +286,13 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
-  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}.`);
-  io.out(`Host: ${host}. Lines: ${(flags.lines ?? (defaults === "v2" ? [...STUDENT_LINES, "M6"] : [...STUDENT_LINES])).join(", ")}, with the budget gate and the probe first.`);
+  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName).length > 0 ? `: ${describeSet(defaults as DefaultsName).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool or --no-lean-search.`);
+  const switches = effectiveSwitches(flags, defaults as DefaultsName);
+  if ("conflict" in switches) {
+    io.err(switches.conflict);
+    return 2;
+  }
+  io.out(`Host: ${host}. Lines: ${(flags.lines ?? studentLines(defaults as DefaultsName)).join(", ")}, with the budget gate and the probe first.`);
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
   let report: DoctorReport | undefined;
@@ -299,7 +332,10 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       return 2;
     }
   }
-  if (flags.autoTool === true && !checkerRegistry.offers(COMPUTE_TOOL)) io.out(`Note: --auto-tool has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
+  // The additions of the set that the host cannot give are said in one line and the run goes on without them.
+  const additions = resolveAdditions(flags, defaults as DefaultsName, switches, host, (capability) => checkerRegistry.offers(capability));
+  for (const note of additions.notes) io.out(note);
+  const { autoTool, leanSearch } = additions;
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
   try {
@@ -318,13 +354,13 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
-      ...(flags.leanSearch === true || flags.consolidation === true ? { base: { ...(flags.leanSearch === true ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}) } } : {}),
+      ...(leanSearch || flags.consolidation === true ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}) } } : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),
-      ...(flags.autoTool === true && checkerRegistry.offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
+      ...(autoTool ? { autoTool: COMPUTE_TOOL } : {}),
       ...(flags.private === true ? { private: true } : {}),
-      ...consentOptions(flags, io, profile),
+      ...consentOptions({ ...flags, intake: switches.intake, leanSearch }, io, profile),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
           if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");

@@ -44,11 +44,63 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
   },
 };
 
+/**
+ * What a set turns on at the level of `solve` itself, beside the `RunConfig` fields of `DEFAULTS_SETS` (Task 34b): the three things that are
+ * not one `RunConfig` field each, because `solve` decides them for its problem. This table and `DEFAULTS_SETS` are the one place that says
+ * what a set does: `solve-command.ts`, `harness doctor` and the page `quickstart.md` read it, and none keeps a copy.
+ *
+ * - `intake`: the intake gate (documentation/literature.md): the statement's hygiene tests, and the literature only with the person's yes.
+ * - `autoTool`: the host's compute tool for a statement the router files as finite, about a graph or about numbers; only when the host offers it.
+ * - `leanSearch`: `RunConfig.leanSearch`; only when the host offers `lean.search`; remote services only with the person's yes.
+ *
+ * The explicit flags (`--intake`, `--auto-tool`, `--lean-search`) turn one on whatever the set; `--no-intake`, `--no-auto-tool` and
+ * `--no-lean-search` turn one of the set off.
+ */
+export interface SolveSwitches {
+  intake: boolean;
+  autoTool: boolean;
+  leanSearch: boolean;
+}
+
+export const SOLVE_SWITCHES: Readonly<Record<DefaultsName, Readonly<SolveSwitches>>> = {
+  v1: { intake: false, autoTool: false, leanSearch: false },
+  v2: { intake: true, autoTool: true, leanSearch: true },
+};
+
+/** The capability that gives `lean.search`, and the compute tool of `autoTool`, as a host profile names them. */
+export const SEARCH_CAPABILITY = "lean.search";
+export const COMPUTE_TOOL = "compute.sage";
+
+/** What a set turns on, in words: one line per addition, taken from `DEFAULTS_SETS` and `SOLVE_SWITCHES`. `offers` says which capabilities the host has. */
+export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean): string[] {
+  const set = DEFAULTS_SETS[name];
+  const sw = SOLVE_SWITCHES[name];
+  const lines: string[] = [];
+  const config: Array<[keyof RunConfig, string]> = [
+    ["editTool", "the edit tool"],
+    ["maskOldChecks", "masking of old check results"],
+    ["checkTimeoutSec", "bounded Lean checks"],
+    ["stateCard", "the state card"],
+    ["budgetRounds", "the budget in rounds"],
+  ];
+  for (const [key, what] of config) if (set[key] !== undefined && set[key] !== false) lines.push(what);
+  if (name === "v2") lines.push("line M6's repeat rule");
+  if (sw.intake) lines.push("the intake gate (hygiene tests; the literature only with your yes)");
+  if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
+  if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
+  return lines;
+}
+
 /** The dollars a `solve` may spend when `--max-usd` is not given: small on purpose, and always there. */
 export const STUDENT_DEFAULT_MAX_USD = 2;
 
 /** The classical battery runs before any model call (line M10), on the shared identity of statements (line M1). */
 export const STUDENT_LINES: readonly string[] = ["M1", "M10"];
+
+/** The lines a `solve` enables when the caller names none: the set's own (`v2` adds M6, for its mechanical repeat rule alone). */
+export function studentLines(defaults: DefaultsName): string[] {
+  return defaults === "v2" ? [...STUDENT_LINES, "M6"] : [...STUDENT_LINES];
+}
 
 /**
  * The share of the allowance a turn may spend before the run stops with its account and waits for a decision: the first stop is a
@@ -121,6 +173,45 @@ export function checkAllowance(maxUsd: number, turnUsd?: number): string[] {
   return problems;
 }
 
+/** The share of a `solve`'s allowance the intake's judge call may cost at most (documentation/literature.md); the bench arms use it too. */
+export const INTAKE_ALLOWANCE_SHARE = 0.05;
+
+/**
+ * What a set gives a problem whatever the person or the problem (Task 34b, decision I): the set's fields, the lines and line options, the
+ * budget gate with the student's settings, and the caller's `base`. `studentConfig` adds the selection, the budget, the consortium mode and
+ * the person's options; the arms of `harness ablate --experiment solve-defaults` take this and only this, so that an arm cannot drift from `solve`.
+ */
+export function setConfig(defaults: DefaultsName, o: Pick<StudentOptions, "lines" | "hostCheckTimeoutSec" | "base"> = {}): Partial<RunConfig> {
+  const lines = o.lines ?? studentLines(defaults);
+  // v2 runs M6 for its mechanical repeat rule only: no detector, no model call.
+  const repeatOnly = defaults === "v2" && o.lines === undefined && lines.includes("M6");
+  const set = DEFAULTS_SETS[defaults];
+  return {
+    ...set,
+    ...(set.checkTimeoutSec !== undefined && o.hostCheckTimeoutSec !== undefined ? { checkTimeoutSec: o.hostCheckTimeoutSec } : {}),
+    ...o.base,
+    defaults,
+    gate: STUDENT_GATE,
+    ...(lines.length > 0 ? { lines: [...lines] } : {}),
+    ...(repeatOnly
+      ? { lineOptions: { ...o.base?.lineOptions, M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } } }
+      : {}),
+  };
+}
+
+/**
+ * What a set's `solve`-level switches (`SOLVE_SWITCHES`) give a bench problem, as `RunConfig` fields: the intake with the bench's yes (a
+ * bench problem is public; `private` in the run's config wins over it), the compute tool and `lean.search` only when the host offers them.
+ */
+export function benchAdditions(defaults: DefaultsName, offers: (capability: string) => boolean = () => true): Partial<RunConfig> {
+  const sw = SOLVE_SWITCHES[defaults];
+  return {
+    ...(sw.intake ? { intake: { hygiene: true, literature: true, consent: { allowed: true, via: "bench" as const }, capShare: INTAKE_ALLOWANCE_SHARE } } : {}),
+    ...(sw.autoTool && offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
+    ...(sw.leanSearch && offers(SEARCH_CAPABILITY) ? { leanSearch: true } : {}),
+  };
+}
+
 /**
  * The configuration of a `solve`: the allowance is both the problem's and the run's budget, so it is a ceiling nothing goes past; the
  * gate and probe-first are on; the classical battery comes first; and consortium mode stops the run for its account when a turn has
@@ -129,24 +220,12 @@ export function checkAllowance(maxUsd: number, turnUsd?: number): string[] {
 export function studentConfig(o: StudentOptions): RunConfig {
   const turn: TurnLimit = { usd: o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6 };
   const defaults = o.defaults ?? DEFAULT_DEFAULTS;
-  const lines = o.lines ?? (defaults === "v2" ? [...STUDENT_LINES, "M6"] : STUDENT_LINES);
-  // v2 runs M6 for its mechanical repeat rule only: no detector, no model call.
-  const repeatOnly = defaults === "v2" && o.lines === undefined && lines.includes("M6");
-  const set = DEFAULTS_SETS[defaults];
   return {
     ...DEFAULT_CONFIG,
-    ...set,
-    ...(set.checkTimeoutSec !== undefined && o.hostCheckTimeoutSec !== undefined ? { checkTimeoutSec: o.hostCheckTimeoutSec } : {}),
-    ...o.base,
-    defaults,
+    ...setConfig(defaults, o),
     selection: o.selection,
     model: o.model,
     budget: { problemUsd: o.maxUsd, runUsd: o.maxUsd },
-    gate: STUDENT_GATE,
-    ...(lines.length > 0 ? { lines: [...lines] } : {}),
-    ...(repeatOnly
-      ? { lineOptions: { ...o.base?.lineOptions, M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } } }
-      : {}),
     consortium: { limit: turn, impasse: { ...DEFAULT_IMPASSE }, narrative: false },
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
   };
