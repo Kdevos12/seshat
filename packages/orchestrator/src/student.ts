@@ -18,6 +18,8 @@ import type { PriceBook } from "./prices.ts";
  * - `v1` is what `solve` did before the sets: nothing is added to the configuration. It stays reachable (`harness solve --defaults v1`),
  *   and a test holds that its configuration is that of the commit the sets began from.
  * - `v2` is `v1` plus the edit tool, the masking of old check results, the bounded checks, the state card and the budget in rounds. It is the default.
+ *   `budgetRounds` only acts on a run of several problems: `solve` has one, so it does nothing there. `studentConfig` also adds line M6
+ *   with its mechanical repeat rule alone (no detector, no model call) to `v2` when the caller names no lines.
  *
  * A later task that changes `solve`'s defaults adds its option to `v2` here, one line for each option.
  */
@@ -126,8 +128,10 @@ export function checkAllowance(maxUsd: number, turnUsd?: number): string[] {
  */
 export function studentConfig(o: StudentOptions): RunConfig {
   const turn: TurnLimit = { usd: o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6 };
-  const lines = o.lines ?? STUDENT_LINES;
   const defaults = o.defaults ?? DEFAULT_DEFAULTS;
+  const lines = o.lines ?? (defaults === "v2" ? [...STUDENT_LINES, "M6"] : STUDENT_LINES);
+  // v2 runs M6 for its mechanical repeat rule only: no detector, no model call.
+  const repeatOnly = defaults === "v2" && o.lines === undefined && lines.includes("M6");
   const set = DEFAULTS_SETS[defaults];
   return {
     ...DEFAULT_CONFIG,
@@ -140,6 +144,9 @@ export function studentConfig(o: StudentOptions): RunConfig {
     budget: { problemUsd: o.maxUsd, runUsd: o.maxUsd },
     gate: STUDENT_GATE,
     ...(lines.length > 0 ? { lines: [...lines] } : {}),
+    ...(repeatOnly
+      ? { lineOptions: { ...o.base?.lineOptions, M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } } }
+      : {}),
     consortium: { limit: turn, impasse: { ...DEFAULT_IMPASSE }, narrative: false },
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
   };
