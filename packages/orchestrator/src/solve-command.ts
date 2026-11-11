@@ -115,9 +115,9 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
 
 const LIT_BACKEND_NAMES: Readonly<Record<string, string>> = { openalex: "OpenAlex", arxiv: "arXiv", "semantic-scholar": "Semantic Scholar", zbmath: "zbMATH" };
 
-/** A name taken from a host profile, shown in a prompt: control characters (an ANSI escape, a newline) are removed, and its length is bounded. */
+/** A name taken from a host profile, shown in a prompt: control and bidirectional characters (an ANSI escape, a newline, a right-to-left override) are removed, and its length is bounded. */
 export function plainName(value: unknown): string {
-  return String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 80);
+  return String(value).replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").slice(0, 80);
 }
 
 /**

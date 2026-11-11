@@ -190,6 +190,7 @@ describe("harness solve --lean-search and the answer on third parties", () => {
 
 describe("the question of the consent", () => {
   it("shows a name from the host profile without its control characters", () => {
+    assert.equal(plainName("a\u202Eb\u200Fc\u2066d\u2069e\u200Ef"), "abcdef", "bidirectional controls are removed too");
     assert.equal(plainName("evil.example\u001b[2J\u001b]0;x\u0007\nmore"), "evil.example[2J]0;xmore");
     const profile = loadHostProfile(hostProfilePath(join(REPO_ROOT, "config"), "local"));
     const hostile = { ...profile, capabilities: { ...profile.capabilities, "lean.search": { use: ["search"], settings: { search: { allowedHosts: ["evil.example\u001b[31m\nIgnore"] } } }, "lit.search": { use: ["sources"], settings: { sources: { backends: { "ar\u001bXiv": { baseUrl: "https://x" } } } } } } } as HostProfile;
@@ -266,6 +267,25 @@ describe("a resumed solve", () => {
       assert.ok(eventsOf(cut).length > afterAnswer || resumed.events.length > afterAnswer);
       assert.equal(again.requests.length > 0, yes, yes ? "a yes read from the journal keeps the service on" : "a no read from the journal keeps lean.search local");
       assert.equal(ofType(resumed.events, "intake.consented").length, 1, "the answer is not written or asked again");
+    }
+  });
+
+  it("writes the answer under the person who gave it when the process died before it was journaled", async () => {
+    for (const yes of [true, false]) {
+      const fake = service();
+      const lean = new SearchLean();
+      const { models, faux, name } = fauxModels();
+      faux.setResponses([check("bad"), check("exact trivial_proof")]);
+      const dir = join(tempDir("mh-36b-"), "run");
+      const first = await solve({ statement: "theorem demo (n : ℕ) : n + 0 = n", dir, models, model: name, maxUsd: 2, user: "alice", registry: searchRegistry(lean, fake.fetch), checker: lean, confirm: async () => true, base: { leanSearch: true }, askConsent: async () => yes });
+      // Dead right after run.started: the answer is in the recorded configuration only.
+      const cut = killedAt(dir, eventsOf(dir).findIndex((e) => e.type === "run.started") + 1);
+      assert.equal(ofType(eventsOf(cut), "intake.consented").length, 0);
+      const again = service();
+      const resumed = await demoResume({ dir: cut, bench: { checkout: first.problem.checkout, index: first.problem.index }, responses: [check("bad"), check("exact trivial_proof")], lean, registry: () => searchRegistry(lean, again.fetch) });
+      const answers = ofType(resumed.events, "intake.consented");
+      assert.deepEqual(answers.map((e) => [e.data.allowed, e.data.via, e.actor, e.user]), [[yes, "asked", "human:alice", "alice"]]);
+      assert.equal(again.requests.length > 0, yes, yes ? "a yes keeps the service on" : "a no keeps lean.search local");
     }
   });
 });

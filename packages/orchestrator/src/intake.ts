@@ -45,11 +45,11 @@ export interface IntakeConfig {
 export const INTAKE_P_SUCCESS = 0.2;
 
 /** The faults of an intake configuration. */
-export function checkIntake(intake: IntakeConfig | undefined, o: { user?: string | undefined; resumed?: boolean } = {}): string[] {
+export function checkIntake(intake: IntakeConfig | undefined, o: { user?: string | undefined } = {}): string[] {
   if (intake === undefined) return [];
   const faults: string[] = [];
   if (intake.capUsd !== undefined && !(Number.isFinite(intake.capUsd) && intake.capUsd > 0 && intake.capUsd <= 1)) faults.push(`intake.capUsd must be above 0 and at most 1 dollar, got ${String(intake.capUsd)}`);
-  if (intake.consent !== undefined && (intake.consent.via === "asked" || intake.consent.via === "flag") && o.user === undefined && o.resumed !== true) faults.push(`intake.consent ${intake.consent.via} is a person's answer: the run needs its user`);
+  if (intake.consent !== undefined && (intake.consent.via === "asked" || intake.consent.via === "flag") && o.user === undefined) faults.push(`intake.consent ${intake.consent.via} is a person's answer: the run needs its user`);
   return faults;
 }
 
@@ -106,9 +106,10 @@ export function recordConsent(o: { journal: Journal; config: IntakeConfig | unde
     : consent !== undefined
       ? { problemId: o.problemId, allowed: consent.allowed, via: consent.via }
       : { problemId: o.problemId, allowed: false, via: "default" };
-  // A resumed run has no user of its own; an answer it must write for the first time (the process died before) is then the orchestrator's note of it.
-  const actor = (decision.via === "asked" || decision.via === "flag") && o.user !== undefined ? `human:${o.user}` : "orchestrator";
-  o.journal.emit("intake.consented", decision, actor);
+  // The answer is a person's and stays attributed to them, also when a resumed run writes it (`run.ts` reads the person from `run.started`).
+  const person = decision.via === "asked" || decision.via === "flag";
+  if (person && o.user === undefined) throw new Error(`the answer ${decision.via} on third parties is a person's, and the run records none`);
+  o.journal.emit("intake.consented", decision, person ? `human:${o.user as string}` : "orchestrator", person ? { user: o.user as string } : {});
 }
 
 /**
