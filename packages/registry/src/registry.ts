@@ -220,15 +220,23 @@ export class Registry {
     for (const id of policy.local ?? []) this.localOnly.add(id);
   }
 
+  /**
+   * What the policy does to a call of the capability, in one place (`invoke` and `thirdPartyRefusal` both read it): `none` (not restricted),
+   * `force` (the call is made with `fields` added to its input), or `only` (the call goes to these implementations, among `candidates`;
+   * none left means `refuse`).
+   */
+  private thirdPartyPlan(id: string, candidates: readonly string[]): { kind: "none" } | { kind: "force"; fields: Record<string, Json> } | { kind: "only"; use: string[] } | { kind: "refuse"; sends: string } {
+    const spec = this.catalog.capabilities.get(id)?.manifest.thirdParty;
+    if (spec === undefined || !(this.privateRun || this.localOnly.has(id))) return { kind: "none" };
+    if (spec.privateInput !== undefined) return { kind: "force", fields: spec.privateInput };
+    const use = candidates.filter((i) => spec.implementations !== undefined && !spec.implementations.includes(i));
+    return use.length > 0 ? { kind: "only", use } : { kind: "refuse", sends: spec.sends };
+  }
+
   /** Why the policy would refuse every call of the capability, or undefined when a call can be made (in its private form if need be). */
   thirdPartyRefusal(id: string): string | undefined {
-    const capability = this.catalog.capabilities.get(id);
-    const restricted = this.privateRun || this.localOnly.has(id);
-    const spec = capability?.manifest.thirdParty;
-    if (!restricted || spec === undefined || spec.privateInput !== undefined) return undefined;
-    const local = this.host.capabilities[id]?.use.filter((i) => spec.implementations !== undefined && !spec.implementations.includes(i)) ?? [];
-    if (local.length > 0) return undefined;
-    return this.refusalText(id, spec.sends);
+    const plan = this.thirdPartyPlan(id, this.host.capabilities[id]?.use ?? []);
+    return plan.kind === "refuse" ? this.refusalText(id, plan.sends) : undefined;
   }
 
   private refusalText(id: string, sends: string): string {
@@ -296,10 +304,9 @@ export class Registry {
   async invoke(id: string, input: Json, options: InvokeOptions = {}): Promise<InvokeResult> {
     const capability = this.capability(id);
     const manifest = capability.manifest;
-    const spec3 = manifest.thirdParty;
-    const restricted = spec3 !== undefined && (this.privateRun || this.localOnly.has(id));
     // A restricted run makes the call in its private form, whatever the caller gave: no caller can forget it.
-    if (restricted && spec3.privateInput !== undefined) input = { ...(input as Record<string, Json>), ...spec3.privateInput };
+    const forced = this.thirdPartyPlan(id, []);
+    if (forced.kind === "force") input = { ...(input as Record<string, Json>), ...forced.fields };
     const problems = validate(manifest.input, input, "input");
     if (problems.length > 0) {
       throw new CapabilityError("invalid_input", id, `invalid input for ${id}: ${problems.join("; ")}`, { details: problems });
@@ -312,11 +319,9 @@ export class Registry {
     if (candidates.length === 0) {
       throw new CapabilityError("unavailable", id, `${id} is not offered on host ${this.host.host}`);
     }
-    if (restricted && spec3.privateInput === undefined) {
-      const local = candidates.filter((i) => spec3.implementations !== undefined && !spec3.implementations.includes(i));
-      if (local.length === 0) throw this.refuse(capability, candidates[0] as string, input, options);
-      candidates = local;
-    }
+    const plan = this.thirdPartyPlan(id, candidates);
+    if (plan.kind === "refuse") throw this.refuse(capability, candidates[0] as string, input, options);
+    if (plan.kind === "only") candidates = plan.use;
     const own = manifest.timeoutField !== undefined ? (input as Record<string, Json>)[manifest.timeoutField] : undefined;
     const timeoutMs =
       options.timeoutMs ??

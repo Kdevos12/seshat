@@ -73,7 +73,7 @@ import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
-import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep } from "./intake.ts";
+import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -1196,6 +1196,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         }
       }
 
+      // The answer on third parties is journaled for every problem the policy applies to, whether or not the intake step runs below (Task 36b).
+      if (config.private === true || config.intake !== undefined) {
+        recordConsent({ journal, config: config.intake, private: config.private === true, leanSearch: config.leanSearch === true, events: resume?.events ?? [], problemId: entry.id, ...(o.user !== undefined ? { user: o.user } : {}) });
+      }
+
       // The intake step (Task 36): the literature and the statement's hygiene, before any paid session. A problem whose step was written by
       // the process before is not tested again.
       if (config.intake !== undefined && memory !== undefined && !adopted && !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id)) {
@@ -1209,6 +1214,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             config: config.intake,
             private: config.private === true,
             leanSearch: config.leanSearch === true,
+            consentRecorded: true,
             journal,
             memory: memory.withActor("orchestrator"),
             registry,

@@ -115,6 +115,11 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
 
 const LIT_BACKEND_NAMES: Readonly<Record<string, string>> = { openalex: "OpenAlex", arxiv: "arXiv", "semantic-scholar": "Semantic Scholar", zbmath: "zbMATH" };
 
+/** A name taken from a host profile, shown in a prompt: control characters (an ANSI escape, a newline) are removed, and its length is bounded. */
+export function plainName(value: unknown): string {
+  return String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 80);
+}
+
 /**
  * The question asked once before a run sends anything outside (Task 36b): what the run could send, and to which services, taken from the host
  * profile (a backend with no address there is not reachable, so it is not named). `lean.search`'s services are the hosts the profile allows.
@@ -123,12 +128,12 @@ export function consentQuestion(profile: HostProfile, o: { literature: boolean; 
   const parts: string[] = [];
   if (o.literature) {
     const backends = Object.keys((profile.capabilities["lit.search"]?.settings?.sources?.backends ?? {}) as Record<string, unknown>).filter((b) => b !== "bench-metadata");
-    const names = (backends.length > 0 ? backends : Object.keys(LIT_BACKEND_NAMES)).map((b) => LIT_BACKEND_NAMES[b] ?? b);
+    const names = (backends.length > 0 ? backends : Object.keys(LIT_BACKEND_NAMES)).map((b) => LIT_BACKEND_NAMES[b] ?? plainName(b));
     parts.push(`the literature step would send the words of this statement to ${names.join(", ")}, and the hits to the model, to look for a paper that already settled it`);
   }
   if (o.leanSearch) {
     const hosts = profile.capabilities["lean.search"]?.settings?.search?.allowedHosts;
-    const names = Array.isArray(hosts) && hosts.length > 0 ? hosts.map(String).join(", ") : "the search services the host profile sets";
+    const names = Array.isArray(hosts) && hosts.length > 0 ? hosts.map(plainName).join(", ") : "the search services the host profile sets";
     parts.push(`--lean-search would send the unknown names and the goals of your proof attempts to ${names} (without it, only a local index and pattern search are used)`);
   }
   return `This run could send content of your problem outside this machine and the model provider: ${parts.join("; and ")}. Allow that? [y/N] `;
