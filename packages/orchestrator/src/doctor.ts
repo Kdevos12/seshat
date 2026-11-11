@@ -7,7 +7,7 @@ import type { HostProfile } from "@seshat/registry";
 import { DEFAULT_LEAN_SERVER_MEMORY_WARN_MB } from "@seshat/registry";
 import { leanMemoryCheck, leanServerMemoryFromPs } from "./lean-memory.ts";
 import { PriceBook } from "./prices.ts";
-import { blendedPrice, cheapestModel } from "./student.ts";
+import { blendedPrice, cheapestModel, DEFAULT_DEFAULTS, describeSet } from "./student.ts";
 
 /**
  * `harness doctor` (plan change PB6, documentation/quickstart.md, "harness doctor"): what this machine has and lacks to solve a problem,
@@ -19,7 +19,7 @@ import { blendedPrice, cheapestModel } from "./student.ts";
 export type CheckStatus = "ok" | "warn" | "missing";
 
 export interface Check {
-  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation";
+  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults";
   status: CheckStatus;
   title: string;
   /** What was found, in plain words. */
@@ -329,6 +329,9 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
 
   // 6. The certifier's isolation.
   const isolation = await isolationCheck(o, checks);
+
+  // 7. What `harness solve` does by default on this host, from the table the command reads (`student.ts`), not from a copy of it.
+  checks.push({ id: "defaults", status: "ok", title: `Defaults of solve (${DEFAULT_DEFAULTS})`, detail: describeSet(DEFAULT_DEFAULTS, (capability) => profile.capabilities[capability] !== undefined).join("; ") });
 
   return { host: profile.host, checks, ok: !checks.some((c) => c.status === "missing"), ...(isolation !== undefined ? { isolation } : {}), ...(chosen !== undefined ? { model: chosen } : {}) };
 }
