@@ -54,6 +54,8 @@ harness ablate --checkout DIR --model PROVIDER/ID --bench bench/graded-v1.json -
 
 When an arm's run ends on a refusal of the model provider (`provider_refused`: an empty balance, a key that is not accepted), the arms after it are not run, `ablation.json` carries `refusal` (the arm, the reason, the arms not run), and `ablation.md` opens by saying that the comparison is not valid. It prints no paired statistics and no verdict on the target, and `harness ablate` exits with code 1. The arms that finished before the refusal keep their rows.
 
+For `--experiment solve-defaults`, when neither `--host` nor `HARNESS_HOST` is given, the arms run on the host `solve` takes (the isolated profile `doctor` wrote, when it exists, else `local`), and the command prints which host that is; every other experiment keeps `local` as its default.
+
 ## Reliability of decisions (J4)
 
 `labelDecisions` gives each decision the outcome Lean gave it: for `prove.search.order` the answer is right when it names a tactic that closed a goal, for `fleet.cold_start` when it names the strategy of a valid attempt, and for the other sites when the claim came to be settled. `reliability` bins the probability of the answer (ten bins) and gives the expected calibration error per site and backend, and the mean rank of the candidate that succeeded. `agreement` compares two backends on the questions both answered (J5). No threshold on a probability is allowed until its site has a curve.
