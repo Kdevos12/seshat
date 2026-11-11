@@ -46,7 +46,7 @@ export interface SessionRecord {
   claimId: string;
   /** The session's number for its task, from 1. */
   session: number;
-  /** Lean accepted the proof (the claim is a candidate or better). */
+  /** `validate` accepted the proof in this session (the claim is a candidate or better). A blueprint hole whose work is done on stubs is `workDone`, not `ok`. */
   ok: boolean;
   usd: number;
   /** Why it failed, a few lines. */
