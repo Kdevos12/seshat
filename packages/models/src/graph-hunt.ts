@@ -3,7 +3,8 @@ import { completeJson, isInterrupted, type Llm, type ProblemContext, withAntiSyc
 import type { MemoryStore } from "@seshat/memory";
 import type { JsonSchema } from "@seshat/registry";
 import { type Battery, makeBattery, MAX_BATTERY_OBJECTS } from "./battery.ts";
-import { degreeSequence, graphCertificateLean, submitGraphRefutation } from "./graph-lean.ts";
+import { join } from "node:path";
+import { degreeSequence, graphAux, graphCertificateLean, graphNames, type LeanErrorClass, submitGraphRefutation } from "./graph-lean.ts";
 import type { GraphStatement } from "./graph-statement.ts";
 import { graphObject, graphsUpToIso, isConnected, MAX_GRAPH_VERTICES } from "./graphs.ts";
 import type { GraphObject } from "./objects.ts";
@@ -25,12 +26,22 @@ export const GRAPH_HUNT = {
   modelRequests: 6,
   /** Of those, the most that repair a program that does not run. */
   repairRequests: 2,
-  /** The most hits of a battery that are sent to Lean, one after the other, until one passes. */
+  /** The most hits that are looked at for Lean, smallest first (fewest vertices, then fewest edges), one after the other, until one passes. */
   hits: 3,
+  /**
+   * The most vertices of a graph that is sent to Lean. `decide` evaluates the whole claim at the witness in the kernel: the adjacency is
+   * n^2 membership tests and a claim about orderings or walks is a search of up to n! cases. 8 is the size of the lists the code builds
+   * and above the 7 that the template's permutation check is meant for; a hit above it stays unconfirmed with the class `too_large`,
+   * and a prover is shown it in the briefing.
+   */
+  leanVertices: 8,
+  /** The most characters of what the briefing says about the graphs of a claim, and the most edges it lists for one. */
+  briefingChars: 2500,
+  briefingEdges: 60,
   /** Limits of the predicate's run in the sandbox (`runPredicate`). */
   predicateCallMs: 200,
   predicateTotalMs: 60_000,
-  /** Lean's answer is asked for at most this many seconds through SageMath's tool. */
+  /** The time limit given to each call of SageMath's generator (the tool's own limit is 300 s). */
   sageTimeoutSec: 300,
 } as const;
 
@@ -43,6 +54,8 @@ export interface GraphSearchBounds {
   neighbors: number;
   familyParameters: readonly number[];
   hitScore: number;
+  /** The time for one call of a program in the sandbox, in milliseconds. Default 500. */
+  callMs?: number;
 }
 
 export const GRAPH_SEARCH_BOUNDS: GraphSearchBounds = {
@@ -70,7 +83,7 @@ export type GraphFilter = {
   maxEdges: number | null;
 };
 
-export function passesFilter(graph: { n: number; edges: readonly unknown[] } & { edges: readonly (readonly [number, number])[] }, filter: GraphFilter): boolean {
+export function passesFilter(graph: { n: number; edges: readonly (readonly [number, number])[] }, filter: GraphFilter): boolean {
   return (
     graph.n >= filter.minVertices &&
     graph.n <= filter.maxVertices &&
@@ -115,9 +128,12 @@ export async function graphHuntBattery(
     } else if (sage === undefined) {
       break;
     } else {
-      const edges = filter.minEdges > 0 || filter.maxEdges !== null ? ` ${filter.minEdges}:${filter.maxEdges ?? ""}` : "";
+      const edges = filter.minEdges > 0 || filter.maxEdges !== null ? { min: filter.minEdges, max: filter.maxEdges } : undefined;
       try {
-        const geng = await sageGraphBattery(sage, { vertices: n, flags: `${filter.connected ? "-c" : ""}${edges}`.trim() }, signal, { maxObjects: MAX_BATTERY_OBJECTS - objects.length });
+        const geng = await sageGraphBattery(sage, { vertices: n, ...(filter.connected ? { flags: "-c" } : {}), ...(edges !== undefined ? { edges } : {}) }, signal, {
+          maxObjects: MAX_BATTERY_OBJECTS - objects.length,
+          timeoutSec: GRAPH_HUNT.sageTimeoutSec,
+        });
         part = geng.objects.filter((g) => passesFilter(g, filter));
       } catch (error) {
         if (isInterrupted(error) || signal?.aborted === true) throw error;
@@ -236,26 +252,36 @@ export interface GraphHitData {
   graph6: string;
   n: number;
   edges: Array<[number, number]>;
+  /** The hit in one line, for the report: the graph, whether Lean confirmed it, and the certificate's hash. */
   description: string;
   source: "battery" | "local_search" | "family";
   filter: GraphFilter;
   programHash: string;
   /** The hash of the certificate in the run's blob store. */
   certificate: string;
-  /** `confirmed`: a Lean proof of the negation passed `validate`. `unconfirmed`: Lean did not accept one, and the hit is evidence only. */
+  /** `confirmed`: a Lean proof of the negation passed `validate`. `unconfirmed`: Lean did not accept one (or the graph was too large to send), and the hit is evidence only. */
   confirmation: "confirmed" | "unconfirmed";
   errorClass?: string;
   leanReason?: string;
   validationId?: string;
   attempts: Json;
   seed?: number;
-  [key: string]: Json | undefined;
 }
 
 export interface GraphSearchData {
+  /** One line, for the report. */
+  summary: string;
   method: "battery" | "local_search" | "family";
-  /** `none_found`: every object had a verdict and none was a counterexample. `incomplete`: some had none. `hit`: see the hit nodes. `not_run`: why in `notes`. */
-  outcome: "none_found" | "incomplete" | "hit" | "not_run";
+  /**
+   * `none_found`: every object had a verdict and none was a counterexample. `incomplete`: some had none. `hit`: see the hit nodes.
+   * `not_run`: why in `notes`. `failed`: the search threw (`reason`). `cut`: the search was stopped by an abort or the budget before it ended.
+   */
+  outcome: "none_found" | "incomplete" | "hit" | "not_run" | "failed" | "cut";
+  /**
+   * Whether this record ends the work for the statement and the program. A battery record that a search is still to follow, a `failed` and a `cut`
+   * search are not final: a resumed process runs the search again. Every other record is final, and a resumed process does nothing more.
+   */
+  final: boolean;
   filter: GraphFilter;
   battery?: { id: string; size: number; digest: string };
   unknown?: number;
@@ -264,14 +290,24 @@ export interface GraphSearchData {
   seed?: number;
   bounds?: Json;
   effort?: Json;
+  reason?: string;
   notes: string[];
-  [key: string]: Json | undefined;
+}
+
+/** The hits in the order Lean is asked: the fewest vertices, then the fewest edges. */
+function smallestFirst<T extends { graph: { n: number; edges: readonly unknown[] } }>(hits: readonly T[]): T[] {
+  return [...hits].sort((a, b) => a.graph.n - b.graph.n || a.graph.edges.length - b.graph.edges.length);
+}
+
+function blobPath(memory: MemoryStore, hash: string): string {
+  return join(memory.blobs.dir, hash.slice(0, 2), hash);
 }
 
 function recordHit(
   problem: ProblemContext,
   input: { graph: GraphObject; source: GraphHitData["source"]; filter: GraphFilter; program: string; score?: string; statement: GraphStatement; seed?: number; detail?: string },
   attempts: Awaited<ReturnType<typeof submitGraphRefutation>>,
+  skipped?: { errorClass: LeanErrorClass; reason: string },
 ): GraphHitData {
   const valid = attempts.find((a) => a.verdict === "valid");
   const last = attempts[attempts.length - 1];
@@ -294,19 +330,22 @@ function recordHit(
     ...(input.detail !== undefined ? { detail: input.detail } : {}),
     lean: graphCertificateLean(input.graph, { degrees, connected: isConnected(input.graph) }),
     refutation: attempts as unknown as Json,
+    ...(skipped !== undefined ? { notSent: skipped.reason } : {}),
   });
+  const confirmation = valid !== undefined ? "confirmed" : "unconfirmed";
   return {
     graph6: input.graph.graph6,
     n: input.graph.n,
     edges: input.graph.edges,
-    description: describeGraph(input.graph),
+    description: `${describeGraph(input.graph)}: ${confirmation} by Lean, certificate ${certificate.slice(0, 12)} (blob ${certificate})`,
     source: input.source,
     filter: input.filter,
     programHash,
     certificate,
-    confirmation: valid !== undefined ? "confirmed" : "unconfirmed",
-    ...(valid === undefined && last?.errorClass !== undefined ? { errorClass: last.errorClass } : {}),
-    ...(valid === undefined && last !== undefined ? { leanReason: (last.reasons[0] ?? last.verdict).slice(0, 300) } : {}),
+    confirmation,
+    ...(skipped !== undefined ? { errorClass: skipped.errorClass, leanReason: skipped.reason } : {}),
+    ...(valid === undefined && skipped === undefined && last?.errorClass !== undefined ? { errorClass: last.errorClass } : {}),
+    ...(valid === undefined && skipped === undefined && last !== undefined ? { leanReason: (last.reasons[0] ?? last.verdict).slice(0, 300) } : {}),
     ...(valid?.validationId !== undefined ? { validationId: valid.validationId } : {}),
     attempts: attempts as unknown as Json,
     ...(input.seed !== undefined ? { seed: input.seed } : {}),
@@ -316,7 +355,8 @@ function recordHit(
 /**
  * A hit is rechecked by Lean: the negation built from the graph goes through `validate`, and only
  * that can change the claim. The record says what came of it; a hit Lean does not accept is evidence
- * marked unconfirmed, with the class of Lean's error. Returns true when Lean accepted a proof.
+ * marked unconfirmed, with the class of Lean's error. A graph above `GRAPH_HUNT.leanVertices` is not sent
+ * (class `too_large`). Returns true when Lean accepted a proof.
  */
 async function confirmHit(
   problem: ProblemContext,
@@ -324,29 +364,41 @@ async function confirmHit(
   input: { graph: GraphObject; source: GraphHitData["source"]; filter: GraphFilter; program: string; score?: string; seed?: number; detail?: string },
 ): Promise<boolean> {
   const memory: MemoryStore = problem.memory;
-  if (memory.nodes(GRAPH_HIT_KIND, { claimId: problem.claimId }).some((n) => (n.data as GraphHitData).graph6 === input.graph.graph6)) return false;
-  problem.log(`M11: a program says the statement fails on ${describeGraph(input.graph)}; Lean is asked to check it`);
-  const attempts = await submitGraphRefutation(problem.validate, { claimId: problem.claimId, statement, graph: input.graph });
-  const data = recordHit(problem, { ...input, statement }, attempts);
+  if (memory.nodes(GRAPH_HIT_KIND, { claimId: problem.claimId }).some((n) => (n.data as unknown as GraphHitData).graph6 === input.graph.graph6)) return false;
+  let attempts: Awaited<ReturnType<typeof submitGraphRefutation>> = [];
+  let skipped: { errorClass: LeanErrorClass; reason: string } | undefined;
+  if (input.graph.n > GRAPH_HUNT.leanVertices) {
+    skipped = { errorClass: "too_large", reason: `the graph has ${input.graph.n} vertices, above the ${GRAPH_HUNT.leanVertices} that are sent to Lean for decide; it was not sent` };
+    problem.log(`M11: a program says the statement fails on ${describeGraph(input.graph)}; ${skipped.reason}`);
+  } else {
+    problem.log(`M11: a program says the statement fails on ${describeGraph(input.graph)}; Lean is asked to check it`);
+    attempts = await submitGraphRefutation(problem.validate, { claimId: problem.claimId, statement, graph: input.graph });
+  }
+  const data = recordHit(problem, { ...input, statement }, attempts, skipped);
   const node = memory.recordNode({ kind: GRAPH_HIT_KIND, claimId: problem.claimId, data: data as unknown as Json });
+  problem.log(`M11: certificate of the graph ${data.graph6}: blob ${data.certificate} (file ${blobPath(memory, data.certificate)})`);
   if (data.confirmation === "confirmed") {
     memory.addEdge({
       kind: "refuted_by",
       from: problem.claimId,
       to: node.nodeId,
       status: "computed",
-      note: `the statement fails on ${data.description}; a Lean proof of the negation passed the fast check (validation ${data.validationId ?? "not recorded"})`,
+      note: `the statement fails on ${describeGraph(input.graph)}; a Lean proof of the negation passed the fast check (validation ${data.validationId ?? "not recorded"})`,
     });
-    memory.recordObstruction({ claimId: problem.claimId, reason: "counterexample", detail: `the statement fails on ${data.description}` });
+    memory.recordObstruction({ claimId: problem.claimId, reason: "counterexample", detail: `the statement fails on ${describeGraph(input.graph)}` });
     problem.log(`M11: a proof of the negation passed the fast check (validation ${data.validationId ?? "not recorded"}); the claim is open until the certifier replays it`);
     return true;
   }
-  problem.log(`M11: Lean did not accept the negation built from the graph (${data.errorClass ?? "other"}: ${data.leanReason ?? ""}); the hit stays evidence, unconfirmed`);
+  problem.log(`M11: Lean did not confirm the negation built from the graph (${data.errorClass ?? "other"}: ${data.leanReason ?? ""}); the hit stays evidence, unconfirmed`);
   return false;
 }
 
-function recordSearch(problem: ProblemContext, data: GraphSearchData): void {
-  problem.memory.recordNode({ kind: GRAPH_SEARCH_KIND, claimId: problem.claimId, data: data as unknown as Json });
+function recordSearch(problem: ProblemContext, data: Omit<GraphSearchData, "summary"> & { summary?: string }): void {
+  const f = data.filter;
+  const summary =
+    data.summary ??
+    `${data.method} on ${f.connected ? "connected " : ""}graphs with ${f.minVertices} to ${f.maxVertices} vertices${f.minEdges > 0 || f.maxEdges !== null ? ` and ${f.minEdges} to ${f.maxEdges ?? "any number of"} edges` : ""}: ${data.outcome}${data.battery !== undefined ? ` (${data.battery.size} graphs, program ${data.programHash.slice(0, 12)})` : ""}${data.reason !== undefined ? `; ${data.reason}` : ""}. Evidence, not a proof.`;
+  problem.memory.recordNode({ kind: GRAPH_SEARCH_KIND, claimId: problem.claimId, data: { ...data, summary } as unknown as Json });
 }
 
 export interface GraphHuntServices {
@@ -360,15 +412,24 @@ export function graphSeed(problem: ProblemContext): number {
   return hash32(`${problem.seed ?? problem.runId}/${problem.problemId}/M11.graphs`);
 }
 
+function limits() {
+  return { callMs: GRAPH_HUNT.predicateCallMs, totalMs: GRAPH_HUNT.predicateTotalMs };
+}
+
 /**
  * The work on a statement about graphs (CA18, CA20): the model writes a predicate (and a score), the
  * sandbox runs it on every graph of the filter, a hit goes to Lean, and "none found" is evidence with
  * the filters. If nothing was found and a score was given, the local search and the families run.
+ *
+ * A resumed process: a `graph_search` record with `final: true` for the statement and the program ends the work.
+ * A battery record with `final: false` (a search was to follow) skips the lists and runs the search; a search that
+ * failed or was cut left a record with `final: false` and is run again.
  */
 export async function huntGraphs(problem: ProblemContext, statement: GraphStatement, services: GraphHuntServices): Promise<void> {
   const memory = problem.memory;
   const statementHash = sha256Hex(statement.text);
-  if (memory.nodes(GRAPH_SEARCH_KIND, { claimId: problem.claimId }).some((n) => (n.data as { statementHash?: string }).statementHash === statementHash)) {
+  const records = (): GraphSearchData[] => memory.nodes(GRAPH_SEARCH_KIND, { claimId: problem.claimId }).map((n) => n.data as unknown as GraphSearchData).filter((d) => d.statementHash === statementHash);
+  if (records().some((d) => d.final === true)) {
     problem.log("M11: the graphs of this statement were already tried");
     return;
   }
@@ -411,92 +472,109 @@ export async function huntGraphs(problem: ProblemContext, statement: GraphStatem
   }
   const programHash = sha256Hex(programs.predicate);
   const { filter, notes } = normalizeFilter(programs.filter, sageOffered);
+  const score = programs.score;
+  const searchWanted = services.search !== undefined && score !== undefined;
+  const earlier = records().find((d) => d.method === "battery" && d.programHash === programHash);
 
-  // 2. The battery and the run.
-  const built = await graphHuntBattery(filter, sage, problem.signal);
-  notes.push(...built.notes);
-  if (built.battery === undefined) {
-    recordSearch(problem, { method: "battery", outcome: "not_run", filter: built.covered, programHash, notes: [...notes, "no graph matches the filter"], statementHash });
-    problem.log("M11: no graph matches the filter; nothing was tried");
-    return;
-  }
-  const battery = built.battery;
-  const run = await runProgram(programs.predicate, battery.objects, limits(), problem.signal);
-  if (problem.signal.aborted) return;
-  const hits = run.verdicts.flatMap((v, i) => (v === true ? [i] : []));
-  const unknown = run.verdicts.filter((v) => v === null).length;
-  const base = { filter: built.covered, battery: { id: battery.id, size: battery.objects.length, digest: battery.digest }, programHash, statementHash };
-  problem.log(`M11: the predicate on ${battery.id} (${battery.objects.length} graphs): ${hits.length} hits, ${unknown} without a verdict${run.stopped !== undefined ? ` (${run.stopped})` : ""}`);
-
-  // 3. The hits, to Lean.
-  if (hits.length > 0) {
-    recordSearch(problem, { ...base, method: "battery", outcome: "hit", unknown, notes });
-    for (const index of hits.slice(0, GRAPH_HUNT.hits)) {
-      const graph = battery.objects[index] as GraphObject;
-      if (await confirmHit(problem, statement, { graph, source: "battery", filter: built.covered, program: programs.predicate, ...(programs.score !== undefined ? { score: programs.score } : {}) })) return;
-      if (spent()) return;
+  if (earlier === undefined) {
+    // 2. The battery and the run.
+    const built = await graphHuntBattery(filter, sage, problem.signal);
+    notes.push(...built.notes);
+    if (built.battery === undefined) {
+      recordSearch(problem, { method: "battery", outcome: "not_run", final: true, filter: built.covered, programHash, notes: [...notes, "no graph matches the filter, or none could be listed"], statementHash });
+      problem.log(`M11: no graph to try (${notes.join("; ")})`);
+      return;
     }
-    return;
-  }
-  recordSearch(problem, {
-    ...base,
-    method: "battery",
-    outcome: unknown === 0 ? "none_found" : "incomplete",
-    unknown,
-    notes: [...notes, "not a proof: the statement may still fail on a graph outside the filter"],
-  });
+    const battery = built.battery;
+    const run = await runProgram(programs.predicate, battery.objects, limits(), problem.signal);
+    if (problem.signal.aborted) return;
+    const hits = run.verdicts.flatMap((v, i) => (v === true ? [i] : []));
+    const unknown = run.verdicts.filter((v) => v === null).length;
+    const base = { filter: built.covered, battery: { id: battery.id, size: battery.objects.length, digest: battery.digest }, programHash, statementHash };
+    problem.log(`M11: the predicate on ${battery.id} (${battery.objects.length} graphs): ${hits.length} hits, ${unknown} without a verdict${run.stopped !== undefined ? ` (${run.stopped})` : ""}`);
+
+    // 3. The hits, to Lean, the smallest first.
+    if (hits.length > 0) {
+      recordSearch(problem, { ...base, method: "battery", outcome: "hit", final: true, unknown, notes });
+      const found = smallestFirst(hits.map((i) => ({ graph: battery.objects[i] as GraphObject })));
+      for (const { graph } of found.slice(0, GRAPH_HUNT.hits)) {
+        if (await confirmHit(problem, statement, { graph, source: "battery", filter: built.covered, program: programs.predicate, ...(score !== undefined ? { score } : {}) })) return;
+        if (spent()) return;
+      }
+      return;
+    }
+    const searchFollows = searchWanted && !spent() && left() > 0;
+    recordSearch(problem, {
+      ...base,
+      method: "battery",
+      outcome: unknown === 0 ? "none_found" : "incomplete",
+      final: !searchFollows,
+      unknown,
+      notes: [...notes, "not a proof: the statement may still fail on a graph outside the filter"],
+    });
+  } else problem.log("M11: the lists were tried by an earlier process; the search beyond them is run");
 
   // 4. Beyond the lists.
-  if (services.search === undefined || programs.score === undefined || spent() || left() <= 0) return;
+  if (!searchWanted || spent() || left() <= 0) return;
   const seed = graphSeed(problem);
   const searchFilter: GraphFilter = { ...filter, maxVertices: GRAPH_SEARCH_BOUNDS.maxVertices };
+  const common = { method: "local_search" as const, filter: searchFilter, programHash, statementHash, seed, bounds: GRAPH_SEARCH_BOUNDS as unknown as Json };
   let result;
   try {
-    result = await services.search({ problem, predicate: programs.predicate, score: programs.score, filter: searchFilter, seed, bounds: GRAPH_SEARCH_BOUNDS, llm, requestsLeft: left });
+    result = await (services.search as GraphSearchRunner)({ problem, predicate: programs.predicate, score: score as string, filter: searchFilter, seed, bounds: GRAPH_SEARCH_BOUNDS, llm, requestsLeft: left });
   } catch (error) {
+    const reason = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+    recordSearch(problem, { ...common, outcome: "failed", final: false, reason, notes: ["the search threw; a resumed process runs it again"] });
     if (isInterrupted(error) || problem.signal.aborted) throw error;
-    problem.log(`M11: the search beyond the lists failed: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
+    problem.log(`M11: the search beyond the lists failed (seed ${seed}): ${reason}`);
     return;
   }
+  const cut = spent();
   recordSearch(problem, {
+    ...common,
     method: result.hits[0]?.source ?? "local_search",
-    outcome: result.hits.length > 0 ? "hit" : "none_found",
-    filter: searchFilter,
-    programHash,
-    statementHash,
-    seed,
-    bounds: GRAPH_SEARCH_BOUNDS as unknown as Json,
+    outcome: result.hits.length > 0 ? "hit" : cut ? "cut" : "none_found",
+    final: result.hits.length > 0 || !cut,
     effort: result.effort,
     notes: [...result.notes, "a search that finds nothing says nothing about the statement"],
   });
   problem.log(`M11: the search beyond the lists (seed ${seed}) found ${result.hits.length} graphs that the score calls counterexamples`);
-  for (const hit of result.hits.slice(0, GRAPH_HUNT.hits)) {
-    let graph: GraphObject;
+  const found: Array<{ graph: GraphObject; source: GraphHitData["source"]; detail: string }> = [];
+  for (const hit of result.hits) {
     try {
-      graph = graphObject(hit.graph.n, hit.graph.edges);
+      found.push({ graph: graphObject(hit.graph.n, hit.graph.edges), source: hit.source, detail: hit.detail });
     } catch {
-      continue;
+      // A graph that is not a simple graph on its vertices is no hit.
     }
-    if (await confirmHit(problem, statement, { graph, source: hit.source, filter: searchFilter, program: programs.predicate, score: programs.score, seed, detail: hit.detail })) return;
+  }
+  for (const hit of smallestFirst(found).slice(0, GRAPH_HUNT.hits)) {
+    if (await confirmHit(problem, statement, { graph: hit.graph, source: hit.source, filter: searchFilter, program: programs.predicate, score: score as string, seed, detail: hit.detail })) return;
     if (spent()) return;
   }
 }
 
-function limits() {
-  return { callMs: GRAPH_HUNT.predicateCallMs, totalMs: GRAPH_HUNT.predicateTotalMs };
-}
-
-/** What the line found about a claim on graphs, in words, for a session's opening message. */
+/** What the line found about a claim on graphs, in words, for a session's opening message. At most `GRAPH_HUNT.briefingChars` characters. */
 export function describeGraphFindings(memory: MemoryStore, claimId: string): string | undefined {
   const hits = memory.nodes(GRAPH_HIT_KIND, { claimId }).map((n) => n.data as unknown as GraphHitData);
   const searches = memory.nodes(GRAPH_SEARCH_KIND, { claimId }).map((n) => n.data as unknown as GraphSearchData);
   if (hits.length === 0 && searches.length === 0) return undefined;
   const lines: string[] = [];
   for (const hit of hits) {
+    if (hit.confirmation === "confirmed") {
+      lines.push(
+        `A program found a counterexample, ${describeGraph(graphObject(hit.n, hit.edges))}, and a Lean proof of the negation built from it passed the fast check (validation ${hit.validationId ?? "not recorded"}): the statement is false as written. Do not spend the session proving it.`,
+      );
+      continue;
+    }
+    const graph = graphObject(hit.n, hit.edges);
+    const names = graphNames(graph);
+    const listed = hit.edges.length <= GRAPH_HUNT.briefingEdges;
     lines.push(
-      hit.confirmation === "confirmed"
-        ? `A program found a counterexample, ${hit.description}, and a Lean proof of the negation built from it passed the fast check (validation ${hit.validationId ?? "not recorded"}): the statement is false as written. Do not spend the session proving it.`
-        : `A program called ${hit.description} a counterexample, but Lean did not accept the negation built from it (${hit.errorClass ?? "other"}): look at the statement and the graph before relying on it.`,
+      `Evidence, not a verdict. A program found this graph: ${hit.n} vertices 0..${hit.n - 1}, ${hit.edges.length === 0 ? "no edge" : `edges ${hit.edges.slice(0, GRAPH_HUNT.briefingEdges).map(([u, v]) => `${u}-${v}`).join(", ")}`}${listed ? "" : ", and more (the rest is in the certificate)"}. ` +
+        `Lean has not confirmed it (${hit.errorClass ?? "other"}${hit.leanReason !== undefined ? `: ${hit.leanReason.slice(0, 160)}` : ""}). Proving the negation of the claim at this graph is a candidate route.` +
+        (listed && hit.n <= GRAPH_HUNT.leanVertices * 2
+          ? ` The harness's auxiliary definitions for it, ${names.graph} (the graph on Fin ${hit.n}) and ${names.adjacency} (its decidable adjacency), read:\n${graphAux(graph)}`
+          : ` The harness names its auxiliary definitions ${names.graph} and ${names.adjacency}; they are in the certificate.`),
     );
   }
   for (const s of searches) {
@@ -507,5 +585,7 @@ export function describeGraphFindings(memory: MemoryStore, claimId: string): str
       );
     }
   }
-  return lines.length === 0 ? undefined : lines.join("\n");
+  if (lines.length === 0) return undefined;
+  const text = lines.join("\n");
+  return text.length <= GRAPH_HUNT.briefingChars ? text : `${text.slice(0, GRAPH_HUNT.briefingChars)}\n[cut]`;
 }

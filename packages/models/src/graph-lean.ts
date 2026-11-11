@@ -76,7 +76,7 @@ export function graphNegationProofs(statement: GraphStatement, graph: GraphObjec
 }
 
 /** Why Lean said no, in one word, from what `validate` reports: what the next step to take depends on. */
-export type LeanErrorClass = "decide_false" | "instance" | "timeout" | "syntax" | "refused" | "other";
+export type LeanErrorClass = "decide_false" | "instance" | "too_large" | "timeout" | "syntax" | "refused" | "other";
 
 export function leanErrorClass(reasons: readonly string[]): LeanErrorClass {
   const text = reasons.join(" ").toLowerCase();
