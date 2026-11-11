@@ -619,12 +619,6 @@ export interface EventDataMap {
     reason: string;
   };
   /**
-   * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
-   * name, version and content hash, what it adds and the programs and servers its tools would run. Written
-   * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
-   * nothing here touches a claim; the hash is what a run records so that it can be reproduced.
-   */
-  /**
    * A round of a run's budget in rounds began (`RunConfig.budgetRounds`, plan change CA8, documentation/scheduler.md, "The budget in rounds"):
    * the problems it works, in the order they are given a slice, the most one of them may have spent in all (`capUsd`, `runUsd / (4K) * 2^round`),
    * and where each stood at its start (`marks`, the measure its end is compared with: absent in round 0). `resumed` names the parked problems
@@ -649,6 +643,12 @@ export interface EventDataMap {
     capUsd: number;
     reason: string;
   };
+  /**
+   * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
+   * name, version and content hash, what it adds and the programs and servers its tools would run. Written
+   * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
+   * nothing here touches a claim; the hash is what a run records so that it can be reproduced.
+   */
   "pack.installed": {
     name: string;
     version: string;
