@@ -118,6 +118,14 @@
     "additionalProperties": false
   },
   "produces": [],
+  "thirdParty": {
+    "sends": "search words taken from the statement, to OpenAlex, arXiv, Semantic Scholar and zbMATH",
+    "privateInput": {
+      "backends": [
+        "bench-metadata"
+      ]
+    }
+  },
   "timeoutMs": 120000,
   "summary": [
     "answers"
