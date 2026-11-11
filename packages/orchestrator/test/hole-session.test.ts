@@ -66,12 +66,11 @@ describe("blueprints: sessions with tools on holes", () => {
   });
 
   /** One hole, named by the main proof; one hole session, then the run goes on to a second outer session whose prompt is kept. */
-  async function oneHole(aux: string, session: ReturnType<typeof say>, options: Record<string, unknown> = {}, extra: ReturnType<typeof say>[] = []) {
+  async function oneHole(aux: string, session: ReturnType<typeof say>, options: Record<string, unknown> = {}, extra: ReturnType<typeof say>[] = [], lean: DemoLean = new DemoLean(blueprintAnswer), config: Record<string, unknown> = {}) {
     const prompts: string[] = [];
-    const lean = new DemoLean(blueprintAnswer);
     const run = await demoRun({
       lines: { M12: createM12Line() },
-      config: { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { ...OPTIONS, holeSessions: 1, rounds: 1, ...options } } },
+      config: { lines: ["M12"], provers: 1, sessions: 2, ...config, lineOptions: { M12: { ...OPTIONS, holeSessions: 1, rounds: 1, ...options } } },
       lean,
       responses: [
         check("exact main_ok aux_x", aux),
@@ -89,6 +88,18 @@ describe("blueprints: sessions with tools on holes", () => {
   const named = (aux: string): string => aux.replace(/aux_\w+/, "aux_x");
   const statusOf = (events: readonly HarnessEvent[], hole: string) => ofType(events, "claim.status_changed").filter((e) => e.data.claimId === hole).map((e) => e.data.to);
   const holeOf = (events: readonly HarnessEvent[]) => ofType(events, "claim.created").filter((e) => e.actor === "line:M12" && !(e.data.gloss ?? "").startsWith("link lemma"))[0]?.data.claimId as string;
+
+  it("gives a hole session's checks the run's checkTimeoutSec", { timeout: 60000 }, async () => {
+    const limits: Array<number | undefined> = [];
+    const lean = new DemoLean(blueprintAnswer);
+    const inner = lean.check.bind(lean);
+    lean.check = async (snippets, options) => {
+      limits.push(options?.timeoutSec);
+      return inner(snippets, options);
+    };
+    await oneHole(named(HARD_AUX), check("exact hole_ok"), {}, [], lean, { checkTimeoutSec: 11 });
+    assert.ok(limits.includes(11), `a check ran under 11 s: ${JSON.stringify(limits)}`);
+  });
 
   it("ends a session that says nothing, or says it is too hard, with the verdict too_hard", { timeout: 60000 }, async () => {
     for (const session of [say("I cannot do this."), call("hole_verdict", { verdict: "too_hard" })]) {
@@ -123,7 +134,7 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.deepEqual(statusOf(events, hole), []);
     assert.deepEqual(nodes(events, "suspect_false").map((n) => [n.checked, n.source]), [[false, "session"]]);
     assert.deepEqual(nodes(events, "hole_verdict").map((v) => [v.verdict, v.negationValidated]), [["statement_wrong", undefined]]);
-    assert.equal(loopTelemetry(events).holes?.wrong, 1);
+    assert.deepEqual(loopTelemetry(events).holes, { verdicts: 1, wrong: 0, share: 0, suspected: 1 }, "a suspicion is not counted as false");
     // It does not stop the work on the parent, and the next session reads it as unverified.
     assert.equal(ofType(events, "problem.finished").length, 1);
     assert.match(prompts[0] ?? "", /Suspected false, UNVERIFIED/);

@@ -905,6 +905,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ranking,
       decide: resolveDecideSettings(config.decide),
       prices,
+      ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
     });
