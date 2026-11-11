@@ -40,7 +40,7 @@ export interface NatStatement {
 
 export type Recognition = { statement: RecognizedStatement } | { reason: string };
 
-interface Binder {
+export interface Binder {
   /** `(`, `{`, `[` or `⦃`. */
   bracket: string;
   names: string[];
@@ -51,7 +51,7 @@ const OPEN = "([{⟨⦃⟦⁅";
 const CLOSE = ")]}⟩⦄⟧⁆";
 const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_'!?]*$/u;
 const NAT_TYPES = new Set(["ℕ", "Nat"]);
-const TYPE_SORT = /^Type(?:\*| _| [\p{L}\p{N}_]+)?$/u;
+export const TYPE_SORT = /^Type(?:\*| _| [\p{L}\p{N}_]+)?$/u;
 
 /**
  * The sort of the statement's type, in one spelling for each sort: `Type` (also written `Type 0`),
@@ -119,7 +119,7 @@ function tidy(text: string): string {
  * holds one is refused: a comment that Lean reads there would reach into the lines written after the
  * statement.
  */
-function splitSignature(statement: string): { binders: Binder[]; conclusion: string } | { reason: string } {
+export function splitSignature(statement: string): { binders: Binder[]; conclusion: string } | { reason: string } {
   const text = maskCommentsAndStrings(statement, { strict: true });
   const forbidden = forbiddenTokensIn(text);
   if (forbidden.length > 0) {

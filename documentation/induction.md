@@ -287,6 +287,25 @@ verdict) or `failed` (a search that threw, or a claim with no specification). An
 finished search read from its `search_result` node). The briefing reads those nodes, so a resumed process has it too. Sage scoring
 ran against a stand-in only.
 
+## Graph search beyond the lists
+
+Plan change CA20 (Task 41), for line M11's option `graphs` ([models.md](models.md#statements-about-graphs)); `graphSearch` in
+`graph-search.ts`, which the orchestrator gives M11. M11 asks the model for a predicate and a score about graphs and tries the predicate on every
+graph of a battery; when nothing is found and a score exists, two searches run, in the sandbox above, bounded by `GRAPH_SEARCH_BOUNDS`
+(120 steps, 6 restarts, 20 s of wall time, at most 12 vertices, 24 moves scored in each step):
+
+- **Local search.** Hill climbing with restarts: a random graph, then each step scores `neighbors` moves (add or remove an edge, add or
+  remove a vertex within the filter's range) in one sandbox run and takes the best, sideways moves included; a climb that does not
+  improve for 25 steps restarts. A graph whose score reaches 1 (and that passes the filter) is a hit. The draws come from `seeded(seed)`, the seed
+  M11 derives from the run's seed and journals, so the same seed and score give the same graph (unless the wall time cuts the search).
+- **Families.** M16's program search (`runSearch`: islands, the same prompt, the sandbox, `reuse`d model requests) with a `SearchSpec`
+  whose programs map a parameter `k` (1 to 8) to a graph `{n, edges}` and whose score is the model's graph score summed over the
+  parameters. This is the hook: no change to `evolve.ts` or `m16.ts` was needed (the smallest change is none). Each program that
+  scored is run on the parameters and its graphs are tested with the predicate. Model requests are the ones M11 has left of its cap; none left, none made.
+
+Every field of the filter M11 records (vertex range, edge range, connectivity) is applied to a graph before it counts as a hit, on both paths; `bounds.callMs` (default 500) is the sandbox's time for one call. A hit is returned to M11, which writes the Lean refutation and submits it through `validate`: neither search changes a status. The tests are in
+`test/graph-search.test.ts` (a planted counterexample found with a fixed seed and found again by a replay, the bounds, a family proposed by the faux model).
+
 ## The counterexample set (the CEGIS rule, PD5)
 
 Lines M8, M14 and M16 share one rule (`cegis.ts`, plan change PD5). The counterexamples found so far for a claim are a set,
