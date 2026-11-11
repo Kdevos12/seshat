@@ -143,7 +143,7 @@ Its length is the option `holeTurns` (12 by default); a hole's task has `holeSes
 
 **When the work is done (CA10).** `readWork` (`hole-work.ts`) is the line's rule on the last check: Lean reports no error, nothing changed outside the regions, a stub that is in the
 file is exactly the dependency's statement with the proof `sorry`, and the rest of the file (helper lemmas, the hole's proof) has no `sorry` or `admit`, and no helper lemma names a dependency (the link lemma takes the dependencies as hypotheses, so such a helper could not be lifted: a dependency is used inside the hole's own proof, and the prompt and the check's answer say so); so every `sorry` Lean reports lies
-in a dependency stub. A check that satisfies it ends the session (`afterCheck`). Work done is **recorded, not a status**: the `m12_session` node holds `workDone`, the proof and its helper
+in a dependency stub. It also reads Lean's own report: `report.sorries` must all fall in a dependency stub (located by their line in the checked file), and `report.axioms` may hold only the validator's standard axioms and `sorryAx` (which the stubs bring in). A check that satisfies it ends the session (`afterCheck`). Work done is **recorded, not a status**: the `m12_session` node holds `workDone`, the proof and its helper
 lemmas as a blob (`work`) and their sha256 (`workHash`). A hole without dependencies has no stub: its check is the workbench's, and a proof Lean accepts makes the claim `computed` as before.
 
 **When the claim becomes `computed`.** Only when its proof, with its dependencies' accepted proofs in place of the stubs, passes `validate`. The line checks the link lemma `(dependencies) -> (hole)` with the
