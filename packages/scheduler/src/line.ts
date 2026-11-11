@@ -513,7 +513,7 @@ export function createM12Line(): Line {
       `Session ${session} of ${limit}: prove the lemma ${info.name} in Lean 4, in at most ${turns} model responses.`,
       `The file you work on is small. Its header (imports, opens, definitions):\n${header}`,
       info.deps.length > 0
-        ? `These lemmas are given, with the proof \`sorry\`; use them by name and keep them exactly as they are in the aux region of every check:\n${stubs}`
+        ? `These lemmas are given, with the proof \`sorry\`; use them by name, only inside the proof of ${info.name} itself (a helper lemma you add must not use them), and keep them exactly as they are in the aux region of every check:\n${stubs}`
         : "No lemma is given: prove it from the header.",
       `The lemma to prove:\nlemma ${info.name} ${claimStatement.trim()} := by\n  <your proof>`,
       `Start with lean_check(aux, proof)${info.deps.length > 0 ? ", whose aux begins with the given lemmas" : ""}; then change it with lean_edit. The work is done when Lean reports no error${info.deps.length > 0 ? " and the only sorry are in the given lemmas" : " and no sorry is left"}.`,
