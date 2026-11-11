@@ -38,6 +38,8 @@ export interface HoleSessionDeps {
   workbench: (claimId: string) => Promise<Workbench>;
   actor: string;
   contextTokens: number;
+  /** The seconds a Lean check may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
+  checkTimeoutSec?: number;
 }
 
 /** The arguments of `hole_verdict`. */
@@ -122,6 +124,7 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     tools: [verdictTool as AgentTool<never, unknown>],
     editTool: true,
     maskOldChecks: true,
+    ...(d.checkTimeoutSec !== undefined ? { checkTimeoutSec: d.checkTimeoutSec } : {}),
     lines: {
       afterCheck: async (check) => {
         checks.submission = check.submission;

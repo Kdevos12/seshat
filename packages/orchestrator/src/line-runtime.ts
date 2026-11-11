@@ -99,6 +99,8 @@ export interface RunLinesOptions {
   decide?: DecideConfig;
   /** The host's prices, for the lines' model calls. */
   prices?: PriceBook;
+  /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
+  checkTimeoutSec?: number;
 }
 
 export interface ProblemLinesOptions {
@@ -335,6 +337,7 @@ export class ProblemLines {
                 {
                   journal: o.journal, blobs: o.blobs, models: o.models, model: o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: o.thinkingLevel,
                   ledger: this.p.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
+                  ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
                   workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
                   ...(o.turn !== undefined ? { turn: o.turn } : {}),
                   ...(o.prices !== undefined ? { prices: o.prices } : {}),
