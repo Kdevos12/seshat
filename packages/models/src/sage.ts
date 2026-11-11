@@ -75,10 +75,10 @@ export interface SageGraphSpec {
  * The graphs that nauty's `geng` makes, through SageMath's `graphs.nauty_geng`, as a battery. The
  * list is read in slices, so that no answer is long. Not run against a real SageMath in the tests.
  */
-export async function sageGraphBattery(run: SageRun, spec: SageGraphSpec, signal?: AbortSignal): Promise<Battery<GraphObject>> {
+export async function sageGraphBattery(run: SageRun, spec: SageGraphSpec, signal?: AbortSignal, options: { maxObjects?: number } = {}): Promise<Battery<GraphObject>> {
   if (!Number.isInteger(spec.vertices) || spec.vertices < 1 || spec.vertices > 20) throw new RangeError(`geng takes 1 to 20 vertices, not ${spec.vertices}`);
   const flags = spec.flags?.trim() ?? "";
-  if (!/^[-\w ]*$/.test(flags)) throw new RangeError(`the geng flags ${JSON.stringify(flags)} have characters that are not flags`);
+  if (!/^[-\w :]*$/.test(flags)) throw new RangeError(`the geng flags ${JSON.stringify(flags)} have characters that are not flags`);
   const arguments_ = `${spec.vertices}${flags === "" ? "" : ` ${flags}`}`;
   const objects: GraphObject[] = [];
   for (let from = 0; ; from += GRAPHS_PER_CALL) {
@@ -88,6 +88,7 @@ export async function sageGraphBattery(run: SageRun, spec: SageGraphSpec, signal
     );
     const slice = parsePythonStrings(text).map(fromGraph6);
     objects.push(...slice);
+    if (options.maxObjects !== undefined && objects.length > options.maxObjects) throw new RangeError(`geng ${arguments_} gives more than ${options.maxObjects} graphs`);
     if (slice.length < GRAPHS_PER_CALL) break;
   }
   return makeBattery({
