@@ -574,11 +574,16 @@ export function createM12Line(): Line {
         verdict = "proved";
       } else if (result.finished && reading?.done === true && result.submission !== undefined) {
         const text = JSON.stringify({ aux: reading.helpers, proof: result.submission.proof });
-        const linked = info.deps.length > 0 ? await linkWork(problem, work, info, reading.helpers, result.submission.proof) : { checked: true, reason: "" };
-        if (linked.checked) {
-          verdict = "proved";
-          workRecord = info.deps.length > 0 ? { workDone: true, work: problem.memory.blobs.put(text), workHash: sha256Hex(text) } : {};
-        } else reasons.push(`the link lemma of ${info.name} did not check: ${linked.reason}`);
+        if (info.deps.length === 0) {
+          // No stub, no link lemma: only `validate` accepts such a hole. A file that is done but not accepted was refused by it (a forbidden tactic, an axiom).
+          reasons.push(`validate did not accept the proof, so the work was not accepted: ${(result.report?.reasons ?? []).slice(0, 2).map((r) => clip(r, 120)).join("; ") || "no reason given"}`);
+        } else {
+          const linked = await linkWork(problem, work, info, reading.helpers, result.submission.proof);
+          if (linked.checked) {
+            verdict = "proved";
+            workRecord = { workDone: true, work: problem.memory.blobs.put(text), workHash: sha256Hex(text) };
+          } else reasons.push(`the link lemma of ${info.name} did not check: ${linked.reason}`);
+        }
       } else if (result.verdict?.verdict === HOLE_FALSE_VERDICT) {
         verdict = HOLE_FALSE_VERDICT;
         if (result.verdict.negation !== undefined) {
