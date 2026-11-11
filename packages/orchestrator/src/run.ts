@@ -73,6 +73,7 @@ import { PriceBook } from "./prices.ts";
 import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolidate.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
+import { refusalLine } from "./provider-errors.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
@@ -338,6 +339,8 @@ export interface RunResult {
   usd: number;
   /** Why the run stopped before its last problem. */
   stopped?: string;
+  /** The error text of the model provider's refusal (a balance, a key) that stopped the run, when `stopped` is `provider_refused`. */
+  providerRefusal?: string;
   /** The report written in the run directory. */
   report: RunReport;
   /** The turn this process worked, for a consortium run: how it ended, and where its account is. */
@@ -968,6 +971,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     results.push({ problemId: problem.problemId, outcome: "aborted", reason: "dropped by the team", attempts: problem.attempts, usd: problem.usd, durationMs: problem.durationMs });
   }
   let stopped: string | undefined;
+  let providerRefusal: string | undefined;
   let failedInARow = 0;
   const stopReason = (): string | undefined => {
     if (stopped !== undefined) return stopped;
@@ -1483,6 +1487,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
           onEnd: (result) => {
             if (result.stop === "turn" || result.stop === "probe" || result.stop === "slice") return;
+            if (result.refusal !== undefined) {
+              // Every later request would be refused the same way: no other prover, no other problem starts.
+              if (providerRefusal === undefined) log(refusalLine(result.refusal));
+              providerRefusal ??= result.refusal;
+              stopped = "provider_refused";
+              controller.abort(ABORT_STOPPED);
+            }
             end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
           },
           ...(turn !== undefined ? { turn } : {}),
@@ -1617,6 +1628,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       if (lineFailure !== undefined) return await end("error", lineFailure);
       if (resumeFailure !== undefined) return await end("error", resumeFailure);
       if (crash !== undefined) return await end("error", `the harness failed: ${messageOf(crash.reason)}`);
+      if (providerRefusal !== undefined) return await end("error", `the model provider refused the request (${providerRefusal})`);
       if (o.signal?.aborted) return await end("aborted", "the run was stopped");
       if (ledger.exhausted) return await end("unsolved", runLedger.exhausted ? "the run's budget ran out" : "the problem's budget ran out");
       if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return await end("error", proverErrors(journal, workbench.attemptIds));
@@ -1759,7 +1771,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     }
   }
   const report = writeReport(o.dir);
-  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
+  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), ...(providerRefusal !== undefined ? { providerRefusal } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
 }
 
 /**

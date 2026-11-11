@@ -11,6 +11,7 @@ import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts
 import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
+import { fatalProviderError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
@@ -140,6 +141,8 @@ export interface ProverResult {
   name: string;
   attempts: number;
   stop: ProverStop;
+  /** Set when the session's error was a refusal of the model provider that a retry cannot cure (`fatalProviderError`): the prover stopped at once. */
+  refusal?: string;
 }
 
 /** A prover fails this many sessions in a row (model or Lean unreachable): it stops. */
@@ -465,6 +468,10 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         return done("aborted");
       case "error":
         failed += 1;
+        {
+          const refusal = result.error === undefined ? undefined : fatalProviderError(result.error);
+          if (refusal !== undefined) return { ...done("errors"), refusal };
+        }
         if (failed >= MAX_FAILED_SESSIONS) return done("errors");
         break;
       default:
