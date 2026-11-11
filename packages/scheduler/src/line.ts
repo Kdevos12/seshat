@@ -528,7 +528,11 @@ export function createM12Line(): Line {
     const turns = task.budget.turns ?? s.holeTurns;
     for (;;) {
       const status = problem.memory.claim(claimId)?.status;
-      if (accepted(status)) return { ended: "done", reason: `the claim is ${status ?? "settled"}` };
+      if (accepted(status)) {
+        // Accepted with no verdict on record: a cut fell between the check that accepted it (the battery's, in the pre-flight) and the verdict.
+        if (verdictsOf(problem, claimId).length === 0) recordVerdict(problem, task, claimId, `${task.taskId}:preflight`, "proved");
+        return { ended: "done", reason: `the claim is ${status ?? "settled"}` };
+      }
       if (workOf(problem, claimId) !== undefined) return { ended: "failed", reason: WAITING };
       if (falseOf(problem, claimId)) return { ended: "failed", reason: `the hole ${info.name} is false: Lean accepted a proof of its negation` };
       const mine = sessionRecords(problem).filter((r) => r.taskId === task.taskId);
@@ -717,6 +721,8 @@ export function createM12Line(): Line {
         // A task whose claim a subsumption or a composition closed needs no work.
         const closed = candidates.find((task) => task.claimId !== undefined && accepted(problem.memory.claim(task.claimId)?.status));
         if (closed !== undefined) {
+          const id = closed.claimId as string;
+          if (s.blueprints && holeInfo(problem, id) !== undefined && verdictsOf(problem, id).length === 0) recordVerdict(problem, closed, id, `${closed.taskId}:preflight`, "proved");
           return { taskId: closed.taskId, reason: "its claim is closed already", run: async () => ({ ended: "done", reason: `the claim is ${problem.memory.claim(closed.claimId as string)?.status ?? "closed"}, with no session of its own` }) };
         }
         const chosen = choose(problem, work, s, candidates);
