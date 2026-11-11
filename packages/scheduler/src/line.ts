@@ -557,11 +557,19 @@ export function createM12Line(): Line {
       } catch (error) {
         if (isInterrupted(error)) throw error;
         if (problem.signal.aborted || problem.budget.exhausted) return { ended: "failed", reason: problem.signal.aborted ? "the problem ended" : "the problem's budget ran out" };
-        const failed: SessionRecord = { problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: false, usd: 0, reasons: [clip(error instanceof Error ? error.message : String(error), 160)], verdict: "too_hard" };
+        const failed: SessionRecord = { problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: false, usd: 0, reasons: [clip(error instanceof Error ? error.message : String(error), 160)], stop: "error" };
         problem.memory.recordNode({ kind: SESSION_KIND, claimId, data: { ...failed } });
         continue;
       }
       if ((result.stop === "aborted" || result.stop === "budget") && (problem.signal.aborted || problem.budget.exhausted)) return { ended: "failed", reason: problem.signal.aborted ? "the problem ended" : "the problem's budget ran out" };
+
+      // A session that ended in an error (a model or Lean outage) with nothing to show is an error, not a verdict: no `hole_verdict` node, and the session is tried again.
+      if (result.stop === "error" && !result.accepted && !result.finished && result.verdict === undefined) {
+        const failed: SessionRecord = { problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: false, usd: result.usd, reasons: ["the session ended in an error (the model or Lean could not be reached)"], stop: "error", turns: result.turns };
+        problem.memory.recordNode({ kind: SESSION_KIND, claimId, data: { ...failed } });
+        problem.log(`${owner} on ${info.name}, hole session ${session}: error`);
+        continue;
+      }
 
       // What the session came to. The work is done only by the rule on the file (`readWork`), and a claim is a candidate only if `validate` says so.
       const reasons: string[] = [];

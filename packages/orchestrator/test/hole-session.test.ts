@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
 import { createM12Line } from "@seshat/scheduler";
 import { call, check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
@@ -114,6 +115,14 @@ describe("blueprints: sessions with tools on holes", () => {
     const accepted = await oneHole(named(HARD_AUX), check("exact hole_ok"));
     assert.deepEqual(nodes(accepted.events, "hole_verdict").map((v) => v.verdict), ["proved"]);
     assert.deepEqual(statusOf(accepted.events, holeOf(accepted.events)), ["computed"]);
+  });
+
+  it("records a session that ends in an error as an error, with no verdict node", { timeout: 60000 }, async () => {
+    const { events } = await oneHole(named(HARD_AUX), fauxAssistantMessage([], { stopReason: "error", errorMessage: "the model is down" }));
+    assert.deepEqual(nodes(events, "hole_verdict"), [], "no verdict");
+    assert.deepEqual(nodes(events, "m12_session").map((n) => [n.ok, n.stop, n.verdict]), [[false, "error", undefined]]);
+    assert.equal(nodes(events, "suspect_false").length, 0);
+    assert.deepEqual(statusOf(events, holeOf(events)), []);
   });
 
   it("ends a session that says nothing, or says it is too hard, with the verdict too_hard", { timeout: 60000 }, async () => {
