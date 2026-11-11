@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Models } from "@earendil-works/pi-ai";
 import { newId } from "@seshat/core";
-import { hostProfilePath, loadHostProfile, RegistryLeanChecker } from "@seshat/registry";
+import { type HostProfile, hostProfilePath, loadHostProfile, RegistryLeanChecker } from "@seshat/registry";
 import { type Check, DEFAULT_PROFILE_NAME, doctor, type DoctorReport, type DoctorSystem, realSystem, renderDoctor } from "./doctor.ts";
 import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { PriceBook } from "./prices.ts";
@@ -111,6 +111,27 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
   const report = await doctorReport(flags, io);
   for (const line of renderDoctor(report)) io.out(line);
   return report.ok ? 0 : 1;
+}
+
+const LIT_BACKEND_NAMES: Readonly<Record<string, string>> = { openalex: "OpenAlex", arxiv: "arXiv", "semantic-scholar": "Semantic Scholar", zbmath: "zbMATH" };
+
+/**
+ * The question asked once before a run sends anything outside (Task 36b): what the run could send, and to which services, taken from the host
+ * profile (a backend with no address there is not reachable, so it is not named). `lean.search`'s services are the hosts the profile allows.
+ */
+export function consentQuestion(profile: HostProfile, o: { literature: boolean; leanSearch: boolean }): string {
+  const parts: string[] = [];
+  if (o.literature) {
+    const backends = Object.keys((profile.capabilities["lit.search"]?.settings?.sources?.backends ?? {}) as Record<string, unknown>).filter((b) => b !== "bench-metadata");
+    const names = (backends.length > 0 ? backends : Object.keys(LIT_BACKEND_NAMES)).map((b) => LIT_BACKEND_NAMES[b] ?? b);
+    parts.push(`the literature step would send the words of this statement to ${names.join(", ")}, and the hits to the model, to look for a paper that already settled it`);
+  }
+  if (o.leanSearch) {
+    const hosts = profile.capabilities["lean.search"]?.settings?.search?.allowedHosts;
+    const names = Array.isArray(hosts) && hosts.length > 0 ? hosts.map(String).join(", ") : "the search services the host profile sets";
+    parts.push(`--lean-search would send the unknown names and the goals of your proof attempts to ${names} (without it, only a local index and pattern search are used)`);
+  }
+  return `This run could send content of your problem outside this machine and the model provider: ${parts.join("; and ")}. Allow that? [y/N] `;
 }
 
 /** The compute tool of the host that `--auto-tool` adds. */
@@ -234,8 +255,19 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
 
   const registry: RunOptions["registry"] = (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) });
+  const wantsIntake = flags.intake === true || flags.lit === true;
   const checkerRegistry = openRegistry({ host });
   const mode = statement.mode ?? classifyStatement(statement.text);
+  if (flags.private === true) {
+    // A tool that would send the problem to a third party cannot be given to a private run: said now, before anything is spent.
+    checkerRegistry.restrictThirdParties({ private: true });
+    const refused = (flags.tools ?? []).flatMap((id) => (checkerRegistry.catalog.capabilities.has(id) ? [checkerRegistry.thirdPartyRefusal(id)] : [])).filter((r): r is string => r !== undefined);
+    if (refused.length > 0) {
+      for (const r of refused) io.err(`--private: ${r}. Drop --private or drop the tool. Nothing was spent.`);
+      await checkerRegistry.close();
+      return 2;
+    }
+  }
   if (flags.autoTool === true && !checkerRegistry.offers(COMPUTE_TOOL)) io.out(`Note: --auto-tool has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
@@ -261,7 +293,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),
       ...(flags.autoTool === true && checkerRegistry.offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
       ...(flags.private === true ? { private: true } : {}),
-      ...(flags.intake === true || flags.lit === true
+      ...(wantsIntake
         ? {
             intake: {
               hygiene: true,
@@ -269,11 +301,12 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
               ...(flags.intakeUsd !== undefined ? { capUsd: flags.intakeUsd } : {}),
               ...(flags.lit === true ? { consent: { allowed: true, via: "flag" as const } } : {}),
             },
-            // Asked once, and only where a person can answer: a call that signs with --yes or is driven by a program has --lit or no.
-            ...(flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || process.stdin.isTTY)
-              ? { askConsent: () => (io.ask ?? terminalAsk)("The literature step would send the words of this statement to OpenAlex, arXiv, Semantic Scholar and zbMATH, and the hits to the model, to look for a paper that already settled it. Allow that? [y/N] ") }
-              : {}),
           }
+        : {}),
+      // Asked once, and only where a person can answer: a call that signs with --yes or is driven by a program has --lit or no. The answer
+      // governs the literature and `lean.search` alike; `solve` journals it, and a resumed run reads it from the journal.
+      ...((wantsIntake || flags.leanSearch === true) && flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || process.stdin.isTTY)
+        ? { askConsent: () => (io.ask ?? terminalAsk)(consentQuestion(profile, { literature: wantsIntake, leanSearch: flags.leanSearch === true })) }
         : {}),
       confirm: async (signature) => {
         if (flags.askStdin === true) {

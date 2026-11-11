@@ -72,7 +72,7 @@ import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./acc
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
-import { docstringBefore } from "@seshat/lit";
+import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -582,6 +582,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The third-party policy, set once for the whole run and read nowhere else (documentation/trust.md, "Third parties"): `--private` is for every
+  // capability; a person who did not agree to the statement going outside (`harness solve`) leaves `lean.search` and `lit.search` to their local
+  // forms. A run without an `intake` config (`harness run` as it was) says nothing and keeps the third parties on.
+  registry.restrictThirdParties({
+    ...(config.private === true ? { private: true } : {}),
+    ...(config.intake !== undefined && config.intake.consent?.allowed !== true ? { local: [LEAN_SEARCH, LIT_SEARCH] } : {}),
+  });
   if (config.leanSearch === true && !registry.offers(LEAN_SEARCH)) {
     return await abandon(`leanSearch needs the capability ${LEAN_SEARCH}: host ${registry.host.host} does not offer it`, undefined, registry);
   }
@@ -1201,6 +1208,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           const step = await intakeStep({
             config: config.intake,
             private: config.private === true,
+            leanSearch: config.leanSearch === true,
             journal,
             memory: memory.withActor("orchestrator"),
             registry,
