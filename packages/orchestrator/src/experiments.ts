@@ -45,7 +45,7 @@ const arm = (name: string, description: string, lines: string[], rest: Partial<A
  * An arm that is what `harness solve` gives a problem under a defaults set (Task 34b, decision I): the set's fields, lines and options, the
  * budget gate (`setConfig`, the function `studentConfig` itself uses), and the set's `solve`-level switches as a bench problem gets them
  * (`benchAdditions`: the intake with the bench's yes, the compute tool and `lean.search` if the host offers them). `plus` is what a later arm
- * adds to a set, one line with its options for example `{ lines: ["M12"], lineOptions: { M12: { ladder: true } } }`.
+ * adds to a set, one line with its options, for example `{ lines: ["M12"], lineOptions: { M12: { blueprints: true } } }`.
  */
 export function solveArm(name: string, description: string, defaults: DefaultsName, context: Pick<ExperimentContext, "host">, rest: Partial<Arm> = {}, plus: { lines?: string[]; lineOptions?: Record<string, JsonObject> } = {}): Arm {
   const host = context.host;
@@ -186,11 +186,13 @@ export const EXPERIMENTS: Experiment[] = [
   {
     name: "solve-defaults",
     amendment: "CA2, CA21 (Task 34b)",
-    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem.",
+    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, which is not a default.",
     notRun: "No number of the target exists until the arms run on real problems with a real model and Lean; the compute tool and lean.search are in an arm only if the host profile offers them. The turn limit, the signature and the question are what `solve` has because a person is there, and are not in the arms.",
     arms: (context) => [
       solveArm("solve-v1", "solve's configuration under defaults v1: the baseline", "v1", context),
       solveArm("solve-v2", "solve's configuration under defaults v2, with the intake gate, the compute tool and lean.search as the host offers them", "v2", context, { versus: "solve-v1" }),
+      // Line M12's blueprints are not in v2: they have not run on a real Lean. This arm measures what they would add to it.
+      solveArm("solve-v2-blueprints", "solve-v2 plus line M12 with its option blueprints: holes that depend on each other, a session with tools per hole", "v2", context, { versus: "solve-v2" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true } } }),
     ],
   },
   {

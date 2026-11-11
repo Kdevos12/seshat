@@ -104,7 +104,15 @@ describe("the solve-defaults experiment", () => {
   const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
 
   it("sets solve-v2 against solve-v1, the baseline", () => {
-    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"]]);
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"]]);
+  });
+
+  it("makes the blueprints arm solve-v2 plus line M12 with blueprints, and nothing else", () => {
+    const { lines: v2Lines, lineOptions: v2Options, ...v2 } = armConfig(base, arm("solve-v2"));
+    const { lines, lineOptions, ...blueprints } = armConfig(base, arm("solve-v2-blueprints"));
+    assert.deepEqual(blueprints, v2);
+    assert.deepEqual(lines, [...(v2Lines ?? []), "M12"]);
+    assert.deepEqual(lineOptions, { ...v2Options, M12: { blueprints: true } });
   });
 
   for (const defaults of ["v1", "v2"] as const) {
@@ -155,10 +163,10 @@ describe("the solve-defaults experiment", () => {
     assert.match(table, /the baseline is solve-v1/);
   });
 
-  it("keeps private in the solve-v2 run's configuration", async () => {
+  it("keeps private in every arm's configuration", async () => {
     const seen: RunOptions[] = [];
     await runAblation({ template, config: { ...base, private: true }, problems, arms, dir: tempDir("mh-solve-defaults-"), run: run(seen) });
-    assert.equal(seen.length, 2);
+    assert.equal(seen.length, arms.length);
     assert.ok(seen.every((o) => o.config.private === true));
   });
 });
