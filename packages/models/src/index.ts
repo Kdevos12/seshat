@@ -5,6 +5,7 @@
 export * from "./battery.ts";
 export * from "./clients.ts";
 export * from "./fingerprint.ts";
+export * from "./graph-hunt.ts";
 export * from "./graph-lean.ts";
 export * from "./graph-statement.ts";
 export * from "./graphs.ts";
