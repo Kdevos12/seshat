@@ -71,6 +71,13 @@ describe("a run's budget in rounds (CA8)", () => {
     const first = result.problems.find((p) => p.problemId === ids[0]);
     assert.ok((first?.usd ?? 99) < 0.92 * 3, "no problem took 92% of the budget");
     assert.ok(result.usd <= 3 + 1e-9);
+    // A session the slice cut is no failure: no failure class, nothing for the router; its last check's class is kept apart for the rotation.
+    const cut = ofType(events, "attempt.finished").filter((e) => e.data.outcome === "budget_exhausted");
+    assert.ok(cut.length > 0, "a slice cut a session");
+    assert.deepEqual(cut.map((e) => e.data.failureClass), cut.map(() => undefined));
+    assert.ok(cut.some((e) => e.data.lastCheckClass === "holes"), "the cut check that typed the sketch is kept as lastCheckClass");
+    const routed = ofType(events, "task.routed").map((e) => e.data.attemptId).filter((id) => cut.some((c) => c.data.attemptId === id));
+    assert.deepEqual(routed, [], "the router saw no failure in a budget cut");
     // Every slice respects its round's cap: nobody had spent more than the cap of its round plus the response that crossed it.
     for (const p of result.problems) assert.ok(p.usd <= 1.5, `${p.problemId} stayed within its rounds`);
   });

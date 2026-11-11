@@ -342,8 +342,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     const outcome = outcomeOf(result);
     if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
     const failure =
-      // A session that the rotation's slice cut (`o.slice`) keeps the class of its last check too: that is how the rotation sees Lean progress in it.
-      (outcome === "invalid" || (outcome === "budget_exhausted" && o.slice !== undefined)) && result.report !== undefined
+      outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {
             statement: workbench.sketch.statement,
             ...(result.submission !== undefined ? { aux: result.submission.aux } : {}),
@@ -360,6 +359,13 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       outcome,
       ...(failure !== undefined ? { failureClass: failure } : {}),
       ...(cardStore !== undefined && outcome === "invalid" && result.report !== undefined ? failureDetailOf(result.report, workbench.sketch.statement, result.submission?.aux) : {}),
+      // A session the rotation's slice cut is no failure, but the rotation reads its last check's class to see Lean progress in it.
+      ...(outcome === "budget_exhausted" && o.slice !== undefined && result.report !== undefined
+        ? (() => {
+            const cls = failureClass(result.report, { statement: workbench.sketch.statement, ...(result.submission !== undefined ? { aux: result.submission.aux } : {}) });
+            return cls === undefined ? {} : { lastCheckClass: cls };
+          })()
+        : {}),
       stoppedBy: result.stop,
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
