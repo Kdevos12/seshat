@@ -89,6 +89,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [context.md](context.md): line M4: the compiled packet (frozen prefix, tail), premise selection, `expand` and `graph_query`
 - [lessons.md](lessons.md): line M5: lessons added from outcomes and never rewritten, the draw, counters and deactivation by effect,
   staged promotion to the global scope, `harness lessons`.
+- [consolidation.md](consolidation.md): the consolidation pass between runs (CA24): `harness consolidate`, state cards of the open problems, duplicate and unsupported
+  lessons, the page "what was tried and why it stopped" with its sentence rule, `--consolidation`, the turn-end section.
 - [m1-identity-memory.md](m1-identity-memory.md): the M1 line: one claim per statement, strategy
   labels, failure classes, the "already tried" section, the redundant-attempts metric.
 - [guards.md](guards.md): the M6 line: neutral framing, resolved citations, no raw error text,

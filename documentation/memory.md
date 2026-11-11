@@ -462,6 +462,11 @@ the only real re-check is a stored proof (`storedProofs`) sent through `validate
 the new run. Do not pass a run directory you did not produce, or whose storage others can write. The
 trust rules are in [trust.md](trust.md#memory-across-runs).
 
+**The consolidation pass.** `harness consolidate RUN_DIR` writes a new run on the chain whose nodes (state cards, pages, lessons merged or
+flagged) are learned records like any other, stamped and unverified, and a later run reads them through the chain ([consolidation.md](consolidation.md)).
+A page is an item of the draw and is judged by `itemEffect` as a lesson is. `stateCardData` takes `{acrossRuns: true}` for the pass, which counts the
+attempts of every run of the chain; a session's own card counts the current run's alone.
+
 **Limits.**
 
 - The Mathlib trigger of an epoch is the bench's git revision, the plan's stand-in: updating the bench

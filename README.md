@@ -79,6 +79,7 @@ flowchart TB
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
   solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults v1 or v2: small cap, gate, M1 and M10"]:::built
+  consolidate["Consolidation pass (CA24, harness consolidate)<br/>cards, duplicate and unsupported lessons, a page whose<br/>every sentence cites journal events; a new run on the old one"]:::wait
   hotloop["Cheaper hot loop (solve defaults v2)<br/>lean_edit in place of a rewritten file, old check results<br/>masked in batches, bounded Lean checks, a state card<br/>from the journal, the run budget in rounds"]:::wait
   leanpush["Premises pushed (CA22, option leanSearch)<br/>after a check: a name search on each unknown identifier,<br/>a goal search on each hole; each hit checked with Lean"]:::wait
   signature["Signature of a prose statement<br/>formalized, shown with test lemmas,<br/>statement.signed before any spend"]:::wait
@@ -147,6 +148,9 @@ flowchart TB
   solve -->|"one-problem index,<br/>student config"| orchestrator
   solve -->|"prose"| signature
   solve -->|"defaults v2"| hotloop
+  journal -->|"a finished run"| consolidate
+  llm -.->|"one call per open problem, capped"| consolidate
+  consolidate -->|"stamped cards and pages, as a new run<br/>(--memory-from)"| journal
   hotloop -->|"edits, masked history,<br/>time-limited checks, state card,<br/>budget in rounds"| provers
   llm -.->|"formalizes prose"| signature
   signature -->|"statement.signed, as human"| journal
@@ -360,6 +364,8 @@ real ablation waits for a model, a Lean server and, for the decisions and the eq
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
 
+The consolidation pass (`harness consolidate RUN_DIR`) looks backward over a finished or paused run and writes, in a new run started on it, the state card of each open problem, merged duplicate lessons, flagged unsupported ones and, with a model and a dollar cap, one page per problem of which every sentence cites journal events; `harness run --consolidation` shows the page to a later run, drawn and judged by effect ([documentation/consolidation.md](documentation/consolidation.md)); a real model has not run it.
+
 ## Commands
 
 ```sh
@@ -375,6 +381,7 @@ pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --mod
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --turn-usd 2
+pnpm harness consolidate runs/RUN_ID [--model PROVIDER/ID --max-usd 1]    # a new run on the old one: cards, merged lessons, a cited page; --consolidation on run shows it
 pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and: harness resume runs/RUN_ID --checkout ...
 pnpm harness lean-env resolve base
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation    # the cumulative configurations
