@@ -19,6 +19,11 @@ export interface ConsortiumConfig {
   impasse: ImpasseSettings;
   /** A model writes a short narrative of each turn, marked as model-written, with its ids checked. */
   narrative: boolean;
+  /**
+   * At the turn's end the report gets the model-free part of the consolidation pass (state cards, duplicate and unsupported lessons),
+   * computed read-only: no model call and nothing written (documentation/consolidation.md, "At the end of a turn"). Absent: off.
+   */
+  consolidation?: boolean;
 }
 
 /** A problem is at an impasse when, after `minAttempts` finished attempts, the mean of its success posterior is below `posteriorBelow`. */

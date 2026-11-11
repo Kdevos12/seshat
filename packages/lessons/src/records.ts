@@ -44,6 +44,10 @@ export interface LessonData {
   /** The lessons a wider one was made from. */
   widenedFrom?: string[];
   deactivated?: { rule: string; reason: string };
+  /** Set by the consolidation pass: the lesson it was merged into (documentation/lessons.md, "Consolidation"). */
+  mergedInto?: string;
+  /** Set by the consolidation pass: the journal no longer backs the lesson's support. It waits for a person like a staged lesson. */
+  flagged?: { reason: string; missing: number; retracted: number; total: number };
 }
 
 /** `rejected`: the team said no. `deactivated`: the rule did. `pending`: waits for the team. */

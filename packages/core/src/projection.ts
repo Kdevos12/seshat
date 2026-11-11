@@ -390,6 +390,14 @@ const INHERITED_SKIPPED: readonly string[] = [
  */
 export const HUMAN_NODE_KINDS: readonly string[] = ["hint", "steer", "lesson_decision"];
 
+/**
+ * The node kinds only the consolidation pass writes (documentation/consolidation.md): the state cards, the pages "what was tried and
+ * why it stopped", the pass's own progress and the lessons it merged or flagged. The journal accepts them from the actor
+ * `consolidation` alone (one writer); a run that reads a page may switch it off, as the orchestrator, with a delta.
+ */
+export const CONSOLIDATION_ACTOR = "consolidation";
+export const CONSOLIDATION_NODE_KINDS: readonly string[] = ["consolidation_card", "consolidation_page", "consolidation_pass", "consolidation_lesson"];
+
 const SCHEMA = `
 create table if not exists meta (key text primary key, value text not null);
 create table if not exists problems (

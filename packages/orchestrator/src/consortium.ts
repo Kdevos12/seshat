@@ -116,5 +116,6 @@ export function readConsortium(recorded: unknown): ConsortiumConfig | undefined 
       minAttempts: typeof impasse.minAttempts === "number" ? impasse.minAttempts : 8,
     },
     narrative: r.narrative === true,
+    ...(r.consolidation === true ? { consolidation: true } : {}),
   };
 }

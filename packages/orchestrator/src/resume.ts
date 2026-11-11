@@ -147,6 +147,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
+    ...(r.consolidation === true ? { consolidation: true } : {}),
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
     ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),

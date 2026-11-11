@@ -19,6 +19,7 @@ import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
+import { consolidateCommand } from "./consolidate-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { measureRun } from "./measures.ts";
@@ -46,8 +47,8 @@ const usage = `usage:
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--lean-search] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
+              [--tool CAPABILITY]... [--lean-search] [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
@@ -73,6 +74,7 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness consolidate RUN_DIR [--out DIR] [--model PROVIDER/ID --max-usd X] [--host HOST]
   harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
   harness packs [--packs-dir DIR]
@@ -80,7 +82,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
@@ -243,6 +245,7 @@ const { positionals, values } = parseArgs({
     prose: { type: "boolean" },
     "no-check": { type: "boolean" },
     "lean-search": { type: "boolean" },
+    consolidation: { type: "boolean" },
     defaults: { type: "string" },
     "no-write": { type: "boolean" },
     rewrite: { type: "boolean" },
@@ -276,6 +279,7 @@ const { positionals, values } = parseArgs({
     "turn-usd": { type: "string" },
     "turn-minutes": { type: "string" },
     "turn-narrative": { type: "boolean" },
+    "turn-consolidation": { type: "boolean" },
     offpeak: { type: "boolean" },
     "offpeak-max-wait": { type: "string" },
     "impasse-posterior": { type: "string" },
@@ -335,6 +339,12 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "consolidate") {
+      return await consolidateCommand(requireTarget("consolidate", "a run directory"), {
+        out: values.out, model: values.model, maxUsd: number("max-usd", values["max-usd"], undefined), host: values.host, models: builtinModels(),
+        codeRev: codeRevision(), signal: stoppable().signal, print: (l) => console.log(l), log: (l) => console.error(l),
+      });
+    }
     if (command === "heuristics") {
       if (target !== "list" && target !== "stats" && target !== "mine") throw new UsageError("heuristics takes a subcommand: list, stats RUN_DIR or mine RUN_DIR...");
       return heuristicsCommand(target, positionals.slice(2), { packsDir: values["packs-dir"], outFile: values.out, out: (l) => console.log(l) });
@@ -542,14 +552,15 @@ function turnLimit(): TurnLimit | undefined {
 function consortiumFlags(): ConsortiumConfig | undefined {
   const limit = turnLimit();
   const narrative = values["turn-narrative"] === true;
+  const consolidation = values["turn-consolidation"] === true;
   const posterior = number("impasse-posterior", values["impasse-posterior"], undefined);
   const attempts = number("impasse-attempts", values["impasse-attempts"], undefined);
-  if (values.human !== true && limit === undefined && !narrative) {
+  if (values.human !== true && limit === undefined && !narrative && !consolidation) {
     if (posterior !== undefined || attempts !== undefined) throw new UsageError("--impasse-posterior and --impasse-attempts go with --human or a turn limit");
     return undefined;
   }
   if (values.ablation !== undefined) throw new UsageError(ablationRefusal({ consortium: { limit: {}, impasse: DEFAULT_IMPASSE, narrative: false } }) as string);
-  return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative };
+  return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative, ...(consolidation ? { consolidation: true } : {}) };
 }
 
 /** `--offpeak` and `--offpeak-max-wait MINUTES` (documentation/human.md, "Off-peak"). */
@@ -737,6 +748,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
     ...(values["lean-search"] === true ? { leanSearch: true } : {}),
+    ...(values.consolidation === true ? { consolidation: true } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
 }
@@ -1029,7 +1041,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lean-search", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "tool", "lean-search", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
@@ -1136,6 +1148,7 @@ async function solve(): Promise<number> {
       private: values.private === true,
       ...(number("intake-usd", values["intake-usd"], undefined) !== undefined ? { intakeUsd: number("intake-usd", values["intake-usd"], undefined) as number } : {}),
       leanSearch: values["lean-search"] === true,
+      consolidation: values.consolidation === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
       ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),
