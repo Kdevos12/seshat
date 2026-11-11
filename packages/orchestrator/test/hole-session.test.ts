@@ -44,6 +44,7 @@ describe("blueprints: sessions with tools on holes", () => {
     // The work record holds the proof and its hash; it is no status.
     const session = nodes(events, "m12_session").find((n) => n.workDone === true);
     assert.equal(session?.verdict, "proved");
+    assert.equal(session?.ok, false, "work done on stubs is workDone, not ok: only validate accepting the proof is ok");
     assert.match(String(session?.workHash), /^[0-9a-f]{64}$/);
     // The dependency edge was checked by Lean, and the hole was derived through it (a composed proof through `validate`), not by its own check.
     const edges = ofType(events, "edge.added").filter((e) => e.data.kind === "decomposes_into");

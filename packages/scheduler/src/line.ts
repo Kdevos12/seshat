@@ -607,7 +607,7 @@ export function createM12Line(): Line {
         reasons.push(result.verdict === undefined ? `the session ended (${result.stop}) with no verdict` : `the prover said ${result.verdict.verdict}`);
       }
       const record: SessionRecord = {
-        problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: verdict === "proved", usd: result.usd,
+        problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: verdict === "proved" && workRecord.workDone !== true, usd: result.usd,
         reasons: reasons.slice(0, 3).map((r) => clip(r, 160)), stop: result.stop, turns: result.turns, verdict, ...workRecord,
         ...(negationValidated ? { negationValidated: true } : {}), ...(result.verdict?.argument !== undefined ? { argument: clip(result.verdict.argument, 400) } : {}),
       };
