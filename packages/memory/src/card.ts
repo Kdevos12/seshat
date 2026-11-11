@@ -34,6 +34,8 @@ export interface AcceptedLemmasData {
 export interface StateCardOptions {
   /** The card's size bound in characters; default `STATE_CARD_CHARS`. */
   maxChars?: number;
+  /** Count the attempts of every run of the memory chain, not this run's alone (the consolidation pass looks backward). */
+  acrossRuns?: boolean;
 }
 
 const HOLES_SHOWN = 8;
@@ -121,7 +123,7 @@ export interface StateCard extends StateCardData {
  * from the attempts of this run on this claim that were `invalid`, one for each session, by the class and the normalised detail of the
  * session's last check; a timeout is counted on its own, and a check Lean never answered says nothing about an approach.
  */
-export function stateCardData(store: MemoryStore, claimId: string): StateCardData | undefined {
+export function stateCardData(store: MemoryStore, claimId: string, options: { acrossRuns?: boolean } = {}): StateCardData | undefined {
   const claim = store.claim(claimId);
   if (claim === undefined) return undefined;
   const parts: string[] = [];
@@ -138,7 +140,7 @@ export function stateCardData(store: MemoryStore, claimId: string): StateCardDat
   const groups = new Map<string, CardApproach>();
   let timeouts = 0;
   for (const attempt of store.attempts(claimId)) {
-    if ((attempt.runsAgo ?? 0) > 0 || attempt.outcome !== "invalid") continue;
+    if ((options.acrossRuns !== true && (attempt.runsAgo ?? 0) > 0) || attempt.outcome !== "invalid") continue;
     const failureClass = attempt.failureClass ?? "other";
     if (failureClass === "timeout") timeouts += 1;
     if (failureClass === "timeout" || failureClass === "lean_unavailable") continue;
@@ -178,6 +180,6 @@ export function renderStateCard(data: StateCardData, options: StateCardOptions =
 
 /** The card of a claim: its data and its bounded text. Undefined for a claim the memory does not have. A pure function of the store. */
 export function stateCard(store: MemoryStore, claimId: string, options: StateCardOptions = {}): StateCard | undefined {
-  const data = stateCardData(store, claimId);
+  const data = stateCardData(store, claimId, options.acrossRuns === true ? { acrossRuns: true } : {});
   return data === undefined ? undefined : { ...data, text: renderStateCard(data, options) };
 }

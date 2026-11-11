@@ -19,6 +19,7 @@ import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from
 import { leanEnvCommand } from "./lean-env-command.ts";
 import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
+import { consolidateCommand } from "./consolidate-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { measureRun } from "./measures.ts";
@@ -73,6 +74,7 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness consolidate RUN_DIR [--out DIR] [--model PROVIDER/ID --max-usd X] [--host HOST]
   harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
   harness packs [--packs-dir DIR]
@@ -299,7 +301,7 @@ const { positionals, values } = parseArgs({
 const [command, target, third] = positionals;
 
 /** The commands that start work with a model of their choosing; a resume keeps the model its run began with. */
-const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
+const MODEL_COMMANDS = new Set(["consolidate", "run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
 // The model of these commands, when --model is not given: SESHAT_MODEL (documentation/models-setup.md). Not for a resume,
 // which refuses --model.
 const envModel = process.env.SESHAT_MODEL?.trim();
@@ -335,6 +337,12 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "consolidate") {
+      return await consolidateCommand(requireTarget("consolidate", "a run directory"), {
+        out: values.out, model: values.model, maxUsd: number("max-usd", values["max-usd"], undefined), host: values.host, models: builtinModels(),
+        codeRev: codeRevision(), signal: stoppable().signal, print: (l) => console.log(l), log: (l) => console.error(l),
+      });
+    }
     if (command === "heuristics") {
       if (target !== "list" && target !== "stats" && target !== "mine") throw new UsageError("heuristics takes a subcommand: list, stats RUN_DIR or mine RUN_DIR...");
       return heuristicsCommand(target, positionals.slice(2), { packsDir: values["packs-dir"], outFile: values.out, out: (l) => console.log(l) });

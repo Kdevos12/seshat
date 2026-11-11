@@ -5,7 +5,7 @@ import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisi
 import { type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents, USER_NAME } from "./log.ts";
-import { HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
+import { CONSOLIDATION_ACTOR, CONSOLIDATION_NODE_KINDS, HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
 import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
@@ -298,12 +298,18 @@ export class Journal {
         if (HUMAN_NODE_KINDS.includes(d.kind) && !actor.startsWith("human:")) {
           throw new Error(`node ${d.nodeId}: a ${d.kind} is the research team's, written by human:NAME, not by ${actor}`);
         }
+        if (CONSOLIDATION_NODE_KINDS.includes(d.kind) && actor !== CONSOLIDATION_ACTOR) {
+          throw new Error(`node ${d.nodeId}: a ${d.kind} is written by the consolidation pass alone (actor ${CONSOLIDATION_ACTOR}), not by ${actor}`);
+        }
         this.checkProvenance(`node ${d.nodeId}`, d.provenance);
         return;
       }
       case "node.updated": {
         const node = p.node(event.data.nodeId);
         if (!node) throw new Error(`unknown node ${event.data.nodeId}`);
+        if (CONSOLIDATION_NODE_KINDS.includes(node.kind) && actor !== CONSOLIDATION_ACTOR && actor !== "orchestrator") {
+          throw new Error(`node ${event.data.nodeId}: a ${node.kind} is changed by the consolidation pass or the orchestrator, not by ${actor}`);
+        }
         // A team's answer is edited by nobody, not even by the person who gave it: they write a new one (documentation/human.md).
         if (HUMAN_NODE_KINDS.includes(node.kind)) {
           throw new Error(`node ${event.data.nodeId}: a ${node.kind} is the research team's and is not edited, ${actor} cannot rewrite it: a person who changes their mind writes a new one`);
