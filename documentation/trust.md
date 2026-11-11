@@ -118,11 +118,19 @@ journaled as a failed tool run (`error: "private"`), before any implementation i
 | Capability | What it sends | With `--private` | What else governs it |
 |---|---|---|---|
 | `lit.search` | words of the statement, to OpenAlex, arXiv, Semantic Scholar, zbMATH | the intake step skips the literature (journaled `private`); a call is forced to the bench-metadata backend, which is a local file | bench problem: on with `--intake`; `solve`: the consent, asked once or `--lit` |
-| `lean.search` | an unknown name, or a goal, to a search service | forced to the local index and the pattern search, which send nothing | bench problem: on; `solve`: the consent; without a yes it is local too |
+| `lean.search` | an unknown name, or a goal, to a search service | forced to the private form: only the local index and the index-based pattern match stay; the `remote` backend and the remote pattern service are off ([lean.md](lean.md#search-pushed-by-the-harness)) | bench problem: on; `solve`: the consent; without a yes it is local too |
 | `decide.ask` | a proof state or statement, to a hosted decision model (`jev`) | a run that asks `jev` is refused at the start; the local `faux` stays usable | the run's decide settings, which `--private` does not change |
 | `oeis.search` | terms of a sequence, to the OEIS | refused (`private`); a line (M11) takes it as a lookup that gave nothing | the person names the tool (`--tool`) or enables a line that uses it: that is their choice, and `solve`'s defaults sets do not |
 | `lmfdb.query` | a query, to the LMFDB | refused | as `oeis.search` |
 | `findstat.identify` | objects and values, to FindStat | refused | as `oeis.search` |
+
+**Limits, said plainly.**
+- A pack ([packs.md](packs.md)) whose manifest has no `thirdParty` field is not checked in a private run: the manifest is its author's word, and the
+  harness cannot see what a program sends. `--private` binds the capabilities of the repository's catalog and the packs that declare themselves.
+- `harness health` is not a run and has no `--private`: it pings the third-party services the host profile lists to say whether they answer.
+- The answer on third parties is journaled (`intake.consented`) for every problem a run takes up under the policy, and a resumed run reads it back
+  from the recorded configuration. The registry's hash covers the manifests, which now carry `thirdParty`, so a run started before this change cannot be resumed after it
+  (the resume is refused for a changed registry, as for any manifest change).
 
 `harness solve --private --tool oeis.search` (or `lmfdb.query`, `findstat.identify`) stops before any spend, and `harness run --private --tool`
 does not start. In `harness run` third parties are on for bench problems (they are public) unless `--private`; nothing changes there without
