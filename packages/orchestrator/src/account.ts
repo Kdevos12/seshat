@@ -7,6 +7,7 @@ import {
   chainOfJournal,
   type EventDataMap,
   type HarnessEvent,
+  isWaitingHoleTask,
   type Json,
   type Journal,
   type MemoryChain,
@@ -375,6 +376,11 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     const next = live ? open.filter((task) => task.status === "ready").slice(0, MAX_PER_LIST).map(taskLine) : [];
     const otherOpen: Record<string, number> = {};
     if (live) for (const task of open) if (task.status !== "ready") otherOpen[task.status] = (otherOpen[task.status] ?? 0) + 1;
+    // A hole whose work is done on stubs ends as a `failed` task (the task API has no ending that fits); it is waiting for its dependencies, not failed.
+    if (live) {
+      const waiting = p.tasks({ problemId: problem.problem_id }).filter((task) => isWaitingHoleTask(task) && task.claim_id !== null && p.claim(task.claim_id)?.status === "open").length;
+      if (waiting > 0) otherOpen.waiting = waiting;
+    }
 
     problems.push({
       problemId: problem.problem_id,
@@ -606,7 +612,7 @@ export function renderAccount(a: Account): string {
     else if (settledOpen) lines.push("- Nothing to search: the claim is certified, and the next turn closes the problem.");
     else if (x.next.length === 0) lines.push("- No task is ready. A resumed turn takes the problem up from the journal, where it left it.");
     for (const n of x.next) lines.push(`- Ready: ${n}`);
-    const others = Object.entries(x.otherOpen).map(([status, n]) => `${n} ${status}${status === "running" ? " (a turn cut them; they go on when the run resumes)" : ""}`);
+    const others = Object.entries(x.otherOpen).map(([status, n]) => `${n} ${status}${status === "running" ? " (a turn cut them; they go on when the run resumes)" : status === "waiting" ? " (holes worked out on stubs, waiting for the lemmas they use; they are not failed)" : ""}`);
     if (!outcomeKnown && others.length > 0) lines.push(`- Other tasks that are not over: ${others.join(", ")}.`);
     if (x.fleet.length > 0) {
       lines.push(`- The fleet's leading strategies: ${x.fleet.map((f) => `\`${f.strategy}\` (${plural(f.sessions, "session")}${f.escalated > 0 ? `, ${f.escalated} on the stronger model` : ""}${f.successRate !== undefined ? `, success rate ${f.successRate}` : ""})`).join("; ")}.`);

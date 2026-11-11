@@ -258,3 +258,8 @@ its context would find that open network, the files the permission model allows 
 the process's memory, which holds nothing of the harness's; nothing stronger than that is promised,
 and a deployment that runs programs of models it does not trust puts the child in a container. The
 verdicts of a program are test results: they change no status.
+
+## Hole verdicts (M12 blueprints)
+
+A hole session's verdict (`proved`, `statement_wrong`, `too_hard`; [scheduler.md](scheduler.md#verdicts-plan-change-ca11)) is a memory node, never a status. `proved` is decided by Lean's report on the hole's small file and the line's rule on it (no error, every `sorry` in a dependency stub), not by what the model says, and the claim becomes `computed` only when its
+proof with the dependencies' accepted proofs passes `validate`. `statement_wrong` makes a claim's negation `computed` only through a Lean-checked proof of the negation (`validate` with the negation flag); an argument, a tool's counterexample (`plausible`) or a refused proof leaves a `suspect_false` evidence node and changes no status. A suspicion never stops work on the parent, never propagates, and reaches the next outer session labelled unverified.

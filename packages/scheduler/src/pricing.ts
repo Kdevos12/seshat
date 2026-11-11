@@ -13,11 +13,11 @@ export interface PriceBook {
   sessionUsd: number;
 }
 
-export function priceBook(records: readonly Pick<SessionRecord, "ok" | "usd">[], priorUsd = PRIOR_SESSION_USD): PriceBook {
+export function priceBook(records: readonly Pick<SessionRecord, "ok" | "usd" | "workDone">[], priorUsd = PRIOR_SESSION_USD): PriceBook {
   let rate: Beta = UNIFORM;
   let total = 0;
   for (const record of records) {
-    rate = betaUpdate(rate, record.ok ? 1 : 0);
+    rate = betaUpdate(rate, record.ok || record.workDone === true ? 1 : 0);
     total += record.usd;
   }
   return { rate, sessionUsd: records.length === 0 ? priorUsd : total / records.length };

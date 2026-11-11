@@ -61,7 +61,7 @@ Event types:
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
 | `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?` |
-| `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
+| `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget` (`usd?`, `sessions?`, `turns?`: the bound of a session in model responses, for M12's hole sessions), `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
 | `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
@@ -305,3 +305,5 @@ header has the hash of its text alone, which is the id the bench gives each prob
 textual duplicates only: statements that differ in the name of a bound variable, in notation or by
 an unfolding get different ids. P0b replaces it with a hash of the elaborated, normalized Lean
 term (`st1_` prefix); ids of different versions never compare equal.
+
+Memory node kinds M12 adds with blueprints (additive, [scheduler.md](scheduler.md#verdicts-plan-change-ca11)): `m12_preflight`, `hole_verdict` (`verdict`, `claimId`, `sessionId`, `negationValidated?`) and `suspect_false` (`checked: false`); `m12_sketch` and `m12_session` gain optional fields. Hole sessions' responses are `model_call.finished` events at the site `scheduler.hole`.

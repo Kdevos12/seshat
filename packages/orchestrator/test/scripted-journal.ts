@@ -25,7 +25,7 @@ export interface Scripted {
  * strategies tried, and a computed one), one refuted with a counter-model, and one that waits with
  * an obstruction and a conjecture. The turn 1 ended at an impasse. The journal stays open.
  */
-export function scriptedJournal(options: { narrative?: string } = {}): Scripted {
+export function scriptedJournal(options: { narrative?: string; before?: (journal: Journal, ids: { problems: Record<string, string>; claims: Record<string, string> }) => void } = {}): Scripted {
   const dir = mkdtempSync(join(tmpdir(), "mh-scripted-"));
   const journal = Journal.open(dir, "run_scripted");
   const blobs = new BlobStore(join(dir, "blobs"));
@@ -154,6 +154,8 @@ export function scriptedJournal(options: { narrative?: string } = {}): Scripted 
     o,
   );
   journal.emit("task.status_changed", { taskId: ready, from: "pending", to: "ready", reason: "nothing to wait for" }, o);
+
+  options.before?.(journal, { problems, claims });
 
   const hash = options.narrative === undefined ? undefined : blobs.put(options.narrative);
   journal.emit(

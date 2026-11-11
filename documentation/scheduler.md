@@ -91,6 +91,119 @@ A split sketch gives:
   propagates. If the check fails the edge stays a candidate and the holes are still worked, but
   the parent is not derived from them.
 
+## Blueprints (plan change CA9)
+
+Task 37. The option `blueprints` (off by default; `--line-option M12.blueprints=true`) reads a sketch as a **blueprint**: a sketch whose holes may
+depend on each other. Without it nothing in this section applies, a `-- uses:` line is a comment, and M12 reads a sketch as described above.
+
+A hole declares what it may use with a comment line **directly above it** (no blank line between them):
+
+```lean
+lemma aux_left (n : ℕ) : 0 + n = n := by
+  sorry
+
+-- uses: aux_left
+lemma aux_right (n : ℕ) : n + 0 = 0 + n := by
+  sorry
+```
+
+No `uses` line means no dependency. The **target is the sink**: it uses the holes its main proof names. A blueprint is accepted when
+
+1. Lean checks the file with no error (`sorry` warnings allowed), as for any sketch (the record's `healthy`);
+2. every name in a `uses` line is a hole of the same blueprint;
+3. no hole restates the target (the statement id of the hole is the target's: the refusal's class is `restates_target`, `SketchRecord.failureClass`);
+4. the dependency graph has no cycle;
+5. every hole reaches the target: it is named by the main proof, or used, directly or through other holes, by a hole that is.
+
+A hole's **statement** still may not name a hole, as before (a statement that depends on an unproved lemma's name cannot be lifted out of the file), and
+no other aux command may rest on a hole. What the option changes is that the holes may use each other in their proofs, as declared. A blueprint that fails a rule is
+refused as a sketch that cannot be split is: the `m12_sketch` node holds `healthy: false` and the reason in `problem` (`the dependency graph has a cycle:
+aux_a -> aux_b -> aux_a`), and no claim, edge or task is made. A blueprint's record also holds `blueprint: true` and `uses`, the declared names of each hole.
+
+**The link lemma and the dependency edges.** The target keeps its edge and its link lemma as before: `decomposes_into` from the problem's claim to all the holes, whose
+link lemma `(T1) -> ... -> (Tn) -> (F)` Lean proves from the sketch's main proof. A hole that declares dependencies gets a `decomposes_into` edge of its own, from its claim
+to the claims of the holes it uses, and its link lemma takes the dependencies as hypotheses: `(D1) -> ... -> (Dk) -> (H)`, proved by the hole's own proof with the dependencies
+introduced as `h_aux_j` under their names (the same `intro ...; refine fun <binders> => ?_; have aux_a := h_aux_1; <proof>` as the target's). That lemma is checked when the
+hole's work is done ([Hole sessions](#hole-sessions-plan-change-ca10)). The rule is the one of every edge: **only a `lean_checked` edge propagates**. So a hole is derived
+from its dependencies only once its link lemma passed Lean and every dependency is `computed` (or better): the graph composes the hole's proof from the link lemma and the
+dependencies' own proofs, in dependency order, and the composed proof goes through `validate` like any derivation (`realize`). A dependency that is refuted or
+never accepted derives nothing, and the hole is not validated.
+
+**Trust is unchanged.** Nothing here sets a status. The problem is settled only when the assembled file, the holes replaced by their accepted proofs in dependency order,
+goes through `validate` (the composition of the target's link lemma and the holes' proofs) and the certifier.
+
+## Hole sessions (plan change CA10)
+
+With `blueprints` on, a hole's inner work is a real session with tools instead of one model call. It runs through the orchestrator's service
+`ProblemContext.holeSession` (`hole-session.ts`: `runSession` on the hole's own workbench; the scheduler package does not import the orchestrator). The session
+has `lean_check`, `lean_edit` and `hole_verdict`, a prompt that is its only context, and a **small file**: the claim's header, the hole's declared dependencies as
+**stubs** (`lemma aux_a <statement> := by sorry`, in the aux region), and the hole. Nothing else is in the file or the prompt: no outer notes, no other holes, no sketch.
+The prompt shows the header whole when it has at most `HOLE_HEADER_CHARS` (2500) characters; a longer one is cut after its first lines (the imports and opens come first) with a line saying that the rest is cut (`cutHeader`). It also repeats the failure reasons of the hole's earlier sessions, at most `HOLE_HISTORY_CHARS` (900) characters in all, the newest kept (`boundHistory`).
+Its length is the option `holeTurns` (12 by default); a hole's task has `holeSessions` sessions (2 by default, since a session is a whole tool loop). Its responses are
+`model_call.finished` events of `line:M12` at the site `scheduler.hole`, charged to the problem's ledger, so the report counts them.
+
+**When the work is done (CA10).** `readWork` (`hole-work.ts`) is the line's rule on the last check: Lean reports no error, nothing changed outside the regions, a stub that is in the
+file is exactly the dependency's statement with the proof `sorry`, and the rest of the file (helper lemmas, the hole's proof) has no `sorry` or `admit`, and no helper lemma names a dependency (the link lemma takes the dependencies as hypotheses, so such a helper could not be lifted: a dependency is used inside the hole's own proof, and the prompt and the check's answer say so); so every `sorry` Lean reports lies
+in a dependency stub. It also reads Lean's own report: `report.sorries` must all fall in a dependency stub (located by their line in the checked file), and `report.axioms` may hold only the validator's standard axioms and `sorryAx` (which the stubs bring in). A check that satisfies it ends the session (`afterCheck`). Work done is **recorded, not a status**: the `m12_session` node holds `workDone`, the proof and its helper
+lemmas as a blob (`work`) and their sha256 (`workHash`). A hole without dependencies has no stub: its check is the workbench's, and a proof Lean accepts makes the claim `computed` as before.
+
+**When the claim becomes `computed`.** Only when its proof, with its dependencies' accepted proofs in place of the stubs, passes `validate`. The line checks the link lemma `(dependencies) -> (hole)` with the
+hole's proof ([Blueprints](#blueprints-plan-change-ca9)); the graph then derives the hole by `realize` from the link lemma and the dependencies' proofs, and the composed proof goes through `validate`. So a hole whose dependencies
+are not accepted yet **waits** (its task ends with the reason "the work is done on stubs..." (`HOLE_WAITING_REASON` of `@seshat/core`): the task API has no non-failure ending that fits, so the task is `failed`, and the account ("waiting" among the other tasks) and the breakpoints (an impasse counts it as blocked) read it as waiting, not failed; `ensureTasks` makes no new task for it). The briefing tells the next session of such a hole whose dependency has a Lean-checked negation that the dependency is false, and of one whose composed proof `validate` refused (a `derivation` node with verdict `invalid`) that it was refused, with the reasons; only the others "wait for the lemmas they use" and is validated, in dependency order, at the step after its dependency is accepted
+(every step propagates). A hole whose dependency is refuted, or never accepted, is not validated.
+
+**Waves, bounds and the gate.** All open holes whose pre-flight passed are eligible at once (their dependencies are stubs, so they do not wait for each other); the task order is the given-clause loop's, and `maxInnerTasks`,
+`rounds` and `stepTasks` bound the work as before. A hole's task is proposed with the budget `{sessions: holeSessions, turns: holeTurns}`; the budget gate prices it as a task (`taskUsd(sessions, turns)`: sessions times the cost of a session, scaled by `turns / 12`,
+12 being the length the mean or the first guess of $0.05 stands for) and may skip it, as it does any task ("the budget gate skipped it"). `TaskBudget.turns` is an optional field ([journal.md](journal.md)).
+
+**Resuming.** Everything is read from the memory's nodes and the ledger. A session cut after its record was written resumes exactly (the verdict node is made again from the record: `repairVerdicts`); **a session cut while it was running is lost and is asked again and paid again** (the model's
+responses of the cut session were charged and are not replayed). Resumption is tested with cuts at every record of a blueprint run except inside a session.
+
+## Pre-flight (plan change CA11)
+
+Before a hole's first paid session, once (an `m12_preflight` evidence node, so a resumed run does not repeat it), at no model cost, through the service `ProblemContext.holePreflight` (`hole-preflight.ts`):
+
+1. the hole is type-checked: part of the blueprint's acceptance (Lean checked the file) and of its reference file;
+2. the **battery** of line M10 (its core tactics, 30 Lean seconds, `validate` for a win) on the hole: a hole it proves is `computed` with no session, verdict `proved`. M10 itself runs only at `beforeProvers`, on the holes that exist then; the pre-flight is how a hole registered later is tried. A battery proof of a hole
+   needs no dependency as hypothesis: the hole's statement stands alone (a statement may not name a hole), so its proof is a proof of the claim itself, which is stronger than a proof from the dependencies;
+3. `plausible` through Task 36's `plausibleTest` (recorded as a `hygiene` node of the claim). A counterexample is a `suspect_false` node (source `plausible`) and stops nothing;
+4. a short attempt of the battery on the hole's **negation** (no model call). A proof of the negation goes through `validate` with the negation flag; if it passes, the verdict is `statement_wrong` with a Lean-checked negation and the hole gets no session.
+
+M11's small models are **not** asked: the line cannot reach M11's check through a service without a new dependency, and this is a marked extension point (`holePreflight` is where it would go). Not run against a real Lean: the
+tactics' behaviour on real holes.
+
+## Verdicts (plan change CA11)
+
+Each hole session ends with one verdict, a memory node of kind `hole_verdict` (`HOLE_VERDICT_KIND` of `@seshat/core`, re-exported by `loop-telemetry.ts`) with `data.verdict`, `claimId`, `sessionId` (`<task>:<n>`, or `<task>:preflight`), `taskId`, `problemId`:
+
+- `proved`: the work is done (above) on a hole with dependencies, or `validate` accepted the proof of a hole with none, or the battery proved the hole. A hole with no dependency whose file is done but which `validate` refused (a forbidden tactic, an axiom) is `too_hard`, with the validator's reasons in the session record;
+- `statement_wrong`: the prover says so through `hole_verdict`. If it gives a Lean proof of the negation (`negation_proof`), the line sends it through `validate` with the negation flag; only when it passes is the node marked `negationValidated` and the claim's negation `computed` (a valid negation validation; the certifier alone makes it `refuted`);
+  the hole then gets no more sessions. If it gives only an argument, a tool's counterexample, or a proof Lean refuses, the verdict is still recorded, with a **`suspect_false` evidence node** on the claim (`checked: false`), and **no status changes**;
+- `too_hard`: the session ended (turns, budget, or the model stopping) with no proof, or the model said so. A session that ends without saying anything is `too_hard`. A `proved` that the model says without a last check that shows it is `too_hard`. A session that ends in an error (an exception, or the model or Lean could not be reached) is no verdict: its record has `stop: "error"` and no `hole_verdict` node is written; the session counts against the hole's limit.
+
+The session record's `ok` means that `validate` accepted the proof in that session; a hole's work done on stubs is its own field, `workDone` (the price book counts either as a success).
+
+A suspicion never stops work on the parent by itself and never propagates: the claim stays `open`, no edge changes, and the next outer session's briefing lists it under "Suspected false, UNVERIFIED". A hole with a Lean-checked negation is listed as a fact. Task 33's telemetry
+(`loopTelemetry`) counts the `hole_verdict` nodes and reports the share whose verdict is `statement_wrong` **with a Lean-checked negation** (`negationValidated`) as "turned out false"; the verdicts that only a prover or a tool says are false are shown apart ("suspected false, unverified") and are not counted as false.
+
+## Options of M12
+
+| Option | Default | Meaning |
+|---|---|---|
+| `subgoals` | true | named holes as claims and tasks |
+| `innerSessions` | 8 | one-call sessions of a hole's task (without blueprints) |
+| `maxInnerTasks`, `rounds`, `stepTasks` | 8, 2, 2 | the bounds above |
+| `ageRatio`, `weightRatio` | 1, 4 | the given-clause ratio |
+| `subsumption`, `subsumeFacts` | true, 40 | closing claims by known facts |
+| `ladder`, `fractions` | true, [0.3, 0.6] | the escalation ladder |
+| `blueprints` | false | blueprints, hole sessions, pre-flight, verdicts (CA9 to CA11) |
+| `holeTurns` | 12 | model responses in a hole session (blueprints only) |
+| `holeSessions` | 2 | sessions of a hole's task (blueprints only) |
+| `seed` | null | the scheduler's draws |
+
+What M12 records: `m12_sketch` (a sketch; with blueprints also `blueprint`, `uses`, `failureClass`), `m12_session` (a session; with blueprints also `stop`, `turns`, `verdict`, `workDone`, `work`, `workHash`, `negationValidated`, `argument`),
+`m12_subsumption`, `m12_preflight`, `hole_verdict`, `suspect_false`. All are facts, none a status, none learned.
+
 ## Inner provers and tasks (PC4 item 1)
 
 Each unproved hole gets a `prove` task, proposed by `line:M12` through the task API: acceptance
@@ -244,3 +357,6 @@ real Lean or model: the link lemma's proof (`intro h_aux_k ...; refine fun ...`)
 close an `instance_of` link lemma, the `lean.meta` instances call, the inner prover's prompt, and the
 price model (the prior of $0.05 a session and the 0.3 and 0.6 fractions are untuned). The lines of
 rung 2 do not exist yet.
+
+**Blueprints, not run.** `hole-session.test.ts` and `blueprint.test.ts` run a blueprint of three holes (one depending on another: worked on stubs, waiting, validated after its dependency, the assembled proof through `validate` and the certifier), a cycle, an unreachable hole, an unknown name, a hole restating the target, the three verdicts, a wrong hole whose negation the simulated Lean accepts (and one with only an argument),
+the gate's price and refusal, the session's file, and a resumption cut at every record of the wave, all with the simulated Lean and the faux model. **Not run** against a real Lean or model: the hole session's prompt and tools with a real model, the link lemma of a hole with dependencies, the battery and `plausible` on real holes, the price scale by turns.
