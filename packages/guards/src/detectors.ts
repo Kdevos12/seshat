@@ -241,8 +241,16 @@ export class ProverWatch {
 }
 
 /** The failure that came back, as the repeat rule counts it: the normalised first error and the strategy label. */
-export function repeatKey(error: string, label: string): string {
-  return JSON.stringify([error, label]);
+export function repeatKey(failureClass: string, error: string, label: string): string {
+  return JSON.stringify([failureClass, error, label]);
+}
+
+/**
+ * Whether a failure class is an error the repeat rule counts. `holes` is a state of progress (a sorry left is the sketch working), `other` has
+ * no specific detail to compare, and `refused` and `lean_unavailable` say nothing about the proof. Real error classes and timeouts count.
+ */
+export function repeatCounts(failureClass: string): boolean {
+  return failureClass !== "holes" && failureClass !== "other" && failureClass !== "refused" && failureClass !== "lean_unavailable";
 }
 
 /** The times a failure is seen on a problem before the repeat rule tells the prover to change approach, and the one on which the session ends. */

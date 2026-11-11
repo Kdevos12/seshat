@@ -173,10 +173,12 @@ in "Course change". The count starts again.
 ## The repeat rule
 
 The mechanical repeat rule (plan change CA7, Task 35) is a detector that counts over the whole problem, not one session: how many times a pair
-(normalised first error, strategy label) was seen on its checks, whichever prover and session made them. The error is the typed detail that
+(failure class, normalised first error, strategy label) was seen on its checks, whichever prover and session made them. The error is the typed detail that
 `classifyFailure` gives (`unknown identifier Nat.foo`, `unsolved goals at case succ`), cut and spaced by `normalizeDetail`, which is the
-normalisation the failure memory already uses; the label is the one the model declared, else the one computed from the file. A check that
-never reached Lean (`refused`, `lean_unavailable`) is not counted.
+normalisation the failure memory already uses; the label is the one the model declared, else the one computed from the file. The class is part of the key, so the same detail text under two classes is two failures. Only real errors and timeouts
+count: the class `holes` is a state of progress (a sketch that closes one hole per check is working, whatever its strategy label),
+`other` has no specific detail to compare, and a check that never reached Lean (`refused`, `lean_unavailable`) says nothing about
+the proof; none of those is counted.
 
 - The **third** occurrence adds a directive to the answer of that check (the hook `afterCheck` gives `CheckDecision.notice`, which the session
   appends to the tool result): the failure, the strategy and the count are named, and the model is told to change approach and that one
@@ -188,7 +190,8 @@ never reached Lean (`refused`, `lean_unavailable`) is not counted.
 
 The option `repeatRule` is off by default, so a run with `--lines M6` is what it was; it is on only where a configuration sets it. It is active
 only when M6 is on. `harness solve`'s set `v2` does not turn it on, because `solve`'s lines are `M1,M10` and M6 is not among them. The counts
-are checkpointed in the `watch` node of each session (`repeats`) and a resumed problem sums them again.
+are checkpointed in the `watch` node of each session (`repeats`) and a resumed problem sums them again. A session that was killed before its checkpoint was written does not count after a resume (its
+failures are counted again only if its checks are made again).
 
 ## Options
 
