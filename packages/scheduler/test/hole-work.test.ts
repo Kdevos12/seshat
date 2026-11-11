@@ -40,3 +40,22 @@ test("a helper lemma that uses a dependency is refused, with the rule in the rea
   // the hole's own proof may use it
   assert.equal(readWork({ aux: stub, proof: "exact aux_a n" }, report(), [dep]).done, true);
 });
+
+test("Lean's own report is read: an added axiom, or a sorry outside the stubs, is not done", () => {
+  const stub = stubsRegion([dep]);
+  const aux = `${stub}\n\nlemma helper (n : Nat) : n = n := rfl`;
+  const file = `import Mathlib\n\n${aux}\n\ntheorem hole (n : Nat) : n = n := by\n  exact helper n\n`;
+  const lineOf = (needle: string): number => file.split("\n").findIndex((l) => l.includes(needle)) + 1;
+  // the normal case: sorryAx through the stub, a sorry at the stub's line
+  const good = report({ checked: file, axioms: ["propext", "sorryAx"], sorries: [{ pos: { line: lineOf("sorry"), column: 2 }, goal: "" }] });
+  assert.equal(readWork({ aux, proof: "exact helper n" }, good, [dep]).done, true);
+  // an added axiom
+  const axiom = report({ checked: file, axioms: ["propext", "sorryAx", "myAxiom"] });
+  assert.match(readWork({ aux, proof: "exact helper n" }, axiom, [dep]).reason ?? "", /myAxiom/);
+  // a sorry Lean reports in the hole's proof (the text scan was fooled, say by a macro)
+  const moved = report({ checked: file, sorries: [{ pos: { line: lineOf("exact helper n"), column: 2 }, goal: "" }] });
+  assert.match(readWork({ aux, proof: "exact helper n" }, moved, [dep]).reason ?? "", /sorry outside the given lemmas/);
+  // a sorry Lean reports in the helper
+  const inHelper = report({ checked: file, sorries: [{ pos: { line: lineOf("lemma helper"), column: 0 }, goal: "" }] });
+  assert.match(readWork({ aux, proof: "exact helper n" }, inHelper, [dep]).reason ?? "", /sorry outside the given lemmas/);
+});

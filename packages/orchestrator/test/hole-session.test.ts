@@ -110,7 +110,7 @@ describe("blueprints: sessions with tools on holes", () => {
     const session = nodes(refused.events, "m12_session")[0];
     assert.equal(session?.ok, false);
     assert.equal(session?.verdict, "too_hard");
-    assert.match(String((session?.reasons as string[] | undefined)?.[0]), /validate did not accept the proof, so the work was not accepted/);
+    assert.match(String((session?.reasons as string[] | undefined)?.[0]), /depends on evil_axiom/);
     assert.deepEqual(statusOf(refused.events, holeOf(refused.events)), [], "no status changed");
     assert.ok(!ofType(refused.events, "task.status_changed").some((e) => String(e.data.reason).includes("waits for its dependencies")));
     const accepted = await oneHole(named(HARD_AUX), check("exact hole_ok"));

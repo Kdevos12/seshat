@@ -50,7 +50,8 @@ export function blueprintAnswer(code: string): FakeLeanAnswer {
   if (proof.includes("dep_ok")) {
     const { aux } = extractSubmission(code);
     if (!aux.includes("lemma aux_left")) return error("unknown identifier 'aux_left'");
-    return aux.includes("sorry") ? { axioms: ["propext", "sorryAx"], sorries: [{ pos: { line: 1, column: 2 }, goal: "n : ℕ\n⊢ stub" }] } : {};
+    const line = code.split("\n").findIndex((l) => l.includes("sorry")) + 1;
+    return aux.includes("sorry") ? { axioms: ["propext", "sorryAx"], sorries: [{ pos: { line, column: 2 }, goal: "n : ℕ\n⊢ stub" }] } : {};
   }
   if (!proof.includes("sorry") && !proof.includes("main_ok") && code.includes("n * 1 = n") && !code.includes("h_aux_1")) return {};
   return m12Answer(code);

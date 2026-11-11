@@ -1,4 +1,4 @@
-import { collapseWhitespace, maskCommentsAndStrings, prepareSketch, readDeclarationHead, splitCommands, type Submission, type ValidationReport } from "@seshat/core";
+import { STANDARD_AXIOMS, collapseWhitespace, maskCommentsAndStrings, prepareSketch, readDeclarationHead, splitCommands, type Submission, type ValidationReport } from "@seshat/core";
 
 /** A hole's declared dependency as its session sees it: the name and the statement, to be a stub. */
 export interface Dependency {
@@ -19,7 +19,7 @@ export const stubOf = (dep: Dependency): string => `lemma ${dep.name} ${dep.stat
 export const stubsRegion = (deps: readonly Dependency[]): string => deps.map(stubOf).join("\n\n");
 
 export interface WorkReading {
-  /** The work on the hole is done (CA10): no Lean error, and every `sorry` lies in a dependency stub. */
+  /** The work on the hole is done (CA10): no Lean error, and every `sorry` lies in a dependency stub (by the text scan and by Lean's own report). */
   done: boolean;
   /** Why not, when it is not. */
   reason?: string;
@@ -32,6 +32,27 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 /** True when the text (comments and strings aside) names the dependency as an identifier. */
 const mentions = (text: string, name: string): boolean =>
   new RegExp(`(?<![\\p{L}\\p{N}_'.!?])${escapeRegExp(name)}(?![\\p{L}\\p{N}_'!?])`, "u").test(maskCommentsAndStrings(text));
+
+/** The axioms a hole's file may depend on: the validator's, and `sorryAx`, which the stubs bring in and which the link lemma removes. */
+const WORK_AXIOMS: readonly string[] = [...STANDARD_AXIOMS, "sorryAx"];
+
+/** The names of the declarations of the checked file that hold a `sorry` Lean reported, or undefined when a position falls in no declaration. */
+function sorryOwners(report: ValidationReport): (string | undefined)[] {
+  const lines = report.checked.split("\n");
+  const offsets: number[] = [];
+  let at = 0;
+  for (const line of lines) {
+    offsets.push(at);
+    at += line.length + 1;
+  }
+  const commands = splitCommands(report.checked).filter((c) => c.kind === "code");
+  return report.sorries.map((s) => {
+    const offset = offsets[s.pos.line - 1];
+    if (offset === undefined) return undefined;
+    const command = commands.find((c) => c.start <= offset && offset < c.end) ?? commands.find((c) => c.start <= offset + s.pos.column && offset + s.pos.column < c.end);
+    return command === undefined ? undefined : readDeclarationHead(command.text.trimEnd())?.name;
+  });
+}
 
 const same = (a: string, b: string): boolean => collapseWhitespace(a) === collapseWhitespace(b);
 
@@ -46,6 +67,14 @@ export function readWork(submission: Submission, report: ValidationReport, deps:
   if (report.leanStatus === undefined || report.leanStatus === "server_error" || report.leanStatus === "timeout") return refuse("Lean did not check the file");
   if (report.editsOutsideRegions) return refuse("the file was changed outside the regions");
   if (report.messages.some((m) => m.severity === "error")) return refuse("Lean reports an error");
+  // Lean's own report, besides the text scan below: every sorry it reports lies in a dependency stub, and no axiom beyond the allowed ones.
+  const stray = report.axioms.filter((a) => !WORK_AXIOMS.includes(a));
+  if (stray.length > 0) return refuse(`the file depends on ${stray.join(", ")}: no axiom is allowed beyond the standard ones`);
+  if (report.sorries.length > 0) {
+    const owners = sorryOwners(report);
+    const bad = owners.findIndex((name) => name === undefined || !deps.some((d) => d.name === name));
+    if (bad >= 0) return refuse(`Lean reports a sorry outside the given lemmas${owners[bad] !== undefined ? ` (in ${owners[bad]})` : ""}: only the given lemmas keep their sorry`);
+  }
   const helpers: string[] = [];
   for (const command of splitCommands(submission.aux)) {
     if (command.kind !== "code") continue;
