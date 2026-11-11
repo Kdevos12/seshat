@@ -93,6 +93,9 @@
     "additionalProperties": false
   },
   "produces": [],
+  "thirdParty": {
+    "sends": "objects of a collection with a value computed on each, to FindStat"
+  },
   "timeoutMs": 30000,
   "summary": [
     "matches.*.id"

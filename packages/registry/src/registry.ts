@@ -161,6 +161,8 @@ export class Registry {
   private readonly env: Readonly<Record<string, string | undefined>>;
   private readonly mcpTransport: McpTransportFactory;
   private readonly instances = new Map<string, Promise<ImplementationInstance>>();
+  private privateRun = false;
+  private readonly localOnly = new Set<string>();
 
   constructor(options: RegistryOptions) {
     const packs = [...(options.packs ?? [])].sort((a, b) => (a.manifest.name < b.manifest.name ? -1 : 1));
@@ -204,6 +206,33 @@ export class Registry {
       host: hostProfileHash(options.host),
       ...(packs.length > 0 ? { packs: packs.map((p) => packRecord(p)) } : {}),
     });
+  }
+
+  /**
+   * The third-party policy of this registry, set once by the run and only ever tightened (documentation/trust.md, "Third parties"). A
+   * capability whose manifest has `thirdParty` is then called in its private form: `private` for every such capability (`--private`),
+   * `local` for the ones named (a person did not agree to the statement going outside). A call that cannot be made locally is
+   * refused with the error code `private`, before any implementation is reached, and journaled as a failed tool run. A capability
+   * without `thirdParty` is never affected.
+   */
+  restrictThirdParties(policy: { private?: boolean; local?: readonly string[] }): void {
+    if (policy.private === true) this.privateRun = true;
+    for (const id of policy.local ?? []) this.localOnly.add(id);
+  }
+
+  /** Why the policy would refuse every call of the capability, or undefined when a call can be made (in its private form if need be). */
+  thirdPartyRefusal(id: string): string | undefined {
+    const capability = this.catalog.capabilities.get(id);
+    const restricted = this.privateRun || this.localOnly.has(id);
+    const spec = capability?.manifest.thirdParty;
+    if (!restricted || spec === undefined || spec.privateInput !== undefined) return undefined;
+    const local = this.host.capabilities[id]?.use.filter((i) => spec.implementations !== undefined && !spec.implementations.includes(i)) ?? [];
+    if (local.length > 0) return undefined;
+    return this.refusalText(id, spec.sends);
+  }
+
+  private refusalText(id: string, sends: string): string {
+    return `${id} sends ${sends} to a third party, and ${this.privateRun ? "this run is private (--private)" : "the statement was not allowed to go outside"}`;
   }
 
   /** The name, version and content hash of each pack, in name order: what a run records to be reproducible. */
@@ -267,6 +296,10 @@ export class Registry {
   async invoke(id: string, input: Json, options: InvokeOptions = {}): Promise<InvokeResult> {
     const capability = this.capability(id);
     const manifest = capability.manifest;
+    const spec3 = manifest.thirdParty;
+    const restricted = spec3 !== undefined && (this.privateRun || this.localOnly.has(id));
+    // A restricted run makes the call in its private form, whatever the caller gave: no caller can forget it.
+    if (restricted && spec3.privateInput !== undefined) input = { ...(input as Record<string, Json>), ...spec3.privateInput };
     const problems = validate(manifest.input, input, "input");
     if (problems.length > 0) {
       throw new CapabilityError("invalid_input", id, `invalid input for ${id}: ${problems.join("; ")}`, { details: problems });
@@ -275,9 +308,14 @@ export class Registry {
       throw new CapabilityError("invalid_input", id, `${id} keeps state between calls, so a call needs a scope`);
     }
     const binding = this.host.capabilities[id];
-    const candidates = options.implementation !== undefined ? [options.implementation] : (binding?.use ?? []);
+    let candidates = options.implementation !== undefined ? [options.implementation] : (binding?.use ?? []);
     if (candidates.length === 0) {
       throw new CapabilityError("unavailable", id, `${id} is not offered on host ${this.host.host}`);
+    }
+    if (restricted && spec3.privateInput === undefined) {
+      const local = candidates.filter((i) => spec3.implementations !== undefined && !spec3.implementations.includes(i));
+      if (local.length === 0) throw this.refuse(capability, candidates[0] as string, input, options);
+      candidates = local;
     }
     const own = manifest.timeoutField !== undefined ? (input as Record<string, Json>)[manifest.timeoutField] : undefined;
     const timeoutMs =
@@ -305,6 +343,30 @@ export class Registry {
     throw new CapabilityError("unavailable", id, `${id}: no implementation could be reached (${unreachable.join("; ")})`, {
       details: unreachable,
     });
+  }
+
+  /** The refusal of a call a restricted run may not make: a tool run that never reached its implementation, and the error to throw. */
+  private refuse(capability: Capability, implId: string, input: Json, options: InvokeOptions): CapabilityError {
+    const manifest = capability.manifest;
+    const spec = manifest.implementations.find((i) => i.id === implId);
+    const toolRunId = newId("tr");
+    const actor = options.actor ?? manifest.id;
+    const message = `${this.refusalText(manifest.id, manifest.thirdParty?.sends ?? "its input")}: nothing was sent`;
+    this.journal?.emit(
+      "tool_run.started",
+      {
+        toolRunId,
+        capability: manifest.id,
+        implementation: implId,
+        version: spec !== undefined ? this.versionOf(spec) : "none",
+        inputHash: this.blobs?.putJson(input) ?? hashJson(input),
+        timeoutMs: 0,
+        ...(options.attemptId !== undefined ? { attemptId: options.attemptId } : {}),
+      },
+      actor,
+    );
+    this.journal?.emit("tool_run.finished", { toolRunId, outcome: "error", durationMs: 0, summary: { error: "private", message } }, actor);
+    return new CapabilityError("private", manifest.id, message, { implementation: implId, toolRunId });
   }
 
   private async run(
