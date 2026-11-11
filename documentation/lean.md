@@ -232,11 +232,14 @@ waiting. An address from `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL` at another host
 With `--lean-search` and no usable backend the run says so once at its start. A backend that fails is skipped and the others
 answer; with none set up the capability answers no hit.
 
-**`--private`.** `RunConfig.private` (Task 36 adds the flag `--private`; this task adds only the optional field, with the same meaning:
-nothing leaves for a third party other than the model provider) keeps `remote` and any `pattern` service off: the call says `private`, the
-implementation does not ask them, and `pattern` falls back to the index when there is one. The local index never leaves the machine. Without
-`private`, `remote` and `pattern` send the missing name, or a hole's goal (the statement being worked on), to the service: on for bench
-problems, to be asked for `solve` (plan change, question 1).
+**Third parties (`--private` and consent).** `remote` and `pattern` send the missing name, or a hole's goal (the statement being worked on), to a
+service, so `lean.search` is marked `thirdParty` with the private form `{"private": true}` ([trust.md](trust.md#third-parties)). The registry adds
+that input to every call of a run that is private (`RunConfig.private`, `--private`) or that has no journaled yes: the call says `private`, the
+implementation does not ask them, and `pattern` falls back to the index when there is one. A caller cannot forget it, and a direct registry call
+without the field sends nothing either. The local index never leaves the machine. Without either, in `harness run` (bench problems are public) the
+services are on. In `harness solve`, `--lean-search` brings the question asked once for the literature, worded with the hosts the profile allows;
+the answer is journaled as `intake.consented`, `--lit` is the non-interactive yes, `--yes` or `--ask-stdin` without `--lit` is no, and a resumed run
+reads the journaled answer. With a no, `lean.search` runs with its local backends only.
 
 **Not run.** Nothing here ran against a real Lean (the `#check` line and the lines Lean gives its messages are from its documentation as
 remembered; the verification reads the message at the line of each `#check`), a real search service (the request and the answer shape of
