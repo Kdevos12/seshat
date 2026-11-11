@@ -212,10 +212,7 @@ async function work(o: ConsolidateOptions & { from: string; out: string }, journ
   };
   const blobs = new BlobStore(join(o.out, "blobs"), journal.chain?.blobDirs ?? []);
   const store = new MemoryStore({ journal, blobs, provenance: context, actor: CONSOLIDATION_ACTOR });
-  if (started.some((e) => e.type === "run.finished")) {
-    log(`the pass in ${o.out} had already ended: nothing is written`);
-    return summary(runId, o.out, store, readEvents(join(o.out, "journal.jsonl")), true);
-  }
+  const hadFinished = started.some((e) => e.type === "run.finished");
   const events = (): HarnessEvent[] => readEvents(join(o.out, "journal.jsonl"));
   const allEvents = chain.segments.flatMap((s) => s.events);
   const problems = chainProblems(allEvents);
@@ -252,8 +249,9 @@ async function work(o: ConsolidateOptions & { from: string; out: string }, journ
 
   const finishedAt = events();
   const spent = finishedAt.filter((e) => e.type === "model_call.finished" && e.data.site === SITE_CONSOLIDATION_PAGE).reduce((n, e) => n + (e.type === "model_call.finished" ? e.data.usd : 0), 0);
-  journal.emit("run.finished", { runId, attempted: 0, solved: 0, candidates: 0, usd: spent }, "orchestrator");
-  const result = summary(runId, o.out, store, readEvents(join(o.out, "journal.jsonl")), false);
+  // A pass run again on a directory it already ended appends only what is new: its records and, when it has nothing to do, nothing at all.
+  if (!hadFinished) journal.emit("run.finished", { runId, attempted: 0, solved: 0, candidates: 0, usd: spent }, "orchestrator");
+  const result = summary(runId, o.out, store, readEvents(join(o.out, "journal.jsonl")), hadFinished && finishedAt.length === started.length);
   return result;
 }
 
