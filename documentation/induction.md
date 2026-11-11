@@ -303,7 +303,7 @@ graph of a battery; when nothing is found and a score exists, two searches run, 
   parameters. This is the hook: no change to `evolve.ts` or `m16.ts` was needed (the smallest change is none). Each program that
   scored is run on the parameters and its graphs are tested with the predicate. Model requests are the ones M11 has left of its cap; none left, none made.
 
-A hit is returned to M11, which writes the Lean refutation and submits it through `validate`: neither search changes a status. The tests are in
+Every field of the filter M11 records (vertex range, edge range, connectivity) is applied to a graph before it counts as a hit, on both paths; `bounds.callMs` (default 500) is the sandbox's time for one call. A hit is returned to M11, which writes the Lean refutation and submits it through `validate`: neither search changes a status. The tests are in
 `test/graph-search.test.ts` (a planted counterexample found with a fixed seed and found again by a replay, the bounds, a family proposed by the faux model).
 
 ## The counterexample set (the CEGIS rule, PD5)
