@@ -29,6 +29,7 @@
     "@seshat/lean-local": "workspace:*",
     "@seshat/lean-lsp": "workspace:*",
     "@seshat/lean-meta": "workspace:*",
+    "@seshat/lean-search": "workspace:*",
     "@seshat/lessons": "workspace:*",
     "@seshat/library": "workspace:*",
     "@seshat/library-builder": "workspace:*",

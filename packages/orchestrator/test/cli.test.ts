@@ -183,6 +183,15 @@ describe("harness run", () => {
     });
   });
 
+  it("knows --lean-search: a resumed run keeps the option it began with, so the flag cannot be given with --resume", async () => {
+    const { code, stderr } = await harness(["run", "--resume", join(tempDir(), "absent"), "--checkout", checkout, "--lean-search"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /--lean-search cannot be given with it/);
+    // It is in the usage of run and of solve.
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness run [^]*\[--lean-search\][^]*harness solve [^]*\[--lean-search\]/);
+  });
+
   it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {
     const env = { SESHAT_MODEL: "nowhere/none" };
     const started = await harness(["run", "--checkout", checkout, "--all"], env);

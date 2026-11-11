@@ -1,0 +1,45 @@
+{
+  "capability": "lean.search",
+  "cases": [
+    {
+      "name": "a name query answers names",
+      "purpose": "A search for a name that Lean does not know answers hits, each a name with the backend that found it. It needs a backend set up (an index of Mathlib, or a service): the harness checks every hit with Lean before it shows one.",
+      "input": {
+        "query": "add_comm",
+        "kind": "name",
+        "limit": 3
+      },
+      "expect": [
+        {
+          "path": "hits",
+          "some": [
+            {
+              "path": "name",
+              "matches": "add_comm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a private run asks no third party",
+      "purpose": "With private set, a backend that sends the query away is not asked: it comes back as skipped with its reason.",
+      "input": {
+        "query": "a + b = b + a",
+        "kind": "goal",
+        "private": true
+      },
+      "expect": [
+        {
+          "path": "skipped",
+          "every": [
+            {
+              "path": "reason",
+              "matches": "^private run"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
