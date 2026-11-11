@@ -82,6 +82,7 @@ const usage = `usage:
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--lean-search] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
+              [--no-intake] [--no-auto-tool] [--no-lean-search]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
 
@@ -237,6 +238,9 @@ const { positionals, values } = parseArgs({
     private: { type: "boolean" },
     "intake-usd": { type: "string" },
     "auto-tool": { type: "boolean" },
+    "no-intake": { type: "boolean" },
+    "no-auto-tool": { type: "boolean" },
+    "no-lean-search": { type: "boolean" },
     port: { type: "string" },
     open: { type: "boolean" },
     lean: { type: "boolean" },
@@ -1131,6 +1135,9 @@ async function solve(): Promise<number> {
       noCheck: values["no-check"] === true,
       ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
       autoTool: values["auto-tool"] === true,
+      noIntake: values["no-intake"] === true,
+      noAutoTool: values["no-auto-tool"] === true,
+      noLeanSearch: values["no-lean-search"] === true,
       intake: values.intake === true || values.lit === true,
       lit: values.lit === true,
       private: values.private === true,

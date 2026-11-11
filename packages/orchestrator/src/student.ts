@@ -44,11 +44,63 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
   },
 };
 
+/**
+ * What a set turns on at the level of `solve` itself, beside the `RunConfig` fields of `DEFAULTS_SETS` (Task 34b): the three things that are
+ * not one `RunConfig` field each, because `solve` decides them for its problem. This table and `DEFAULTS_SETS` are the one place that says
+ * what a set does: `solve-command.ts`, `harness doctor` and the page `quickstart.md` read it, and none keeps a copy.
+ *
+ * - `intake`: the intake gate (documentation/literature.md): the statement's hygiene tests, and the literature only with the person's yes.
+ * - `autoTool`: the host's compute tool for a statement the router files as finite, about a graph or about numbers; only when the host offers it.
+ * - `leanSearch`: `RunConfig.leanSearch`; only when the host offers `lean.search`; remote services only with the person's yes.
+ *
+ * The explicit flags (`--intake`, `--auto-tool`, `--lean-search`) turn one on whatever the set; `--no-intake`, `--no-auto-tool` and
+ * `--no-lean-search` turn one of the set off.
+ */
+export interface SolveSwitches {
+  intake: boolean;
+  autoTool: boolean;
+  leanSearch: boolean;
+}
+
+export const SOLVE_SWITCHES: Readonly<Record<DefaultsName, Readonly<SolveSwitches>>> = {
+  v1: { intake: false, autoTool: false, leanSearch: false },
+  v2: { intake: true, autoTool: true, leanSearch: true },
+};
+
+/** The capability that gives `lean.search`, and the compute tool of `autoTool`, as a host profile names them. */
+export const SEARCH_CAPABILITY = "lean.search";
+export const COMPUTE_TOOL = "compute.sage";
+
+/** What a set turns on, in words: one line per addition, taken from `DEFAULTS_SETS` and `SOLVE_SWITCHES`. `offers` says which capabilities the host has. */
+export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean): string[] {
+  const set = DEFAULTS_SETS[name];
+  const sw = SOLVE_SWITCHES[name];
+  const lines: string[] = [];
+  const config: Array<[keyof RunConfig, string]> = [
+    ["editTool", "the edit tool"],
+    ["maskOldChecks", "masking of old check results"],
+    ["checkTimeoutSec", "bounded Lean checks"],
+    ["stateCard", "the state card"],
+    ["budgetRounds", "the budget in rounds"],
+  ];
+  for (const [key, what] of config) if (set[key] !== undefined && set[key] !== false) lines.push(what);
+  if (name === "v2") lines.push("line M6's repeat rule");
+  if (sw.intake) lines.push("the intake gate (hygiene tests; the literature only with your yes)");
+  if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
+  if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
+  return lines;
+}
+
 /** The dollars a `solve` may spend when `--max-usd` is not given: small on purpose, and always there. */
 export const STUDENT_DEFAULT_MAX_USD = 2;
 
 /** The classical battery runs before any model call (line M10), on the shared identity of statements (line M1). */
 export const STUDENT_LINES: readonly string[] = ["M1", "M10"];
+
+/** The lines a `solve` enables when the caller names none: the set's own (`v2` adds M6, for its mechanical repeat rule alone). */
+export function studentLines(defaults: DefaultsName): string[] {
+  return defaults === "v2" ? [...STUDENT_LINES, "M6"] : [...STUDENT_LINES];
+}
 
 /**
  * The share of the allowance a turn may spend before the run stops with its account and waits for a decision: the first stop is a
@@ -129,7 +181,7 @@ export function checkAllowance(maxUsd: number, turnUsd?: number): string[] {
 export function studentConfig(o: StudentOptions): RunConfig {
   const turn: TurnLimit = { usd: o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6 };
   const defaults = o.defaults ?? DEFAULT_DEFAULTS;
-  const lines = o.lines ?? (defaults === "v2" ? [...STUDENT_LINES, "M6"] : STUDENT_LINES);
+  const lines = o.lines ?? studentLines(defaults);
   // v2 runs M6 for its mechanical repeat rule only: no detector, no model call.
   const repeatOnly = defaults === "v2" && o.lines === undefined && lines.includes("M6");
   const set = DEFAULTS_SETS[defaults];

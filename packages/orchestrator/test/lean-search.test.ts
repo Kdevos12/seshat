@@ -158,7 +158,7 @@ describe("lean.search pushed by the harness (CA22)", () => {
     assert.deepEqual([config.leanSearch, config.private], [true, true]);
   });
 
-  it("is in no defaults set of solve (the controller adds it to v2), and --lean-search adds it to the set's configuration", () => {
+  it("is in the RunConfig of no defaults set (v2 turns it on at solve's level, SOLVE_SWITCHES), and --lean-search adds it to the set's configuration", () => {
     for (const set of Object.values(DEFAULTS_SETS)) assert.equal("leanSearch" in set, false);
     const base = { selection: { ids: ["p"] }, model: "faux/m", maxUsd: 2 };
     assert.equal("leanSearch" in studentConfig(base), false);
