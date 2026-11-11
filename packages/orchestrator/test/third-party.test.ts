@@ -5,9 +5,13 @@ import { type LeanCheckOptions, type LeanCheckResult, type LeanChecker, type Lea
 import { LEAN_SEARCH, leanSearchFactory, RegistryLeanSearch, type Fetch } from "@seshat/lean-search";
 import { oeisFactory } from "@seshat/models";
 import { CapabilityError, type HostProfile, hostProfilePath, leanCheckImplementation, loadCatalog, loadHostProfile, Registry } from "@seshat/registry";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { litFactory } from "@seshat/lit";
+import { startFakeLit } from "../../lit/test/fake-lit.ts";
+import { hostAt } from "../../lit/test/helpers.ts";
 import { BARE_MACHINE } from "../../ui/test/helpers.ts";
 import { consentQuestion, REPO_ROOT, runBench, solve, solveCommand, type RunOptions, type SolveOptions } from "../src/index.ts";
-import { check, config, DemoLean, demoBench, fauxModels, ofType, tempDir } from "./m0-helpers.ts";
+import { check, config, DemoLean, demoBench, demoResume, fauxModels, killedAt, ofType, tempDir } from "./m0-helpers.ts";
 
 /** The third-party policy of Task 36b, at the level of the registry, of a run, of `solve` and of `harness solve`. Nothing here reaches a network. */
 const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
@@ -159,5 +163,67 @@ describe("the question of the consent", () => {
     assert.match(both, /leansearch\.net, loogle\.lean-lang\.org/);
     assert.doesNotMatch(consentQuestion(profile, { literature: false, leanSearch: true }), /OpenAlex/);
     assert.doesNotMatch(consentQuestion(profile, { literature: true, leanSearch: false }), /loogle/);
+  });
+});
+
+describe("lit.search under the third-party policy", () => {
+  it("answers from the bench's metadata only, with no remote request, in a private run and in a run with no yes", async () => {
+    const site = await startFakeLit();
+    try {
+      const checkout = tempDir("mh-36b-bench-");
+      mkdirSync(join(checkout, "FormalConjectures"), { recursive: true });
+      writeFileSync(join(checkout, "FormalConjectures", "A.lean"), '/-- The Erdos Straus conjecture about unit fractions summing to four over n -/\n@[category research open]\ntheorem erdos_straus (n : ℕ) : n = n := sorry\n');
+      const host = hostAt(site.url, { backends: { openalex: { baseUrl: site.url, allowedHosts: ["127.0.0.1"] }, arxiv: { baseUrl: site.url, allowedHosts: ["127.0.0.1"] }, "bench-metadata": { dir: checkout } } });
+      const registryWith = (policy: Parameters<Registry["restrictThirdParties"]>[0] | undefined) => {
+        const registry = new Registry({ catalog, host, factories: { lit: litFactory() } });
+        if (policy !== undefined) registry.restrictThirdParties(policy);
+        return registry;
+      };
+      const input = { query: "Erdos Straus conjecture unit fractions" };
+      // Unrestricted: the remote backends are asked (the counter moves), so the counter means something.
+      const open = registryWith(undefined);
+      await open.invoke("lit.search", input);
+      assert.ok(site.requests.length > 0);
+      await open.close();
+      // The policy as the run sets it: `--private`, and a missing yes.
+      for (const policy of [{ private: true }, { local: ["lean.search", "lit.search"] }]) {
+        const before = site.requests.length;
+        const registry = registryWith(policy);
+        // The caller asks for every backend, even by name: the registry forces the local one.
+        for (const call of [input, { ...input, backends: ["openalex", "arxiv", "bench-metadata"] }]) {
+          const { output } = await registry.invoke("lit.search", call as never);
+          const hits = (output as { hits: Array<{ backend: string }> }).hits;
+          assert.ok(hits.length > 0 && hits.every((h) => h.backend === "bench-metadata"), JSON.stringify(policy));
+        }
+        assert.equal(site.requests.length, before, `no remote request with ${JSON.stringify(policy)}`);
+        await registry.close();
+      }
+    } finally {
+      await site.close();
+    }
+  });
+});
+
+describe("a resumed solve", () => {
+  it("reads the recorded answer for lean.search and never asks again: remote after a yes, local after a no", async () => {
+    for (const yes of [true, false]) {
+      const fake = service();
+      const lean = new SearchLean();
+      const { models, faux, name } = fauxModels();
+      faux.setResponses([check("bad"), check("exact trivial_proof")]);
+      const dir = join(tempDir("mh-36b-"), "run");
+      let asked = 0;
+      const first = await solve({ statement: "theorem demo (n : ℕ) : n + 0 = n", dir, models, model: name, maxUsd: 2, user: "alice", registry: searchRegistry(lean, fake.fetch), checker: lean, confirm: async () => true, base: { leanSearch: true }, askConsent: async () => (asked++, yes) });
+      assert.equal(asked, 1);
+      assert.equal(fake.requests.length > 0, yes);
+      // The process died right after the answer was journaled; a new process resumes the run.
+      const cut = killedAt(dir, eventsOf(dir).findIndex((e) => e.type === "intake.consented") + 1);
+      const afterAnswer = eventsOf(cut).length;
+      const again = service();
+      const resumed = await demoResume({ dir: cut, bench: { checkout: first.problem.checkout, index: first.problem.index }, responses: [check("bad"), check("exact trivial_proof")], lean, registry: () => searchRegistry(lean, again.fetch) });
+      assert.ok(eventsOf(cut).length > afterAnswer || resumed.events.length > afterAnswer);
+      assert.equal(again.requests.length > 0, yes, yes ? "a yes read from the journal keeps the service on" : "a no read from the journal keeps lean.search local");
+      assert.equal(ofType(resumed.events, "intake.consented").length, 1, "the answer is not written or asked again");
+    }
   });
 });

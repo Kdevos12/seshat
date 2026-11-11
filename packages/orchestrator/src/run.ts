@@ -481,7 +481,7 @@ interface QueuedProblem {
 async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> {
   const { config } = o;
   const problems = checkConfig(config);
-  problems.push(...checkIntake(config.intake, { user: o.user }));
+  problems.push(...checkIntake(config.intake, { user: o.user, resumed: resume !== undefined }));
   if (config.private === true && sitesSentOutside(resolveDecideSettings(config.decide)).length > 0) {
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
