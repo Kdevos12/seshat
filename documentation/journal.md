@@ -162,6 +162,16 @@ a failure of the tool. Its `summary` holds the output paths the manifest names, 
 tool runs of a stateful capability carry their `scope`: the calls with the same scope share state
 (the variables of a SageMath session), in the journal's order.
 
+### Consolidation nodes
+
+Four node kinds are written by the consolidation pass alone, as the actor `consolidation` (the journal refuses them from any other actor, and
+refuses a `node.updated` on them from any actor but `consolidation` and `orchestrator`, which switches a page off): `consolidation_card`
+(`passId`, `problemId`, `target`, `card`, `text`), `consolidation_page` (`passId`, `problemId`, `text`, `sentences`, `dropped`, `modelCallId`,
+`usd`, `active`, `supersedes?`, `deactivated?`), `consolidation_pass` (a problem's step: `status` `page`, `no_page`, `skipped_budget`, `failed` or
+`no_model`, with its counts) and `consolidation_lesson` (a lesson `merged` or `flagged`). Pages and cards carry the provenance stamp. The model call
+is a `model_call.finished` at the site `consolidation.page`. Optional fields added to the data of a `lesson` node: `mergedInto`, `flagged`. Optional
+field of a consortium run's configuration: `consolidation`; of a run's: `consolidation`. See [consolidation.md](consolidation.md).
+
 ## Writing
 
 `Journal.emit(type, data, actor)` is the only way to write. It checks the invariants against the
