@@ -1,6 +1,7 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
+import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import type { FailureClass } from "@seshat/memory";
 import { chargedTotals, type Ledger } from "./budget.ts";
@@ -46,6 +47,8 @@ export interface ProverOptions {
   editTool?: boolean;
   /** The sessions mask their old check results (`SessionOptions.maskOldChecks`). */
   maskOldChecks?: boolean;
+  /** The run's push of verified `lean.search` hits into the check answers (`SessionOptions.appendToCheck`); absent: none. */
+  leanSearch?: LeanSearchPush;
   /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
@@ -284,6 +287,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
         ...(o.editTool === true ? { editTool: true } : {}),
         ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
+        ...(o.leanSearch !== undefined ? { appendToCheck: (o.leanSearch as LeanSearchPush).forSession() } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the

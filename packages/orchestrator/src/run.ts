@@ -29,6 +29,8 @@ import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
 import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
+import { maskedCount } from "./mask.ts";
+import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
 import { Breakpoints } from "./breakpoints.ts";
@@ -120,6 +122,13 @@ export interface RunConfig {
    * documentation/m0-loop.md, "Masked old checks"). The journal is not touched. Absent: off, and a run that records and sends what it always did.
    */
   maskOldChecks?: boolean;
+  /**
+   * After a check that did not accept the file, the harness searches Lean declarations for each unknown identifier and each hole's goal
+   * (capability `lean.search`), checks every hit against the run's Lean, and appends the names and the signatures Lean printed to the
+   * check's answer (plan change CA22, documentation/lean.md, "Search pushed by the harness"). The host must offer `lean.search`.
+   * Absent: off, and a run that records and answers what it always did.
+   */
+  leanSearch?: boolean;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -170,7 +179,8 @@ export interface RunConfig {
   /**
    * `--private`: nothing of the problem is sent outside the machine and the model provider (documentation/literature.md, "Third
    * parties"). It wins over every option that sends something: the literature step is skipped with the reason, and a run that also asks
-   * Jev for decisions is refused. The one place later tasks read it from. Absent or false: no restriction.
+   * Jev for decisions is refused, and the backends of `lean.search` that send a query to a service stay off (documentation/lean.md). The
+   * one place later tasks read it from. Absent or false: no restriction.
    */
   private?: boolean;
 }
@@ -572,6 +582,31 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  if (config.leanSearch === true && !registry.offers(LEAN_SEARCH)) {
+    return await abandon(`leanSearch needs the capability ${LEAN_SEARCH}: host ${registry.host.host} does not offer it`, undefined, registry);
+  }
+  // The push of verified hits into the provers' check answers (plan change CA22): one for the run, so that a name is checked once per environment.
+  const leanSearch =
+    config.leanSearch === true
+      ? new LeanSearchPush({
+          checker: new RegistryLeanChecker(registry, { actor: LEAN_SEARCH }),
+          // A name is hidden again only once the answer that showed it has been masked in the history (`mask.ts`); without masking, never.
+          ...(config.maskOldChecks === true ? { masked: (shownAt: number, now: number) => shownAt <= maskedCount(now) } : {}),
+          search: async (request, signal) => {
+            const found = await new RegistryLeanSearch(registry).search(
+              { ...request, ...(config.private === true ? { private: true } : {}) },
+              { actor: LEAN_SEARCH, ...(signal !== undefined ? { signal } : {}) },
+            );
+            // A backend that failed makes the answer partial, and a partial answer is not kept; one a private run left out by design is not a failure.
+            return found === undefined ? undefined : { names: found.hits.map((hit) => hit.name), complete: found.skipped.every((s) => s.reason === PRIVATE_REASON) };
+          },
+        })
+      : undefined;
+  if (leanSearch !== undefined) {
+    // Said once, at the start: a search with no backend, or none usable, changes nothing and would otherwise do so silently.
+    const entry = (await registry.health(LEAN_SEARCH))[0];
+    if (entry === undefined || !entry.ok) log(`warning: leanSearch is on, but ${LEAN_SEARCH} has no usable backend on host ${registry.host.host}: ${entry?.detail ?? "none is set up"}; no hit will be added to the checks' answers`);
+  }
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
   // host cannot give is refused here, before `run.started` or `run.resumed` is written.
   const prices = new PriceBook(registry.host.models, o.wallClock);
@@ -687,6 +722,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+      ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1299,6 +1335,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(config.editTool === true ? { editTool: true } : {}),
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+          ...(leanSearch !== undefined ? { leanSearch } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

@@ -261,6 +261,15 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lean-search:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/lessons:
     dependencies:
       '@seshat/core':
@@ -407,6 +416,9 @@ importers:
       '@seshat/lean-meta':
         specifier: workspace:*
         version: link:../lean-meta
+      '@seshat/lean-search':
+        specifier: workspace:*
+        version: link:../lean-search
       '@seshat/lessons':
         specifier: workspace:*
         version: link:../lessons
