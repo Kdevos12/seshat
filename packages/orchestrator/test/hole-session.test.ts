@@ -126,6 +126,43 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.deepEqual(statusOf(events, holeOf(events)), []);
   });
 
+  /** The blueprint of `BP_AUX`: aux_right (works on the stub of aux_left) first, aux_left second; then the prompt of the next outer session is returned. */
+  async function twoHoles(second: ReturnType<typeof say>, lean: DemoLean) {
+    const prompts: string[] = [];
+    const run = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { ...OPTIONS, holeSessions: 1, rounds: 1 } } },
+      lean,
+      responses: [
+        check(BP_PROOF, BP_AUX),
+        say("Three lemmas are left."),
+        check("exact dep_ok", LEFT_STUB),
+        second,
+        (context: Parameters<typeof sessionPromptOf>[0]) => {
+          if (!context.messages.some((m) => m.role === "assistant")) prompts.push(sessionPromptOf(context));
+          return say("Going on.");
+        },
+      ],
+    });
+    return { ...run, prompts };
+  }
+
+  it("tells the next session that a hole's dependency is false, not that the hole waits for it to be proved", { timeout: 60000 }, async () => {
+    const { prompts } = await twoHoles(call("hole_verdict", { verdict: "statement_wrong", argument: "false", negation_proof: "exact neg_ok" }), new DemoLean(blueprintAnswer));
+    const prompt = prompts[0] ?? "";
+    assert.match(prompt, /a lemma it uses is false \(Lean accepted a proof of its negation\): aux_right \(uses aux_left\)/);
+    assert.doesNotMatch(prompt, /waiting for the lemmas it uses to be proved/);
+  });
+
+  it("tells the next session that validate refused the derivation of a hole whose dependencies are proved, instead of waiting silently", { timeout: 60000 }, async () => {
+    const answer = (code: string) => (code.includes("aux_m2_p1") ? { messages: [{ severity: "error" as const, pos: { line: 1, column: 0 }, text: "composed refused" }] } : blueprintAnswer(code));
+    const { prompts, events } = await twoHoles(check("exact hole_ok"), new DemoLean(answer));
+    assert.ok(nodes(events, "derivation").some((d) => d.verdict === "invalid"), "validate refused a composed proof");
+    const prompt = prompts[0] ?? "";
+    assert.match(prompt, /validate refused the proof composed from them: aux_right/);
+    assert.doesNotMatch(prompt, /waiting for the lemmas it uses to be proved/);
+  });
+
   it("ends a session that says nothing, or says it is too hard, with the verdict too_hard", { timeout: 60000 }, async () => {
     for (const session of [say("I cannot do this."), call("hole_verdict", { verdict: "too_hard" })]) {
       const { events, faux } = await oneHole(named(HARD_AUX), session);

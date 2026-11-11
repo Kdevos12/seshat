@@ -1,6 +1,6 @@
-import { HOLE_FALSE_VERDICT, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, SUSPECT_FALSE_KIND } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, SUSPECT_FALSE_KIND } from "@seshat/core";
 import {
-  Atms, checkEdge, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
+  Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
 import { LeanMeta } from "@seshat/lean-meta";
 import {
@@ -425,7 +425,7 @@ export function createM12Line(): Line {
     return pick === undefined ? undefined : { task: pick.clause.task, rule: pick.rule, weight: pick.clause.weight };
   }
 
-  const WAITING = "the work on the hole is done on stubs; its claim waits for its dependencies and is validated when they are accepted";
+  const WAITING = HOLE_WAITING_REASON;
 
   /** Writes a session's verdict node, once: a session that has its node is left alone. */
   function recordVerdict(problem: ProblemContext, task: TaskInfo, claimId: string, sessionId: string, verdict: HoleVerdict, extra: { negationValidated?: boolean; argument?: string } = {}): void {
@@ -758,6 +758,10 @@ export function createM12Line(): Line {
         const refutedHoles: string[] = [];
         const suspected: string[] = [];
         const waiting: string[] = [];
+        const falseDeps: string[] = [];
+        const refusedDerivations: string[] = [];
+        const nameOf = new Map<string, string>();
+        for (const { record } of sketchRecords(session)) for (const [k, id] of record.holes.entries()) nameOf.set(id, record.names[k] ?? "aux_lemma");
         const tasks = ownTasks(session);
         const seen = new Set<string>();
         for (const { record } of sketchRecords(session)) {
@@ -780,7 +784,12 @@ export function createM12Line(): Line {
               const suspect = session.memory.nodes(SUSPECT_FALSE_KIND, { claimId: id }).map((n) => n.data as { problemId?: string; argument?: string }).filter((d) => d.problemId === session.problemId).at(-1);
               if (suspect !== undefined) suspected.push(`${name}${suspect.argument !== undefined ? ` (${clip(suspect.argument, 160)})` : ""}`);
               if (workOf(session, id) !== undefined) {
-                waiting.push(name);
+                // Its work is done on stubs. A dependency found false, or a derivation `validate` refused, is not a wait.
+                const falseOnes = session.memory.edges({ from: id, kinds: ["decomposes_into"] }).flatMap((e) => e.to).filter((dep) => falseOf(session, dep)).map((dep) => nameOf.get(dep) ?? dep);
+                const refused = session.memory.nodes(DERIVATION_KIND, { claimId: id }).map((n) => n.data as unknown as Partial<DerivationRecord> & { reasons?: string[] }).filter((d) => d.problemId === session.problemId && d.verdict === "invalid").at(-1);
+                if (falseOnes.length > 0) falseDeps.push(`${name} (uses ${[...new Set(falseOnes)].join(", ")})`);
+                else if (refused !== undefined) refusedDerivations.push(`${name}${refused.reasons !== undefined && refused.reasons.length > 0 ? ` (${refused.reasons.slice(0, 2).map((r) => clip(r, 120)).join("; ")})` : ""}`);
+                else waiting.push(name);
                 continue;
               }
               const working = tasks.some((task) => task.claimId === id && task.status !== "done" && task.status !== "failed" && task.status !== "cancelled");
@@ -788,12 +797,14 @@ export function createM12Line(): Line {
             }
           }
         }
-        if (lines.length === 0 && open.length === 0 && stuck.length === 0 && refutedHoles.length === 0 && suspected.length === 0 && waiting.length === 0) return undefined;
+        if (lines.length === 0 && open.length === 0 && stuck.length === 0 && refutedHoles.length === 0 && suspected.length === 0 && waiting.length === 0 && falseDeps.length === 0 && refusedDerivations.length === 0) return undefined;
         const text = [
           lines.length > 0 ? `The scheduler proved these lemmas of your sketch; Lean accepted each. Put them in the auxiliary region under these names:\n\n${lines.join("\n\n")}` : "",
           open.length > 0 ? `Still open, and worked on between your sessions: ${open.join(", ")}.` : "",
           refutedHoles.length > 0 ? `False, and Lean accepted a proof of the negation of: ${refutedHoles.join(", ")}. Restate ${refutedHoles.length === 1 ? "it" : "them"}.` : "",
           waiting.length > 0 ? `Worked out on its stubs, waiting for the lemmas it uses to be proved: ${waiting.join(", ")}.` : "",
+          falseDeps.length > 0 ? `Worked out on its stubs, but it can never be derived as stated: a lemma it uses is false (Lean accepted a proof of its negation): ${falseDeps.join("; ")}. Restate the lemma it uses.` : "",
+          refusedDerivations.length > 0 ? `Worked out on its stubs and its dependencies are proved, but validate refused the proof composed from them: ${refusedDerivations.join("; ")}.` : "",
           suspected.length > 0 ? `Suspected false, UNVERIFIED (a session said so, and no Lean-checked proof of the negation exists; it may be wrong, do not drop the lemma on this alone): ${suspected.join("; ")}.` : "",
           stuck.length > 0 ? `Not proved: ${stuck.join(", ")}. The scheduler's sessions on ${stuck.length === 1 ? "it" : "them"} did not succeed; they are yours to prove or to restate.` : "",
         ].filter((t) => t !== "").join("\n\n");
