@@ -88,6 +88,11 @@ export interface RunReport {
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
   leanChecks: { total: number; outcomes: Record<string, number>; medianMs?: number; p90Ms?: number };
   /**
+   * The harness's search of Lean declarations (`RunConfig.leanSearch`): the requests to `lean.search` and the `lean.check` runs that verify
+   * their hits, apart from `leanChecks`, which counts the provers' and the validator's own. Absent when the run made none.
+   */
+  leanSearch?: { requests: number; requestMs: number; checks: number; checkMs: number };
+  /**
    * The provers' calls of each capability besides lean.check: calls by outcome, the attempts that
    * made them, and how many of those attempts found a proof.
    */
@@ -393,6 +398,9 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
   const capabilities = new Map<string, string>();
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
+  // The search's own runs (actor `lean.search`): its requests, and the Lean checks that verify its hits. They are not the provers' checks.
+  const search = { requests: 0, requestMs: 0, checks: 0, checkMs: 0 };
+  const searchRuns = new Map<string, "requests" | "checks">();
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
   const proofAttempts = new Set<string>();
   const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
@@ -508,6 +516,10 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       case "tool_run.started": {
         const d = event.data;
         capabilities.set(d.toolRunId, d.capability);
+        if (event.actor === "lean.search" && (d.capability === "lean.check" || d.capability === "lean.search")) {
+          searchRuns.set(d.toolRunId, d.capability === "lean.check" ? "checks" : "requests");
+          break;
+        }
         // Only the provers' calls: an attempt's, and not the validator's Lean checks.
         if (d.capability === "lean.check" || d.attemptId === undefined) break;
         const use = tools.get(d.capability) ?? { calls: 0, outcomes: {}, attempts: new Set<string>() };
@@ -517,6 +529,12 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         break;
       }
       case "tool_run.finished": {
+        const searchKind = searchRuns.get(event.data.toolRunId);
+        if (searchKind !== undefined) {
+          search[searchKind] += 1;
+          search[searchKind === "checks" ? "checkMs" : "requestMs"] += event.data.durationMs;
+          break;
+        }
         const capability = capabilities.get(event.data.toolRunId);
         if (capability !== "lean.check") {
           const use = capability === undefined ? undefined : tools.get(capability);
@@ -607,6 +625,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ...(medianMs !== undefined ? { medianMs } : {}),
       ...(p90Ms !== undefined ? { p90Ms } : {}),
     },
+    ...(search.requests > 0 || search.checks > 0 ? { leanSearch: search } : {}),
     tools: Object.fromEntries(
       [...tools].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, use]) => [
         id,
@@ -755,6 +774,12 @@ export function renderRunReport(report: RunReport): string {
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +
       `${report.leanChecks.medianMs !== undefined ? `; median ${(report.leanChecks.medianMs / 1000).toFixed(1)} s` : ""}` +
       `${report.leanChecks.p90Ms !== undefined ? `, 90th percentile ${(report.leanChecks.p90Ms / 1000).toFixed(1)} s` : ""}.`,
+    ...(report.leanSearch !== undefined
+      ? [
+          `Lean search (not in the checks above): ${report.leanSearch.requests} request(s), ${(report.leanSearch.requestMs / 1000).toFixed(1)} s; ` +
+            `${report.leanSearch.checks} Lean check(s) of the hits, ${(report.leanSearch.checkMs / 1000).toFixed(1)} s.`,
+        ]
+      : []),
     ...tools.map(
       ([id, use]) =>
         `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +

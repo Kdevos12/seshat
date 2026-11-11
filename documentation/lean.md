@@ -209,11 +209,27 @@ of the last four are gone with the rest of its text. The journal keeps the check
 of `lean.search` (actor `lean.search`) and the verification a tool run of `lean.check` (actor `lean.search`), neither attributed to the
 attempt, so the loop telemetry's check times stay the provers' own. A hit is not a claim and changes no status.
 
+**Once a run, once a session.** A query `(kind, query)` is sent to the backends once a run: its names are kept in the push object, as the
+verification is, so the same unknown name or goal is not sent again (to a third party, with up to 8 s of waiting) at every failing check. An
+answer is kept only when every backend that was to be asked answered: a failure, or a partial answer, is asked again at the next check
+(a backend a private run leaves out by design is no failure). Each session also keeps the names it was shown and the check whose answer showed
+them: a name is left out of a new section while that answer is in the history, and may come back once it has been masked (`maskedCount` of
+`mask.ts`, when `maskOldChecks` is on; without masking, a name is shown once a session). When nothing new remains no section is appended.
+A name is remembered as missing from the environment only when Lean's message at its line says `unknown identifier` or `unknown constant`: a file
+that failed for another reason (an import, the server) says nothing of the name, and nothing is cached.
+
+**The report.** The search's own Lean runs are kept out of the provers' check count and times: the verification is a tool run of
+`lean.check` by the actor `lean.search`, and `report.json` has `leanSearch` (`requests`, `requestMs`, `checks`, `checkMs`), printed as its own
+line in `report.md` ("Lean search (not in the checks above)").
+
 **Backends** (the host profile's `lean.search` settings; each optional, any mix): `remote`, an HTTP service for natural-language and goal
 queries (`remoteUrl`, `LEAN_SEARCH_URL`); `local`, a file of declarations ranked by BM25 with no model (`index`, `LEAN_SEARCH_INDEX`: a JSON
 array or JSONL of `{name, type, doc?}`, for instance the export of the run's environment); `pattern`, a Loogle-like service (`patternUrl`,
-`LEAN_PATTERN_URL`), or a match of a goal's conclusion over the index when there is no address. The services are reached over https only, with
-no credentials in the address, no redirect, an answer read up to 256 KB and 8 s of waiting. A backend that fails is skipped and the others
+`LEAN_PATTERN_URL`), or a match of a goal's conclusion over the index when there is no address. The services are reached over https only, only at a host of the setting `allowedHosts` (the shipped profiles allow `leansearch.net` and
+`loogle.lean-lang.org`; none listed, none allowed), with no credentials in the address, no redirect, an answer read up to 256 KB and 8 s of
+waiting. An address from `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL` at another host makes that backend unavailable with its reason (in `skipped` and in
+`harness health`), and the others go on. A name is one token of dot-separated parts (guillemets only as a whole `«...»` part).
+With `--lean-search` and no usable backend the run says so once at its start. A backend that fails is skipped and the others
 answer; with none set up the capability answers no hit.
 
 **`--private`.** `RunConfig.private` (Task 36 adds the flag `--private`; this task adds only the optional field, with the same meaning:

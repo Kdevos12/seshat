@@ -10,7 +10,7 @@ import {
   validate,
 } from "@seshat/registry";
 import { type Backend, type BackendId, localBackend, patternBackend, type QueryKind, remoteBackend } from "./backends.ts";
-import { DEFAULT_TIMEOUT_MS, type Fetch, MAX_RESPONSE_BYTES } from "./http.ts";
+import { DEFAULT_TIMEOUT_MS, type Fetch, MAX_RESPONSE_BYTES, serviceUrl } from "./http.ts";
 import { type LocalIndex, loadIndex } from "./local.ts";
 
 /**
@@ -44,9 +44,13 @@ export interface LeanSearchOutput {
 /** The order the backends' hits are interleaved in. */
 const ORDER: readonly BackendId[] = ["remote", "pattern", "local"];
 
+/** Why a private run skips a backend: also how a caller tells that from a failure. */
+export const PRIVATE_REASON = "private run: nothing leaves for a third party";
+
 const SETTINGS: JsonSchema = {
   type: "object",
   properties: {
+    allowedHosts: { type: "array", items: { type: "string", minLength: 1 } },
     remoteUrl: { type: "string" },
     patternUrl: { type: "string" },
     index: { type: "string" },
@@ -57,6 +61,7 @@ const SETTINGS: JsonSchema = {
 };
 
 interface Settings {
+  allowedHosts?: string[];
   remoteUrl?: string;
   patternUrl?: string;
   index?: string;
@@ -73,7 +78,10 @@ export interface LeanSearchFactoryOptions {
 }
 
 /** The backends a context sets up, and the local index it loads (once, when the first call needs it). */
-function setUp(context: Pick<FactoryContext, "spec" | "settings">, options: LeanSearchFactoryOptions): { backends: Backend[]; index: () => LocalIndex | undefined; configured: BackendId[] } {
+function setUp(
+  context: Pick<FactoryContext, "spec" | "settings">,
+  options: LeanSearchFactoryOptions,
+): { backends: Backend[]; index: () => LocalIndex | undefined; configured: BackendId[]; unavailable: string[] } {
   const problems = validate(SETTINGS, context.settings, "settings");
   if (problems.length > 0) throw new Error(`${context.spec.factory}: ${problems.join("; ")}`);
   const s = context.settings as Settings;
@@ -88,16 +96,37 @@ function setUp(context: Pick<FactoryContext, "spec" | "settings">, options: Lean
     if (indexPath !== undefined && loaded === undefined) loaded = loadIndex(indexPath);
     return loaded;
   };
-  const remoteUrl = given(s.remoteUrl);
-  const patternUrl = given(s.patternUrl);
+  // A service is used only at a host the profile allows (none: no service); an address that is not allowed, or not usable, makes that
+  // backend unavailable, with its reason, and the others go on.
+  const allowed = s.allowedHosts ?? [];
+  const unavailable: string[] = [];
+  const checked = (id: BackendId, raw: string | undefined): string | undefined => {
+    if (raw === undefined) return undefined;
+    try {
+      const host = serviceUrl(raw).hostname;
+      if (!allowed.includes(host)) throw new Error(`the host ${host} is not among the allowed hosts of this profile (${allowed.join(", ") || "none"})`);
+      return raw;
+    } catch (error) {
+      unavailable.push(`${id}: ${messageOf(error)}`);
+      return `!${messageOf(error)}`;
+    }
+  };
+  const remoteUrl = checked("remote", given(s.remoteUrl));
+  const patternUrl = checked("pattern", given(s.patternUrl));
   const backends: Backend[] = [];
-  if (remoteUrl !== undefined) backends.push(remoteBackend(remoteUrl, http));
-  if (patternUrl !== undefined || indexPath !== undefined) {
+  if (remoteUrl !== undefined) backends.push(remoteUrl.startsWith("!") ? refused("remote", remoteUrl.slice(1)) : remoteBackend(remoteUrl, http));
+  if (patternUrl?.startsWith("!") === true) backends.push(refused("pattern", patternUrl.slice(1), indexPath !== undefined ? lazyPattern(undefined, index, http, true) : undefined));
+  else if (patternUrl !== undefined || indexPath !== undefined) {
     // The pattern backend over the index reads it when asked, like the local one.
     backends.push(lazyPattern(patternUrl, index, http, indexPath !== undefined));
   }
   if (indexPath !== undefined) backends.push(lazyLocal(index));
-  return { backends, index, configured: backends.map((b) => b.id) };
+  return { backends, index, configured: backends.map((b) => b.id), unavailable };
+}
+
+/** A service backend whose address is refused: it fails with the reason when asked, and in a private run it is what it would be, off (or its offline form). */
+function refused(id: BackendId, reason: string, offline?: Backend): Backend {
+  return { id, leaves: true, ...(offline !== undefined ? { offline } : {}), search: async () => { throw new Error(reason); } };
 }
 
 function lazyPattern(url: string | undefined, index: () => LocalIndex | undefined, http: { fetch?: Fetch; timeoutMs: number; maxBytes: number }, hasIndex: boolean): Backend {
@@ -129,7 +158,7 @@ export const MAX_LIMIT = 20;
 /** The factory `lean-search`. Settings: `remoteUrl`, `patternUrl`, `index`, `timeoutSec`, `maxResponseBytes`; none is required. */
 export function leanSearchFactory(options: LeanSearchFactoryOptions = {}): ImplementationFactory {
   return (context): ImplementationInstance => {
-    const { backends, index, configured } = setUp(context, options);
+    const { backends, index, configured, unavailable } = setUp(context, options);
     return {
       async invoke(input, { signal }) {
         const { query, kind, limit = 5, private: isPrivate = false } = input as unknown as LeanSearchInput;
@@ -138,7 +167,7 @@ export function leanSearchFactory(options: LeanSearchFactoryOptions = {}): Imple
         const eligible = backends.flatMap((b) => {
           if (!isPrivate || !b.leaves) return [b];
           if (b.offline !== undefined) return [b.offline];
-          skipped.push({ backend: b.id, reason: "private run: nothing leaves for a third party" });
+          skipped.push({ backend: b.id, reason: PRIVATE_REASON });
           return [];
         });
         const answers = await Promise.all(
@@ -170,7 +199,8 @@ export function leanSearchFactory(options: LeanSearchFactoryOptions = {}): Imple
         if (configured.length === 0) return { ok: false, detail: "no backend is set up: give remoteUrl, patternUrl or index (LEAN_SEARCH_URL, LEAN_PATTERN_URL, LEAN_SEARCH_INDEX)" };
         try {
           const idx = index();
-          return { ok: true, detail: `${configured.join(", ")} set up${idx === undefined ? "" : ` (${idx.size} declarations in the index)`}; the services are not probed` };
+          const down = unavailable.length > 0 ? `; not usable: ${unavailable.join("; ")}` : "";
+          return { ok: unavailable.length === 0, detail: `${configured.join(", ")} set up${idx === undefined ? "" : ` (${idx.size} declarations in the index)`}${down}; the services are not probed` };
         } catch (error) {
           return { ok: false, detail: messageOf(error) };
         }

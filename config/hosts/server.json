@@ -193,6 +193,7 @@
       "optional": true,
       "settings": {
         "search": {
+          "allowedHosts": ["leansearch.net", "loogle.lean-lang.org"],
           "remoteUrl": "${env:LEAN_SEARCH_URL:-}",
           "patternUrl": "${env:LEAN_PATTERN_URL:-}",
           "index": "${env:LEAN_SEARCH_INDEX:-}"
