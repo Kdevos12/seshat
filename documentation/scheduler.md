@@ -181,7 +181,7 @@ Each hole session ends with one verdict, a memory node of kind `hole_verdict` (`
 - `too_hard`: the session ended (turns, budget, or the model stopping) with no proof, or the model said so. A session that ends without saying anything is `too_hard`. A `proved` that the model says without a last check that shows it is `too_hard`.
 
 A suspicion never stops work on the parent by itself and never propagates: the claim stays `open`, no edge changes, and the next outer session's briefing lists it under "Suspected false, UNVERIFIED". A hole with a Lean-checked negation is listed as a fact. Task 33's telemetry
-(`loopTelemetry`) counts the `hole_verdict` nodes and reports the share whose verdict is `statement_wrong` (with or without a checked negation: it is the share of proposed holes found false by the session).
+(`loopTelemetry`) counts the `hole_verdict` nodes and reports the share whose verdict is `statement_wrong` **with a Lean-checked negation** (`negationValidated`) as "turned out false"; the verdicts that only a prover or a tool says are false are shown apart ("suspected false, unverified") and are not counted as false.
 
 ## Options of M12
 
