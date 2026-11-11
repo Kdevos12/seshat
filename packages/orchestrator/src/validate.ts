@@ -185,6 +185,14 @@ export class ClaimBenches {
   }
 
   /**
+   * The workbench of a claim (or of its negation) on the claim's own small file: the header and the statement. A line's session with tools
+   * works on it (`ProblemContext.holeSession`). Throws when the reference file does not check.
+   */
+  workbenchFor(claimId: string, negation: boolean, signal: AbortSignal): Promise<Workbench> {
+    return this.bench(claimId, negation, signal);
+  }
+
+  /**
    * The workbench of a claim or of its negation. A reference that Lean did not answer for (it could
    * not be reached, or the check was stopped) is tried again next time; one that does not compile
    * is not.

@@ -2,6 +2,8 @@ import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import { type BlobStore, hash32, type Journal, type RandomSource, seeded, type Submission } from "@seshat/core";
 import type {
+  HolePreflightRequest,
+  HoleSessionRequest,
   AttemptAnnotation,
   Briefing,
   Budget,
@@ -36,6 +38,8 @@ import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Run
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
+import { holePreflight } from "./hole-preflight.ts";
+import { runHoleSession } from "./hole-session.ts";
 import { lineLlm } from "./llm.ts";
 import type { PriceBook } from "./prices.ts";
 import { packetFault } from "./packet.ts";
@@ -324,6 +328,31 @@ export class ProblemLines {
         }),
       budget: budgetOf(this.p.ledger, this.p.gate),
       tasks: taskApi(o.tasks, o.journal, { problemId: this.p.problemId, claimId: this.p.claimId, line: id }),
+      ...(id === "M12"
+        ? {
+            holeSession: (request: HoleSessionRequest) =>
+              runHoleSession(
+                {
+                  journal: o.journal, blobs: o.blobs, models: o.models, model: o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: o.thinkingLevel,
+                  ledger: this.p.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
+                  workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
+                  ...(o.turn !== undefined ? { turn: o.turn } : {}),
+                  ...(o.prices !== undefined ? { prices: o.prices } : {}),
+                },
+                request,
+              ),
+            holePreflight: (request: HolePreflightRequest) =>
+              holePreflight(
+                {
+                  registry: o.registry, memory: o.memory.withActor(actor), signal: own, actor, header: this.p.target.sketch.prefix,
+                  validate: (r) => o.benches.validate(r, { actor, signal: own, problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench } }),
+                  log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
+                  ...(o.seed !== undefined ? { seed: o.seed } : {}),
+                },
+                request,
+              ),
+          }
+        : {}),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
       options: entry.options,
@@ -687,7 +716,7 @@ export class ProblemLines {
       }
       // The budget gate weighs the task's price against what is left before it is opened (`budget.line` where there are no numbers).
       if (this.p.gate !== undefined) {
-        const gated = await this.p.gate.task({ taskId: choice.taskId, sessions: row.budget.sessions ?? 1 });
+        const gated = await this.p.gate.task({ taskId: choice.taskId, sessions: row.budget.sessions ?? 1, ...(row.budget.turns !== undefined ? { turns: row.budget.turns } : {}) });
         if (gated.action === "skip") {
           tasks.cancel(choice.taskId, `the budget gate skipped it: ${gated.reason}`);
           tasks.promote(this.p.problemId);
