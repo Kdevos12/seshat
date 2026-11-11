@@ -255,7 +255,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const sections = [...(opened?.sections ?? []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
-      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars });
+      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;
       result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {

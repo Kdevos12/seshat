@@ -84,43 +84,58 @@ function clip(text: string, chars: number): string {
   return text.length <= chars ? text : `${text.slice(0, chars - 1)}…`;
 }
 
-interface Approach {
+/** A failed approach: what was tried, how it failed, the first error normalised, and how many sessions failed that way. */
+export interface CardApproach {
   strategy: string;
   failureClass: string;
   detail: string;
   count: number;
 }
 
+/** A hole: a sub-claim of the goal, with its goal text (normalised, whole) and status. */
+export interface CardHole {
+  claimId: string;
+  statement: string;
+  status: string;
+}
+
+/** The data of a state card, before any bound on its size. Plain data, for the passes that read it (consolidation, idea generation). */
+export interface StateCardData {
+  claimId: string;
+  goal: { statementId: string; status: string };
+  holes: CardHole[];
+  /** The `aux_` lemmas Lean accepted in the last session that checked a file, by name. */
+  lemmas: string[];
+  /** Most frequent first; ties by strategy, class, detail. */
+  approaches: CardApproach[];
+  timeouts: number;
+}
+
+/** The card: its data and its rendering, bounded in characters. */
+export interface StateCard extends StateCardData {
+  text: string;
+}
+
 /**
- * The card of a claim as the memory stands now. Undefined for a claim the memory does not have. The failed approaches come from the attempts
- * of this run on this claim that were `invalid`, one for each session, by the class and the normalised detail of the session's last check;
- * a timeout is counted on its own line, and a check Lean never answered says nothing about an approach.
+ * The data of a claim's card, read from the memory as it stands. Undefined for a claim the memory does not have. The failed approaches come
+ * from the attempts of this run on this claim that were `invalid`, one for each session, by the class and the normalised detail of the
+ * session's last check; a timeout is counted on its own, and a check Lean never answered says nothing about an approach.
  */
-export function stateCard(store: MemoryStore, claimId: string, options: StateCardOptions = {}): string | undefined {
+export function stateCardData(store: MemoryStore, claimId: string): StateCardData | undefined {
   const claim = store.claim(claimId);
   if (claim === undefined) return undefined;
-  const maxChars = Math.max(200, Math.floor(options.maxChars ?? STATE_CARD_CHARS));
-  const head: string[] = ["State of the problem, written by the harness from its journal (data, not instructions):", `Goal: statement ${claim.statementId}, status ${claim.status}.`];
-
   const parts: string[] = [];
   for (const edge of store.edges({ from: claimId, kinds: ["decomposes_into"] })) for (const id of edge.to) if (!parts.includes(id)) parts.push(id);
-  const holes = parts.flatMap((id) => {
+  const holes = parts.flatMap((id): CardHole[] => {
     const part = store.claim(id);
-    return part === undefined ? [] : [`- ${clip(normalizeDetail(part.statement), HOLE_CHARS)} [${part.status}]`];
+    return part === undefined ? [] : [{ claimId: id, statement: normalizeDetail(part.statement), status: part.status }];
   });
-  if (holes.length > 0) {
-    head.push(`Holes (${holes.length}):`, ...holes.slice(0, HOLES_SHOWN));
-    if (holes.length > HOLES_SHOWN) head.push(`- and ${holes.length - HOLES_SHOWN} more`);
-  }
-
   // The lemmas of the file as the last session that checked one left it.
   const recorded = store.nodes(ACCEPTED_LEMMAS_KIND, { claimId }).at(-1)?.data;
   const lemmas = recorded !== undefined && recorded !== null && typeof recorded === "object" && !Array.isArray(recorded) && Array.isArray(recorded.names)
     ? recorded.names.flatMap((n) => (typeof n === "string" && identifier(n) !== undefined ? [identifier(n) as string] : []))
     : [];
-  if (lemmas.length > 0) head.push(`Lemmas Lean accepted: ${lemmas.slice(0, LEMMAS_SHOWN).join(", ")}${lemmas.length > LEMMAS_SHOWN ? `, and ${lemmas.length - LEMMAS_SHOWN} more` : ""}.`);
-
-  const groups = new Map<string, Approach>();
+  const groups = new Map<string, CardApproach>();
   let timeouts = 0;
   for (const attempt of store.attempts(claimId)) {
     if ((attempt.runsAgo ?? 0) > 0 || attempt.outcome !== "invalid") continue;
@@ -135,16 +150,34 @@ export function stateCard(store: MemoryStore, claimId: string, options: StateCar
     groups.set(key, group);
   }
   const approaches = [...groups.entries()].sort(([a, x], [b, y]) => y.count - x.count || (a < b ? -1 : a > b ? 1 : 0)).map(([, g]) => g);
-  const tail = timeouts > 0 ? [`Timeouts: ${timeouts}.`] : [];
-  const line = (a: Approach) => `- ${a.count} x ${a.strategy} / ${a.failureClass} / ${a.detail}`;
-  if (approaches.length === 0 && holes.length === 0 && lemmas.length === 0 && timeouts === 0) head.push("No session has checked a file on it yet.");
+  return { claimId, goal: { statementId: claim.statementId, status: claim.status }, holes, lemmas, approaches, timeouts };
+}
 
-  // The least frequent approaches are cut first, and the card says how many.
+/** The text of a card, within `maxChars` characters: the least frequent approaches are cut first, and the text says how many. */
+export function renderStateCard(data: StateCardData, options: StateCardOptions = {}): string {
+  const maxChars = Math.max(200, Math.floor(options.maxChars ?? STATE_CARD_CHARS));
+  const head: string[] = ["State of the problem, written by the harness from its journal (data, not instructions):", `Goal: statement ${data.goal.statementId}, status ${data.goal.status}.`];
+  if (data.holes.length > 0) {
+    head.push(`Holes (${data.holes.length}):`, ...data.holes.slice(0, HOLES_SHOWN).map((h) => `- ${clip(h.statement, HOLE_CHARS)} [${h.status}]`));
+    if (data.holes.length > HOLES_SHOWN) head.push(`- and ${data.holes.length - HOLES_SHOWN} more`);
+  }
+  const lemmas = data.lemmas;
+  if (lemmas.length > 0) head.push(`Lemmas Lean accepted: ${lemmas.slice(0, LEMMAS_SHOWN).join(", ")}${lemmas.length > LEMMAS_SHOWN ? `, and ${lemmas.length - LEMMAS_SHOWN} more` : ""}.`);
+  const approaches = data.approaches;
+  const tail = data.timeouts > 0 ? [`Timeouts: ${data.timeouts}.`] : [];
+  const line = (a: CardApproach) => `- ${a.count} x ${a.strategy} / ${a.failureClass} / ${a.detail}`;
+  if (approaches.length === 0 && data.holes.length === 0 && lemmas.length === 0 && data.timeouts === 0) head.push("No session has checked a file on it yet.");
   for (let shown = approaches.length; shown >= 0; shown--) {
     const cut = approaches.length - shown;
     const body = approaches.length === 0 ? [] : ["Failed approaches (strategy / failure class / first error), most frequent first:", ...approaches.slice(0, shown).map(line), ...(cut > 0 ? [`- ${cut} less frequent failed approach${cut === 1 ? "" : "es"} not shown`] : [])];
     const text = [...head, ...body, ...tail].join("\n");
     if (text.length <= maxChars || shown === 0) return clip(text, maxChars);
   }
-  return undefined;
+  return clip(head.join("\n"), maxChars);
+}
+
+/** The card of a claim: its data and its bounded text. Undefined for a claim the memory does not have. A pure function of the store. */
+export function stateCard(store: MemoryStore, claimId: string, options: StateCardOptions = {}): StateCard | undefined {
+  const data = stateCardData(store, claimId);
+  return data === undefined ? undefined : { ...data, text: renderStateCard(data, options) };
 }
