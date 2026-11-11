@@ -23,6 +23,8 @@ export function fatalProviderError(message: string): string | undefined {
   const text = message.trim();
   const status = /^(?:\w+ )?(?:status |http )?(\d{3})\b/i.exec(text)?.[1] ?? /\b(?:status|http|code)[ :=]+(\d{3})\b/i.exec(text)?.[1];
   if (status !== undefined && FATAL_STATUSES.includes(Number(status))) return text.slice(0, 200);
+  // A rate limit or an overload passes by itself, whatever its text says about the account.
+  if (status !== undefined && (Number(status) === 429 || Number(status) >= 500)) return undefined;
   const lower = text.toLowerCase();
   return FATAL_PHRASES.some((phrase) => lower.includes(phrase)) ? text.slice(0, 200) : undefined;
 }
