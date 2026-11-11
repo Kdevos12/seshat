@@ -400,3 +400,12 @@ export function renderConsolidationReport(events: readonly HarnessEvent[], runId
   return `${lines.join("\n")}\n`;
 }
 
+
+/** The model-free part as a section of a turn's report: read-only, no model call, nothing written. The page needs `harness consolidate`. */
+export function renderModelFreeSection(part: ModelFreePart): string {
+  const lines = ["The model-free part of the consolidation pass (documentation/consolidation.md), computed from the journal when the turn ended. No model was called and nothing was written; the page \"what was tried and why it stopped\" needs `harness consolidate RUN_DIR --model PROVIDER/ID --max-usd X`.", ""];
+  if (part.cards.length === 0) lines.push("No open problem has an attempt yet.", "");
+  for (const card of part.cards) lines.push(`### ${card.problem.target}`, "", "```", card.text, "```", "");
+  lines.push(`Lessons: ${part.merges.length} group(s) of duplicates would be merged${part.merges.length > 0 ? ` (${part.merges.map((m) => `${m.merged.length + 1} into \`${m.keep}\``).join(", ")})` : ""}; ${part.flags.length} would be flagged as unsupported${part.flags.length > 0 ? ` (${part.flags.map((f) => `\`${f.lessonId}\`: ${f.reason}`).join("; ")})` : ""}.`);
+  return lines.join("\n");
+}

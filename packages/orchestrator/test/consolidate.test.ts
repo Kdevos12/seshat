@@ -10,6 +10,9 @@ import { MemoryStore } from "@seshat/memory";
 import { consolidate, chainProblems, newestPage, modelFreePart, PAGE_KIND } from "../src/consolidate.ts";
 import { injectedPart, listEvents, parsePage, PAGE_INJECT_CHARS, PAGE_STORED_CHARS } from "../src/consolidation-page.ts";
 import { RunSetupError } from "../src/index.ts";
+import { attempt, open } from "../../lessons/test/helpers.ts";
+import { pageForSession } from "../src/consolidation-show.ts";
+import { consortium } from "./turns-helpers.ts";
 import { certifier } from "./resume-helpers.ts";
 import { check, demoBench, demoRun, fauxModels, say, tempDir } from "./m0-helpers.ts";
 
@@ -206,6 +209,87 @@ describe("the consolidation pass", () => {
     } finally {
       j.close();
     }
+  });
+});
+
+type Step = Parameters<typeof demoRun>[0]["responses"][number];
+type Ctx = Parameters<Extract<Step, (...a: never[]) => unknown>>[0];
+const textOf = (m: { content: unknown } | undefined): string => (typeof m?.content === "string" ? m.content : ((m?.content ?? []) as Array<{ text?: string }>).map((c) => c.text ?? "").join(""));
+
+describe("showing the page to a later run (--consolidation)", () => {
+  async function withPage() {
+    const a = await earlier();
+    const [x, y] = ids(a.dir) as [string, string];
+    const { models, faux, name } = fauxModels();
+    faux.setResponses([pageAnswer(`The first approach failed [${x}].`, `The second failed as well [${x}, ${y}].`)]);
+    const out = join(tempDir(), "c");
+    await consolidate({ from: a.dir, out, model: name, maxUsd: 5, models });
+    return { a, out };
+  }
+  async function next(a: Awaited<ReturnType<typeof earlier>>, out: string, consolidation: boolean) {
+    const sessions = 6;
+    const first: string[] = [];
+    const responses: Step[] = Array.from({ length: sessions }, () => [
+      (c: Ctx) => (first.push(textOf(c.messages.find((m) => m.role === "user"))), check("bad")),
+      say("notes"),
+    ]).flat();
+    const run = await demoRun({ bench: a.bench, memoryFrom: out, problems: 1, config: { sessions, seed: "s1", ...(consolidation ? { consolidation: true } : {}) }, responses });
+    return { run, first };
+  }
+
+  it("is off by default: nothing is injected even when the chain holds a page", async () => {
+    const { a, out } = await withPage();
+    const { first, run } = await next(a, out, false);
+    assert.ok(first.length > 0 && first.every((p) => !p.includes("Unverified notes from an earlier run")));
+    assert.ok(run.events.filter((e) => e.type === "attempt.started").every((e) => e.type === "attempt.started" && e.data.included === undefined));
+  });
+
+  it("puts the capped page in the first user message only, journals the draw, and leaves the system prompt alone", async () => {
+    const { a, out } = await withPage();
+    const on = await next(a, out, true);
+    const off = await next(a, out, false);
+    const started = on.run.events.filter((e) => e.type === "attempt.started");
+    const pageId = started.flatMap((e) => (e.type === "attempt.started" ? [...(e.data.included ?? []), ...(e.data.withheld ?? [])] : []))[0];
+    assert.ok(pageId?.startsWith("nod_"), "the draw is journaled on attempt.started");
+    const included = started.filter((e) => e.type === "attempt.started" && e.data.included?.includes(pageId as string)).length;
+    const withSection = on.first.filter((p) => p.includes("# Unverified notes from an earlier run\nThe first approach failed. The second failed as well."));
+    assert.equal(withSection.length, included);
+    assert.ok(included >= 1 && included < started.length || included === started.length, "some sessions have it");
+    assert.ok(on.first.every((p) => !p.includes("[e")), "citations are not shown");
+    const hash = (r: typeof on) => (r.run.events.find((e) => e.type === "run.started") as unknown as { data: { config: { prompt: { hash: string } } } }).data.config.prompt.hash;
+    assert.equal(hash(on), hash(off), "the system prompt's hash is unchanged");
+  });
+});
+
+describe("at the end of a consortium turn", () => {
+  it("adds the model-free section to the report with no model call and nothing written, when the option is on", async () => {
+    const sessions = 2;
+    const responses: Step[] = [check("bad"), say("n"), check("bad"), say("n")];
+    const on = await demoRun({ config: { sessions, consortium: consortium({ tokens: 1_000_000_000 }, { consolidation: true }) }, responses });
+    const report = readFileSync(join(on.dir, "turns", "1", "report.md"), "utf8");
+    assert.match(report, /## Consolidation \(model-free\)/);
+    assert.match(report, /State of the problem/);
+    assert.equal(on.events.filter((e) => e.type === "model_call.finished").length, 0);
+    assert.equal(on.events.filter((e) => e.type === "node.recorded" && e.data.kind.startsWith("consolidation_")).length, 0);
+    const off = await demoRun({ config: { sessions, consortium: consortium({ tokens: 1_000_000_000 }) }, responses });
+    assert.doesNotMatch(readFileSync(join(off.dir, "turns", "1", "report.md"), "utf8"), /Consolidation \(model-free\)/);
+  });
+});
+
+describe("a page is judged by its effect", () => {
+  it("is switched off when attempts that had it fail where attempts that did not succeed", async () => {
+    const { root, journal } = open();
+    const claim = (await root.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", header: "import Mathlib", origin: "t" })).claimId;
+    const page = root.withActor("consolidation").recordNode({ kind: PAGE_KIND, claimId: claim, data: { text: "x [e1].", sentences: [{ text: "It failed.", cites: ["e1"] }], active: true } });
+    const store = root.withActor("orchestrator");
+    const o = { claimId: claim, problemId: "p", prover: "p1", session: 1, seed: "s" };
+    assert.deepEqual(pageForSession(store, o).included !== undefined, true);
+    for (let k = 0; k < 8; k++) {
+      attempt(journal, claim, { included: [page.nodeId], outcome: "invalid" });
+      attempt(journal, claim, { withheld: [page.nodeId], outcome: "valid" });
+    }
+    assert.deepEqual(pageForSession(store, o), {});
+    assert.equal((store.node(page.nodeId)?.data as { active: boolean }).active, false);
   });
 });
 

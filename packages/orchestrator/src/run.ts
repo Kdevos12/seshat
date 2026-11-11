@@ -20,6 +20,7 @@ import {
   ProofValidator,
   type ProvenanceContext,
   type Reference,
+  readEvents,
   SKETCH_POLICY,
   sha256Hex,
   stampProvenance,
@@ -69,6 +70,7 @@ import { applyDrops, claimAndParts, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
+import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolidate.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
@@ -136,6 +138,12 @@ export interface RunConfig {
    * prompts as it always did.
    */
   stateCard?: boolean;
+  /**
+   * The sessions are shown the newest page "what was tried and why it stopped" that a consolidation pass left in the run's memory chain for
+   * the problem's claim (`harness consolidate`, documentation/consolidation.md): drawn like a lesson, in the first user message only, judged
+   * by its measured effect and switched off when that is negative. Absent: off, and a run that records and prompts as it always did.
+   */
+  consolidation?: boolean;
   /**
    * With a run budget and more than one problem, the problems are worked round-robin with a cap that doubles from round to round, and a
    * problem without Lean progress at the end of its round is parked (plan change CA8, documentation/scheduler.md, "The budget in rounds").
@@ -742,6 +750,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
+      ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
@@ -1406,6 +1415,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           limits: config.limits,
           notesChars: effectiveNotesChars(config),
           ...(config.stateCard === true ? { stateCard: true } : {}),
+          ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
@@ -1617,6 +1627,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   }
   let crashed: { error: unknown } | undefined;
   let turnSummary: TurnSummary | undefined;
+  let consolidationSection: string | undefined;
   try {
     if (rounds !== undefined) {
       rounds.begin();
@@ -1659,6 +1670,15 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         waiting,
         ...(narrative !== undefined ? { narrative } : {}),
       });
+      if (config.consortium?.consolidation === true) {
+        try {
+          const store = new MemoryStore({ journal, blobs, actor: "orchestrator" });
+          const part = modelFreePart(store, chainProblems([...(journal.chain?.segments ?? []).flatMap((s) => s.events), ...readEvents(journal.log.path)]));
+          consolidationSection = renderModelFreeSection(part);
+        } catch (error) {
+          log(`the consolidation section of the turn's report could not be computed: ${messageOf(error)}`);
+        }
+      }
       turnSummary = { number: turn.number, reason, detail, paused, account: `turns/${turn.number}/report.md` };
     }
     if (!paused) {
@@ -1691,7 +1711,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // The account is built from the journal alone, once it is closed (documentation/human.md).
   if (turnSummary !== undefined) {
     try {
-      writeAccount(o.dir, turnSummary.number);
+      writeAccount(o.dir, turnSummary.number, consolidationSection !== undefined ? { consolidation: consolidationSection } : {});
     } catch (error) {
       log(`the account of turn ${turnSummary.number} could not be written: ${messageOf(error)}`);
     }

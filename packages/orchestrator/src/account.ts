@@ -150,6 +150,8 @@ export interface Account {
   inherited?: Pick<MemorySummary, "claims" | "carried" | "reset" | "attempts" | "lessons" | "nodes" | "edges" | "validations"> | { unreadable: string };
   narrative?: { text: string; hash: string; modelWritten: true };
   narrativeRefused?: string;
+  /** The model-free part of the consolidation pass, as markdown, when the consortium option asked for it (`ConsortiumConfig.consolidation`). */
+  consolidation?: string;
 }
 
 /** A turn that has not been written yet: the account is built for what is about to be said of it. */
@@ -628,6 +630,7 @@ export function renderAccount(a: Account): string {
       );
     }
   }
+  if (a.consolidation !== undefined) lines.push("", "## Consolidation (model-free)", "", a.consolidation);
   if (Object.keys(a.unknownKinds).length > 0) {
     lines.push("", "## Records this account does not detail", "", `The journal holds records of kinds this account has no section for: ${counts(a.unknownKinds)}. They are in the journal (fingerprints, identifications, drift findings and the lines' other records are among them).`);
   }
@@ -645,10 +648,11 @@ function chainOption(journalPath: string): Pick<AccountOptions, "chain"> {
 }
 
 /** Writes `turns/<n>/report.md` and `report.json` in a run directory, from its journal alone. */
-export function writeAccount(dir: string, turn: number): Account {
+export function writeAccount(dir: string, turn: number, extra: { consolidation?: string } = {}): Account {
   const events = readEvents(join(dir, "journal.jsonl"));
   const blobs = new BlobStore(join(dir, "blobs"));
   const account = buildAccount(events, turn, { blob: (hash) => blobs.get(hash), ...chainOption(join(dir, "journal.jsonl")) });
+  if (extra.consolidation !== undefined) account.consolidation = extra.consolidation;
   const out = join(dir, "turns", String(turn));
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "report.json"), `${JSON.stringify(account, null, 2)}\n`);
