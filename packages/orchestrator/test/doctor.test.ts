@@ -53,7 +53,9 @@ describe("harness doctor", () => {
   it("finds nothing missing on a complete machine and writes the isolation profile", async () => {
     const { report, dir } = await run(machine({ has: ALL }));
     assert.equal(report.ok, true);
-    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
+    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+    const defaults = report.checks.find((c) => c.id === "defaults");
+    assert.match(defaults?.detail ?? "", /the intake gate.*lean\.search/s, "doctor lists what the default set turns on");
     assert.equal(report.isolation?.written, true);
     const profile = JSON.parse(readFileSync(join(dir, "hosts", "sandboxed.json"), "utf8"));
     const lake = profile.capabilities["lean.certify"].settings.lake;

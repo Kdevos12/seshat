@@ -48,7 +48,7 @@ documentation as remembered (zbMATH's the least sure) and are tested against a f
    `verdict` one of `proves`, `refutes`, `restricts`, `unrelated`, and `settled` true only when the verdict is `proves` or `refutes` and the
    quote passed the screen. The node is about the problem's claim and changes no status (Ruling 13); no node and no text of a hit is in a system
    prompt or a lesson. The briefing shows the title, the link, the verdict and the screened quote, as data in a user-role section.
-5. **The cap**: the step may spend `capUsd` (default $0.05, an option) on its judge call. With the model's price the call is sized to fit:
+5. **The cap**: the step may spend `capUsd` (default $0.05, an option) on its judge call. In `harness solve`, when `--intake-usd` is not given, the cap is the smaller of $0.05 and 5% of the run's allowance (`IntakeConfig.capShare`, recorded in `run.started`; `--intake-usd` wins). With the model's price the call is sized to fit:
    hits are left out until the input fits, and the answer's tokens are what the rest of the cap pays for; when nothing fits the step is
    skipped with `cap: ...`. The budget gate is asked first (`problem.budget.ask`, site `judge`); its `skip` is a skipped step with
    `budget: ...`. A skipped step is journaled, with its reason, in `intake.finished`.
@@ -115,6 +115,7 @@ Events `intake.consented` and `intake.finished`; node kinds `literature` and `hy
 is refused there, and `BENCH_CHECKOUT` is set to the run's checkout so that `bench-metadata` reads it). None is on by default, and none changes the
 defaults of either command: the controller adds them to a named defaults set later.
 
+- **The defaults set `v2`** (Task 34b) turns the intake on (hygiene; the literature only with the person's yes), `--auto-tool` and `--lean-search` on: `--no-intake`, `--no-auto-tool` and `--no-lean-search` turn one off, `--defaults v1` none ([quickstart.md](quickstart.md#defaults-sets)). The test lemmas `solve` ran for the signature are handed to the intake step (`RunOptions.testLemmas`), which records them and does not run them again. The compute tool is decided per problem by the run (`RunConfig.autoTool`, pinned at the start like a tool, recorded as `autoTool`): only a problem whose statement is filed gets it.
 - **The question** (`solve`): after the signature, and only when `--lit` is absent, `--yes` and `--ask-stdin` are, no terminal is there and `--private` is
   not set, `solve` asks "Allow that? [y/N]" once; the answer, either way, is `intake.consented` with `via: "asked"`, written as `human:NAME`.
 - **`--tool ID`** (CA17): the capability is a tool of the provers (`RunConfig.tools`), checked and pinned as for `harness run --tool`.

@@ -39,6 +39,11 @@ export interface Arm {
   tools?: string[];
   /** A candidate prompt in place of the merged one (`harness optimize-prompts` measures its candidates as arms; documentation/prompts.md). */
   prompts?: RunConfig["prompts"];
+  /**
+   * Other `RunConfig` fields of this arm, laid over the table's after everything above (additive; `lines`, `lineOptions`, `gate` and `tools`
+   * have their own fields). The `solve-defaults` experiment puts the set's flags, the intake, `autoTool` and `leanSearch` here.
+   */
+  config?: Partial<Omit<RunConfig, "lines" | "lineOptions" | "gate" | "tools">>;
   /** The arm this one is compared with. Default: the arm before it in the table. */
   versus?: string;
 }
@@ -62,6 +67,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
   const gate = arm.gate === undefined ? baseGate : arm.gate === false ? undefined : arm.gate;
   return {
     ...shared,
+    ...(arm.config ?? {}),
     ...(arm.model !== undefined ? { model: arm.model } : {}),
     tools: arm.tools ?? base.tools,
     ...(arm.lines.length > 0 ? { lines: arm.lines } : {}),

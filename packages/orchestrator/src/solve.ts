@@ -27,8 +27,8 @@ import { shellQuote } from "./result.ts";
 import type { PriceBook } from "./prices.ts";
 import { resolveModel, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
 import { type IntakeConfig } from "./intake.ts";
-import { fileStatement } from "./solve-tools.ts";
-import { checkAllowance, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
+
+import { checkAllowance, INTAKE_ALLOWANCE_SHARE, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
 
 /**
  * `harness solve` (plan change PB6, documentation/quickstart.md): a problem of one's own, with the least friction. The statement is a Lean
@@ -438,9 +438,11 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   if (intake !== undefined && (intake.literature === true || wantsLeanSearch) && o.private !== true && intake.consent === undefined && o.askConsent !== undefined) {
     intake = { ...intake, consent: { allowed: await o.askConsent(), via: "asked" } };
   }
-  const filed = o.autoTool !== undefined ? fileStatement(problem.entry.statement) : undefined;
-  const tools = [...new Set([...(o.tools ?? []), ...(filed !== undefined && o.autoTool !== undefined ? [o.autoTool] : [])])];
-  if (filed !== undefined && o.autoTool !== undefined && !(o.tools ?? []).includes(o.autoTool)) show(`The statement is filed as ${filed}: the provers get ${o.autoTool}.`);
+  // The intake's judge call is proportionate to the allowance: the smaller of its default and 5% of it (`--intake-usd` wins).
+  if (intake !== undefined && intake.capUsd === undefined && intake.capShare === undefined) intake = { ...intake, capShare: INTAKE_ALLOWANCE_SHARE };
+  // The compute tool is decided by the run, per problem (`RunConfig.autoTool`); a tool the person named is run-wide and is not added twice.
+  const tools = [...new Set(o.tools ?? [])];
+  const autoTool = o.autoTool !== undefined && !tools.includes(o.autoTool) ? o.autoTool : undefined;
   const config = studentConfig({
     selection: { ids: [problem.entry.id] },
     model: o.model,
@@ -450,7 +452,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(o.defaults !== undefined ? { defaults: o.defaults } : {}),
     ...(o.hostCheckTimeoutSec !== undefined ? { hostCheckTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
-    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
+    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(autoTool !== undefined ? { autoTool } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
   });
   const result = await runBench({
     config,
@@ -468,6 +470,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(o.runId !== undefined ? { runId: o.runId } : {}),
     ...(o.lib ?? {}),
     benchFile: problem.indexFile,
+    ...(testLemmasResult !== undefined ? { testLemmas: new Map([[problem.entry.id, testLemmasResult]]) } : {}),
     user: o.user,
     ...(prose !== undefined ? { prose } : {}),
     afterStart: (journal: Journal) => {

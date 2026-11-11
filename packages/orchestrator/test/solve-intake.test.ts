@@ -6,7 +6,7 @@ import { litFactory } from "@seshat/lit";
 import { leanCheckImplementation, loadCatalog, Registry, type HostProfile } from "@seshat/registry";
 import { type FakeLit, startFakeLit } from "../../lit/test/fake-lit.ts";
 import { hostAt } from "../../lit/test/helpers.ts";
-import { fileStatement, REPO_ROOT, solve, type SolveOptions } from "../src/index.ts";
+import { fileStatement, intakeCapUsd, REPO_ROOT, solve, type SolveOptions } from "../src/index.ts";
 import { fakeSage } from "./fixtures/fake-sage.ts";
 import { check, DemoLean, fauxModels, ofType, say, sageRegistry, tempDir } from "./m0-helpers.ts";
 import { readEvents } from "@seshat/core";
@@ -40,12 +40,14 @@ function base(over: Partial<SolveOptions>, responses: Parameters<ReturnType<type
       return true;
     },
     show: (line) => shown.push(line),
+    log: (line) => shown.push(line),
     ...over,
   };
   return { o, lean, signatures, shown, faux };
 }
 
 const eventsOf = (dir: string) => readEvents(join(dir, "journal.jsonl"));
+const autoToolOf = (dir: string) => (ofType(eventsOf(dir), "run.started")[0]?.data.config as { autoTool?: { capability: string } }).autoTool?.capability;
 const toolsOf = (dir: string) => (ofType(eventsOf(dir), "run.started")[0]?.data.config as { tools: Array<{ capability: string }> }).tools.map((t) => t.capability);
 
 describe("the kinds the router files a statement under", () => {
@@ -72,14 +74,40 @@ describe("harness solve --tool and --auto-tool", () => {
   it("adds the host's compute tool when the statement is filed as finite, graph or number, and says so; not for another statement", async () => {
     const number = base({ autoTool: "compute.sage", statement: "(n : ℕ) : n + 0 = n" }, [check("exact trivial_proof")]);
     await solve(number.o);
-    assert.deepEqual(toolsOf(number.o.dir), ["compute.sage"]);
+    assert.deepEqual(toolsOf(number.o.dir), [], "the tool is the problem's, not the run's");
+    assert.equal(autoToolOf(number.o.dir), "compute.sage");
     assert.ok(number.shown.some((l) => /filed as number: the provers get compute\.sage/.test(l)));
     const other = base({ autoTool: "compute.sage", statement: "(G : Type) [Group G] (a : G) : a * 1 = a" }, [check("exact trivial_proof")]);
     await solve(other.o);
     assert.deepEqual(toolsOf(other.o.dir), []);
+    assert.ok(!other.shown.some((l) => /the provers get/.test(l)), "a statement that is not filed gets nothing");
     const explicit = base({ autoTool: "compute.sage", tools: ["compute.sage"], statement: "(n : ℕ) : n + 0 = n" }, [check("exact trivial_proof")]);
     await solve(explicit.o);
     assert.deepEqual(toolsOf(explicit.o.dir), ["compute.sage"], "a tool named and filed is given once");
+  });
+});
+
+describe("the intake of a solve is proportionate and does not repeat", () => {
+  it("runs the test lemmas once: the intake reuses the ones solve ran for the signature", async () => {
+    const once = base({ intake: { hygiene: true } }, [check("exact trivial_proof")]);
+    await solve(once.o);
+    // The first case of the test lemmas (`m11_stmt 9`) is checked once in the whole solve, not once by solve and once by the intake.
+    assert.equal(once.lean.calls.filter((c) => /@m11_stmt 9 := by decide/.test(c.code)).length, 1);
+  });
+
+  it("caps the judge call at the smaller of the default and 5% of the allowance, and --intake-usd wins", () => {
+    assert.equal(intakeCapUsd({}, 2), 0.05);
+    assert.equal(intakeCapUsd({ capShare: 0.05 }, 2), 0.05);
+    assert.equal(intakeCapUsd({ capShare: 0.05 }, 0.5), 0.025);
+    assert.equal(intakeCapUsd({ capShare: 0.05 }, 100), 0.05);
+    assert.equal(intakeCapUsd({ capUsd: 0.2, capShare: 0.05 }, 0.5), 0.2);
+  });
+
+  it("solve gives the intake the 5% share of the allowance it has left", async () => {
+    const small = base({ maxUsd: 0.4, intake: { hygiene: true } }, [check("exact trivial_proof")]);
+    await solve(small.o);
+    const started = ofType(eventsOf(small.o.dir), "run.started")[0]?.data.config as { intake: { capShare?: number } };
+    assert.equal(started.intake.capShare, 0.05);
   });
 });
 
