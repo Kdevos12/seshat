@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
-import { createM12Line } from "@seshat/scheduler";
+import { createM12Line, HOLE_HISTORY_CHARS } from "@seshat/scheduler";
 import { call, check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 import { loopTelemetry } from "../src/loop-telemetry.ts";
 import { BP_AUX, BP_PROOF, blueprintAnswer, HARD_AUX, LEFT_STUB, WRONG_AUX } from "./blueprint-helpers.ts";
@@ -146,6 +146,34 @@ describe("blueprints: sessions with tools on holes", () => {
     });
     return { ...run, prompts };
   }
+
+  it("gives a hole session a prompt with only the header, the stubs, the hole and the bounded history of its earlier sessions", { timeout: 60000 }, async () => {
+    const prompts: string[] = [];
+    const { events, faux } = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { ...OPTIONS, holeSessions: 2, rounds: 1 } } },
+      lean: new DemoLean(blueprintAnswer),
+      responses: [
+        check(BP_PROOF, BP_AUX),
+        say("Three lemmas are left."),
+        say("I cannot do this."),
+        (context: Parameters<typeof sessionPromptOf>[0]) => {
+          if (!context.messages.some((m) => m.role === "assistant")) prompts.push(sessionPromptOf(context));
+          return check("exact dep_ok", LEFT_STUB);
+        },
+        check("exact hole_ok"),
+        say("Done."),
+      ],
+    });
+    assert.ok(faux.getPendingResponseCount() >= 0 && events.length > 0);
+    const prompt = prompts[0] ?? "";
+    assert.match(prompt, /Session 2 of 2: prove the lemma aux_right/);
+    assert.match(prompt, /import FormalConjectures.Util.ProblemImports\n\nnamespace Demo/, "the header is whole, imports included");
+    assert.match(prompt, /lemma aux_left \(n : ℕ\) : 0 \+ n = n := by\n {2}sorry/);
+    assert.match(prompt, /Earlier sessions on this lemma did not succeed:\n- session 1:/);
+    assert.ok(prompt.slice(prompt.indexOf("Earlier sessions")).length <= HOLE_HISTORY_CHARS + 80);
+    assert.doesNotMatch(prompt, /aux_third|main_ok|n \* 1|Three lemmas are left/, "no sketch, no other hole, no outer notes");
+  });
 
   it("tells the next session that a hole's dependency is false, not that the hole waits for it to be proved", { timeout: 60000 }, async () => {
     const { prompts } = await twoHoles(call("hole_verdict", { verdict: "statement_wrong", argument: "false", negation_proof: "exact neg_ok" }), new DemoLean(blueprintAnswer));

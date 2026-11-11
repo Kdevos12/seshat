@@ -138,6 +138,7 @@ With `blueprints` on, a hole's inner work is a real session with tools instead o
 `ProblemContext.holeSession` (`hole-session.ts`: `runSession` on the hole's own workbench; the scheduler package does not import the orchestrator). The session
 has `lean_check`, `lean_edit` and `hole_verdict`, a prompt that is its only context, and a **small file**: the claim's header, the hole's declared dependencies as
 **stubs** (`lemma aux_a <statement> := by sorry`, in the aux region), and the hole. Nothing else is in the file or the prompt: no outer notes, no other holes, no sketch.
+The prompt shows the header whole when it has at most `HOLE_HEADER_CHARS` (2500) characters; a longer one is cut after its first lines (the imports and opens come first) with a line saying that the rest is cut (`cutHeader`). It also repeats the failure reasons of the hole's earlier sessions, at most `HOLE_HISTORY_CHARS` (900) characters in all, the newest kept (`boundHistory`).
 Its length is the option `holeTurns` (12 by default); a hole's task has `holeSessions` sessions (2 by default, since a session is a whole tool loop). Its responses are
 `model_call.finished` events of `line:M12` at the site `scheduler.hole`, charged to the problem's ledger, so the report counts them.
 

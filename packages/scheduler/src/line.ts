@@ -7,7 +7,7 @@ import {
   type Briefing, completeJson, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
-import { readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
+import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
 import { linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
@@ -507,7 +507,7 @@ export function createM12Line(): Line {
   }
 
   function holePrompt(problem: ProblemContext, work: Work, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[]): string {
-    const header = (problem.memory.claim(info.claimId)?.header ?? work.header).slice(-2500);
+    const header = cutHeader(problem.memory.claim(info.claimId)?.header ?? work.header);
     const stubs = stubsRegion(info.deps);
     return [
       `Session ${session} of ${limit}: prove the lemma ${info.name} in Lean 4, in at most ${turns} model responses.`,
@@ -517,7 +517,7 @@ export function createM12Line(): Line {
         : "No lemma is given: prove it from the header.",
       `The lemma to prove:\nlemma ${info.name} ${claimStatement.trim()} := by\n  <your proof>`,
       `Start with lean_check(aux, proof)${info.deps.length > 0 ? ", whose aux begins with the given lemmas" : ""}; then change it with lean_edit. The work is done when Lean reports no error${info.deps.length > 0 ? " and the only sorry are in the given lemmas" : " and no sorry is left"}.`,
-      failures.length > 0 ? `Earlier sessions on this lemma did not succeed:\n${failures.join("\n")}` : "",
+      failures.length > 0 ? `Earlier sessions on this lemma did not succeed:\n${boundHistory(failures).join("\n")}` : "",
     ].filter((line) => line !== "").join("\n\n");
   }
 
@@ -546,7 +546,7 @@ export function createM12Line(): Line {
       const claim = problem.memory.claim(claimId);
       const session = mine.length + 1;
       const sessionId = `${task.taskId}:${session}`;
-      const failures = mine.slice(-3).map((r) => `- session ${r.session}: ${r.reasons.join("; ") || "no proof"}`);
+      const failures = mine.map((r) => clip(`- session ${r.session}: ${r.reasons.join("; ") || "no proof"}`, 300));
       const prompt = holePrompt(problem, work, info, claim?.statement ?? "", session, limit, turns, failures);
       let result: HoleSessionResult;
       try {
