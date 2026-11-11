@@ -362,6 +362,11 @@ export interface EventDataMap {
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
     failureDetail?: string;
+    /**
+     * The class of the last check of a session that a round's slice cut (`RunConfig.budgetRounds`, which records it only then). It is not a
+     * failure: `failureClass` stays absent for a budget cut. Only the rotation's measure of Lean progress reads it (documentation/scheduler.md).
+     */
+    lastCheckClass?: string;
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };

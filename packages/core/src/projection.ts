@@ -53,6 +53,8 @@ export interface AttemptRow {
   strategy: string | null;
   premises: string[] | null;
   failure_detail: string | null;
+  /** The class of the last check of a session that a round's slice cut (`attempt.finished.lastCheckClass`); null otherwise. */
+  last_check_class: string | null;
   /** The task the attempt worked for. */
   task_id: string | null;
   /** Where its model calls were made; null: `prover.session`. */
@@ -357,7 +359,7 @@ export interface MemorySummary {
 export class StaleProjectionError extends Error {}
 
 /** Version of the tables below, kept in SQLite's `user_version`. A projection of another version is rebuilt. */
-export const PROJECTION_VERSION = 10;
+export const PROJECTION_VERSION = 11;
 
 /** Events of an earlier journal that the projection leaves out: what that run did on its own account. */
 const INHERITED_SKIPPED: readonly string[] = [
@@ -404,7 +406,7 @@ create table if not exists attempts (
   attempt_id text primary key, claim_id text not null, prover text not null, iteration integer not null,
   model text not null, outcome text, failure_class text, stopped_by text, error text, usd real, input_tokens integer,
   output_tokens integer, duration_ms integer, turns integer, started_seq integer not null, finished_seq integer,
-  role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text,
+  role text, declared_strategy text, subgoal text, strategy text, premises_json text, failure_detail text, last_check_class text,
   task_id text, site text, charged_usd real not null default 0, charged_input_tokens integer not null default 0,
   charged_output_tokens integer not null default 0, charged_requests integer not null default 0, carry_json text,
   provenance_json text, included_json text, withheld_json text, epoch integer not null default 0,
@@ -681,13 +683,13 @@ export class Projection {
         const d = event.data;
         db.prepare(
           `update attempts set outcome = ?, failure_class = ?, stopped_by = ?, error = ?, usd = ?, input_tokens = ?,
-           output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ?, strategy = ?, premises_json = ?, failure_detail = ?,
+           output_tokens = ?, duration_ms = ?, turns = ?, finished_seq = ?, strategy = ?, premises_json = ?, failure_detail = ?, last_check_class = ?,
            declared_strategy = coalesce(?, declared_strategy), carry_json = ?
            where attempt_id = ?`,
         ).run(
           d.outcome, d.failureClass ?? null, d.stoppedBy ?? null, d.error ?? null, d.usd, d.inputTokens, d.outputTokens,
           d.durationMs, d.turns, event.seq, d.strategy ?? null, d.premises === undefined ? null : canonicalJson(d.premises),
-          d.failureDetail ?? null, d.declaredStrategy ?? null, d.carry === undefined ? null : canonicalJson(d.carry), d.attemptId);
+          d.failureDetail ?? null, d.lastCheckClass ?? null, d.declaredStrategy ?? null, d.carry === undefined ? null : canonicalJson(d.carry), d.attemptId);
         return;
       }
       case "tool_run.started": {

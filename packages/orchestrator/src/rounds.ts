@@ -26,11 +26,12 @@ export function roundCap(runUsd: number, k: number, round: number): number {
 }
 
 /** The mark of a problem from the ladder's measure and its attempts' rows. */
-export function markOf(progress: Progress, attempts: ReadonlyArray<{ outcome: string | null; failure_class: string | null }>): Mark {
+export function markOf(progress: Progress, attempts: ReadonlyArray<{ outcome: string | null; failure_class: string | null; last_check_class?: string | null }>): Mark {
   let depth = -1;
   for (const row of attempts) {
-    // A session the slice cut has the class of its last check too (the prover records it), so the class counts whatever the outcome.
-    const d = row.outcome === "valid" ? VALID_DEPTH : row.failure_class === null ? undefined : failureDepth(row.failure_class);
+    // A session the slice cut has no failure class, but the prover records the class of its last check apart (`lastCheckClass`).
+    const cls = row.failure_class ?? row.last_check_class ?? null;
+    const d = row.outcome === "valid" ? VALID_DEPTH : cls === null ? undefined : failureDepth(cls);
     if (d !== undefined && d > depth) depth = d;
   }
   return { proved: progress.proved, holes: progress.holes ?? null, depth };
