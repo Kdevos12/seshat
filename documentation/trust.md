@@ -98,7 +98,7 @@ statement, `settled: true`) and a `hygiene` node (a vacuity or `plausible` resul
 changes its status, and only a Lean proof through `validate` does. What a site sends is hostile text: it is cleaned and bounded when read, a quote counts
 only when it is a verbatim part of that text, it is shown escaped as data in a user-role section and never enters a system prompt or a lesson, and a
 model's reading of it (the judge's verdict) is an opinion, not a check. The statement goes to third parties only for a bench problem, or when the person
-agreed (asked once and journaled, or `--lit`), and never with `--private`. `--private` today turns the literature search off and refuses a run that asks a third-party decision model; it does not yet block the other capabilities that call third-party sites (the OEIS, LMFDB and FindStat capabilities), which a run uses only if its lines are enabled.
+agreed (asked once and journaled, or `--lit`), and never with `--private`. `--private` is one rule for every capability that sends content of the problem to a third party ([Third parties](#third-parties)).
 
 The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
 to set, a task is `done` only when its claim already has the status its criterion asks for, and
@@ -106,6 +106,38 @@ only the orchestrator writes them. A resumed run ([ledger.md](ledger.md#resume))
 what the interrupted process was about to write: it writes a status change that was cut only when
 a validation already in the journal justifies it, and a candidate is certified by the same
 certifier as any other, unless the journal holds the certifier's answer for it.
+
+## Third parties
+
+The model provider is the only party that sees a problem without being asked. Every other service a run can reach with content of the
+problem is a **third party**, and says so in its manifest (`thirdParty`, [capabilities.md](capabilities.md#third-parties)). One rule, in one
+place, governs them: the registry. A run sets its policy once, from `--private` and from the consent below, and from then on no caller
+can forget it: a call that would send is made in its local form, or refused with the error code `private`, which names `--private` and is
+journaled as a failed tool run (`error: "private"`), before any implementation is reached.
+
+| Capability | What it sends | With `--private` | What else governs it |
+|---|---|---|---|
+| `lit.search` | words of the statement, to OpenAlex, arXiv, Semantic Scholar, zbMATH | the intake step skips the literature (journaled `private`); a call is forced to the bench-metadata backend, which is a local file | bench problem: on with `--intake`; `solve`: the consent, asked once or `--lit` |
+| `lean.search` | an unknown name, or a goal, to a search service | forced to the private form: only the local index and the index-based pattern match stay; the `remote` backend and the remote pattern service are off ([lean.md](lean.md#search-pushed-by-the-harness)) | bench problem: on; `solve`: the consent; without a yes it is local too |
+| `decide.ask` | a proof state or statement, to a hosted decision model (`jev`) | a run that asks `jev` is refused at the start; the local `faux` stays usable | the run's decide settings, which `--private` does not change |
+| `oeis.search` | terms of a sequence, to the OEIS | refused (`private`); a line (M11) takes it as a lookup that gave nothing | the person names the tool (`--tool`) or enables a line that uses it: that is their choice, and `solve`'s defaults sets do not |
+| `lmfdb.query` | a query, to the LMFDB | refused | as `oeis.search` |
+| `findstat.identify` | objects and values, to FindStat | refused | as `oeis.search` |
+
+**Limits, said plainly.**
+- A pack ([packs.md](packs.md)) whose manifest has no `thirdParty` field is not checked in a private run: the manifest is its author's word, and the
+  harness cannot see what a program sends. `--private` binds the capabilities of the repository's catalog and the packs that declare themselves.
+- `harness health` is not a run and has no `--private`: it pings the third-party services the host profile lists to say whether they answer.
+- The answer on third parties is journaled (`intake.consented`) for every problem a run takes up under the policy, and a resumed run reads it back
+  from the recorded configuration. The registry's hash covers the manifests, which now carry `thirdParty`, so a run started before this change cannot be resumed after it
+  (the resume is refused for a changed registry, as for any manifest change).
+
+`harness solve --private --tool oeis.search` (or `lmfdb.query`, `findstat.identify`) stops before any spend, and `harness run --private --tool`
+does not start. In `harness run` third parties are on for bench problems (they are public) unless `--private`; nothing changes there without
+the flag. In `harness solve` the question "may this run send content of your problem outside?" is asked once, when `--intake` or `--lean-search`
+is on and a person can answer, and names the services the host profile reaches; the answer is journaled as `intake.consented` and a resumed run
+does not ask again. `--lit` is the non-interactive yes; with `--yes` or `--ask-stdin` and no `--lit` the answer is no, and `lean.search` then
+uses its local backends only. Whatever comes back is hostile text and an evidence node at most: nothing here changes a claim's status.
 
 ## Memory across runs
 

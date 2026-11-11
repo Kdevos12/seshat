@@ -118,6 +118,12 @@
     "additionalProperties": false
   },
   "produces": [],
+  "thirdParty": {
+    "sends": "the unknown name, or the text of a goal, to a search service",
+    "privateInput": {
+      "private": true
+    }
+  },
   "timeoutMs": 30000,
   "summary": [
     "used"

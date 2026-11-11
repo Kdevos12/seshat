@@ -73,8 +73,8 @@ import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./acc
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
-import { docstringBefore } from "@seshat/lit";
-import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep } from "./intake.ts";
+import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
+import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -499,7 +499,9 @@ interface QueuedProblem {
 async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> {
   const { config } = o;
   const problems = checkConfig(config);
-  problems.push(...checkIntake(config.intake, { user: o.user }));
+  // The person of a run is the one it began with: a resumed run names none of its own, and a recorded answer of a person's stays theirs.
+  const person = o.user ?? resume?.events.find((e) => e.type === "run.started")?.user;
+  problems.push(...checkIntake(config.intake, { user: person }));
   if (config.private === true && sitesSentOutside(resolveDecideSettings(config.decide)).length > 0) {
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
@@ -600,6 +602,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The third-party policy, set once for the whole run and read nowhere else (documentation/trust.md, "Third parties"): `--private` is for every
+  // capability; a person who did not agree to the statement going outside (`harness solve`) leaves `lean.search` and `lit.search` to their local
+  // forms. A run without an `intake` config (`harness run` as it was) says nothing and keeps the third parties on.
+  registry.restrictThirdParties({
+    ...(config.private === true ? { private: true } : {}),
+    ...(config.intake !== undefined && config.intake.consent?.allowed !== true ? { local: [LEAN_SEARCH, LIT_SEARCH] } : {}),
+  });
   if (config.leanSearch === true && !registry.offers(LEAN_SEARCH)) {
     return await abandon(`leanSearch needs the capability ${LEAN_SEARCH}: host ${registry.host.host} does not offer it`, undefined, registry);
   }
@@ -1262,6 +1271,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         }
       }
 
+      // The answer on third parties is journaled for every problem the policy applies to, whether or not the intake step runs below (Task 36b).
+      if (config.private === true || config.intake !== undefined) {
+        recordConsent({ journal, config: config.intake, private: config.private === true, leanSearch: config.leanSearch === true, events: resume?.events ?? [], problemId: entry.id, ...(person !== undefined ? { user: person } : {}) });
+      }
+
       // The intake step (Task 36): the literature and the statement's hygiene, before any paid session. A problem whose step was written by
       // the process before is not tested again.
       if (config.intake !== undefined && memory !== undefined && !adopted && !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id)) {
@@ -1274,6 +1288,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           const step = await intakeStep({
             config: config.intake,
             private: config.private === true,
+            leanSearch: config.leanSearch === true,
+            consentRecorded: true,
             journal,
             memory: memory.withActor("orchestrator"),
             registry,

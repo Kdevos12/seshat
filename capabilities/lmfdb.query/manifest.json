@@ -75,6 +75,9 @@
     "additionalProperties": false
   },
   "produces": [],
+  "thirdParty": {
+    "sends": "the query (a collection and its conditions) to the LMFDB"
+  },
   "timeoutMs": 30000,
   "summary": [
     "url"

@@ -325,7 +325,7 @@ export interface SolveOptions {
   autoTool?: string;
   /** The intake step (Task 36): the statement's hygiene, and the literature when the person agrees. Absent: none, as before. */
   intake?: IntakeConfig;
-  /** Asks the person once whether the statement may go to third parties; the answer is journaled. Absent: no answer, which is no. */
+  /** Asks the person once whether the statement may go to third parties (the literature, and `lean.search` with `leanSearch`); the answer is journaled. Absent: no answer, which is no. */
   askConsent?: () => Promise<boolean>;
   /** `--private`: nothing goes outside the machine and the model provider; wins over everything. */
   private?: boolean;
@@ -432,8 +432,10 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   if (!(remaining > 0)) throw new SolveInputError(`formalizing the statement cost $${formalization?.usd.toFixed(4)}, all of the allowance $${o.maxUsd}: raise --max-usd`);
   const turnUsd = Math.min(remaining, o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6);
   // The person's agreement to send the statement outside is asked once, here, after the signature, and journaled by the run.
-  let intake = o.intake;
-  if (intake?.literature === true && o.private !== true && intake.consent === undefined && o.askConsent !== undefined) {
+  // The answer governs the literature and also `lean.search` (Task 36b), so `--lean-search` brings the question and the record of the answer too.
+  const wantsLeanSearch = o.base?.leanSearch === true;
+  let intake = o.intake ?? (wantsLeanSearch ? {} : undefined);
+  if (intake !== undefined && (intake.literature === true || wantsLeanSearch) && o.private !== true && intake.consent === undefined && o.askConsent !== undefined) {
     intake = { ...intake, consent: { allowed: await o.askConsent(), via: "asked" } };
   }
   const filed = o.autoTool !== undefined ? fileStatement(problem.entry.statement) : undefined;
