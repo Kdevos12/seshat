@@ -91,6 +91,47 @@ A split sketch gives:
   propagates. If the check fails the edge stays a candidate and the holes are still worked, but
   the parent is not derived from them.
 
+## Blueprints (plan change CA9)
+
+Task 37. The option `blueprints` (off by default; `--line-option M12.blueprints=true`) reads a sketch as a **blueprint**: a sketch whose holes may
+depend on each other. Without it nothing in this section applies, a `-- uses:` line is a comment, and M12 reads a sketch as described above.
+
+A hole declares what it may use with a comment line **directly above it** (no blank line between them):
+
+```lean
+lemma aux_left (n : ℕ) : 0 + n = n := by
+  sorry
+
+-- uses: aux_left
+lemma aux_right (n : ℕ) : n + 0 = 0 + n := by
+  sorry
+```
+
+No `uses` line means no dependency. The **target is the sink**: it uses the holes its main proof names. A blueprint is accepted when
+
+1. Lean checks the file with no error (`sorry` warnings allowed), as for any sketch (the record's `healthy`);
+2. every name in a `uses` line is a hole of the same blueprint;
+3. no hole restates the target (the statement id of the hole is the target's: the refusal's class is `restates_target`, `SketchRecord.failureClass`);
+4. the dependency graph has no cycle;
+5. every hole reaches the target: it is named by the main proof, or used, directly or through other holes, by a hole that is.
+
+A hole's **statement** still may not name a hole, as before (a statement that depends on an unproved lemma's name cannot be lifted out of the file), and
+no other aux command may rest on a hole. What the option changes is that the holes may use each other in their proofs, as declared. A blueprint that fails a rule is
+refused as a sketch that cannot be split is: the `m12_sketch` node holds `healthy: false` and the reason in `problem` (`the dependency graph has a cycle:
+aux_a -> aux_b -> aux_a`), and no claim, edge or task is made. A blueprint's record also holds `blueprint: true` and `uses`, the declared names of each hole.
+
+**The link lemma and the dependency edges.** The target keeps its edge and its link lemma as before: `decomposes_into` from the problem's claim to all the holes, whose
+link lemma `(T1) -> ... -> (Tn) -> (F)` Lean proves from the sketch's main proof. A hole that declares dependencies gets a `decomposes_into` edge of its own, from its claim
+to the claims of the holes it uses, and its link lemma takes the dependencies as hypotheses: `(D1) -> ... -> (Dk) -> (H)`, proved by the hole's own proof with the dependencies
+introduced as `h_aux_j` under their names (the same `intro ...; refine fun <binders> => ?_; have aux_a := h_aux_1; <proof>` as the target's). That lemma is checked when the
+hole's work is done ([Hole sessions](#hole-sessions-plan-change-ca10)). The rule is the one of every edge: **only a `lean_checked` edge propagates**. So a hole is derived
+from its dependencies only once its link lemma passed Lean and every dependency is `computed` (or better): the graph composes the hole's proof from the link lemma and the
+dependencies' own proofs, in dependency order, and the composed proof goes through `validate` like any derivation (`realize`). A dependency that is refuted or
+never accepted derives nothing, and the hole is not validated.
+
+**Trust is unchanged.** Nothing here sets a status. The problem is settled only when the assembled file, the holes replaced by their accepted proofs in dependency order,
+goes through `validate` (the composition of the target's link lemma and the holes' proofs) and the certifier.
+
 ## Inner provers and tasks (PC4 item 1)
 
 Each unproved hole gets a `prove` task, proposed by `line:M12` through the task API: acceptance

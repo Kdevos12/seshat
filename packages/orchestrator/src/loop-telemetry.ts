@@ -1,4 +1,6 @@
-import type { HarnessEvent } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_VERDICT_KIND, type HarnessEvent } from "@seshat/core";
+
+export { HOLE_FALSE_VERDICT, HOLE_VERDICT_KIND };
 
 /**
  * Loop telemetry (plan change CA3): where a run's dollars and minutes go, read from the journal alone. Per attempt (a session of a
@@ -57,9 +59,7 @@ function quantile(values: readonly number[], q: number): number | undefined {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 }
 
-/** The kind of the memory node a mechanism writes for the verdict of a proposed sub-lemma, and its false verdict (CA11). */
-export const HOLE_VERDICT_KIND = "hole_verdict";
-export const HOLE_FALSE_VERDICT = "statement_wrong";
+// The kind of the memory node a mechanism writes for the verdict of a proposed sub-lemma, and its false verdict (CA11), live in `@seshat/core`.
 
 export function loopTelemetry(events: readonly HarnessEvent[]): LoopTelemetry {
   const taskProblem = new Map<string, string>();
