@@ -3,7 +3,7 @@ import type { AttemptAnnotation, Briefing, CheckDecision, CheckVeto, JsonObject,
 import type { Json } from "@seshat/core";
 import { classifyFailure, classifyStrategy, type LeanState, leanState, normalizeDetail } from "@seshat/memory";
 import { type CitationEnv, knownSorries, unresolvedReferences } from "./citations.ts";
-import { DEFAULT_WATCH, type DetectorKind, type Finding, noticeFor, type Observation, ProverWatch, REPEAT_DIRECTIVE_AT, REPEAT_STOP_AT, repeatDirective, repeatKey, RepeatCounter, SessionWatch } from "./detectors.ts";
+import { DEFAULT_WATCH, type DetectorKind, type Finding, noticeFor, type Observation, ProverWatch, REPEAT_DIRECTIVE_AT, REPEAT_STOP_AT, repeatDirective, repeatCounts, repeatKey, RepeatCounter, SessionWatch } from "./detectors.ts";
 import { type DriftData, driftNodes, recordDrift } from "./drift.ts";
 import { categoryOf, framingProblems, isOpenConjecture, neutralQuestion } from "./framing.ts";
 import { scrubLeanOutput } from "./rawerrors.ts";
@@ -228,13 +228,13 @@ export function createM6(env: M6Env = {}): Line {
   }
 
   /** Counts one failure of the problem; the rule's answer is `repeatDecision`. */
-  function repeatCount(run: RunState, problemId: string, state: SessionState, error: string, label: string): { error: string; label: string; times: number } {
+  function repeatCount(run: RunState, problemId: string, state: SessionState, failureClass: string, error: string, label: string): { error: string; label: string; times: number } {
     let counter = run.repeats.get(problemId);
     if (counter === undefined) {
       counter = new RepeatCounter();
       run.repeats.set(problemId, counter);
     }
-    const key = repeatKey(error, label);
+    const key = repeatKey(failureClass, error, label);
     state.repeats.set(key, (state.repeats.get(key) ?? 0) + 1);
     return { error, label, times: counter.add(key) };
   }
@@ -460,8 +460,8 @@ export function createM6(env: M6Env = {}): Line {
         if (!flag(options, "detectors")) return undefined;
 
         // The repeat rule counts every failed check, whichever detector acts on it, so that a resumed run counts the same.
-        const repeat = flag(options, "repeatRule") && !check.accepted && failure !== undefined && failure.class !== "lean_unavailable" && failure.class !== "refused"
-          ? repeatCount(run, session.problemId, state, normalizeDetail(failure.detail), label)
+        const repeat = flag(options, "repeatRule") && !check.accepted && failure !== undefined && repeatCounts(failure.class)
+          ? repeatCount(run, session.problemId, state, failure.class, normalizeDetail(failure.detail), label)
           : undefined;
         const restating = check.accepted ? undefined : await restatingLemma(session, aux, failure?.class, failure?.detail, run);
         const finding = state.watch.observe({

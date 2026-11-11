@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "@seshat/core";
-import { createM6, framingProblems, REMOVED_MARK, UNSOURCED_MARK } from "@seshat/guards";
+import { createM6, framingProblems, REMOVED_MARK, repeatCounts, repeatKey, UNSOURCED_MARK } from "@seshat/guards";
 import type { Line } from "@seshat/lines";
 import { sessionPrompt, systemPrompt } from "../src/prompt.ts";
 import { DISCRETE } from "@seshat/bench";
-import { check, DEMO_FILE, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { check, DEMO_FILE, DemoLean, demoAnswer, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 
 type Message = TranscriptContext["messages"][number];
 
@@ -480,5 +480,33 @@ describe("M6 repeat rule (CA7)", () => {
     const shape = (events: readonly HarnessEvent[]) => drifts(events).filter((d) => d.kind === "repeated_failure").map((d) => [d.action, d.session, d.check]);
     assert.deepEqual(shape(resumed.events), shape(whole.events));
     assert.ok(shape(resumed.events).length >= 2);
+  });
+
+  it("does not count progress: a sketch that closes one hole per check under one strategy is never told to change approach", async () => {
+    const { events } = await demoRun({
+      config: { ...M6_ONLY, sessions: 1, lineOptions: { M6: FIVE } },
+      responses: [check("sorry"), check("sorry\n  sorry"), check("sorry\n  sorry\n  sorry"), check("sorry\n  sorry\n  sorry\n  sorry"), check("sorry\n  sorry\n  sorry\n  sorry\n  sorry"), say("n")],
+    });
+    assert.deepEqual(drifts(events).filter((d) => d.kind === "repeated_failure"), []);
+    assert.equal(ofType(events, "attempt.finished")[0]?.data.stoppedBy, "model");
+  });
+
+  it("does not count errors the classes do not name", async () => {
+    const odd = new DemoLean((code) =>
+      proofOf(code)?.includes("weird") === true ? { messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "something odd happened" }] } : demoAnswer(code),
+    );
+    const { events } = await demoRun({
+      lean: odd,
+      config: { ...M6_ONLY, sessions: 1, lineOptions: { M6: FIVE } },
+      responses: [check("weird"), check("weird 1"), check("weird 2"), check("weird 3"), say("n")],
+    });
+    assert.deepEqual(drifts(events).filter((d) => d.kind === "repeated_failure"), []);
+    assert.equal(ofType(events, "attempt.finished")[0]?.data.stoppedBy, "model");
+  });
+
+  it("counts by failure class: the same detail text under two classes is two failures, and only real errors and timeouts count", () => {
+    assert.notEqual(repeatKey("unknown_identifier", "x failed", "automation"), repeatKey("tactic_failed", "x failed", "automation"));
+    assert.deepEqual(["holes", "other", "refused", "lean_unavailable"].map(repeatCounts), [false, false, false, false]);
+    assert.deepEqual(["timeout", "unknown_identifier", "tactic_failed", "unsolved_goals", "syntax"].map(repeatCounts), [true, true, true, true, true]);
   });
 });
