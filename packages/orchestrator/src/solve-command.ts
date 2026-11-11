@@ -8,7 +8,7 @@ import { type Check, DEFAULT_PROFILE_NAME, doctor, type DoctorReport, type Docto
 import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
-import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveResult } from "./solve.ts";
+import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
 import { cheapestModel, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, STUDENT_DEFAULT_MAX_USD, STUDENT_LINES } from "./student.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
@@ -139,6 +139,31 @@ export function consentQuestion(profile: HostProfile, o: { literature: boolean; 
   return `This run could send content of your problem outside this machine and the model provider: ${parts.join("; and ")}. Allow that? [y/N] `;
 }
 
+/**
+ * What `--intake`, `--lit` and `--lean-search` give `solve` for the answer on third parties: the intake section (with `--lit`, the yes of a call
+ * that cannot ask), and the question, asked once, only where a person can answer. `--yes` or `--ask-stdin` without `--lit` gives neither a yes nor
+ * a question, which `solve` journals as a no and `lean.search` keeps to its local backends.
+ */
+export function consentOptions(flags: SolveFlags, io: Pick<CommandIo, "ask">, profile: HostProfile, canAsk: boolean = process.stdin.isTTY === true): Pick<SolveOptions, "intake" | "askConsent"> {
+  const wantsIntake = flags.intake === true || flags.lit === true;
+  const ask = flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || canAsk);
+  return {
+    ...(wantsIntake
+      ? {
+          intake: {
+            hygiene: true,
+            literature: true,
+            ...(flags.intakeUsd !== undefined ? { capUsd: flags.intakeUsd } : {}),
+            ...(flags.lit === true ? { consent: { allowed: true, via: "flag" as const } } : {}),
+          },
+        }
+      : {}),
+    ...((wantsIntake || flags.leanSearch === true) && ask
+      ? { askConsent: () => (io.ask ?? terminalAsk)(consentQuestion(profile, { literature: wantsIntake, leanSearch: flags.leanSearch === true })) }
+      : {}),
+  };
+}
+
 /** The compute tool of the host that `--auto-tool` adds. */
 const COMPUTE_TOOL = "compute.sage";
 
@@ -260,7 +285,6 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
 
   const registry: RunOptions["registry"] = (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) });
-  const wantsIntake = flags.intake === true || flags.lit === true;
   const checkerRegistry = openRegistry({ host });
   const mode = statement.mode ?? classifyStatement(statement.text);
   if (flags.private === true) {
@@ -298,21 +322,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),
       ...(flags.autoTool === true && checkerRegistry.offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
       ...(flags.private === true ? { private: true } : {}),
-      ...(wantsIntake
-        ? {
-            intake: {
-              hygiene: true,
-              literature: true,
-              ...(flags.intakeUsd !== undefined ? { capUsd: flags.intakeUsd } : {}),
-              ...(flags.lit === true ? { consent: { allowed: true, via: "flag" as const } } : {}),
-            },
-          }
-        : {}),
-      // Asked once, and only where a person can answer: a call that signs with --yes or is driven by a program has --lit or no. The answer
-      // governs the literature and `lean.search` alike; `solve` journals it, and a resumed run reads it from the journal.
-      ...((wantsIntake || flags.leanSearch === true) && flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || process.stdin.isTTY)
-        ? { askConsent: () => (io.ask ?? terminalAsk)(consentQuestion(profile, { literature: wantsIntake, leanSearch: flags.leanSearch === true })) }
-        : {}),
+      ...consentOptions(flags, io, profile),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
           if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");

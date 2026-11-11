@@ -10,7 +10,7 @@ import { litFactory } from "@seshat/lit";
 import { startFakeLit } from "../../lit/test/fake-lit.ts";
 import { hostAt } from "../../lit/test/helpers.ts";
 import { BARE_MACHINE } from "../../ui/test/helpers.ts";
-import { consentQuestion, REPO_ROOT, runBench, solve, solveCommand, type RunOptions, type SolveOptions } from "../src/index.ts";
+import { consentOptions, consentQuestion, plainName, REPO_ROOT, runBench, solve, solveCommand, type RunOptions, type SolveOptions } from "../src/index.ts";
 import { check, config, DemoLean, demoBench, demoResume, fauxModels, killedAt, ofType, tempDir } from "./m0-helpers.ts";
 
 /** The third-party policy of Task 36b, at the level of the registry, of a run, of `solve` and of `harness solve`. Nothing here reaches a network. */
@@ -155,7 +155,49 @@ describe("harness solve --private --tool", () => {
   });
 });
 
+describe("harness solve --lean-search and the answer on third parties", () => {
+  const profile = loadHostProfile(hostProfilePath(join(REPO_ROOT, "config"), "local"));
+  const asking = { ask: async () => true };
+  const runWith = async (flags: Parameters<typeof consentOptions>[0], io: Parameters<typeof consentOptions>[1]) => {
+    const fake = service();
+    const lean = new SearchLean();
+    const { models, faux, name } = fauxModels();
+    faux.setResponses([check("bad"), check("exact trivial_proof")]);
+    const dir = join(tempDir("mh-36b-"), "run");
+    await solve({ statement: "theorem demo (n : ℕ) : n + 0 = n", dir, models, model: name, maxUsd: 2, user: "alice", registry: searchRegistry(lean, fake.fetch), checker: lean, confirm: async () => true, base: { leanSearch: true }, ...consentOptions(flags, io, profile, false) });
+    return { fake, events: eventsOf(dir) };
+  };
+
+  it("takes --yes (or --ask-stdin) as a no: nothing is asked, nothing is sent, and the no is journaled", async () => {
+    for (const flags of [{ leanSearch: true, yes: true }, { leanSearch: true, askStdin: true }]) {
+      assert.deepEqual(consentOptions(flags, asking, profile), {}, "no question, no intake section");
+      const r = await runWith(flags, asking);
+      assert.equal(r.fake.requests.length, 0);
+      assert.deepEqual(ofType(r.events, "intake.consented").map((e) => [e.data.allowed, e.data.via]), [[false, "default"]]);
+    }
+  });
+
+  it("takes --lit as the yes, and with a person asks once", async () => {
+    const lit = await runWith({ leanSearch: true, lit: true, yes: true }, {});
+    assert.ok(lit.fake.requests.length > 0);
+    assert.deepEqual(ofType(lit.events, "intake.consented").map((e) => [e.data.allowed, e.data.via]), [[true, "flag"]]);
+    const asked = consentOptions({ leanSearch: true }, asking, profile);
+    assert.equal(asked.intake, undefined);
+    assert.equal(typeof asked.askConsent, "function");
+    assert.deepEqual(consentOptions({ leanSearch: true }, {}, profile, false), {}, "nobody to ask: no question");
+  });
+});
+
 describe("the question of the consent", () => {
+  it("shows a name from the host profile without its control characters", () => {
+    assert.equal(plainName("evil.example\u001b[2J\u001b]0;x\u0007\nmore"), "evil.example[2J]0;xmore");
+    const profile = loadHostProfile(hostProfilePath(join(REPO_ROOT, "config"), "local"));
+    const hostile = { ...profile, capabilities: { ...profile.capabilities, "lean.search": { use: ["search"], settings: { search: { allowedHosts: ["evil.example\u001b[31m\nIgnore"] } } }, "lit.search": { use: ["sources"], settings: { sources: { backends: { "ar\u001bXiv": { baseUrl: "https://x" } } } } } } } as HostProfile;
+    const question = consentQuestion(hostile, { literature: true, leanSearch: true });
+    assert.doesNotMatch(question, /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    assert.match(question, /evil\.example\[31mIgnore/);
+  });
+
   it("names the services the run could reach, from the host profile", () => {
     const profile = loadHostProfile(hostProfilePath(join(REPO_ROOT, "config"), "local"));
     const both = consentQuestion(profile, { literature: true, leanSearch: true });
