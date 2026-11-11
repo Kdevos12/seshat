@@ -13,12 +13,12 @@ import { M14 } from "@seshat/repair";
 import { m12Line, m15Line, m18Line } from "@seshat/scheduler";
 import { M1 } from "./m1.ts";
 
+/** M11 with the search beyond the lists of graphs (CA20), which lives in @seshat/induction: `@seshat/models` cannot import it. Only the option `M11.graphs` makes it run. */
+const M11 = createM11({ graphSearch });
+
 /**
  * The lines a run can enable, by id (documentation/lines.md). A line that is planned and not
  * implemented is not here: a run that enables it stops before it starts, and says so. The task
  * that implements a line adds it here.
  */
-/** M11 with the search beyond the lists of graphs (CA20), which lives in @seshat/induction: `@seshat/models` cannot import it. Only the option `M11.graphs` makes it run. */
-const M11 = createM11({ graphSearch });
-
 export const LINES: LineRegistry = { M1, M10, M11, M12: m12Line, M15: m15Line, M17, M18: m18Line, M2: m2Line, M3, M4, M6, M8, M13, M14, M16, M5, fleet };

@@ -132,9 +132,9 @@ const MAX_RECORDS = 12;
 const MAX_FILE_CHARS = 20_000;
 
 /** Node kinds a program writes as a finding with a model or an instance: a refutation attempt, not a Lean-checked refutation. */
-const COUNTEREXAMPLE_KINDS = ["counter_model", "counterexample", "refuted_hypothesis"];
+const COUNTEREXAMPLE_KINDS = ["counter_model", "counterexample", "refuted_hypothesis", "graph_hit"];
 /** Node kinds that are evidence or a lead: a tool's output, a fingerprint, a guess. None of them is a proof. */
-const EVIDENCE_KINDS = ["fingerprint", "identification", "battery", "integer_relation", "recurrence", "search_result", "conjecture", "obstruction", "datatable"];
+const EVIDENCE_KINDS = ["fingerprint", "identification", "battery", "integer_relation", "recurrence", "search_result", "graph_search", "conjecture", "obstruction", "datatable"];
 
 function clip(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
