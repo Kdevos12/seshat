@@ -1,5 +1,5 @@
 import { type Json, type RandomSource, seeded } from "@seshat/core";
-import { type GraphSearchHit, type GraphSearchInput, type GraphSearchResult, type GraphSearchRunner, isConnected } from "@seshat/models";
+import { type GraphSearchHit, type GraphSearchInput, type GraphSearchResult, type GraphSearchRunner, passesFilter } from "@seshat/models";
 import { type SearchOptions, type SearchSpec, makeScorer, runSearch } from "./evolve.ts";
 import { booleans, numbers, runValues } from "./sandbox.ts";
 
@@ -80,7 +80,7 @@ function start(random: RandomSource, minVertices: number, maxVertices: number): 
 export async function localSearch(input: GraphSearchInput, deadline: number): Promise<{ hit?: GraphSearchHit; effort: { [key: string]: Json } }> {
   const { bounds, filter, problem } = input;
   const random = seeded(input.seed);
-  const limits = { callMs: 500, totalMs: 15_000, memoryMb: 128, seed: input.seed };
+  const limits = { callMs: bounds.callMs ?? 500, totalMs: 15_000, memoryMb: 128, seed: input.seed };
   const minV = Math.max(1, filter.minVertices);
   const maxV = Math.min(bounds.maxVertices, filter.maxVertices);
   let steps = 0;
@@ -93,7 +93,8 @@ export async function localSearch(input: GraphSearchInput, deadline: number): Pr
     scored += graphs.length;
     return numbers(run);
   };
-  const allowed = (g: Graph): boolean => (!filter.connected || isConnected(g)) && (filter.maxEdges === null || g.edges.length <= filter.maxEdges);
+  // Every field of the recorded filter is applied: vertices, edges, connectivity.
+  const allowed = (g: Graph): boolean => passesFilter(g, filter);
   for (restarts = 1; restarts <= bounds.restarts; restarts++) {
     let current = start(random, minV, maxV);
     let currentScore = (await score([current]))[0] ?? -Infinity;
@@ -184,7 +185,7 @@ export async function familySearch(input: GraphSearchInput, deadline: number): P
     const graphs: Array<{ k: number; graph: Graph }> = [];
     built.values.forEach((value, i) => {
       const graph = graphOf(value, bounds.maxVertices);
-      if (graph !== undefined && graph.n >= filter.minVertices) graphs.push({ k: parameters[i] as number, graph });
+      if (graph !== undefined && passesFilter(graph, filter)) graphs.push({ k: parameters[i] as number, graph });
     });
     if (graphs.length === 0) continue;
     const verdicts = booleans(await runValues(input.predicate, graphs.map((g) => g.graph), limits, problem.signal));
