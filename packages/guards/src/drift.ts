@@ -2,7 +2,7 @@ import type { Json } from "@seshat/core";
 import type { MemoryNode, MemoryStore } from "@seshat/memory";
 
 /**
- * What a guard or a detector found (plan §9). The first five are drift detectors, which stop and
+ * What a guard or a detector found (plan §9). The first six are drift detectors, which stop and
  * restart a session; the others are guards, which reject a call, remove a text or note a finding.
  */
 export const DRIFT_KINDS = [
@@ -11,6 +11,7 @@ export const DRIFT_KINDS = [
   "statement_drift",
   "restated_target",
   "length_growth",
+  "repeated_failure",
   "unresolved_citation",
   "sorry_as_known",
   "raw_error_text",

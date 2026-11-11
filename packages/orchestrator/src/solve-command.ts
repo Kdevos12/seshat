@@ -206,7 +206,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
   io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}.`);
-  io.out(`Host: ${host}. Lines: ${(flags.lines ?? [...STUDENT_LINES]).join(", ")}, with the budget gate and the probe first.`);
+  io.out(`Host: ${host}. Lines: ${(flags.lines ?? (defaults === "v2" ? [...STUDENT_LINES, "M6"] : [...STUDENT_LINES])).join(", ")}, with the budget gate and the probe first.`);
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
   let report: DoctorReport | undefined;

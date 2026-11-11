@@ -373,6 +373,11 @@ export interface EventDataMap {
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
     failureDetail?: string;
+    /**
+     * The class of the last check of a session that a round's slice cut (`RunConfig.budgetRounds`, which records it only then). It is not a
+     * failure: `failureClass` stays absent for a budget cut. Only the rotation's measure of Lean progress reads it (documentation/scheduler.md).
+     */
+    lastCheckClass?: string;
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };
@@ -625,6 +630,31 @@ export interface EventDataMap {
     reason: string;
   };
   /**
+   * A round of a run's budget in rounds began (`RunConfig.budgetRounds`, plan change CA8, documentation/scheduler.md, "The budget in rounds"):
+   * the problems it works, in the order they are given a slice, the most one of them may have spent in all (`capUsd`, `runUsd / (4K) * 2^round`),
+   * and where each stood at its start (`marks`, the measure its end is compared with: absent in round 0). `resumed` names the parked problems
+   * this round takes up again. A resumed run reads these events to continue the same rotation. Written by the orchestrator only.
+   */
+  "budget.round": {
+    round: number;
+    capUsd: number;
+    runUsd: number;
+    problems: string[];
+    marks?: { [problemId: string]: { proved: number; holes: number | null; depth: number } };
+    resumed?: string[];
+  };
+  /**
+   * A problem without Lean progress at the end of its round was parked: it waits until every other problem is solved or parked and budget
+   * remains. `usd` is what it had spent in all. Written by the orchestrator only; it changes no claim.
+   */
+  "problem.parked": {
+    problemId: string;
+    round: number;
+    usd: number;
+    capUsd: number;
+    reason: string;
+  };
+  /**
    * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
    * name, version and content hash, what it adds and the programs and servers its tools would run. Written
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
@@ -780,6 +810,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "budget.gated",
   "pack.installed",
   "pack.removed",
+  "budget.round",
+  "problem.parked",
 ];
 
 /** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */

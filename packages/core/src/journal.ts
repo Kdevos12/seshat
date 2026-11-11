@@ -356,6 +356,19 @@ export class Journal {
         if (typeof event.data.reason !== "string" || event.data.reason === "") throw new Error(`turn ${event.data.turn}: a turn ends for a reason`);
         return;
       }
+      case "budget.round": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!Number.isInteger(d.round) || d.round < 0) throw new Error(`budget.round: bad round ${String(d.round)}`);
+        if (!(d.capUsd > 0) || !(d.runUsd > 0)) throw new Error(`budget.round ${d.round}: the cap and the run's budget must be positive`);
+        if (!Array.isArray(d.problems) || d.problems.length === 0) throw new Error(`budget.round ${d.round}: a round works at least one problem`);
+        return;
+      }
+      case "problem.parked": {
+        this.onlyOrchestrator(event.type, actor);
+        if (!p.problem(event.data.problemId)) throw new Error(`unknown problem ${event.data.problemId}`);
+        return;
+      }
       case "pack.installed":
       case "pack.removed": {
         this.onlyOrchestrator(event.type, actor);
