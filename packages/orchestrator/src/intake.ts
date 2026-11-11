@@ -65,6 +65,8 @@ export interface IntakeStepOptions {
   config: IntakeConfig | undefined;
   /** True: nothing goes outside, whatever else is asked (`RunConfig.private`). */
   private: boolean;
+  /** The run already journaled the answer for this problem (`recordConsent`): the step does not. */
+  consentRecorded?: boolean;
   /** `RunConfig.leanSearch`: the answer on third parties also governs `lean.search`, so it is journaled even when the literature is not asked. */
   leanSearch?: boolean;
   journal: Journal;
@@ -90,6 +92,25 @@ export interface IntakeStepOptions {
 }
 
 /**
+ * Journals who allowed the problem to go outside, and how (`intake.consented`), once per problem: when the literature or `lean.search` is asked,
+ * or `--private` is on. A run calls it for every problem it takes up, whether or not the intake step runs, so the answer the policy applies is
+ * always in the journal; a resumed run finds it in `events` and writes nothing.
+ */
+export function recordConsent(o: { journal: Journal; config: IntakeConfig | undefined; private: boolean; leanSearch: boolean; events: readonly HarnessEvent[]; problemId: string; user?: string }): void {
+  const config = o.config ?? {};
+  if (!(config.literature === true || o.private || o.leanSearch)) return;
+  if (o.events.some((e) => e.type === "intake.consented" && e.data.problemId === o.problemId)) return;
+  const consent = config.consent;
+  const decision: EventDataMap["intake.consented"] = o.private
+    ? { problemId: o.problemId, allowed: false, via: "private" }
+    : consent !== undefined
+      ? { problemId: o.problemId, allowed: consent.allowed, via: consent.via }
+      : { problemId: o.problemId, allowed: false, via: "default" };
+  const actor = decision.via === "asked" || decision.via === "flag" ? `human:${o.user as string}` : "orchestrator";
+  o.journal.emit("intake.consented", decision, actor);
+}
+
+/**
  * The step for one problem. Records `intake.consented` when the literature is asked or `--private` is on, the `hygiene` and `literature`
  * nodes, and `intake.finished`; returns the breakpoint a run with a person should stop at. A failure of a check is a note, never a
  * failure of the problem: only an interruption goes up.
@@ -99,17 +120,7 @@ export async function intakeStep(o: IntakeStepOptions): Promise<IntakeStep> {
   const config = o.config ?? {};
   const out: IntakeStep = { hygiene: [] };
   const wantsLiterature = config.literature === true;
-  const consented = (o.events ?? []).some((e) => e.type === "intake.consented" && e.data.problemId === o.problemId);
-  if ((wantsLiterature || o.private || o.leanSearch === true) && !consented) {
-    const consent = config.consent;
-    const decision: EventDataMap["intake.consented"] = o.private
-      ? { problemId: o.problemId, allowed: false, via: "private" }
-      : consent !== undefined
-        ? { problemId: o.problemId, allowed: consent.allowed, via: consent.via }
-        : { problemId: o.problemId, allowed: false, via: "default" };
-    const actor = decision.via === "asked" || decision.via === "flag" ? `human:${o.user as string}` : "orchestrator";
-    o.journal.emit("intake.consented", decision, actor);
-  }
+  if (o.consentRecorded !== true) recordConsent({ journal: o.journal, config: o.config, private: o.private, leanSearch: o.leanSearch === true, events: o.events ?? [], problemId: o.problemId, ...(o.user !== undefined ? { user: o.user } : {}) });
   const allowed = o.private ? false : wantsLiterature && config.consent?.allowed === true;
 
   if (config.hygiene === true && o.checker !== undefined) {
