@@ -54,3 +54,38 @@ test("a hole's statement may not name a hole, with or without a uses line", () =
   const named = `${A}\n\n-- uses: aux_a\nlemma aux_b (n : Nat) (h : aux_a = aux_a) : n = n := by\n  sorry`;
   assert.match(readSketch({ aux: named, proof: "exact aux_b" }, blueprint).problem ?? "", /names aux_a/);
 });
+
+test("aux_a and aux_ab in one blueprint are two holes: a name is not read inside a longer one", () => {
+  const ab = hole("aux_ab", "(n : Nat) : 0 + n = n", "aux_a");
+  const ok = readSketch({ aux: `${A}\n\n${ab}`, proof: "exact aux_ab 1" }, blueprint);
+  assert.equal(ok.problem, undefined);
+  assert.deepEqual(dependencyOrder(ok.holes, "aux_ab"), ["aux_a", "aux_ab"]);
+  // the main proof names aux_ab only, and aux_ab does not declare aux_a: aux_a is not reached (aux_ab does not count as a use of it)
+  const lost = readSketch({ aux: `${A}\n\n${hole("aux_ab", "(n : Nat) : 0 + n = n")}`, proof: "exact aux_ab 1" }, blueprint);
+  assert.match(lost.problem ?? "", /aux_a does not reach the target/);
+  // a uses line naming aux_a does not declare aux_ab
+  assert.deepEqual(readSketch({ aux: `${A}\n\n${ab}`, proof: "x" }).holes.map((h) => h.uses), [[], ["aux_a"]]);
+});
+
+test("a name twice in a uses line counts once", () => {
+  const r = readSketch({ aux: `${A}\n\n${B("aux_a, aux_a aux_a")}`, proof: "exact aux_b 1" }, blueprint);
+  assert.equal(r.problem, undefined);
+  assert.deepEqual(r.holes[1]?.uses, ["aux_a"]);
+});
+
+test("a uses line above a command that is not a hole is dropped, and does not carry to the next hole", () => {
+  const aux = `${A}\n\n-- uses: aux_a\ndef helper : Nat := 1\n\n${B()}`;
+  const r = readSketch({ aux, proof: "exact aux_a 1 ▸ aux_b 1" }, blueprint);
+  assert.equal(r.problem, undefined);
+  assert.deepEqual(r.holes.map((h) => h.uses), [[], []]);
+  assert.equal(r.others.length, 1);
+  // directly above the next hole, with only the def between them and no blank line, it is the def's and not the hole's
+  const tight = readSketch({ aux: `${A}\n\n-- uses: aux_a\ndef helper : Nat := 1\n${B()}`, proof: "exact aux_a 1 ▸ aux_b 1" }, blueprint);
+  assert.deepEqual(tight.holes.map((h) => h.uses), [[], []]);
+});
+
+test("a hole that names itself, in its uses line or in its own statement, is refused", () => {
+  assert.match(readSketch({ aux: hole("aux_a", "(n : Nat) : n + 0 = n", "aux_a"), proof: "exact aux_a 1" }, blueprint).problem ?? "", /cycle: aux_a -> aux_a/);
+  const own = `lemma aux_a (n : Nat) (h : aux_a = aux_a) : n = n := by\n  sorry`;
+  assert.match(readSketch({ aux: own, proof: "exact aux_a" }, blueprint).problem ?? "", /names aux_a/);
+});

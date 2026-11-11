@@ -48,6 +48,18 @@ describe("blueprints: registering a sketch whose holes depend on each other (CA9
     }
   });
 
+  it("refuses a blueprint whose hole restates the target with the class restates_target, and makes nothing", { timeout: 30000 }, async () => {
+    // the target of the demo file is `n + 0 = n`
+    const { events } = await register("lemma aux_r (n : ℕ) : n + 0 = n := by\n  sorry", "exact main_ok aux_r");
+    const [record] = nodes(events, "m12_sketch");
+    assert.equal(record?.healthy, false);
+    assert.equal(record?.failureClass, "restates_target");
+    assert.match(String(record?.problem), /states the target again/);
+    assert.equal(ofType(events, "claim.created").filter((e) => e.actor === "line:M12").length, 0, "no claim is made");
+    assert.equal(ofType(events, "edge.added").filter((e) => e.data.kind === "decomposes_into").length, 0);
+    assert.equal(ofType(events, "task.created").filter((e) => e.data.proposedBy === "line:M12").length, 0);
+  });
+
   it("without the option the sketch is read as before (the uses line is a comment)", { timeout: 30000 }, async () => {
     const { events } = await register(BP_AUX, BP_PROOF, false);
     const [record] = nodes(events, "m12_sketch");
