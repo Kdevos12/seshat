@@ -27,3 +27,16 @@ test("an error, a changed stub, a sorry in a helper or in the proof, or a file L
   assert.equal(readWork({ aux: stub, proof: "x" }, report({ leanStatus: "server_error" }), [dep]).done, false);
   assert.equal(readWork({ aux: stub, proof: "x" }, report({ editsOutsideRegions: true }), [dep]).done, false);
 });
+
+test("a helper lemma that uses a dependency is refused, with the rule in the reason", () => {
+  const stub = stubsRegion([dep]);
+  const r = readWork({ aux: `${stub}\n\nlemma helper (n : Nat) : n + 0 = n := aux_a n`, proof: "exact helper n" }, report(), [dep]);
+  assert.equal(r.done, false);
+  assert.match(r.reason ?? "", /helper.*uses the given lemma aux_a/);
+  assert.match(r.reason ?? "", /inside the proof of the hole/);
+  // a longer name that merely starts with the dependency's name, and a mention in a comment, are not a use
+  const ok = readWork({ aux: `${stub}\n\nlemma helper (n : Nat) : n = n := by\n  -- not aux_a\n  exact aux_ab n`, proof: "x" }, report(), [dep]);
+  assert.equal(ok.done, true);
+  // the hole's own proof may use it
+  assert.equal(readWork({ aux: stub, proof: "exact aux_a n" }, report(), [dep]).done, true);
+});
