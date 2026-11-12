@@ -255,6 +255,8 @@ export interface EventDataMap {
     target: string;
     source: SourceRef;
     domain: string[];
+    /** The cap the problem's ledger was opened with, recorded only under `RunConfig.budgetShare` (plan change PA4). */
+    allowanceUsd?: number;
   };
   "problem.finished": {
     problemId: string;

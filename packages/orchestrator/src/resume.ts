@@ -151,6 +151,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.consolidation === true ? { consolidation: true } : {}),
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
+    ...(typeof r.budgetShare === "number" ? { budgetShare: r.budgetShare } : {}),
     ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"

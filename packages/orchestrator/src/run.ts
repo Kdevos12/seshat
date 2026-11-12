@@ -160,6 +160,13 @@ export interface RunConfig {
    * Absent: off, and a problem is worked until its allowance is spent, as it always was.
    */
   budgetRounds?: boolean;
+  /**
+   * With a run budget, a problem's ledger is capped when it is opened (or resumed) at `min(problemUsd, budgetShare x what remains of the run
+   * budget / the problems not yet finished, this one included)`, so that one problem cannot starve the ones after it (plan change PA4,
+   * documentation/scheduler.md). With `budgetRounds` the slices of a problem are cut from this ledger, so the bound holds for its total.
+   * Absent, or a run without a run budget: today's behaviour exactly. A number above 0.
+   */
+  budgetShare?: number;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -390,6 +397,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.checkTimeoutSec !== undefined && !(config.checkTimeoutSec >= 1)) problems.push(`checkTimeoutSec must be at least 1 second, got ${config.checkTimeoutSec}`);
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
+  if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -784,6 +792,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
+      ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       bench: { hash: o.index.hash, source: { ...o.index.source } },
@@ -1066,10 +1075,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
    * and its registration, its tasks, its spend, the candidate it found and what its provers carried are
    * taken from the journal (documentation/ledger.md, "Resume").
    */
+  const problemCap = (ownSpentUsd: number): number => {
+    const { problemUsd, runUsd } = config.budget;
+    if (config.budgetShare === undefined || runUsd === undefined) return problemUsd;
+    const unfinished = Math.max(1, o.problems.length - results.length);
+    return Math.min(problemUsd, (config.budgetShare * Math.max(0, runUsd - runLedger.usd + ownSpentUsd)) / unfinished);
+  };
+
   const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem, rotation?: Rotation, grant?: Grant): Promise<ProblemResult | undefined> => {
     const started = performance.now();
-    const ledger = runLedger.child(config.budget.problemUsd);
-    if (again !== undefined) ledger.seed(journal.projection.problemSpend(entry.id));
+    // The problem's cap (PA4): the allowance, bounded by its share of what the run has left. A resumed problem's own spend is part of what the
+    // journal says the run has spent, so it counts as left, and the bound is the one the problem was opened with.
+    const priorSpend = again !== undefined ? journal.projection.problemSpend(entry.id) : undefined;
+    const capUsd = problemCap(priorSpend?.usd ?? 0);
+    const ledger = runLedger.child(capUsd);
+    if (priorSpend !== undefined) ledger.seed(priorSpend);
     const domain = entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`);
     let attempts = 0;
     // The problem's file is read before its claim is made: its prefix is the header the statement is read under.
@@ -1118,6 +1138,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           target: entry.fullName,
           source: { repo: o.index.source.repo, rev: o.index.source.rev, path: entry.path, line: entry.line },
           domain,
+          ...(config.budgetShare !== undefined && config.budget.runUsd !== undefined ? { allowanceUsd: capUsd } : {}),
         },
         "orchestrator",
       );
@@ -1280,7 +1301,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         theorem: entry.fullName,
         provers: config.provers,
         sessions: config.sessions,
-        problemUsd: config.budget.problemUsd,
+        problemUsd: capUsd,
       });
       // The provers had started if any of their tasks ever ran: the lines' `beforeProvers` came before that.
       const begun = again !== undefined && proverTasks.some((task) => (tasks.get(task.taskId)?.running_seq ?? null) !== null);
@@ -1344,7 +1365,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             price: perMillion,
             ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd, pSuccess: INTAKE_P_SUCCESS }); return { action: a.action, reason: a.reason }; } } : {}),
             checker: new RegistryLeanChecker(registry, { actor: "orchestrator" }),
-            allowanceUsd: config.budget.problemUsd,
+            allowanceUsd: capUsd,
             ...(o.testLemmas?.get(entry.id) !== undefined ? { testLemmas: o.testLemmas.get(entry.id) as TestLemmas } : {}),
             problemId: entry.id,
             claimId,
@@ -1600,7 +1621,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // the journal says they stopped. Nothing inside a slice differs from a problem worked alone.
       let settled: PromiseSettledResult<ProverResult>[];
       for (let current = grant; ; ) {
-        if (current !== undefined && !idle) sliceLedger = ledger.child(Math.max(0, Math.min(current.capUsd, config.budget.problemUsd) - ledger.usd));
+        if (current !== undefined && !idle) sliceLedger = ledger.child(Math.max(0, Math.min(current.capUsd, capUsd) - ledger.usd));
         settled = idle ? [] : await gated();
         const paused =
           rotation !== undefined && current !== undefined && !idle && workbench.candidate === undefined && !controller.signal.aborted && !ledger.exhausted && turn?.ended === undefined &&
