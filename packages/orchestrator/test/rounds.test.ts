@@ -149,3 +149,45 @@ describe("a run's budget in rounds (CA8)", () => {
     }
   });
 });
+
+describe("a probe that a slice paused", () => {
+  // At this price one model response costs about $0.97. Two problems, a problem allowance of $28 (a probe cap of $2.80) and a run allowance of $7:
+  // round 0's slice is $7 / 8 = $0.875, under the probe's cap, so the probe's one response crosses the slice and the slice pauses it.
+  const SLICE_PRICE = 400;
+  const cfg = { provers: 2, sessions: 3, seed: "slice-probe", budget: { problemUsd: 28, runUsd: 7 }, budgetRounds: true, gate: { floor: 0 } };
+  const gates = (events: Parameters<typeof ofType>[0]) => ofType(events, "budget.gated").map((e) => e.data);
+
+  it("goes on at the next slice, as a probe, within the probe's cap; the gate answers once, and the problem is solved when the probe succeeds", async () => {
+    const win = check("exact trivial_proof");
+    const { result, events } = await demoRun({
+      pricePerMillion: SLICE_PRICE, problems: 2, file: THREE, config: cfg,
+      responses: [check("bad 1"), check("bad 2"), win, win],
+    });
+    assert.deepEqual(result.problems.map((p) => p.outcome), ["candidate", "candidate"]);
+    const cut = ofType(events, "attempt.finished").filter((e) => e.data.outcome === "budget_exhausted");
+    assert.ok(cut.length >= 1, "a slice cut a probe's session");
+    const probeCap = 0.1 * 28;
+    // One probe row and no gate answer more than once: a probe is journaled once, and a solved problem was never judged.
+    for (const problemId of new Set(gates(events).map((g) => g.problemId))) {
+      assert.equal(gates(events).filter((g) => g.problemId === problemId && g.action === "probe").length, 1);
+    }
+    const started = ofType(events, "task.status_changed").filter((e) => e.data.to === "running");
+    const perTask = new Map<string, number>();
+    for (const e of started) perTask.set(e.data.taskId, (perTask.get(e.data.taskId) ?? 0) + 1);
+    assert.ok([...perTask.values()].every((n) => n === 1), "no task is started twice");
+    assert.ok(result.problems.every((p) => p.usd <= probeCap), "the probe stayed within its cap");
+  });
+
+  it("judges as before when the continued probe makes no progress", async () => {
+    const { result, events } = await demoRun({
+      pricePerMillion: SLICE_PRICE, problems: 2, file: THREE, config: cfg,
+      responses: Array.from({ length: 12 }, (_, k) => check(`bad ${k}`)),
+    });
+    assert.ok(result.problems.every((p) => p.outcome === "unsolved"));
+    for (const problemId of new Set(gates(events).map((g) => g.problemId))) {
+      const own = gates(events).filter((g) => g.problemId === problemId);
+      assert.deepEqual(own.map((g) => `${g.action}:${g.by}`), ["probe:probe", "skip:progress"]);
+    }
+    for (const p of result.problems) assert.ok(p.usd <= 2.8 + 1, `${p.problemId} spent ${p.usd} on its probe: its cap and the response that crossed it`);
+  });
+});

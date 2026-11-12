@@ -1523,6 +1523,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         const paused = tasks.get(task.taskId)?.status === "running";
         return { begin: !paused, resumed: carried.get(task.taskId) ?? (paused ? proverResumeOf(journal, blobs, task.taskId) : undefined) };
       };
+      /** Set when a slice of the rotation paused the probe's prover: the next slice takes the probe up where it stopped. */
+      let probeCut = false;
+      /** What a task's attempts have cost so far, in dollars. */
+      const spentBy = (taskId: string): number => journal.projection.attemptsOfTask(taskId).reduce((sum, a) => sum + (a.usd ?? 0), 0);
       const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
         const [first, ...rest] = working;
         if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, launch(task)))));
@@ -1530,9 +1534,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         if (stage === "start" || stage === "probing") {
           const { capUsd } = gate.probe();
           const resumedFirst = carried.get(first.taskId);
-          // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
-          if (resumedFirst === undefined || resumedFirst.session < 1) {
+          if (probeCut) {
+            // A slice paused the probe's session (its task is still running): the probe goes on from where the journal says it stopped, still a probe,
+            // under what is left of its cap, for one more session. Nothing left of the cap, or no session left: the gate judges.
+            probeCut = false;
+            const resumed = proverResumeOf(journal, blobs, first.taskId);
+            const left = capUsd - spentBy(first.taskId);
+            if (resumed !== undefined && resumed.session < config.sessions && left > 1e-9) {
+              const result = await settleRun(startProver(first, { begin: false, resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
+              if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
+              if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+            }
+          } else if (resumedFirst === undefined || resumedFirst.session < 1) {
+            // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
             const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
+            if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
           }
           const widened = await gate.widen(working.length);
