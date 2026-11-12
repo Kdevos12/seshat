@@ -25,8 +25,10 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 
 ### Not run
 
-Three sites answered a real probe on 2026-11-12 (OpenAlex, arXiv, zbMATH); Semantic Scholar refused (HTTP 429) without a key. The
-requests corrected after that probe (below) have not run against the sites yet, and no intake step has run for real. The tests answer
+Three sites answered real probes on 2026-11-12 (OpenAlex, arXiv, zbMATH), before and after the corrections below; Semantic Scholar
+refused both times (HTTP 429) without a key, so its parser has not read a real answer. No intake step has run for real, and how well
+the intake's three query forms find a known result is not measured (a query ending in "counterexample disproof" brought OpenAlex hits
+about other disproofs). The tests answer
 from a fake server (`packages/lit/test/fake-lit.ts`) and from the answers that probe recorded (`packages/lit/test/fixtures/real/`:
 zbMATH in full, OpenAlex and arXiv cut to their first result).
 
@@ -37,7 +39,11 @@ zbMATH in full, OpenAlex and arXiv cut to their first result).
   ("contents unavailable due to conflicting licenses"): it now counts as no text, and the hit's text is then `keywords: a; b; c`.
   OpenAlex answered a `meta.notice` addressed to the reader: it is data and never reaches a hit (only `results` is read).
   Without a key OpenAlex charges each search ($0.001) to a daily allowance of $0.10 shared by everyone at the same address, about a
-  hundred searches a day, which the cache spares; a key setting for OpenAlex is not built. Semantic Scholar needs a key. Per backend, three optional settings: `apiKeyEnv` (the NAME of an environment variable, read at call time;
+  hundred searches a day, which the cache spares; a key setting for OpenAlex is not built. Semantic Scholar needs a key.
+  A second probe with the corrected requests: arXiv read the AND request as written (2 results, then 111 for a longer query, on topic);
+  OpenAlex's third hit for the default query was the paper that refutes the conjecture the query names; zbMATH answered HTTP 404 to a
+  longer query that matched nothing, which now counts as no hit and not as a site out of reach.
+  Per backend, three optional settings: `apiKeyEnv` (the NAME of an environment variable, read at call time;
   when set and not empty, the requests of `semantic-scholar` carry the header `x-api-key`; the key is never in an address, a cache file, an
   error or `raw`), `minIntervalMs` (the least time between two requests to that site, over the global setting; `local.json` gives arXiv 3000)
   and `retry429Ms` (an HTTP 429 is retried once after this pause; absent: no retry; `local.json` gives Semantic Scholar 2000).
