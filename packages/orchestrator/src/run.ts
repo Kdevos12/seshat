@@ -1539,9 +1539,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             // under what is left of its cap, for one more session. Nothing left of the cap, or no session left: the gate judges.
             probeCut = false;
             const resumed = proverResumeOf(journal, blobs, first.taskId);
-            const left = capUsd - spentBy(first.taskId);
+            const left = gate.probeTotalUsd(capUsd) - spentBy(first.taskId);
             if (resumed !== undefined && resumed.session < config.sessions && left > 1e-9) {
-              const result = await settleRun(startProver(first, { begin: false, resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
+              const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
               if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
               if (result.status === "rejected" || result.value.stop !== "probe") return [result];
             }
@@ -1550,6 +1550,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
             if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+          }
+          // A probe its cap cut while it was still working, with no Lean progress, has told the gate nothing: one extension (`probeExtend`).
+          const extension = gate.extension({ taskId: first.taskId, capUsd });
+          if (extension !== undefined) {
+            const resumed = proverResumeOf(journal, blobs, first.taskId);
+            if (resumed !== undefined && resumed.session < config.sessions) {
+              const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(extension.capUsd) } }));
+              if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
+              if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+            }
           }
           const widened = await gate.widen(working.length);
           if (widened.action === "skip" && turn !== undefined) {
@@ -1563,6 +1573,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             return [{ status: "fulfilled", value: { name: first.name, attempts: workbench.attemptIds.length, stop: "turn" } }];
           }
           if (widened.action === "skip") {
+            // After a resumption the probe's task is `ready` again: it takes up its place before it ends.
+            if (tasks.get(first.taskId)?.status === "ready") tasks.start(first.taskId, `prover ${first.name} resumes after the interruption, to end at the gate`);
             endProverTask(tasks, first, { stop: "gate", sessions: config.sessions, budget: "the problem's budget" });
             for (const task of rest) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");
             tasks.promote(entry.id);

@@ -62,6 +62,14 @@ describe("what the sets turn on, from one source", () => {
     assert.match(describeSet("v2", () => false).join("; "), /compute\.sage.*does not offer it.*lean\.search.*does not offer it/s);
   });
 
+  it("turns on the probe's extension in v2 and not in v1: the gate of v1 is what it was", () => {
+    const of = (defaults: "v1" | "v2") => studentConfig({ selection: { ids: ["p"] }, model: "faux/m", maxUsd: 2, defaults }).gate;
+    assert.deepEqual(of("v2"), { probeExtend: true });
+    assert.deepEqual(of("v1"), {});
+    assert.match(describeSet("v2").join("; "), /extension for a probe its cap cut/);
+    assert.doesNotMatch(describeSet("v1").join("; "), /extension/);
+  });
+
   it("keeps v1's RunConfig exactly as it was, and none of the three in the RunConfig of any set", () => {
     assert.deepEqual(DEFAULTS_SETS.v1, {});
     for (const set of Object.values(DEFAULTS_SETS)) for (const key of ["intake", "leanSearch", "autoTool"]) assert.equal(key in set, false);

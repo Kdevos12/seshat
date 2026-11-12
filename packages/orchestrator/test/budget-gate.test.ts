@@ -154,6 +154,67 @@ describe("the budget gate: before a session", () => {
     });
   });
 
+  describe("a probe its cap cut (probeExtend)", () => {
+    // At this price the probe's first response already crosses its cap of $0.10, with a check that typed nothing: no Lean progress.
+    const PRICE = 60;
+    const config = { provers: 2, sessions: 3, seed: "extend", budget: { problemUsd: 1 }, gate: { floor: 0, probeExtend: true } };
+    const bad = (n: number) => Array.from({ length: n }, (_, k) => check(`bad ${k}`));
+    const spent = (events: readonly HarnessEvent[]) => ofType(events, "attempt.finished").reduce((sum, a) => sum + (a.data.usd ?? 0), 0);
+
+    it("runs one extension under twice the cap, journaled as a second probe row with its reason, and the problem is solved when it succeeds", async () => {
+      const { events, result } = await demoRun({ responses: [check("bad"), check("exact trivial_proof")], pricePerMillion: PRICE, config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:probe:probe"]);
+      assert.match(gates(events)[1]?.reason ?? "", /^the probe was cut by its cap after 1 Lean check: one extension of 0\.2000 dollars/);
+      assert.deepEqual(ofType(events, "attempt.finished").map((a) => a.data.outcome), ["budget_exhausted", "valid"]);
+      assert.deepEqual(ofType(events, "attempt.started").map((a) => [a.data.prover, a.data.iteration]), [["p1", 1], ["p1", 2]]);
+      assert.equal(result.problems[0]?.outcome, "candidate");
+    });
+
+    it("lets a second cut end at the gate as before, and spends at most three times the cap in all", async () => {
+      const { events, result } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 2, "one extension, not two");
+      assert.equal(result.problems[0]?.outcome, "unsolved");
+      // The cap of the probe (0.10) and its extension (0.20), and the response that crossed each.
+      assert.ok(spent(events) <= 0.3 + 0.2, `the probe spent ${spent(events)}`);
+    });
+
+    it("gives none to a probe whose session ended because the model stopped", async () => {
+      const { events } = await demoRun({ responses: [check("bad"), say("notes")], config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+
+    it("gives none to a probe that made Lean progress: the gate widens it", async () => {
+      const { events } = await demoRun({ responses: [check("sorry"), say("notes"), ...bad(6)], pricePerMillion: PRICE, config: { ...config, gate: { ...config.gate, share: { wave: 1, session: 1 } } } });
+      assert.equal(gates(events).filter((g) => g.action === "probe").length, 1);
+    });
+
+    it("changes nothing without the setting", async () => {
+      const { events } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config: { ...config, gate: { floor: 0 } } });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+
+    it("is granted once across an interruption, whether it was cut before the row or after it", async () => {
+      const whole = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      const at = whole.events.findIndex((e, i) => e.type === "budget.gated" && e.data.action === "probe" && i > 0 && whole.events.slice(0, i).some((x) => x.type === "budget.gated"));
+      for (const cut of [at, at + 1]) {
+        const used = whole.events.slice(0, cut).filter((e) => e.type === "attempt.charged").length;
+        const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, pricePerMillion: PRICE, responses: bad(12).slice(used) });
+        assert.equal(gates(resumed.events).filter((g) => g.action === "probe").length, 2, `one probe and one extension, cut at ${cut}`);
+        assert.ok(ofType(resumed.events, "attempt.started").length <= 2, `cut at ${cut}`);
+        assert.equal(resumed.result.problems[0]?.outcome, "unsolved");
+        assertSound(resumed.events);
+      }
+    });
+
+    it("counts the extension apart in the report, not as another probe", async () => {
+      const { result } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      assert.match(renderRunReport(result.report), /1 problem\(s\) probed.*1 probe\(s\) cut by their cap ran one extension/);
+    });
+  });
+
   it("is off without the option: no answer, no probe, the provers start together as before", async () => {
     const { events } = await demoRun({ responses: [check("bad"), say("n"), check("bad"), say("n")], config: { provers: 2, sessions: 1 } });
     assert.deepEqual(gates(events), []);
