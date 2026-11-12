@@ -88,6 +88,13 @@ describe("scanRegion", () => {
 });
 
 describe("forbiddenTokensIn", () => {
+  it("refuses a partial definition, not a name that holds the word", () => {
+    assert.deepEqual(forbiddenTokensIn("partial def aux_f : Nat → Nat\n  | n => aux_f n"), ["partial"]);
+    assert.deepEqual(forbiddenTokensIn("exact Finset.sum_partial_le h"), []);
+    assert.deepEqual(forbiddenTokensIn("exact partial_sum_le h"), []);
+    assert.deepEqual(forbiddenTokensIn("exact (PartialOrder.le_refl a)"), []);
+  });
+
   it("lists the forbidden tokens of a text whose comments are blanked, in the order of the list, with whole-word matching", () => {
     assert.deepEqual(forbiddenTokensIn("n = n #eval IO.Process.exit 7 macro_rules"), ["#eval", "macro_rules", "IO"]);
     assert.deepEqual(forbiddenTokensIn("exact _root_.Lean.ofReduceBool"), ["Lean"]);
