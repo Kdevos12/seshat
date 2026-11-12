@@ -31,6 +31,8 @@ const SYMBOLS: Array<[RegExp, string]> = [
 /** A Lean text read as words: identifiers split on dots, underscores and camel case, symbols named, binders' single letters dropped. */
 export function leanWords(lean: string): string {
   let text = lean.replace(/--.*$/gm, " ").replace(/\/-[\s\S]*?-\//g, " ");
+  // A binder's names say nothing of the mathematics (`(hzle1 : ...)`, `(z : ...)`): only what follows the colon is read.
+  text = text.replace(/[({\[⦃]\s*[^():{}\[\]⦃⦄|,]+?\s*:(?!=)/g, " ");
   for (const [pattern, word] of SYMBOLS) text = text.replace(pattern, word);
   text = text.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_.]/g, " ");
   const words = text.match(/[\p{L}]{3,}/gu) ?? [];
@@ -42,6 +44,15 @@ export function docstringBefore(prefix: string): string | undefined {
   const found = /\/--([\s\S]*?)-\/\s*(?:@\[[^\]]*\]\s*)*$/.exec(prefix);
   const doc = found?.[1]?.replace(/\s+/g, " ").trim();
   return doc === undefined || doc === "" ? undefined : doc;
+}
+
+/**
+ * The docstring of a declaration, from the two parts a sketch cuts its file into: a sketch keeps the docstring at the start of its
+ * header (so that the prover sees it with the statement), and a file cut by hand may leave it at the end of the prefix.
+ */
+export function docstringOf(parts: { prefix: string; header: string }): string | undefined {
+  const doc = /^\s*\/--([\s\S]*?)-\//.exec(parts.header)?.[1]?.replace(/\s+/g, " ").trim();
+  return doc !== undefined && doc !== "" ? doc : docstringBefore(parts.prefix);
 }
 
 /**
