@@ -1491,6 +1491,11 @@ gate; a hint, never a status); NL3 (a capped, journaled `consult` tool to anothe
 with PA11; NL5 (LeanDex as a `lean.search` backend after a free recorded probe) when `lean.search` is
 next touched. NL4 and NL6 stay proposed.
 
+Also from `plans/plan-change-knowledge-graphs.md` (Ruling 37), a reduced KG1 before the rest of Task 51:
+an arm `solve-v2-graph` (`v2` plus M2 and M4) with its report counts and `harness ablate --arms`, then a
+smoke run of that arm alone on four or five of Task 50's problems, $0.50 each, $1 in all. KG2 to KG4 stay
+proposed.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
