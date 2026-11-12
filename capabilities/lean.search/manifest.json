@@ -178,8 +178,9 @@
       "factory": "lean-search",
       "description": "The three backends the host profile sets up, asked together and merged: remote (remoteUrl, https, no redirect, a cap on the answer, a time limit), pattern (patternUrl, a Loogle-like service, or the local index) and local (index, a file of declarations, BM25). Not run against a real service or a Mathlib-sized index.",
       "environment": {
-        "remoteUrl": "the address LEAN_SEARCH_URL gives, or none",
-        "patternUrl": "the address LEAN_PATTERN_URL gives, or none",
+        "remoteUrl": "the address LEAN_SEARCH_URL gives; in the local profile https://leansearch.net/search when it is not set",
+        "remoteQuery": "text or list, as LEAN_SEARCH_QUERY gives; list in the local profile (leansearch.net reads only that form)",
+        "patternUrl": "the address LEAN_PATTERN_URL gives; in the local profile https://loogle.lean-lang.org/json when it is not set",
         "index": "the file LEAN_SEARCH_INDEX names, or none"
       }
     }

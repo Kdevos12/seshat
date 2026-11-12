@@ -1,0 +1,46 @@
+[
+  [
+    {
+      "result": {
+        "module_name": ["Mathlib", "Algebra", "Group", "Defs"],
+        "kind": "theorem",
+        "name": ["add_comm"],
+        "signature": " {G : Type u_1} [AddCommMagma G] (a b : G) : a + b = b + a",
+        "type": "∀ {G : Type u_1} [inst : AddCommMagma G] (a b : G), a + b = b + a",
+        "value": ":= AddCommMagma.add_comm",
+        "docstring": null,
+        "informal_name": "Commutativity of Addition",
+        "informal_description": "For any two elements $a$ and $b$ in a commutative additive magma $G$, the sum $a + b$ equals $b + a$."
+      },
+      "distance": 0.11
+    },
+    {
+      "result": {
+        "module_name": ["Init", "Data", "Nat", "Basic"],
+        "kind": "theorem",
+        "name": ["Nat", "add_comm"],
+        "signature": " (n m : ℕ) : n + m = m + n",
+        "type": "∀ (n m : ℕ), n + m = m + n",
+        "value": ":= Nat.add_comm n m",
+        "docstring": null,
+        "informal_name": "Commutativity of Natural Number Addition",
+        "informal_description": "For any natural numbers $n$ and $m$, $n + m = m + n$."
+      },
+      "distance": 0.12
+    },
+    {
+      "result": {
+        "module_name": ["Mathlib", "Algebra", "Group", "Basic"],
+        "kind": "theorem",
+        "name": ["add_comm_sub"],
+        "signature": " {α : Type u_1} [AddCommGroup α] (a b c : α) : a - b + c = c - b + a",
+        "type": "∀ {α : Type u_1} [inst : AddCommGroup α] (a b c : α), a - b + c = c - b + a",
+        "value": ":= ...",
+        "docstring": null,
+        "informal_name": "Rearrangement of a subtraction and an addition",
+        "informal_description": "For elements $a, b, c$ of an additive commutative group, $a - b + c = c - b + a$."
+      },
+      "distance": 0.14
+    }
+  ]
+]

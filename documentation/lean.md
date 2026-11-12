@@ -232,6 +232,19 @@ waiting. An address from `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL` at another host
 With `--lean-search` and no usable backend the run says so once at its start. A backend that fails is skipped and the others
 answer; with none set up the capability answers no hit.
 
+**Against the real services (plan change PA3).** In the third real run no session had a Mathlib search: the owner's profile set no address, so
+`lean.search` answered empty. A free probe on the owner's machine (2026-11-12) recorded the two public services' answers. Loogle
+(`GET https://loogle.lean-lang.org/json?q=PATTERN`) answers `{count, header, heartbeats, hits: [{name, type, module, doc}], suggestions}` with
+up to 200 hits, which `parseHits` reads as it was; both backends now cut the hits to the limit asked. LeanSearch
+(`POST https://leansearch.net/search`) reads the query only as a list, `{"query": [TEXT], "num_results": N}`, and answers one list per query of
+`{result: {name: [parts], module_name, kind, signature, type, docstring, informal_name, informal_description}, distance}`: the setting
+`remoteQuery` (`text`, the default, or `list`; `LEAN_SEARCH_QUERY`) sends that form. `config/hosts/local.json` now sets both services when the
+variables are not set (`LEAN_SEARCH_URL` defaults to `https://leansearch.net/search` with `remoteQuery` `list`, `LEAN_PATTERN_URL` to
+`https://loogle.lean-lang.org/json`), so a profile built from it searches Mathlib without a setting; `--private`, or no yes to the question asked
+once, still keeps every query on the machine. The tests read the recorded shapes (`packages/lean-search/test/real-shapes.test.ts`). Not run: a
+run with these services; whether the Mathlib behind leansearch.net matches the run's Lean 4.27 Mathlib (a name it gives that the run's
+Mathlib lacks is dropped by the `#check` that confirms every hit).
+
 **Third parties (`--private` and consent).** `remote` and `pattern` send the missing name, or a hole's goal (the statement being worked on), to a
 service, so `lean.search` is marked `thirdParty` with the private form `{"private": true}` ([trust.md](trust.md#third-parties)). The registry adds
 that input to every call of a run that is private (`RunConfig.private`, `--private`) or that has no journaled yes: the call says `private`, the

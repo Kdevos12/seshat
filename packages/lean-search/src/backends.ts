@@ -66,24 +66,29 @@ export function conclusionOf(goal: string): string {
   return (at >= 0 ? goal.slice(at + 1) : goal).replace(/\s+/g, " ").trim();
 }
 
+/** How the remote backend sends its query: as a text, or as a list of one text (LeanSearch's form, which answers one list of hits per query). */
+export type RemoteQuery = "text" | "list";
+
 /**
  * `remote`: an HTTP search service that takes a natural-language or goal query. The request is `POST URL` with `{"query": TEXT, "num_results":
- * N}`; the answer is read by `parseHits`. A service with another shape is a replacement of this backend, behind the same capability.
+ * N}`, or with `"query": [TEXT]` when `query` is `list` (leansearch.net reads only that form); the answer is read by `parseHits` and cut to the
+ * limit. A service with another shape is a replacement of this backend, behind the same capability.
  */
-export function remoteBackend(url: string, options: HttpOptions = {}): Backend {
+export function remoteBackend(url: string, options: HttpOptions = {}, query: RemoteQuery = "text"): Backend {
   const target = serviceUrl(url);
   return {
     id: "remote",
     leaves: true,
     async search(request, limit, signal) {
-      const answer = await requestJson(target, { body: { query: request.query, num_results: limit }, ...(signal !== undefined ? { signal } : {}) }, options);
-      return parseHits(answer);
+      const body = { query: query === "list" ? [request.query] : request.query, num_results: limit };
+      const answer = await requestJson(target, { body, ...(signal !== undefined ? { signal } : {}) }, options);
+      return parseHits(answer).slice(0, limit);
     },
   };
 }
 
 /**
- * `pattern`: a pattern search. With a URL, a Loogle-like service: `GET URL?q=PATTERN`, answered as `{"hits": [{"name", "type"}]}`; a name is
+ * `pattern`: a pattern search. With a URL, a Loogle-like service: `GET URL?q=PATTERN`, answered as `{"hits": [{"name", "type", "doc", "module"}]}`; a name is
  * sent as a quoted string, a goal by its conclusion. Without one, a pattern match of a goal's conclusion over the local index, which leaves the machine nowhere.
  */
 export function patternBackend(options: { url?: string; index?: LocalIndex; http?: HttpOptions }): Backend | undefined {
@@ -101,7 +106,8 @@ export function patternBackend(options: { url?: string; index?: LocalIndex; http
       if (target === undefined) return request.kind === "name" ? [] : (index as LocalIndex).matchPattern(pattern, limit);
       const url = new URL(target.href);
       url.searchParams.set("q", pattern);
-      return parseHits(await requestJson(url, signal !== undefined ? { signal } : {}, options.http));
+      // Loogle answers up to 200 hits whatever is asked: the limit is applied here.
+      return parseHits(await requestJson(url, signal !== undefined ? { signal } : {}, options.http)).slice(0, limit);
     },
   };
 }
