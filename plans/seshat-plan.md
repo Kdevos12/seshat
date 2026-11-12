@@ -1484,6 +1484,13 @@ Task 38 (PA11, refinement rounds for M12) are brought forward, before the lead a
 48). PA5, PA12, PA14 and PA15 follow, each measured as an arm. Then the paired measure on at least
 60 grade B problems, one arm per added piece against `v2` fixed.
 
+Also in Task 51, from `plans/plan-change-numina.md` (Ruling 36): NL1 first (`v2` gives `lean.lsp` to the
+prover by default, with an arm); NL2 is the shape of PA13 (generator, fresh-context verifier and
+revision, accepted after three independent verifier passes, at most four rounds, each priced by the
+gate; a hint, never a status); NL3 (a capped, journaled `consult` tool to another configured model)
+with PA11; NL5 (LeanDex as a `lean.search` backend after a free recorded probe) when `lean.search` is
+next touched. NL4 and NL6 stay proposed.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
