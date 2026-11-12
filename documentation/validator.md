@@ -131,7 +131,9 @@ below). Refused anywhere in the regions:
   hide from the checks; a block comment that the text does not close;
 - ways to skip or weaken a proof: `sorry` and `admit` (unless the policy allows holes), `axiom`,
   `native_decide`, `ofReduceBool`, `ofReduceNat`, `trustCompiler`, `implemented_by`, `extern`,
-  `unsafe`, `debug`, `skipKernelTC`;
+  `unsafe`, `debug`, `skipKernelTC`, and `partial` (a `partial def` becomes an opaque constant over an
+  `_unsafe_rec` that the certifier refuses; the first real runs paid for four such proofs before
+  the certifier turned them down);
 - commands and attributes that run code or change the syntax: `#eval`, `#exit`, `#print`,
   `run_cmd`, `run_elab`, `run_meta`, `run_tac`, `by_elab`, `eval%`, `elab`, `elab_rules`, `macro`,
   `macro_rules`, `syntax`, `declare_syntax_cat`, `notation`, `infix`, `infixl`, `infixr`, `prefix`,
