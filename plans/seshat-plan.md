@@ -1424,6 +1424,39 @@ off by default. `harness teach RUN_DIR`. Documentation: a new `documentation/tea
 `memory.md`. Tests: nothing is built from a trajectory Lean did not accept, each memory is drawn and
 its effect counted, an entry with a negative effect is switched off.
 
+### Task 45: The literature search made ready for the real sites (LW1)
+
+Main team. `plans/plan-change-literature.md`, item LW1 (Ruling 34). The profile `harness doctor`
+writes keeps `lit.search` and gets a cache directory; the doctor's check `literature` (no request);
+a cache of the sites' answers in `@seshat/lit` (`cacheDir`, `cacheDays`, 7 days by default; a
+failure is never kept); `harness lit probe`, which asks each enabled backend once through the
+registry, prints what the site answered and what the parser made of it, and with `--out` keeps the
+raw body and the parsed hits as files, so that a real answer becomes a test fixture. No model call.
+Then, on a machine that reaches the sites: one probe, and each backend's request and parser
+corrected against what it shows. Documentation: `literature.md`, `capabilities.md`, the README's
+commands. Tests: the cache (fresh, expired, failure, absent), the probe against the fake server.
+
+### Task 46: Tools an agent can choose (RA1)
+
+Main team, after Task 45. `plans/plan-change-research-agent.md`, item RA1: in the mode `lead` the
+host's capabilities are offered through the registry's three levels (a few always declared, the
+rest by tool search), each call a tool run charged to its caller. Not started.
+
+### Task 47: The minimal lead (RA2, RA3 with `prove` and `explore`, RA4, RA5, RA6)
+
+Main team, after Task 46 and after the first real measurement of M12's blueprints, on which it
+is built: one lead per problem, the only writer of a plan held in the journal; an obstacle ledger;
+children with a contract; recursion by refinement of the one plan (depth 2); budgets in cascade
+and effort by rule; the lead only after the scripted probe fails; the guards of RA6. The mode
+`scripted` stays byte-for-byte. Not started.
+
+### Task 48: The arm `solve-lead` and its measure (RA11)
+
+Main team, after Task 47: the arm against `solve-v2` and `solve-v2-blueprints` at the same cap by
+the paired protocol, on grades B and C, and a second arm with a stronger planner (RA9). The rest
+of both plan changes (the `read` child with LW2 and LW3, RA7, RA9, RA10, the consortium wiring of
+section 5, LW4 to LW6) is scheduled only after this measure. Not started.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
