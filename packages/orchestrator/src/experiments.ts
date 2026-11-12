@@ -186,13 +186,15 @@ export const EXPERIMENTS: Experiment[] = [
   {
     name: "solve-defaults",
     amendment: "CA2, CA21 (Task 34b)",
-    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, which is not a default.",
+    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, and a fourth adds lines M2 (the graph) and M4 (the context compiler), neither of which is a default.",
     notRun: "No number of the target exists until the arms run on real problems with a real model and Lean; the compute tool and lean.search are in an arm only if the host profile offers them. The turn limit, the signature and the question are what `solve` has because a person is there, and are not in the arms.",
     arms: (context) => [
       solveArm("solve-v1", "solve's configuration under defaults v1: the baseline", "v1", context),
       solveArm("solve-v2", "solve's configuration under defaults v2, with the intake gate, the compute tool and lean.search as the host offers them", "v2", context, { versus: "solve-v1" }),
       // Line M12's blueprints are not in v2: they have not run on a real Lean. This arm measures what they would add to it.
       solveArm("solve-v2-blueprints", "solve-v2 plus line M12 with its option blueprints: holes that depend on each other, a session with tools per hole", "v2", context, { versus: "solve-v2" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true } } }),
+      // Lines M2 and M4 are not in v2: they have never run with a real model. This arm measures what they cost and what they add to it (plan change KG1).
+      solveArm("solve-v2-graph", "solve-v2 plus line M2 (the graph of claims and variants) and line M4 (the context compiler), with their default options", "v2", context, { versus: "solve-v2" }, { lines: ["M2", "M4"] }),
     ],
   },
   {

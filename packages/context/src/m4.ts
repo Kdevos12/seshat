@@ -191,17 +191,25 @@ export function rawFeedback(check: Pick<SessionCheck["report"], "verdict" | "mes
 /** The titles of the briefing sections that M4 replaces with its own sections or that the harness adds to every packet. */
 const OWN_SECTIONS = new Set(["Already tried", "Library", "Lessons", "Classical tools, tried before any model (line M10)", "Hints from the team", "What the team asks"]);
 
-/** The briefing sections of the other lines, taken from the opening message (the packet replaces it): `# Title` after the last check. */
+/**
+ * The briefing sections of the other lines, taken from the opening message (the packet replaces it): `# Title` after the last check, and the
+ * state card (`stateCard`, plan change CA7), which the opening message holds before the notes: a packet that dropped it would undo v2's card.
+ */
 export function otherLines(opening: string | undefined): Array<{ title: string; text: string }> {
   if (opening === undefined) return [];
+  const card = /\n# Where the problem stands\n([\s\S]*?)\n\n# Your notes from the previous sessions/.exec(opening)?.[1];
+  const own = card === undefined ? [] : [{ title: "Where the problem stands", text: card }];
   const marker = opening.indexOf("# What Lean said about the file as it is");
-  if (marker < 0) return [];
+  if (marker < 0) return own;
   const parts = opening.slice(marker).split("\n\n# ").slice(1);
-  return parts.flatMap((p) => {
-    const nl = p.indexOf("\n");
-    const title = (nl < 0 ? p : p.slice(0, nl)).trim();
-    return OWN_SECTIONS.has(title) || title === "" ? [] : [{ title, text: nl < 0 ? "" : p.slice(nl + 1) }];
-  });
+  return [
+    ...own,
+    ...parts.flatMap((p) => {
+      const nl = p.indexOf("\n");
+      const title = (nl < 0 ? p : p.slice(0, nl)).trim();
+      return OWN_SECTIONS.has(title) || title === "" ? [] : [{ title, text: nl < 0 ? "" : p.slice(nl + 1) }];
+    }),
+  ];
 }
 
 function holesOf(report: SessionCheck["report"]): string[] {
