@@ -6,7 +6,9 @@ import { describe, it } from "node:test";
 import { makeBackend } from "../src/backends.ts";
 import type { BackendId } from "../src/backends.ts";
 
-// Expectations of the shapes of the real sites' answers; the fixtures are to be replaced by recorded answers.
+// The fixtures are the answers the real sites gave on 2026-11-12 to the first probe (documentation/literature.md, "Against the real
+// sites"): zbMATH in full, OpenAlex and arXiv cut to their first result. OpenAlex's notice is cut after its second sentence. The arXiv
+// answer is the one to the old request (words read as OR), kept to test the parser: its first entry is off-topic, as the probe showed.
 const OPENALEX_TITLE = "On conjectures of Graffiti";
 const OPENALEX_LINK = "https://doi.org/10.1016/0012-365x(88)90199-9";
 const ZB_TITLE = "On one of Graffiti's conjectures (583)";
@@ -48,8 +50,10 @@ describe("the shapes of the real answers", () => {
     const found = await backend?.search("Graffiti conjecture independence number counterexample theorem extra words here", 3);
     assert.ok(calls[0]?.url.includes(ARXIV_AND), calls[0]?.url);
     assert.equal((calls[0]?.url.match(/%20AND%20/g) ?? []).length <= 4, true);
-    assert.equal(found?.hits.length, 2);
-    assert.equal(found?.hits[0]?.title, "Graffiti conjectures on independence number");
+    assert.equal(found?.hits.length, 1);
+    assert.equal(found?.hits[0]?.title, "A counterexample to generalizations of the Milnor-Bloch-Kato conjecture");
+    assert.equal(found?.hits[0]?.url, "https://arxiv.org/abs/0706.4354v2");
+    assert.ok(found?.hits[0]?.text.startsWith("We construct an example of a torus"));
   });
 
   it("arXiv: a query without words stays as it is", async () => {
@@ -63,7 +67,7 @@ describe("the shapes of the real answers", () => {
     const found = await makeBackend("zbmath", site("zbmath", "api.zbmath.org"), { fetch, ...fast })?.search("graffiti", 3);
     assert.equal(found?.hits[0]?.title, ZB_TITLE);
     assert.equal(found?.hits[0]?.url, ZB_LINK);
-    assert.equal(found?.hits[0]?.text, "keywords: edge-independence; Graffiti; matching number");
+    assert.equal(found?.hits[0]?.text, "keywords: edge-independence number; Graffiti conjecture; tree; inverse degree; matching");
     assert.ok(!/unavailable/.test(found?.hits[0]?.text ?? ""));
   });
 });
