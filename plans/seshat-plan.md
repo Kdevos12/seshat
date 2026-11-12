@@ -1457,6 +1457,33 @@ the paired protocol, on grades B and C, and a second arm with a stronger planner
 of both plan changes (the `read` child with LW2 and LW3, RA7, RA9, RA10, the consortium wiring of
 section 5, LW4 to LW6) is scheduled only after this measure. Not started.
 
+### Task 49: Free fixes from the audit of the third real run (PA1, PA3, PA4, PA6)
+
+Main team. `plans/plan-change-putnam-audit.md` (Ruling 35). PA1: a new version of the prover's
+system prompt (no `partial`, `unsafe` or `implemented_by`, structural recursion or
+`termination_by`; compute small cases with the compute tool for a statement with an integer
+parameter; prefer the known proof whose lemmas Mathlib has). PA3: `lean.search` gets a backend on
+the owner's host after a recorded real probe. PA4: a problem spends at most a share of what
+remains of the run's budget. PA6: grade B problems out of reach at small budgets are tagged in the
+graded bench and reported apart; the measure uses at least 60 paired problems with a run budget
+that does not cut the per-problem cap.
+
+### Task 50: The diagnostic replay of the nine failures
+
+Main team, after Task 49, on the owner's machine: the nine problems unsolved in at least one arm
+of the third real run, with `v2` fixed and a real $0.50 cap per problem, at most $4.50 in all
+(the owner's yes of 2026-11-12). Not a measure of gain (regression to the mean): it shows whether
+the causes "format" and "budget" are gone.
+
+### Task 51: The pieces the audit asks for (PA10, PA9, PA7, PA8, then PA13 and PA11)
+
+Main team, after Task 50, in this order: data tables pushed by the harness (PA10); a built-in pack
+of Mathlib skills and its caller (PA9); heuristic cards drawn in `solve` without the fleet, with a
+control arm (PA7) and four new cards (PA8); then Task 39 (PA13, an informal proof first) and
+Task 38 (PA11, refinement rounds for M12) are brought forward, before the lead agent (Tasks 46 to
+48). PA5, PA12, PA14 and PA15 follow, each measured as an arm. Then the paired measure on at least
+60 grade B problems, one arm per added piece against `v2` fixed.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
