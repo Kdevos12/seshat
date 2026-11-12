@@ -267,7 +267,7 @@ describe("student defaults", () => {
   it("builds a capped, gated, probe-first, consortium configuration", () => {
     const c = studentConfig({ selection: { kind: "all" }, model: "p/m", maxUsd: STUDENT_DEFAULT_MAX_USD });
     assert.deepEqual(c.budget, { problemUsd: 2, runUsd: 2 });
-    assert.deepEqual(c.gate, {});
+    assert.deepEqual(c.gate, { probeExtend: true }, "the default set v2 gives a probe its cap cut one extension");
     assert.deepEqual(c.lines, [...STUDENT_LINES, "M6"], "the default set v2 adds M6 for its repeat rule");
     assert.equal(c.consortium?.limit.usd, 1);
     assert.equal(c.consortium?.narrative, false);
