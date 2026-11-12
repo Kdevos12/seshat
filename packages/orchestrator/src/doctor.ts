@@ -7,6 +7,7 @@ import type { HostProfile } from "@seshat/registry";
 import { DEFAULT_LEAN_SERVER_MEMORY_WARN_MB } from "@seshat/registry";
 import { leanMemoryCheck, leanServerMemoryFromPs } from "./lean-memory.ts";
 import { PriceBook } from "./prices.ts";
+import { enabledBackends } from "./lit-enabled.ts";
 import { blendedPrice, cheapestModel, DEFAULT_DEFAULTS, describeSet } from "./student.ts";
 
 /**
@@ -339,11 +340,6 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
   return { host: profile.host, checks, ok: !checks.some((c) => c.status === "missing"), ...(isolation !== undefined ? { isolation } : {}), ...(chosen !== undefined ? { model: chosen } : {}) };
 }
 
-/** The value of a setting with its `${env:NAME:-default}` references replaced, as the registry reads it. */
-function withEnv(value: unknown, env: DoctorSystem["env"]): string {
-  return typeof value === "string" ? value.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_m, name: string, fallback?: string) => env[name] ?? fallback ?? "") : "";
-}
-
 /** `lit.search` in the host profile: which backends it enables (a setting with an address, or a directory). Makes no request. */
 function literatureCheck(profile: HostProfile, env: DoctorSystem["env"]): Check {
   const title = "Literature search";
@@ -351,11 +347,7 @@ function literatureCheck(profile: HostProfile, env: DoctorSystem["env"]): Check 
   if (binding === undefined) {
     return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} has no lit.search: the literature step of a run is skipped.`, fix: "Use a host profile that lists lit.search (config/hosts/local.json), or run `pnpm harness doctor` to write one that does." };
   }
-  const enabled: string[] = [];
-  for (const settings of Object.values(binding.settings ?? {})) {
-    const backends = (settings as { backends?: Record<string, { baseUrl?: unknown; dir?: unknown }> }).backends ?? {};
-    for (const [id, setting] of Object.entries(backends)) if (withEnv(setting.baseUrl, env) !== "" || withEnv(setting.dir, env) !== "") enabled.push(id);
-  }
+  const enabled = enabledBackends(profile, env);
   if (enabled.length === 0) return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} lists lit.search but enables no backend (no address, no directory).`, fix: "Give a backend an address in the profile (config/hosts/local.json)." };
   return { id: "literature", status: "ok", title, detail: `lit.search has ${enabled.join(", ")} enabled. No request was made: \`pnpm harness lit probe\` asks each of them once and shows what it answers.` };
 }
