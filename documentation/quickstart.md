@@ -148,6 +148,7 @@ run needs is missing.
 | Price table | the chosen model (`--model`, or the cheapest) has no price in the host profile or in pi-ai | to give it a `models` entry in the host profile ([m0-loop.md](m0-loop.md#prices)), or to choose a priced model |
 | Lean server memory | (a warning, never a failure) the Lean server on this machine takes more than the host profile's `leanServerMemoryWarnMb` (default 8 GB) | the Kimina settings that fit this machine's memory (`MAX_REPLS`, `MAX_REPL_USES`, `MAX_REPL_MEM`), and to restart the server with them when it has grown ([lean.md](lean.md#memory-of-the-lean-server)) |
 | Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
+| Literature search | (a warning, never a failure) the host profile has no `lit.search`, or it enables no backend; no request is made ([literature.md](literature.md)) | to use a profile that lists it |
 | Certifier isolation | (a warning, not a failure) the host profile has no sandbox for the certifier and this machine has none | that results stay `computed` |
 
 **The isolation profile.** The certifier runs a candidate's Lean code, and it refuses to without a sandbox

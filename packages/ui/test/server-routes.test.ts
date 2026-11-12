@@ -103,13 +103,13 @@ describe("the doctor through the API", () => {
     const report = (await s.call("GET", "/api/doctor")).json();
     assert.equal(report.ok, false, "a bare machine lacks what a run needs");
     // The credentials are the server's environment's and the stored keys, never those of the machine that runs the test.
-    assert.deepEqual(report.checks.map((c: any) => c.id), ["lean", "kimina", "credentials", "network", "isolation", "defaults"]);
+    assert.deepEqual(report.checks.map((c: any) => c.id), ["lean", "kimina", "credentials", "network", "isolation", "defaults", "literature"]);
     assert.equal(report.checks.find((c: any) => c.id === "credentials").status, "missing");
     assert.ok(report.checks.find((c: any) => c.id === "lean").fix, "a missing thing says what to do");
     // A stored key counts: the cheapest model it gives is priced, and the network to it is checked.
     assert.equal((await s.call("PUT", "/api/providers/deepseek/key", { key: "test-key-not-real-0001" })).status, 200);
     const keyed = (await s.call("GET", "/api/doctor")).json();
-    assert.deepEqual(keyed.checks.map((c: any) => c.id), ["lean", "kimina", "credentials", "prices", "network", "isolation", "defaults"]);
+    assert.deepEqual(keyed.checks.map((c: any) => c.id), ["lean", "kimina", "credentials", "prices", "network", "isolation", "defaults", "literature"]);
     assert.equal(keyed.checks.find((c: any) => c.id === "credentials").status, "ok");
     assert.deepEqual(readdirSync(join(s.dir, "config-dir", "hosts")), ["local.json"], "no isolation profile was written");
     assert.equal((await s.call("GET", "/api/doctor?model=--yes%20x")).status, 400);
