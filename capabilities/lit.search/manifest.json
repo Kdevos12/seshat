@@ -46,6 +46,10 @@
           ]
         },
         "description": "Ask only these backends; absent: every one the host profile enables"
+      },
+      "keepRaw": {
+        "type": "boolean",
+        "description": "Put the body each backend answered in its entry of answers (raw), to see what a site says. Absent: false"
       }
     },
     "additionalProperties": false
@@ -81,6 +85,14 @@
             "error": {
               "type": "string",
               "description": "Why the backend gave nothing"
+            },
+            "cached": {
+              "type": "boolean",
+              "description": "True when the answer came from the cache of earlier answers"
+            },
+            "raw": {
+              "type": "string",
+              "description": "The body the backend answered, bounded by the size limit; only when keepRaw was asked"
             }
           },
           "additionalProperties": false

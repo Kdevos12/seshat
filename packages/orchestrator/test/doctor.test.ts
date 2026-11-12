@@ -65,7 +65,9 @@ describe("harness doctor", () => {
     assert.equal(lake.unsandboxed, undefined);
     assert.equal(profile.host, "sandboxed");
     const base = JSON.parse(readFileSync(join(dir, "hosts", "local.json"), "utf8"));
-    assert.deepEqual(profile.capabilities["lit.search"], base.capabilities["lit.search"], "the profile keeps the literature search");
+    const { cacheDir, ...litSources } = profile.capabilities["lit.search"].settings.sources;
+    assert.equal(cacheDir, join(dir, "hosts", "lit-cache"), "the literature answers are cached beside the profile");
+    assert.deepEqual({ ...profile.capabilities["lit.search"], settings: { sources: litSources } }, base.capabilities["lit.search"], "the profile keeps the literature search");
     loadHostProfile(join(dir, "hosts", "sandboxed.json"));
     assert.match(renderDoctor(report).join("\n"), /Everything a run needs is here/);
   });

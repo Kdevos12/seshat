@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Json } from "@seshat/core";
 
 /**
@@ -28,6 +31,15 @@ export interface FetcherOptions {
   /** The least time between two requests. Default 1000 ms; the tests use 0. */
   minIntervalMs?: number;
   userAgent?: string;
+  /** Answers kept on disk: the directory, how many days an answer stays fresh, and the backend's id (part of the key). Absent: no cache. */
+  cache?: { dir: string; days: number; backend: string };
+}
+
+/** What a request gave: the text, the HTTP status it came with, and whether it was read from the cache. */
+export interface Answer {
+  body: string;
+  status: number;
+  cached: boolean;
 }
 
 export const DEFAULT_MAX_BYTES = 1024 * 1024;
@@ -63,10 +75,57 @@ export class Fetcher {
     };
   }
 
+  /** The file of the cache for an address (the sha256 of backend, method and address), or undefined without a cache. */
+  #cacheFile(address: string): string | undefined {
+    const c = this.#o.cache;
+    return c === undefined ? undefined : join(c.dir, `${createHash("sha256").update(`${c.backend}\n${"GET"}\n${address}`).digest("hex")}.json`);
+  }
+
+  #fromCache(address: string): Answer | undefined {
+    const file = this.#cacheFile(address);
+    const c = this.#o.cache;
+    if (file === undefined || c === undefined) return undefined;
+    try {
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { fetchedAt?: unknown; status?: unknown; body?: unknown };
+      if (typeof stored.fetchedAt !== "string" || typeof stored.body !== "string" || typeof stored.status !== "number") return undefined;
+      const age = Date.now() - Date.parse(stored.fetchedAt);
+      if (!(age >= 0 && age < c.days * 86_400_000) || stored.body.length > this.#o.maxBytes) return undefined;
+      return { body: stored.body, status: stored.status, cached: true };
+    } catch {
+      return undefined;
+    }
+  }
+
+  #toCache(address: string, status: number, body: string): void {
+    const file = this.#cacheFile(address);
+    if (file === undefined || this.#o.cache === undefined) return;
+    try {
+      mkdirSync(this.#o.cache.dir, { recursive: true });
+      const temporary = `${file}.${process.pid}.tmp`;
+      writeFileSync(temporary, JSON.stringify({ fetchedAt: new Date().toISOString(), status, body }));
+      renameSync(temporary, file);
+    } catch {
+      // a cache that cannot be written is no cache
+    }
+  }
+
   /** The text an address answers (a GET), bounded; throws `LitError`. */
   async text(address: string, signal?: AbortSignal): Promise<string> {
+    return (await this.answer(address, signal)).body;
+  }
+
+  /** The answer to an address, from the cache when a fresh file is there, otherwise from the site (and then kept); throws `LitError`. A failure is never kept. */
+  async answer(address: string, signal?: AbortSignal): Promise<Answer> {
     const refused = refusalOf(address, this.#o.allowedHosts);
     if (refused !== undefined) throw new LitError(`${refused}: no request was sent`);
+    const hit = this.#fromCache(address);
+    if (hit !== undefined) return hit;
+    const body = await this.#request(address, signal);
+    this.#toCache(address, 200, body);
+    return { body, status: 200, cached: false };
+  }
+
+  async #request(address: string, signal?: AbortSignal): Promise<string> {
     const turn = this.#queue.then(async () => {
       const wait = this.#last + this.#o.minIntervalMs - Date.now();
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
@@ -130,11 +189,14 @@ export class Fetcher {
   }
 
   async json(address: string, signal?: AbortSignal): Promise<Json> {
-    const text = await this.text(address, signal);
-    try {
-      return JSON.parse(text) as Json;
-    } catch {
-      throw new LitError(`${address}: the answer is not JSON`);
-    }
+    return parseJson((await this.answer(address, signal)).body, address);
+  }
+}
+
+export function parseJson(text: string, address: string): Json {
+  try {
+    return JSON.parse(text) as Json;
+  } catch {
+    throw new LitError(`${address}: the answer is not JSON`);
   }
 }

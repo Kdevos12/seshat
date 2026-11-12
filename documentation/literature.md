@@ -28,6 +28,20 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 No backend has run against its site: this environment reaches none. The requests and the answers are written from each site's
 documentation as remembered (zbMATH's the least sure) and are tested against a fake server (`packages/lit/test/fake-lit.ts`).
 
+### Against the real sites
+
+- **The doctor's profile.** The host profile `harness doctor` writes keeps the base profile's `lit.search` binding (the four remote backends
+  with their `allowedHosts`, and `bench-metadata` when `BENCH_CHECKOUT` is set) and sets `cacheDir` to `lit-cache` beside the profile file.
+  `harness doctor` has a check `literature` that says which backends the profile enables and makes no request.
+- **The cache.** With `cacheDir` set (absent: no cache) an answer is kept for `cacheDays` (default 7) as a JSON file `{fetchedAt, status, body}`
+  named by the sha256 of backend, method and address; a fresh file answers without a request and the call says `cached: true` in that
+  backend's entry of `answers`. A failed request is not kept, and an answer is kept only after the size and text-type limits passed.
+- **The probe.** `pnpm harness lit probe [--host NAME] [--query "words"] [--limit N] [--out DIR] [--no-cache]` asks each enabled backend
+  once, through the registry, and prints the address asked, the HTTP outcome or the error, the number of hits parsed and, for the first hit,
+  its title, link and the first 200 characters of its text (cleaned, and shown escaped). `--out DIR` writes `BACKEND.raw.txt` (the body
+  received) and `BACKEND.hits.json` (what was parsed) so that a real answer can become a test fixture. It makes no model call and writes no
+  journal; its exit code is 0 when at least one backend returned hits and 1 otherwise. It has not been run against a real site yet.
+
 ## The intake step
 
 `runIntake` (`packages/lit/src/intake.ts`) is the step; the orchestrator calls it for a problem before any paid session
