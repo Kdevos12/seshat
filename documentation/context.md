@@ -37,7 +37,7 @@ resolved without regard to case. M6 resolves them like any other citation.
 
 ## What is lost when M4 is on
 
-The packet replaces the opening message, so the opening message's own content is not shown: the prover's notes from earlier sessions (the M0 loop's mechanism; the sketch's state and the last feedback take their place, and M5's lessons are the advice that carries over), and any section of another line that M4 replaces by title. The briefing sections of the other lines are kept as the "Notes from other lines" section above.
+The packet replaces the opening message, so the opening message's own content is not shown: the prover's notes from earlier sessions (the M0 loop's mechanism; the sketch's state and the last feedback take their place, and M5's lessons are the advice that carries over), and any section of another line that M4 replaces by title. The briefing sections of the other lines are kept as the "Notes from other lines" section above, and so is the state card of `solve`'s defaults `v2` ("Where the problem stands", which the opening message holds before the notes): the packet keeps it among those notes. The masking of old check results has nothing to mask under M4, since a packet shows the last check only.
 
 ## Resume
 
