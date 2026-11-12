@@ -315,8 +315,8 @@ describe("resuming a run that has a certifier", () => {
 describe("resuming within the budget that is left", () => {
   /** Every session checks a proof that fails, then writes its notes. */
   const failing = (sessions: number): FauxResponseStep[] => Array.from({ length: sessions }, (_, k) => [check("bad"), say(`NOTES: ${k + 1}`)]).flat();
-  // At 100 dollars per million tokens a check costs about 24 cents and a session's notes about 2.
-  const PRICE = 100;
+  // At 90 dollars per million tokens, with the prover prompt m0-2.2, a check costs about 24 cents and a session's notes about 2.
+  const PRICE = 90;
 
   it("spends no more on a problem than the budget that the journal says is left", async () => {
     const config = { sessions: 4, budget: { problemUsd: 0.6 } };

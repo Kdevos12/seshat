@@ -10,7 +10,8 @@ theorem zero_add' (n : ℕ) : 0 + n = n := by
   sorry
 
 end Demo`);
-const PRICE = 100;
+/** Set against the prover prompt's length (m0-2.2): a longer prompt costs more per call. */
+const PRICE = 90;
 /** One failing session of one check and its notes: about $0.26 at this price. */
 const fail = (n: number): FauxResponseStep[] => [check(`bad ${n}`), say("notes")];
 
