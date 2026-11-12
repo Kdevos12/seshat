@@ -71,6 +71,8 @@ included and what each section kept.
 
 ## The tools
 
+Each call of `expand` and `graph_query` is journaled as a `tool_run` of that capability by the actor `line:M4`, with the attempt's id (`LineTool.journaled`), so that `report.json` counts it in `tools` and in `graph.context` (`graph` also holds M4's packets, their tokens and the facts shown, and, for line M2, its variants and `lean_checked` edges: only what the journal holds, so the depth widenings are not counted); `report.md` prints them, and the ablation's table has one row of them per arm.
+
 `expand(id)` shows one item in full. For a claim: its statement, status, and a table of neighbours. A hub (over 50 neighbours) answers
 the counts per relation kind first, and `kind` then lists one kind. `graph_query` has three modes: a `pattern` (a constant, a shape
 with `?x` backreferences and `_`, or a conclusion `⊢ ...`); `anchors`, the connect mode of [graph.md](graph.md#connecting-claims),

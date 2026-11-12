@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type BlobStore, hash32, type Journal, type RandomSource, seeded, type Submission } from "@seshat/core";
+import { type BlobStore, hash32, hashJson, type Journal, newId, type RandomSource, seeded, type Submission } from "@seshat/core";
 import type {
   HolePreflightRequest,
   HoleSessionRequest,
@@ -552,7 +552,7 @@ export class ProblemLines {
         if (!/^[a-z][a-z0-9_]{0,63}$/.test(spec.name)) throw new LineError(id, "tools", `bad tool name ${JSON.stringify(spec.name)}`);
         if (names.has(spec.name)) throw new LineError(id, "tools", `the tool name ${spec.name} is taken`);
         names.add(spec.name);
-        tools.push(agentTool(id, spec, this.p.signal));
+        tools.push(agentTool(id, spec, this.p.signal, spec.journaled === true ? { journal: this.run.o.journal, attemptId: info.attemptId } : undefined));
       }
     }
     const packetLine = this.with("contextPacket")[0];
@@ -901,7 +901,7 @@ function budgetOf(ledger: Ledger, gate?: BudgetGate): Budget {
 }
 
 /** A line's tool as a tool of a prover's session. An error goes back to the model as a tool error. */
-function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal): AgentTool<never, unknown> {
+function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal, record?: { journal: Journal; attemptId: string }): AgentTool<never, unknown> {
   return {
     name: spec.name,
     label: spec.name,
@@ -910,10 +910,18 @@ function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal): AgentTo
     parameters: spec.parameters as never,
     executionMode: "sequential",
     execute: async (_id, params, signal) => {
+      // A journaled tool leaves a tool_run, as a capability's call does (the report counts them); the actor is the line.
+      const actor = `line:${line}`;
+      const toolRunId = newId("tr");
+      const started = performance.now();
+      if (record !== undefined) record.journal.emit("tool_run.started", { toolRunId, capability: spec.name, implementation: actor, version: "1", inputHash: hashJson(params as JsonObject), attemptId: record.attemptId }, actor);
+      const finish = (outcome: "ok" | "error") => record?.journal.emit("tool_run.finished", { toolRunId, outcome, durationMs: Math.round(performance.now() - started) }, actor);
       try {
         const text = await spec.run(params as JsonObject, signal ?? fallback);
+        finish("ok");
         return { content: [{ type: "text", text }], details: { line } };
       } catch (error) {
+        finish("error");
         return { content: [{ type: "text", text: `Error: ${messageOf(error)}` }], details: { line }, isError: true };
       }
     },

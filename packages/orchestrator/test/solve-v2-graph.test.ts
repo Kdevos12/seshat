@@ -4,6 +4,7 @@ import type { AssistantMessage, TranscriptContext } from "@earendil-works/pi-ai"
 import { type Arm, ablationProblems, armConfig } from "../src/ablation.ts";
 import { DEFAULT_CONFIG, type RunConfig } from "../src/index.ts";
 import { experimentArms } from "../src/experiments.ts";
+import { buildReport } from "../src/report.ts";
 import { call, check, demoRun, ofType, say } from "./m0-helpers.ts";
 
 /**
@@ -47,6 +48,13 @@ describe("the solve-v2-graph arm in a run", () => {
     // M4 replaces the conversation with its packet at every request, so no request holds an old check result for the masking to hide: it is on
     // (the run's configuration) and has nothing to do. The state card is kept by M4's packet.
     assert.equal((started as { maskOldChecks?: boolean }).maskOldChecks, true, "the masking is on in the run's configuration");
+    const counted = buildReport(events);
+    assert.equal(counted.tools.expand?.calls, 1, "an expand call is journaled as a tool run of the prover's attempt");
+    assert.equal(counted.tools.graph_query?.calls, 1);
+    assert.equal(counted.graph?.context?.expandCalls, 1);
+    assert.equal(counted.graph?.context?.graphQueryCalls, 1);
+    assert.ok((counted.graph?.context?.packets ?? 0) >= 1 && (counted.graph?.context?.packetTokens ?? 0) > 0 && (counted.graph?.context?.factsShown ?? -1) >= 0);
+    assert.ok(counted.graph?.graph !== undefined, "M2 ran");
     assert.ok(requests.every((r) => r.messages.filter((m) => m.role === "toolResult").length <= 1), "one check result at most per request: the packet shows the last check only");
     assert.ok(all.some((t) => /Where the problem stands\nState of the problem, written by the harness from its journal/.test(t) && /# Goal C1/.test(t)), "v2's state card is in the packet");
     assert.ok(ofType(events, "node.recorded").some((e) => e.data.kind === "context_packet"), "M4 compiled a packet");

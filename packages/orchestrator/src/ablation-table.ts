@@ -258,6 +258,24 @@ function extras(arms: readonly ArmResult[]): string[] {
       "",
     );
   }
+  const graphed = arms.filter((a) => a.measures.graph !== undefined);
+  if (graphed.length > 0) {
+    out.push(
+      "## Graph and context counts",
+      "",
+      "From the journal: M4's packets, the facts they showed and the provers' calls of expand and graph_query; M2's variants and edges (plan change KG1). A dash is a line the arm did not run.",
+      "",
+      ...table(
+        ["Configuration", "Packets", "Packet tokens", "Facts shown", "expand", "graph_query", "Variants", "Edges", "lean_checked"],
+        graphed.map((a) => {
+          const { context, graph } = a.measures.graph as NonNullable<typeof a.measures.graph>;
+          const n = (value: number | undefined) => (value === undefined ? "-" : String(value));
+          return [a.arm.name, n(context?.packets), n(context?.packetTokens), n(context?.factsShown), n(context?.expandCalls), n(context?.graphQueryCalls), n(graph?.variants), n(graph?.edges), n(graph?.leanCheckedEdges)];
+        }),
+      ),
+      "",
+    );
+  }
   const built = arms.filter((a) => a.build !== undefined);
   if (built.length > 0) {
     out.push(
