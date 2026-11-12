@@ -53,7 +53,8 @@ describe("harness doctor", () => {
   it("finds nothing missing on a complete machine and writes the isolation profile", async () => {
     const { report, dir } = await run(machine({ has: ALL }));
     assert.equal(report.ok, true);
-    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+    assert.match(byId(report, "literature").detail, /openalex, arxiv, semantic-scholar, zbmath/);
     const defaults = report.checks.find((c) => c.id === "defaults");
     assert.match(defaults?.detail ?? "", /the intake gate.*lean\.search/s, "doctor lists what the default set turns on");
     assert.equal(report.isolation?.written, true);
@@ -63,6 +64,8 @@ describe("harness doctor", () => {
     assert.ok(lake.sandbox.includes("bwrap") && lake.sandbox.includes("--unshare-net"));
     assert.equal(lake.unsandboxed, undefined);
     assert.equal(profile.host, "sandboxed");
+    const base = JSON.parse(readFileSync(join(dir, "hosts", "local.json"), "utf8"));
+    assert.deepEqual(profile.capabilities["lit.search"], base.capabilities["lit.search"], "the profile keeps the literature search");
     loadHostProfile(join(dir, "hosts", "sandboxed.json"));
     assert.match(renderDoctor(report).join("\n"), /Everything a run needs is here/);
   });

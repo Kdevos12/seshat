@@ -19,7 +19,7 @@ import { blendedPrice, cheapestModel, DEFAULT_DEFAULTS, describeSet } from "./st
 export type CheckStatus = "ok" | "warn" | "missing";
 
 export interface Check {
-  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults";
+  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults" | "literature";
   status: CheckStatus;
   title: string;
   /** What was found, in plain words. */
@@ -333,7 +333,31 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
   // 7. What `harness solve` does by default on this host, from the table the command reads (`student.ts`), not from a copy of it.
   checks.push({ id: "defaults", status: "ok", title: `Defaults of solve (${DEFAULT_DEFAULTS})`, detail: describeSet(DEFAULT_DEFAULTS, (capability) => profile.capabilities[capability] !== undefined).join("; ") });
 
+  // 8. The literature search: what the host profile enables. No request is made here (`harness lit probe` makes them).
+  checks.push(literatureCheck(profile, system.env));
+
   return { host: profile.host, checks, ok: !checks.some((c) => c.status === "missing"), ...(isolation !== undefined ? { isolation } : {}), ...(chosen !== undefined ? { model: chosen } : {}) };
+}
+
+/** The value of a setting with its `${env:NAME:-default}` references replaced, as the registry reads it. */
+function withEnv(value: unknown, env: DoctorSystem["env"]): string {
+  return typeof value === "string" ? value.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_m, name: string, fallback?: string) => env[name] ?? fallback ?? "") : "";
+}
+
+/** `lit.search` in the host profile: which backends it enables (a setting with an address, or a directory). Makes no request. */
+function literatureCheck(profile: HostProfile, env: DoctorSystem["env"]): Check {
+  const title = "Literature search";
+  const binding = profile.capabilities["lit.search"];
+  if (binding === undefined) {
+    return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} has no lit.search: the literature step of a run is skipped.`, fix: "Use a host profile that lists lit.search (config/hosts/local.json), or run `pnpm harness doctor` to write one that does." };
+  }
+  const enabled: string[] = [];
+  for (const settings of Object.values(binding.settings ?? {})) {
+    const backends = (settings as { backends?: Record<string, { baseUrl?: unknown; dir?: unknown }> }).backends ?? {};
+    for (const [id, setting] of Object.entries(backends)) if (withEnv(setting.baseUrl, env) !== "" || withEnv(setting.dir, env) !== "") enabled.push(id);
+  }
+  if (enabled.length === 0) return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} lists lit.search but enables no backend (no address, no directory).`, fix: "Give a backend an address in the profile (config/hosts/local.json)." };
+  return { id: "literature", status: "ok", title, detail: `lit.search has ${enabled.join(", ")} enabled. No request was made: \`pnpm harness lit probe\` asks each of them once and shows what it answers.` };
 }
 
 /** What the host profile in use says of the certifier's sandbox. */
