@@ -58,6 +58,10 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 42 | The consolidation pass between runs (CA24) | main | built (merge `d81047c`), reviewed by the controller on its trust-critical source; waits for the second pull request into `main` | `claude/project-thread-h60gyw` | Off by default (`--consolidation`, `harness consolidate`). Faux provider only |
 | 43 | The reverie line (CA25) | main | not started: deferred by the owner (2026-11-11) until a real run gives numbers | | after 37, 41 and 42 |
 | 44 | Teacher memory (CA26) | main | not started: deferred by the owner (2026-11-11) until a real run gives numbers | | last |
+| 45 | The literature search made ready for the real sites (LW1) | main | built (commits `aee835e`, `71c18d4`, `e98c035`), reviewed by the controller on the cache and the probe; `pnpm check` 2968 tests, 0 fail; the real probe on the owner's machine is not run yet | `claude/project-thread-h60gyw` | `harness lit probe`. No backend has run against its site |
+| 46 | Tools an agent can choose (RA1) | main | not started | | after 45 |
+| 47 | The minimal lead (RA2 to RA6) | main | not started: waits for the first real measurement of blueprints | | after 46 |
+| 48 | The arm `solve-lead` and its measure (RA11) | main | not started | | after 47 |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
@@ -480,6 +484,8 @@ Changes to shared files that the other team builds on, newest last (CLAUDE.md, "
   `--host` nor `HARNESS_HOST` is given; `CheckDecision.cause` (`packages/lines/src/line.ts`) and `SessionResult.lineCause`
   say why a line stopped a session, and a gate's probe whose session the repeat rule stopped runs one more session under the
   probe's ledger before the gate judges it.
+
+- Task 45 (2026-11-12, commits `aee835e`, `71c18d4`, `e98c035`): `lit.search` settings `cacheDir` and `cacheDays` (default 7; absent, no cache); input `keepRaw`; per-backend `answers` entries gain the optional `cached` and `raw`; `Fetcher.answer()` in `@seshat/lit`; the doctor's check id `literature` (last) and `cacheDir` in the profile it writes; the command `harness lit probe [--host] [--query] [--limit] [--out] [--no-cache]`; `enabledBackends` in `packages/orchestrator/src/lit-enabled.ts`. All optional; existing callers unchanged.
 
 ## Log
 
