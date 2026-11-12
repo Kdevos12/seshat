@@ -187,6 +187,32 @@ describe("harness doctor", () => {
   });
 });
 
+describe("doctor --rewrite on the generated profile in use", () => {
+  it("adds a capability the profile lacks, keeps lean.certify byte for byte, adds nothing twice, and auto leaves the file alone", async () => {
+    const { dir } = await run(machine({ has: ALL }));
+    const path = join(dir, "hosts", "sandboxed.json");
+    const old = JSON.parse(readFileSync(path, "utf8"));
+    delete old.capabilities["lit.search"];
+    writeFileSync(path, `${JSON.stringify(old, null, 2)}\n`);
+    const certify = JSON.stringify(old.capabilities["lean.certify"]);
+    const { models } = fauxModels();
+    const again = (write?: "auto" | "rewrite") => doctor({ system: machine({ has: ALL }), models, profile: loadHostProfile(path), configDir: dir, leanProject: "/p", ...(write !== undefined ? { write } : {}) });
+    const before = readFileSync(path, "utf8");
+    await again();
+    assert.equal(readFileSync(path, "utf8"), before);
+    const first = await again("rewrite");
+    assert.match(byId(first, "isolation").detail, /lit\.search/);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.ok(after.capabilities["lit.search"] !== undefined);
+    assert.equal(after.capabilities["lit.search"].settings.sources.cacheDir, join(dir, "hosts", "lit-cache"));
+    assert.equal(JSON.stringify(after.capabilities["lean.certify"]), certify);
+    const written = readFileSync(path, "utf8");
+    const second = await again("rewrite");
+    assert.match(byId(second, "isolation").detail, /no capability.*missing/);
+    assert.equal(readFileSync(path, "utf8"), written);
+  });
+});
+
 describe("doctor, review round 1", () => {
   it("tests the real recipe before it trusts it: the work directory is writable, the rest is not, there is no network", async () => {
     const calls: string[][] = [];

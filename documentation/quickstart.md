@@ -165,7 +165,10 @@ with `prlimit`, no network, the filesystem read-only except the work directory; 
 network, read-only, all capabilities dropped, as your user). The file is written once and never over an
 existing one (`--rewrite` replaces it, `--no-write` only checks), it is git-ignored, and no profile `doctor`
 writes sets `unsandboxed`: that stays a choice a person writes down. `solve` and `doctor` use
-`sandboxed` by themselves when it exists.
+`sandboxed` by themselves when it exists. `harness doctor --rewrite`, run with that generated profile in use, does not replace it:
+once its sandbox passes the test it adds the capabilities of `config/hosts/local.json` the file lacks (`lit.search` with its `cacheDir`
+beside the profile), keeps every capability it has (above all `lean.certify` and its sandbox) as it is, and names what it added; when
+nothing is missing the file is not rewritten. Without `--rewrite` the file is never touched.
 
 **Without any isolation** `doctor` writes nothing and says so: *every proof that passes the fast check stays
 `computed`, and no claim can become `proved` or `refuted`.* `solve` still works, and `RESULT.md` says the
