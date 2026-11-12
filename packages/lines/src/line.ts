@@ -507,6 +507,11 @@ export interface LineTool {
   parameters: JsonObject;
   /** Runs a call; the text goes back to the model. An error goes back as a tool error. */
   run: (args: JsonObject, signal: AbortSignal) => Promise<string>;
+  /**
+   * The orchestrator journals each call as a `tool_run` of the capability named like the tool, by the line, so that a run's report counts it
+   * (the context compiler's `expand` and `graph_query`). Default: not journaled.
+   */
+  journaled?: boolean;
 }
 
 export interface SessionDecision {

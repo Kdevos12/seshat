@@ -222,6 +222,8 @@ that failed for another reason (an import, the server) says nothing of the name,
 `lean.check` by the actor `lean.search`, and `report.json` has `leanSearch` (`requests`, `requestMs`, `checks`, `checkMs`), printed as its own
 line in `report.md` ("Lean search (not in the checks above)").
 
+**The graph and context counts.** When line M2 or M4 ran, `report.json` has `graph` (`graph.context`: `packets`, `packetTokens`, `factsShown`, `expandCalls`, `graphQueryCalls`; `graph.graph`: `variants`, `edges`, `leanCheckedEdges`), built from the journal alone and printed as lines in `report.md`; the ablation's table has a section with one row per arm that has them (plan change KG1, [context.md](context.md)).
+
 **Backends** (the host profile's `lean.search` settings; each optional, any mix): `remote`, an HTTP service for natural-language and goal
 queries (`remoteUrl`, `LEAN_SEARCH_URL`); `local`, a file of declarations ranked by BM25 with no model (`index`, `LEAN_SEARCH_INDEX`: a JSON
 array or JSONL of `{name, type, doc?}`, for instance the export of the run's environment); `pattern`, a Loogle-like service (`patternUrl`,

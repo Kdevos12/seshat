@@ -19,6 +19,7 @@ import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
 import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.ts";
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
+import { type GraphReport, graphReport, renderGraphReport } from "./graph-report.ts";
 import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
 
 export interface ProblemLine {
@@ -93,6 +94,8 @@ export interface RunReport {
    * their hits, apart from `leanChecks`, which counts the provers' and the validator's own. Absent when the run made none.
    */
   leanSearch?: { requests: number; requestMs: number; checks: number; checkMs: number };
+  /** What lines M2 and M4 did (`graph-report.ts`), from the journal alone. Absent when neither was enabled. */
+  graph?: GraphReport;
   /**
    * The provers' calls of each capability besides lean.check: calls by outcome, the attempts that
    * made them, and how many of those attempts found a proof.
@@ -584,6 +587,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   }
   for (const [attemptId, value] of offPeakCharged) if (charges.has(attemptId)) offPeakUsd += value;
   const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
+  const graph = graphReport(events, (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : [])));
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
@@ -652,6 +656,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ...(p90Ms !== undefined ? { p90Ms } : {}),
     },
     ...(search.requests > 0 || search.checks > 0 ? { leanSearch: search } : {}),
+    ...(graph !== undefined ? { graph } : {}),
     tools: Object.fromEntries(
       [...tools].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, use]) => [
         id,
@@ -818,6 +823,7 @@ export function renderRunReport(report: RunReport): string {
             `${report.leanSearch.checks} Lean check(s) of the hits, ${(report.leanSearch.checkMs / 1000).toFixed(1)} s.`,
         ]
       : []),
+    ...(report.graph !== undefined ? renderGraphReport(report.graph) : []),
     ...tools.map(
       ([id, use]) =>
         `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +
