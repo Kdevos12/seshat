@@ -41,6 +41,7 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
     checkTimeoutSec: DEFAULT_CHECK_TIMEOUT_SEC,
     stateCard: true,
     budgetRounds: true,
+    budgetShare: 2,
   },
 };
 
@@ -82,6 +83,7 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
     ["checkTimeoutSec", "bounded Lean checks"],
     ["stateCard", "the state card"],
     ["budgetRounds", "the budget in rounds"],
+    ["budgetShare", "a problem's cap bounded by its share of the run budget"],
   ];
   for (const [key, what] of config) if (set[key] !== undefined && set[key] !== false) lines.push(what);
   if (name === "v2") lines.push("line M6's repeat rule");

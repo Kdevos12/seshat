@@ -317,6 +317,8 @@ Task 35 (plan change CA8). In the first real runs the first problem took 92% of 
 
 **Not run.** Tested with the simulated Lean and the faux model: the arithmetic, the measure, three problems whose first would have taken the whole budget (without the option it does; with it all three are solved), one problem, the warning, and resumption. Whether the quarter of the budget of round 0 and the doubling are right on real problems, and how often a session cut by a small slice loses work that a longer one would have kept, have not run.
 
+A problem's share (`RunConfig.budgetShare`, plan change PA4). In the third real run one problem spent a third of the run budget and the last one ran out. With `budgetShare` set and a run budget, a problem's ledger is capped when it is opened (or resumed) at `min(problemUsd, budgetShare x what remains of the run budget / the problems not yet finished, this one included)`; with `budgetRounds` the slices are cut from that ledger, so the bound holds for the problem's total over its rounds, and the one place the rule lives is `problemCap` in `run.ts`. A resumed problem counts its own earlier spend as left, and the journal gives both the run's spend and the finished problems, so a resumed run computes the same bound. `problem.registered` records the cap used (`allowanceUsd`, only under the setting). Absent, the setting changes nothing; the set `v2` turns it on with `budgetShare: 2` and `v1` does not.
+
 ## Owners chosen by the fleet (Ruling 29)
 
 `TaskApi.assign(taskId, owner, reason)` ([lines.md](lines.md#tasks)) gives a task of the problem that

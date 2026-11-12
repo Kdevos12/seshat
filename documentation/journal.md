@@ -45,7 +45,7 @@ Event types:
 | `turn.deferred` | `runId`, `scope` (`turn` or `session`), `turn?`, `problemId?`, `prover?`, `from`, `nextStart`, `until`, `bounded`: the run waits for off-peak hours before starting this ([human.md](human.md#off-peak)) |
 | `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`): a turn of a consortium run begins ([human.md](human.md)) |
 | `turn.ended` | `runId`, `turn`, `reason` (`tokens`, `usd`, `minutes`, `impasse`, `settled`, `disagreement`, `interrupted`, `finished` or why the run stopped), `detail`, `spent` (`turn` and `run`: `usd`, `inputTokens`, `outputTokens`), `minutes`, `waiting` (problem ids), `breakpoint?` (`kind`, `problemId?`, `nodeId?`), `narrative?` (`hash?`, `rejected?`) |
-| `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
+| `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain`, `allowanceUsd?` (the cap the problem's ledger was opened with, recorded only under `budgetShare`) |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
