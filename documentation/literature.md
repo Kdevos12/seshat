@@ -27,8 +27,8 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 
 Three sites answered a real probe on 2026-11-12 (OpenAlex, arXiv, zbMATH); Semantic Scholar refused (HTTP 429) without a key. The
 requests corrected after that probe (below) have not run against the sites yet, and no intake step has run for real. The tests answer
-from a fake server (`packages/lit/test/fake-lit.ts`) and from fixtures in the real answers' shapes (`packages/lit/test/fixtures/real/`,
-for now written by hand from the probe's excerpts).
+from a fake server (`packages/lit/test/fake-lit.ts`) and from the answers that probe recorded (`packages/lit/test/fixtures/real/`:
+zbMATH in full, OpenAlex and arXiv cut to their first result).
 
 ### Against the real sites
 
@@ -36,7 +36,8 @@ for now written by hand from the probe's excerpts).
   the request is now `all:w1 AND all:w2 ...` over the first five words of the query. zbMATH's review text was a placeholder
   ("contents unavailable due to conflicting licenses"): it now counts as no text, and the hit's text is then `keywords: a; b; c`.
   OpenAlex answered a `meta.notice` addressed to the reader: it is data and never reaches a hit (only `results` is read).
-  Semantic Scholar needs a key. Per backend, three optional settings: `apiKeyEnv` (the NAME of an environment variable, read at call time;
+  Without a key OpenAlex charges each search ($0.001) to a daily allowance of $0.10 shared by everyone at the same address, about a
+  hundred searches a day, which the cache spares; a key setting for OpenAlex is not built. Semantic Scholar needs a key. Per backend, three optional settings: `apiKeyEnv` (the NAME of an environment variable, read at call time;
   when set and not empty, the requests of `semantic-scholar` carry the header `x-api-key`; the key is never in an address, a cache file, an
   error or `raw`), `minIntervalMs` (the least time between two requests to that site, over the global setting; `local.json` gives arXiv 3000)
   and `retry429Ms` (an HTTP 429 is retried once after this pause; absent: no retry; `local.json` gives Semantic Scholar 2000).
