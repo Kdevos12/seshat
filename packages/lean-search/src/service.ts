@@ -52,6 +52,7 @@ const SETTINGS: JsonSchema = {
   properties: {
     allowedHosts: { type: "array", items: { type: "string", minLength: 1 } },
     remoteUrl: { type: "string" },
+    remoteQuery: { type: "string", enum: ["text", "list", ""] },
     patternUrl: { type: "string" },
     index: { type: "string" },
     timeoutSec: { type: "integer", minimum: 1 },
@@ -63,6 +64,8 @@ const SETTINGS: JsonSchema = {
 interface Settings {
   allowedHosts?: string[];
   remoteUrl?: string;
+  /** `list` sends the remote query as a list of one text (leansearch.net); `text`, the empty text or absent: as a text. */
+  remoteQuery?: "text" | "list" | "";
   patternUrl?: string;
   index?: string;
   timeoutSec?: number;
@@ -114,7 +117,7 @@ function setUp(
   const remoteUrl = checked("remote", given(s.remoteUrl));
   const patternUrl = checked("pattern", given(s.patternUrl));
   const backends: Backend[] = [];
-  if (remoteUrl !== undefined) backends.push(remoteUrl.startsWith("!") ? refused("remote", remoteUrl.slice(1)) : remoteBackend(remoteUrl, http));
+  if (remoteUrl !== undefined) backends.push(remoteUrl.startsWith("!") ? refused("remote", remoteUrl.slice(1)) : remoteBackend(remoteUrl, http, s.remoteQuery === "list" ? "list" : "text"));
   if (patternUrl?.startsWith("!") === true) backends.push(refused("pattern", patternUrl.slice(1), indexPath !== undefined ? lazyPattern(undefined, index, http, true) : undefined));
   else if (patternUrl !== undefined || indexPath !== undefined) {
     // The pattern backend over the index reads it when asked, like the local one.
@@ -155,7 +158,7 @@ function lazyLocal(index: () => LocalIndex | undefined): Backend {
 /** The most hits one call returns. */
 export const MAX_LIMIT = 20;
 
-/** The factory `lean-search`. Settings: `remoteUrl`, `patternUrl`, `index`, `timeoutSec`, `maxResponseBytes`; none is required. */
+/** The factory `lean-search`. Settings: `remoteUrl`, `remoteQuery`, `patternUrl`, `index`, `timeoutSec`, `maxResponseBytes`; none is required. */
 export function leanSearchFactory(options: LeanSearchFactoryOptions = {}): ImplementationFactory {
   return (context): ImplementationInstance => {
     const { backends, index, configured, unavailable } = setUp(context, options);

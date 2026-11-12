@@ -414,7 +414,7 @@ in `@seshat/lean-search`, version `backends-1`) runs the backends the host profi
 
 | Backend | Setting | What it is |
 |---|---|---|
-| `remote` | `remoteUrl` (`LEAN_SEARCH_URL`) | an HTTP search service for natural-language and goal queries: `POST` of `{"query", "num_results"}`, answered as a list of declarations |
+| `remote` | `remoteUrl` (`LEAN_SEARCH_URL`), `remoteQuery` (`LEAN_SEARCH_QUERY`) | an HTTP search service for natural-language and goal queries: `POST` of `{"query", "num_results"}`, the query as a text or, with `remoteQuery` `list`, as a list of one text (leansearch.net), answered as a list of declarations |
 | `local` | `index` (`LEAN_SEARCH_INDEX`) | a file of declarations (a JSON array or one object a line: `name`, `type`, optional `doc`) ranked by BM25, no model |
 | `pattern` | `patternUrl` (`LEAN_PATTERN_URL`) | a Loogle-like service (`GET` with `q`), or, when no address is set, a match of a goal's conclusion over the index |
 
@@ -423,8 +423,8 @@ A service is reached over https only, at a host of the `allowedHosts` setting (n
 waiting (`timeoutSec`, `maxResponseBytes`); one that fails is `skipped` and the others still answer. With `private` set no backend that
 sends the query to a third party is asked: `remote` is skipped, and `pattern` falls back to the index when there is one. The answer holds
 names only: what a backend says besides (types, doc strings) ranks inside the index and goes no further. Its contract has 2 cases (names
-for a name query, and a private call that asks no service), which need a backend set up. Not run against a real service or an index of
-Mathlib.
+for a name query, and a private call that asks no service), which need a backend set up. The local profile sets leansearch.net and Loogle
+when `LEAN_SEARCH_URL` and `LEAN_PATTERN_URL` are not set; their answers' shapes were recorded by a probe ([lean.md](lean.md#search-pushed-by-the-harness)), but no run has used them, and no index of Mathlib has been built.
 
 ## `decide.ask`
 
