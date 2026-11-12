@@ -392,6 +392,24 @@ export async function probeSandbox(system: DoctorSystem, sandbox: readonly strin
 /** A Docker image name that cannot be read as an option. */
 const IMAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/;
 
+/** The literature search keeps its answers in `lit-cache` beside the profile file (the binding is otherwise the base's). */
+function withLitCache(binding: NonNullable<HostProfile["capabilities"][string]>, configDir: string): NonNullable<HostProfile["capabilities"][string]> {
+  return { ...binding, settings: Object.fromEntries(Object.entries(binding.settings ?? {}).map(([impl, settings]) => [impl, { ...settings, cacheDir: join(configDir, "hosts", "lit-cache") }])) };
+}
+
+/** Writes the generated profile again with the capabilities of `local.json` it lacks (the others are kept as they are); the names added, none when the file is left alone. */
+function addMissingCapabilities(configDir: string, path: string): string[] {
+  const current = JSON.parse(readFileSync(path, "utf8")) as HostProfile & { description?: string };
+  const base = JSON.parse(readFileSync(join(configDir, "hosts", "local.json"), "utf8")) as HostProfile;
+  const added: Record<string, NonNullable<HostProfile["capabilities"][string]>> = {};
+  for (const [id, binding] of Object.entries(base.capabilities)) {
+    if (current.capabilities[id] === undefined) added[id] = id === "lit.search" ? withLitCache(binding, configDir) : binding;
+  }
+  const names = Object.keys(added);
+  if (names.length > 0) writeFileSync(path, `${JSON.stringify({ ...current, capabilities: { ...current.capabilities, ...added } }, null, 2)}\n`);
+  return names;
+}
+
 async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<DoctorReport["isolation"]> {
   const { system, profile } = o;
   const title = "Certifier isolation";
@@ -404,9 +422,11 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
   }
   if (current.sandbox.length > 0) {
     const flaw = await probeSandbox(system, current.sandbox);
+    // `--rewrite` on the generated profile itself: add what local.json gained since it was written, and keep everything it has.
+    const refreshed = flaw === undefined && (o.write ?? "auto") === "rewrite" && profile.host === name && existsSync(path) ? addMissingCapabilities(o.configDir, path) : undefined;
     checks.push(
       flaw === undefined
-        ? { id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`, and a test run of that sandbox here confirmed that a candidate's code can write only its work directory and cannot use the network. It can still read the files your user can read.` }
+        ? { id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`, and a test run of that sandbox here confirmed that a candidate's code can write only its work directory and cannot use the network. It can still read the files your user can read.${refreshed === undefined ? "" : refreshed.length > 0 ? ` --rewrite wrote ${path} again with the capabilities of local.json it lacked: ${refreshed.join(", ")}; the others are as they were.` : ` --rewrite found no capability of local.json missing from ${path}: it was not rewritten.`}` }
         : {
             id: "isolation",
             status: "warn",
@@ -415,7 +435,7 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
             fix: "Fix the sandbox command of lean.certify in that profile, or delete it and run `pnpm harness doctor` again for the default one.",
           },
     );
-    return undefined;
+    return refreshed === undefined ? undefined : { profile: name, path, written: refreshed.length > 0, tool: current.sandbox[0] === "docker" ? "docker" : "bubblewrap" };
   }
   if (current.unsandboxed) {
     checks.push({
@@ -481,12 +501,8 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
     const inUse = join(o.configDir, "hosts", `${profile.host}.json`);
     const base = JSON.parse(readFileSync(existsSync(inUse) ? inUse : join(o.configDir, "hosts", "local.json"), "utf8")) as HostProfile & { description?: string };
     const { unsandboxed: _opted, ...lake } = (base.capabilities["lean.certify"]?.settings?.lake ?? {}) as Record<string, unknown>;
-    // The literature search keeps its answers in `lit-cache` beside the profile file (the binding is otherwise the base's).
     const litBase = base.capabilities["lit.search"];
-    const lit =
-      litBase === undefined
-        ? {}
-        : { "lit.search": { ...litBase, settings: Object.fromEntries(Object.entries(litBase.settings ?? {}).map(([impl, settings]) => [impl, { ...settings, cacheDir: join(o.configDir, "hosts", "lit-cache") }])) } };
+    const lit = litBase === undefined ? {} : { "lit.search": withLitCache(litBase, o.configDir) };
     const next = {
       ...base,
       host: name,
