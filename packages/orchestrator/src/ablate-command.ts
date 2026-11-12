@@ -47,6 +47,8 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
   /** The cumulative configurations, comma-separated names; default all of them. Ignored with an experiment. */
   configs?: readonly string[];
   experiment?: string;
+  /** With an experiment: run only the arms with these names, in the experiment's order. Absent: every arm. */
+  arms?: readonly string[];
   /** The lines an experiment's arms share; default every line. */
   lines?: readonly string[];
   models?: readonly string[];
@@ -59,10 +61,21 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
 }
 
 /** The arms a command asks for: the cumulative configurations, or the arms of one experiment. */
-export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "lines" | "models" | "host">): Arm[] {
+export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "arms" | "lines" | "models" | "host">): Arm[] {
+  if (command.arms !== undefined && command.experiment === undefined) throw new RunSetupError("--arms goes with --experiment");
   if (command.experiment !== undefined) {
     if (command.configs !== undefined) throw new RunSetupError("choose the configurations with --configs or an --experiment, not both");
-    return experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])], ...(command.host !== undefined ? { host: command.host } : {}) });
+    const all = experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])], ...(command.host !== undefined ? { host: command.host } : {}) });
+    if (command.arms === undefined) return all;
+    const unknown = command.arms.filter((name) => !all.some((a) => a.name === name));
+    if (unknown.length > 0) throw new RunSetupError(`unknown arm ${unknown.map((n) => JSON.stringify(n)).join(", ")} in experiment ${command.experiment}; its arms are ${all.map((a) => a.name).join(", ")}`);
+    const chosen = all.filter((a) => (command.arms as readonly string[]).includes(a.name));
+    // An arm whose `versus` arm is not chosen keeps running: the comparison falls back to the arm before it in the table, and to none for the first.
+    return chosen.map((a) => {
+      if (a.versus === undefined || chosen.some((x) => x.name === a.versus)) return a;
+      const { versus: _dropped, ...rest } = a;
+      return rest;
+    });
   }
   if (command.lines !== undefined || command.models !== undefined) throw new RunSetupError("--lines and --models go with --experiment");
   return cumulativeArms(command.configs !== undefined && command.configs.length > 0 ? [...command.configs] : cumulativeNames());
