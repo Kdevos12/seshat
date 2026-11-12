@@ -79,7 +79,7 @@ describe("harness solve", () => {
     assert.equal(c.requests.length, 1, "the certifier ran");
     // The defaults: a capped budget, the gate, probe first, the classical battery, a consortium stop at half the allowance.
     assert.deepEqual(run.config?.budget, { problemUsd: 2, runUsd: 2 });
-    assert.deepEqual(run.config?.gate, {});
+    assert.deepEqual(run.config?.gate, { probeExtend: true });
     assert.deepEqual(run.config?.lines, ["M1", "M10", "M6"]);
     assert.equal(run.config?.consortium?.limit.usd, 1);
     // The one-problem bench is a real index.
@@ -236,6 +236,7 @@ describe("the defaults sets of solve", () => {
     assert.equal(name, "v2", "v2 is the default");
     assert.deepEqual(v2, {
       ...v1,
+      gate: { probeExtend: true },
       lines: ["M1", "M10", "M6"],
       lineOptions: { M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } },
       editTool: true,
