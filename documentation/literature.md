@@ -25,11 +25,21 @@ the four remote ones at their public addresses (`OPENALEX_URL`, `ARXIV_URL`, `SE
 
 ### Not run
 
-No backend has run against its site: this environment reaches none. The requests and the answers are written from each site's
-documentation as remembered (zbMATH's the least sure) and are tested against a fake server (`packages/lit/test/fake-lit.ts`).
+Three sites answered a real probe on 2026-11-12 (OpenAlex, arXiv, zbMATH); Semantic Scholar refused (HTTP 429) without a key. The
+requests corrected after that probe (below) have not run against the sites yet, and no intake step has run for real. The tests answer
+from a fake server (`packages/lit/test/fake-lit.ts`) and from fixtures in the real answers' shapes (`packages/lit/test/fixtures/real/`,
+for now written by hand from the probe's excerpts).
 
 ### Against the real sites
 
+- **What the first real probe showed, and what changed.** arXiv read `all:a b c` as an OR of the words (649626 results, off-topic hits):
+  the request is now `all:w1 AND all:w2 ...` over the first five words of the query. zbMATH's review text was a placeholder
+  ("contents unavailable due to conflicting licenses"): it now counts as no text, and the hit's text is then `keywords: a; b; c`.
+  OpenAlex answered a `meta.notice` addressed to the reader: it is data and never reaches a hit (only `results` is read).
+  Semantic Scholar needs a key. Per backend, three optional settings: `apiKeyEnv` (the NAME of an environment variable, read at call time;
+  when set and not empty, the requests of `semantic-scholar` carry the header `x-api-key`; the key is never in an address, a cache file, an
+  error or `raw`), `minIntervalMs` (the least time between two requests to that site, over the global setting; `local.json` gives arXiv 3000)
+  and `retry429Ms` (an HTTP 429 is retried once after this pause; absent: no retry; `local.json` gives Semantic Scholar 2000).
 - **The doctor's profile.** The host profile `harness doctor` writes keeps the base profile's `lit.search` binding (the four remote backends
   with their `allowedHosts`, and `bench-metadata` when `BENCH_CHECKOUT` is set) and sets `cacheDir` to `lit-cache` beside the profile file.
   `harness doctor` has a check `literature` that says which backends the profile enables and makes no request.

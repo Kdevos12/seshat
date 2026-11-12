@@ -1,0 +1,5 @@
+{"meta": {"notice": "No API key, so this request shares one free daily budget ($0.10) with everyone on your network's IP address. Get a free key and add api_key=YOUR_KEY to your requests.", "count": 62, "db_response_time_ms": 81, "page": 1, "per_page": 3},
+ "results": [
+  {"id": "https://openalex.org/W2043159245", "doi": "https://doi.org/10.1016/0012-365x(88)90199-9", "title": "On conjectures of Graffiti", "abstract_inverted_index": null},
+  {"id": "https://openalex.org/W2000000002", "doi": "https://doi.org/10.1016/0012-365x(91)00000-0", "title": "Graffiti and independence numbers", "abstract_inverted_index": {"We": [0], "study": [1], "independence": [2], "numbers": [3]}}
+ ]}

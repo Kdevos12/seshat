@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="html">arXiv Query: search_query=all:Graffiti AND all:independence</title>
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">2</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/1001.0001v1</id>
+    <title>Graffiti conjectures on independence number</title>
+    <summary>We test several Graffiti conjectures about the independence number.</summary>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/1001.0002v2</id>
+    <title>A second paper</title>
+    <summary>Another abstract.</summary>
+  </entry>
+</feed>

@@ -131,11 +131,14 @@ export function zbmath(s: RemoteSettings): Backend {
       const hits = list.flatMap((raw): Hit[] => {
         if (!isRecord(raw)) return [];
         const title = isRecord(raw.title) ? str(raw.title.title) : str(raw.title);
-        const reviews = Array.isArray(raw.editorial_contributions) ? raw.editorial_contributions.flatMap((c) => (isRecord(c) ? [str(c.text)] : [])) : [];
+        // zbMATH answers a placeholder where the licence forbids the review: that is no text.
+        const reviews = Array.isArray(raw.editorial_contributions) ? raw.editorial_contributions.flatMap((c) => (isRecord(c) && !/contents unavailable due to conflicting licenses/i.test(str(c.text)) ? [str(c.text)] : [])) : [];
+        const keywords = Array.isArray(raw.keywords) ? raw.keywords.filter((k): k is string => typeof k === "string" && k !== "") : [];
+        const body = reviews.join(" ") !== "" ? reviews.join(" ") : keywords.length > 0 ? `keywords: ${keywords.join("; ")}` : "";
         const links = Array.isArray(raw.links) ? raw.links.flatMap((l) => (isRecord(l) ? [str(l.url)] : [])) : [];
         const id = typeof raw.id === "number" || typeof raw.id === "string" ? String(raw.id) : "";
         const own = /^[\w.-]+$/.test(id) ? `${s.baseUrl.replace(/^(https?:\/\/)api\./, "$1")}/${id}` : s.baseUrl;
-        return [{ backend: "zbmath", url: linkOr(links[0] ?? own, s.baseUrl), title: clean(title, MAX_TITLE_CHARS), text: clean(reviews.join(" "), MAX_TEXT_CHARS) }];
+        return [{ backend: "zbmath", url: linkOr(links[0] ?? own, s.baseUrl), title: clean(title, MAX_TITLE_CHARS), text: clean(body, MAX_TEXT_CHARS) }];
       });
       return { url, hits: done(hits, limit), raw: answer.body, cached: answer.cached };
     },
@@ -169,7 +172,10 @@ export function arxiv(s: RemoteSettings): Backend {
   return {
     id: "arxiv",
     async search(query, limit, signal) {
-      const url = `${s.baseUrl}/api/query?search_query=${encodeURIComponent(`all:${query}`)}&start=0&max_results=${limit}`;
+      // arXiv reads spaces in `all:a b c` as OR, which returns off-topic hits: ask for the first words joined by AND.
+      const words = wordsOf(query).slice(0, 5);
+      const expression = words.length > 0 ? words.map((w) => `all:${w}`).join(" AND ") : `all:${query}`;
+      const url = `${s.baseUrl}/api/query?search_query=${encodeURIComponent(expression)}&start=0&max_results=${limit}`;
       const answer = await s.fetcher.answer(url, signal);
       const xml = answer.body;
       if (!/<feed[\s>]/.test(xml)) throw new LitError(`${url}: the answer is not an Atom feed`);
@@ -238,15 +244,21 @@ export function benchMetadata(dir: string): Backend {
 }
 
 /** The backend of an id, from its setting; `undefined` when the setting does not enable it (no address, no directory). */
-export function makeBackend(id: BackendId, setting: { baseUrl?: string; allowedHosts?: readonly string[]; dir?: string }, fetcherOptions: Omit<FetcherOptions, "allowedHosts" | "cache"> & { cache?: { dir: string; days: number } }): Backend | undefined {
+export function makeBackend(id: BackendId, setting: { baseUrl?: string; allowedHosts?: readonly string[]; dir?: string; apiKeyEnv?: string; minIntervalMs?: number; retry429Ms?: number }, fetcherOptions: Omit<FetcherOptions, "allowedHosts" | "cache"> & { cache?: { dir: string; days: number }; env?: Readonly<Record<string, string | undefined>> }): Backend | undefined {
   if (id === "bench-metadata") return setting.dir === undefined || setting.dir === "" ? undefined : benchMetadata(setting.dir);
   if (setting.baseUrl === undefined || setting.baseUrl === "") return undefined;
-  const { cache, ...rest } = fetcherOptions;
+  const { cache, env, ...rest } = fetcherOptions;
+  // The key is read at call time from the environment, by the name the setting gives; it only goes in a header.
+  const keyName = id === "semantic-scholar" ? setting.apiKeyEnv : undefined;
+  const headers = keyName === undefined || keyName === "" ? undefined : (): Record<string, string> => {
+    const key = (env ?? process.env)[keyName];
+    return key !== undefined && key !== "" ? { "x-api-key": key } : {};
+  };
   const baseUrl = setting.baseUrl.replace(/\/+$/, "");
   const allowedHosts = setting.allowedHosts ?? [];
   const refused = refusalOf(`${baseUrl}/`, allowedHosts);
   if (refused !== undefined) throw new Error(`${id}: ${refused}`);
-  const s: RemoteSettings = { baseUrl, allowedHosts, fetcher: new Fetcher({ ...rest, allowedHosts, ...(cache !== undefined ? { cache: { ...cache, backend: id } } : {}) }) };
+  const s: RemoteSettings = { baseUrl, allowedHosts, fetcher: new Fetcher({ ...rest, allowedHosts, ...(setting.minIntervalMs !== undefined ? { minIntervalMs: setting.minIntervalMs } : {}), ...(setting.retry429Ms !== undefined ? { retry429Ms: setting.retry429Ms } : {}), ...(headers !== undefined ? { headers } : {}), ...(cache !== undefined ? { cache: { ...cache, backend: id } } : {}) }) };
   switch (id) {
     case "openalex":
       return openalex(s);

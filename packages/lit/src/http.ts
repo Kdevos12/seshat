@@ -13,11 +13,14 @@ export type Fetch = typeof fetch;
 export class LitError extends Error {
   /** The site could not be reached or is busy (no answer, 5xx, 408, 429); otherwise it answered with something refused. */
   readonly unreachable: boolean;
+  /** The HTTP status of a refused answer, when there was one. */
+  readonly status: number | undefined;
 
-  constructor(message: string, options: { unreachable?: boolean } = {}) {
+  constructor(message: string, options: { unreachable?: boolean; status?: number } = {}) {
     super(message);
     this.name = "LitError";
     this.unreachable = options.unreachable ?? false;
+    this.status = options.status;
   }
 }
 
@@ -31,6 +34,12 @@ export interface FetcherOptions {
   /** The least time between two requests. Default 1000 ms; the tests use 0. */
   minIntervalMs?: number;
   userAgent?: string;
+  /** Headers added to every request, read at call time (a key from the environment). Never part of the cache key, an address or an error message. */
+  headers?: () => Record<string, string>;
+  /** When set, an HTTP 429 is retried once after this many milliseconds. Default 0: no retry. */
+  retry429Ms?: number;
+  /** The pause between requests and before a retry; injectable so that a test does not wait. */
+  sleep?: (ms: number) => Promise<void>;
   /** Answers kept on disk: the directory, how many days an answer stays fresh, and the backend's id (part of the key). Absent: no cache. */
   cache?: { dir: string; days: number; backend: string };
 }
@@ -41,6 +50,8 @@ export interface Answer {
   status: number;
   cached: boolean;
 }
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const DEFAULT_MAX_BYTES = 1024 * 1024;
 const TEXT_TYPES = /^(?:application\/(?:json|xml|atom\+xml|[\w.+-]*\+json|[\w.+-]*\+xml)|text\/[\w.+-]+)(?:\s*;.*)?$/i;
@@ -120,7 +131,15 @@ export class Fetcher {
     if (refused !== undefined) throw new LitError(`${refused}: no request was sent`);
     const hit = this.#fromCache(address);
     if (hit !== undefined) return hit;
-    const body = await this.#request(address, signal);
+    let body: string;
+    try {
+      body = await this.#request(address, signal);
+    } catch (error) {
+      const retry = this.#o.retry429Ms ?? 0;
+      if (!(error instanceof LitError && error.status === 429 && retry > 0)) throw error;
+      await (this.#o.sleep ?? defaultSleep)(retry);
+      body = await this.#request(address, signal);
+    }
     this.#toCache(address, 200, body);
     return { body, status: 200, cached: false };
   }
@@ -128,7 +147,7 @@ export class Fetcher {
   async #request(address: string, signal?: AbortSignal): Promise<string> {
     const turn = this.#queue.then(async () => {
       const wait = this.#last + this.#o.minIntervalMs - Date.now();
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (wait > 0) await (this.#o.sleep ?? defaultSleep)(wait);
       this.#last = Date.now();
     });
     this.#queue = turn.catch(() => undefined);
@@ -141,7 +160,7 @@ export class Fetcher {
       try {
         response = await (this.#o.fetch ?? fetch)(address, {
           method: "GET",
-          headers: { Accept: "application/json, application/atom+xml, text/plain", "User-Agent": this.#o.userAgent },
+          headers: { Accept: "application/json, application/atom+xml, text/plain", "User-Agent": this.#o.userAgent, ...(this.#o.headers?.() ?? {}) },
           redirect: "error",
           signal: merged,
         });
@@ -151,7 +170,7 @@ export class Fetcher {
       if (!response.ok) {
         const busy = response.status >= 500 || response.status === 408 || response.status === 429;
         await response.body?.cancel().catch(() => undefined);
-        throw new LitError(`${address}: HTTP ${response.status}`, { unreachable: busy });
+        throw new LitError(`${address}: HTTP ${response.status}`, { unreachable: busy, status: response.status });
       }
       const type = response.headers.get("content-type") ?? "";
       if (!TEXT_TYPES.test(type.trim())) {
