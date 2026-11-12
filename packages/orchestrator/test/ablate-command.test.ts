@@ -69,6 +69,28 @@ describe("harness ablate", () => {
     assert.throws(() => commandArms({ lines: ["M1"] }), RunSetupError);
   });
 
+  it("runs only the arms --arms names, in the experiment's order, and refuses an unknown name with the list", () => {
+    const names = (arms: readonly string[]) => commandArms({ experiment: "packet-mode", arms }).map((a) => a.name);
+    assert.deepEqual(names(["naive", "append_only"]), ["append_only", "naive"], "the experiment's order, not the order given");
+    assert.deepEqual(commandArms({ experiment: "packet-mode" }).map((a) => a.name), ["prefix_tail", "append_only", "recompiled", "naive"], "absent: every arm");
+    assert.throws(() => names(["naive", "nope"]), (e: unknown) => e instanceof RunSetupError && /"nope"/.test(e.message) && /prefix_tail, append_only, recompiled, naive/.test(e.message));
+    assert.throws(() => commandArms({ arms: ["M0"] }), RunSetupError);
+    const kept = commandArms({ experiment: "packet-mode", arms: ["append_only", "naive"] });
+    assert.equal(kept[0]?.versus, undefined, "versus prefix_tail, which is not chosen");
+    assert.equal(kept[1]?.versus, undefined);
+    assert.equal(commandArms({ experiment: "renderings", arms: ["list", "merged"] })[1]?.versus, "list", "a versus arm that is chosen stays");
+  });
+
+  it("runs one arm whose versus arm is not chosen, without a comparison", async () => {
+    const dir = join(tempDir("mh-ablate-arms-"), "out");
+    const seen: RunOptions[] = [];
+    const result = await ablateCommand({ template, config: base, problems, dir, experiment: "packet-mode", arms: ["naive"], lines: ["M1", "M4"], run: fake(seen), print: () => undefined });
+    assert.equal(seen.length, 1);
+    assert.equal(result.arms.length, 1);
+    assert.equal(result.arms[0]?.comparison, undefined);
+    assert.ok(existsSync(join(dir, "ablation.md")));
+  });
+
   it("runs an experiment, writes ablation.md and ablation.json, and prints the table with what was not run", async () => {
     const dir = join(tempDir("mh-ablate-cmd-"), "out");
     const printed: string[] = [];

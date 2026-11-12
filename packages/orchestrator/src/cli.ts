@@ -57,7 +57,7 @@ const usage = `usage:
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
               [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
+              [--configs M0,M1,... | --experiment NAME [--arms NAME,...] [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
@@ -115,7 +115,7 @@ report: prints the report of a run from its journal, and rewrites RESULT.md besi
 rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
 RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
-(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. solve-defaults runs on the host solve takes unless --host or HARNESS_HOST is given. --split N builds
+(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. solve-defaults runs on the host solve takes unless --host or HARNESS_HOST is given. --arms NAME,... (with --experiment) runs only those arms, in the experiment's order. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
 would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
 optimize-prompts: GEPA-style rewriting of the prover's system prompt (documentation/prompts.md). It splits the problems into dev, a held-out
@@ -226,6 +226,7 @@ const { positionals, values } = parseArgs({
     ablation: { type: "string" },
     configs: { type: "string" },
     experiment: { type: "string" },
+    arms: { type: "string" },
     models: { type: "string" },
     split: { type: "string" },
     "split-by": { type: "string" },
@@ -922,6 +923,7 @@ async function ablate(): Promise<number> {
     dir,
     ...(list(values.configs) !== undefined ? { configs: list(values.configs) as string[] } : {}),
     ...(values.experiment !== undefined ? { experiment: values.experiment } : {}),
+    ...(list(values.arms) !== undefined ? { arms: list(values.arms) as string[] } : {}),
     ...(values.lines !== undefined ? { lines: selectLines() } : {}),
     ...(list(values.models) !== undefined ? { models: list(values.models) as string[] } : {}),
     ...(split !== undefined ? { split } : {}),

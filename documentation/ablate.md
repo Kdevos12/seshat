@@ -56,6 +56,8 @@ harness ablate --checkout DIR --model PROVIDER/ID --bench bench/graded-v1.json -
 
 When an arm's run ends on a refusal of the model provider (`provider_refused`: an empty balance, a key that is not accepted), the arms after it are not run, `ablation.json` carries `refusal` (the arm, the reason, the arms not run), and `ablation.md` opens by saying that the comparison is not valid. It prints no paired statistics and no verdict on the target, and `harness ablate` exits with code 1. The arms that finished before the refusal keep their rows.
 
+`--arms NAME,...` (with `--experiment` only) runs only the named arms of the experiment, in the experiment's own order, whatever the order given; a name the experiment does not have is a setup error that lists its arm names, and without the option every arm runs. An arm whose `versus` arm is not chosen keeps running and is compared with the arm before it in the chosen table, or with none when it is the first (a run of one arm has no comparison, and the paired protocol takes that arm as its own baseline, so it prints no verdict worth reading).
+
 For `--experiment solve-defaults`, when neither `--host` nor `HARNESS_HOST` is given, the arms run on the host `solve` takes (the isolated profile `doctor` wrote, when it exists, else `local`), and the command prints which host that is; every other experiment keeps `local` as its default.
 
 ## Reliability of decisions (J4)
