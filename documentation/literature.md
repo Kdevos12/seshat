@@ -66,7 +66,9 @@ zbMATH in full, OpenAlex and arXiv cut to their first result).
 
 1. **Three query forms**, made without a model (`queryForms`): the words of the statement, the statement itself (the person's prose when
    there is some, otherwise the Lean statement with its symbols read as words), and the words with `conjecture counterexample
-   disproof`. Nothing of the Lean syntax is sent. Each form is one `lit.search` call, so each query and its answer is a tool run of the
+   disproof`. Nothing of the Lean syntax is sent. For a bench problem the words come from the docstring above the declaration, which a
+   sketch keeps at the start of its header (`docstringOf`); without one, from the Lean statement, where a binder's names are left out
+   (the first real intake, on 2026-11-12, missed the docstring and searched for the hypotheses' names). Each form is one `lit.search` call, so each query and its answer is a tool run of the
    journal, as every other tool's.
 2. **One judge call**: "does a hit prove, refute or restrict this exact statement?", for at most 12 hits (duplicates by link removed),
    with JSON of `{index, verdict, quote}` for each. The system prompt (`JUDGE_SYSTEM`) is fixed and holds nothing fetched; the hits are in the

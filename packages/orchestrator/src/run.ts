@@ -76,7 +76,7 @@ import { keepResultCurrent, writeResult } from "./result.ts";
 import { refusalLine } from "./provider-errors.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
-import { docstringBefore, LIT_SEARCH } from "@seshat/lit";
+import { docstringOf, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
@@ -1351,7 +1351,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             statement: entry.statement,
             ...(o.prose !== undefined ? { prose: o.prose } : {}),
             name: entry.fullName,
-            ...(docstringBefore(problem.sketch.prefix) !== undefined ? { doc: docstringBefore(problem.sketch.prefix) as string } : {}),
+            ...(docstringOf(problem.sketch) !== undefined ? { doc: docstringOf(problem.sketch) as string } : {}),
             header: problem.sketch.prefix,
             ...(o.user !== undefined ? { user: o.user } : {}),
             events: resume?.events ?? [],
