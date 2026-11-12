@@ -374,6 +374,7 @@ pnpm check
 pnpm harness capabilities
 pnpm harness models
 pnpm harness doctor    # what this machine lacks, and the isolated host profile when it can write one
+pnpm harness lit probe [--out DIR]    # asks each literature site once and shows what it answers and what the parser makes of it (never run against a real site yet)
 pnpm harness solve "Every even number above two is a sum of two primes." --max-usd 2    # or Lean, or a file; RESULT.md in the run directory
 pnpm harness view runs/RUN_ID    # runs/RUN_ID/view.html, static
 pnpm harness ui [--port N] [--open]    # the local interface on 127.0.0.1 only; the address it prints carries a token

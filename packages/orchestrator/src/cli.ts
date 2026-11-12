@@ -29,6 +29,7 @@ import { buildReport, renderRunReport } from "./report.ts";
 import { writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, solveCommand } from "./solve-command.ts";
+import { litProbeCommand } from "./lit-command.ts";
 import { refusalLine } from "./provider-errors.ts";
 import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
@@ -42,6 +43,7 @@ const usage = `usage:
   harness capabilities [--host HOST]
   harness describe CAPABILITY
   harness health [CAPABILITY] [--host HOST]
+  harness lit probe [--host NAME] [--query "words"] [--limit N] [--out DIR] [--no-cache]   (what each literature site answers, and what the parser makes of it)
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
@@ -188,6 +190,9 @@ const { positionals, values } = parseArgs({
     implementation: { type: "string" },
     case: { type: "string", multiple: true },
     out: { type: "string" },
+    query: { type: "string" },
+    limit: { type: "string" },
+    "no-cache": { type: "boolean" },
     "include-computed": { type: "boolean" },
     config: { type: "string" },
     adopt: { type: "string" },
@@ -333,6 +338,7 @@ async function main(): Promise<number> {
     if (command === "view") return view();
     if (command === "solve") return await solve();
     if (command === "doctor") return await doctor();
+    if (command === "lit") return await lit();
     if (command === "ui") return await ui();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
@@ -1183,6 +1189,22 @@ async function ui(): Promise<number> {
 }
 
 /** `harness doctor`: documentation/quickstart.md. */
+async function lit(): Promise<number> {
+  if (target !== "probe") throw new UsageError("lit takes a subcommand: probe");
+  if (third !== undefined) throw new UsageError(`lit probe takes no argument, got ${third}`);
+  const limit = number("limit", values.limit, undefined);
+  return await litProbeCommand(
+    {
+      ...(values.host !== undefined ? { host: values.host } : {}),
+      ...(values.query !== undefined ? { query: values.query } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(values.out !== undefined ? { out: values.out } : {}),
+      noCache: values["no-cache"] === true,
+    },
+    { out: (line) => console.log(line), err: (line) => console.error(line), signal: stoppable().signal },
+  );
+}
+
 async function doctor(): Promise<number> {
   if (target !== undefined) throw new UsageError(`doctor takes no argument, got ${target}`);
   if (values["no-write"] === true && values.rewrite === true) throw new UsageError("--no-write and --rewrite cannot both be given");
