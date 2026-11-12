@@ -98,11 +98,25 @@ const minutes = (ms: number): string => (ms >= 60_000 ? `${(ms / 60_000).toFixed
 function protocol(result: AblationResult): string[] {
   const p = result.protocol;
   if (p === undefined) return [];
+  if (result.protocolAll !== undefined) {
+    const n = result.outOfReach?.length ?? 0;
+    return [
+      "## Paired protocol",
+      "",
+      `${n} of the ${result.problems.length} problem(s) are tagged out of reach at a small budget (${(result.outOfReach ?? []).join(", ")}): the verdicts use the others, and the first table is set beside them.`,
+      "",
+      ...protocolTable(result, result.protocolAll, "All problems", result.problems.length),
+      ...protocolTable(result, p, "Problems in reach", result.problems.length - n),
+    ];
+  }
+  return protocolTable(result, p, "", result.problems.length, true);
+}
+
+function protocolTable(result: AblationResult, p: NonNullable<AblationResult["protocol"]>, title: string, count: number, header = false): string[] {
   const range = (x: { low: number; high: number }) => `${(x.low * 100).toFixed(0)}% to ${(x.high * 100).toFixed(0)}%`;
   const out = [
-    "## Paired protocol",
-    "",
-    `The same ${result.problems.length} problem(s) at ${money(result.budget.problemUsd, 2)} per problem in every arm; the baseline is ${p.baseline}. The interval is Wilson's, 95%, of the share solved.`,
+    ...(header ? ["## Paired protocol", ""] : title !== "" ? [`### ${title}`, ""] : []),
+    `The same ${count} problem(s) at ${money(result.budget.problemUsd, 2)} per problem in every arm; the baseline is ${p.baseline}. The interval is Wilson's, 95%, of the share solved.`,
     "",
     ...table(
       ["Arm", "Solved", "95% interval", "Dollars", "$ per solved", "Solved per $", "Wall-clock", "Certified refutations", "Settled in the literature"],
