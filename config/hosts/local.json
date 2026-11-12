@@ -190,8 +190,8 @@
         "sources": {
           "backends": {
             "openalex": { "baseUrl": "${env:OPENALEX_URL:-https://api.openalex.org}", "allowedHosts": ["api.openalex.org"] },
-            "arxiv": { "baseUrl": "${env:ARXIV_URL:-https://export.arxiv.org}", "allowedHosts": ["export.arxiv.org"] },
-            "semantic-scholar": { "baseUrl": "${env:SEMANTIC_SCHOLAR_URL:-https://api.semanticscholar.org}", "allowedHosts": ["api.semanticscholar.org"] },
+            "arxiv": { "baseUrl": "${env:ARXIV_URL:-https://export.arxiv.org}", "allowedHosts": ["export.arxiv.org"], "minIntervalMs": 3000 },
+            "semantic-scholar": { "baseUrl": "${env:SEMANTIC_SCHOLAR_URL:-https://api.semanticscholar.org}", "allowedHosts": ["api.semanticscholar.org"], "apiKeyEnv": "SEMANTIC_SCHOLAR_API_KEY", "retry429Ms": 2000 },
             "zbmath": { "baseUrl": "${env:ZBMATH_URL:-https://api.zbmath.org}", "allowedHosts": ["api.zbmath.org"] },
             "bench-metadata": { "dir": "${env:BENCH_CHECKOUT:-}" }
           }

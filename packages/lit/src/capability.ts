@@ -28,6 +28,9 @@ const BACKEND_SETTING: JsonSchema = {
     baseUrl: { type: "string" },
     allowedHosts: { type: "array", items: { type: "string", minLength: 1 } },
     dir: { type: "string" },
+    apiKeyEnv: { type: "string", minLength: 1 },
+    minIntervalMs: { type: "integer", minimum: 0 },
+    retry429Ms: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 };
@@ -47,7 +50,7 @@ const SETTINGS: JsonSchema = {
 };
 
 interface Settings {
-  backends?: Partial<Record<BackendId, { baseUrl?: string; allowedHosts?: string[]; dir?: string }>>;
+  backends?: Partial<Record<BackendId, { baseUrl?: string; allowedHosts?: string[]; dir?: string; apiKeyEnv?: string; minIntervalMs?: number; retry429Ms?: number }>>;
   timeoutSec?: number;
   minIntervalMs?: number;
   maxBytes?: number;
@@ -61,7 +64,7 @@ interface Settings {
  * empty setting is off), each with the hosts it may reach. A backend that does not answer is named in `answers` and the others
  * still give their hits; the call is `unavailable` when none answered, and the registry then tries the host's next implementation.
  */
-export function litFactory(options: { fetch?: Fetch } = {}): ImplementationFactory {
+export function litFactory(options: { fetch?: Fetch; env?: Readonly<Record<string, string | undefined>>; sleep?: (ms: number) => Promise<void> } = {}): ImplementationFactory {
   return ({ spec, settings }: Pick<FactoryContext, "spec" | "settings">): ImplementationInstance => {
     const problems = validate(SETTINGS, settings, "settings");
     if (problems.length > 0) throw new Error(`${spec.factory}: ${problems.join("; ")}`);
@@ -75,6 +78,8 @@ export function litFactory(options: { fetch?: Fetch } = {}): ImplementationFacto
       try {
         made = makeBackend(id, setting, {
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+        ...(options.env !== undefined ? { env: options.env } : {}),
+        ...(options.sleep !== undefined ? { sleep: options.sleep } : {}),
         ...(s.timeoutSec !== undefined ? { timeoutMs: s.timeoutSec * 1000 } : {}),
         ...(s.minIntervalMs !== undefined ? { minIntervalMs: s.minIntervalMs } : {}),
         ...(s.maxBytes !== undefined ? { maxBytes: s.maxBytes } : {}),
