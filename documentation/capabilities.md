@@ -380,6 +380,7 @@ setting is off), each with its `allowedHosts`: the address must be on that list,
 test), a redirect is an error, an answer over `maxBytes` (1 MiB) is refused, only a text content type is read, one request at a time
 with a pause. A backend that fails is named in `answers` and the others still answer; the call is `unavailable` when none did.
 Replacing a backend is a change of the setting; replacing the whole implementation is another implementation id in the profile's `use`.
+Two more settings keep the answers of the sites: `cacheDir` (absent: no cache) and `cacheDays` (default 7); an answer is stored under the sha256 of backend, method and address, a failure is never stored, and an entry of `answers` read from the cache says `cached: true`. The input takes an optional `keepRaw` that puts the body a backend answered in `raw` of its entry (it is what `harness lit probe --out` writes), and both fields are optional, so existing callers are unchanged.
 Its contract has 3 cases (a query with hits, one without, a blank one) against a fake server; it has not run against any site.
 
 ## `lmfdb.query`

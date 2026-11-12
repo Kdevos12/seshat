@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Json } from "@seshat/core";
-import { Fetcher, type FetcherOptions, LitError, refusalOf } from "./http.ts";
+import { Fetcher, type FetcherOptions, LitError, parseJson, refusalOf } from "./http.ts";
 import { clean } from "./text.ts";
 
 /**
@@ -26,6 +26,10 @@ export interface Searched {
   /** The request that was made, or what was read. */
   url: string;
   hits: Hit[];
+  /** The body the site answered (bounded by the size limit), for a caller that keeps it. */
+  raw?: string;
+  /** True when the answer came from the cache, not from the site. */
+  cached?: boolean;
 }
 
 export interface Backend {
@@ -83,14 +87,15 @@ export function openalex(s: RemoteSettings): Backend {
     id: "openalex",
     async search(query, limit, signal) {
       const url = `${s.baseUrl}/works?search=${encodeURIComponent(query)}&per-page=${limit}&select=id,doi,title,abstract_inverted_index`;
-      const json = await s.fetcher.json(url, signal);
+      const answer = await s.fetcher.answer(url, signal);
+      const json = parseJson(answer.body, url);
       const list = isRecord(json) && Array.isArray(json.results) ? json.results : undefined;
       if (list === undefined) throw new LitError(`${url}: the answer has no list of results`);
       const hits = list.flatMap((raw): Hit[] => {
         if (!isRecord(raw)) return [];
         return [{ backend: "openalex", url: linkOr(raw.doi ?? raw.id, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(abstractOf(raw.abstract_inverted_index), MAX_TEXT_CHARS) }];
       });
-      return { url, hits: done(hits, limit) };
+      return { url, hits: done(hits, limit), raw: answer.body, cached: answer.cached };
     },
   };
 }
@@ -102,11 +107,12 @@ export function semanticScholar(s: RemoteSettings): Backend {
     id: "semantic-scholar",
     async search(query, limit, signal) {
       const url = `${s.baseUrl}/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=${limit}&fields=title,abstract,url`;
-      const json = await s.fetcher.json(url, signal);
+      const answer = await s.fetcher.answer(url, signal);
+      const json = parseJson(answer.body, url);
       const list = isRecord(json) && Array.isArray(json.data) ? json.data : undefined;
       if (list === undefined) throw new LitError(`${url}: the answer has no list in data`);
       const hits = list.flatMap((raw): Hit[] => (isRecord(raw) ? [{ backend: "semantic-scholar", url: linkOr(raw.url, s.baseUrl), title: clean(str(raw.title), MAX_TITLE_CHARS), text: clean(str(raw.abstract), MAX_TEXT_CHARS) }] : []));
-      return { url, hits: done(hits, limit) };
+      return { url, hits: done(hits, limit), raw: answer.body, cached: answer.cached };
     },
   };
 }
@@ -118,7 +124,8 @@ export function zbmath(s: RemoteSettings): Backend {
     id: "zbmath",
     async search(query, limit, signal) {
       const url = `${s.baseUrl}/v1/document/_search?search_string=${encodeURIComponent(query)}&page=0&results_per_page=${limit}`;
-      const json = await s.fetcher.json(url, signal);
+      const answer = await s.fetcher.answer(url, signal);
+      const json = parseJson(answer.body, url);
       const list = isRecord(json) ? (Array.isArray(json.result) ? json.result : Array.isArray(json.results) ? json.results : undefined) : undefined;
       if (list === undefined) throw new LitError(`${url}: the answer has no list of results`);
       const hits = list.flatMap((raw): Hit[] => {
@@ -130,7 +137,7 @@ export function zbmath(s: RemoteSettings): Backend {
         const own = /^[\w.-]+$/.test(id) ? `${s.baseUrl.replace(/^(https?:\/\/)api\./, "$1")}/${id}` : s.baseUrl;
         return [{ backend: "zbmath", url: linkOr(links[0] ?? own, s.baseUrl), title: clean(title, MAX_TITLE_CHARS), text: clean(reviews.join(" "), MAX_TEXT_CHARS) }];
       });
-      return { url, hits: done(hits, limit) };
+      return { url, hits: done(hits, limit), raw: answer.body, cached: answer.cached };
     },
   };
 }
@@ -163,10 +170,11 @@ export function arxiv(s: RemoteSettings): Backend {
     id: "arxiv",
     async search(query, limit, signal) {
       const url = `${s.baseUrl}/api/query?search_query=${encodeURIComponent(`all:${query}`)}&start=0&max_results=${limit}`;
-      const xml = await s.fetcher.text(url, signal);
+      const answer = await s.fetcher.answer(url, signal);
+      const xml = answer.body;
       if (!/<feed[\s>]/.test(xml)) throw new LitError(`${url}: the answer is not an Atom feed`);
       const hits = atomEntries(xml).map((e): Hit => ({ backend: "arxiv", url: linkOr(e.id.trim().replace(/^http:/, "https:"), s.baseUrl), title: clean(e.title, MAX_TITLE_CHARS), text: clean(e.summary, MAX_TEXT_CHARS) }));
-      return { url, hits: done(hits, limit) };
+      return { url, hits: done(hits, limit), raw: answer.body, cached: answer.cached };
     },
   };
 }
@@ -230,14 +238,15 @@ export function benchMetadata(dir: string): Backend {
 }
 
 /** The backend of an id, from its setting; `undefined` when the setting does not enable it (no address, no directory). */
-export function makeBackend(id: BackendId, setting: { baseUrl?: string; allowedHosts?: readonly string[]; dir?: string }, fetcherOptions: Omit<FetcherOptions, "allowedHosts">): Backend | undefined {
+export function makeBackend(id: BackendId, setting: { baseUrl?: string; allowedHosts?: readonly string[]; dir?: string }, fetcherOptions: Omit<FetcherOptions, "allowedHosts" | "cache"> & { cache?: { dir: string; days: number } }): Backend | undefined {
   if (id === "bench-metadata") return setting.dir === undefined || setting.dir === "" ? undefined : benchMetadata(setting.dir);
   if (setting.baseUrl === undefined || setting.baseUrl === "") return undefined;
+  const { cache, ...rest } = fetcherOptions;
   const baseUrl = setting.baseUrl.replace(/\/+$/, "");
   const allowedHosts = setting.allowedHosts ?? [];
   const refused = refusalOf(`${baseUrl}/`, allowedHosts);
   if (refused !== undefined) throw new Error(`${id}: ${refused}`);
-  const s: RemoteSettings = { baseUrl, allowedHosts, fetcher: new Fetcher({ ...fetcherOptions, allowedHosts }) };
+  const s: RemoteSettings = { baseUrl, allowedHosts, fetcher: new Fetcher({ ...rest, allowedHosts, ...(cache !== undefined ? { cache: { ...cache, backend: id } } : {}) }) };
   switch (id) {
     case "openalex":
       return openalex(s);
