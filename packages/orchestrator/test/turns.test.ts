@@ -161,8 +161,9 @@ describe("a consortium turn", () => {
 
   it("keeps the notes a session wrote before the turn ended, and the sketch of its last check", async () => {
     // Session 1 ends by itself with its notes; session 2 is cut by the turn after its first check.
+    // The token limit is set for the length of the prover prompt m0-2.2.
     const run = await demoRun({
-      config: { sessions: 3, consortium: consortium({ tokens: 4000 }) },
+      config: { sessions: 3, consortium: consortium({ tokens: 4800 }) },
       responses: [check("bad"), say("NOTES: bad is not a lemma."), check("rfl"), ...spare()],
     });
     const attempts = ofType(run.events, "attempt.finished");

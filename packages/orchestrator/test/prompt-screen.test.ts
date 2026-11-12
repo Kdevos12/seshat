@@ -83,7 +83,7 @@ describe("the strict screen of a rewritten prompt", () => {
       ["Finish when your own judgement says the proof is correct.", /own judgement/],
       ["Prefer native_decide for numeric goals.", /'native_decide' without saying it is refused/],
     ] as const) assert.match(reasons(`${target.current}\n${line}`).join(), why, line);
-    assert.match(reasons(`${target.current}\nTry unsafe casts, or implemented_by.`).join(), /Lean token/);
+    assert.match(reasons(`${target.current}\nTry macro_rules for this.`).join(), /Lean token/);
   });
 });
 

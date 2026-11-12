@@ -83,7 +83,7 @@ describe("a patch of a prompt file", () => {
     execFileSync("git", ["-C", repo, "apply", "p.patch"]);
     assert.equal(readFileSync(join(repo, target.file), "utf8"), `${candidate}\n`);
     // The version moves with the text: a minor bump, and the hash of what was written.
-    assert.deepEqual(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")), { promptVersion: "m0-2.2", sha256: sha256Hex(candidate) });
+    assert.deepEqual(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")), { promptVersion: "m0-2.3", sha256: sha256Hex(candidate) });
     assert.equal(unifiedPatch("f.txt", "a\nb\n", "a\nb\n"), "");
   });
 
@@ -220,7 +220,7 @@ describe("harness optimize-prompts on a simulated bench", () => {
     const repo = promptRepo();
     execFileSync("git", ["-C", repo, "apply", join(dir, "candidates/c1/prover.system.patch")]);
     assert.equal(readFileSync(join(repo, target.file), "utf8"), `${improved}\n`);
-    assert.equal(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")).promptVersion, "m0-2.2");
+    assert.equal(JSON.parse(readFileSync(join(repo, target.versionFile), "utf8")).promptVersion, "m0-2.3");
     assert.equal(evidence.provenance.promptVersion, `${PROMPT_VERSION}+${sha256Hex(improved).slice(0, 8)}`, "the candidate is stamped with the version a run measuring it is");
     // The report says what it is.
     const report = readFileSync(join(dir, "report.md"), "utf8");
