@@ -62,6 +62,9 @@ Updated 2026-11-05 UTC. `main` at the heuristic bank merge (0614185), 2650 tests
 | 46 | Tools an agent can choose (RA1) | main | not started | | after 45 |
 | 47 | The minimal lead (RA2 to RA6) | main | not started: waits for the first real measurement of blueprints | | after 46 |
 | 48 | The arm `solve-lead` and its measure (RA11) | main | not started | | after 47 |
+| 49 | Free fixes from the audit (PA1, PA3, PA4, PA6) | main | in progress | `claude/project-thread-h60gyw` | after 45 |
+| 50 | The diagnostic replay of the nine failures (at most $4.50) | main | not started | | after 49 |
+| 51 | The audit's pieces (PA10, PA9, PA7, PA8, then PA13 = Task 39, PA11 = Task 38) | main | not started | | after 50 |
 | Final | review of the whole build | main | after 26, 27 and 28 | |
 
 States: not started, implementing, in review, fix round, merged, suspended. The collaborator's rows
