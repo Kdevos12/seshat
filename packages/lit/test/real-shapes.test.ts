@@ -72,6 +72,16 @@ describe("the shapes of the real answers", () => {
   });
 });
 
+describe("zbMATH's answer to a search without a match", () => {
+  it("HTTP 404 is no hit, not a failure; another backend's 404 stays a failure", async () => {
+    const none = stub([{ status: 404, body: '{"status":{"status_code":404}}', type: "application/json" }]);
+    const found = await makeBackend("zbmath", site("zbmath", "api.zbmath.org"), { fetch: none.fetch, ...fast })?.search("independence number average degree", 3);
+    assert.deepEqual(found?.hits, []);
+    const other = stub([{ status: 404, body: "{}", type: "application/json" }]);
+    await assert.rejects(async () => makeBackend("openalex", site("openalex", "api.openalex.org"), { fetch: other.fetch, ...fast })?.search("graffiti", 3), /HTTP 404/);
+  });
+});
+
 describe("a key, a pause and one retry", () => {
   const KEY = "sk-test-secret-0123456789";
   const json = '{"data":[{"title":"T","abstract":"A","url":"https://example.org/p"}]}';

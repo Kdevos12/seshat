@@ -124,7 +124,14 @@ export function zbmath(s: RemoteSettings): Backend {
     id: "zbmath",
     async search(query, limit, signal) {
       const url = `${s.baseUrl}/v1/document/_search?search_string=${encodeURIComponent(query)}&page=0&results_per_page=${limit}`;
-      const answer = await s.fetcher.answer(url, signal);
+      let answer: Awaited<ReturnType<Fetcher["answer"]>>;
+      try {
+        answer = await s.fetcher.answer(url, signal);
+      } catch (error) {
+        // zbMATH answers HTTP 404 to a search that matches nothing (seen on the real site): that is no hit, not a site out of reach.
+        if (error instanceof LitError && error.status === 404) return { url, hits: [], raw: "", cached: false };
+        throw error;
+      }
       const json = parseJson(answer.body, url);
       const list = isRecord(json) ? (Array.isArray(json.result) ? json.result : Array.isArray(json.results) ? json.results : undefined) : undefined;
       if (list === undefined) throw new LitError(`${url}: the answer has no list of results`);
