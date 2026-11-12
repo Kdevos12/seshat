@@ -164,6 +164,12 @@ export interface AblationResult {
   /** The paired protocol of plan change CA2 (documentation/ablate.md): intervals, dollars, the pairs against the baseline arm and the target. */
   protocol?: Protocol;
   /**
+   * The problems among `problems` that the bench tags `small_budget_out_of_reach` (plan change PA6); absent when there are none. When present,
+   * `protocol` is over the others (the verdicts use the problems in reach) and `protocolAll` is the same protocol over every problem.
+   */
+  outOfReach?: string[];
+  protocolAll?: Protocol;
+  /**
    * Set when an arm's run ended on a refusal of the model provider (a balance, a key): the arm that was refused and why, and the arms
    * that were not run. The comparison is not valid: `arms` holds only the arms that finished before it, and there is no protocol.
    */
@@ -362,6 +368,10 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     const against = r.arm.versus !== undefined ? results.find((x) => x.arm.name === r.arm.versus) : results[i - 1];
     if (against !== undefined) r.comparison = compareArms(r.arm.name, r.measures, { name: against.arm.name, measures: against.measures });
   });
+  const outOfReach = input.problems.filter((p) => p.reach !== undefined).map((p) => p.id);
+  const out = new Set(outOfReach);
+  const measured = results.map((r) => ({ name: r.arm.name, measures: r.measures }));
+  const inReach = outOfReach.length > 0 && outOfReach.length < input.problems.length ? measured.map((m) => ({ ...m, measures: { ...m.measures, perProblem: m.measures.perProblem.filter((p) => !out.has(p.problemId)) } })) : measured;
   const result: AblationResult = {
     benchId: input.template.index.benchId,
     label: runLabel(input.config.model, input.notRun),
@@ -372,7 +382,8 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     problems: input.problems.map((p) => p.id),
     ...(input.buildProblems !== undefined ? { buildProblems: input.buildProblems.map((p) => p.id) } : {}),
     ...(basisName !== undefined ? { difficultyBasis: basisName } : {}),
-    ...(refusal === undefined ? { protocol: pairedProtocol(results.map((r) => ({ name: r.arm.name, measures: r.measures })), input.baseline, input.target) } : { refusal }),
+    ...(outOfReach.length > 0 ? { outOfReach } : {}),
+    ...(refusal === undefined ? { protocol: pairedProtocol(inReach, input.baseline, input.target), ...(inReach !== measured ? { protocolAll: pairedProtocol(measured, input.baseline, input.target) } : {}) } : { refusal }),
     arms: results,
   };
   writeFileSync(join(input.dir, "ablation.json"), `${JSON.stringify(result, null, 2)}\n`);

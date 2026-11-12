@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ProblemEntry, sample, stemOf } from "@seshat/bench";
 import { readEvents, sha256Hex } from "@seshat/core";
-import { type AblationInput, type AblationResult, type Arm, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
+import { type AblationInput, type AblationResult, type Arm, armConfig, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
 import { renderAblation, renderChunks } from "./ablation-table.ts";
 import { analyseChunks, attemptsByProver } from "./chunks.ts";
 import { allLines, experiment, type ExperimentContext, experimentArms } from "./experiments.ts";
@@ -72,6 +72,13 @@ export function commandArms(command: Pick<AblateCommand, "configs" | "experiment
 export async function ablateCommand(command: AblateCommand): Promise<AblationResult> {
   if (existsSync(join(command.dir, "ablation.json"))) throw new RunSetupError(`${command.dir} holds a finished ablation: write into a new directory (an ablation that was cut off is resumed by giving the same directory again)`);
   const arms = commandArms(command);
+  // The audit's point (PA6): a run budget below sample x cap cuts the per-problem cap of the arm, so the arm is not measured at the cap it names.
+  for (const arm of arms) {
+    const { problemUsd, runUsd } = armConfig(command.config, arm).budget;
+    if (runUsd !== undefined && runUsd < command.problems.length * problemUsd - 1e-9) {
+      (command.log ?? command.print)(`warning: the run budget ($${runUsd}) is below ${command.problems.length} problem(s) x the cap of $${problemUsd} per problem for arm ${arm.name}: the run budget may cut the per-problem cap, and the arm is then not measured at the cap it names (documentation/ablate.md)`);
+    }
+  }
   const seed = String(command.config.seed ?? "ablate");
   const split = command.split !== undefined ? splitBench(command.problems, command.split, seed, command.splitBy) : undefined;
   mkdirSync(command.dir, { recursive: true });

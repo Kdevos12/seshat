@@ -40,6 +40,9 @@ export interface ProblemEntry {
   sorryInStatement: boolean;
   statement: string;
   statementId: string;
+  /** `small_budget_out_of_reach`: known out of reach at a small budget (`config/bench/out-of-reach.json`, plan change PA6); absent: in reach. */
+  reach?: "small_budget_out_of_reach";
+  reachReason?: string;
   /** sha256 of the file after `toPlainHeader`: the text the prover and Lean see. */
   fileHash: string;
   imports: string[];

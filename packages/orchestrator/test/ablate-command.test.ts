@@ -101,6 +101,46 @@ describe("harness ablate", () => {
   });
 });
 
+describe("problems out of reach (PA6)", () => {
+  const tagged = problems.map((p) => (p.id === "p2" ? { ...p, reach: "small_budget_out_of_reach" as const, reachReason: "no Mathlib" } : p));
+  const twoSpec: ScriptedSpec = { problems: [{ id: "p1", outcome: "proved", attempts: [{ outcome: "valid", usd: 0.4 }] }, { id: "p2", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p3", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p4", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p5", outcome: "unsolved", attempts: [{ usd: 0.5 }] }] };
+  const run = async (o: RunOptions): Promise<RunResult> => {
+    const r = scriptedRun(twoSpec, o.dir);
+    const report = buildReport(r.events);
+    return { runId: report.runId, dir: o.dir, problems: [], usd: report.usd, report };
+  };
+
+  it("reports all problems and the problems in reach apart, and pairs on the ones in reach", async () => {
+    const dir = join(tempDir("mh-ablate-reach-"), "out");
+    const result = await ablateCommand({ template, config: base, problems: tagged, dir, configs: ["M0", "M1"], run, print: () => undefined });
+    assert.deepEqual(result.outOfReach, ["p2"]);
+    assert.equal(result.protocolAll?.arms[0]?.problems, 5);
+    assert.equal(result.protocol?.arms[0]?.problems, 4, "the verdicts use the problems in reach");
+    const text = readFileSync(join(dir, "ablation.md"), "utf8");
+    assert.match(text, /### All problems/);
+    assert.match(text, /### Problems in reach/);
+    assert.match(text, /The same 4 problem\(s\)/);
+  });
+
+  it("keeps the one table when nothing is tagged", async () => {
+    const dir = join(tempDir("mh-ablate-reach-"), "out");
+    const result = await ablateCommand({ template, config: base, problems, dir, configs: ["M0", "M1"], run, print: () => undefined });
+    assert.equal(result.outOfReach, undefined);
+    assert.equal(result.protocolAll, undefined);
+    assert.doesNotMatch(readFileSync(join(dir, "ablation.md"), "utf8"), /### All problems/);
+  });
+
+  it("warns when the run budget is below sample x cap, and not otherwise", async () => {
+    const lines: string[] = [];
+    const config = { ...base, budget: { problemUsd: 1, runUsd: 3 } };
+    await ablateCommand({ template, config, problems, dir: join(tempDir("mh-ablate-reach-"), "out"), configs: ["M0"], run, print: () => undefined, log: (l) => lines.push(l) });
+    assert.equal(lines.filter((l) => /below 5 problem\(s\) x the cap of \$1/.test(l)).length, 1);
+    const quiet: string[] = [];
+    await ablateCommand({ template, config: { ...base, budget: { problemUsd: 1, runUsd: 5 } }, problems, dir: join(tempDir("mh-ablate-reach-"), "out"), configs: ["M0"], run, print: () => undefined, log: (l) => quiet.push(l) });
+    assert.equal(quiet.filter((l) => /^warning/.test(l)).length, 0);
+  });
+});
+
 describe("harness chunks", () => {
   it("prints the curves of a run directory and refuses one without a journal", () => {
     const dir = tempDir("mh-chunks-");

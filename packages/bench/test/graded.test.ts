@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { AdmissionInfrastructureError, buildGraded, gradedIndex, isGraded, lakeAdmitter, readGraded, sample, writeGraded } from "../src/index.ts";
+import { AdmissionInfrastructureError, buildGraded, gradedIndex, isGraded, lakeAdmitter, outOfReachList, readGraded, sample, tagReach, writeGraded } from "../src/index.ts";
 
 const dir = (): string => mkdtempSync(join(tmpdir(), "mh-graded-"));
 
@@ -112,6 +112,36 @@ describe("buildGraded", () => {
     assert.equal(readGraded(file).hash, bench.hash);
     writeFileSync(file, JSON.stringify({ ...bench, seed: "other" }));
     assert.throws(() => readGraded(file), /hash does not match/);
+  });
+});
+
+describe("the problems out of reach at a small budget (PA6)", () => {
+  const fc = fcFixture();
+  const putnam = putnamFixture();
+  const list = [{ id: "putnam_1", reason: "absent from Mathlib" }];
+
+  it("commits the two problems the audit named, and an absent list means everything is in reach", () => {
+    assert.deepEqual(outOfReachList().map((x) => x.id), ["putnam_1967_a5", "putnam_2025_b5"]);
+    assert.deepEqual(outOfReachList(join(dir(), "none.json")), []);
+  });
+
+  it("tags the entries on build, matching the entry's full name, and leaves the others alone", () => {
+    const bench = buildGraded({ fc, putnam, seed: "s", sizeB: 100, outOfReach: list });
+    const tagged = bench.entries.filter((e) => e.reach !== undefined);
+    assert.deepEqual(tagged.map((e) => [e.fullName, e.reach, e.reachReason]), [["putnam_1", "small_budget_out_of_reach", "absent from Mathlib"]]);
+    const index = gradedIndex(bench, "B", { allowUnchecked: true });
+    assert.equal(index.problems.filter((p) => p.reach !== undefined).length, 1, "the index carries the tag to the run");
+  });
+
+  it("tags on read an index built without the list, and keeps a tag it already carries", () => {
+    const bench = buildGraded({ fc, putnam, seed: "s", sizeB: 100, outOfReach: [] });
+    assert.ok(bench.entries.every((e) => e.reach === undefined));
+    const path = join(dir(), "graded.json");
+    writeGraded(path, bench);
+    assert.ok(readGraded(path).entries.every((e) => e.reach === undefined), "the committed list names none of the fixture's problems");
+    const read = readGraded(path, { outOfReach: list });
+    assert.deepEqual(read.entries.filter((e) => e.reach !== undefined).map((e) => e.fullName), ["putnam_1"]);
+    assert.equal(tagReach(read.entries, [{ id: "putnam_1", reason: "other" }]).find((e) => e.fullName === "putnam_1")?.reachReason, "absent from Mathlib");
   });
 });
 
