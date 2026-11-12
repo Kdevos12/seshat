@@ -85,6 +85,7 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
   ];
   for (const [key, what] of config) if (set[key] !== undefined && set[key] !== false) lines.push(what);
   if (name === "v2") lines.push("line M6's repeat rule");
+  if (studentGate(name).probeExtend === true) lines.push("one extension for a probe its cap cut (the budget gate)");
   if (sw.intake) lines.push("the intake gate (hygiene tests; the literature only with your yes)");
   if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
   if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
@@ -110,6 +111,11 @@ export const STUDENT_TURN_SHARE = 0.5;
 
 /** The budget gate with its own defaults, probe first (documentation/scheduler.md, "The budget gate"). */
 export const STUDENT_GATE: GateSettings = {};
+
+/** The set `v2` also lets a probe its cap cut run one extension before the gate judges it (`probeExtend`, documentation/scheduler.md); `v1` is the gate as it was. */
+export function studentGate(defaults: DefaultsName): GateSettings {
+  return defaults === "v2" ? { ...STUDENT_GATE, probeExtend: true } : STUDENT_GATE;
+}
 
 /** The dollars of a model in a table, per million tokens: what a call with this input and output costs at the price of the table. */
 export function blendedPrice(model: Pick<Model<Api>, "provider" | "id" | "cost">, prices?: PriceBook): number {
@@ -191,7 +197,7 @@ export function setConfig(defaults: DefaultsName, o: Pick<StudentOptions, "lines
     ...(set.checkTimeoutSec !== undefined && o.hostCheckTimeoutSec !== undefined ? { checkTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...o.base,
     defaults,
-    gate: STUDENT_GATE,
+    gate: studentGate(defaults),
     ...(lines.length > 0 ? { lines: [...lines] } : {}),
     ...(repeatOnly
       ? { lineOptions: { ...o.base?.lineOptions, M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } } }
