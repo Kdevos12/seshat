@@ -34,6 +34,15 @@ describe("the built-in bank", () => {
     assert.equal(new Set(BUILTIN_CARDS.map((c) => c.id)).size, BUILTIN_CARDS.length);
   });
 
+  it("has the four cards of the third run's audit (PA8), with their families and a condition where the card needs one", () => {
+    const byId = new Map(BUILTIN_CARDS.map((c) => [c.id, c]));
+    for (const [id, family] of [["invariant.mod_small_prime", "invariant"], ["represent.prime_by_prime", "represent"], ["represent.lowest_terms", "represent"], ["strategy.formalizable_route", "represent"]] as const) {
+      assert.equal(byId.get(id)?.family, family, id);
+    }
+    assert.equal(byId.get("strategy.formalizable_route")?.level, "strategy");
+    assert.deepEqual(byId.get("represent.prime_by_prime")?.when, { anyFeatures: ["divisibility", "prime"] });
+  });
+
   it("keeps the six directives of the fleet word for word, under their labels", () => {
     assert.deepEqual(Object.keys(DIRECTIVE_TEXTS), ["small_cases", "more_general", "other_tool", "shortest", "skeleton", "doubt"]);
     assert.equal(DIRECTIVE_TEXTS.small_cases, "Work out small cases first, by hand or with decide, and read the pattern from them before you generalize.");
