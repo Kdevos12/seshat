@@ -22,6 +22,11 @@ export interface SketchRecord {
   problem?: string;
   /** `restates_target` when a blueprint is refused because a hole states the target again (CA9). */
   failureClass?: string;
+  /** The holes of a blueprint left out because they reach the target neither directly nor through `uses` (PA16): no claim, no task, no session. */
+  dropped?: string[];
+  /** The check's flags, kept for the audit (PA16): the file was edited outside the two regions, and Lean found holes in it. */
+  editsOutsideRegions?: boolean;
+  leanHoles?: boolean;
   /** The sketch was read as a blueprint (option `blueprints`): its holes may declare dependencies. */
   blueprint?: boolean;
   /** For a blueprint, the holes each hole declares it may use (`-- uses:`), as names, parallel to `names`. */

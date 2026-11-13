@@ -218,6 +218,8 @@ export interface SessionHooks {
    * prefix and a tail. `prefix` is the one the session froze, once it has (absent before).
    */
   packet?: (request: number, messages: readonly AgentMessage[], prefix: string | undefined) => Promise<string | FrozenPacket | undefined>;
+  /** Before each check: a line may rewrite the aux region (`LineHooks.rewriteCheck`); the notes of the lines that did. */
+  rewriteCheck?: (proposal: Proposal) => Promise<{ aux: string; note: string } | undefined>;
   /** Before each check: the line that rejects the call, and why. */
   beforeCheck?: (proposal: Proposal) => Promise<{ line: LineId; reason: string } | undefined>;
   /** After each check: the line that stops the session, and why. */
@@ -557,6 +559,7 @@ export class ProblemLines {
     }
     const packetLine = this.with("contextPacket")[0];
     const guards = this.with("beforeCheck");
+    const rewriters = this.with("rewriteCheck");
     const checkers = this.with("afterCheck");
     let differed = false;
     const hooks: SessionHooks = {
@@ -578,6 +581,22 @@ export class ProblemLines {
                 }
                 return answer;
               }),
+          }
+        : {}),
+      ...(rewriters.length > 0
+        ? {
+            rewriteCheck: async (proposal: Proposal) => {
+              let current = proposal;
+              const notes: string[] = [];
+              for (const { entry, hook } of rewriters) {
+                const rewritten = await call(entry.line.id, "rewriteCheck", () => hook(this.sessionContext(entry, info), current));
+                if (rewritten !== undefined && rewritten.aux !== current.aux) {
+                  current = { ...current, aux: rewritten.aux };
+                  notes.push(rewritten.note);
+                }
+              }
+              return notes.length === 0 ? undefined : { aux: current.aux, note: notes.join("\n") };
+            },
           }
         : {}),
       ...(guards.length > 0
@@ -617,7 +636,7 @@ export class ProblemLines {
           }
         : {}),
     };
-    const inSession = hooks.packet !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
+    const inSession = hooks.packet !== undefined || hooks.rewriteCheck !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
     return { sections, tools, ...(inSession ? { hooks } : {}) };
   }
 

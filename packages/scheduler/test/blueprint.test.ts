@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dependencyOrder, readSketch } from "../src/index.ts";
+import { blueprintNotice, dependencyOrder, dropHeaderImports, readSketch } from "../src/index.ts";
 
 const hole = (name: string, statement: string, uses?: string): string => `${uses === undefined ? "" : `-- uses: ${uses}\n`}lemma ${name} ${statement} := by\n  sorry`;
 const A = hole("aux_a", "(n : Nat) : n + 0 = n");
@@ -28,9 +28,13 @@ test("a cycle is refused, with the cycle", () => {
   assert.match(readSketch({ aux: hole("aux_a", "(n : Nat) : n + 0 = n", "aux_a"), proof: "exact aux_a 1" }, blueprint).problem ?? "", /cycle: aux_a -> aux_a/);
 });
 
-test("a hole that no one uses does not reach the target", () => {
+test("a hole that no one uses is left out when another hole remains, and the blueprint is refused when none does", () => {
   const r = readSketch({ aux: `${A}\n\n${B()}`, proof: "exact aux_a 1" }, blueprint);
-  assert.match(r.problem ?? "", /aux_b does not reach the target/);
+  assert.equal(r.problem, undefined);
+  assert.deepEqual(r.holes.map((h) => h.name), ["aux_a"]);
+  assert.deepEqual(r.dropped, ["aux_b"]);
+  const none = readSketch({ aux: `${A}\n\n${B()}`, proof: "exact 1" }, blueprint);
+  assert.match(none.problem ?? "", /aux_a does not reach the target/);
 });
 
 test("a name in a uses line that is no hole of the blueprint is refused", () => {
@@ -62,7 +66,9 @@ test("aux_a and aux_ab in one blueprint are two holes: a name is not read inside
   assert.deepEqual(dependencyOrder(ok.holes, "aux_ab"), ["aux_a", "aux_ab"]);
   // the main proof names aux_ab only, and aux_ab does not declare aux_a: aux_a is not reached (aux_ab does not count as a use of it)
   const lost = readSketch({ aux: `${A}\n\n${hole("aux_ab", "(n : Nat) : 0 + n = n")}`, proof: "exact aux_ab 1" }, blueprint);
-  assert.match(lost.problem ?? "", /aux_a does not reach the target/);
+  assert.equal(lost.problem, undefined);
+  assert.deepEqual(lost.dropped, ["aux_a"]);
+  assert.deepEqual(lost.holes.map((h) => h.name), ["aux_ab"]);
   // a uses line naming aux_a does not declare aux_ab
   assert.deepEqual(readSketch({ aux: `${A}\n\n${ab}`, proof: "x" }).holes.map((h) => h.uses), [[], ["aux_a"]]);
 });
@@ -88,4 +94,57 @@ test("a hole that names itself, in its uses line or in its own statement, is ref
   assert.match(readSketch({ aux: hole("aux_a", "(n : Nat) : n + 0 = n", "aux_a"), proof: "exact aux_a 1" }, blueprint).problem ?? "", /cycle: aux_a -> aux_a/);
   const own = `lemma aux_a (n : Nat) (h : aux_a = aux_a) : n = n := by\n  sorry`;
   assert.match(readSketch({ aux: own, proof: "exact aux_a" }, blueprint).problem ?? "", /names aux_a/);
+});
+
+// The shapes of the third real run (PA16), shortened: putnam_1983_a4 had three aux lemmas, the main proof called one of them, and
+// `aux_sum_mod` was meant to use `aux_choose_mod_three` without saying so.
+const CHOOSE = hole("aux_choose_mod_three", "(n : Nat) : n * 1 = n");
+const SUM = (uses?: string) => hole("aux_sum_mod", "(n : Nat) : n + 0 = n", uses);
+const facts = { refusedBeforeLean: false, errors: 0, editsOutsideRegions: false };
+
+test("1983 A4 as it was: aux_choose_mod_three is left out and named, the blueprint is healthy", () => {
+  const r = readSketch({ aux: `${CHOOSE}\n\n${SUM()}`, proof: "exact aux_sum_mod 1" }, blueprint);
+  assert.equal(r.problem, undefined);
+  assert.deepEqual(r.holes.map((h) => h.name), ["aux_sum_mod"]);
+  assert.deepEqual(r.dropped, ["aux_choose_mod_three"]);
+  const notice = blueprintNotice(r, facts);
+  assert.match(notice, /^Read as a blueprint: aux_sum_mod will be worked as separate sessions\./);
+  assert.match(notice, /aux_choose_mod_three is used by nothing and is left out; add `-- uses: aux_choose_mod_three` above the hole that needs it/);
+});
+
+test("1983 A4 with a uses line: both holes are kept, with the dependency edge", () => {
+  const r = readSketch({ aux: `${CHOOSE}\n\n${SUM("aux_choose_mod_three")}`, proof: "exact aux_sum_mod 1" }, blueprint);
+  assert.equal(r.problem, undefined);
+  assert.equal(r.dropped, undefined);
+  assert.deepEqual(r.holes.map((h) => [h.name, h.uses]), [["aux_choose_mod_three", []], ["aux_sum_mod", ["aux_choose_mod_three"]]]);
+  assert.deepEqual(dependencyOrder(r.holes, "aux_sum_mod"), ["aux_choose_mod_three", "aux_sum_mod"]);
+  assert.match(blueprintNotice(r, facts), /^Read as a blueprint: aux_choose_mod_three, aux_sum_mod will be worked/);
+});
+
+test("Lean errors keep a sketch from being read as a blueprint, and the answer says so", () => {
+  const r = readSketch({ aux: `${CHOOSE}\n\n${SUM("aux_choose_mod_three")}`, proof: "exact aux_sum_mod 1" }, blueprint);
+  assert.match(blueprintNotice(r, { ...facts, errors: 3 }), /^Not a blueprint yet: Lean reports 3 error\(s\)\./);
+  assert.match(blueprintNotice(r, { ...facts, refusedBeforeLean: true }), /refused before Lean ran/);
+});
+
+test("a main proof that is sorry (1999 A2) gets 'write the main proof from the holes'; a file with no hole gets the format", () => {
+  const r = readSketch({ aux: `${CHOOSE}\n\n${SUM()}`, proof: "sorry" }, blueprint);
+  assert.match(blueprintNotice(r, facts), /^Not a blueprint yet: the main proof has a sorry of its own\.\nWrite the main proof from the holes/);
+  const none = readSketch({ aux: "lemma helper (n : Nat) : n = n := rfl", proof: "exact 1" }, blueprint);
+  assert.match(blueprintNotice(none, facts), /it has no named hole\.\nHow to write a blueprint:\n- A hole is an `aux_` lemma/);
+});
+
+test("a cycle is named in the answer", () => {
+  const r = readSketch({ aux: `${hole("aux_a", "(n : Nat) : n + 0 = n", "aux_b")}\n\n${B("aux_a")}`, proof: "exact aux_a 1" }, blueprint);
+  assert.match(blueprintNotice(r, facts), /cycle: aux_a -> aux_b -> aux_a\.\nRemove one `-- uses:` line of the cycle/);
+});
+
+test("imports the header already has are dropped from aux; others, and every other line, stay", () => {
+  const header = "import Mathlib\nimport Foo.Bar Baz\n\nnamespace X\n";
+  const aux = "import Mathlib\nopen Finset BigOperators\n\ndef f := 1\nimport Other";
+  const cut = dropHeaderImports(aux, header);
+  assert.deepEqual(cut.dropped, ["Mathlib"]);
+  assert.equal(cut.aux, "open Finset BigOperators\n\ndef f := 1\nimport Other");
+  assert.equal(dropHeaderImports("import Foo.Bar Baz\nlemma x := 1", header).aux, "lemma x := 1");
+  assert.deepEqual(dropHeaderImports("def f := 1", header), { aux: "def f := 1", dropped: [] });
 });

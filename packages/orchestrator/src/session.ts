@@ -201,7 +201,24 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
    * `lean_check` runs it with the regions the model wrote, `lean_edit` with the regions that its edit made, so that the two are the
    * same check and the journal stores the same full submission for both.
    */
-  const doCheck = async (params: { aux: string; proof: string; strategy?: unknown }, signal?: AbortSignal): Promise<AgentToolResult<{ summary: string }>> => {
+  const doCheck = async (given: { aux: string; proof: string; strategy?: unknown }, signal?: AbortSignal): Promise<AgentToolResult<{ summary: string }>> => {
+    let params = given;
+    let rewriteNote: string | undefined;
+    if (o.lines?.rewriteCheck !== undefined) {
+      // A line that fails here ends the session with an error, as in `beforeCheck`.
+      try {
+        const rewritten = await o.lines.rewriteCheck({ aux: params.aux, proof: params.proof });
+        if (rewritten !== undefined) {
+          params = { ...params, aux: rewritten.aux };
+          rewriteNote = rewritten.note;
+        }
+      } catch (error) {
+        if (lineFailed(error) === "turn") {
+          return { content: [{ type: "text", text: "Not checked: the turn is over. The session ends here." }], details: { summary: "turn over" }, isError: true, terminate: true };
+        }
+        return { content: [{ type: "text", text: "The harness failed while guarding this check. The session ends here." }], details: { summary: "harness failure" }, isError: true, terminate: true };
+      }
+    }
     const strategy = "strategy" in params && typeof params.strategy === "string" ? params.strategy : undefined;
     const refused = o.veto?.({ aux: params.aux, proof: params.proof, ...(strategy !== undefined ? { strategy } : {}) });
     if (refused !== undefined) {
@@ -265,7 +282,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       }
       const appended = o.appendToCheck === undefined || result.accepted || failure !== undefined || lineStop !== undefined ? undefined : await o.appendToCheck(report, signal).catch(() => undefined);
       return {
-        content: [{ type: "text", text: [formatCheck(report), ...(appended === undefined || appended === "" ? [] : [appended]), ...(lineNotice === undefined ? [] : [lineNotice])].join("\n\n") }],
+        content: [{ type: "text", text: [formatCheck(report), ...(rewriteNote === undefined ? [] : [rewriteNote]), ...(appended === undefined || appended === "" ? [] : [appended]), ...(lineNotice === undefined ? [] : [lineNotice])].join("\n\n") }],
         details: { summary: summarizeCheck(report) },
         ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
       };

@@ -34,10 +34,10 @@ describe("blueprints: registering a sketch whose holes depend on each other (CA9
   it("refuses a cycle, an unreachable hole, an unknown name and a hole that restates the target, and makes nothing", { timeout: 60000 }, async () => {
     const cases: Array<[string, string, RegExp, string?]> = [
       ["cycle", BP_AUX.replace("lemma aux_left", "-- uses: aux_right\nlemma aux_left"), /cycle: aux_right -> aux_left -> aux_right/],
-      ["unreachable", BP_AUX, /aux_third does not reach the target/],
+      ["unreachable", BP_AUX, /aux_right does not reach the target/],
       ["unknown", BP_AUX.replace("-- uses: aux_left", "-- uses: aux_nowhere"), /not a hole of this blueprint/],
     ];
-    const proofs = ["exact main_ok aux_left aux_right aux_third", "exact main_ok aux_right", BP_PROOF];
+    const proofs = ["exact main_ok aux_left aux_right aux_third", "exact main_ok", BP_PROOF];
     for (const [k, [name, aux, pattern]] of cases.entries()) {
       const { events } = await register(aux, proofs[k] as string);
       const [record] = nodes(events, "m12_sketch");
@@ -46,6 +46,18 @@ describe("blueprints: registering a sketch whose holes depend on each other (CA9
       assert.equal(ofType(events, "edge.added").filter((e) => e.data.kind === "decomposes_into").length, 0, name);
       assert.equal(ofType(events, "task.created").filter((e) => e.data.proposedBy === "line:M12").length, 0, name);
     }
+  });
+
+  it("leaves out a hole that nothing reaches: no claim, no task, the name in the record (PA16)", { timeout: 30000 }, async () => {
+    const { events } = await register(BP_AUX, "exact main_ok aux_right");
+    const [record] = nodes(events, "m12_sketch");
+    assert.equal(record?.healthy, true);
+    assert.deepEqual(record?.dropped, ["aux_third"]);
+    assert.deepEqual(record?.names, ["aux_right", "aux_left"]);
+    assert.equal(record?.editsOutsideRegions, false);
+    assert.equal(record?.leanHoles, true);
+    const claims = ofType(events, "claim.created").filter((e) => e.actor === "line:M12" && !(e.data.gloss ?? "").startsWith("link lemma"));
+    assert.equal(claims.length, 2, "the dropped hole gets no claim");
   });
 
   it("refuses a blueprint whose hole restates the target with the class restates_target, and makes nothing", { timeout: 30000 }, async () => {
