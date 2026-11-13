@@ -112,6 +112,10 @@ both; a resumed run reads the journaled answer). With a no the hygiene tests sti
 `--no-auto-tool`, `--no-lean-search` (they matter only with `v2`; a flag and its `--no-` cannot both be given). `--defaults v1` turns none of them on, and the
 explicit flags `--intake`, `--lit`, `--auto-tool` and `--lean-search` still turn one on under `v1`.
 
+`v2` also gives the prover `lean.lsp` (the tool `lean_lsp`: goals, diagnostics, several tactics at a line, Mathlib search; plan change NL1) beside
+`lean_check`, when the host profile offers the capability (otherwise one note and the run goes on); `--no-tool lean.lsp` turns it off, and `v1` never
+has it. The report's `tools` block counts its calls like those of any capability. It never judges a proof: only `lean_check` does.
+
 The intake's judge call is proportionate to the allowance: when `--intake-usd` is not given, its cap is the smaller of the default ($0.05) and 5% of the
 run's allowance (`--max-usd`), so a $0.40 run spends at most $0.02 on it. The test lemmas that `solve` runs to show them before the signature are the ones the intake
 records: they are not run a second time. Not run on a real Lean, model, search service or literature site: the target of the plan change (at least 1.5 times the

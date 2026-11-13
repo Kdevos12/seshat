@@ -9,7 +9,7 @@ import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./im
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
-import { cheapestModel, COMPUTE_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
+import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
 
@@ -57,6 +57,8 @@ export interface SolveFlags extends DoctorFlags {
   noIntake?: boolean;
   noAutoTool?: boolean;
   noLeanSearch?: boolean;
+  /** `--no-tool ID`: drop a tool the set gives (today `lean.lsp`, which `v2` gives the prover). */
+  noTools?: string[];
   /** `--private`: nothing goes outside; wins over everything. */
   private?: boolean;
   /** `--intake-usd`: the cap of the judge call. */
@@ -171,17 +173,23 @@ export function consentOptions(flags: SolveFlags, io: Pick<CommandIo, "ask">, pr
 }
 
 /** What the host lets the switches do: the compute tool and `lean.search` only if the host offers them, and one line for each that it does not. */
-export function resolveAdditions(flags: SolveFlags, defaults: string, switches: { autoTool: boolean; leanSearch: boolean }, host: string, offers: (capability: string) => boolean): { autoTool: boolean; leanSearch: boolean; notes: string[] } {
+export function resolveAdditions(flags: SolveFlags, defaults: string, switches: { autoTool: boolean; leanSearch: boolean; leanLsp?: boolean }, host: string, offers: (capability: string) => boolean): { autoTool: boolean; leanSearch: boolean; leanLsp: boolean; notes: string[] } {
   const notes: string[] = [];
   const autoTool = switches.autoTool && offers(COMPUTE_TOOL);
   const leanSearch = switches.leanSearch && offers(SEARCH_CAPABILITY);
   if (switches.autoTool && !autoTool) notes.push(`Note: ${flags.autoTool === true ? "--auto-tool" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
   if (switches.leanSearch && !leanSearch) notes.push(`Note: ${flags.leanSearch === true ? "--lean-search" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${SEARCH_CAPABILITY}; the run goes on without it.`);
-  return { autoTool, leanSearch, notes };
+  const leanLsp = switches.leanLsp === true && offers(LEAN_LSP_TOOL);
+  if (switches.leanLsp === true && !leanLsp) notes.push(`Note: the ${defaults} defaults has nothing to add: host ${host} does not offer ${LEAN_LSP_TOOL}; the run goes on without it.`);
+  return { autoTool, leanSearch, leanLsp, notes };
 }
 
 /** What `solve` does at its own level under a set and the flags: the set's switches (`SOLVE_SWITCHES`), the explicit flags on, the `--no-...` flags off. */
-export function effectiveSwitches(flags: SolveFlags, defaults: DefaultsName): { intake: boolean; autoTool: boolean; leanSearch: boolean } | { conflict: string } {
+export function effectiveSwitches(flags: SolveFlags, defaults: DefaultsName): { intake: boolean; autoTool: boolean; leanSearch: boolean; leanLsp: boolean } | { conflict: string } {
+  const droppable = [LEAN_LSP_TOOL];
+  const unknown = (flags.noTools ?? []).filter((id) => !droppable.includes(id));
+  if (unknown.length > 0) return { conflict: `--no-tool ${unknown.join(", ")}: only ${droppable.join(", ")} can be dropped this way` };
+  if ((flags.tools ?? []).some((id) => (flags.noTools ?? []).includes(id))) return { conflict: "--tool and --no-tool cannot name the same tool" };
   const set = SOLVE_SWITCHES[defaults];
   for (const [on, off, name] of [
     [flags.intake === true || flags.lit === true, flags.noIntake === true, "--intake (or --lit)/--no-intake"],
@@ -194,6 +202,7 @@ export function effectiveSwitches(flags: SolveFlags, defaults: DefaultsName): { 
     intake: flags.intake === true || flags.lit === true || (set.intake && flags.noIntake !== true),
     autoTool: flags.autoTool === true || (set.autoTool && flags.noAutoTool !== true),
     leanSearch: flags.leanSearch === true || (set.leanSearch && flags.noLeanSearch !== true),
+    leanLsp: (set.leanLsp && !(flags.noTools ?? []).includes(LEAN_LSP_TOOL)),
   };
 }
 
@@ -286,7 +295,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
-  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName).length > 0 ? `: ${describeSet(defaults as DefaultsName).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool or --no-lean-search.`);
+  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName).length > 0 ? `: ${describeSet(defaults as DefaultsName).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
   const switches = effectiveSwitches(flags, defaults as DefaultsName);
   if ("conflict" in switches) {
     io.err(switches.conflict);
@@ -335,7 +344,8 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   // The additions of the set that the host cannot give are said in one line and the run goes on without them.
   const additions = resolveAdditions(flags, defaults as DefaultsName, switches, host, (capability) => checkerRegistry.offers(capability));
   for (const note of additions.notes) io.out(note);
-  const { autoTool, leanSearch } = additions;
+  const { autoTool, leanSearch, leanLsp } = additions;
+  const tools = [...new Set([...(flags.tools ?? []), ...(leanLsp ? [LEAN_LSP_TOOL] : [])])];
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
   try {
@@ -357,7 +367,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(leanSearch || flags.consolidation === true ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}) } } : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
-      ...(flags.tools !== undefined && flags.tools.length > 0 ? { tools: flags.tools } : {}),
+      ...(tools.length > 0 ? { tools } : {}),
       ...(autoTool ? { autoTool: COMPUTE_TOOL } : {}),
       ...(flags.private === true ? { private: true } : {}),
       ...consentOptions({ ...flags, intake: switches.intake, leanSearch }, io, profile),

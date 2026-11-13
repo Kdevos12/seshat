@@ -53,6 +53,7 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
  * - `intake`: the intake gate (documentation/literature.md): the statement's hygiene tests, and the literature only with the person's yes.
  * - `autoTool`: the host's compute tool for a statement the router files as finite, about a graph or about numbers; only when the host offers it.
  * - `leanSearch`: `RunConfig.leanSearch`; only when the host offers `lean.search`; remote services only with the person's yes.
+ * - `leanLsp`: `lean.lsp` (goals, diagnostics, `multi_attempt`, Mathlib search) in the prover's `tools`; only when the host offers it (plan change NL1).
  *
  * The explicit flags (`--intake`, `--auto-tool`, `--lean-search`) turn one on whatever the set; `--no-intake`, `--no-auto-tool` and
  * `--no-lean-search` turn one of the set off.
@@ -61,16 +62,19 @@ export interface SolveSwitches {
   intake: boolean;
   autoTool: boolean;
   leanSearch: boolean;
+  leanLsp: boolean;
 }
 
 export const SOLVE_SWITCHES: Readonly<Record<DefaultsName, Readonly<SolveSwitches>>> = {
-  v1: { intake: false, autoTool: false, leanSearch: false },
-  v2: { intake: true, autoTool: true, leanSearch: true },
+  v1: { intake: false, autoTool: false, leanSearch: false, leanLsp: false },
+  v2: { intake: true, autoTool: true, leanSearch: true, leanLsp: true },
 };
 
 /** The capability that gives `lean.search`, and the compute tool of `autoTool`, as a host profile names them. */
 export const SEARCH_CAPABILITY = "lean.search";
 export const COMPUTE_TOOL = "compute.sage";
+/** The Lean language server, a tool `v2` gives the prover beside lean_check when the host offers it. */
+export const LEAN_LSP_TOOL = "lean.lsp";
 
 /** What a set turns on, in words: one line per addition, taken from `DEFAULTS_SETS` and `SOLVE_SWITCHES`. `offers` says which capabilities the host has. */
 export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean): string[] {
@@ -91,6 +95,7 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
   if (sw.intake) lines.push("the intake gate (hygiene tests; the literature only with your yes)");
   if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
   if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
+  if (sw.leanLsp) lines.push(`${LEAN_LSP_TOOL} for the prover (goals, diagnostics, several tactics at a line)${offers !== undefined && !offers(LEAN_LSP_TOOL) ? " (this host does not offer it)" : ""}`);
   return lines;
 }
 
@@ -217,6 +222,7 @@ export function benchAdditions(defaults: DefaultsName, offers: (capability: stri
     ...(sw.intake ? { intake: { hygiene: true, literature: true, consent: { allowed: true, via: "bench" as const }, capShare: INTAKE_ALLOWANCE_SHARE } } : {}),
     ...(sw.autoTool && offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
     ...(sw.leanSearch && offers(SEARCH_CAPABILITY) ? { leanSearch: true } : {}),
+    ...(sw.leanLsp && offers(LEAN_LSP_TOOL) ? { tools: [LEAN_LSP_TOOL] } : {}),
   };
 }
 
