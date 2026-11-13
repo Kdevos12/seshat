@@ -58,6 +58,15 @@ replace them ([decide.md](decide.md#the-two-providers-of-jev)). Prefer `JEV_API_
 it reaches Jev without making OpenRouter's chat models candidates for the run's model. `JEV_API_KEY` is the key
 of the provider chosen, so change it with `JEV_PROVIDER` (an OpenRouter key is refused for TypeSafe).
 
+## Consult: advice from another model (beta)
+
+**Beta: checked by a dry run only (the faux provider); the owner tests it later with an open-source model.** Plan change NL3. `RunConfig.consult` (`{ model, maxCalls?, maxOutputTokens? }`; `harness run` and `harness solve --consult PROVIDER/ID`, with `--consult-calls N`, default 2, and `--consult-tokens N`, default 1000) gives the outer prover a tool `consult(question)`: one question, as text, to another configured model, answered as text in the prover's context only. It is off unless asked for: no defaults set (`v1`, `v2`) and no arm of an experiment turns it on, and a run without it records, prompts and journals what it always did. The model is looked up like the run's model (`provider/id`, credentials checked before any spend). The tool says of itself: "advice from another model; only Lean decides".
+
+- **Caps.** `maxCalls` per prover session; a call beyond it is a tool error and no model call. A call is also refused when the turn or the problem is over, or when its largest possible cost (the question as input and `maxOutputTokens` as output, at the model's price, the host's table when it has one) would not fit what the problem's budget has left, the check a session makes before it resends a cut response.
+- **Cost and journal.** The call is charged to the problem's ledger at the model's price and journaled as a `model_call.finished` at the site `consult`, from the prover's actor (`prover:p1`), with the problem and no attempt (the cost is in the problem's totals; the request blob names the attempt); the question and the answer are blobs as for other model calls. `harness report` and `RESULT.md` count the calls (`consult`: model, calls, dollars) and the spend by site shows `consult`. `describeSet` and the start of `harness solve` say it is on.
+- **No status.** The answer never changes a claim, an edge or a status: only Lean's check does.
+- **Not built:** the hole sessions of M12 do not have it; only the outer prover. Not run against a real model; `consult.test.ts` covers the tool's absence, a call answered, journaled and charged, the cap, the budget refusal, and the sets unchanged.
+
 ## The variables
 
 | Variable | For | Default |

@@ -14,6 +14,7 @@ import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
+import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
@@ -50,7 +51,7 @@ const usage = `usage:
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--lean-search] [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
@@ -85,7 +86,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
@@ -149,6 +150,8 @@ SESHAT_LEAN_ENV_DIR or lean/env; every other command looks the host's environmen
 declarations for each unknown identifier and each hole's goal (capability lean.search: a remote service, a local index, a pattern search, as
 the host profile sets them up), checks every hit against the run's Lean, and adds the names and the signatures Lean printed to the check's answer
 (documentation/lean.md, "Search pushed by the harness"). The host must offer lean.search.
+--consult MODEL (run and solve; beta, off by default, in no defaults set and no arm; documentation/models-setup.md, "Consult"): gives the outer prover the tool consult(question), one question as text to another model, answered
+in the prover's context only (advice: only Lean decides), at most --consult-calls (default 2) times a session and --consult-tokens (default 1000) tokens an answer, charged to the problem's budget and journaled at the site consult.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
@@ -257,6 +260,9 @@ const { positionals, values } = parseArgs({
     prose: { type: "boolean" },
     "no-check": { type: "boolean" },
     "lean-search": { type: "boolean" },
+    consult: { type: "string" },
+    "consult-calls": { type: "string" },
+    "consult-tokens": { type: "string" },
     consolidation: { type: "boolean" },
     defaults: { type: "string" },
     "no-write": { type: "boolean" },
@@ -452,6 +458,20 @@ function number(name: string, value: string | undefined, fallback: number | unde
   const parsed = Number(value);
   if (value.trim() === "" || !Number.isFinite(parsed)) throw new UsageError(`--${name} must be a number, got ${JSON.stringify(value)}`);
   return parsed;
+}
+
+/** `--consult MODEL` with `--consult-calls` and `--consult-tokens` (plan change NL3): the setting, or undefined when the flag is absent. */
+function consultFlag(): ConsultConfig | undefined {
+  const calls = number("consult-calls", values["consult-calls"], undefined);
+  const tokens = number("consult-tokens", values["consult-tokens"], undefined);
+  if (values.consult === undefined) {
+    if (calls !== undefined || tokens !== undefined) throw new UsageError("--consult-calls and --consult-tokens go with --consult MODEL");
+    return undefined;
+  }
+  const config: ConsultConfig = { model: values.consult, ...(calls !== undefined ? { maxCalls: calls } : {}), ...(tokens !== undefined ? { maxOutputTokens: tokens } : {}) };
+  const problems = checkConsult(config);
+  if (problems.length > 0) throw new UsageError(problems.join("; "));
+  return config;
 }
 
 function isCacheRetention(value: string): value is CacheRetention {
@@ -761,6 +781,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
     ...(values["lean-search"] === true ? { leanSearch: true } : {}),
+    ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
     ...(values.consolidation === true ? { consolidation: true } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
@@ -1064,7 +1085,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lean-search", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
@@ -1175,6 +1196,7 @@ async function solve(): Promise<number> {
       private: values.private === true,
       ...(number("intake-usd", values["intake-usd"], undefined) !== undefined ? { intakeUsd: number("intake-usd", values["intake-usd"], undefined) as number } : {}),
       leanSearch: values["lean-search"] === true,
+      ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
       consolidation: values.consolidation === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),

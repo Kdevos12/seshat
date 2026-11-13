@@ -106,6 +106,8 @@ export interface RunReport {
    * cost is in `usd` and the token counts.
    */
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
+  /** The tool `consult` (`RunConfig.consult`, plan change NL3, beta): the model, the calls the provers made and what they cost. Absent when the run was not configured with it and made none. */
+  consult?: { model: string; calls: number; usd: number };
   /**
    * The sessions' requests sent again after a transient error cut their response (documentation/m0-loop.md, "Transient errors"):
    * how many, in how many attempts, and what the cut responses were charged (in `usd` already). Absent when there was none.
@@ -419,6 +421,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
   const proofAttempts = new Set<string>();
   const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
+  const consult = { calls: 0, usd: 0, model: undefined as string | undefined };
   // What a session that never finished cost, from its charges.
   const charges = new Map<string, { usd: number; inputTokens: number; outputTokens: number; cachedInputTokens: number }>();
   let usd = 0;
@@ -527,6 +530,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         modelCalls.total += 1;
         count(modelCalls.outcomes, d.outcome);
         count(modelCalls.lines, d.line);
+        if (d.site === "consult") {
+          consult.calls += 1;
+          consult.usd += d.usd;
+          consult.model ??= d.model;
+        }
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
@@ -664,6 +672,11 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(() => {
+      const model = (started.config as { consult?: { model?: unknown } } | null)?.consult?.model;
+      const named = typeof model === "string" ? model : consult.model;
+      return named !== undefined ? { consult: { model: named, calls: consult.calls, usd: consult.usd } } : {};
+    })(),
     ...(repeatStops.length > 0 ? { repeatStops } : {}),
     ...(rotation.rounds > 0 ? { rounds: rotation } : {}),
     ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
@@ -829,6 +842,7 @@ export function renderRunReport(report: RunReport): string {
         `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +
         `${use.proofs} of which found a proof.`,
     ),
+    ...(report.consult !== undefined ? [`Consult (beta): ${report.consult.calls} call(s) to ${report.consult.model}, ${money(report.consult.usd)}; its answers are advice, no status came from them.`] : []),
     ...(report.modelCalls !== undefined
       ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
       : []),

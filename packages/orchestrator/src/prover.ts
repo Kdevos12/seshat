@@ -4,6 +4,7 @@ import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, n
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
+import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
 import { pageForSession } from "./consolidation-show.ts";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
@@ -78,6 +79,8 @@ export interface ProverOptions {
   transcript?: (attemptId: string, messages: AgentMessage[]) => void;
   /** Capabilities given to the sessions besides lean_check (`direct` ones, checked and pinned by the run). */
   tools?: readonly PinnedTool[];
+  /** The tool `consult` (plan change NL3, beta): one question to another model, answered as text. Absent: the sessions do not have it. */
+  consult?: { config: ConsultConfig; resolveModel: (name: string) => Promise<Model<Api>>; problemId: string };
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
   /**
@@ -272,7 +275,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     let result: SessionResult;
     try {
       const opened: OpenedSession | undefined =
-        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...(o.editTool === true ? ["lean_edit"] : []), ...tools.map((t) => toolName(t.capability))]);
+        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...(o.editTool === true ? ["lean_edit"] : []), ...(o.consult !== undefined ? [CONSULT_TOOL] : []), ...tools.map((t) => toolName(t.capability))]);
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
@@ -288,6 +291,13 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
               registry: workbench.registry, attemptId, actor, implementation: t.implementation, ...(binding !== undefined ? { binding } : {}),
             });
           }),
+          ...(o.consult !== undefined
+            ? [consultTool({
+                config: o.consult.config, journal, blobs: o.blobs, models: o.models, resolveModel: o.consult.resolveModel, ledger: o.ledger,
+                problemId: o.consult.problemId, attemptId, actor, signal: o.signal,
+                ...(o.prices !== undefined ? { prices: o.prices } : {}), ...(o.turn !== undefined ? { turn: o.turn } : {}),
+              }) as never]
+            : []),
           ...(opened?.tools ?? []),
         ],
         models: o.models,

@@ -78,6 +78,7 @@ import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODE
 import { RunSetupError } from "./setup-error.ts";
 import { docstringOf, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
+import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
@@ -175,6 +176,12 @@ export interface RunConfig {
    * Absent, or a run without a run budget: today's behaviour exactly. A number above 0.
    */
   budgetShare?: number;
+  /**
+   * The tool `consult` for the outer provers (plan change NL3, documentation/models-setup.md, "Consult", beta): one question, as text, to another configured
+   * model, `maxCalls` times a session (default 2), charged to the problem's ledger and journaled at the site `consult`. Its answer is advice in the
+   * prover's context and never changes a claim or a status. Absent: off, no defaults set and no arm turns it on, and a run that records and prompts as it always did.
+   */
+  consult?: ConsultConfig;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -602,6 +609,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     }
   }
   const model = await resolveModel(o.models, config.model);
+  if (config.consult !== undefined) {
+    const problems = checkConsult(config.consult);
+    if (problems.length > 0) throw new RunSetupError(problems.join("; "));
+    // Looked up now, so that a model or a key that is missing stops the run before any spend.
+    await resolveModel(o.models, config.consult.model);
+  }
   if (resume === undefined && existsSync(join(o.dir, "journal.jsonl")) && statSync(join(o.dir, "journal.jsonl")).size > 0) {
     throw new RunSetupError(`${o.dir} already holds a run; choose another directory`);
   }
@@ -795,6 +808,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+      ...(config.consult !== undefined ? { consult: { ...config.consult } } : {}),
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
       ...(config.firstCases === true ? { firstCases: true } : {}),
@@ -1519,6 +1533,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(config.editTool === true ? { editTool: true } : {}),
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+          ...(config.consult !== undefined ? { consult: { config: config.consult, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),

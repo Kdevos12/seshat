@@ -39,6 +39,8 @@ export interface SolveFlags extends DoctorFlags {
   noCheck?: boolean;
   /** `--lean-search`: `RunConfig.leanSearch` on top of the defaults set (it is in none of them). */
   leanSearch?: boolean;
+  /** `--consult MODEL` (beta, plan change NL3): `RunConfig.consult` on top of the defaults set (it is in none of them). */
+  consult?: NonNullable<RunConfig["consult"]>;
   /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
   consolidation?: boolean;
   offpeak?: RunConfig["offpeak"];
@@ -295,7 +297,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   }
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
-  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName).length > 0 ? `: ${describeSet(defaults as DefaultsName).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
+  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName, undefined, flags).length > 0 ? `: ${describeSet(defaults as DefaultsName, undefined, flags).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
   const switches = effectiveSwitches(flags, defaults as DefaultsName);
   if ("conflict" in switches) {
     io.err(switches.conflict);
@@ -364,7 +366,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
-      ...(leanSearch || flags.consolidation === true ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}) } } : {}),
+      ...(leanSearch || flags.consolidation === true || flags.consult !== undefined ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}), ...(flags.consult !== undefined ? { consult: flags.consult } : {}) } } : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       ...(tools.length > 0 ? { tools } : {}),
