@@ -212,6 +212,20 @@ describe("harness run", () => {
     assert.match(resumed.stderr, /--role cannot be given with it/);
   });
 
+  it("knows --sketch (CA14): in the usage of solve, refused by run, and a file that is too long stops solve before anything is spent", async () => {
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness solve [^]*\[--sketch FILE\]/);
+    const refused = await harness(["run", "--checkout", checkout, "--all", "--model", "nowhere/none", "--sketch", "x.txt"]);
+    assert.equal(refused.code, 2);
+    assert.match(refused.stderr, /--sketch is for harness solve/);
+    const dir = tempDir();
+    writeFileSync(join(dir, "long.txt"), "y".repeat(20001));
+    const long = await harness(["solve", "(n : ℕ) : n + 0 = n", "--sketch", join(dir, "long.txt"), "--yes", "--no-check", "--model", "nowhere/none", "--out", join(dir, "run")]);
+    assert.equal(long.code, 2);
+    assert.match(long.stderr, /the sketch is 20001 characters long; the limit is 20000/);
+    assert.equal(existsSync(join(dir, "run")), false, "nothing was written");
+  });
+
   it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {
     const env = { SESHAT_MODEL: "nowhere/none" };
     const started = await harness(["run", "--checkout", checkout, "--all"], env);

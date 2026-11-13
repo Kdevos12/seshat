@@ -38,6 +38,8 @@ export interface HintData {
   text: string;
   /** The last turn that had ended when the hint was written; the hint answers its account. */
   afterTurn: number;
+  /** True for a person's sketch of the proof (`harness solve --sketch`): it is shown in a section of its own, never among the team's hints (`sketch.ts`). */
+  sketch?: true;
 }
 
 /** What a steer asks for. */
@@ -156,7 +158,7 @@ function isRecord(value: Json | undefined): value is { [key: string]: Json } {
 /** Reads a hint's data back, or undefined when the node is not a well-formed hint. */
 export function hintOf(data: Json): HintData | undefined {
   if (!isRecord(data) || data.provenance !== "human" || typeof data.by !== "string" || typeof data.text !== "string") return undefined;
-  return { provenance: "human", by: data.by, text: data.text, afterTurn: typeof data.afterTurn === "number" ? data.afterTurn : 0 };
+  return { provenance: "human", by: data.by, text: data.text, afterTurn: typeof data.afterTurn === "number" ? data.afterTurn : 0, ...(data.sketch === true ? { sketch: true as const } : {}) };
 }
 
 /** Reads a steer's data back, or undefined when the node is not a well-formed steer. */
@@ -252,7 +254,8 @@ export function teamBriefing(p: Projection, claimId: string): Array<{ title: str
   const hints = scope.flatMap((id) =>
     p.nodes(HINT_KIND, id).flatMap((node) => {
       const hint = hintOf(node.data);
-      return hint === undefined ? [] : [{ seq: node.created_seq, claimId: id, hint }];
+      // A person's sketch has its own section (`sketchBriefing`), in the first briefing only.
+      return hint === undefined || hint.sketch === true ? [] : [{ seq: node.created_seq, claimId: id, hint }];
     }),
   );
   hints.sort((a, b) => a.seq - b.seq);

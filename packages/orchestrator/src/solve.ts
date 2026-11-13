@@ -329,6 +329,8 @@ export interface SolveOptions {
   askConsent?: () => Promise<boolean>;
   /** `--private`: nothing goes outside the machine and the model provider; wins over everything. */
   private?: boolean;
+  /** `--sketch FILE`, the file's text (CA14): the person's informal proof or hint, at most 20 000 characters. Journaled once under `user` as a hint of the problem's claim; it never sets a status. */
+  sketch?: string;
 }
 
 export interface SolveResult {
@@ -472,6 +474,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     benchFile: problem.indexFile,
     ...(testLemmasResult !== undefined ? { testLemmas: new Map([[problem.entry.id, testLemmasResult]]) } : {}),
     user: o.user,
+    ...(o.sketch !== undefined ? { sketch: o.sketch } : {}),
     ...(prose !== undefined ? { prose } : {}),
     afterStart: (journal: Journal) => {
       journal.emit(

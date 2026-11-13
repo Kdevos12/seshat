@@ -80,6 +80,7 @@ import { docstringOf, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { describeRoles, RoleBook, type RolesConfig, resolveRoles } from "./roles.ts";
+import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
@@ -336,6 +337,12 @@ export interface RunOptions {
   afterStart?: (journal: Journal) => void;
   /** The person's words, when the statement was formalized from them (`harness solve`): the literature queries use them. */
   prose?: string;
+  /**
+   * A person's sketch of the proof, or a hint (`harness solve --sketch FILE`, documentation/human.md, "A person's sketch"): at most 20 000 characters, for a run of
+   * one problem. It is journaled once, when the problem is registered, as a `hint` node of its claim written by `human:NAME` (`user`; `human:person` when the
+   * run has no name), and reaches the first briefing of the outer provers and the planner's prompt. It changes no status. Ignored by a resume, which finds it in the journal.
+   */
+  sketch?: string;
   /**
    * Test lemmas the caller already ran for a problem's statement, by problem id (`harness solve` runs them to show them before the signature):
    * the intake step records them and does not run them again.
@@ -627,6 +634,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   }
   // The roles' models, looked up now for the same reason; an error names the role.
   if (config.roles !== undefined) await resolveRoles(config.roles, (name) => resolveModel(o.models, name));
+  // A person's sketch: refused before anything is written when it is empty or too long, or when the run has more than one problem to give it to.
+  if (o.sketch !== undefined && resume === undefined) {
+    const flaw = sketchProblem(o.sketch);
+    if (flaw !== undefined) throw new RunSetupError(flaw);
+    if (o.problems.length !== 1) throw new RunSetupError(`a sketch is for one problem, and this run has ${o.problems.length}: --sketch goes with a single statement`);
+  }
   const proverRoleModel = config.roles?.prover?.model;
   const proverModel = proverRoleModel === undefined || proverRoleModel === config.model ? model : await resolveModel(o.models, proverRoleModel);
   // The tool consult: `RunConfig.consult`, or the `consult` role's model alone (`consult.model` wins when both name one).
@@ -1195,6 +1208,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         },
         "orchestrator",
       );
+      // The person's sketch, once, as a hint of the claim (never a status); the first briefing and the planner read it from the journal.
+      if (o.sketch !== undefined) recordSketch(journal, { ...(o.user !== undefined ? { by: o.user } : {}), claimId, text: o.sketch });
     }
     const finish = (outcome: ProblemOutcome, reason?: string, proof?: string): ProblemResult => {
       const durationMs = Math.round(performance.now() - started);

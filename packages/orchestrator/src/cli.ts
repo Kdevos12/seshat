@@ -87,7 +87,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
@@ -156,6 +156,8 @@ in the prover's context only (advice: only Lean decides), at most --consult-call
 --role ROLE=MODEL and --role-setting ROLE.KEY=VALUE (run and solve, repeatable; documentation/models-setup.md, "Roles"): a model, and sampling settings, for a place the harness calls a model from. ROLE is prover (the
 outer sessions), planner (the refinement rounds), hole (the hole sessions), verifier or consult (a model for the consult tool), or escalation (the planner's next model after two rounds without Lean
 progress); KEY is temperature, topP or thinking (escalation: maxShare). A role not named has the run's model and settings. Example: --role planner=PROVIDER/ID --role-setting planner.temperature=0.2.
+--sketch FILE (solve; documentation/human.md, "A person's sketch"): your own informal proof or hint, in a text file of at most 20000 characters. It is journaled once as a hint under your name (--as), shown to the first
+briefing of the outer prover in a section "A sketch from NAME" and to the planner's prompt when the scheduler refines, as unchecked data; it never sets a status. It goes with one statement.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
@@ -263,6 +265,7 @@ const { positionals, values } = parseArgs({
     lean: { type: "boolean" },
     prose: { type: "boolean" },
     "no-check": { type: "boolean" },
+    sketch: { type: "string" },
     "lean-search": { type: "boolean" },
     consult: { type: "string" },
     role: { type: "string", multiple: true },
@@ -850,6 +853,7 @@ async function run(): Promise<number> {
   if (values.resume !== undefined) return await resume(values.resume);
   if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
   if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID or SESHAT_MODEL (harness models lists them)");
+  if (values.sketch !== undefined) throw new UsageError("--sketch is for harness solve: a sketch goes with one statement of your own");
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
@@ -1232,6 +1236,7 @@ async function solve(): Promise<number> {
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      ...(values.sketch !== undefined ? { sketch: values.sketch } : {}),
       ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
       autoTool: values["auto-tool"] === true,
       noIntake: values["no-intake"] === true,

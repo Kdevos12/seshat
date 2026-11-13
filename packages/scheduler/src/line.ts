@@ -3,6 +3,7 @@ import {
   Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
 import { LeanMeta } from "@seshat/lean-meta";
+import { sketchOfNodes } from "@seshat/memory";
 import {
   type Briefing, completeJson, type FinishedAttempt, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
@@ -510,9 +511,12 @@ export function createM12Line(): Line {
     if (base === undefined || stored === undefined || work.refineSkipped.has(base.nodeId)) return false;
     const submission = JSON.parse(stored) as { aux: string; proof: string };
     const round = rounds + 1;
+    // A person's sketch (`harness solve --sketch`) is a hint node of the claim: the planner is told of it, as unverified data.
+    const sketch = sketchOfNodes(problem.memory.nodes("hint", { claimId: problem.claimId }));
     const prompt = plannerPrompt({
       round, max: s.maxRefinements, target: target.statement, aux: submission.aux, proof: submission.proof, holes: plannerHoles(problem, base.record),
       ...(base.case === "a" ? { refused: { ...(base.record.problem !== undefined ? { problem: base.record.problem } : {}), errors: base.record.errors ?? [] } } : {}),
+      ...(sketch !== undefined ? { sketch } : {}),
     });
     // The gate prices the round as a task of one call: a share of what an inner session has cost on this problem (its first guess before any).
     if (problem.budget.ask !== undefined) {
