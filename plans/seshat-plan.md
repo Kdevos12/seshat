@@ -1496,6 +1496,12 @@ an arm `solve-v2-graph` (`v2` plus M2 and M4) with its report counts and `harnes
 smoke run of that arm alone on four or five of Task 50's problems, $0.50 each, $1 in all. KG2 to KG4 stay
 proposed.
 
+Also from `plans/plan-change-aletheia.md` (Ruling 38): AL1 and AL2 shape NL2 (the verifier's verdict
+`correct`, `fixable` or `wrong`; the verifier reads only the final proof; a verifier of another model
+family when one is configured); AL3 right after NL2 (an accepted informal proof shown as "Not checked by
+Lean", the claim staying `open`); AL4 with the next change to intake (the readings of a statement); AL5 at
+any time (an interaction card from the journal). AL6 is not approved.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
