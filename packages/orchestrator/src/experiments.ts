@@ -196,8 +196,8 @@ export const EXPERIMENTS: Experiment[] = [
       solveArm("solve-v2-blueprints", "solve-v2 plus line M12 with its option blueprints: holes that depend on each other, a session with tools per hole", "v2", context, { versus: "solve-v2" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true } } }),
       // Lines M2 and M4 are not in v2: they have never run with a real model. This arm measures what they cost and what they add to it (plan change KG1).
       solveArm("solve-v2-graph", "solve-v2 plus line M2 (the graph of claims and variants) and line M4 (the context compiler), with their default options", "v2", context, { versus: "solve-v2" }, { lines: ["M2", "M4"] }),
-      // Refinement rounds (CA12, PA11): a planner call rewrites a blueprint that was refused or whose holes did not all get proved. Set against the blueprints arm: only `refine` differs.
-      solveArm("solve-v2-blueprints-refine", "solve-v2-blueprints plus M12's option refine: a planner call rewrites a refused or stuck blueprint, at most 8 rounds a problem", "v2", context, { versus: "solve-v2-blueprints" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true, refine: true } } }),
+      // Refinement rounds (CA12, PA11) and the repair pass (CA13): a planner call rewrites a blueprint that was refused or whose holes did not all get proved, and a session that ends on errors is cut to a blueprint. Set against the blueprints arm: only `refine` and `repair` differ.
+      solveArm("solve-v2-blueprints-refine", "solve-v2-blueprints plus M12's options refine and repair: a planner call rewrites a refused or stuck blueprint, at most 8 rounds a problem, and a session that ends on Lean errors has its failing blocks cut to sorry, at most 2 repairs a problem", "v2", context, { versus: "solve-v2-blueprints" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true, refine: true, repair: true } } }),
     ],
   },
   {

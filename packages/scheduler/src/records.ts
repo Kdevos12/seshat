@@ -37,6 +37,8 @@ export interface SketchRecord {
   planner?: boolean;
   refinedFrom?: string;
   round?: number;
+  /** The repair pass's blueprint (CA13): the harness cut the failing blocks of the outer attempt `repairOf` to `sorry`, with no model call. */
+  repairOf?: string;
   /** For a blueprint, the holes each hole declares it may use (`-- uses:`), as names, parallel to `names`. */
   uses?: string[][];
   /**
