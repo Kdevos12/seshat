@@ -190,6 +190,7 @@ describe("harness run", () => {
     // It is in the usage of run and of solve.
     const usage = await harness(["--help"]);
     assert.match(usage.stdout, /harness run [^]*\[--lean-search\][^]*harness solve [^]*\[--lean-search\]/);
+    assert.match(usage.stdout, /harness run [^]*\[--consult PROVIDER\/ID[^]*harness solve [^]*\[--consult PROVIDER\/ID/);
   });
 
   it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {

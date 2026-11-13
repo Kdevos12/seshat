@@ -4,6 +4,7 @@ import { DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { DEFAULT_CONFIG, type RunConfig } from "./run.ts";
 import { DEFAULT_CHECK_TIMEOUT_SEC } from "@seshat/registry";
 import type { PriceBook } from "./prices.ts";
+import { DEFAULT_CONSULT_CALLS } from "./consult.ts";
 
 /**
  * The defaults of `harness solve` (plan change PB6, documentation/quickstart.md, "Student defaults"): what a run should do when its
@@ -78,7 +79,7 @@ export const COMPUTE_TOOL = "compute.sage";
 export const LEAN_LSP_TOOL = "lean.lsp";
 
 /** What a set turns on, in words: one line per addition, taken from `DEFAULTS_SETS` and `SOLVE_SWITCHES`. `offers` says which capabilities the host has. */
-export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean): string[] {
+export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean, on: { consult?: RunConfig["consult"] } = {}): string[] {
   const set = DEFAULTS_SETS[name];
   const sw = SOLVE_SWITCHES[name];
   const lines: string[] = [];
@@ -98,6 +99,8 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
   if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
   if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
   if (sw.leanLsp) lines.push(`${LEAN_LSP_TOOL} for the prover (goals, diagnostics, several tactics at a line)${offers !== undefined && !offers(LEAN_LSP_TOOL) ? " (this host does not offer it)" : ""}`);
+  // Not in any set: only a run that was asked for it (`--consult`, plan change NL3, beta).
+  if (on.consult !== undefined) lines.push(`the consult tool (beta, asked for with --consult): the prover may put ${on.consult.maxCalls ?? DEFAULT_CONSULT_CALLS} question(s) a session to ${on.consult.model}; its answer is advice, only Lean decides`);
   return lines;
 }
 

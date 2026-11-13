@@ -9,7 +9,7 @@ export function toolName(id: string): string {
 }
 
 /** Tools a session has besides its capabilities: a capability's tool name never takes one (a pack's all start with `pack_`). */
-export const BUILTIN_TOOL_NAMES: readonly string[] = ["lean_check", "expand", "graph_query", "tool_search"];
+export const BUILTIN_TOOL_NAMES: readonly string[] = ["lean_check", "expand", "graph_query", "tool_search", "consult"];
 
 /** Problems with the capabilities a run gives its provers besides `lean_check`; empty when they are fine. */
 export function checkTools(registry: Registry, ids: readonly string[]): string[] {

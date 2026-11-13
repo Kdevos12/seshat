@@ -145,6 +145,15 @@ function configOf(recorded: unknown): RunConfig {
     ...(typeof r.defaults === "string" ? { defaults: r.defaults } : {}),
     ...(r.editTool === true ? { editTool: true } : {}),
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
+    ...(typeof r.consult === "object" && r.consult !== null && typeof (r.consult as Record<string, unknown>).model === "string"
+      ? {
+          consult: {
+            model: (r.consult as { model: string }).model,
+            ...(typeof (r.consult as Record<string, unknown>).maxCalls === "number" ? { maxCalls: (r.consult as { maxCalls: number }).maxCalls } : {}),
+            ...(typeof (r.consult as Record<string, unknown>).maxOutputTokens === "number" ? { maxOutputTokens: (r.consult as { maxOutputTokens: number }).maxOutputTokens } : {}),
+          },
+        }
+      : {}),
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
     ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
     ...(r.firstCases === true ? { firstCases: true } : {}),
