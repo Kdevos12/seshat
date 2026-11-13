@@ -41,6 +41,8 @@ export interface SolveFlags extends DoctorFlags {
   leanSearch?: boolean;
   /** `--consult MODEL` (beta, plan change NL3): `RunConfig.consult` on top of the defaults set (it is in none of them). */
   consult?: NonNullable<RunConfig["consult"]>;
+  /** `--role ROLE=MODEL`, `--role-setting ROLE.KEY=VALUE` (CA15, CA23): `RunConfig.roles` on top of the defaults set (it is in none of them). */
+  roles?: NonNullable<RunConfig["roles"]>;
   /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
   consolidation?: boolean;
   offpeak?: RunConfig["offpeak"];
@@ -366,7 +368,9 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
-      ...(leanSearch || flags.consolidation === true || flags.consult !== undefined ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}), ...(flags.consult !== undefined ? { consult: flags.consult } : {}) } } : {}),
+      ...(leanSearch || flags.consolidation === true || flags.consult !== undefined || flags.roles !== undefined
+        ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}), ...(flags.consult !== undefined ? { consult: flags.consult } : {}), ...(flags.roles !== undefined ? { roles: flags.roles } : {}) } }
+        : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       ...(tools.length > 0 ? { tools } : {}),

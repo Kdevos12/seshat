@@ -14,6 +14,7 @@ import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { fatalProviderError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
+import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
@@ -81,6 +82,11 @@ export interface ProverOptions {
   tools?: readonly PinnedTool[];
   /** The tool `consult` (plan change NL3, beta): one question to another model, answered as text. Absent: the sessions do not have it. */
   consult?: { config: ConsultConfig; resolveModel: (name: string) => Promise<Model<Api>>; problemId: string };
+  /**
+   * The run's roles (`RunConfig.roles`): with `prover` in them, the sessions are sent the role's sampling settings, and the settings used are recorded
+   * on `attempt.started`. The role's model and thinking level are `model` and `thinkingLevel` above. Absent: nothing changes.
+   */
+  roles?: RoleBook;
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
   /**
@@ -248,6 +254,14 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       }
       pageSection = shown.section;
     }
+    // The prover role's settings (`RunConfig.roles`): a temperature or thinking level a line sampled for the session wins, key by key.
+    let topP: number | undefined;
+    if (o.roles?.has("prover") === true) {
+      const use = o.roles.use("prover", info.model, thinkingLevel);
+      if (temperature === undefined) temperature = use.temperature;
+      topP = use.topP;
+      if (use.record !== undefined) info = { ...info, settings: { ...use.record, ...info.settings } };
+    }
     attempts += 1;
     progress.attempts = attempts;
     journal.emit(
@@ -296,6 +310,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
                 config: o.consult.config, journal, blobs: o.blobs, models: o.models, resolveModel: o.consult.resolveModel, ledger: o.ledger,
                 problemId: o.consult.problemId, attemptId, actor, signal: o.signal,
                 ...(o.prices !== undefined ? { prices: o.prices } : {}), ...(o.turn !== undefined ? { turn: o.turn } : {}),
+                ...(o.roles !== undefined ? { roles: o.roles } : {}),
               }) as never]
             : []),
           ...(opened?.tools ?? []),
@@ -304,6 +319,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         model,
         thinkingLevel,
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(topP !== undefined ? { topP } : {}),
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,

@@ -4,6 +4,7 @@ import { estimateTokens } from "@seshat/context";
 import { type BlobStore, type Journal, newId, SITE } from "@seshat/core";
 import { type Ledger, messageCost } from "./budget.ts";
 import type { PriceBook } from "./prices.ts";
+import { type RoleBook, sampling } from "./roles.ts";
 import type { Turn } from "./turns.ts";
 
 /**
@@ -53,6 +54,8 @@ export interface ConsultToolOptions {
   signal: AbortSignal;
   prices?: PriceBook;
   turn?: Turn;
+  /** The run's roles: with `consult` among them, its sampling settings are sent with the call and recorded on its event (documentation/models-setup.md, "Roles"). */
+  roles?: RoleBook;
 }
 
 /** The most dollars a call may cost: the question and the system prompt as input at the full input price, and `maxOutputTokens` of output. */
@@ -107,7 +110,14 @@ export function consultTool(o: ConsultToolOptions): AgentTool<ReturnType<typeof 
       const modelCallId = newId("mc");
       const requestHash = o.blobs.putJson({ model: o.config.model, system: SYSTEM, prompt: question, maxTokens: maxOutput, attemptId: o.attemptId });
       const started = performance.now();
-      const options: SimpleStreamOptions = { signal: o.signal, maxTokens: maxOutput };
+      const use = o.roles?.has("consult") === true ? o.roles.use("consult", o.config.model) : undefined;
+      const thinking = o.roles?.config.consult?.settings?.thinking;
+      const options: SimpleStreamOptions = {
+        signal: o.signal,
+        maxTokens: maxOutput,
+        ...(use !== undefined ? sampling(use) : {}),
+        ...(thinking !== undefined && thinking !== "off" ? { reasoning: thinking as NonNullable<SimpleStreamOptions["reasoning"]> } : {}),
+      };
       const message = await o.models.completeSimple(model, { systemPrompt: SYSTEM, messages: [{ role: "user", content: question, timestamp: Date.now() }] }, options);
       const cost = messageCost(model, message, o.prices);
       o.ledger.charge(cost);
@@ -123,6 +133,8 @@ export function consultTool(o: ConsultToolOptions): AgentTool<ReturnType<typeof 
           model: o.config.model,
           outcome,
           site,
+          ...(use !== undefined ? { role: "consult" } : {}),
+          ...(use?.record !== undefined ? { settings: use.record } : {}),
           requestHash,
           ...(outcome === "ok" ? { responseHash: o.blobs.put(text) } : {}),
           ...(error !== undefined ? { error: error.slice(0, 1000) } : {}),

@@ -15,6 +15,7 @@ import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@ses
 import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
 import { renderHealth } from "./health.ts";
 import { checkConsult, type ConsultConfig } from "./consult.ts";
+import { checkRoles, ROLES, type RolesConfig } from "./roles.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
@@ -51,7 +52,7 @@ const usage = `usage:
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
@@ -86,7 +87,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
@@ -152,6 +153,9 @@ the host profile sets them up), checks every hit against the run's Lean, and add
 (documentation/lean.md, "Search pushed by the harness"). The host must offer lean.search.
 --consult MODEL (run and solve; beta, off by default, in no defaults set and no arm; documentation/models-setup.md, "Consult"): gives the outer prover the tool consult(question), one question as text to another model, answered
 in the prover's context only (advice: only Lean decides), at most --consult-calls (default 2) times a session and --consult-tokens (default 1000) tokens an answer, charged to the problem's budget and journaled at the site consult.
+--role ROLE=MODEL and --role-setting ROLE.KEY=VALUE (run and solve, repeatable; documentation/models-setup.md, "Roles"): a model, and sampling settings, for a place the harness calls a model from. ROLE is prover (the
+outer sessions), planner (the refinement rounds), hole (the hole sessions), verifier or consult (a model for the consult tool), or escalation (the planner's next model after two rounds without Lean
+progress); KEY is temperature, topP or thinking (escalation: maxShare). A role not named has the run's model and settings. Example: --role planner=PROVIDER/ID --role-setting planner.temperature=0.2.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
@@ -261,6 +265,8 @@ const { positionals, values } = parseArgs({
     "no-check": { type: "boolean" },
     "lean-search": { type: "boolean" },
     consult: { type: "string" },
+    role: { type: "string", multiple: true },
+    "role-setting": { type: "string", multiple: true },
     "consult-calls": { type: "string" },
     "consult-tokens": { type: "string" },
     consolidation: { type: "boolean" },
@@ -470,6 +476,46 @@ function consultFlag(): ConsultConfig | undefined {
   }
   const config: ConsultConfig = { model: values.consult, ...(calls !== undefined ? { maxCalls: calls } : {}), ...(tokens !== undefined ? { maxOutputTokens: tokens } : {}) };
   const problems = checkConsult(config);
+  if (problems.length > 0) throw new UsageError(problems.join("; "));
+  return config;
+}
+
+/**
+ * `--role ROLE=MODEL` and `--role-setting ROLE.KEY=VALUE` (plan changes CA15 and CA23): `RunConfig.roles`, or undefined when neither is given. A VALUE is
+ * read as JSON when it parses (a number), a string otherwise (a thinking level).
+ */
+function rolesFlags(): RolesConfig | undefined {
+  const named = values.role ?? [];
+  const settings = values["role-setting"] ?? [];
+  if (named.length === 0 && settings.length === 0) return undefined;
+  const roles: Record<string, { model?: string; settings?: Record<string, Json>; maxShare?: number }> = {};
+  const entry = (role: string): { model?: string; settings?: Record<string, Json>; maxShare?: number } => (roles[role] ??= {});
+  const known = new Set<string>([...ROLES, "escalation"]);
+  for (const text of named) {
+    const match = /^([a-z]+)=(\S+)$/.exec(text);
+    if (match === null || !known.has(match[1] as string)) throw new UsageError(`--role takes ROLE=PROVIDER/ID with ROLE one of ${[...known].join(", ")}, got ${JSON.stringify(text)}`);
+    entry(match[1] as string).model = match[2] as string;
+  }
+  for (const text of settings) {
+    const match = /^([a-z]+)\.([A-Za-z]+)=(.*)$/s.exec(text);
+    if (match === null || !known.has(match[1] as string)) throw new UsageError(`--role-setting takes ROLE.KEY=VALUE with ROLE one of ${[...known].join(", ")}, got ${JSON.stringify(text)}`);
+    const [, role = "", key = "", raw = ""] = match;
+    let value: Json;
+    try {
+      value = JSON.parse(raw) as Json;
+    } catch {
+      value = raw;
+    }
+    if (role === "escalation") {
+      if (key !== "maxShare" || typeof value !== "number") throw new UsageError(`--role-setting escalation.maxShare=X is the only setting of escalation, got ${JSON.stringify(text)}`);
+      entry(role).maxShare = value;
+    } else {
+      const own = entry(role);
+      own.settings = { ...own.settings, [key]: value };
+    }
+  }
+  const config = roles as unknown as RolesConfig;
+  const problems = checkRoles(config);
   if (problems.length > 0) throw new UsageError(problems.join("; "));
   return config;
 }
@@ -782,6 +828,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     tools: [...new Set(values.tool ?? [])],
     ...(values["lean-search"] === true ? { leanSearch: true } : {}),
     ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
+    ...(rolesFlags() !== undefined ? { roles: rolesFlags() as RolesConfig } : {}),
     ...(values.consolidation === true ? { consolidation: true } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
@@ -1085,7 +1132,7 @@ function finished(result: RunResult, dir: string): number {
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "role", "role-setting", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait",
 ] as const;
 
@@ -1197,6 +1244,7 @@ async function solve(): Promise<number> {
       ...(number("intake-usd", values["intake-usd"], undefined) !== undefined ? { intakeUsd: number("intake-usd", values["intake-usd"], undefined) as number } : {}),
       leanSearch: values["lean-search"] === true,
       ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
+      ...(rolesFlags() !== undefined ? { roles: rolesFlags() as RolesConfig } : {}),
       consolidation: values.consolidation === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),

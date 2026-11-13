@@ -193,6 +193,25 @@ describe("harness run", () => {
     assert.match(usage.stdout, /harness run [^]*\[--consult PROVIDER\/ID[^]*harness solve [^]*\[--consult PROVIDER\/ID/);
   });
 
+  it("knows --role and --role-setting (CA15, CA23): in the usage of run and solve, and checked before anything runs", async () => {
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness run [^]*\[--role ROLE=PROVIDER\/ID\]\.\.\. \[--role-setting ROLE\.KEY=VALUE\]\.\.\.[^]*harness solve [^]*\[--role ROLE=PROVIDER\/ID\]/);
+    const base = ["run", "--checkout", checkout, "--all", "--model", "nowhere/none"];
+    const unknown = await harness([...base, "--role", "judge=a/b"]);
+    assert.equal(unknown.code, 2);
+    assert.match(unknown.stderr, /--role takes ROLE=PROVIDER\/ID with ROLE one of prover, planner, hole, verifier, consult, escalation/);
+    const badSetting = await harness([...base, "--role", "planner=a/b", "--role-setting", "planner.temperature=9"]);
+    assert.equal(badSetting.code, 2);
+    assert.match(badSetting.stderr, /roles\.planner\.settings\.temperature must be a number from 0 to 2/);
+    const escalation = await harness([...base, "--role", "planner=a/b", "--role-setting", "escalation.temperature=1"]);
+    assert.match(escalation.stderr, /escalation\.maxShare=X is the only setting of escalation/);
+    const alone = await harness([...base, "--role", "escalation=a/b"]);
+    assert.match(alone.stderr, /goes with roles\.planner/);
+    // A resumed run keeps the roles it began with.
+    const resumed = await harness(["run", "--resume", join(tempDir(), "absent"), "--checkout", checkout, "--role", "hole=a/b"]);
+    assert.match(resumed.stderr, /--role cannot be given with it/);
+  });
+
   it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {
     const env = { SESHAT_MODEL: "nowhere/none" };
     const started = await harness(["run", "--checkout", checkout, "--all"], env);

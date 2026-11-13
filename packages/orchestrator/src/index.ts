@@ -4,6 +4,7 @@ export * from "./budget-gate.ts";
 export * from "./budget.ts";
 export * from "./consortium.ts";
 export * from "./consult.ts";
+export * from "./roles.ts";
 export * from "./doctor.ts";
 export * from "./feedback.ts";
 export * from "./gate-report.ts";

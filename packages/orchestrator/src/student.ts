@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, type RunConfig } from "./run.ts";
 import { DEFAULT_CHECK_TIMEOUT_SEC } from "@seshat/registry";
 import type { PriceBook } from "./prices.ts";
 import { DEFAULT_CONSULT_CALLS } from "./consult.ts";
+import { describeRoles } from "./roles.ts";
 
 /**
  * The defaults of `harness solve` (plan change PB6, documentation/quickstart.md, "Student defaults"): what a run should do when its
@@ -79,7 +80,7 @@ export const COMPUTE_TOOL = "compute.sage";
 export const LEAN_LSP_TOOL = "lean.lsp";
 
 /** What a set turns on, in words: one line per addition, taken from `DEFAULTS_SETS` and `SOLVE_SWITCHES`. `offers` says which capabilities the host has. */
-export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean, on: { consult?: RunConfig["consult"] } = {}): string[] {
+export function describeSet(name: DefaultsName, offers?: (capability: string) => boolean, on: { consult?: RunConfig["consult"]; roles?: RunConfig["roles"] } = {}): string[] {
   const set = DEFAULTS_SETS[name];
   const sw = SOLVE_SWITCHES[name];
   const lines: string[] = [];
@@ -101,6 +102,8 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
   if (sw.leanLsp) lines.push(`${LEAN_LSP_TOOL} for the prover (goals, diagnostics, several tactics at a line)${offers !== undefined && !offers(LEAN_LSP_TOOL) ? " (this host does not offer it)" : ""}`);
   // Not in any set: only a run that was asked for it (`--consult`, plan change NL3, beta).
   if (on.consult !== undefined) lines.push(`the consult tool (beta, asked for with --consult): the prover may put ${on.consult.maxCalls ?? DEFAULT_CONSULT_CALLS} question(s) a session to ${on.consult.model}; its answer is advice, only Lean decides`);
+  // Not in any set either: a model, and settings, per role (`--role`, `--role-setting`, plan changes CA15 and CA23).
+  if (on.roles !== undefined && describeRoles(on.roles) !== "") lines.push(`roles (asked for with --role): ${describeRoles(on.roles)}`);
   return lines;
 }
 

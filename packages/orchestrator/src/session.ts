@@ -53,6 +53,8 @@ export interface SessionOptions {
   thinkingLevel: ThinkingLevel;
   /** Sent with each of the session's requests (a line sampled it: documentation/fleet.md); absent: the provider's own. */
   temperature?: number;
+  /** Sent with each request as the provider's `top_p` sampling parameter (a role's setting, documentation/models-setup.md, "Roles"); OpenAI-compatible adapters act on it. Absent: the provider's own. */
+  topP?: number;
   systemPrompt: string;
   prompt: string;
   workbench: Workbench;
@@ -342,6 +344,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   const packet = o.lines?.packet;
   const cacheRetention = o.cacheRetention;
   const temperature = o.temperature;
+  const topP = o.topP;
   const rebuild = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     requests += 1;
     // `append_only`: after the first compiled packet the history is the session's own, never rewritten, so that each
@@ -388,9 +391,14 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     streamFn: (model, context, options) => {
       const over = o.turn?.ended;
       if (over !== undefined) return refusedStream(model, `the turn is over (${over.detail}): the request was not sent`);
-      const sent = cacheRetention === undefined && temperature === undefined
+      const sent = cacheRetention === undefined && temperature === undefined && topP === undefined
         ? options
-        : { ...options, ...(cacheRetention !== undefined ? { cacheRetention } : {}), ...(temperature !== undefined ? { temperature } : {}) };
+        : {
+            ...options,
+            ...(cacheRetention !== undefined ? { cacheRetention } : {}),
+            ...(temperature !== undefined ? { temperature } : {}),
+            ...(topP !== undefined ? { samplingParams: { ...options?.samplingParams, top_p: topP } } : {}),
+          };
       return retryingStream({
         send: () => o.models.streamSimple(model, context, sent),
         policy: o.retry ?? REQUEST_RETRY,

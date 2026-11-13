@@ -67,6 +67,32 @@ of the provider chosen, so change it with `JEV_PROVIDER` (an OpenRouter key is r
 - **No status.** The answer never changes a claim, an edge or a status: only Lean's check does.
 - **Not built:** the hole sessions of M12 do not have it; only the outer prover. Not run against a real model; `consult.test.ts` covers the tool's absence, a call answered, journaled and charged, the cap, the budget refusal, and the sets unchanged.
 
+## Roles: a model and settings for each place a model is called (CA15, CA23)
+
+`RunConfig.roles` gives a model, and sampling settings, to each place the harness calls a model from. A role that is not named has the run's model and its default settings, and a run without `roles` sends and records what it always did (a test compares the requests). It is in no defaults set.
+
+| Role | The calls it governs |
+|---|---|
+| `prover` | the outer prover's sessions (`prover.session`) |
+| `planner` | the refinement rounds' call of M12, at the site `scheduler.planner` ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)) |
+| `hole` | M12's hole sessions, at the site `scheduler.hole` |
+| `verifier` | reserved for the verifier that a later part of Task 39 adds: the setting is checked and kept, and nothing reads it yet |
+| `consult` | the consult tool: `roles.consult.model` is another way to name `consult.model`, which wins when both are given |
+
+`roles.escalation` (`{ model, maxShare? }`) is the planner's: see [scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11).
+
+```json
+{ "roles": { "planner": { "model": "provider/id", "settings": { "temperature": 0.2, "thinking": "high" } }, "hole": { "model": "provider/id" } } }
+```
+
+- **Model.** `model` is `provider/id`, looked up like the run's model with its credentials checked before any spend: an unknown name, or a provider with no key, is a `RunSetupError` that names the role (`roles.planner.model "x/y": ...`). Each call is charged at its own model's price (the host's table when it has one) to the same ledgers as the run's, and a model with no price anywhere is warned of, or refused under a dollar cap, as the run's model is.
+- **Settings.** `settings` holds `temperature` (0 to 2), `topP` (above 0, at most 1) and `thinking` (a level the run knows). They are sent with every request of the role, the one-shot calls (`completeJson` and the like) included. `temperature` is a request option of the provider; `topP` goes as the `top_p` sampling parameter, which only OpenAI-compatible adapters of pi-ai act on, the others ignore it. A temperature or thinking level that a line sampled for an outer session ([fleet.md](fleet.md#sampled-settings)) wins over the `prover` role's, key by key.
+- **Ignored settings.** A setting that the host profile says the model's family ignores (`models.PROVIDER/ID.ignores`, [m0-loop.md](m0-loop.md#prices): `always`, or `thinking` for the ones ignored while the request thinks) is not sent and is recorded as ignored, as the fleet does.
+- **The journal.** `run.started` records `roles`. A one-shot call or a hole session's response is a `model_call.finished` with the optional fields `role` and `settings` (`{ temperature?, topP?, thinking?, ignored? }`, the settings as sent); the `prover` role's settings are in the `settings` of `attempt.started`, merged with the line's. The planner's escalation adds `escalation`. Fields absent mean the run named no role for the call.
+- **The command line.** `harness run` and `harness solve`: `--role ROLE=PROVIDER/ID` (repeatable; ROLE is one of the five, or `escalation`) and `--role-setting ROLE.KEY=VALUE` (repeatable; KEY is `temperature`, `topP` or `thinking`, VALUE read as JSON when it parses; `escalation.maxShare=X`), the way `--line-option` takes its options. Example: `--role planner=provider/id --role-setting planner.temperature=0.2`. A resumed run keeps the roles it began with.
+- **To see them.** The start log has a line `roles: ...`, `harness solve` says them in its defaults line (`describeSet`), and `harness report` and `RESULT.md` have one line per role named: `Role hole: provider/id, 4 call(s), $0.0123` (the prover's are sessions).
+- **Not run.** Only the faux provider has answered a request under a role (`roles.test.ts`: the planner's call goes to the planner's model and is charged at its price, a setting the family ignores is not sent and is recorded, an unknown model fails at the start, the hole and prover roles, consult through the role, and no `roles`: unchanged). Whether a real provider honours `top_p` through its adapter is untested.
+
 ## The variables
 
 | Variable | For | Default |

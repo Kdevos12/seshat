@@ -17,6 +17,7 @@ import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
+import { type RoleLine, roleReport } from "./role-report.ts";
 import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.ts";
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
 import { type GraphReport, graphReport, renderGraphReport } from "./graph-report.ts";
@@ -108,6 +109,8 @@ export interface RunReport {
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
   /** The tool `consult` (`RunConfig.consult`, plan change NL3, beta): the model, the calls the provers made and what they cost. Absent when the run was not configured with it and made none. */
   consult?: { model: string; calls: number; usd: number };
+  /** Calls and cost per role (`RunConfig.roles`, documentation/models.md, "Roles"): one entry for each role the run named. Absent when it named none. */
+  roles?: RoleLine[];
   /**
    * The sessions' requests sent again after a transient error cut their response (documentation/m0-loop.md, "Transient errors"):
    * how many, in how many attempts, and what the cut responses were charged (in `usd` already). Absent when there was none.
@@ -677,6 +680,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       const named = typeof model === "string" ? model : consult.model;
       return named !== undefined ? { consult: { model: named, calls: consult.calls, usd: consult.usd } } : {};
     })(),
+    ...(roleReport(events) !== undefined ? { roles: roleReport(events) as RoleLine[] } : {}),
     ...(repeatStops.length > 0 ? { repeatStops } : {}),
     ...(rotation.rounds > 0 ? { rounds: rotation } : {}),
     ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
@@ -843,6 +847,7 @@ export function renderRunReport(report: RunReport): string {
         `${use.proofs} of which found a proof.`,
     ),
     ...(report.consult !== undefined ? [`Consult (beta): ${report.consult.calls} call(s) to ${report.consult.model}, ${money(report.consult.usd)}; its answers are advice, no status came from them.`] : []),
+    ...(report.roles ?? []).map((r) => `Role ${r.role}: ${r.models.join(", ")}, ${r.calls} ${r.role === "prover" ? "session(s)" : "call(s)"}, ${money(r.usd)}.`),
     ...(report.modelCalls !== undefined
       ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
       : []),
