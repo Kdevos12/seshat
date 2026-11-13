@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  BlobStore,
   chainOfJournal,
   type EventDataMap,
   type HarnessEvent,
@@ -22,6 +23,7 @@ import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
 import { type GraphReport, graphReport, renderGraphReport } from "./graph-report.ts";
 import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
+import { informalLines, type InformalLine, renderInformal } from "./informal-view.ts";
 
 export interface ProblemLine {
   problemId: string;
@@ -167,6 +169,11 @@ export interface RunReport {
    * credited to them.
    */
   memory?: MemoryLine;
+  /**
+   * The informal proof first of each problem that has one (plan changes PA13, AL3, documentation/informal.md): added by `writeReport`, which reads the blobs.
+   * The text of an accepted proof is there, cut at 4000 characters, only when no Lean proof of the problem was certified. Absent when the run had none.
+   */
+  informal?: InformalLine[];
   /** The intake step of each problem that had one (Task 36, documentation/literature.md); absent for a run without it. */
   intake?: IntakeLine[];
 }
@@ -898,6 +905,7 @@ export function renderRunReport(report: RunReport): string {
         ]
       : []),
     ...(report.loop !== undefined ? ["", ...renderLoop(report.loop)] : []),
+    ...(report.informal !== undefined ? renderInformal(report.informal) : []),
   ];
   return `${lines.join("\n")}\n`;
 }
@@ -929,6 +937,15 @@ export function writeReport(dir: string): RunReport {
   const report = buildReport(events);
   const memory = memoryLine(join(dir, "journal.jsonl"), events);
   if (memory !== undefined) report.memory = memory;
+  const blobs = new BlobStore(join(dir, "blobs"));
+  const informal = informalLines(events, (hash) => {
+    try {
+      return blobs.get(hash);
+    } catch {
+      return undefined;
+    }
+  });
+  if (informal.length > 0) report.informal = informal;
   writeFileSync(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   writeFileSync(join(dir, "report.md"), renderRunReport(report));
   return report;

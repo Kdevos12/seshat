@@ -201,12 +201,18 @@ written whole or not at all (a rename), so a reader never sees half of one.
 **What it holds**, in this order:
 
 1. The headline, one line for each problem: proved or refuted (certified), a candidate (fast check only),
-   or not solved yet, with the journal's reason.
+   or not solved yet, with the journal's reason; or, when the run asked for an informal proof first and none was accepted, "No solution found.".
 2. Where the run stands: how it ended, or that the journal has no end; dollars, tokens and time; the
    journal's length, last hash and whether its hash chain verifies (a chain that does not verify is
    said first, above the headline). When you signed a statement, the statement, your words and the
    test lemmas.
 3. A note when no certifier ran, with the reason the run recorded.
+
+   With the informal proof first ([informal.md](informal.md)), **Not checked by Lean** follows the claims: an informal proof that the
+   verifier accepted, when no Lean proof of the problem was certified, with the text (cut at 4000 characters, and a line says so), its verifier passes,
+   the models by role and the line "This argument has not been checked by Lean; it may be wrong." When nothing was accepted and no Lean proof was
+   certified the headline says "No solution found." and no informal attempt is shown anywhere; when a Lean proof was certified the informal proof is not
+   shown, and one line says it exists. The claim's status is never changed by it: it stays `open`. `report.md` (and what `solve` prints at the end) has the same section.
 4. The claims by status.
 5. **Lean proofs certified so far**: each with the validation behind it and the whole Lean file as it was
    checked. A proof is listed here only when a valid `kernel_replay` validation of that claim is in the

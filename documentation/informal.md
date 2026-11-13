@@ -25,6 +25,10 @@ The result is a node of kind `informal_proof` on the problem's claim (`@seshat/m
 
 An **accepted** proof goes, under the title "An informal proof, checked by N verifier passes and not by Lean", quoted as data, with its facts, into the outer prover's first briefing and into the planner's prompt of [the refinement rounds](scheduler.md#refinement-rounds-plan-change-ca12-pa11). When the host offers `lean.search`, its facts are looked up first (at most five queries, no model call, tool runs in the journal) and the names found go with it. A proof that was not accepted is shown to no one; `solve`'s RESULT and the report show an accepted one with no certified Lean proof under "Not checked by Lean" ([quickstart.md](quickstart.md)).
 
+## What the result shows (AL3)
+
+No model call, from the journal and its blobs (`informal-view.ts`). In `RESULT.md` and in `report.md` (and so in what `harness solve` prints at the end): an accepted proof with **no certified Lean proof** of the problem is shown under "Not checked by Lean": the text cut at 4000 characters (a line says so), the verifier passes, the models by role and the line "This argument has not been checked by Lean; it may be wrong." When nothing was accepted and no Lean proof was certified, the headline is "No solution found." and no attempt is shown, the rejected ones included. With a certified Lean proof the informal one is not shown; one line says it exists. The claim's status is never changed. The partial Lean sketches of the RESULT, which are Lean's own files, stay where they were.
+
 ## Not run
 
 Everything is tested with the faux provider and a simulated Lean. No real model has written or read a proof here: whether a verifier of another family catches what the generator's own would miss, and whether an accepted proof helps the prover, are what the arms measure. Putnam solutions are in the models' training data, so a gain measured there overstates the gain on open problems.
