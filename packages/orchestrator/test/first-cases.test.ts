@@ -93,6 +93,10 @@ describe("reading a statement's expressions", () => {
     assert.equal(firstCasesPlan("(n : ℕ) : ∑ i ∈ Finset.range n, i ≤ n ^ 2"), undefined);
     assert.equal(firstCasesPlan("(n : ℕ) : n + 0 = n"), undefined, "no sum, product, binomial or factorial");
     assert.equal(firstCasesPlan("(n : ℕ) : ∑ i ∈ Finset.range n, foo i = n"), undefined, "an unknown name");
+    assert.equal(firstCasesPlan("(n' : ℕ) : ∑ i ∈ Finset.range n', i = n'"), undefined, "a Lean name that is not a Python name");
+    assert.equal(firstCasesPlan("(n : ℕ) : ∑ i' ∈ Finset.range n, i' = n"), undefined, "a bound name that is not a Python name");
+    assert.equal(firstCasesPlan("(n=__import__('os').system('x')or : ℕ) : ∑ i ∈ Finset.range n, i = n"), undefined, "a parameter name that is code");
+    assert.equal(firstCasesPlan("(sum : ℕ) : ∑ i ∈ Finset.range sum, i = sum"), undefined, "a name the generated code uses");
   });
 
   it("reads a product and a factorial, and one side alone", () => {
