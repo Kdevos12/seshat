@@ -11,6 +11,19 @@ export interface NamedHole {
   text: string;
   /** The holes it declares it may use (`-- uses: aux_a, aux_b` directly above it). Empty without such a line. */
   uses: string[];
+  /** The holes of the blueprint it replaces (`-- refines: aux_old` directly above it, plan change CA12). Empty without such a line. */
+  refines?: string[];
+  /** Its depth in the refinements: 0 in a first blueprint, one more than the deepest hole it refines (blueprints with a `depths` option only). */
+  depth?: number;
+}
+
+/** The deepest a refined hole may be (CA12): a blueprint with a hole deeper than this is refused. */
+export const MAX_HOLE_DEPTH = 3;
+
+/** The depths of the holes of the blueprint a refinement revises: by the hole's name, and by the id of its statement (a hole that is kept as it is keeps its depth). */
+export interface BaseDepths {
+  byName: ReadonlyMap<string, number>;
+  byStatement: ReadonlyMap<string, number>;
 }
 
 /** What reading a sketch may be asked (all off: M12 as it was). */
@@ -19,6 +32,8 @@ export interface ReadOptions {
   blueprint?: boolean;
   /** The target's statement in signature form, to refuse a hole that restates it (blueprints only). */
   target?: string;
+  /** The depths of the blueprint being revised: with it, each hole gets a `depth` and one deeper than `MAX_HOLE_DEPTH` is refused (blueprints only). */
+  depths?: BaseDepths;
 }
 
 export interface SketchReading {
@@ -73,18 +88,27 @@ export function readSketch(submission: Submission, options: ReadOptions = {}): S
   const problems: string[] = [];
   // The `-- uses:` line directly above the next command (no blank line between them).
   let declared: string[] = [];
+  // The `-- refines:` line directly above it (CA12), read like the `-- uses:` line.
+  let refining: string[] = [];
+  const names = (line: string): string[] => line.split(/[\s,]+/).filter((n) => n !== "");
   for (const command of splitCommands(submission.aux)) {
     if (command.kind === "comment") {
       const trailing = /\s*$/.exec(command.text)?.[0] ?? "";
       const gap = trailing.split("\n").length - 1 > 1;
-      const uses = /^--\s*uses:(.*)$/m.exec(command.text.trimEnd());
-      if (uses !== null && !gap) declared = [...declared, ...(uses[1] as string).split(/[\s,]+/).filter((n) => n !== "")];
+      const text = command.text.trimEnd();
+      const uses = /^--\s*uses:(.*)$/m.exec(text);
+      const refines = /^--\s*refines:(.*)$/m.exec(text);
+      if (uses !== null && !gap) declared = [...declared, ...names(uses[1] as string)];
       else if (gap) declared = [];
+      if (refines !== null && !gap) refining = [...refining, ...names(refines[1] as string)];
+      else if (gap) refining = [];
       continue;
     }
     if (command.kind !== "code") continue;
     const uses = [...new Set(declared)];
+    const refines = [...new Set(refining)];
     declared = [];
+    refining = [];
     const text = command.text.trimEnd();
     const head = readDeclarationHead(text);
     if (head === undefined || (head.keyword !== "theorem" && head.keyword !== "lemma") || !head.name.startsWith("aux_")) {
@@ -95,7 +119,7 @@ export function readSketch(submission: Submission, options: ReadOptions = {}): S
       const sketch = prepareSketch(text, head.name);
       if (sketch.originalProof.trim() === "sorry") {
         parseSignature(sketch.statement);
-        holes.push({ name: head.name, statement: sketch.statement, text, uses });
+        holes.push({ name: head.name, statement: sketch.statement, text, uses, refines });
         continue;
       }
     } catch (error) {
@@ -108,21 +132,34 @@ export function readSketch(submission: Submission, options: ReadOptions = {}): S
   if (problems.length > 0) return reading(problems[0] as string);
   if (holes.length === 0) return reading("no named hole");
   if (SORRY.test(maskCommentsAndStrings(submission.proof))) return reading("the main proof has a sorry of its own");
-  const names = holes.map((h) => h.name);
+  const holeNames = holes.map((h) => h.name);
   for (const hole of holes) {
-    const used = mentions(hole.statement, names);
+    const used = mentions(hole.statement, holeNames);
     if (used !== undefined) return reading(`the statement of ${hole.name} names ${used}`);
   }
   for (const other of others) {
-    const used = mentions(other, names);
+    const used = mentions(other, holeNames);
     if (used !== undefined) return reading(`an auxiliary declaration rests on the hole ${used}`);
   }
   if (options.blueprint === true) {
+    if (options.depths !== undefined) {
+      for (const hole of holes) {
+        hole.depth = depthOf(hole, options.depths);
+        if (hole.depth > MAX_HOLE_DEPTH) return reading(`${hole.name} refines too deep (depth ${hole.depth}, at most ${MAX_HOLE_DEPTH})`);
+      }
+    }
     const checked = checkBlueprint(holes, submission.proof, options.target);
     if (checked !== undefined && "problem" in checked) return { holes, others, ...checked };
     if (checked !== undefined) return { holes: holes.filter((h) => !checked.dropped.includes(h.name)), others, dropped: checked.dropped };
   }
   return reading();
+}
+
+/** A hole's depth: one more than the deepest hole it refines; a hole that refines none keeps the depth its statement had in the blueprint revised, else 0. */
+function depthOf(hole: NamedHole, base: BaseDepths): number {
+  const refines = hole.refines ?? [];
+  if (refines.length > 0) return Math.max(...refines.map((name) => base.byName.get(name) ?? 0)) + 1;
+  return base.byStatement.get(statementIdV0(hole.statement)) ?? 0;
 }
 
 /** The names a text uses among `names`, in the order of `names`. */
@@ -255,6 +292,7 @@ export function blueprintNotice(reading: SketchReading, facts: CheckFacts): stri
   if (/does not reach the target/.test(problem)) return not(problem, "Add `-- uses: X` directly above the hole whose proof will use X, or name the hole in the main proof");
   if (/cycle/.test(problem)) return not(problem, "Remove one `-- uses:` line of the cycle");
   if (/which is not a hole/.test(problem)) return not(problem, "A `-- uses:` line names holes of this file only (aux_ lemmas proved by `sorry`)");
+  if (/refines too deep/.test(problem)) return not(problem, "Split the hole at a smaller depth: a hole may refine a hole of a blueprint at most three times over");
   if (/states the target again/.test(problem)) return not(problem, "State a smaller step, not the target");
   if (/^the statement of .* names |rests on the hole/.test(problem)) return not(problem, "A hole's statement and the other aux lemmas may not name a hole; declare the dependency of a hole with `-- uses:` instead");
   return not(problem, "Fix that, then check again");

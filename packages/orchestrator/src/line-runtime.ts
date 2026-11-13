@@ -346,6 +346,8 @@ export class ProblemLines {
                 },
                 request,
               ),
+            // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12).
+            checkSketch: async (submission: Submission) => (await this.p.workbench.check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
             holePreflight: (request: HolePreflightRequest) =>
               holePreflight(
                 {

@@ -29,6 +29,14 @@ export interface SketchRecord {
   leanHoles?: boolean;
   /** The sketch was read as a blueprint (option `blueprints`): its holes may declare dependencies. */
   blueprint?: boolean;
+  /** Lean's first errors of the sketch's check, clipped (the planner of a refinement round reads them; recorded with the option `refine`). */
+  errors?: string[];
+  /** For a blueprint read with the option `refine`, each hole's depth in the refinements, parallel to `names` (0 in a first blueprint, CA12). */
+  depth?: number[];
+  /** A refinement round's blueprint (CA12): the planner wrote it, from the record `refinedFrom` (its node id), in round `round` (1, 2, ...). */
+  planner?: boolean;
+  refinedFrom?: string;
+  round?: number;
   /** For a blueprint, the holes each hole declares it may use (`-- uses:`), as names, parallel to `names`. */
   uses?: string[][];
   /**
@@ -40,6 +48,16 @@ export interface SketchRecord {
   holes: string[];
   /** The `decomposes_into` edge from the problem's claim to the holes, once made. */
   edgeId?: string;
+}
+
+/** Why a problem's refinement rounds stopped for the rest of the run (CA12): the planner's model call failed. */
+export const REFINE_STOP_KIND = "m12_refine_stop";
+
+export interface RefineStopRecord {
+  problemId: string;
+  /** The round that was being made (counting the rounds recorded, plus this one). */
+  round: number;
+  reason: string;
 }
 
 /** One inner session of the scheduler's prover on a subgoal. */

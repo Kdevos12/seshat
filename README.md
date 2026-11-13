@@ -62,7 +62,7 @@ flowchart TB
   defreview["Definition review<br/>new definitions unreviewed:<br/>not in claim statements"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
   m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::built
-  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers<br/>blueprint: holes that use holes,<br/>hole sessions with tools, verdicts"]:::wait
+  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers<br/>blueprint: holes that use holes,<br/>hole sessions with tools, verdicts,<br/>refinement rounds: a planner call<br/>rewrites the blueprint (CA12)"]:::wait
   ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m18["Line M18: variant curriculum<br/>rung 1: special cases of a hard<br/>problem, a capped share of budget"]:::wait
   m15["Line M15: archive of decompositions<br/>cells, a Thompson pick of the one to extend,<br/>schemas from closed sub-DAGs"]:::wait

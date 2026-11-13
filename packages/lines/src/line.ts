@@ -339,6 +339,12 @@ export interface ProblemContext {
    * Absent: the line makes no such test.
    */
   holePreflight?: (request: HolePreflightRequest) => Promise<HolePreflightResult>;
+  /**
+   * Checks a sketch (the regions of a file with holes) on the problem's own file, as a prover's `lean_check` does, outside a session: no attempt, no
+   * model. What M12's refinement rounds use to read the blueprint the planner wrote. Absent in a context an older caller builds, and for the
+   * lines other than M12.
+   */
+  checkSketch?: (submission: Submission) => Promise<ValidationReport>;
 }
 
 /** What a hole session is asked: the claim whose small file it works on, and the only context it has. */
