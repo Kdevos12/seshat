@@ -89,6 +89,17 @@ describe("statement hygiene: plausible", () => {
     assert.equal(plausibleVerdict({ id: "p", status: "timeout", messages: [], sorries: [], timeMs: 1, error: "timeout" }).result, "unavailable");
   });
 
+  it("tells an unknown tactic from a statement that is not testable and one that does not compile", () => {
+    assert.equal(plausibleVerdict(result("unknown namespace 'Plausible'")).result, "unavailable");
+    const nt = plausibleVerdict(result("Failed to create a `testable` instance for ∀ (p : Polynomial ℝ), p = p\nWhat to do: ..."));
+    assert.equal(nt.result, "not_testable");
+    assert.match(nt.detail ?? "", /^Failed to create a `testable` instance/);
+    assert.doesNotMatch(nt.detail ?? "", /What to do/);
+    const e = plausibleVerdict(result("Function expected at\n  aux_L\nunknown identifier 'aux_L'"));
+    assert.equal(e.result, "error");
+    assert.match(e.detail ?? "", /^the statement did not compile: Function expected/);
+  });
+
   it("is asked of Lean as one example with the tactic", async () => {
     const lean = new SimLean(false, "Found a counterexample!\nn := 7");
     const r = await plausibleTest(lean, "import Mathlib", "(n : ℕ) : n < 5");

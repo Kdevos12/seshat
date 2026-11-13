@@ -16,7 +16,7 @@ export type HygieneCheck = "vacuity" | "plausible" | "test_lemmas";
 /** The data of a `hygiene` node. */
 export interface HygieneData {
   check: HygieneCheck;
-  /** vacuity: `satisfiable`, `vacuous`, `unknown`, `skipped`; plausible: `no_counterexample`, `counterexample`, `unavailable`, `skipped`; test lemmas: `passed`, `failed`, `skipped`, `inconclusive`. */
+  /** vacuity: `satisfiable`, `vacuous`, `unknown`, `skipped`; plausible: `no_counterexample`, `counterexample`, `unavailable` (the tactic itself is unknown), `not_testable` (no `testable` instance for the statement), `error` (the statement did not compile), `skipped`; test lemmas: `passed`, `failed`, `skipped`, `inconclusive`. */
   result: string;
   /** A line on what was found, from Lean's answer or from this step; cleaned and short. */
   detail?: string;
@@ -152,8 +152,14 @@ export function plausibleVerdict(result: LeanCheckResult | undefined): HygieneDa
   const found = /Found a counter-?example!?([\s\S]*)/i.exec(text);
   if (found !== null) return { check: "plausible", result: "counterexample", detail: clean(found[1] ?? "", 300) };
   if (result.status === "server_error" || result.status === "repl_error" || result.status === "timeout") return { check: "plausible", result: "unavailable", detail: clean(result.error ?? result.status, 200) };
-  if (/unknown (?:tactic|namespace|identifier)|expected token|Plausible/i.test(text) && !/Gave up|no counter/i.test(text) && result.status === "lean_error") {
-    return { check: "plausible", result: "unavailable", detail: "this Lean project has no `plausible` tactic" };
+  if (result.status === "lean_error" && !/Gave up|no counter/i.test(text)) {
+    const errors = result.messages.filter((m) => m.severity === "error");
+    const first = clean((errors[0]?.text ?? text).split("\n")[0] ?? "", 200);
+    if (errors.some((m) => /unknown tactic/i.test(m.text) || (/unknown namespace/i.test(m.text) && /Plausible/.test(m.text)))) {
+      return { check: "plausible", result: "unavailable", detail: "this Lean project has no `plausible` tactic" };
+    }
+    if (/testable.{0,3} instance|SampleableExt/i.test(text)) return { check: "plausible", result: "not_testable", detail: first };
+    if (errors.length > 0) return { check: "plausible", result: "error", detail: `the statement did not compile: ${first}` };
   }
   return { check: "plausible", result: "no_counterexample", detail: "plausible found none in its samples; that is no proof" };
 }
