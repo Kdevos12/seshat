@@ -28,6 +28,13 @@ Each item names its kind: modify a module (MOD), add within a module (ADD), new 
 | PA14 | NEW | Formal-cost triage before spending: estimate the formalization's size (informal proof length, key lemmas missing from Mathlib) and classify the problem as invest, short try or skip; the gate reads it. | 1967 A5 and 2025 B5 classed skip or short try on a replay of their journals. |
 | PA15 | NEW | `harness audit RUN`: one dossier per unsolved problem (spend, tool calls by name, gate verdict and words, last Lean errors, last sketch), optionally set beside a reference solution a person supplies; never read by a solving run. | Built from the journal alone; test on scripted journals. |
 
+## Correction and proposed amendment, 2026-11-13 (after the third run's end and the journal extract)
+
+- The "partial def" refusals were the certifier's defect, not the model's: Lean 4.27 adds `X._unsafe_rec`, marked partial, for every recursive definition, and the certifier refused any partial constant (fixed in `03b25e2`). Six candidates were wrongly refused (1994 A1 twice, 1997 B5 three times, 2000 A2 once). If they certify, the run reads v1 16/20, v2 14/20, blueprints 15/20. PA1's ban on `partial` stays harmless but is no longer motivated by these refusals.
+- PA5 is confirmed by the journals: v2's budget rounds parked 19 problems with round 0 at $0.0169, below what a probe spends ($0.03 to $0.07). Proposed acceptance for PA5: round 0 is never smaller than the probe's expected cost.
+- PA16 (MOD, M12), new: the blueprints arm stated 5 blueprints and judged all 5 unhealthy, so no hole session ran. Before PA11 builds on M12, read the five pre-flight verdicts and decide whether the health rule or the blueprint prompt is wrong. Acceptance: on a replay of those five journals, the verdicts are explained, and a corrected rule or prompt is tested.
+- Suggested saving on the approved replay: certify the six wrongly refused candidates again for free with the corrected certifier first; then the paid replay needs only the six problems still unsolved in some arm without that defect (1967 A5, 1983 A4, 1999 A2, 2003 B3, 2004 B1, 2025 B5), at most $3.00 instead of $4.50. 1994 A1, 1997 B5 and 2000 A2 join the replay only if their re-certification fails.
+
 ## Order
 
 1. Free now: PA1, PA3, PA4, PA6.

@@ -1475,6 +1475,13 @@ of the third real run, with `v2` fixed and a real $0.50 cap per problem, at most
 (the owner's yes of 2026-11-12). Not a measure of gain (regression to the mean): it shows whether
 the causes "format" and "budget" are gone.
 
+Amended 2026-11-13 (the audit's correction, a saving within the owner's approval): the six candidates the
+certifier wrongly refused for `X._unsafe_rec` are certified again first, for free, with the corrected
+certifier (`03b25e2`); the paid replay then takes only 1967 A5, 1983 A4, 1999 A2, 2003 B3, 2004 B1 and 2025
+B5, at most $3.00, and adds 1994 A1, 1997 B5 or 2000 A2 only if its re-certification fails. Before PA11
+builds on M12 (Task 51), PA16: read the five pre-flight verdicts that judged every blueprint of the third
+run unhealthy, and fix the health rule or the blueprint prompt.
+
 ### Task 51: The pieces the audit asks for (PA10, PA9, PA7, PA8, then PA13 and PA11)
 
 Main team, after Task 50, in this order: data tables pushed by the harness (PA10); a built-in pack
