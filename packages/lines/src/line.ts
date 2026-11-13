@@ -190,6 +190,12 @@ export interface LineHooks {
    * `LINE_ORDER` that rejects is taken.
    */
   beforeCheck?: (session: SessionContext, proposal: Proposal) => Promise<CheckVeto | undefined>;
+  /**
+   * Before each `lean_check`, before `beforeCheck`: a line may rewrite the aux region it is about to check (M12 with blueprints drops the
+   * `import` lines the header already has, which the screen refuses). The `note` goes to the model after the check's answer; the checked and
+   * recorded file is the rewritten one. Lines are called in `LINE_ORDER`, each with the proposal as the lines before it left it.
+   */
+  rewriteCheck?: (session: SessionContext, proposal: Proposal) => Promise<{ aux: string; note: string } | undefined>;
   /** After each `lean_check` of a session: a `stop` ends the session (a drift detector). */
   afterCheck?: (session: SessionContext, check: SessionCheck) => Promise<CheckDecision | undefined>;
   /**

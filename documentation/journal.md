@@ -306,4 +306,4 @@ textual duplicates only: statements that differ in the name of a bound variable,
 an unfolding get different ids. P0b replaces it with a hash of the elaborated, normalized Lean
 term (`st1_` prefix); ids of different versions never compare equal.
 
-Memory node kinds M12 adds with blueprints (additive, [scheduler.md](scheduler.md#verdicts-plan-change-ca11)): `m12_preflight`, `hole_verdict` (`verdict`, `claimId`, `sessionId`, `negationValidated?`) and `suspect_false` (`checked: false`); `m12_sketch` and `m12_session` gain optional fields. Hole sessions' responses are `model_call.finished` events at the site `scheduler.hole`.
+Memory node kinds M12 adds with blueprints (additive, [scheduler.md](scheduler.md#verdicts-plan-change-ca11)): `m12_preflight`, `hole_verdict` (`verdict`, `claimId`, `sessionId`, `negationValidated?`) and `suspect_false` (`checked: false`); `m12_sketch` and `m12_session` gain optional fields (`m12_sketch`: `dropped`, the holes of a blueprint left out because nothing reaches the target; `editsOutsideRegions` and `leanHoles`, the check's flags). Hole sessions' responses are `model_call.finished` events at the site `scheduler.hole`.

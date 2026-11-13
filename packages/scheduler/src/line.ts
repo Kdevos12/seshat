@@ -8,7 +8,7 @@ import {
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
 import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
-import { linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
+import { BLUEPRINT_FORMAT, blueprintNotice, dropHeaderImports, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import {
@@ -713,6 +713,8 @@ export function createM12Line(): Line {
           healthy,
           ...(reading.problem !== undefined ? { problem: reading.problem } : {}),
           ...(reading.failureClass !== undefined ? { failureClass: reading.failureClass } : {}),
+          ...(reading.dropped !== undefined && reading.dropped.length > 0 ? { dropped: reading.dropped } : {}),
+          ...(report !== undefined ? { editsOutsideRegions: report.editsOutsideRegions, leanHoles: report.holes } : {}),
           ...(s.blueprints ? { blueprint: true, uses: reading.holes.map((h) => h.uses) } : {}),
           registered: false,
           holes: [],
@@ -746,6 +748,30 @@ export function createM12Line(): Line {
           reason: `chosen by the ${rule} order of the given-clause loop (weight ${weight.toFixed(3)})`,
           run: (owner) => inner(problem, work, s, problem.tasks.get(task.taskId) ?? task, owner),
         };
+      },
+
+      // How to write a blueprint, for the outer prover, only with the option `blueprints` (PA16): the format nothing else told it.
+      briefingSections: async (session): Promise<readonly Briefing[] | undefined> => {
+        const s = settings(session.options);
+        if (!s.blueprints || !s.subgoals || !works.has(keyOf(session))) return undefined;
+        return [{ title: "How to write a blueprint", text: BLUEPRINT_FORMAT }];
+      },
+
+      // What M12 will do with the sketch just checked, read by the function that makes the record (PA16). Without `blueprints`: nothing.
+      afterCheck: async (session, check) => {
+        const s = settings(session.options);
+        if (!s.blueprints || !s.subgoals || !works.has(keyOf(session)) || !check.report.holes) return undefined;
+        const reading = readSketch(check.submission, readOptions(s, session.memory.claim(session.claimId)?.statement));
+        return { notice: blueprintNotice(reading, { refusedBeforeLean: check.report.leanStatus === undefined, errors: check.report.messages.filter((m) => m.severity === "error").length, editsOutsideRegions: check.report.editsOutsideRegions }) };
+      },
+
+      // An `import` in the aux region that the header already has is dropped before the screen, which refuses it (PA16).
+      rewriteCheck: async (session, proposal) => {
+        const s = settings(session.options);
+        if (!s.blueprints || !s.subgoals || !works.has(keyOf(session))) return undefined;
+        const cut = dropHeaderImports(proposal.aux, session.target.sketch.prefix);
+        if (cut.dropped.length === 0) return undefined;
+        return { aux: cut.aux, note: `Dropped from the AUX region before checking: \`import ${cut.dropped.join(" ")}\` (the file's header already imports it).` };
       },
 
       briefing: async (session): Promise<Briefing | undefined> => {
