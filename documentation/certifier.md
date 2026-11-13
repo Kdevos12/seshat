@@ -135,7 +135,10 @@ initializers (`importModules (loadExts := false)`, passed explicitly). It
    partial constant (`Environment.replay` skips those). One partial constant is not the candidate's:
    Lean v4.27.0 adds `X._unsafe_rec`, marked partial, for every recursive definition `X`, structural
    or well-founded, as the compiler's implementation of it; it is let through when `X` is declared in
-   the same module and is neither unsafe nor partial (`compilerAux`), so a `partial def` stays refused.
+   the same module as an ordinary safe definition (`compilerAux`: a `defnInfo` whose safety is `safe`).
+   A `partial def X` stays refused: Lean v4.27.0 makes its `X` an opaque constant whose own `isPartial`
+   is false, so the test is on the kind of `X`; a first version that tested `isPartial` let a
+   `partial def` through (checked on a real Lean on 2026-11-13, and fixed the same day).
    Until 2026-11-13 it was refused too: in the third real run six candidates that the fast check had
    accepted (Putnam 1994 A1 twice, 1997 B5 three times, 2000 A2 once) were rejected for it, and 1997 B5,
    whose own statement defines `tetration` by structural recursion, could not be certified at all;

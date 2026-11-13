@@ -177,15 +177,18 @@ def axiomsOf (env : Environment) (name : Name) : Array Name := Id.run do
 Whether a partial constant is the compiler's implementation of a definition the module declares: Lean 4.27
 adds `X._unsafe_rec`, marked partial, for every recursive definition `X`, structural or well-founded, and
 nothing safe can refer to it. It is the compiler's, not the candidate's, when `X` is declared in the same
-module and is itself neither unsafe nor partial; a `partial def X` stays refused, since `X` is then partial.
-(Found on 2026-11-12: the source's own structural `tetration` of Putnam 1997 B5 made its proofs uncertifiable.)
+module as an ordinary safe definition (`defnInfo`, structural or well-founded). A `partial def X` stays
+refused: Lean 4.27 makes its `X` an opaque constant (not partial), with `X._unsafe_rec` the partial one, so
+the test is on the kind of `X`, not on its `isPartial` flag.
+(Found on 2026-11-12: the source's own structural `tetration` of Putnam 1997 B5 made its proofs uncertifiable.
+On 2026-11-13 a check of `partial def f` on a real Lean showed that a test on `isPartial` let it through.)
 -/
 def compilerAux (own : Std.HashMap Name ConstantInfo) (name : Name) : Bool :=
   match name with
   | .str base "_unsafe_rec" =>
     match own.get? base with
-    | some info => !info.isUnsafe && !info.isPartial
-    | none => false
+    | some (.defnInfo val) => val.safety == .safe
+    | _ => false
   | _ => false
 
 /--
