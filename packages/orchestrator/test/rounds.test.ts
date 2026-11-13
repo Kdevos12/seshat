@@ -21,6 +21,15 @@ describe("the arithmetic of the rounds", () => {
     assert.equal(roundCap(2, 1, 0), 0.5);
   });
 
+  it("never gives round 0 less than the probe's cap, and doubles from there (PA5)", () => {
+    // 20 problems, a run budget of $1.35 and a problem allowance of $0.50: a quarter of a share is $0.0169, the probe's cap $0.05
+    assert.ok(Math.abs(roundCap(1.35, 20, 0) - 0.016875) < 1e-12);
+    assert.ok(Math.abs(roundCap(1.35, 20, 0, 0.05) - 0.05) < 1e-12);
+    assert.deepEqual([0, 1, 2].map((r) => roundCap(1.35, 20, r, 0.05)), [0.05, 0.1, 0.2]);
+    // a floor below the quarter share changes nothing
+    assert.equal(roundCap(12, 3, 1, 0.5), 2);
+  });
+
   it("reads Lean progress as the ladder does, and a check that typed every step as the gate's probe does", () => {
     assert.equal(markProgress(undefined, { ...NO_MARK }), undefined);
     assert.match(markProgress(undefined, { proved: 1, holes: null, depth: 2 }) ?? "", /1 more subclaim/);
@@ -151,23 +160,65 @@ describe("a run's budget in rounds (CA8)", () => {
   });
 });
 
-describe("a probe that a slice paused", () => {
+describe("round 0 can afford a probe (PA5)", () => {
+  const gated = { sessions: 20, gate: { floor: 0 }, budgetRounds: true };
+
+  it("with the gate on, round 0's cap is the probe's cap (a tenth of the allowance), not a quarter of the share", async () => {
+    const lines: string[] = [];
+    // 3 problems, $3: a quarter of a share is $0.25, the probe's cap $0.5 (a tenth of $5 is $0.5)
+    const { events } = await demoRun({
+      pricePerMillion: PRICE, problems: 3, file: THREE, log: (line) => lines.push(line),
+      config: { ...gated, budget: { problemUsd: 5, runUsd: 3 } },
+      responses: [check("exact trivial_proof"), check("exact trivial_proof"), check("exact trivial_proof")],
+    });
+    assert.equal(ofType(events, "budget.round")[0]?.data.capUsd, 0.5);
+    assert.equal(lines.filter((l) => /cannot give each/.test(l)).length, 0);
+  });
+
+  it("without the gate there is no probe and the cap is what it was", async () => {
+    const { events } = await demoRun({
+      pricePerMillion: PRICE, problems: 3, file: THREE,
+      config: { sessions: 20, budgetRounds: true, budget: { problemUsd: 5, runUsd: 3 } },
+      responses: [check("exact trivial_proof"), check("exact trivial_proof"), check("exact trivial_proof")],
+    });
+    assert.equal(ofType(events, "budget.round")[0]?.data.capUsd, 0.25);
+  });
+
+  it("warns once when the run budget cannot give every problem that floor, and serves the problems in the run's order until it is spent", async () => {
+    const lines: string[] = [];
+    // $0.3 for 3 problems of a $5 allowance: the floor is $0.5 each; the first problem takes the budget
+    const { result, events } = await demoRun({
+      pricePerMillion: PRICE, problems: 3, file: THREE, log: (line) => lines.push(line),
+      config: { ...gated, concurrency: 1, budget: { problemUsd: 5, runUsd: 0.3 } },
+      responses: Array.from({ length: 6 }, (_, k) => fail(k)).flat(),
+    });
+    assert.equal(lines.filter((l) => /cannot give each of the 3 problems the probe's cap/.test(l)).length, 1);
+    assert.equal(ofType(events, "budget.round")[0]?.data.capUsd, 0.5);
+    assert.equal(result.stopped, "budget_exhausted");
+    // $0.27 for the first problem's session leaves $0.03: the second begins and the budget ends it; the third never begins.
+    assert.deepEqual(result.problems.map((p) => p.problemId), ofType(events, "problem.registered").map((e) => e.data.problemId).slice(0, 2));
+    assert.equal(result.problems.length, 2, "the last problem never begins");
+  });
+});
+
+describe("a probe and the slice (PA5 and CA8)", () => {
   // At this price one model response costs about $0.97. Two problems, a problem allowance of $28 (a probe cap of $2.80) and a run allowance of $7:
-  // round 0's slice is $7 / 8 = $0.875, under the probe's cap, so the probe's one response crosses the slice and the slice pauses it.
+  // a quarter of a share is $7 / 8 = $0.875, under the probe's cap. Before PA5 round 0's slice was $0.875 and the probe's one response crossed it, so the
+  // slice paused the probe; now round 0's slice is the probe's cap ($2.80), so it no longer does at round 0 (the continuation stays for a later slice and a resumed run).
   const SLICE_PRICE = 400;
   const cfg = { provers: 2, sessions: 3, seed: "slice-probe", budget: { problemUsd: 28, runUsd: 7 }, budgetRounds: true, gate: { floor: 0 } };
   const gates = (events: Parameters<typeof ofType>[0]) => ofType(events, "budget.gated").map((e) => e.data);
 
-  it("goes on at the next slice, as a probe, within the probe's cap; the gate answers once, and the problem is solved when the probe succeeds", async () => {
+  it("is no longer paused at round 0: the slice is the probe's cap; the gate answers once, and the problem is solved when the probe succeeds", async () => {
     const win = check("exact trivial_proof");
     const { result, events } = await demoRun({
       pricePerMillion: SLICE_PRICE, problems: 2, file: THREE, config: cfg,
       responses: [check("bad 1"), check("bad 2"), win, win],
     });
     assert.deepEqual(result.problems.map((p) => p.outcome), ["candidate", "candidate"]);
-    const cut = ofType(events, "attempt.finished").filter((e) => e.data.outcome === "budget_exhausted");
-    assert.ok(cut.length >= 1, "a slice cut a probe's session");
     const probeCap = 0.1 * 28;
+    assert.ok(Math.abs((ofType(events, "budget.round")[0]?.data.capUsd ?? 0) - probeCap) < 1e-9, "round 0's cap is the probe's cap, not a quarter of the share");
+    assert.equal(ofType(events, "attempt.finished").filter((e) => e.data.outcome === "budget_exhausted").length, 0, "no slice cut a probe's session");
     // One probe row and no gate answer more than once: a probe is journaled once, and a solved problem was never judged.
     for (const problemId of new Set(gates(events).map((g) => g.problemId))) {
       assert.equal(gates(events).filter((g) => g.problemId === problemId && g.action === "probe").length, 1);

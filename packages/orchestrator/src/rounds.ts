@@ -20,9 +20,13 @@ export interface Mark {
 
 export const NO_MARK: Readonly<Mark> = { proved: 0, holes: null, depth: -1 };
 
-/** The most a problem may have spent in all in round `round`. */
-export function roundCap(runUsd: number, k: number, round: number): number {
-  return (runUsd / (4 * Math.max(1, k))) * 2 ** round;
+/**
+ * The most a problem may have spent in all in round `round`: round 0 gets a quarter of its share of the run budget, but never less than
+ * `floorUsd`, the cost of one probe (PA5: a probe costs $0.03 to $0.07, and a quarter of a share of $0.0169 paid for none), and each round
+ * doubles the one before. `floorUsd` is zero when there is no probe, and is at most the problem's allowance (a slice never exceeds it anyway).
+ */
+export function roundCap(runUsd: number, k: number, round: number, floorUsd = 0): number {
+  return Math.max(runUsd / (4 * Math.max(1, k)), floorUsd) * 2 ** round;
 }
 
 /** The mark of a problem from the ladder's measure and its attempts' rows. */
@@ -89,6 +93,8 @@ export interface Grant {
 export interface RotationOptions {
   runUsd: number;
   k: number;
+  /** The least round 0 gives a problem: the probe's cap (`roundCap`). Absent: none. */
+  floorUsd?: number;
   concurrency: number;
   /** The problems in the order they are worked, for a run that begins. */
   order: readonly string[];
@@ -251,7 +257,7 @@ export class Rotation {
   #startRound(round: number, resumed: string[], marks: Map<string, Mark> | undefined): void {
     const o = this.#o;
     this.#round = round;
-    this.#cap = roundCap(o.runUsd, o.k, round);
+    this.#cap = roundCap(o.runUsd, o.k, round, o.floorUsd);
     const at = new Map<string, Mark>();
     if (round > 0) for (const id of this.#active) at.set(id, marks?.get(id) ?? o.measure(id));
     this.#baseline.clear();
