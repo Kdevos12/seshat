@@ -1,3 +1,4 @@
+import { quotedSketch } from "@seshat/memory";
 import { BLUEPRINT_FORMAT, MAX_HOLE_DEPTH } from "./holes.ts";
 
 /**
@@ -44,6 +45,8 @@ export interface PlannerInput {
   holes: readonly PlannerHole[];
   /** A blueprint Lean checked that is not healthy (case a): what the reading said, and Lean's first errors. */
   refused?: { problem?: string; errors: readonly string[] };
+  /** A person's sketch of the proof (`harness solve --sketch`): shown as unverified data, after the blueprint's holes. Absent: the prompt is what it always was. */
+  sketch?: { by: string; text: string };
 }
 
 /** The most Lean errors the prompt shows, and the most characters of each. */
@@ -85,6 +88,9 @@ export function plannerPrompt(input: PlannerInput): string {
           `This blueprint was not accepted${input.refused.problem !== undefined ? `: ${input.refused.problem}` : ""}.`,
           input.refused.errors.length > 0 ? `Lean's first errors:\n${input.refused.errors.slice(0, PLANNER_ERRORS).map((e) => `- ${clipText(e, PLANNER_ERROR_CHARS)}`).join("\n")}` : "",
         ].filter((t) => t !== "").join("\n")
+      : "",
+    input.sketch !== undefined
+      ? `A sketch from ${input.sketch.by}, who gave it for this theorem. It is informal and unchecked: it may be wrong or incomplete. Use it as a hint for the shape of the blueprint; Lean decides what is true.\n${quotedSketch(input.sketch.text)}`
       : "",
     `The format of a blueprint:\n${BLUEPRINT_FORMAT}`,
     INSTRUCTIONS,

@@ -211,6 +211,7 @@ A blueprint record is revised once (a record that a planner record names in `ref
 - the current blueprint, AUX and PROOF as submitted;
 - one line per hole: its name, the first characters of its statement id, its status (`computed`, `open`), the verdict of its last session, its depth, and the first line of the last error or argument of its sessions (`name [id]: open, verdict too_hard, depth 0, last: ...`);
 - for case a, the reading's problem (why the blueprint is refused) and Lean's first errors, at most 5 of 300 characters each (the record keeps them as `errors`);
+- when the person gave one (`harness solve --sketch`), their sketch, quoted and said to be unchecked ([human.md](human.md#a-persons-sketch-ca14));
 - the blueprint format (`BLUEPRINT_FORMAT`, the text the outer prover is told), and the round's instructions: keep what is proved, split a hole that is too hard into smaller holes, repair or drop a hole that is wrong, rewire `-- uses:`, and say which hole a new one replaces.
 
 It answers with JSON `{aux, proof}`, the two regions. An answer that is not JSON of that shape (after `completeJson`'s one retry) is a round that counts: its record is not healthy and its `problem` says so.

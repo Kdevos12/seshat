@@ -231,6 +231,14 @@ last line a crash cut (resume first).
 A focus or a drop names a claim that exists: the claim of a problem the run has begun. A problem that has
 not begun has no claim yet.
 
+### A person's sketch (CA14)
+
+`harness solve --sketch FILE` gives the run your own informal proof, or a hint, before it starts: a text file of at most 20 000 characters (longer, empty or unreadable is a `RunSetupError`, before anything is spent). It goes with one statement: `RunOptions.sketch` of a run with several problems is a `RunSetupError`, and `harness run` has no `--sketch`. The run journals it once, right after `problem.registered`, as a `hint` node of the problem's claim with `provenance: "human"` and `sketch: true`, written by `human:NAME`, where NAME is the person the run is on behalf of (`--as NAME`, else `SESHAT_USER`, else the login name; `human:person` when a run has no name at all). It is evidence of what a person said and nothing more: no status of any claim is set or touched by it, and a proof that follows it is checked like any other.
+
+It reaches two places, as unverified data and never as a system instruction. The outer prover's first briefing (the first session of each prover, not the later ones) gets a section "A sketch from NAME": the text quoted line by line, with a sentence saying it is informal, unchecked, possibly wrong, and that only Lean's check says a proof is right. It is not among the "Hints from the team", which are the team's answers to an account. And the planner's prompt of a refinement round ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)) has the same text under "A sketch from NAME", before the format of a blueprint; a prompt without a sketch is what it was. Both readers read the node from the journal, so a resumed run keeps it.
+
+The screen is the hygiene the literature gives fetched text ([literature.md](literature.md)), with the lines kept (`screenSketch` in `@seshat/memory`): control, bidirectional and zero-width characters go, a run of three `<` or `>` becomes two so that the text cannot forge a delimiter, line ends are made `\n` and runs of empty lines one. It is not the strict screen of `screenProse` (a lemma's gloss, a lesson): that refuses code, `$`, `:=` and underscores, which a person's mathematics has, and the sketch is the person's own words, not a model's. Not run with a real model: `sketch.test.ts` checks the node and its actor, that no status moves, the first briefing and only it, the planner's prompt, the limits, and `harness solve`.
+
 ### What an answer can and cannot change
 
 An answer changes what the models are told (a hint, a strategy ruled out), the order and the end of

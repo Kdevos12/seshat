@@ -10,6 +10,7 @@ import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
 import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
+import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
 
@@ -41,6 +42,8 @@ export interface SolveFlags extends DoctorFlags {
   leanSearch?: boolean;
   /** `--consult MODEL` (beta, plan change NL3): `RunConfig.consult` on top of the defaults set (it is in none of them). */
   consult?: NonNullable<RunConfig["consult"]>;
+  /** `--sketch FILE` (CA14): a person's informal proof or hint, read from the file (at most 20 000 characters); journaled once as a hint under the person's name. */
+  sketch?: string;
   /** `--role ROLE=MODEL`, `--role-setting ROLE.KEY=VALUE` (CA15, CA23): `RunConfig.roles` on top of the defaults set (it is in none of them). */
   roles?: NonNullable<RunConfig["roles"]>;
   /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
@@ -280,6 +283,8 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
     return 2;
   }
   const statement = readStatement(argument, flags);
+  // Read and checked before anything is spent: a file that is missing, empty or too long is a setup error.
+  const sketch = flags.sketch !== undefined ? readSketchFile(flags.sketch) : undefined;
   const maxUsd = flags.max ?? STUDENT_DEFAULT_MAX_USD;
   const user = personName(flags.as);
 
@@ -365,6 +370,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       prices,
       header: DEFAULT_HEADER,
       checker: new RegistryLeanChecker(checkerRegistry, { actor: "orchestrator" }),
+      ...(sketch !== undefined ? { sketch } : {}),
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
       ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
       ...(flags.lines !== undefined ? { lines: flags.lines } : {}),

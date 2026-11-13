@@ -255,6 +255,9 @@ export async function demoRun(options: {
   leanEnvironment?: RunOptions["leanEnvironment"];
   /** How a request that a transient error cut is sent again. Default: `TEST_RETRY`. */
   retry?: RetryPolicy;
+  /** The person the run is on behalf of (`RunOptions.user`) and their sketch (`RunOptions.sketch`). */
+  user?: string;
+  sketch?: string;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
@@ -281,6 +284,8 @@ export async function demoRun(options: {
     ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
     ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
     retry: options.retry ?? TEST_RETRY,
+    ...(options.user !== undefined ? { user: options.user } : {}),
+    ...(options.sketch !== undefined ? { sketch: options.sketch } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }
