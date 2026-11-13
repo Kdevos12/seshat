@@ -103,6 +103,21 @@ function tokenize(text: string): Token[] | undefined {
 
 class GiveUp extends Error {}
 
+/**
+ * The names that reach the Sage code are plain Python identifiers that shadow nothing the generated
+ * code uses: the statement's own text never reaches it otherwise (Lean's `x'` is not valid Python).
+ */
+const RESERVED = new Set([
+  "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except",
+  "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass",
+  "raise", "return", "try", "while", "with", "yield", "None", "True", "False",
+  "sum", "prod", "range", "binomial", "factorial", "json", "print", "_cell",
+]);
+
+export function isSafeName(name: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(name) && !RESERVED.has(name);
+}
+
 /** A recursive-descent translator of one side of the equation; throws `GiveUp` at anything outside the shapes above. */
 class Translator {
   private at = 0;
@@ -181,7 +196,7 @@ class Translator {
   private bigOperator(scope: Set<string>): string {
     const symbol = this.next();
     const name = this.next();
-    if (!/^[A-Za-z_][A-Za-z0-9_']*$/.test(name) || scope.has(name)) throw new GiveUp();
+    if (!isSafeName(name) || scope.has(name)) throw new GiveUp();
     const sep = this.next();
     if (sep !== "∈" && sep !== "in") throw new GiveUp();
     const range = this.next();
@@ -239,6 +254,7 @@ export function firstCasesPlan(statement: string): FirstCasesPlan | undefined {
   const parameters = sig.binders.filter((b) => b.names.length > 0 && /^[ℕℤ]$/.test(b.type));
   if (parameters.length !== 1 || parameters[0]?.names.length !== 1) return undefined;
   const variable = parameters[0].names[0] as string;
+  if (!isSafeName(variable)) return undefined;
   if (/[∀∃∧∨→↔¬≤≥<>≠]|<->|->/.test(sig.conclusion) || /\bfun\b|\blet\b/.test(sig.conclusion)) return undefined;
   const sides = splitEquation(sig.conclusion);
   if (sides === undefined) return undefined;
