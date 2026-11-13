@@ -403,6 +403,8 @@ export interface HolePreflightResult {
   refuted: boolean;
   /** `plausible`'s result (`counterexample`, `no_counterexample`, `unavailable`, `not_testable`, `error`, `skipped`), when it ran. */
   plausible?: string;
+  /** Lean's first error when the hole's file does not type-check (task 51): the claim then gets no session. Absent: it type-checks, or Lean did not answer. */
+  compileError?: string;
   /** A line on each test that ran. */
   notes: string[];
 }
