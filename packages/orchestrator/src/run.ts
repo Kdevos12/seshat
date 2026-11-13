@@ -29,7 +29,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { CARD_NOTES_CHARS, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
 import { maskedCount } from "./mask.ts";
 import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -1299,6 +1299,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 rung: () => live.lines?.rung ?? 0,
                 ...(turn !== undefined ? { turn: () => turn.number } : {}),
                 attemptIds: () => live.workbench?.attemptIds ?? [],
+                ...(memory !== undefined ? { informalAccepted: () => informalProofOfNodes(memory.nodes(INFORMAL_PROOF_KIND, { claimId }), () => undefined)?.accepted === true } : {}),
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
                 decide: problemDecide({
                   line: GATE_LINE,

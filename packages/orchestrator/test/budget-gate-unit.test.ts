@@ -252,3 +252,39 @@ describe("what a launch is asked", () => {
     }
   });
 });
+
+describe("an accepted informal proof at the widening", () => {
+  function gateInformal(journal: Journal, accepted: boolean): BudgetGate {
+    return new BudgetGate({ settings: gateSettings({ floor: 0 }), journal, problemId: "P1", claimId: "clm_1", ledger: new Ledger(5).child(5), seed: "unit", rung: () => 0, attemptIds: () => [], informalAccepted: () => accepted, log: () => {} });
+  }
+
+  it("counts as progress once: the problem widens, and a second look does not count it again", async () => {
+    const journal = open();
+    try {
+      const gate = gateInformal(journal, true);
+      gate.probe();
+      const first = await gate.widen(2);
+      assert.equal(first.action, "widen");
+      assert.match(first.reason, /an informal proof was accepted \(not checked by Lean\)/);
+      assert.match(journal.projection.gates()[1]?.data.reason ?? "", /an informal proof was accepted/);
+      // A second probe (a later turn) and judgement: the marker is in the journal, so it is not counted again.
+      gate.probe();
+      const second = await gate.widen(2);
+      assert.deepEqual([second.action, second.by], ["skip", "progress"]);
+    } finally {
+      journal.close();
+    }
+  });
+
+  it("changes nothing without an accepted proof", async () => {
+    const journal = open();
+    try {
+      const gate = gateInformal(journal, false);
+      gate.probe();
+      const stopped = await gate.widen(2);
+      assert.deepEqual([stopped.action, stopped.by], ["skip", "progress"]);
+    } finally {
+      journal.close();
+    }
+  });
+});

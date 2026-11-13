@@ -25,6 +25,9 @@ export const PROGRESS_DEPTH = 5;
 /** The length, in model responses, of the session the mean cost (or the first guess) stands for: a task bounded in turns is priced in proportion (12 is M12's `holeTurns`). */
 const USUAL_SESSION_TURNS = 12;
 
+/** The reason the gate gives when an accepted informal proof is what lets the problem widen. */
+export const INFORMAL_PROGRESS = "an informal proof was accepted (not checked by Lean)";
+
 type Gated = EventDataMap["budget.gated"];
 
 export interface BudgetGateOptions {
@@ -44,6 +47,8 @@ export interface BudgetGateOptions {
   attemptIds: () => readonly string[];
   /** The ladder's measure of Lean progress now (new subclaims proved, fewer holes), when the run has a memory. */
   leanProgress?: () => Progress;
+  /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
+  informalAccepted?: () => boolean;
   /** The weight of an attempt of an older epoch (`MemoryStore.weightOf`); absent: 1. */
   epochWeight?: (epoch: number) => number;
   /** Where the rule has no numbers; absent, or a site `off`: the rule alone. */
@@ -347,12 +352,14 @@ export class BudgetGate {
 
   /** After the probe: whether the problem widens to `provers` provers (PB2). Only Lean progress widens, except for the floor's fraction. */
   async widen(provers: number): Promise<GateOutcome> {
-    const why = this.progress();
+    let why = this.progress();
+    // An accepted informal proof counts as progress once (PA5): a later probe or judgement does not count it again.
+    if (why === undefined && this.o.informalAccepted?.() === true && !this.rows().some((g) => g.site === "wave" && g.reason.includes(INFORMAL_PROGRESS))) why = INFORMAL_PROGRESS;
     const estimate = Math.max(1, provers) * this.sessionUsd();
     const query = { ...this.query("wave", estimate, `wave:${this.rows().filter((g) => g.site === "wave").length}`), progress: why !== undefined };
     const answer = widenRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
-    return this.write(why === undefined ? verdict : { ...verdict, reason: `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
+    return this.write(why === undefined ? verdict : { ...verdict, reason: why === INFORMAL_PROGRESS ? `${verdict.reason} (${why})` : `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
   }
 
   /** Before a session of a widened prover. */
