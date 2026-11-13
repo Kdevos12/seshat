@@ -29,7 +29,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { CARD_NOTES_CHARS, MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
 import { maskedCount } from "./mask.ts";
 import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -66,7 +66,7 @@ import {
   type RecordedRun,
 } from "./resume.ts";
 import { Router } from "./routing.ts";
-import { applyDrops, claimAndParts, steering } from "./team.ts";
+import { applyDrops, claimAndParts, HINT_KIND, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
@@ -84,6 +84,7 @@ import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
+import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -121,6 +122,14 @@ export interface RunConfig {
    * "The first cases the harness pushes"). Absent: off, and a run that records and prompts as it always did.
    */
   firstCases?: boolean;
+  /**
+   * The informal proof first (plan changes PA13, NL2, AL1, AL2, documentation/informal.md): once per problem, before the first outer prover session and
+   * before M12's first blueprint, a generator (role `planner`) writes a proof in natural language, a verifier (role `verifier`) reads the final text in a
+   * fresh context, and the proof is revised or regenerated until `passes` verifier passes in a row say `correct` (default 3) or `rounds` generate-or-revise
+   * calls are made (default 4). An accepted proof is a hint journaled as an `informal_proof` node, shown to the outer prover and to the planner as not
+   * checked by Lean; it never changes a claim's status. Absent: off, and a run that records and prompts as it always did.
+   */
+  informalFirst?: InformalFirst;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -434,6 +443,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
+  if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -844,6 +854,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
       ...(config.firstCases === true ? { firstCases: true } : {}),
+      ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
@@ -1459,6 +1470,103 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         }
       }
 
+      // The first cases of the statement (`RunConfig.firstCases`). The compute tool is the run's `autoTool` (or a compute tool it was given by name), whether or not the
+      // router files this statement: the router does not read big operators, and a sum is the shape the table is for. Computed once, on first use.
+      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
+      let casesDone: { value: Awaited<ReturnType<typeof computeFirstCases>> } | undefined;
+      const casesOnce = async (): Promise<Awaited<ReturnType<typeof computeFirstCases>>> => {
+        casesDone ??= {
+          value:
+            config.firstCases === true && computeTool !== undefined
+              ? await computeFirstCases(entry.statement, {
+                  registry,
+                  capability: computeTool.capability,
+                  implementation: computeTool.implementation,
+                  // Numbers go to the OEIS only when the run is not private and the person did not refuse third parties (the intake's answer, when there is one).
+                  oeis: registry.offers("oeis.search") && config.private !== true && (config.intake === undefined || config.intake.consent?.allowed === true),
+                  signal: controller.signal,
+                })
+              : undefined,
+        };
+        return casesDone.value;
+      };
+
+      // The informal proof first (PA13, NL2, AL1, AL2): once per problem, before the lines and the provers. A problem whose node exists does not run it again; a loop
+      // that was cut mid-way (no node) is run again from its start. The result is a hint of the claim: no status changes.
+      if (config.informalFirst !== undefined && !adopted && !hasInformalProof(journal.projection, claimId, entry.id)) {
+        const settings = informalSettings(config.informalFirst);
+        try {
+          if (resume !== undefined) log(`${entry.fullName}: the informal proof has no record in the journal: its loop is run again from its start`);
+          const planner = roleBook?.has("planner") === true ? roleBook.use("planner") : undefined;
+          const verifier = roleBook?.has("verifier") === true ? roleBook.use("verifier") : undefined;
+          const informalCases = await casesOnce();
+          const prose = o.prose !== undefined && String(o.prose).trim() !== "" ? String(o.prose) : docstringOf(problem.sketch);
+          const person = sketchOfNodes(journal.projection.nodes(HINT_KIND, claimId));
+          const llm = lineLlm({
+            line: INFORMAL_LINE as LineId,
+            journal,
+            blobs,
+            models: o.models,
+            model: config.model,
+            resolveModel: (name) => (name === config.model ? Promise.resolve(model) : resolveModel(o.models, name)),
+            thinkingLevel: config.thinkingLevel,
+            ledger,
+            problemId: entry.id,
+            signal: controller.signal,
+            ...(turn !== undefined ? { turn } : {}),
+            prices,
+            // The generator and the reviser are the planner's role, the verifier is its own.
+            roleFor: (site) => {
+              const use = site === "informal.verify" ? verifier : planner;
+              return use === undefined ? undefined : { use };
+            },
+          });
+          const outcome = await runInformalLoop({
+            settings,
+            llm,
+            statement: entry.statement,
+            ...(prose !== undefined ? { doc: prose } : {}),
+            ...(informalCases !== undefined ? { firstCases: informalCases.section } : {}),
+            ...(person !== undefined ? { sketch: person } : {}),
+            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "task", estimateUsd }); return { action: a.action, reason: a.reason }; } } : {}),
+            estimateUsd: capUsd * INFORMAL_CALL_SHARE,
+            signal: controller.signal,
+            interrupted: (error) => turn?.ended !== undefined && isTurnEnded(error),
+            log: (text) => log(`${entry.fullName}: ${text}`),
+          });
+          if (outcome.stop === "stopped") {
+            log(`${entry.fullName}: the informal proof was cut by the end of the problem and is not recorded`);
+          } else {
+            // The facts of an accepted proof are looked up with lean.search when the host offers it: at most five queries, no model call, tool runs in the journal.
+            const hits =
+              outcome.accepted && outcome.facts.length > 0 && registry.offers(LEAN_SEARCH)
+                ? await lookupFacts(outcome.facts, async (query) => {
+                    const found = await new RegistryLeanSearch(registry).search(
+                      { query, kind: "name", limit: HITS_PER_FACT, ...(config.private === true ? { private: true } : {}) },
+                      { actor: "harness:informal", signal: controller.signal },
+                    );
+                    return found?.hits.map((hit) => hit.name);
+                  })
+                : [];
+            recordInformalProof(journal, blobs, {
+              claimId,
+              problemId: entry.id,
+              outcome,
+              required: settings.passes,
+              models: { planner: planner?.model ?? config.model, verifier: verifier?.model ?? planner?.model ?? config.model },
+              hits,
+            });
+            log(
+              `${entry.fullName}: the informal proof is ${outcome.accepted ? `accepted after ${outcome.passes} verifier pass(es)` : `not accepted (${outcome.stop}${outcome.detail !== undefined ? `: ${outcome.detail}` : ""})`}` +
+                `, ${outcome.rounds} generate-or-revise call(s); a hint, not checked by Lean`,
+            );
+          }
+        } catch (error) {
+          if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
+          if (!controller.signal.aborted) log(`${entry.fullName}: the informal proof failed and was left out: ${messageOf(error)}`);
+        }
+      }
+
       // With lines: the problem's lines, their `beforeProvers`, and `afterProblem` before the end.
       let lines: ProblemLines | undefined;
       let lineFailure: string | undefined;
@@ -1521,21 +1629,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // The compute tool a problem gets only when the router files its statement (`RunConfig.autoTool`).
       const autoToolFiled = pinnedAuto !== undefined ? fileStatement(entry.statement) : undefined;
       if (autoToolFiled !== undefined && pinnedAuto !== undefined) log(`${entry.fullName}: the statement is filed as ${autoToolFiled}: the provers get ${pinnedAuto.capability}`);
-      // The first cases of the statement, once per problem before the provers start (`RunConfig.firstCases`). The compute tool is the run's `autoTool`
-      // (or a compute tool it was given by name), whether or not the router files this statement: the router does not read big operators, and a sum is
-      // the shape the table is for.
-      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
-      const firstCases =
-        config.firstCases === true && computeTool !== undefined && !idle
-          ? await computeFirstCases(entry.statement, {
-              registry,
-              capability: computeTool.capability,
-              implementation: computeTool.implementation,
-              // Numbers go to the OEIS only when the run is not private and the person did not refuse third parties (the intake's answer, when there is one).
-              oeis: registry.offers("oeis.search") && config.private !== true && (config.intake === undefined || config.intake.consent?.allowed === true),
-              signal: controller.signal,
-            })
-          : undefined;
+      // The first cases of the statement, once per problem before the provers start (`RunConfig.firstCases`). They are computed when asked for (above, for the informal
+      // proof, which comes before the lines; here otherwise), and once.
+      const firstCases = idle ? undefined : await casesOnce();
       if (firstCases !== undefined) log(`${entry.fullName}: the first cases are computed (${firstCases.table.rows.length} rows${firstCases.hits.length > 0 ? `, ${firstCases.hits.length} OEIS match(es)` : ""})`);
       /**
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a

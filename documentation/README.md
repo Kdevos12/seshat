@@ -101,6 +101,7 @@ blocks the Lean toolchain downloads and has no model credentials.
   Lean or prose statement, the signature of prose, the student defaults), `harness doctor` (what the machine
   lacks, the isolated host profile), `RESULT.md` (what a run leaves, whatever stopped it) and `harness view`
   (one static HTML page of a run), and the local page `harness ui` ([ui.md](ui.md)).
+- [informal.md](informal.md): the informal proof first (option `informalFirst`): a proof in natural language, read by a verifier until three passes in a row, a hint that Lean has not checked and that never changes a status.
 - [models-setup.md](models-setup.md): the providers for a first real run: DeepSeek's own API as the run's model (its key, its
   prices and off-peak calendar in the host profiles, `SESHAT_MODEL`), Jev at OpenRouter or at TypeSafe for `decide`, the
   variables, and what has not run.

@@ -16,6 +16,7 @@ import { fatalProviderError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
 import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
+import { informalBriefing } from "./informal.ts";
 import { sketchBriefing } from "./sketch.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
@@ -296,7 +297,9 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const team = teamBriefing(journal.projection, workbench.claimId);
       // A person's sketch (`harness solve --sketch`) is in the first briefing only: "A sketch from NAME", screened and as data.
       const sketch = session === 1 ? sketchBriefing(journal.projection, workbench.claimId) : [];
-      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...sketch, ...(pageSection !== undefined ? [pageSection] : []), ...team];
+      // An informal proof that the verifier accepted (`RunConfig.informalFirst`), in the first briefing only, marked as not checked by Lean.
+      const informal = session === 1 ? informalBriefing(journal.projection, o.blobs, workbench.claimId) : [];
+      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
       const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;
