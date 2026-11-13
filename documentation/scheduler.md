@@ -194,6 +194,39 @@ The session record's `ok` means that `validate` accepted the proof in that sessi
 A suspicion never stops work on the parent by itself and never propagates: the claim stays `open`, no edge changes, and the next outer session's briefing lists it under "Suspected false, UNVERIFIED". A hole with a Lean-checked negation is listed as a fact. Task 33's telemetry
 (`loopTelemetry`) counts the `hole_verdict` nodes and reports the share whose verdict is `statement_wrong` **with a Lean-checked negation** (`negationValidated`) as "turned out false"; the verdicts that only a prover or a tool says are false are shown apart ("suspected false, unverified") and are not counted as false.
 
+## Refinement rounds (plan change CA12, PA11)
+
+Task 38. In the third real run M12 stated blueprints and never revised one: a refused blueprint, or one whose hole nothing proved, was the end of it. With `blueprints` **and** `refine` on (both off by default; `--line-option M12.refine=true`), M12 runs a **refinement round** for a problem: one model call that rewrites the blueprint from what happened to it. Without `refine`, nothing here applies and every record, prompt and task is what it was.
+
+**When a round runs.** In M12's `schedule` step (between the outer sessions, and when the problem's provers are over), for a problem that is not solved, when
+
+- **a.** the problem has no healthy blueprint, and at least one blueprint record that Lean checked (its last check exists: the record has `editsOutsideRegions`), or a planner's answer that was no blueprint. The round revises the last such record;
+- **b.** the current healthy blueprint (the latest `m12_sketch` that is a registered, healthy blueprint) has every hole accepted or with a `hole_verdict` and no task that can still run, and at least one hole is not proved: its claim is refuted, or its last verdict is not `proved`. A hole worked out on its stubs that waits for the lemmas it uses is not a failure: it ends when they do.
+
+A blueprint record is revised once (a record that a planner record names in `refinedFrom` is not revised again), and a round whose blueprint is not healthy leaves the problem in case a: the next round, in the same step, revises it, up to the cap. A problem has at most `maxRefinements` rounds (default 8), counted from the `m12_sketch` records with `planner: true`.
+
+**The call.** One model call in a **fresh context** (no conversation history), through the same one-call path as the other M12 calls (`problem.llm.completeJson`), at the site **`scheduler.planner`**: a `model_call.finished` of `line:M12`, charged to the problem's ledger. Its prompt is `plannerPrompt` in `refine.ts`, a constant with a version (`PLANNER_VERSION`, in its first line), and holds only:
+
+- the target theorem's statement;
+- the current blueprint, AUX and PROOF as submitted;
+- one line per hole: its name, the first characters of its statement id, its status (`computed`, `open`), the verdict of its last session, its depth, and the first line of the last error or argument of its sessions (`name [id]: open, verdict too_hard, depth 0, last: ...`);
+- for case a, the reading's problem (why the blueprint is refused) and Lean's first errors, at most 5 of 300 characters each (the record keeps them as `errors`);
+- the blueprint format (`BLUEPRINT_FORMAT`, the text the outer prover is told), and the round's instructions: keep what is proved, split a hole that is too hard into smaller holes, repair or drop a hole that is wrong, rewire `-- uses:`, and say which hole a new one replaces.
+
+It answers with JSON `{aux, proof}`, the two regions. An answer that is not JSON of that shape (after `completeJson`'s one retry) is a round that counts: its record is not healthy and its `problem` says so.
+
+**`-- refines:` and depth.** A new hole that replaces an old one says so with `-- refines: aux_old` on the line above it, next to its `-- uses:` line if it has one (`NamedHole.refines`; several names are allowed). A hole's **depth** is 0 in a first blueprint; with `-- refines:` it is the depth of the deepest hole it refines plus one; without, it keeps the depth its statement had in the blueprint being revised (a hole kept as it is stays where it was). The reader, given the depths of the revised blueprint (`ReadOptions.depths`), refuses a blueprint with a hole deeper than 3: `aux_x refines too deep (depth 4, at most 3)`, with the same effects as any refusal (a record that is not healthy, and case a for the next round). The prompt says the depth of each hole. The record has `depth`, an optional array parallel to `names`, with `refine` on.
+
+**What happens to the answer.** It is read by `readSketch` with the options of a blueprint (so `restates_target`, the dropping of unreachable holes (PA16) and the depth rule apply; an `import` the header has is dropped first), **checked by Lean** on the problem's own file through `ProblemContext.checkSketch` (the check a prover's `lean_check` makes, with no attempt: [lines.md](lines.md)), and recorded as an `m12_sketch` with `planner: true`, `refinedFrom` (the node id of the record it revises) and `round` (1, 2, ...). If healthy, it is registered like any blueprint, in the same step: its holes become claims by their statement ids (M1's `ensureClaim`), so **a hole whose statement did not change is the same claim** and keeps its status and its proof, whatever name the planner gives it, and a statement already `computed` or `proved` in memory (another blueprint of the problem, or, under the same Lean environment, a `proved` claim a `--memory-from` run carries) is that claim too and gets **no session**. (Records carry across `--memory-from` as well, with the problem's id: a blueprint an earlier run recorded is this problem's too, and counts for the rounds. The cross-run reuse has not been run in a test, only the reuse inside a run.) The new holes go through the pre-flight and the hole sessions as any hole. Nothing here sets a status: a hole becomes `computed` only through `validate`.
+
+**The gate.** Each round is put to the budget gate as a task of one call (`problem.budget.ask`, site `task`): its estimate is a twelfth of what an inner session has cost on the problem (the gate's price of a task of one session bounded to one response; `PLANNER_CALL_SHARE`), the rule is the one of [the budget gate](#the-budget-gate), and the gate journals its answer (`budget.gated`). A round the gate skips is not made and is not counted; the gate is asked once for each blueprint it revises (a resumed process asks again). Without a gate the round is made.
+
+**A planner that fails.** A round whose model call fails (the provider's error after the retries) is no round: it does not count, no record is written, but **refinement stops for that problem for the rest of the run**, and the memory holds why in a node `m12_refine_stop` (`problemId`, `round`, `reason`; the log says so too).
+
+**Resuming.** M12 is `resume: "rebuild"`: the rounds made are counted from the `m12_sketch` records with `planner: true`, a record the planner wrote is registered like any other whose registration a cut left undone, and a round whose record exists is not made again. A round cut while its call was in flight is **lost and asked again**, as a hole session is (the call that was paid for before the cut is returned at no charge, `LlmRequest.reuse`; one that was cut before its `model_call.finished` is asked again).
+
+**Not built, and not run.** Sub-blueprints for a single hole (a planner call whose target is a hole): a split happens inside the global blueprint. The repair pass (CA13) and the `consult` tool (NL3) are the next part of the plan. Nothing has run against a real Lean or model: the planner's prompt, whether a model writes a `-- refines:` split that Lean accepts, and the price of a round (a twelfth of a session is a guess) are untested; the arm `solve-v2-blueprints-refine` of the experiment `solve-defaults` ([ablate.md](ablate.md)) measures it against `solve-v2-blueprints`. `refine.test.ts` runs it with the simulated Lean and the faux model: a refused blueprint revised into a healthy one (case a), a hole that ended too hard split with `-- refines:` while the hole that did not change keeps its claim and gets no session (case b), a statement already computed reused under another name, depth 4 refused, `maxRefinements`, the gate skipping a round, a planner that fails, an answer that is no blueprint, and a resumption cut after a round's record and one cut while the call was in flight.
+
 ## Options of M12
 
 | Option | Default | Meaning |
@@ -207,10 +240,12 @@ A suspicion never stops work on the parent by itself and never propagates: the c
 | `blueprints` | false | blueprints, hole sessions, pre-flight, verdicts (CA9 to CA11) |
 | `holeTurns` | 12 | model responses in a hole session (blueprints only) |
 | `holeSessions` | 2 | sessions of a hole's task (blueprints only) |
+| `refine` | false | refinement rounds: a planner call rewrites a blueprint Lean refused, or whose holes had their sessions with one not proved (blueprints only; CA12, PA11) |
+| `maxRefinements` | 8 | the most refinement rounds for a problem (refine only) |
 | `seed` | null | the scheduler's draws |
 
-What M12 records: `m12_sketch` (a sketch; `editsOutsideRegions` and `leanHoles`, the check's flags; with blueprints also `blueprint`, `uses`, `failureClass`, `dropped`), `m12_session` (a session; with blueprints also `stop`, `turns`, `verdict`, `workDone`, `work`, `workHash`, `negationValidated`, `argument`),
-`m12_subsumption`, `m12_preflight`, `hole_verdict`, `suspect_false`. All are facts, none a status, none learned.
+What M12 records: `m12_sketch` (a sketch; `editsOutsideRegions` and `leanHoles`, the check's flags; with blueprints also `blueprint`, `uses`, `failureClass`, `dropped`; with `refine` also `depth`, `errors`, and for a planner's blueprint `planner`, `refinedFrom`, `round`), `m12_session` (a session; with blueprints also `stop`, `turns`, `verdict`, `workDone`, `work`, `workHash`, `negationValidated`, `argument`),
+`m12_subsumption`, `m12_preflight`, `m12_refine_stop` (a planner call that failed), `hole_verdict`, `suspect_false`. All are facts, none a status, none learned.
 
 ## Inner provers and tasks (PC4 item 1)
 

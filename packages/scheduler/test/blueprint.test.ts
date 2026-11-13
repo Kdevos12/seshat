@@ -148,3 +148,29 @@ test("imports the header already has are dropped from aux; others, and every oth
   assert.equal(dropHeaderImports("import Foo.Bar Baz\nlemma x := 1", header).aux, "lemma x := 1");
   assert.deepEqual(dropHeaderImports("def f := 1", header), { aux: "def f := 1", dropped: [] });
 });
+
+const refining = (name: string, statement: string, refines: string, uses?: string): string =>
+  `-- refines: ${refines}${uses === undefined ? "" : `\n-- uses: ${uses}`}\nlemma ${name} ${statement} := by\n  sorry`;
+const depths = (byName: Array<[string, number]>) => ({ byName: new Map(byName), byStatement: new Map<string, number>() });
+
+test("a `-- refines:` line above a hole names the holes it replaces, next to or apart from its `-- uses:` line (CA12)", () => {
+  const r = readSketch({ aux: `${A}\n\n${refining("aux_b", "(n : Nat) : 0 + n = n", "aux_old, aux_older", "aux_a")}\n\n-- refines: aux_old\n\n${C()}`, proof: "exact aux_b 1 ▸ aux_c 1" }, blueprint);
+  assert.deepEqual(r.holes.map((h) => [h.name, h.uses, h.refines]), [["aux_a", [], []], ["aux_b", ["aux_a"], ["aux_old", "aux_older"]], ["aux_c", [], []]]);
+});
+
+test("a hole's depth is one more than the deepest hole it refines; a hole that refines none keeps the depth of its statement (CA12)", () => {
+  const base = { byName: new Map([["aux_old", 1], ["aux_other", 2]]), byStatement: new Map<string, number>() };
+  const r = readSketch({ aux: `${refining("aux_a", "(n : Nat) : n + 0 = n", "aux_old, aux_other")}\n\n${B("aux_a")}`, proof: "exact aux_b 1" }, { ...blueprint, depths: base });
+  assert.equal(r.problem, undefined);
+  assert.deepEqual(r.holes.map((h) => h.depth), [3, 0]);
+  // Without the option nothing is computed.
+  assert.deepEqual(readSketch({ aux: `${refining("aux_a", "(n : Nat) : n + 0 = n", "aux_old")}\n\n${B("aux_a")}`, proof: "exact aux_b 1" }, blueprint).holes.map((h) => h.depth), [undefined, undefined]);
+});
+
+test("a hole deeper than 3 is refused with the reason (CA12)", () => {
+  const aux = `${refining("aux_x", "(n : Nat) : n + 0 = n", "aux_old")}\n\n${B("aux_x")}`;
+  const r = readSketch({ aux, proof: "exact aux_b 1" }, { ...blueprint, depths: depths([["aux_old", 3]]) });
+  assert.equal(r.problem, "aux_x refines too deep (depth 4, at most 3)");
+  assert.match(blueprintNotice(r, { refusedBeforeLean: false, errors: 0, editsOutsideRegions: false }), /refines too deep/);
+  assert.equal(readSketch({ aux, proof: "exact aux_b 1" }, { ...blueprint, depths: depths([["aux_old", 2]]) }).problem, undefined);
+});

@@ -1,4 +1,4 @@
-import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, SUSPECT_FALSE_KIND } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
 import {
   Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
@@ -8,11 +8,12 @@ import {
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
 import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
-import { BLUEPRINT_FORMAT, blueprintNotice, dropHeaderImports, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
+import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, dropHeaderImports, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
+import { PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
-  asRecord, PREFLIGHT_KIND, type PreflightRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
+  asRecord, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
 } from "./records.ts";
 import { backwardSubsume, forwardSubsume, isLinkLemma, type SubsumeOptions } from "./subsume.ts";
 
@@ -45,6 +46,10 @@ export const M12_OPTIONS = {
   holeTurns: 12,
   /** Sessions of a hole's task before it fails (blueprints only; a session is a whole tool loop, so fewer than `innerSessions`). */
   holeSessions: 2,
+  /** Refinement rounds (CA12, blueprints only): a planner call rewrites a blueprint Lean refused, or whose holes have all had their sessions with one not proved. */
+  refine: false,
+  /** The most refinement rounds for one problem (refine only). */
+  maxRefinements: 8,
   /** Seeds the scheduler's draws. Null: the run's seed. */
   seed: null,
 } satisfies JsonObject;
@@ -62,6 +67,8 @@ interface Settings {
   blueprints: boolean;
   holeTurns: number;
   holeSessions: number;
+  refine: boolean;
+  maxRefinements: number;
   seed: string | number | null;
 }
 
@@ -85,6 +92,8 @@ function settings(options: Readonly<JsonObject>): Settings {
     blueprints: flag("blueprints"),
     holeTurns: num("holeTurns", 1),
     holeSessions: num("holeSessions", 1),
+    refine: flag("refine"),
+    maxRefinements: num("maxRefinements", 0),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -104,10 +113,46 @@ interface Work {
   /** Facts already compared against the open holes. */
   swept: Set<string>;
   meta: LeanMeta;
+  /** The blueprints (their records) whose refinement round the budget gate skipped, so that the gate is not asked again for the same state (CA12). */
+  refineSkipped: Set<string>;
 }
 
 /** What reading a sketch is asked: a blueprint, when the option is on (CA9). */
 const readOptions = (s: Settings, target: string | undefined): ReadOptions => (s.blueprints ? { blueprint: true, ...(target !== undefined ? { target } : {}) } : {});
+
+/** Lean's first errors of a check, clipped: what a planner is told about a blueprint that was refused. */
+const errorsOf = (report: { messages: ReadonlyArray<{ severity: string; text: string }> }): string[] =>
+  report.messages.filter((m) => m.severity === "error").slice(0, PLANNER_ERRORS).map((m) => clip(m.text, PLANNER_ERROR_CHARS));
+
+/**
+ * The record of a sketch that was read and checked: a prover's (`afterAttempt`) or a planner's (refinement round). Healthy means it checked with
+ * only its named holes open, and the reading found it splittable.
+ */
+function sketchRecordOf(
+  problem: ProblemContext, s: Settings, attemptId: string, submission: { aux: string; proof: string }, reading: SketchReading,
+  report: { holes: boolean; editsOutsideRegions: boolean; messages: ReadonlyArray<{ severity: string; text: string }> } | undefined,
+  extra: Partial<SketchRecord> = {},
+): SketchRecord {
+  const healthy = reading.problem === undefined && report !== undefined && report.holes && !report.messages.some((m) => m.severity === "error") && !report.editsOutsideRegions;
+  const errors = s.refine && report !== undefined ? errorsOf(report) : [];
+  return {
+    problemId: problem.problemId,
+    attemptId,
+    submission: problem.memory.blobs.put(JSON.stringify({ aux: submission.aux, proof: submission.proof })),
+    names: reading.holes.map((h) => h.name),
+    healthy,
+    ...(reading.problem !== undefined ? { problem: reading.problem } : {}),
+    ...(reading.failureClass !== undefined ? { failureClass: reading.failureClass } : {}),
+    ...(reading.dropped !== undefined && reading.dropped.length > 0 ? { dropped: reading.dropped } : {}),
+    ...(report !== undefined ? { editsOutsideRegions: report.editsOutsideRegions, leanHoles: report.holes } : {}),
+    ...(s.blueprints ? { blueprint: true, uses: reading.holes.map((h) => h.uses) } : {}),
+    ...(s.refine ? { depth: reading.holes.map((h) => h.depth ?? 0) } : {}),
+    ...(errors.length > 0 ? { errors } : {}),
+    ...extra,
+    registered: false,
+    holes: [],
+  };
+}
 
 function sessionRecords(problem: ProblemContext): SessionRecord[] {
   return problem.memory
@@ -133,8 +178,9 @@ interface HoleInfo {
   deps: Array<Dependency & { claimId: string }>;
 }
 
-function holeInfo(problem: ProblemContext, claimId: string): HoleInfo | undefined {
-  for (const { record } of sketchRecords(problem)) {
+function holeInfo(problem: ProblemContext, claimId: string, latestFirst = false): HoleInfo | undefined {
+  // With refinement rounds a claim may be a hole of several blueprints: the latest one says what it uses.
+  for (const { record } of latestFirst ? sketchRecords(problem).reverse() : sketchRecords(problem)) {
     if (record.blueprint !== true || !record.healthy || !record.registered) continue;
     const k = record.holes.indexOf(claimId);
     if (k < 0) continue;
@@ -364,6 +410,147 @@ export function createM12Line(): Line {
     }
   }
 
+  /** A task of the problem that has not ended. */
+  const live = (task: TaskInfo): boolean => task.status !== "done" && task.status !== "failed" && task.status !== "cancelled";
+
+  /**
+   * Whether the holes of a healthy blueprint have all had their sessions and one is not proved (CA12, case b): every hole is accepted, or has a
+   * verdict and no task that can still run; at least one of them is false, refuted, or ended without a proof. A hole worked out on its stubs
+   * that waits for the lemmas it uses is neither: it ends when they do.
+   */
+  function holesFailed(problem: ProblemContext, record: SketchRecord): boolean {
+    const tasks = ownTasks(problem);
+    let failed = false;
+    for (const id of record.holes) {
+      const claim = problem.memory.claim(id);
+      if (claim === undefined || accepted(claim.status)) continue;
+      if (claim.status === "refuted") {
+        failed = true;
+        continue;
+      }
+      if (tasks.some((task) => task.claimId === id && live(task))) return false;
+      const last = verdictsOf(problem, id).at(-1);
+      if (last === undefined) return false;
+      if (last.verdict !== "proved") failed = true;
+    }
+    return failed;
+  }
+
+  /** The blueprint a refinement round revises, and why (CA12): case b, the healthy one whose holes have all had their sessions; or case a, the last one Lean checked when no blueprint is healthy. */
+  function refineBase(problem: ProblemContext): { nodeId: string; record: SketchRecord; case: "a" | "b" } | undefined {
+    const records = sketchRecords(problem).filter(({ record }) => record.blueprint === true);
+    const refined = new Set(records.flatMap(({ record }) => (record.refinedFrom !== undefined ? [record.refinedFrom] : [])));
+    const healthy = records.filter(({ record }) => record.healthy);
+    if (healthy.length > 0) {
+      const current = healthy.at(-1) as (typeof records)[number];
+      if (!current.record.registered || refined.has(current.nodeId) || !holesFailed(problem, current.record)) return undefined;
+      return { ...current, case: "b" };
+    }
+    // The last one Lean checked, or a planner's answer that was no blueprint (it has no check, and revises what the round before revised).
+    const checked = records.filter(({ record }) => record.editsOutsideRegions !== undefined || record.planner === true).at(-1);
+    return checked === undefined || refined.has(checked.nodeId) ? undefined : { ...checked, case: "a" };
+  }
+
+  /** What the planner is told about each hole of the blueprint it revises. */
+  function plannerHoles(problem: ProblemContext, record: SketchRecord): PlannerHole[] {
+    return record.names.map((name, k): PlannerHole => {
+      const id = record.holes[k];
+      const claim = id === undefined ? undefined : problem.memory.claim(id);
+      const verdict = id === undefined ? undefined : verdictsOf(problem, id).at(-1);
+      const session = id === undefined ? undefined : sessionRecords(problem).filter((r) => r.claimId === id).at(-1);
+      const detail = verdict?.argument ?? session?.reasons[0];
+      return {
+        name,
+        status: claim?.status ?? "not registered",
+        depth: record.depth?.[k] ?? 0,
+        ...(claim !== undefined ? { statementId: claim.statementId.replace(/^sid_/, "").slice(0, 12) } : {}),
+        ...(verdict !== undefined ? { verdict: verdict.verdict } : {}),
+        ...(detail !== undefined ? { detail } : {}),
+      };
+    });
+  }
+
+  /** The depths of the blueprint a round revises: by the name of each hole, and by its statement (a hole kept as it is keeps its depth). */
+  function baseDepths(problem: ProblemContext, record: SketchRecord, submission: { aux: string; proof: string }): BaseDepths {
+    const byName = new Map(record.names.map((name, k) => [name, record.depth?.[k] ?? 0] as const));
+    const byStatement = new Map<string, number>();
+    for (const hole of readSketch(submission).holes) {
+      const depth = byName.get(hole.name);
+      if (depth !== undefined) byStatement.set(statementIdV0(hole.statement), depth);
+    }
+    return { byName, byStatement };
+  }
+
+  /**
+   * A refinement round (CA12, PA11): one model call in a fresh context that rewrites the blueprint from what happened to it, read and checked
+   * like any blueprint and recorded as an `m12_sketch` with `planner: true`. Returns true when a record was written (the caller registers it).
+   * A round the budget gate skips is not made (the gate journals its answer); a round whose model call fails is no round, and stops the
+   * rounds of the problem for the rest of the run (`m12_refine_stop`). Everything it needs is read from the memory's nodes, so a resumed run
+   * counts the rounds made and does not make one again; a round cut while its call was in flight is asked again.
+   */
+  async function refine(problem: ProblemContext, work: Work, s: Settings): Promise<boolean> {
+    if (!s.blueprints || !s.refine || !s.subgoals || problem.checkSketch === undefined) return false;
+    if (problem.signal.aborted || problem.budget.exhausted) return false;
+    if (problem.memory.nodes(REFINE_STOP_KIND, { claimId: problem.claimId }).some((n) => asRecord<RefineStopRecord>(n.data).problemId === problem.problemId)) return false;
+    const rounds = sketchRecords(problem).filter(({ record }) => record.planner === true).length;
+    if (rounds >= s.maxRefinements) return false;
+    const target = problem.memory.claim(problem.claimId);
+    if (target === undefined || accepted(target.status)) return false;
+    const base = refineBase(problem);
+    const stored = base === undefined ? undefined : problem.memory.blobs.get(base.record.submission);
+    if (base === undefined || stored === undefined || work.refineSkipped.has(base.nodeId)) return false;
+    const submission = JSON.parse(stored) as { aux: string; proof: string };
+    const round = rounds + 1;
+    const prompt = plannerPrompt({
+      round, max: s.maxRefinements, target: target.statement, aux: submission.aux, proof: submission.proof, holes: plannerHoles(problem, base.record),
+      ...(base.case === "a" ? { refused: { ...(base.record.problem !== undefined ? { problem: base.record.problem } : {}), errors: base.record.errors ?? [] } } : {}),
+    });
+    // The gate prices the round as a task of one call: a share of what an inner session has cost on this problem (its first guess before any).
+    if (problem.budget.ask !== undefined) {
+      const answer = await problem.budget.ask({ site: "task", estimateUsd: priceBook(sessionRecords(problem)).sessionUsd * PLANNER_CALL_SHARE });
+      if (answer.action === "skip") {
+        work.refineSkipped.add(base.nodeId);
+        problem.log(`refinement round ${round}: skipped by the budget gate (${answer.reason})`);
+        return false;
+      }
+    }
+    let written: { aux: string; proof: string } | undefined;
+    let flaw: string | undefined;
+    try {
+      const answer = await completeJson<{ aux?: unknown; proof?: unknown }>(problem.llm, {
+        prompt, site: SITE_PLANNER, reuse: true,
+        schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: ["aux", "proof"] },
+      });
+      if (typeof answer.value.proof === "string" && typeof answer.value.aux === "string") written = { aux: answer.value.aux, proof: answer.value.proof };
+      else flaw = "the planner's answer has no AUX and PROOF regions";
+    } catch (error) {
+      if (isInterrupted(error)) throw error;
+      if (problem.signal.aborted || problem.budget.exhausted) return false;
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof JsonAnswerError) flaw = `the planner's answer was not a blueprint: ${clip(message, 160)}`;
+      else if (/the model call failed/.test(message)) {
+        const stop: RefineStopRecord = { problemId: problem.problemId, round, reason: clip(message, 200) };
+        problem.memory.recordNode({ kind: REFINE_STOP_KIND, claimId: problem.claimId, data: { ...stop } });
+        problem.log(`refinement round ${round}: the planner's model call failed (${stop.reason}); no more rounds for this problem`);
+        return false;
+      } else throw error;
+    }
+    const attemptId = `planner_${round}`;
+    const extra: Partial<SketchRecord> = { planner: true, refinedFrom: base.nodeId, round };
+    if (written === undefined) {
+      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...sketchRecordOf(problem, s, attemptId, submission, { holes: [], others: [], problem: flaw ?? "no blueprint" }, undefined, extra) } });
+      return true;
+    }
+    const cut = dropHeaderImports(written.aux, work.header);
+    const answered = { aux: cut.aux, proof: written.proof };
+    const reading = readSketch(answered, { ...readOptions(s, target.statement), depths: baseDepths(problem, base.record, submission) });
+    const report = reading.holes.length === 0 ? undefined : await problem.checkSketch(answered);
+    const record = sketchRecordOf(problem, s, attemptId, answered, reading, report, extra);
+    problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
+    problem.log(`refinement round ${round} (case ${base.case}): ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`}`);
+    return true;
+  }
+
   async function begin(problem: ProblemContext): Promise<void> {
     const s = settings(problem.options);
     const seen = new Set<string>();
@@ -379,6 +566,7 @@ export function createM12Line(): Line {
       down: { count: 0 },
       swept: new Set(),
       meta: new LeanMeta(problem.registry, { actor: ACTOR }),
+      refineSkipped: new Set(),
     };
     works.set(keyOf(problem), work);
     // What a cut left undone: the verdicts of sessions whose record was written, and the tasks of the sketches already recorded.
@@ -626,7 +814,7 @@ export function createM12Line(): Line {
   async function inner(problem: ProblemContext, work: Work, s: Settings, task: TaskInfo, owner: string): Promise<TaskEnd> {
     const claimId = task.claimId;
     if (claimId === undefined) return { ended: "failed", reason: "the task has no claim" };
-    const info = s.blueprints && problem.holeSession !== undefined ? holeInfo(problem, claimId) : undefined;
+    const info = s.blueprints && problem.holeSession !== undefined ? holeInfo(problem, claimId, s.refine) : undefined;
     if (info !== undefined) return await innerHole(problem, work, s, task, owner, info);
     const limit = task.budget.sessions ?? s.innerSessions;
     for (;;) {
@@ -703,22 +891,7 @@ export function createM12Line(): Line {
         const target = problem.memory.claim(problem.claimId)?.statement;
         const reading = readSketch(attempt.submission, readOptions(s, target));
         if (reading.holes.length === 0) return undefined;
-        const report = attempt.report;
-        const healthy = reading.problem === undefined && report !== undefined && report.holes && !report.messages.some((m) => m.severity === "error") && !report.editsOutsideRegions;
-        const record: SketchRecord = {
-          problemId: problem.problemId,
-          attemptId: attempt.attemptId,
-          submission: problem.memory.blobs.put(JSON.stringify({ aux: attempt.submission.aux, proof: attempt.submission.proof })),
-          names: reading.holes.map((h) => h.name),
-          healthy,
-          ...(reading.problem !== undefined ? { problem: reading.problem } : {}),
-          ...(reading.failureClass !== undefined ? { failureClass: reading.failureClass } : {}),
-          ...(reading.dropped !== undefined && reading.dropped.length > 0 ? { dropped: reading.dropped } : {}),
-          ...(report !== undefined ? { editsOutsideRegions: report.editsOutsideRegions, leanHoles: report.holes } : {}),
-          ...(s.blueprints ? { blueprint: true, uses: reading.holes.map((h) => h.uses) } : {}),
-          registered: false,
-          holes: [],
-        };
+        const record = sketchRecordOf(problem, s, attempt.attemptId, attempt.submission, reading, attempt.report);
         problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
         return undefined;
       },
@@ -731,6 +904,20 @@ export function createM12Line(): Line {
         await soft(problem, "subsumption", () => sweep(problem, work, s));
         await soft(problem, "propagation", () => propagate(problem, work));
         ensureTasks(problem, s);
+        // A refinement round, when one is due (CA12): its blueprint is registered and its holes get tasks like any other.
+        if (s.blueprints && s.refine) {
+          await soft(problem, "the refinement round", async () => {
+            // A round whose blueprint is not healthy leaves the problem as case a: the next round may try again, up to the cap.
+            for (;;) {
+              if (!(await refine(problem, work, s))) return;
+              await registerAll(problem, work, s);
+              await sweep(problem, work, s);
+              await propagate(problem, work);
+              ensureTasks(problem, s);
+              if (sketchRecords(problem).at(-1)?.record.healthy === true) return;
+            }
+          });
+        }
         // Read again: the tasks just made are ready too.
         const candidates = problem.tasks.ready().filter((task) => task.proposedBy === ACTOR && task.kind === "prove");
         // A task whose claim a subsumption or a composition closed needs no work.

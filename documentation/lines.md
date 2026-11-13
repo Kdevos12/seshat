@@ -458,7 +458,7 @@ only through a composed proof whose premises are gone ([graph.md](graph.md#compo
 The result gives the verdict, the `validation.finished` id when the check was recorded, the claim's
 status after the check, the reasons, and the validator's report.
 
-`ProblemContext.holeSession` and `holePreflight` (M12 only, optional): a session with tools on a claim's small file, and the pre-flight tests of a claim ([scheduler.md](scheduler.md#hole-sessions-plan-change-ca10)). `TaskBudget.turns` is the bound of a session in responses.
+`ProblemContext.holeSession` and `holePreflight` (M12 only, optional): a session with tools on a claim's small file, and the pre-flight tests of a claim ([scheduler.md](scheduler.md#hole-sessions-plan-change-ca10)). `TaskBudget.turns` is the bound of a session in responses. `ProblemContext.checkSketch` (M12 only, optional) checks a sketch's regions on the problem's own file as a prover's `lean_check` does, with no attempt and no model: what M12's refinement rounds use to read the blueprint the planner wrote ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)).
 
 ## Scheduling
 
