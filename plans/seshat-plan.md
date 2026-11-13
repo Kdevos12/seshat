@@ -1495,13 +1495,16 @@ Also in Task 51, from `plans/plan-change-numina.md` (Ruling 36): NL1 first (`v2`
 prover by default, with an arm); NL2 is the shape of PA13 (generator, fresh-context verifier and
 revision, accepted after three independent verifier passes, at most four rounds, each priced by the
 gate; a hint, never a status); NL3 (a capped, journaled `consult` tool to another configured model)
-with PA11; NL5 (LeanDex as a `lean.search` backend after a free recorded probe) when `lean.search` is
+with PA11, as an option off by default, checked by a dry run and marked beta at release (Ruling 39); NL5 (LeanDex as a `lean.search` backend after a free recorded probe) when `lean.search` is
 next touched. NL4 and NL6 stay proposed.
 
 Also from `plans/plan-change-knowledge-graphs.md` (Ruling 37), a reduced KG1 before the rest of Task 51:
 an arm `solve-v2-graph` (`v2` plus M2 and M4) with its report counts and `harness ablate --arms`, then a
 smoke run of that arm alone on four or five of Task 50's problems, $0.50 each, $1 in all. KG2 to KG4 stay
 proposed.
+
+Order since Ruling 39 (2026-11-13): PA16, then Task 38 (PA11) and Task 39 (PA13 with NL2, AL1, AL2, then
+AL3), both before Task 50's replay so that the replay measures them; then KG1's smoke run; then the rest.
 
 Also from `plans/plan-change-aletheia.md` (Ruling 38): AL1 and AL2 shape NL2 (the verifier's verdict
 `correct`, `fixable` or `wrong`; the verifier reads only the final proof; a verifier of another model
