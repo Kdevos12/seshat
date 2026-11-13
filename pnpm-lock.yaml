@@ -261,6 +261,15 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/lean-search:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
   packages/lessons:
     dependencies:
       '@seshat/core':
@@ -308,6 +317,21 @@ importers:
       '@seshat/core':
         specifier: workspace:*
         version: link:../core
+      '@seshat/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@seshat/registry':
+        specifier: workspace:*
+        version: link:../registry
+
+  packages/lit:
+    dependencies:
+      '@seshat/core':
+        specifier: workspace:*
+        version: link:../core
+      '@seshat/lines':
+        specifier: workspace:*
+        version: link:../lines
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory
@@ -392,6 +416,9 @@ importers:
       '@seshat/lean-meta':
         specifier: workspace:*
         version: link:../lean-meta
+      '@seshat/lean-search':
+        specifier: workspace:*
+        version: link:../lean-search
       '@seshat/lessons':
         specifier: workspace:*
         version: link:../lessons
@@ -401,6 +428,9 @@ importers:
       '@seshat/library-builder':
         specifier: workspace:*
         version: link:../library-builder
+      '@seshat/lit':
+        specifier: workspace:*
+        version: link:../lit
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines

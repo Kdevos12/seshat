@@ -4,6 +4,11 @@ The prover's system prompt is a text file, `packages/orchestrator/prompts/prover
 `{{NOTES_CHARS}}` (the notes limit) and `{{TOOLS_SECTION}}` (the section on the tools besides `lean_check`, or nothing). `systemPrompt` in
 `packages/orchestrator/src/prompt.ts` renders it. A prompt that is a file can be changed by a patch, and a patch is something a person reads and merges.
 
+A run with `RunConfig.editTool` (the tool `lean_edit`, [m0-loop.md](m0-loop.md#the-edit-tool)) adds a section, "Editing", in the tools'
+place, before the section on other tools: use `lean_check` for the first draft and `lean_edit` after it. The section is code
+(`editSection` in `prompt.ts`), not part of the file, and is added only when the option is on: a run without it renders the file as before, and its
+prompt hash is the same.
+
 Prompt text changes only with a human merge (Global Constraint 16). Nothing in the harness writes a prompt in place.
 
 ## Measuring a candidate: `RunConfig.prompts`

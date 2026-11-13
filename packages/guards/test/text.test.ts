@@ -50,6 +50,16 @@ describe("auxDeclarations", () => {
   });
 });
 
+describe("auxDeclarations with the binders and the statement on column-0 lines", () => {
+  it("attributes the three lines to one declaration, and the next command to its own", () => {
+    const aux = ["theorem aux_x", "(n : ℕ)", ": n = n := rfl", "axiom aux_z : False"].join("\n");
+    const found = auxDeclarations(aux);
+    assert.deepEqual(found.map((d) => [d.name, d.keyword, d.sorry]), [["aux_x", "theorem", false], ["aux_z", "axiom", false]]);
+    assert.equal(found[0]?.statement?.replace(/\s+/g, " "), "(n : ℕ) : n = n");
+    assert.equal(found[0]?.text.includes("axiom"), false);
+  });
+});
+
 describe("the text of a submission", () => {
   it("ignores comments and spacing", () => {
     const a = { aux: "-- one\ntheorem aux_x : True := by\n  trivial", proof: "simp  -- two\n" };

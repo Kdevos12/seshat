@@ -49,6 +49,9 @@ const FORBIDDEN_TOKENS = [
   // Ways to skip or weaken the proof.
   "sorry", "admit", "axiom", "native_decide", "ofReduceBool", "ofReduceNat", "trustCompiler",
   "implemented_by", "extern", "unsafe", "debug", "skipKernelTC",
+  // A `partial def` compiles to an opaque constant over an `_unsafe_rec`, which the certifier refuses: the first real runs paid for
+  // four proofs that passed the fast check and failed there (2026-11-12).
+  "partial",
   // Commands and attributes that run code or change the syntax.
   "#eval", "#exit", "#print", "run_cmd", "run_elab", "run_meta", "run_tac", "by_elab", "eval%",
   "elab", "elab_rules", "macro", "macro_rules", "syntax", "declare_syntax_cat", "notation", "infix",

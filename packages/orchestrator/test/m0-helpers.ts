@@ -178,9 +178,11 @@ export function sageRegistry(
  * A faux model priced so that a response costs a few cents, unless `pricePerMillion` says otherwise.
  * `extraModels` are the ids of other models of the same provider, named `faux/ID`.
  */
-export function fauxModels(pricePerMillion = 3, extraModels: readonly string[] = []): { models: MutableModels; faux: FauxProviderHandle; name: string } {
-  const cost = { input: pricePerMillion, output: pricePerMillion * 5, cacheRead: pricePerMillion / 10, cacheWrite: pricePerMillion };
-  const faux = fauxProvider({ models: [{ id: "prover", cost }, ...extraModels.map((id) => ({ id, cost }))] });
+export function fauxModels(pricePerMillion = 3, extraModels: readonly string[] = [], extraPrices: Readonly<Record<string, number>> = {}): { models: MutableModels; faux: FauxProviderHandle; name: string } {
+  const priced = (price: number) => ({ input: price, output: price * 5, cacheRead: price / 10, cacheWrite: price });
+  const cost = priced(pricePerMillion);
+  // A model of `extraModels` has its own price when `extraPrices` gives one (dollars per million input tokens; output is five times it).
+  const faux = fauxProvider({ models: [{ id: "prover", cost }, ...extraModels.map((id) => ({ id, cost: extraPrices[id] !== undefined ? priced(extraPrices[id] as number) : cost }))] });
   const models = createModels();
   models.setProvider(faux.provider);
   const model = faux.getModel();
@@ -236,6 +238,8 @@ export async function demoRun(options: {
   filter?: BenchFilter;
   /** Ids of other models of the faux provider, which a line may name as `faux/ID`. */
   extraModels?: readonly string[];
+  /** The price of some of those models, in dollars per million input tokens (output is five times it); the others have `pricePerMillion`. */
+  extraPrices?: Readonly<Record<string, number>>;
   /** A bench the run shares with another run (a resumption of it). Default: a new one from `file` and `filter`. */
   bench?: { checkout: string; index: BenchIndex };
   codeRev?: string;
@@ -251,10 +255,13 @@ export async function demoRun(options: {
   leanEnvironment?: RunOptions["leanEnvironment"];
   /** How a request that a transient error cut is sent again. Default: `TEST_RETRY`. */
   retry?: RetryPolicy;
+  /** The person the run is on behalf of (`RunOptions.user`) and their sketch (`RunOptions.sketch`). */
+  user?: string;
+  sketch?: string;
 }): Promise<DemoRun & { faux: FauxProviderHandle; lean: LeanChecker; bench: { checkout: string; index: BenchIndex } }> {
   const bench = options.bench ?? demoBench(options.file, options.filter);
   const { checkout, index } = bench;
-  const { models, faux, name } = fauxModels(options.pricePerMillion, options.extraModels);
+  const { models, faux, name } = fauxModels(options.pricePerMillion, options.extraModels, options.extraPrices);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
   const dir = options.dir ?? join(tempDir(), "run");
@@ -277,6 +284,8 @@ export async function demoRun(options: {
     ...(options.memoryFrom !== undefined ? { memoryFrom: options.memoryFrom } : {}),
     ...(options.leanEnvironment !== undefined ? { leanEnvironment: options.leanEnvironment } : {}),
     retry: options.retry ?? TEST_RETRY,
+    ...(options.user !== undefined ? { user: options.user } : {}),
+    ...(options.sketch !== undefined ? { sketch: options.sketch } : {}),
   });
   return { result, events: readEvents(join(dir, "journal.jsonl")), dir, faux, lean, bench };
 }
@@ -298,6 +307,8 @@ export async function demoResume(options: {
   lines?: LineRegistry;
   pricePerMillion?: number;
   extraModels?: readonly string[];
+  /** The price of some of those models, in dollars per million input tokens (output is five times it); the others have `pricePerMillion`. */
+  extraPrices?: Readonly<Record<string, number>>;
   codeRev?: string;
   turns?: TurnProcess;
   /** Wall-clock milliseconds, for the host's pricing calendar. */
@@ -307,7 +318,7 @@ export async function demoResume(options: {
   /** How a request that a transient error cut is sent again. Default: `TEST_RETRY`. */
   retry?: RetryPolicy;
 }): Promise<{ result: RunResult; events: HarnessEvent[]; faux: FauxProviderHandle; lean: LeanChecker }> {
-  const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels);
+  const { models, faux } = fauxModels(options.pricePerMillion, options.extraModels, options.extraPrices);
   faux.setResponses(options.responses);
   const lean = options.lean ?? new DemoLean();
   const result = await resumeBench({

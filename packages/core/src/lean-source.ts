@@ -18,6 +18,11 @@ const OPENERS = new Set(["(", "[", "{", "⟨", "⦃", "⟦", "⁅"]);
 const CLOSERS = new Set([")", "]", "}", "⟩", "⦄", "⟧", "⁆"]);
 
 /**
+ * Characters no command starts with: a line at column 0 that begins with one continues the declaration above (PutnamBench writes
+ * `theorem name`, then each binder `(S : Set ℝ)` and the `: statement` at column 0).
+ */
+const NEVER_START = new Set(["(", "{", "[", "⦃", ":"]);
+/**
  * A line at column 0 still belongs to the previous command when that one cannot end where it
  * stopped: after `:`, `,`, an arrow, a connective or a relation, as in
  * `theorem t :` followed by `answer(sorry) ↔ ...` at column 0.
@@ -37,7 +42,7 @@ export function splitCommands(source: string): Command[] {
     if (lineStart) {
       lineStart = false;
       const blank = c === "\n" || c === " " || c === "\t" || c === "\r";
-      if (depth === 0 && !inString && brackets <= 0 && !blank && c !== "|" && !CONTINUES.has(last)) {
+      if (depth === 0 && !inString && brackets <= 0 && !blank && c !== "|" && !NEVER_START.has(c) && !CONTINUES.has(last)) {
         starts.push(i);
         brackets = 0;
       }

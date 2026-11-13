@@ -1,16 +1,23 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
+import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
-import type { FailureClass } from "@seshat/memory";
+import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
+import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
+import { pageForSession } from "./consolidation-show.ts";
 import { chargedTotals, type Ledger } from "./budget.ts";
 import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
 import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
+import { fatalProviderError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
+import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
+import { informalBriefing } from "./informal.ts";
+import { sketchBriefing } from "./sketch.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
 import { isTurnEnded, type Turn } from "./turns.ts";
@@ -42,6 +49,29 @@ export interface ProverOptions {
   packetMode?: PacketMode;
   /** How a request that a transient error cut is sent again (`SessionOptions.retry`); absent: `REQUEST_RETRY`. */
   retry?: RetryPolicy;
+  /** The sessions get the tool `lean_edit` (`SessionOptions.editTool`) and a prompt that says when to use it. */
+  editTool?: boolean;
+  /** The sessions mask their old check results (`SessionOptions.maskOldChecks`). */
+  maskOldChecks?: boolean;
+  /** The run's push of verified `lean.search` hits into the check answers (`SessionOptions.appendToCheck`); absent: none. */
+  leanSearch?: LeanSearchPush;
+  /** The first cases of the statement, computed by the harness (`RunConfig.firstCases`): a titled section of the first session's opening message only. */
+  firstCases?: { title: string; text: string };
+  /**
+   * The next session's opening message carries the state card (plan change CA7, documentation/m0-loop.md, "The state card"), and the
+   * prover records what the card needs (the typed detail of the failure, the lemmas Lean accepted). The caller limits `notesChars` to
+   * `CARD_NOTES_CHARS`. Absent: off, and the prompts and the journal are what they always were.
+   */
+  stateCard?: boolean;
+  /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
+  stateCardChars?: number;
+  /**
+   * The page of an earlier consolidation pass is shown to the sessions, drawn like a lesson (`RunConfig.consolidation`, documentation/consolidation.md).
+   * `seed` is the run's draw seed. Absent: off.
+   */
+  consolidation?: { seed: string | number; problemId: string };
+  /** The seconds a Lean check of a session may take (`SessionOptions.checkTimeoutSec`); absent: the workbench's policy. */
+  checkTimeoutSec?: number;
   /** The host's prices, passed to the session (`SessionOptions.prices`). */
   prices?: PriceBook;
   /** The problem's ledger. */
@@ -52,6 +82,13 @@ export interface ProverOptions {
   transcript?: (attemptId: string, messages: AgentMessage[]) => void;
   /** Capabilities given to the sessions besides lean_check (`direct` ones, checked and pinned by the run). */
   tools?: readonly PinnedTool[];
+  /** The tool `consult` (plan change NL3, beta): one question to another model, answered as text. Absent: the sessions do not have it. */
+  consult?: { config: ConsultConfig; resolveModel: (name: string) => Promise<Model<Api>>; problemId: string };
+  /**
+   * The run's roles (`RunConfig.roles`): with `prover` in them, the sessions are sent the role's sampling settings, and the settings used are recorded
+   * on `attempt.started`. The role's model and thinking level are `model` and `thinkingLevel` above. Absent: nothing changes.
+   */
+  roles?: RoleBook;
   /** The problem's enabled lines; absent in M0. */
   lines?: ProblemLines;
   /**
@@ -70,6 +107,11 @@ export interface ProverOptions {
    * is a child of the problem's with the probe's cap; running into that cap pauses it too.
    */
   probe?: { sessions: number };
+  /**
+   * True when the budget that ran out is only the slice a round of the run's budget gave the problem (`RunConfig.budgetRounds`): the prover then
+   * pauses with `slice`, its task stays running, and the problem asks for its next slice. Absent: a budget that runs out ends the prover.
+   */
+  slice?: () => boolean;
   /** The budget gate: asked before each session after a prover's first. A `skip` ends the prover with `gate`. */
   gate?: { minSessions: number; session(who: { prover: string; session: number }): Promise<{ action: string }> };
   /** Called when the loop has ended, before the lines' `afterProver`: the orchestrator ends the prover's task here. */
@@ -104,14 +146,16 @@ export interface ProverResume {
 /**
  * Why a prover stopped: it found the candidate, used its sessions, ran out of budget, was stopped,
  * kept failing, a line's `beforeSession` stopped it, the consortium turn ended (`turn`), the budget gate skipped its next session
- * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end).
+ * (`gate`), or it ran its probe sessions and waits for the gate to widen the problem (`probe`: not an end), or the problem's slice of the run's budget in rounds is spent (`slice`: a pause, not an end, plan change CA8).
  */
-export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate";
+export type ProverStop = "solved" | "sessions" | "budget" | "aborted" | "errors" | "line" | "turn" | "probe" | "gate" | "slice";
 
 export interface ProverResult {
   name: string;
   attempts: number;
   stop: ProverStop;
+  /** Set when the session's error was a refusal of the model provider that a retry cannot cure (`fatalProviderError`): the prover stopped at once. */
+  refusal?: string;
 }
 
 /** A prover fails this many sessions in a row (model or Lean unreachable): it stops. */
@@ -132,8 +176,8 @@ export async function runProver(o: ProverOptions): Promise<ProverResult> {
     if (o.turn?.ended === undefined || !isTurnEnded(error)) throw error;
     result = { name: o.name, attempts: progress.attempts, stop: "turn" };
   }
-  // A prover that ran its probe has not ended either: the gate says whether it goes on.
-  if (result.stop === "probe") return result;
+  // A prover that ran its probe has not ended either: the gate says whether it goes on. Nor has one whose slice of the run's budget is spent.
+  if (result.stop === "probe" || result.stop === "slice") return result;
   o.onEnd?.(result);
   // The lines hear of a prover that ended, not of one the turn interrupted: it has not ended, it waits.
   if (result.stop !== "turn") await o.lines?.afterProver({ prover: result.name, stop: result.stop, attempts: result.attempts });
@@ -145,7 +189,9 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const actor = `prover:${o.name}`;
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
-  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate);
+  const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
+  const cardStore = o.stateCard === true ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
+  const pageStore = o.consolidation === undefined ? undefined : new MemoryStore({ journal, blobs: o.blobs, actor: "orchestrator" });
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
   let notes: string | undefined = resumed?.carry?.notes;
@@ -155,8 +201,9 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const done = (stop: ProverStop): ProverResult => ({ name: o.name, attempts, stop });
 
   // The probe's cap is its own ledger's: running into it pauses the prover, running into the problem's budget ends it.
-  const budgetStop = (): ProverStop => (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
-  const lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
+  const budgetStop = (): ProverStop => o.slice?.() === true ? "slice" : (o.probe !== undefined && !(o.ledger.parent?.exhausted ?? false) ? "probe" : "budget");
+  let lastSession = o.probe === undefined ? o.sessions : Math.min(o.sessions, o.probe.sessions);
+  let probeExtended = false;
   for (let session = (resumed?.session ?? 0) + 1; session <= lastSession; session++) {
     if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
     if (o.ledger.exhausted) return done(budgetStop());
@@ -178,6 +225,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     let model = o.model;
     let thinkingLevel = o.thinkingLevel;
     let temperature: number | undefined;
+    let pageSection: { title: string; text: string } | undefined;
     if (o.lines !== undefined) {
       const plan = await o.lines.beforeSession(info);
       if (plan.stop !== undefined) return done("line");
@@ -200,6 +248,21 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       if (o.signal.aborted) return done(o.signal.reason === ABORT_BUDGET ? "budget" : "aborted");
       if (o.ledger.exhausted) return done(budgetStop());
       if (o.turn?.ended !== undefined) return done("turn");
+    }
+    if (pageStore !== undefined && o.consolidation !== undefined) {
+      const shown = pageForSession(pageStore, { claimId: workbench.claimId, problemId: o.consolidation.problemId, prover: o.name, session, seed: o.consolidation.seed });
+      if (shown.included !== undefined && shown.withheld !== undefined && shown.included.length + shown.withheld.length > 0) {
+        info = { ...info, included: [...(info.included ?? []), ...shown.included], withheld: [...(info.withheld ?? []), ...shown.withheld] };
+      }
+      pageSection = shown.section;
+    }
+    // The prover role's settings (`RunConfig.roles`): a temperature or thinking level a line sampled for the session wins, key by key.
+    let topP: number | undefined;
+    if (o.roles?.has("prover") === true) {
+      const use = o.roles.use("prover", info.model, thinkingLevel);
+      if (temperature === undefined) temperature = use.temperature;
+      topP = use.topP;
+      if (use.record !== undefined) info = { ...info, settings: { ...use.record, ...info.settings } };
     }
     attempts += 1;
     progress.attempts = attempts;
@@ -228,12 +291,18 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     let result: SessionResult;
     try {
       const opened: OpenedSession | undefined =
-        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...tools.map((t) => toolName(t.capability))]);
+        o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...(o.editTool === true ? ["lean_edit"] : []), ...(o.consult !== undefined ? [CONSULT_TOOL] : []), ...tools.map((t) => toolName(t.capability))]);
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
-      const sections = [...(opened?.sections ?? []), ...team];
+      // A person's sketch (`harness solve --sketch`) is in the first briefing only: "A sketch from NAME", screened and as data.
+      const sketch = session === 1 ? sketchBriefing(journal.projection, workbench.claimId) : [];
+      // An informal proof that the verifier accepted (`RunConfig.informalFirst`), in the first briefing only, marked as not checked by Lean.
+      const informal = session === 1 ? informalBriefing(journal.projection, o.blobs, workbench.claimId) : [];
+      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
+      // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
+      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;
       result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {
@@ -242,12 +311,21 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
               registry: workbench.registry, attemptId, actor, implementation: t.implementation, ...(binding !== undefined ? { binding } : {}),
             });
           }),
+          ...(o.consult !== undefined
+            ? [consultTool({
+                config: o.consult.config, journal, blobs: o.blobs, models: o.models, resolveModel: o.consult.resolveModel, ledger: o.ledger,
+                problemId: o.consult.problemId, attemptId, actor, signal: o.signal,
+                ...(o.prices !== undefined ? { prices: o.prices } : {}), ...(o.turn !== undefined ? { turn: o.turn } : {}),
+                ...(o.roles !== undefined ? { roles: o.roles } : {}),
+              }) as never]
+            : []),
           ...(opened?.tools ?? []),
         ],
         models: o.models,
         model,
         thinkingLevel,
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(topP !== undefined ? { topP } : {}),
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,
@@ -256,6 +334,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           lastCheck,
           session,
           sessions: o.sessions,
+          ...(card !== undefined ? { card } : {}),
           ...(sections.length > 0 ? { sections } : {}),
         }),
         workbench,
@@ -275,6 +354,10 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.packetMode !== undefined ? { packetMode: o.packetMode } : {}),
         ...(o.retry !== undefined ? { retry: o.retry } : {}),
         ...(o.prices !== undefined ? { prices: o.prices } : {}),
+        ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
+        ...(o.editTool === true ? { editTool: true } : {}),
+        ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
+        ...(o.leanSearch !== undefined ? { appendToCheck: (o.leanSearch as LeanSearchPush).forSession() } : {}),
       });
     } catch (error) {
       // The harness failed in the session. What the session was charged before it failed is spent, and the
@@ -314,6 +397,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       notes = clipNotes(notes === undefined ? cut : `${notes}\n${cut}`, o.notesChars);
     }
     const outcome = outcomeOf(result);
+    if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
     const failure =
       outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {
@@ -331,6 +415,14 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       attemptId,
       outcome,
       ...(failure !== undefined ? { failureClass: failure } : {}),
+      ...(cardStore !== undefined && outcome === "invalid" && result.report !== undefined ? failureDetailOf(result.report, workbench.sketch.statement, result.submission?.aux) : {}),
+      // A session the rotation's slice cut is no failure, but the rotation reads its last check's class to see Lean progress in it.
+      ...(outcome === "budget_exhausted" && o.slice !== undefined && result.report !== undefined
+        ? (() => {
+            const cls = failureClass(result.report, { statement: workbench.sketch.statement, ...(result.submission !== undefined ? { aux: result.submission.aux } : {}) });
+            return cls === undefined ? {} : { lastCheckClass: cls };
+          })()
+        : {}),
       stoppedBy: result.stop,
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
@@ -338,6 +430,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       turns: result.turns,
       ...(result.retries !== undefined ? { retries: result.retries } : {}),
       ...(result.toolTokens !== undefined ? { toolTokens: result.toolTokens } : {}),
+      checks: result.submissions,
+      ...(result.holes !== undefined ? { holes: result.holes } : {}),
       usd: result.cost.usd,
       inputTokens: result.cost.inputTokens,
       outputTokens: result.cost.outputTokens,
@@ -400,6 +494,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     o.transcript?.(attemptId, result.messages);
 
     if (result.stop === "turn") return done("turn");
+    // A probe session the repeat rule ended has not told the gate anything: the session that is told to change approach runs, once, under the probe's ledger.
+    if (o.probe !== undefined && !probeExtended && outcome !== "valid" && result.lineCause === "repeated_failure" && lastSession < o.sessions && session === lastSession) {
+      probeExtended = true;
+      lastSession += 1;
+    }
     switch (outcome) {
       case "valid":
         return done("solved");
@@ -409,6 +508,10 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         return done("aborted");
       case "error":
         failed += 1;
+        {
+          const refusal = result.error === undefined ? undefined : fatalProviderError(result.error);
+          if (refusal !== undefined) return { ...done("errors"), refusal };
+        }
         if (failed >= MAX_FAILED_SESSIONS) return done("errors");
         break;
       default:
@@ -416,6 +519,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     }
   }
   return done(lastSession < o.sessions ? "probe" : "sessions");
+}
+
+/** The typed detail of a session's last check, for the card; a line's own `failureDetail` comes after it and wins. */
+function failureDetailOf(report: NonNullable<SessionResult["report"]>, statement: string, aux: string | undefined): { failureDetail?: string } {
+  const failure = classifyFailure(report, { statement, ...(aux !== undefined ? { aux } : {}) });
+  return failure === undefined ? {} : { failureDetail: failure.detail };
 }
 
 function outcomeOf(result: SessionResult): AttemptOutcome {

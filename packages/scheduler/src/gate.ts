@@ -26,6 +26,12 @@ export interface GateSettings {
    * One low Thompson draw would otherwise end a widened prover for good after its first session.
    */
   minSessions?: number;
+  /**
+   * A probe whose one session was cut by the probe's own cap, after at least one Lean check, and that made no Lean progress, runs one
+   * extension (one more session under a ledger of twice the cap) before the gate judges: a session the cap cut says nothing about the
+   * problem. Default false; the defaults set `v2` of `harness solve` turns it on.
+   */
+  probeExtend?: boolean;
 }
 
 export interface ResolvedGate {
@@ -34,6 +40,7 @@ export interface ResolvedGate {
   probeFraction: number;
   margin: number;
   minSessions: number;
+  probeExtend: boolean;
 }
 
 /** What a site may take of what is left: a wave of provers or a session, half of it; a line's task, a quarter; a judge call, a tenth. */
@@ -43,6 +50,7 @@ export const DEFAULT_GATE: Readonly<ResolvedGate> = {
   probeFraction: 0.1,
   margin: 0.1,
   minSessions: 2,
+  probeExtend: false,
 };
 
 /** The settings with the defaults under them; refuses a value out of range. */
@@ -61,7 +69,9 @@ export function gateSettings(given: GateSettings = {}): ResolvedGate {
   if (!(typeof margin === "number" && margin >= 0 && margin <= 1)) throw new RangeError(`margin must be from 0 to 1, got ${String(margin)}`);
   const minSessions = given.minSessions ?? DEFAULT_GATE.minSessions;
   if (!(Number.isInteger(minSessions) && minSessions >= 1)) throw new RangeError(`minSessions must be a whole number of at least 1, got ${String(minSessions)}`);
-  return { share, floor, probeFraction, margin, minSessions };
+  const probeExtend = given.probeExtend ?? DEFAULT_GATE.probeExtend;
+  if (typeof probeExtend !== "boolean") throw new RangeError(`probeExtend must be true or false, got ${String(probeExtend)}`);
+  return { share, floor, probeFraction, margin, minSessions, probeExtend };
 }
 
 /** What the gate is asked: the hook `problem.budget.ask` (documentation/lines.md). */

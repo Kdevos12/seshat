@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import { readIndex } from "@seshat/bench";
 import { readEvents } from "@seshat/core";
-import { classifyStatement, isSignature, leanProblem, SolveInputError, solve, type SolveOptions, TARGET_NAME } from "../src/index.ts";
+import { DEFAULT_CONFIG, DEFAULT_IMPASSE, DEFAULTS_SETS, studentConfig, classifyStatement, isSignature, leanProblem, SolveInputError, solve, type SolveOptions, TARGET_NAME } from "../src/index.ts";
 import { certifier } from "./resume-helpers.ts";
 import { certifyingRegistry, check, DemoLean, demoResume, fauxModels, ofType, say, tempDir } from "./m0-helpers.ts";
 
@@ -79,8 +79,8 @@ describe("harness solve", () => {
     assert.equal(c.requests.length, 1, "the certifier ran");
     // The defaults: a capped budget, the gate, probe first, the classical battery, a consortium stop at half the allowance.
     assert.deepEqual(run.config?.budget, { problemUsd: 2, runUsd: 2 });
-    assert.deepEqual(run.config?.gate, {});
-    assert.deepEqual(run.config?.lines, ["M1", "M10"]);
+    assert.deepEqual(run.config?.gate, { probeExtend: true });
+    assert.deepEqual(run.config?.lines, ["M1", "M10", "M6"]);
     assert.equal(run.config?.consortium?.limit.usd, 1);
     // The one-problem bench is a real index.
     const index = readIndex(run.problem.indexFile);
@@ -215,3 +215,61 @@ describe("Task 30 review round 1", () => {
   });
 });
 
+
+describe("the defaults sets of solve", () => {
+  const base = { selection: { ids: ["p"] }, model: "faux/m", maxUsd: 2 };
+
+  it("v1 is the configuration solve had before the sets, and v2 is v1 plus the three options", () => {
+    const { defaults, ...v1 } = studentConfig({ ...base, defaults: "v1" });
+    assert.equal(defaults, "v1");
+    // What `solve` built at ae3b2a0, written out: nothing of the sets is in it.
+    assert.deepEqual(v1, {
+      ...DEFAULT_CONFIG,
+      selection: { ids: ["p"] },
+      model: "faux/m",
+      budget: { problemUsd: 2, runUsd: 2 },
+      gate: {},
+      lines: ["M1", "M10"],
+      consortium: { limit: { usd: 1 }, impasse: { ...DEFAULT_IMPASSE }, narrative: false },
+    });
+    const { defaults: name, ...v2 } = studentConfig(base);
+    assert.equal(name, "v2", "v2 is the default");
+    assert.deepEqual(v2, {
+      ...v1,
+      gate: { probeExtend: true },
+      lines: ["M1", "M10", "M6"],
+      lineOptions: { M6: { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true } },
+      editTool: true,
+      maskOldChecks: true,
+      checkTimeoutSec: 120,
+      stateCard: true,
+      budgetRounds: true,
+      budgetShare: 2,
+      firstCases: true,
+    });
+    assert.deepEqual(DEFAULTS_SETS.v1, {});
+  });
+
+  it("takes the host's checkTimeoutSec in v2 and ignores it in v1; an explicit override of the run wins", () => {
+    assert.equal(studentConfig({ ...base, hostCheckTimeoutSec: 45 }).checkTimeoutSec, 45);
+    assert.equal(studentConfig({ ...base, defaults: "v1", hostCheckTimeoutSec: 45 }).checkTimeoutSec, undefined);
+    assert.equal(studentConfig({ ...base, hostCheckTimeoutSec: 45, base: { checkTimeoutSec: 30 } }).checkTimeoutSec, 30);
+  });
+
+  it("records the set's name, and v2's options, where the run records its configuration", async () => {
+    const v2 = options({ responses: [check("exact trivial_proof")] });
+    const run = await solve(v2.o);
+    const recorded = JSON.parse(readFileSync(join(run.dir, "config.json"), "utf8")) as Record<string, unknown>;
+    assert.deepEqual([recorded.defaults, recorded.editTool, recorded.maskOldChecks, recorded.checkTimeoutSec, recorded.stateCard, recorded.budgetRounds], ["v2", true, true, 120, true, true]);
+    const started = ofType(readEvents(join(run.dir, "journal.jsonl")), "run.started")[0];
+    assert.equal((started?.data.config as Record<string, unknown>).defaults, "v2");
+
+    const v1 = options({ responses: [check("exact trivial_proof")], defaults: "v1" });
+    const old = await solve(v1.o);
+    const kept = JSON.parse(readFileSync(join(old.dir, "config.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(kept.defaults, "v1");
+    for (const key of ["editTool", "maskOldChecks", "checkTimeoutSec", "stateCard", "budgetRounds", "budgetShare", "firstCases"]) assert.equal(key in kept, false, `${key} is not in a v1 run`);
+    // v1 sends the prover's checks under the validator's policy, as before: both checks and the prompt are the merged ones.
+    assert.equal(old.result?.problems[0]?.outcome, "proved");
+  });
+});

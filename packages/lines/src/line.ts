@@ -190,6 +190,12 @@ export interface LineHooks {
    * `LINE_ORDER` that rejects is taken.
    */
   beforeCheck?: (session: SessionContext, proposal: Proposal) => Promise<CheckVeto | undefined>;
+  /**
+   * Before each `lean_check`, before `beforeCheck`: a line may rewrite the aux region it is about to check (M12 with blueprints drops the
+   * `import` lines the header already has, which the screen refuses). The `note` goes to the model after the check's answer; the checked and
+   * recorded file is the rewritten one. Lines are called in `LINE_ORDER`, each with the proposal as the lines before it left it.
+   */
+  rewriteCheck?: (session: SessionContext, proposal: Proposal) => Promise<{ aux: string; note: string } | undefined>;
   /** After each `lean_check` of a session: a `stop` ends the session (a drift detector). */
   afterCheck?: (session: SessionContext, check: SessionCheck) => Promise<CheckDecision | undefined>;
   /**
@@ -322,6 +328,85 @@ export interface ProblemContext {
    * older caller builds: nothing is ignored.
    */
   ignoresSetting?: (model: string, setting: string, thinking?: string) => boolean;
+  /**
+   * A session of a model with tools on one claim's own small file (`lean_check`, `lean_edit` and the `hole_verdict` tool): what M12's
+   * blueprints use to work a hole (documentation/scheduler.md, "Hole sessions"). The orchestrator gives it; absent in a context an older caller
+   * builds, and a line that needs it works without.
+   */
+  holeSession?: (request: HoleSessionRequest) => Promise<HoleSessionResult>;
+  /**
+   * The tests of a claim before any paid session, at no model cost: the battery on the claim, `plausible` and the battery on its negation.
+   * Absent: the line makes no such test.
+   */
+  holePreflight?: (request: HolePreflightRequest) => Promise<HolePreflightResult>;
+  /**
+   * Checks a sketch (the regions of a file with holes) on the problem's own file, as a prover's `lean_check` does, outside a session: no attempt, no
+   * model. What M12's refinement rounds use to read the blueprint the planner wrote. Absent in a context an older caller builds, and for the
+   * lines other than M12.
+   */
+  checkSketch?: (submission: Submission) => Promise<ValidationReport>;
+}
+
+/** What a hole session is asked: the claim whose small file it works on, and the only context it has. */
+export interface HoleSessionRequest {
+  claimId: string;
+  /** The whole opening prompt: the session knows nothing else. */
+  prompt: string;
+  /** Model responses in the session. */
+  turns: number;
+  /**
+   * Looks at each check: true when the work is done, which ends the session (the line's rule: no error, and every `sorry` in a
+   * dependency stub). A check the claim's own workbench accepts (a file without `sorry` that Lean accepts) ends it too.
+   */
+  done: (submission: Submission, report: ValidationReport) => boolean;
+  /** Names the session in the journal's model calls (`<task>:<session>`). */
+  key: string;
+}
+
+/** What a hole session says through its `hole_verdict` tool. The verdict is the model's claim; nothing here is a status. */
+export interface HoleVerdictCall {
+  verdict: "proved" | "statement_wrong" | "too_hard";
+  /** The argument or counterexample for `statement_wrong`: text, never trusted. */
+  argument?: string;
+  /** A Lean proof of the negation of the claim, which the line sends through `validate` with the negation flag. */
+  negation?: { proof: string; aux?: string };
+}
+
+export interface HoleSessionResult {
+  /** Why the session ended (`SessionStop`). */
+  stop: string;
+  turns: number;
+  usd: number;
+  /** The regions of the session's last check and what Lean said. */
+  submission?: Submission;
+  report?: ValidationReport;
+  /** `done` held for the last check, or the claim's own workbench accepted it. */
+  finished: boolean;
+  /** The workbench accepted a file without `sorry` (the claim became a candidate). */
+  accepted: boolean;
+  /** The verdict the model gave with `hole_verdict`, if it did. */
+  verdict?: HoleVerdictCall;
+}
+
+export interface HolePreflightRequest {
+  claimId: string;
+}
+
+/**
+ * What the tests of a claim found. Each is evidence; a status changes only through `validate` inside the tests (the battery's proof of
+ * the claim, or of its negation).
+ */
+export interface HolePreflightResult {
+  /** The battery proved the claim and `validate` accepted the proof. */
+  proved: boolean;
+  /** The battery proved the claim's negation and `validate` accepted it with the negation flag. */
+  refuted: boolean;
+  /** `plausible`'s result (`counterexample`, `no_counterexample`, `unavailable`, `not_testable`, `error`, `skipped`), when it ran. */
+  plausible?: string;
+  /** Lean's first error when the hole's file does not type-check (task 51): the claim then gets no session. Absent: it type-checks, or Lean did not answer. */
+  compileError?: string;
+  /** A line on each test that ran. */
+  notes: string[];
 }
 
 /** The problem's theorem. */
@@ -436,6 +521,11 @@ export interface LineTool {
   parameters: JsonObject;
   /** Runs a call; the text goes back to the model. An error goes back as a tool error. */
   run: (args: JsonObject, signal: AbortSignal) => Promise<string>;
+  /**
+   * The orchestrator journals each call as a `tool_run` of the capability named like the tool, by the line, so that a run's report counts it
+   * (the context compiler's `expand` and `graph_query`). Default: not journaled.
+   */
+  journaled?: boolean;
 }
 
 export interface SessionDecision {
@@ -491,6 +581,13 @@ export interface CheckVeto {
 export interface CheckDecision {
   /** End the session, for this reason. Its attempt ends `stoppedBy: "line:<id>"`. */
   stop?: string;
+  /** Why the session ends, as data for the prover (optional; with `stop`): `repeated_failure` is the repeat rule's. */
+  cause?: string;
+  /**
+   * Text added to the answer of the check that was just made, which the model reads next (the repeat rule's directive, plan change CA7).
+   * Made of the line's own words, labels and counts. Ignored when `stop` is given: the session ends.
+   */
+  notice?: string;
 }
 
 /** A session that has ended, for `afterAttempt`. */

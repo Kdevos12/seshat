@@ -174,6 +174,24 @@ def axiomsOf (env : Environment) (name : Name) : Array Name := Id.run do
   return state.axioms
 
 /--
+Whether a partial constant is the compiler's implementation of a definition the module declares: Lean 4.27
+adds `X._unsafe_rec`, marked partial, for every recursive definition `X`, structural or well-founded, and
+nothing safe can refer to it. It is the compiler's, not the candidate's, when `X` is declared in the same
+module as an ordinary safe definition (`defnInfo`, structural or well-founded). A `partial def X` stays
+refused: Lean 4.27 makes its `X` an opaque constant (not partial), with `X._unsafe_rec` the partial one, so
+the test is on the kind of `X`, not on its `isPartial` flag.
+(Found on 2026-11-12: the source's own structural `tetration` of Putnam 1997 B5 made its proofs uncertifiable.
+On 2026-11-13 a check of `partial def f` on a real Lean showed that a test on `isPartial` let it through.)
+-/
+def compilerAux (own : Std.HashMap Name ConstantInfo) (name : Name) : Bool :=
+  match name with
+  | .str base "_unsafe_rec" =>
+    match own.get? base with
+    | some (.defnInfo val) => val.safety == .safe
+    | _ => false
+  | _ => false
+
+/--
 The candidate against the reference. What the candidate did wrong is the reason. An exception that is
 not a refusal of the kernel (a file that cannot be read, say) is not the candidate's and is not caught.
 -/
@@ -185,7 +203,7 @@ def judge (req : CertifyRequest) (reference : CompiledModule) (base refEnv : Env
   for name in candidate.data.constNames, info in candidate.data.constants do
     if info.isUnsafe then
       return refuse s!"the module declares the unsafe constant {name}"
-    if info.isPartial then
+    if info.isPartial && !compilerAux candidate.own name then
       return refuse s!"the module declares the partial constant {name}"
   match (← replayModule base candidate) with
   | .error message =>

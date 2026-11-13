@@ -57,7 +57,7 @@ export function createProverTasks(tasks: TaskLedger, o: ProverTasksOptions): Pro
 export type ProverTaskEnd =
   | {
       /** `ProverResult.stop`. A prover that the consortium turn interrupted (`turn`) has not ended: its task stays `running` until the run is resumed. */
-      stop: Exclude<ProverStop, "turn" | "probe">;
+      stop: Exclude<ProverStop, "turn" | "probe" | "slice">;
       /** Sessions the prover could use. */
       sessions: number;
       /** What ran out, when the budget did: "the problem's budget" or "the run's budget". */

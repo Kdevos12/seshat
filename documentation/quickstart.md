@@ -89,6 +89,56 @@ quoted (a newline, a backtick) gives the placeholder command instead.
 | Host | the one named, `HARNESS_HOST`, `sandboxed` when `doctor` has written it, then `local` | `--host` |
 | User | `--as`, `SESHAT_USER`, then the operating system's login name, which is then journaled (`user`, `human:NAME`) as it is; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
 
+### Defaults sets
+
+`harness solve --defaults v1|v2` picks a named set of defaults (`DEFAULTS_SETS` in `student.ts`; the default is `v2`). The set's name is
+recorded in the run's configuration (`defaults` in `config.json` and in `run.started`), and a resumption reads it back.
+
+| Set | What it is |
+|---|---|
+| `v1` | What `solve` did before the sets: the table above and nothing else. Kept so that a result can be compared with, or reproduced under, the older defaults. |
+| `v2` (default) | `v1` plus five options of `harness run`, which are off in `harness run` itself, and one line: `editTool` (the prover edits its last file with `lean_edit` instead of rewriting it, [m0-loop.md](m0-loop.md#the-edit-tool)), `maskOldChecks` (check results older than the last four are sent as their one-line summary, in batches of four, [m0-loop.md](m0-loop.md#masked-old-checks)) and `checkTimeoutSec` (the provers' Lean checks are bounded at the host's `checkTimeoutSec`, default 120 s, [lean.md](lean.md#bounded-checks)), `stateCard` (each session opens with a card built from the journal, notes limited to 1500 characters, [m0-loop.md](m0-loop.md#the-state-card)) and `budgetRounds` (a run's budget shared in rounds among its problems, [scheduler.md](scheduler.md#the-budget-in-rounds); it acts only on a run of several problems and does nothing for `solve`'s one problem), and `budgetShare: 2` (a problem's cap is at most twice its even share of what the run budget has left, [scheduler.md](scheduler.md#the-budget-in-rounds)). `v2` also adds line M6 with its mechanical repeat rule only (no detector, no model call, [guards.md](guards.md)): the third occurrence of the same failure tells the prover to change approach and the fourth ends the session. It also lets a budget-gate probe that its own cap cut, with no Lean progress, run one extension before the gate judges it (`probeExtend`, [scheduler.md](scheduler.md#the-budget-gate)). Three more additions are `solve`'s own switches, not `RunConfig` fields of the set (`SOLVE_SWITCHES` in `student.ts`, beside `DEFAULTS_SETS`; `harness doctor` and the line `solve` prints at its start list them from that table): the **intake gate** (the statement's hygiene tests, and the literature only with your yes, [literature.md](literature.md)), **`compute.sage`** for a statement filed as finite, about a graph or about numbers (only when the host offers it), and **`lean.search`** (only when the host offers it; remote services only with your yes, [lean.md](lean.md#search-pushed-by-the-harness)). A host that offers neither the compute tool nor `lean.search` gets one line saying so and the run goes on without it. |
+
+Why: in the first real runs about 90% of the dollars were output tokens (the model rewrote its whole Lean file at every check), 4 sessions
+of 9 ended on a full context, and Lean checks ran into 900-second timeouts. `v2` makes each attempt cheaper and shorter; the certifier's
+limits and the validator's policy are unchanged, and Lean still decides everything. `harness run` keeps its own defaults: each of the three is an
+option there (`editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds` in the run configuration), so a recorded run replays as before. A later change of
+`solve`'s defaults adds its option to `v2`.
+
+In a plain `v2` solve the one question about third parties is therefore asked, once, after the signature, wherever a person can answer, because the
+intake's literature and `lean.search` both want the answer (`--lit` is the yes; `--yes` or `--ask-stdin` without `--lit` is no; `--private` wins over
+both; a resumed run reads the journaled answer). With a no the hygiene tests still run (they send nothing outside), the literature is skipped and
+`lean.search` keeps to its local index and pattern search: nothing goes to a third party. Each addition can be turned off alone: `--no-intake`,
+`--no-auto-tool`, `--no-lean-search` (they matter only with `v2`; a flag and its `--no-` cannot both be given). `--defaults v1` turns none of them on, and the
+explicit flags `--intake`, `--lit`, `--auto-tool` and `--lean-search` still turn one on under `v1`.
+
+`v2` also gives the prover `lean.lsp` (the tool `lean_lsp`: goals, diagnostics, several tactics at a line, Mathlib search; plan change NL1) beside
+`lean_check`, when the host profile offers the capability (otherwise one note and the run goes on); `--no-tool lean.lsp` turns it off, and `v1` never
+has it. A `lean.lsp` that the set added and that cannot be reached at the start (no `uvx`: `pipx install uv`) is dropped with one warning in the log and the report, and the run goes on; one you named with `--tool` still fails the run ([lean-lsp.md](lean-lsp.md)). The report's `tools` block counts its calls like those of any capability. It never judges a proof: only `lean_check` does.
+
+`v2` also sets `firstCases`: for a statement with one natural-number or integer parameter and an equation of sums, products, binomials or factorials,
+and when the run has the compute tool, the harness computes the first cases itself (no model) and, if the host offers `oeis.search` and the run is not
+private, looks the sequence up; the table reaches the first briefing as computed data
+([induction.md](induction.md#the-first-cases-the-harness-pushes)).
+
+The intake's judge call is proportionate to the allowance: when `--intake-usd` is not given, its cap is the smaller of the default ($0.05) and 5% of the
+run's allowance (`--max-usd`), so a $0.40 run spends at most $0.02 on it. The test lemmas that `solve` runs to show them before the signature are the ones the intake
+records: they are not run a second time. Not run on a real Lean, model, search service or literature site: the target of the plan change (at least 1.5 times the
+problems solved per dollar of `v1`) has no number until `harness ablate --experiment solve-defaults` runs on real problems ([ablate.md](ablate.md)).
+
+Options that are off unless you ask (they do not change the defaults above):
+
+| Option | What it does |
+|---|---|
+| `--tool ID` (repeatable) | gives the provers that capability besides `lean_check`, as `harness run --tool` does (`--tool compute.sage`); a capability that is not `direct` or that the host does not offer stops the run before it spends |
+| `--auto-tool` | adds the host's compute tool (`compute.sage`) when the router files the statement as finite, about a graph or about numbers ([literature.md](literature.md#solve-options)); said before the run; nothing is added when the host does not offer it |
+| `--intake` | tests the statement before any paid session (vacuity, `plausible`, the first cases, now also for a Lean statement) and, if you agree, searches the literature ([literature.md](literature.md)) |
+| `--lit` | your agreement to send the words of the statement to OpenAlex, arXiv, Semantic Scholar and zbMATH, and the hits to the model, in a call that cannot ask; implies `--intake`. Without it `solve` asks once and journals your answer (`intake.consented`); with `--yes` or `--ask-stdin` and no `--lit` the answer is no |
+| `--private` | Nothing is sent to a third party: the registry refuses the OEIS, LMFDB and FindStat capabilities and keeps `lean.search` and the literature to their local forms ([trust.md](trust.md#third-parties)); `--tool` naming one stops the command before any spend. Wins over `--lit` and `--intake` (the literature step is skipped, journaled as private) and is refused with `--decide-backend jev` |
+| `--intake-usd X` | the most the judge call may cost (default $0.05) |
+| `--sketch FILE` | your own informal proof or hint, in a text file of at most 20 000 characters: `harness solve "(n : ℕ) : ..." --sketch my-idea.txt --as ada`. It is journaled once as a hint under your name, shown to the outer prover's first briefing ("A sketch from ada") and to the planner of a refinement round as unchecked data, and it sets no status ([human.md](human.md#a-persons-sketch-ca14)) |
+| `--role ROLE=PROVIDER/ID` and `--role-setting ROLE.KEY=VALUE` (repeatable) | a model, and sampling settings, for a place a model is called from ([models-setup.md](models-setup.md#roles-a-model-and-settings-for-each-place-a-model-is-called-ca15-ca23)): `--role planner=PROVIDER/ID --role-setting planner.temperature=0.2` sends the refinement rounds' call to another model |
+
 The first stop is a look at where the run stands, not the end: nothing is lost by it, and the money you have
 not spent stays yours.
 
@@ -107,7 +157,9 @@ run needs is missing.
 | Kimina Lean server | nothing answers at `LEAN_SERVER_API_URL` (default `http://localhost:8000`), it refuses the machine (401, 403), or it answers something else | to start one ([lean.md](lean.md)); to set `LEAN_SERVER_API_KEY` |
 | Model credentials | no provider has credentials | to set one provider's key (`pnpm harness models` lists the providers) |
 | Price table | the chosen model (`--model`, or the cheapest) has no price in the host profile or in pi-ai | to give it a `models` entry in the host profile ([m0-loop.md](m0-loop.md#prices)), or to choose a priced model |
+| Lean server memory | (a warning, never a failure) the Lean server on this machine takes more than the host profile's `leanServerMemoryWarnMb` (default 8 GB) | the Kimina settings that fit this machine's memory (`MAX_REPLS`, `MAX_REPL_USES`, `MAX_REPL_MEM`), and to restart the server with them when it has grown ([lean.md](lean.md#memory-of-the-lean-server)) |
 | Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
+| Literature search | (a warning, never a failure) the host profile has no `lit.search`, or it enables no backend; no request is made ([literature.md](literature.md)) | to use a profile that lists it |
 | Certifier isolation | (a warning, not a failure) the host profile has no sandbox for the certifier and this machine has none | that results stay `computed` |
 
 **The isolation profile.** The certifier runs a candidate's Lean code, and it refuses to without a sandbox
@@ -124,7 +176,10 @@ with `prlimit`, no network, the filesystem read-only except the work directory; 
 network, read-only, all capabilities dropped, as your user). The file is written once and never over an
 existing one (`--rewrite` replaces it, `--no-write` only checks), it is git-ignored, and no profile `doctor`
 writes sets `unsandboxed`: that stays a choice a person writes down. `solve` and `doctor` use
-`sandboxed` by themselves when it exists.
+`sandboxed` by themselves when it exists. `harness doctor --rewrite`, run with that generated profile in use, does not replace it:
+once its sandbox passes the test it adds the capabilities of `config/hosts/local.json` the file lacks (`lit.search` with its `cacheDir`
+beside the profile), keeps every capability it has (above all `lean.certify` and its sandbox) as it is, and names what it added; when
+nothing is missing the file is not rewritten. Without `--rewrite` the file is never touched.
 
 **Without any isolation** `doctor` writes nothing and says so: *every proof that passes the fast check stays
 `computed`, and no claim can become `proved` or `refuted`.* `solve` still works, and `RESULT.md` says the
@@ -146,12 +201,18 @@ written whole or not at all (a rename), so a reader never sees half of one.
 **What it holds**, in this order:
 
 1. The headline, one line for each problem: proved or refuted (certified), a candidate (fast check only),
-   or not solved yet, with the journal's reason.
+   or not solved yet, with the journal's reason; or, when the run asked for an informal proof first and none was accepted, "No solution found.".
 2. Where the run stands: how it ended, or that the journal has no end; dollars, tokens and time; the
    journal's length, last hash and whether its hash chain verifies (a chain that does not verify is
    said first, above the headline). When you signed a statement, the statement, your words and the
    test lemmas.
 3. A note when no certifier ran, with the reason the run recorded.
+
+   With the informal proof first ([informal.md](informal.md)), **Not checked by Lean** follows the claims: an informal proof that the
+   verifier accepted, when no Lean proof of the problem was certified, with the text (cut at 4000 characters, and a line says so), its verifier passes,
+   the models by role and the line "This argument has not been checked by Lean; it may be wrong." When nothing was accepted and no Lean proof was
+   certified the headline says "No solution found." and no informal attempt is shown anywhere; when a Lean proof was certified the informal proof is not
+   shown, and one line says it exists. The claim's status is never changed by it: it stays `open`. `report.md` (and what `solve` prints at the end) has the same section.
 4. The claims by status.
 5. **Lean proofs certified so far**: each with the validation behind it and the whole Lean file as it was
    checked. A proof is listed here only when a valid `kernel_replay` validation of that claim is in the

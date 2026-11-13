@@ -7,6 +7,7 @@ import {
   chainOfJournal,
   type EventDataMap,
   type HarnessEvent,
+  isWaitingHoleTask,
   type Json,
   type Journal,
   type MemoryChain,
@@ -18,6 +19,7 @@ import {
   type TaskRow,
 } from "@seshat/core";
 import { referencesIn } from "@seshat/guards";
+import { HYGIENE_KIND, LITERATURE_KIND, shown } from "@seshat/lit";
 import { claimAndParts, hintOf, HINT_KIND, STEER_KIND, steerOf } from "./team.ts";
 import { JUDGMENT_KIND } from "./breakpoints.ts";
 import { type Ledger, messageCost } from "./budget.ts";
@@ -37,7 +39,7 @@ import { consortiumOf } from "./consortium.ts";
  * does not detail" (`unknownKinds` in the JSON): a fingerprint, an identification or a drift finding is in the
  * journal and in the count, and not silently left out.
  */
-const READ_KINDS = new Set(["counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND, "allocation"]);
+const READ_KINDS = new Set(["counter_model", "obstruction", "conjecture", "judgment", HINT_KIND, STEER_KIND, "allocation", LITERATURE_KIND, HYGIENE_KIND]);
 
 const MAX_PER_LIST = 12;
 const MAX_TREE_NODES = 60;
@@ -149,6 +151,8 @@ export interface Account {
   inherited?: Pick<MemorySummary, "claims" | "carried" | "reset" | "attempts" | "lessons" | "nodes" | "edges" | "validations"> | { unreadable: string };
   narrative?: { text: string; hash: string; modelWritten: true };
   narrativeRefused?: string;
+  /** The model-free part of the consolidation pass, as markdown, when the consortium option asked for it (`ConsortiumConfig.consolidation`). */
+  consolidation?: string;
 }
 
 /** A turn that has not been written yet: the account is built for what is about to be said of it. */
@@ -372,6 +376,11 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     const next = live ? open.filter((task) => task.status === "ready").slice(0, MAX_PER_LIST).map(taskLine) : [];
     const otherOpen: Record<string, number> = {};
     if (live) for (const task of open) if (task.status !== "ready") otherOpen[task.status] = (otherOpen[task.status] ?? 0) + 1;
+    // A hole whose work is done on stubs ends as a `failed` task (the task API has no ending that fits); it is waiting for its dependencies, not failed.
+    if (live) {
+      const waiting = p.tasks({ problemId: problem.problem_id }).filter((task) => isWaitingHoleTask(task) && task.claim_id !== null && p.claim(task.claim_id)?.status === "open").length;
+      if (waiting > 0) otherOpen.waiting = waiting;
+    }
 
     problems.push({
       problemId: problem.problem_id,
@@ -417,6 +426,16 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     if (bp?.kind === "settled" && bp.problemId === id) continue;
     asked.push(`Problem ${id} is settled (its claim was certified in this turn): read its claims and their checks below, and sign the edges you accept (harness sign).`);
   }
+  if (bp?.kind === "literature" && bp.problemId !== undefined) {
+    // Text from third parties, judged by a model: shown as data (escaped, cut), never as a status.
+    const claimId = p.problem(bp.problemId)?.claim_id;
+    const hits = p.nodes(LITERATURE_KIND, claimId ?? undefined).flatMap((node) => {
+      const d = object(node.data);
+      return d?.settled === true ? [`"${shown(String(d.title ?? ""), 120)}" (${shown(String(d.url ?? ""), 200)}) ${shown(String(d.verdict ?? ""), 20)}: "${shown(String(d.quote ?? ""), 240)}"`] : [];
+    });
+    asked.push(`Problem ${bp.problemId}: the literature may have settled it. A model judged these sources (data from third parties, nothing is proved by them; read them yourself): ${hits.join("; ")}. Decide whether to go on (harness hint, or harness steer to drop it).`);
+  }
+  if (bp?.kind === "vacuous" && bp.problemId !== undefined) asked.push(`Problem ${bp.problemId}: Lean proved that no values satisfy the statement's hypotheses, so the statement is vacuous as written. Check what was meant before anything is spent (harness hint, or drop the problem).`);
   if (bp?.kind === "disagreement") asked.push(`Two informal validators disagree (${bp.nodeId ?? "see the judgment"}): decide which reading is right (harness hint, or harness sign on the edge in question).`);
   if (end !== undefined && ["tokens", "usd", "minutes"].includes(end.reason)) asked.push(`The turn's ${end.reason} limit was reached: set the next turn's limit (harness steer --turn-tokens, --turn-usd or --turn-minutes) or resume as it is.`);
   if (end !== undefined && end.waiting.length === 0) asked.push("Nothing waits: the run is over.");
@@ -593,7 +612,7 @@ export function renderAccount(a: Account): string {
     else if (settledOpen) lines.push("- Nothing to search: the claim is certified, and the next turn closes the problem.");
     else if (x.next.length === 0) lines.push("- No task is ready. A resumed turn takes the problem up from the journal, where it left it.");
     for (const n of x.next) lines.push(`- Ready: ${n}`);
-    const others = Object.entries(x.otherOpen).map(([status, n]) => `${n} ${status}${status === "running" ? " (a turn cut them; they go on when the run resumes)" : ""}`);
+    const others = Object.entries(x.otherOpen).map(([status, n]) => `${n} ${status}${status === "running" ? " (a turn cut them; they go on when the run resumes)" : status === "waiting" ? " (holes worked out on stubs, waiting for the lemmas they use; they are not failed)" : ""}`);
     if (!outcomeKnown && others.length > 0) lines.push(`- Other tasks that are not over: ${others.join(", ")}.`);
     if (x.fleet.length > 0) {
       lines.push(`- The fleet's leading strategies: ${x.fleet.map((f) => `\`${f.strategy}\` (${plural(f.sessions, "session")}${f.escalated > 0 ? `, ${f.escalated} on the stronger model` : ""}${f.successRate !== undefined ? `, success rate ${f.successRate}` : ""})`).join("; ")}.`);
@@ -617,6 +636,7 @@ export function renderAccount(a: Account): string {
       );
     }
   }
+  if (a.consolidation !== undefined) lines.push("", "## Consolidation (model-free)", "", a.consolidation);
   if (Object.keys(a.unknownKinds).length > 0) {
     lines.push("", "## Records this account does not detail", "", `The journal holds records of kinds this account has no section for: ${counts(a.unknownKinds)}. They are in the journal (fingerprints, identifications, drift findings and the lines' other records are among them).`);
   }
@@ -634,10 +654,11 @@ function chainOption(journalPath: string): Pick<AccountOptions, "chain"> {
 }
 
 /** Writes `turns/<n>/report.md` and `report.json` in a run directory, from its journal alone. */
-export function writeAccount(dir: string, turn: number): Account {
+export function writeAccount(dir: string, turn: number, extra: { consolidation?: string } = {}): Account {
   const events = readEvents(join(dir, "journal.jsonl"));
   const blobs = new BlobStore(join(dir, "blobs"));
   const account = buildAccount(events, turn, { blob: (hash) => blobs.get(hash), ...chainOption(join(dir, "journal.jsonl")) });
+  if (extra.consolidation !== undefined) account.consolidation = extra.consolidation;
   const out = join(dir, "turns", String(turn));
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "report.json"), `${JSON.stringify(account, null, 2)}\n`);

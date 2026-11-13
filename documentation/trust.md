@@ -93,12 +93,51 @@ outside the closed list, and one whose answer is not among its labels. The sites
 would amount to a verdict (fidelity, equivalence, status, progress) are refused by name. With the
 `jev` backend, proof states go to a third party: that is off unless the run asks.
 
+The intake step ([literature.md](literature.md)) cannot bypass it either. A `literature` node (a hit the judge says proves or refutes the
+statement, `settled: true`) and a `hygiene` node (a vacuity or `plausible` result) are evidence, written by the orchestrator, about a claim; neither
+changes its status, and only a Lean proof through `validate` does. What a site sends is hostile text: it is cleaned and bounded when read, a quote counts
+only when it is a verbatim part of that text, it is shown escaped as data in a user-role section and never enters a system prompt or a lesson, and a
+model's reading of it (the judge's verdict) is an opinion, not a check. The statement goes to third parties only for a bench problem, or when the person
+agreed (asked once and journaled, or `--lit`), and never with `--private`. `--private` is one rule for every capability that sends content of the problem to a third party ([Third parties](#third-parties)).
+
 The task ledger cannot bypass it either ([ledger.md](ledger.md)): task events name no claim status
 to set, a task is `done` only when its claim already has the status its criterion asks for, and
 only the orchestrator writes them. A resumed run ([ledger.md](ledger.md#resume)) does not trust
 what the interrupted process was about to write: it writes a status change that was cut only when
 a validation already in the journal justifies it, and a candidate is certified by the same
 certifier as any other, unless the journal holds the certifier's answer for it.
+
+## Third parties
+
+The model provider is the only party that sees a problem without being asked. Every other service a run can reach with content of the
+problem is a **third party**, and says so in its manifest (`thirdParty`, [capabilities.md](capabilities.md#third-parties)). One rule, in one
+place, governs them: the registry. A run sets its policy once, from `--private` and from the consent below, and from then on no caller
+can forget it: a call that would send is made in its local form, or refused with the error code `private`, which names `--private` and is
+journaled as a failed tool run (`error: "private"`), before any implementation is reached.
+
+| Capability | What it sends | With `--private` | What else governs it |
+|---|---|---|---|
+| `lit.search` | words of the statement, to OpenAlex, arXiv, Semantic Scholar, zbMATH | the intake step skips the literature (journaled `private`); a call is forced to the bench-metadata backend, which is a local file | bench problem: on with `--intake`; `solve`: the consent, asked once or `--lit` |
+| `lean.search` | an unknown name, or a goal, to a search service | forced to the private form: only the local index and the index-based pattern match stay; the `remote` backend and the remote pattern service are off ([lean.md](lean.md#search-pushed-by-the-harness)) | bench problem: on; `solve`: the consent; without a yes it is local too |
+| `decide.ask` | a proof state or statement, to a hosted decision model (`jev`) | a run that asks `jev` is refused at the start; the local `faux` stays usable | the run's decide settings, which `--private` does not change |
+| `oeis.search` | terms of a sequence, to the OEIS | refused (`private`); a line (M11) takes it as a lookup that gave nothing | the person names the tool (`--tool`) or enables a line that uses it: that is their choice, and `solve`'s defaults sets do not |
+| `lmfdb.query` | a query, to the LMFDB | refused | as `oeis.search` |
+| `findstat.identify` | objects and values, to FindStat | refused | as `oeis.search` |
+
+**Limits, said plainly.**
+- A pack ([packs.md](packs.md)) whose manifest has no `thirdParty` field is not checked in a private run: the manifest is its author's word, and the
+  harness cannot see what a program sends. `--private` binds the capabilities of the repository's catalog and the packs that declare themselves.
+- `harness health` is not a run and has no `--private`: it pings the third-party services the host profile lists to say whether they answer.
+- The answer on third parties is journaled (`intake.consented`) for every problem a run takes up under the policy, and a resumed run reads it back
+  from the recorded configuration. The registry's hash covers the manifests, which now carry `thirdParty`, so a run started before this change cannot be resumed after it
+  (the resume is refused for a changed registry, as for any manifest change).
+
+`harness solve --private --tool oeis.search` (or `lmfdb.query`, `findstat.identify`) stops before any spend, and `harness run --private --tool`
+does not start. In `harness run` third parties are on for bench problems (they are public) unless `--private`; nothing changes there without
+the flag. In `harness solve` the question "may this run send content of your problem outside?" is asked once, when `--intake` or `--lean-search`
+is on and a person can answer, and names the services the host profile reaches; the answer is journaled as `intake.consented` and a resumed run
+does not ask again. `--lit` is the non-interactive yes; with `--yes` or `--ask-stdin` and no `--lit` the answer is no, and `lean.search` then
+uses its local backends only. Whatever comes back is hostile text and an evidence node at most: nothing here changes a claim's status.
 
 ## Memory across runs
 
@@ -111,6 +150,15 @@ without the journal's invariants. `--memory-from` is for your own runs. What nev
 directory: a problem is `proved` or `refuted` only by this run's own certification, and the real re-check
 of an earlier proof is the stored proof sent through `validate` in the new run. A status that came from
 another environment counts for nothing, and the journal refuses to cite its validations.
+
+## Learned records and the consolidation pass
+
+The consolidation pass ([consolidation.md](consolidation.md)) writes cards and pages, which are unverified artifacts: stamped (Global Constraint 16),
+never a fact, never a claim's status, never an edge. A page is written by one model call whose input holds the state card and the problem's events
+by id; text from an external source (a literature quote or title, a tool's output body, a search result) is never in that input, so it cannot
+become part of the page. A sentence of the page is kept only if it cites at least one event and every event it cites is in the list the model was
+given for that problem; the rest is dropped and counted. The page reaches a session only in the first user message, labelled unverified, drawn and
+judged by its effect, never in a system prompt. Only the pass writes the node kinds: the journal refuses them from another actor.
 
 ## Definitions
 
@@ -210,3 +258,8 @@ its context would find that open network, the files the permission model allows 
 the process's memory, which holds nothing of the harness's; nothing stronger than that is promised,
 and a deployment that runs programs of models it does not trust puts the child in a container. The
 verdicts of a program are test results: they change no status.
+
+## Hole verdicts (M12 blueprints)
+
+A hole session's verdict (`proved`, `statement_wrong`, `too_hard`; [scheduler.md](scheduler.md#verdicts-plan-change-ca11)) is a memory node, never a status. `proved` is decided by Lean's report on the hole's small file and the line's rule on it (no error, every `sorry` in a dependency stub), not by what the model says, and the claim becomes `computed` only when its
+proof with the dependencies' accepted proofs passes `validate`. `statement_wrong` makes a claim's negation `computed` only through a Lean-checked proof of the negation (`validate` with the negation flag); an argument, a tool's counterexample (`plausible`) or a refused proof leaves a `suspect_false` evidence node and changes no status. A suspicion never stops work on the parent, never propagates, and reaches the next outer session labelled unverified.

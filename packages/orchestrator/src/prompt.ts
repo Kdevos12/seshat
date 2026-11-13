@@ -22,9 +22,18 @@ export const PROVER_SYSTEM_TEMPLATE = readFileSync(new URL("../prompts/prover.sy
  * The system prompt of an M0 prover session; `tools` are the names of its tools besides lean_check. `template` replaces the prompt's
  * text for a measurement run of a candidate (`RunConfig.prompts`); the default is the merged prompt.
  */
-export function systemPrompt(notesChars: number, tools: readonly string[] = [], template: string = PROVER_SYSTEM_TEMPLATE): string {
-  return template.replace("{{NOTES_CHARS}}", () => String(notesChars)).replace("{{TOOLS_SECTION}}", () => toolsSection(tools));
+export function systemPrompt(notesChars: number, tools: readonly string[] = [], template: string = PROVER_SYSTEM_TEMPLATE, editTool = false): string {
+  return template.replace("{{NOTES_CHARS}}", () => String(notesChars)).replace("{{TOOLS_SECTION}}", () => (editTool ? editSection : "") + toolsSection(tools));
 }
+
+/**
+ * The section of the system prompt on `lean_edit` (plan change CA5), added in the tools' place only when the run gives the sessions the
+ * tool: the prompt of a run without it is the merged prompt, byte for byte.
+ */
+const editSection = `
+# Editing
+Use lean_check(aux, proof) for your first draft. After it, change the file with lean_edit(region, old, new): region is aux or proof, old is text that occurs exactly once in that region as you last checked it, and new replaces it. The edit is checked as lean_check checks, so you write only what changes instead of both regions again. If old is not found or occurs more than once, nothing is checked and you get the region's current text. Send both regions again with lean_check only when most of a region changes.
+`;
 
 /** The section of the system prompt on the tools besides lean_check; empty without them. */
 function toolsSection(tools: readonly string[]): string {
@@ -48,6 +57,8 @@ export interface SessionContext {
   sessions: number;
   /** The enabled lines' briefings, each a titled section after the last check. */
   sections?: ReadonlyArray<{ title: string; text: string }>;
+  /** The state card (plan change CA7): where the problem stands, written by code from the journal. Shown as data; absent: no such section. */
+  card?: string;
 }
 
 /** The first message of a session: the theorem, the notes, the file, the last check, and the lines' sections. */
@@ -55,9 +66,10 @@ export function sessionPrompt(c: SessionContext): string {
   const notes = c.notes ?? "(none: this is your first session on this theorem)";
   const lastCheck = c.lastCheck ?? "(the file has not been checked yet)";
   const sections = (c.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
+  const card = c.card === undefined ? "" : `\n# Where the problem stands\n${c.card}\n`;
   return `Theorem: ${c.theorem}
 This is session ${c.session} of at most ${c.sessions}.
-
+${card}
 # Your notes from the previous sessions
 ${notes}
 
@@ -74,6 +86,6 @@ ${lastCheck}${sections}`;
 export const WRAP_UP = `This session has reached its limit. Do not call any tool now. Write your notes for the next session as your reply: rewrite them in full, as the system prompt says.`;
 
 /** Identifies the prompts of a run, for `run.started`. The tools' descriptions are pinned by the registry's hash. */
-export function promptHash(notesChars: number, tools: readonly string[] = [], template: string = PROVER_SYSTEM_TEMPLATE): string {
-  return sha256Hex([PROMPT_VERSION, systemPrompt(notesChars, tools, template), sessionPrompt({ theorem: "", file: "", notes: undefined, lastCheck: undefined, session: 1, sessions: 1 }), WRAP_UP].join("\n\u0000\n"));
+export function promptHash(notesChars: number, tools: readonly string[] = [], template: string = PROVER_SYSTEM_TEMPLATE, editTool = false): string {
+  return sha256Hex([PROMPT_VERSION, systemPrompt(notesChars, tools, template, editTool), sessionPrompt({ theorem: "", file: "", notes: undefined, lastCheck: undefined, session: 1, sessions: 1 }), WRAP_UP].join("\n\u0000\n"));
 }

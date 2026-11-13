@@ -89,6 +89,22 @@ Two measures run side by side.
 `deactivation: "presence"` uses the presence rule instead: harmful outweighs useful after `minObservations` in all. A deactivated lesson
 stays in the journal with the rule and the reason, and is never shown again; nothing reactivates it.
 
+## Consolidation
+
+The consolidation pass ([consolidation.md](consolidation.md)) reads the lessons of a run's chain and acts only where it finds something; a run
+with no consolidation has neither of the fields below.
+
+- **Duplicates merged.** Active (or waiting) lessons of the same type, scope and normalised text (lowercase, spaces collapsed, final punctuation
+  removed) are one: the oldest stays. It takes the union of the others' `support`, `claims` and `domains` (the latest 50 each) and the sum of
+  their `useful` and `harmful` counters. Each duplicate is deactivated (rule `merged`, `mergedInto` names the kept lesson) and stays in the
+  journal; its draws and effects stay under its own id and are not moved. `addLesson` is unchanged: it still merges a duplicate of the same `key`
+  by adding support and leaving the counters alone.
+- **Unsupported lessons flagged.** A lesson's support is the attempts it lists (`support`). An attempt backs it when the chain holds it and its
+  claim is not `retracted`. A lesson none of whose supporting attempts backs it (including one that lists none) gets `flagged` (the reason and the
+  counts) and `pending: true`: it is shown to no session until a person approves it, with `harness lessons approve RUN_DIR ID` on the run
+  that flagged it, like a staged lesson. `harness lessons pending` lists it with its flag. An approval is a `lesson_decision` node, which a
+  later run does not inherit, so a later run on the consolidation run sees the lesson waiting again until it is approved there.
+
 ## Staged promotion
 
 A lesson for the global scope changes what every later problem sees, so by default it is recorded `pending` and shown to nobody until a

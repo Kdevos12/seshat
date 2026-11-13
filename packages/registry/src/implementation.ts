@@ -29,6 +29,7 @@ export const CAPABILITY_ERROR_CODES = [
   "unknown_capability",
   "invalid_input",
   "unavailable",
+  "private",
   "timeout",
   "aborted",
   "failed",

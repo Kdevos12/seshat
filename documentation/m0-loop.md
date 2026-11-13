@@ -62,7 +62,7 @@ the run is paused, and `harness resume` goes on. The configuration is recorded (
 The run stops before its last problem when it is aborted (`aborted`), when its budget runs out
 (`budget_exhausted`), when Lean cannot be reached (`lean_unavailable`), when the Lean server cannot import the libraries of the environment that line M17 puts the run in
 (`lean_environment`; a run in an environment through the host's `LEAN_ENV` alone is not probed: [lean-env.md](lean-env.md#line-m17-a-run-in-an-extended-environment)), or after three problems in
-a row ended with a harness error (`errors`). The reason is in `run.finished`.
+a row ended with a harness error (`errors`), or at once when the model provider refuses a request for good (`provider_refused`: a status 401, 402 or 403, an empty balance, a key it does not accept; a 429, a 5xx or a timeout is not one). The reason is in `run.finished`; `RunResult.providerRefusal` carries the provider's text.
 
 A run whose process ended without a `run.finished` (a kill, a crash, a usage limit) is continued by
 `resumeBench`, from its journal and the run directory alone: it checks that what resumes is what
@@ -191,7 +191,7 @@ prompt asks the prover to rewrite them in full and keep what still helps.
 
 A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
 out, when the problem is aborted, after two sessions in a row ended with an error (the model or
-Lean could not be reached), or when a line's `beforeSession` stops it (`line`).
+Lean could not be reached), or when a line's `beforeSession` stops it (`line`). With the budget in rounds ([scheduler.md](scheduler.md#the-budget-in-rounds)) a prover whose slice of the budget is spent pauses with `slice`: its task stays running and the problem asks for its next slice.
 
 ## A session
 
@@ -202,6 +202,12 @@ has no such argument. A check puts the two
 regions into the file, keeps the file in the blob store, and runs the fast check under
 `SKETCH_POLICY`, which lets `sorry` and `admit` reach Lean so that the goals of the holes come back
 ([validator.md](validator.md#holes)). Regions that contain marker lines are refused before Lean.
+
+A run may bound its provers' checks (`RunConfig.checkTimeoutSec`, a number of seconds; the host profile's
+`checkTimeoutSec` gives the value `harness solve` uses, [lean.md](lean.md#bounded-checks)). A check that passes
+the bound answers "Lean did not finish within the time limit", which costs the session one turn instead of the validator's
+300 seconds; the validator's own policy, the reference check and the certifier keep their limits. Absent, as in
+`harness run`, the provers' checks run under the validator's policy as they always did.
 
 A check of a file without holes that Lean answered is a validation, recorded as
 `validation.finished` (method `repl`). The first valid one makes the claim `computed`, ends the
@@ -284,6 +290,67 @@ responses cost (`retries` in `report.json`).
 
 The one-shot model calls of the lines (`model_call.finished`) are not sent again: a call that a
 transient error cut fails, and the line decides what to do, as before.
+
+### The edit tool
+
+The model rewrites its whole Lean file at every check, and output tokens were about 90% of the dollars of the first real runs. With
+`RunConfig.editTool` the session also has `lean_edit(region, old, new)` (plan change CA5):
+
+- `region` is `aux` or `proof`; it applies to the region **as last checked in this session** (the regions of the session's last
+  `lean_check` or `lean_edit` call, whatever Lean said of them);
+- exactly one occurrence of `old` must exist in it. With none the answer is `not found`, with several `found N times`, each with the region's
+  current text; an empty `old` is refused the same way. Nothing is checked, nothing is counted and nothing is recorded: the answer is an
+  error result, like a check the team vetoed;
+- on success it runs **the same check** as `lean_check` with the regions that the edit made (the team's veto, the lines' guards and
+  `afterCheck`, the workbench's check and its time limit), so the journal stores the full resulting submission exactly as a `lean_check`
+  with those two regions would: the tool run, the blob, the validation and everything that reads them are unchanged;
+- before any `lean_check` in the session it answers that there is nothing to edit (the file the session starts from is not a check).
+
+`lean_check(aux, proof)` stays, for the first draft. The prover's system prompt gains a section, "Editing", that says so, only when the
+option is on; without it the prompt is the merged prompt byte for byte, and the prompt hash in `run.started` is unchanged. The
+option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([quickstart.md](quickstart.md#defaults-sets)).
+
+### Exploring is not checking
+
+A session with a tool besides `lean_check` and `lean_edit` (`lean.lsp`, `lean.search`, any `--tool`) can spend its turns looking: in two real runs on 2026-11-13, 15 of 24 and 6 of 12 prover sessions never called `lean_check`, and progress, the budget gate and the ladder are measured on checks. The session therefore counts its model turns since its last `lean_check` or `lean_edit` (or since its start). When `TURNS_BEFORE_CHECK` (6) turns have passed without one, or when the session has `TURNS_LEFT_TO_CHECK` (2) turns left, this one included, and has made no check, every such tool answers, without being called: "Submit your file now with lean_check (AUX and PROOF, with `sorry` for what is not proved yet): until you do, only lean_check and lean_edit answer." The answer is an error result of the tool, journaled like any other tool answer; a check resets the count and the tools answer again. A session with only `lean_check` and `lean_edit` is unchanged, and so is the prover's system prompt. A hole session names its `hole_verdict` as an ending tool (`SessionOptions.endingTools`): it is neither counted nor refused. The guard of `lean.lsp` (8 calls without a check, [lean-lsp.md](lean-lsp.md)) stays; in practice the guard of the turns is the first to answer unless a turn makes several calls (`orchestrator/test/turn-guard.test.ts`).
+
+### The state card
+
+A session that starts on long notes starts on what the model chose to remember. With `RunConfig.stateCard` (plan change CA7; `card.ts` of
+`@seshat/memory`) the opening message of each session also carries a card that code builds from the journal: no model call, no clock, no
+randomness, so the same journal gives the same card, byte for byte. `stateCard(store, claimId, {maxChars})` is exported from `@seshat/memory`,
+beside the projection, and returns the structured card (`goal`, `holes`, `lemmas`, `approaches`, `timeouts`, as `StateCardData`, which `stateCardData` gives alone) with its bounded `text` (`renderStateCard` makes the text from the data), so that a later pass (a consolidation pass, an idea generator) calls it without the run loop. The card holds, in this
+order: the goal's statement id and status; the holes (the claims joined to the goal by `decomposes_into`) with their goal text and status; the
+lemmas Lean accepted, by name (the `aux_` lemmas of the last session's check with no error and no `sorry`, recorded as an `accepted_lemmas`
+node when the option is on); the failed approaches as (strategy label, failure class, first error normalised) with a count, the most frequent
+first; the timeouts with their count. A session counts once, by the class and typed detail of its last check (`failureDetail`, which the prover
+records itself when the option is on and M1 does not); the normalisation is `normalizeDetail`, the one the failure memory uses. A session with no
+strategy label (no M1) shows `unlabelled`. A timeout is counted on its own line, and a check Lean never answered says nothing about an approach.
+
+The card has a hard bound in characters (`stateCardChars`, default 3000): when it is over, the least frequent approaches are cut first and the
+card says how many were cut. Its text comes from the model's proofs and Lean's messages, so it is data, in the user-role opening message under
+"Where the problem stands", never in the system prompt. With the card on, the notes the model writes are limited to 1500 characters
+(`CARD_NOTES_CHARS`; the system prompt says so and the prompt hash records it). Off, nothing changes: no section, no node, the merged prompts
+byte for byte. The option is off in `harness run` and on in `harness solve`'s defaults set `v2`. Tested in `memory/test/card.test.ts` (the
+order, counts, the bound, the accepted lemmas) and `orchestrator/test/state-card.test.ts` (the opening message, the limit, off).
+
+### Masked old checks
+
+In a long session the answers to old checks fill the context. With `RunConfig.maskOldChecks` (plan change CA6; `mask.ts`) the session keeps the
+last four check results whole and sends the older ones as their one-line summary (`summarizeCheck`: `Earlier check, masked: 3 error(s), 0 hole(s).`).
+A "check result" is the answer of a `lean_check` or `lean_edit` that ran Lean; a refusal, a veto and a miss of an edit are not counted.
+
+The masking goes in batches of four, so that the cached prefix of the request survives: nothing changes until four more results are
+maskable, that is, with `n` results in the history `4 * floor((n - 4) / 4)` of the oldest are masked (none below 8, four from 8 to 11, eight
+from 12 to 15). A masked result depends on itself alone, so between two batches the history only grows at its end, and from one batch to the next
+the part that was masked stays byte for byte the same (the tests hold both). It goes through the session's `rewriteHistory` hook, before the
+hook's own function if a caller gave one. Only what is sent to the model changes: the session's messages, the transcript and the journal
+keep the full answers. A line's context packet that replaces the history has nothing to mask. The option is off in `harness run` and on
+in `harness solve`'s defaults set `v2`.
+
+The section that `RunConfig.leanSearch` appends to an answer ([lean.md](lean.md#search-pushed-by-the-harness)) is not in the summary
+that masking keeps, so a masked result drops it with the rest of its text; the whole results keep it, within its own bound of 1,200
+characters on top of the answer's.
 
 ## What the prover sees
 
@@ -369,14 +436,14 @@ evidence, not proof, since only `lean_check` decides; it asks the prover to use 
 cases, compute examples and search for counterexamples before writing Lean, and to find the values
 and witnesses a proof needs.
 
-`PROMPT_VERSION` (now `m0-2.1`) changes with any change of the prompts, and `run.started` records it
+`PROMPT_VERSION` (now `m0-2.2`) changes with any change of the prompts, and `run.started` records it
 with a hash of the prompts, tools' names included. Version `m0-2` added the section on other tools;
 without tools, its system prompt is that of `m0-1`. Version `m0-2.1` is a minor one: the lines now add
 sections to the prompt (the fleet's "Directive for this session" and "Step plan", the sentence that ends M6's
 question about an open conjecture), which are optional and recorded on the attempt, and the base prompt is
 unchanged. A minor change opens no epoch ([memory.md](memory.md#epochs)), and the provenance stamp tells the
 versions apart. The tools' descriptions are in their manifests,
-covered by the registry's hash.
+covered by the registry's hash. Version `m0-2.2` (another minor one, plan change PA1) rewrites the base prompt's method: the "Never allowed" list adds `partial` and `unsafe` definitions and `implemented_by`, small cases are computed first for a statement with an integer parameter, the proof chosen is the one whose lemmas Mathlib has, and a recursive auxiliary definition uses structural recursion or `termination_by`.
 
 ## Budgets
 
@@ -583,6 +650,13 @@ A run with the line M12 (or one with a `ladder.escalated` event) adds a table of
 
 A run with the gate (`gate` in `report.json`) adds a paragraph and a table of its answers by site, and the avoided spend, an estimate of what the skipped launches would have cost, never a measured amount ([scheduler.md](scheduler.md#the-budget-gate)). It is read from the journal alone.
 
+A run that made an attempt ends its report with a **Loop** section (`loop` in `report.json`; `loop-telemetry.ts`, plan change CA3), read from the journal alone, to say where the dollars and minutes go:
+
+- per attempt (a session of a prover): the Lean checks it made (`attempt.finished.checks`, else its `lean.check` tool runs), the seconds a check took (median and 95th centile, from the tool runs' durations), the output tokens per check, the dollars by cache hit, cache miss and output, the context it ended with (the input tokens of its last request), and why it stopped (`stoppedBy`);
+- per problem: the rate of repeated failures (invalid attempts whose `failureDetail`, or `failureClass`, an earlier attempt of the problem already had, over the invalid attempts that name one), the open holes over time (the holes each check left, `attempt.finished.holes`, in the order the attempts ended) and, for the run, the share of proposed sub-lemmas that turned out false.
+
+The dollar split reads `outputUsd` and `cacheReadUsd` of the charges (the output tokens and the cache reads at the prices that charged the response); the rest is the cache-miss input and the cache writes. A journal written before these fields says "not recorded" and so does a run with no sub-lemma verdict: the share of sub-lemmas found false counts `node.recorded` events of kind `hole_verdict` whose `data.verdict` is `statement_wrong` (the verdict of CA11, which another task writes), over those that have a verdict. A check Lean could not answer adds no hole count. The percentiles are over the checks that finished (the index `floor(q n)` of the sorted seconds), and a check with no attempt (the reference check of a problem) is not counted.
+
 A consortium run says how many turns it had and why each ended (`turns` in `report.json`), and a run that
 waits for the team says it is paused after turn N and where the account is, instead of "has not finished".
 
@@ -603,6 +677,12 @@ the retries run out; a 400 not sent again and a 503 sent again; no send again on
 during the wait; the classifier, with errors that only mention a timeout or a status; a run with pi-ai's faux provider whose journal
 and report record the retry; and a run whose model fails with `timed out waiting for ...`, which is not sent again. A cut from DeepSeek's own API has
 been seen in the first real run, but no run has yet gone through a retry against a real provider.
+`hot-loop.test.ts` covers the cheaper hot loop (Task 34) with the faux provider and a simulated Lean: a check that passes its time limit and the
+limit each check is given (the reference keeps the validator's), the edit tool on none, one and several occurrences, before any check and on the
+aux region, the full submission it leaves in the journal, the prompt with and without the tool, and the masking (the counts of the batches,
+the history only growing inside a batch, the prefix byte-identical between two batches, the journal whole); `solve.test.ts` covers the defaults
+sets. A real Kimina's time limit and memory, and a real model's use of `lean_edit` and of masked results, have not run: whether they cut cost
+and context as the first runs suggest is to be measured.
 `certify.test.ts` runs certification through the loop with a fake certifier and with the registry's
 `lean.certify`: a claim `proved` only after the certificate, a certifier that gives no answer, the
 refutations of a line (certified, rejected, and against a claim already refuted), the proofs a line

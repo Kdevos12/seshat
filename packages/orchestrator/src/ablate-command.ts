@@ -1,11 +1,13 @@
+import { hostName } from "./implementations.ts";
+import { studentHost } from "./solve-command.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ProblemEntry, sample, stemOf } from "@seshat/bench";
 import { readEvents, sha256Hex } from "@seshat/core";
-import { type AblationInput, type AblationResult, type Arm, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
+import { type AblationInput, type AblationResult, type Arm, armConfig, cumulativeArms, cumulativeNames, runAblation } from "./ablation.ts";
 import { renderAblation, renderChunks } from "./ablation-table.ts";
 import { analyseChunks, attemptsByProver } from "./chunks.ts";
-import { allLines, experiment, experimentArms } from "./experiments.ts";
+import { allLines, experiment, type ExperimentContext, experimentArms } from "./experiments.ts";
 import { RunSetupError } from "./run.ts";
 import { runLabel } from "./run-label.ts";
 
@@ -45,9 +47,13 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
   /** The cumulative configurations, comma-separated names; default all of them. Ignored with an experiment. */
   configs?: readonly string[];
   experiment?: string;
+  /** With an experiment: run only the arms with these names, in the experiment's order. Absent: every arm. */
+  arms?: readonly string[];
   /** The lines an experiment's arms share; default every line. */
   lines?: readonly string[];
   models?: readonly string[];
+  /** The host profile the arms that are what `solve` would do take their capabilities and check timeout from (`solve-defaults`). */
+  host?: ExperimentContext["host"];
   /** The number of problems the memory is built on before the arms are measured on the others. */
   split?: number;
   splitBy?: SplitBy;
@@ -55,10 +61,21 @@ export interface AblateCommand extends Omit<AblationInput, "arms" | "buildProble
 }
 
 /** The arms a command asks for: the cumulative configurations, or the arms of one experiment. */
-export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "lines" | "models">): Arm[] {
+export function commandArms(command: Pick<AblateCommand, "configs" | "experiment" | "arms" | "lines" | "models" | "host">): Arm[] {
+  if (command.arms !== undefined && command.experiment === undefined) throw new RunSetupError("--arms goes with --experiment");
   if (command.experiment !== undefined) {
     if (command.configs !== undefined) throw new RunSetupError("choose the configurations with --configs or an --experiment, not both");
-    return experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])] });
+    const all = experimentArms(command.experiment, { lines: [...(command.lines ?? allLines())], models: [...(command.models ?? [])], ...(command.host !== undefined ? { host: command.host } : {}) });
+    if (command.arms === undefined) return all;
+    const unknown = command.arms.filter((name) => !all.some((a) => a.name === name));
+    if (unknown.length > 0) throw new RunSetupError(`unknown arm ${unknown.map((n) => JSON.stringify(n)).join(", ")} in experiment ${command.experiment}; its arms are ${all.map((a) => a.name).join(", ")}`);
+    const chosen = all.filter((a) => (command.arms as readonly string[]).includes(a.name));
+    // An arm whose `versus` arm is not chosen keeps running: the comparison falls back to the arm before it in the table, and to none for the first.
+    return chosen.map((a) => {
+      if (a.versus === undefined || chosen.some((x) => x.name === a.versus)) return a;
+      const { versus: _dropped, ...rest } = a;
+      return rest;
+    });
   }
   if (command.lines !== undefined || command.models !== undefined) throw new RunSetupError("--lines and --models go with --experiment");
   return cumulativeArms(command.configs !== undefined && command.configs.length > 0 ? [...command.configs] : cumulativeNames());
@@ -68,6 +85,13 @@ export function commandArms(command: Pick<AblateCommand, "configs" | "experiment
 export async function ablateCommand(command: AblateCommand): Promise<AblationResult> {
   if (existsSync(join(command.dir, "ablation.json"))) throw new RunSetupError(`${command.dir} holds a finished ablation: write into a new directory (an ablation that was cut off is resumed by giving the same directory again)`);
   const arms = commandArms(command);
+  // The audit's point (PA6): a run budget below sample x cap cuts the per-problem cap of the arm, so the arm is not measured at the cap it names.
+  for (const arm of arms) {
+    const { problemUsd, runUsd } = armConfig(command.config, arm).budget;
+    if (runUsd !== undefined && runUsd < command.problems.length * problemUsd - 1e-9) {
+      (command.log ?? command.print)(`warning: the run budget ($${runUsd}) is below ${command.problems.length} problem(s) x the cap of $${problemUsd} per problem for arm ${arm.name}: the run budget may cut the per-problem cap, and the arm is then not measured at the cap it names (documentation/ablate.md)`);
+    }
+  }
   const seed = String(command.config.seed ?? "ablate");
   const split = command.split !== undefined ? splitBench(command.problems, command.split, seed, command.splitBy) : undefined;
   mkdirSync(command.dir, { recursive: true });
@@ -80,6 +104,8 @@ export async function ablateCommand(command: AblateCommand): Promise<AblationRes
     arms,
     dir: command.dir,
     ...(command.run !== undefined ? { run: command.run } : {}),
+    ...(command.baseline !== undefined ? { baseline: command.baseline } : {}),
+    ...(command.target !== undefined ? { target: command.target } : {}),
     ...(command.pilot !== undefined ? { pilot: command.pilot } : {}),
     ...(command.log !== undefined ? { log: command.log } : {}),
   });
@@ -112,4 +138,12 @@ function modelOf(dir: string): string {
   const first = readEvents(join(dir, "journal.jsonl"))[0];
   const config = first?.type === "run.started" ? (first.data.config as { model?: unknown } | null) : null;
   return typeof config?.model === "string" ? config.model : "";
+}
+
+/**
+ * The host the arms of an ablation run on: the one named, `HARNESS_HOST`, then the default of the command (`hostName`: `local`), except for
+ * `solve-defaults`, whose arms are what `solve` does and so take the host `solve` takes (`studentHost`: the isolated profile `doctor` wrote, when it exists).
+ */
+export function ablateHost(experiment: string | undefined, explicit: string | undefined, configDir?: string): string {
+  return experiment === "solve-defaults" ? studentHost(explicit, configDir) : hostName(explicit);
 }

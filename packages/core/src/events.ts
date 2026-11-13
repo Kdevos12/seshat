@@ -66,6 +66,13 @@ export interface TokenCost {
    * table is authoritative (documentation/m0-loop.md, "Prices"), and the report shows how much it left out. Absent otherwise.
    */
   unchargedUsd?: number;
+  /**
+   * Of `usd`, the dollars of the output tokens, and of the cache reads (the cache-hit price), at the prices that charged the
+   * response (the loop telemetry of the report, documentation/report.md): what is left is the cache-miss input and cache writes.
+   * Absent in journals written before the fields, and when the response had no such tokens.
+   */
+  outputUsd?: number;
+  cacheReadUsd?: number;
 }
 
 /**
@@ -156,7 +163,8 @@ export interface EventDataMap {
     /**
      * Why the run stopped before its last problem: `aborted`, `budget_exhausted`, `lean_unavailable`,
      * `lean_environment` (the Lean server cannot import the environment's libraries), or
-     * `errors` (problems ended with a harness error in a row).
+     * `errors` (problems ended with a harness error in a row), or
+     * `provider_refused` (the model provider refused the request for good: a balance, a key).
      */
     stopped?: string;
   };
@@ -247,6 +255,8 @@ export interface EventDataMap {
     target: string;
     source: SourceRef;
     domain: string[];
+    /** The cap the problem's ledger was opened with, recorded only under `RunConfig.budgetShare` (plan change PA4). */
+    allowanceUsd?: number;
   };
   "problem.finished": {
     problemId: string;
@@ -354,6 +364,10 @@ export interface EventDataMap {
      * than the field, and for a session that did not start.
      */
     toolTokens?: number;
+    /** The Lean checks the session made (`lean_check` calls that reached Lean). Absent in journals older than the field. */
+    checks?: number;
+    /** The open holes (Lean's `sorry` goals) each of those checks left, in order; a check Lean could not answer adds none. Absent in older journals. */
+    holes?: number[];
     /** The strategy classified from what the attempt submitted. */
     strategy?: string;
     /** The strategy the model declared in its last `lean_check` that gave one; replaces the one given at the start. */
@@ -362,6 +376,11 @@ export interface EventDataMap {
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
     failureDetail?: string;
+    /**
+     * The class of the last check of a session that a round's slice cut (`RunConfig.budgetRounds`, which records it only then). It is not a
+     * failure: `failureClass` stays absent for a budget cut. Only the rotation's measure of Lean progress reads it (documentation/scheduler.md).
+     */
+    lastCheckClass?: string;
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };
@@ -461,6 +480,12 @@ export interface EventDataMap {
     responseHash?: string;
     error?: string;
     durationMs: number;
+    /** The role the call was made for (`RunConfig.roles`, documentation/models-setup.md, "Roles"). Absent: the run set no role for it. */
+    role?: string;
+    /** The sampling settings the call was sent with, and `ignored`, the ones its model's family ignores and that were not sent. Absent: the role's own settings are none. */
+    settings?: { [key: string]: Json };
+    /** Set when the planner's call went to the escalation model: the planner's own model, and the refinement rounds in a row without Lean progress that led there. */
+    escalation?: { from: string; rounds: number };
   };
   /**
    * A task of the ledger (documentation/ledger.md). Written by the orchestrator only: a line
@@ -614,6 +639,31 @@ export interface EventDataMap {
     reason: string;
   };
   /**
+   * A round of a run's budget in rounds began (`RunConfig.budgetRounds`, plan change CA8, documentation/scheduler.md, "The budget in rounds"):
+   * the problems it works, in the order they are given a slice, the most one of them may have spent in all (`capUsd`, `runUsd / (4K) * 2^round`),
+   * and where each stood at its start (`marks`, the measure its end is compared with: absent in round 0). `resumed` names the parked problems
+   * this round takes up again. A resumed run reads these events to continue the same rotation. Written by the orchestrator only.
+   */
+  "budget.round": {
+    round: number;
+    capUsd: number;
+    runUsd: number;
+    problems: string[];
+    marks?: { [problemId: string]: { proved: number; holes: number | null; depth: number } };
+    resumed?: string[];
+  };
+  /**
+   * A problem without Lean progress at the end of its round was parked: it waits until every other problem is solved or parked and budget
+   * remains. `usd` is what it had spent in all. Written by the orchestrator only; it changes no claim.
+   */
+  "problem.parked": {
+    problemId: string;
+    round: number;
+    usd: number;
+    capUsd: number;
+    reason: string;
+  };
+  /**
    * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
    * name, version and content hash, what it adds and the programs and servers its tools would run. Written
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
@@ -672,6 +722,45 @@ export interface EventDataMap {
     trivial?: { by: string };
   };
   /**
+   * The statement may be sent to third parties for the intake step (literature search, `lit.search`), or may not: the answer, asked
+   * once before the step (documentation/literature.md, "Third parties"). Written by `human:NAME` when a person answered (`harness
+   * solve` asks once; `--lit` agrees in a call that cannot ask; absence is no), and by the orchestrator when no one is asked
+   * (`via: "bench"`: a bench problem is public; `via: "private"`: `--private` wins over everything). It changes no claim.
+   */
+  "intake.consented": {
+    problemId: string;
+    /** True: the statement may go to the backends. */
+    allowed: boolean;
+    via: "asked" | "flag" | "bench" | "private" | "default";
+  };
+  /**
+   * The intake step of a problem ended, before any paid session: it searched the literature and judged the hits, or was skipped
+   * with a reason. Written by the orchestrator only. The hits themselves are `literature` nodes (data `{backend, url, title, quote,
+   * verdict, settled}`); this event is the record of the step: the three queries, what was dropped and why (a quote that is not in the
+   * fetched text, an answer the judge did not give), and what the step cost. It changes no claim.
+   */
+  "intake.finished": {
+    problemId: string;
+    claimId: string;
+    state: "done" | "skipped";
+    /** Why the step did not run (`private`, `not agreed`, `budget`, `cap`, `no backend`, `failed: ...`). */
+    reason?: string;
+    /** The query forms sent: `{form, query}`. */
+    queries: Array<{ form: string; query: string }>;
+    /** Hits the backends returned, and hits that became `literature` nodes. */
+    hits: number;
+    kept: number;
+    /** Hits that were not kept, with the reason. */
+    dropped: Array<{ backend: string; url: string; title: string; why: string }>;
+    /** Kept hits that say `proves` or `refutes` with a screened quote. */
+    settled: number;
+    /** What the judge call cost, against the cap of the step. */
+    usd: number;
+    capUsd: number;
+    /** The judge's call, when one was made. */
+    modelCallId?: string;
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -724,10 +813,14 @@ export const EVENT_TYPES: readonly EventType[] = [
   "ladder.escalated",
   "memory.epoch_opened",
   "statement.signed",
+  "intake.consented",
+  "intake.finished",
   "decision.made",
   "budget.gated",
   "pack.installed",
   "pack.removed",
+  "budget.round",
+  "problem.parked",
 ];
 
 /** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */

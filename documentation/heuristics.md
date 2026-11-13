@@ -102,14 +102,18 @@ coarse on purpose, so that a bucket gathers enough sessions to say something.
 ## The built-in cards
 
 `BUILTIN_CARDS` holds the six directives (`DIRECTIVE_CARDS`, all strategy cards with no condition, as
-before the bank) and 23 starter cards (`STARTER_CARDS`) from nine traditions: first principles thinking
+before the bank) and 27 starter cards (`STARTER_CARDS`) from ten traditions: first principles thinking
 (unfold the definitions; which hypothesis is used), VOTAT (one parameter at a time; one change between two
 failed checks), strong inference (the discriminating computation), experimental mathematics (guess the
 answer first), Pólya (restate the intent; a known result; working backwards; strengthen the induction
 hypothesis; the hypotheses a named lemma needs), Engel (invariants, the extremal object, counting two ways,
 the equality case), Zeitz (normalize by symmetry), Tao (dominant terms, the deferred witness, a toy model,
 the weakest version, where a counterexample would be, what one would look like) and Schoenfeld (name the
-obstacle before switching). Each is written in our own words; none quotes a book. A test checks that every
+obstacle before switching). Four cards come from the audit of the third real run (plan change PA8):
+`invariant.mod_small_prime` (reduce modulo a small number and read the residues), `represent.prime_by_prime`
+(one prime's exponent at a time), `represent.lowest_terms` (a fraction in lowest terms, so that coprimality
+speaks), and the strategy card `strategy.formalizable_route` (of the family `represent`: among several proofs,
+prefer the one whose key lemmas Mathlib has, checked by search or `exact?`, not the shortest on paper). Each is written in our own words; none quotes a book. A test checks that every
 built-in card is valid, that no two overlap, and that M6's framing check finds nothing in any of them (none
 asks to demonstrate the statement).
 

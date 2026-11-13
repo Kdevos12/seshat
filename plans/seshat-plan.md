@@ -117,16 +117,21 @@ These bind every task. Copy them to reviewers verbatim.
     lines.
 15. Workers never dispatch subagents and never push. Each team's controller pushes, pulls and
     merges, as `CLAUDE.md` says.
-16. Learned memory (plan change PE1 and PE6). An artifact a mechanism learns from outcomes rather
-    than from Lean (a lesson, an attempt record that "already tried" reads, a posterior, a schema,
-    a channel statistic, a prompt) is unverified: it carries the provenance stamp of Task 23 and
-    never becomes a fact. No mechanism writes free-form procedural skills from the agent's own
-    experience: procedure enters only through verified channels (library lemmas, Lean macros,
-    schemas) or counted lessons. Human-written skills are allowed; at most 3 are loaded in full in a
-    session (an option), and the others are listed by name and description. Text from an external
-    source (a paper, a web page, a database entry, a tool's output) keeps its provenance and never
-    becomes a lesson or part of a system prompt: a lesson's text comes only from our own journaled
-    outcomes.
+16. Learned memory (plan change PE1 and PE6, amended by the owner on 2026-11-10: Ruling 33 and
+    `plans/plan-change-capabilities.md`, section 10). An artifact a mechanism learns from outcomes
+    rather than from Lean (a lesson, an attempt record that "already tried" reads, a posterior, a
+    schema, a channel statistic, a prompt, a consolidation page, a speculation, a teacher's memory)
+    is unverified: it carries the provenance stamp of Task 23 and never becomes a fact or a claim's
+    status. Procedural memory written by a model, from Seshat's own outcomes or from a stronger
+    model's, is allowed behind a gate: its source is Lean-accepted outcomes, or sentences that each
+    cite journal events; it is shown by random draw (Task 23) and judged by its measured effect, and
+    switched off when the effect is negative; the part injected into a session has a size cap; it is
+    an option, off by default until it has beaten the run without it on the graded bench (Task 33).
+    Human-written skills are allowed; by default at most 3 are loaded in full in a session (an
+    option), and the others are listed by name and description. Text from an external source (a
+    paper, a web page, a database entry, a tool's output) keeps its provenance and never becomes a
+    lesson or part of a system prompt: a lesson's text comes only from the journaled outcomes of
+    Seshat's own runs.
 
 ## Interfaces every task shares
 
@@ -1239,6 +1244,273 @@ Coherence
 rules: no second registry of strategy text, no second effect counter (it reuses PE2's), no card
 duplicating a lesson (M5) or a schema (M15); a test fails if two built-in cards share a family, a `when`
 and an `ask`.
+
+### Task 33: The graded bench, the paired protocol and loop telemetry (CA1 to CA3)
+
+Main team. First of the tasks of `plans/plan-change-capabilities.md` (approved 2026-11-10, Ruling 33):
+its section 2 is this task's requirement, item by item. The goal is a yardstick on which today's
+Seshat does not score zero, and the numbers that say where a run's dollars and minutes go.
+
+- CA1. `bench/graded-v1.json` and its builder in the bench package, beside `bench-ext`: three
+  grades (A exercise, B competition, C research) from local checkouts, nothing vendored. Each entry
+  has its id, grade, source, source commit, path, statement hash and licence; the sample of grade B
+  (100 problems) and of grade C is drawn from a seed written in the file. A statement is admitted
+  only when it compiles under `lean/env/base`; without a Lean the builder records the entry as
+  unchecked and the run refuses unchecked entries unless told otherwise. `harness run` and `harness
+  ablate` take the graded bench and a grade. If the sources cannot be reached where the task is
+  built, the builder is tested on fixture checkouts, the index is not committed, and the page says so.
+- CA2. `harness ablate` reports, per arm: problems solved with a Wilson 95% interval, dollars spent,
+  dollars per solved problem, problems solved per dollar, wall-clock time; and against the baseline
+  arm: the discordant pairs, an exact McNemar test, and the ratio of problems solved per dollar. A
+  line says whether the target is met (ratio at least `--target`, default 1.5, with no fewer problems
+  solved). Certified refutations are counted apart, and so are statements found settled in the
+  literature (an optional flag on the `literature` evidence node of Task 36; zero until then). The
+  baseline arm of this plan change is `solve`'s defaults at `ae3b2a0`: Task 34 keeps them reachable
+  as the defaults set `v1`.
+- CA3. A "Loop" section in the report, from the journal alone, with every number CA3 lists. Where
+  the journal lacks a number, an event gains an optional field (additive, named in the ledger).
+
+Documentation: `bench.md`, `ablate.md`, the report's page, the README status paragraph. Tests: the
+statistics against known values, the builder on fixtures, the seeded sample (same seed, same
+sample), the telemetry from a recorded journal, the target line. Not run: the real sources, a real
+Lean admission, a real paired run.
+
+### Task 34: A cheaper hot loop (CA4 to CA6)
+
+Main team. Section 3 of the plan change, items CA4, CA5 and CA6, is this task's requirement.
+
+- CA4. `checkTimeoutSec` (host setting, default 120) bounds the provers' checks; the validator's
+  and the certifier's own limits do not change. The registry's health limit becomes a host setting.
+  `harness doctor` prints the Kimina settings that fit the machine's memory and warns when the
+  server's memory passes a threshold. `harness lean-server start` is not built in this task (Ruling
+  33): `doctor`'s advice comes first.
+- CA5. The tool `lean_edit(region, old, new)`, as specified. The journal stores the full submission.
+- CA6. Check results older than the last four are replaced by their one-line summary, in batches
+  of four so that the cached prefix changes rarely; a test holds the prefix byte-identical between
+  two batches.
+- The defaults sets of `solve`: `v1` is exactly the defaults of `ae3b2a0` and stays reachable
+  (`harness solve --defaults v1`); `v2` is `v1` plus the edit tool, the masking and the bounded
+  checks, and is the default. `harness run`'s own defaults do not change: each new behaviour is an
+  option there (`editTool`, `maskOldChecks`), so a recorded run replays as before.
+
+Documentation: `m0-loop.md`, `lean.md`, `quickstart.md`, `prompts.md` if the prover's prompt changes.
+Tests with the faux provider and the simulated Lean: a check that passes the limit, the edit tool on
+one, no and several occurrences, the masking and its batches, the two defaults sets. Not run: a real
+Kimina, a real model.
+
+### Task 35: The state card, the repeat rule and a run's budget in rounds (CA7, CA8)
+
+Main team, after Task 34. Section 3 of the plan change, items CA7 and CA8.
+
+- CA7. The state card is built by code from the journal (no model call) and opens the next session
+  in place of long notes; the model's notes shrink to 1500 characters when the card is on. The card
+  is a pure function of the journal up to the session's start, exported for Tasks 42 and 43. M6
+  gains the mechanical repeat rule (three times: a directive; a fourth: the session ends).
+- CA8. Round-robin over a run's problems with a doubling cap, parking a problem without Lean
+  progress, as specified; the warning when the problem allowance is above its fair share.
+- Both are options, on in `solve`'s defaults set `v2`.
+
+Documentation: `m0-loop.md`, `guards.md`, `scheduler.md`. Tests: the card from recorded journals
+(holes, accepted lemmas, failures with counts, timeouts), its size bound, the repeat rule, a run of
+three problems whose first would have taken the whole budget.
+
+### Task 36: Intake: literature search, tools for `solve`, statement hygiene (CA16, CA17, CA21)
+
+Main team. Section 5 of the plan change, items CA16, CA17 and CA21.
+
+- CA16. The capability `lit.search` in a new package `@seshat/lit`, behind the registry (manifest,
+  contract, host profile), with replaceable backends (OpenAlex, arXiv, Semantic Scholar, zbMATH, the
+  local bench checkout's metadata), each optional. The intake step, the judge call, the `literature`
+  evidence node with its screened quote and its optional `settled` flag, the breakpoint in a run
+  with a person, `--private`. Third parties: on for bench problems, asked once for `solve` (the
+  answer is journaled), off with `--private`. Nothing fetched enters a system prompt or a lesson.
+- CA17. `harness solve --tool ID`, and the host's compute tool by default when the router files the
+  statement as finite, graph or number.
+- CA21. The vacuity test, `plausible`, and the test lemmas for every statement, at intake.
+- Each is an option; this task does not change `solve`'s defaults set (the controller adds them to
+  `v2` after Task 34 merges).
+
+Documentation: a new `documentation/literature.md`, `capabilities.md`, `quickstart.md`, `trust.md`,
+the README diagram. Tests: fake servers for every backend, a quote that is not in the fetched text
+(refused), hostile text in a hit, `--private` sends nothing, a settled hit stops a run with a person,
+the hygiene checks on a vacuous statement. Not run: the real services.
+
+### Task 37: Blueprints and a tool-equipped prover per hole (CA9 to CA11)
+
+Main team, after Tasks 34 and 35. Section 4 of the plan change, items CA9, CA10 and CA11, built by
+extending line M12 (`@seshat/scheduler`), not beside it; M12's behaviour without the new options is
+unchanged. Dependent holes with `-- uses:`, the acceptance of a blueprint (no Lean error, no cycle,
+every node reaches the target), the hole session on a small file (header, dependency stubs, the
+hole; 12 turns by default, priced by the gate), the rule for when a hole's work is done and when its
+claim becomes `computed`, the pre-flight test of a hole, and the three verdicts with their trust
+rules (`statement_wrong` makes a negation `computed` only through a Lean-checked negation; anything
+else is a `suspect_false` evidence node). The share of proposed holes that turn out false is logged
+for Task 33's telemetry.
+
+Documentation: `scheduler.md`, `trust.md`, `lines.md`, the README diagram. Tests: a blueprint with
+dependencies end to end with the simulated Lean and the faux provider, a cycle, an unreachable node,
+a hole that restates the target, each verdict, a wrong hole whose negation Lean accepts, the
+assembled file through `validate`.
+
+### Task 38: Refinement rounds and the repair pass (CA12, CA13)
+
+Main team, after Task 37. Section 4 of the plan change, items CA12 and CA13: the planner call after
+each wave in a fresh context, nodes identified by M1's statement id so that an unchanged statement
+keeps its proof and a proof from another branch, problem or run is reused, at most 8 rounds and
+depth 3, each round priced by the gate; the repair pass that cuts failing blocks to `sorry` and
+runs the battery on each hole. Documentation: `scheduler.md`, `repair.md`. Tests: a proof kept
+across a rewrite, a proof reused from an earlier run (`--memory-from`), the caps, the repair pass on
+a file with two failing blocks.
+
+### Task 39: An informal proof first, roles, and sampling settings per role (CA14, CA15, CA23)
+
+Main team, after Task 38. Items CA14 and CA15 of section 4 and CA23 of section 7: the planner's
+informal proof before the first blueprint, `harness solve --sketch FILE` journaled as a hint under
+the person's name, `RunConfig.roles` (model and settings per role, one-shot calls included, ignored
+settings recorded as ignored), the escalation of the planner to the stronger priced model after two
+rounds without Lean progress for at most 25% of the allowance. Documentation: `scheduler.md`,
+`fleet.md`, `models.md`, `quickstart.md`. Tests: the sketch reaches the planner and the journal,
+each role's settings are sent, an ignored setting is not sent, the 25% cap.
+
+### Task 40: `lean.search`, pushed by the harness (CA22)
+
+Main team, after Task 34. Section 6 of the plan change: a capability `lean.search` with replaceable
+backends (a remote search service, a local index, a pattern search), called by the harness on an
+unknown identifier and for a hole's goal; each hit is checked against the run's Lean environment
+before it is shown; the hits are appended to the check's answer. `--private` keeps remote backends
+off. Documentation: `lean.md`, `capabilities.md`, `library.md`. Tests: fake backends, a name the
+environment does not have (dropped), the answer's size bound.
+
+### Task 41: Counterexamples on finite structures (CA18 to CA20)
+
+Main team. Section 5 of the plan change, items CA18, CA19 and CA20: M11 reads graphs (batteries to 8
+vertices from `graphsUpToIso`, to 10 through the compute tool), with a model-written predicate run
+in M8's sandbox and every hit rechecked by Lean before it is more than evidence; the Lean templates
+of `lean/SeshatLib/Finite` (no `bv_decide`, no `native_decide`); a local search over graphs driven
+by a model-written score, and M16's program search for families. Documentation: the pages of M11,
+`induction.md`, `lean-meta.md` or a new page for the templates. Tests: a known false statement on
+graphs refuted with a certificate file, "no counterexample up to N" recorded as evidence with its
+filters, the sandbox limits. Not run: the Lean templates against a real Lean.
+
+### Task 42: The consolidation pass between runs (CA24)
+
+Main team, after Task 35. Section 7 of the plan change, item CA24: `harness consolidate RUN_DIR`
+and the end of a consortium turn; the state card of every open problem, duplicate lessons merged,
+unsupported lessons flagged, and at most one model call per problem for a page whose every sentence
+cites journal events (a sentence that cites none is dropped). The pass writes into a new run
+started on the earlier one; the earlier journal is not written. Global Constraint 16 as amended.
+Documentation: a new `documentation/consolidation.md`, `memory.md`, `lessons.md`. Tests: the earlier
+journal's hash is unchanged, a sentence with no citation is dropped, a citation of an event that
+does not exist is dropped, the injected size cap.
+
+### Task 43: The reverie line (CA25)
+
+Main team, after Tasks 37, 41 and 42. Section 7 of the plan change, item CA25, whole: the levers
+drawn by the harness from a seeded stream and recorded, the typed ideas, the funnel (cheapest
+first, no model as judge), what survives and where it goes, the `speculation` node, the 10% budget
+cap, the measure. A new package `@seshat/reverie` and a line after `M12` in `LINE_ORDER`, off by
+default. Documentation: a new `documentation/reverie.md`, `lines.md`, `trust.md`, the README
+diagram. Tests: the same seed gives the same levers, each lever alone, each idea type through its
+test, a speculation never changes a status and never enters a system prompt, an `approach` shown
+by draw and counted, the budget cap.
+
+### Task 44: Teacher memory (CA26)
+
+Main team, last. Section 7 of the plan change, item CA26, under the amended Global Constraint 16:
+from the Lean-accepted trajectories of a run made with a stronger model, three memories for the
+small model (blueprint shapes per domain, worked holes retrieved by goal, the fix that worked per
+Lean error class, retrieved when that error comes back), all stamped, drawn and judged by effect,
+off by default. `harness teach RUN_DIR`. Documentation: a new `documentation/teacher.md`,
+`memory.md`. Tests: nothing is built from a trajectory Lean did not accept, each memory is drawn and
+its effect counted, an entry with a negative effect is switched off.
+
+### Task 45: The literature search made ready for the real sites (LW1)
+
+Main team. `plans/plan-change-literature.md`, item LW1 (Ruling 34). The profile `harness doctor`
+writes keeps `lit.search` and gets a cache directory; the doctor's check `literature` (no request);
+a cache of the sites' answers in `@seshat/lit` (`cacheDir`, `cacheDays`, 7 days by default; a
+failure is never kept); `harness lit probe`, which asks each enabled backend once through the
+registry, prints what the site answered and what the parser made of it, and with `--out` keeps the
+raw body and the parsed hits as files, so that a real answer becomes a test fixture. No model call.
+Then, on a machine that reaches the sites: one probe, and each backend's request and parser
+corrected against what it shows. Documentation: `literature.md`, `capabilities.md`, the README's
+commands. Tests: the cache (fresh, expired, failure, absent), the probe against the fake server.
+
+### Task 46: Tools an agent can choose (RA1)
+
+Main team, after Task 45. `plans/plan-change-research-agent.md`, item RA1: in the mode `lead` the
+host's capabilities are offered through the registry's three levels (a few always declared, the
+rest by tool search), each call a tool run charged to its caller. Not started.
+
+### Task 47: The minimal lead (RA2, RA3 with `prove` and `explore`, RA4, RA5, RA6)
+
+Main team, after Task 46 and after the first real measurement of M12's blueprints, on which it
+is built: one lead per problem, the only writer of a plan held in the journal; an obstacle ledger;
+children with a contract; recursion by refinement of the one plan (depth 2); budgets in cascade
+and effort by rule; the lead only after the scripted probe fails; the guards of RA6. The mode
+`scripted` stays byte-for-byte. Not started.
+
+### Task 48: The arm `solve-lead` and its measure (RA11)
+
+Main team, after Task 47: the arm against `solve-v2` and `solve-v2-blueprints` at the same cap by
+the paired protocol, on grades B and C, and a second arm with a stronger planner (RA9). The rest
+of both plan changes (the `read` child with LW2 and LW3, RA7, RA9, RA10, the consortium wiring of
+section 5, LW4 to LW6) is scheduled only after this measure. Not started.
+
+### Task 49: Free fixes from the audit of the third real run (PA1, PA3, PA4, PA6)
+
+Main team. `plans/plan-change-putnam-audit.md` (Ruling 35). PA1: a new version of the prover's
+system prompt (no `partial`, `unsafe` or `implemented_by`, structural recursion or
+`termination_by`; compute small cases with the compute tool for a statement with an integer
+parameter; prefer the known proof whose lemmas Mathlib has). PA3: `lean.search` gets a backend on
+the owner's host after a recorded real probe. PA4: a problem spends at most a share of what
+remains of the run's budget. PA6: grade B problems out of reach at small budgets are tagged in the
+graded bench and reported apart; the measure uses at least 60 paired problems with a run budget
+that does not cut the per-problem cap.
+
+### Task 50: The diagnostic replay of the nine failures
+
+Main team, after Task 49, on the owner's machine: the nine problems unsolved in at least one arm
+of the third real run, with `v2` fixed and a real $0.50 cap per problem, at most $4.50 in all
+(the owner's yes of 2026-11-12). Not a measure of gain (regression to the mean): it shows whether
+the causes "format" and "budget" are gone.
+
+Amended 2026-11-13 (the audit's correction, a saving within the owner's approval): the six candidates the
+certifier wrongly refused for `X._unsafe_rec` are certified again first, for free, with the corrected
+certifier (`03b25e2`); the paid replay then takes only 1967 A5, 1983 A4, 1999 A2, 2003 B3, 2004 B1 and 2025
+B5, at most $3.00, and adds 1994 A1, 1997 B5 or 2000 A2 only if its re-certification fails. Before PA11
+builds on M12 (Task 51), PA16: read the five pre-flight verdicts that judged every blueprint of the third
+run unhealthy, and fix the health rule or the blueprint prompt.
+
+### Task 51: The pieces the audit asks for (PA10, PA9, PA7, PA8, then PA13 and PA11)
+
+Main team, after Task 50, in this order: data tables pushed by the harness (PA10); a built-in pack
+of Mathlib skills and its caller (PA9); heuristic cards drawn in `solve` without the fleet, with a
+control arm (PA7) and four new cards (PA8); then Task 39 (PA13, an informal proof first) and
+Task 38 (PA11, refinement rounds for M12) are brought forward, before the lead agent (Tasks 46 to
+48). PA5, PA12, PA14 and PA15 follow, each measured as an arm. Then the paired measure on at least
+60 grade B problems, one arm per added piece against `v2` fixed.
+
+Also in Task 51, from `plans/plan-change-numina.md` (Ruling 36): NL1 first (`v2` gives `lean.lsp` to the
+prover by default, with an arm); NL2 is the shape of PA13 (generator, fresh-context verifier and
+revision, accepted after three independent verifier passes, at most four rounds, each priced by the
+gate; a hint, never a status); NL3 (a capped, journaled `consult` tool to another configured model)
+with PA11, as an option off by default, checked by a dry run and marked beta at release (Ruling 39); NL5 (LeanDex as a `lean.search` backend after a free recorded probe) when `lean.search` is
+next touched. NL4 and NL6 stay proposed.
+
+Also from `plans/plan-change-knowledge-graphs.md` (Ruling 37), a reduced KG1 before the rest of Task 51:
+an arm `solve-v2-graph` (`v2` plus M2 and M4) with its report counts and `harness ablate --arms`, then a
+smoke run of that arm alone on four or five of Task 50's problems, $0.50 each, $1 in all. KG2 to KG4 stay
+proposed.
+
+Order since Ruling 39 (2026-11-13): PA16, then Task 38 (PA11) and Task 39 (PA13 with NL2, AL1, AL2, then
+AL3), both before Task 50's replay so that the replay measures them; then KG1's smoke run; then the rest.
+
+Also from `plans/plan-change-aletheia.md` (Ruling 38): AL1 and AL2 shape NL2 (the verifier's verdict
+`correct`, `fixable` or `wrong`; the verifier reads only the final proof; a verifier of another model
+family when one is configured); AL3 right after NL2 (an accepted informal proof shown as "Not checked by
+Lean", the claim staying `open`); AL4 with the next change to intake (the readings of a statement); AL5 at
+any time (an interaction card from the journal). AL6 is not approved.
 
 ## Later (not scheduled)
 

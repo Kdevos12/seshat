@@ -50,6 +50,8 @@ tool's. `pnpm harness describe lean.lsp` prints what the model reads about the t
 reads the goal with `lean_goal` and asks `lean_leanfinder` with its text (the last 1500 characters,
 which hold the target).
 
+**Looking is not checking (task 51).** Progress is measured on `lean_check`, and in the replay 15 of 24 sessions made no check at all while calling `lean.lsp` 2 to 84 times. When the prover has made `LSP_CALLS_BEFORE_CHECK` (8) `lean_lsp` calls since its last `lean_check` or `lean_edit` (or since the start), the next call is answered by the harness, without calling the capability: "Check your file with lean_check now: only lean_check counts, and its answer is what the harness measures. lean.lsp answers again after that check." It is journaled as a tool answer like any other (an error result of the tool `lean_lsp`), and a check resets the count. It applies only where `lean.lsp` is among the prover's tools (`orchestrator/test/lsp-guard.test.ts`). A second guard, on turns, answers every exploring tool the same way after 6 turns without a check ([m0-loop.md](m0-loop.md#exploring-is-not-checking)).
+
 ### How a call reaches the file
 
 The tool's parameters do not show the problem's `sketch`: the run fills it in from the problem and
@@ -165,7 +167,7 @@ The server needs Python 3.10 or later and a built Lean project: `lean-toolchain`
 because the first call starts Lean on it.
 
 ```sh
-pip install uv                                        # or the installer of https://docs.astral.sh/uv/
+pip install uv                                        # or `pipx install uv`, or the installer of https://docs.astral.sh/uv/
 export LEAN_PROJECT_DIR=/path/to/formal-conjectures   # the Lean project the files are checked in
 pnpm harness health lean.lsp                          # starts the pinned server and asks its version
 pnpm harness contract lean.lsp                        # needs Lean; four cases also need the network
@@ -198,6 +200,8 @@ names, arguments, types, minimums and enumerations of its 22 tools) is
 call against it as the server's argument validation does. Moving the pin means changing
 `LEAN_LSP_MCP_VERSION`, the manifest's implementation version, reading the new release's tool list
 and running the contract.
+
+**Optional where a defaults set added it (task 51).** `harness solve`'s set `v2` adds `lean.lsp` to the prover's tools (`RunConfig.optionalTools` lists it: `tools` says what is offered, `optionalTools` says which of them the person did not name). If it cannot be reached at the start of the run (no `uvx`, no Lean project, another release), the run drops it with one warning, in the log and in the report ("lean.lsp was dropped: REASON; install uv to use it, see documentation/lean-lsp.md"; `run.started`'s config carries `toolsDropped`), and goes on with `lean_check` alone. A tool the person named with `--tool lean.lsp` still fails the run at start, as before. The replay's machine had no `uvx` and `v2` failed at start with "lean.lsp cannot be reached".
 
 ## Settings
 

@@ -109,6 +109,9 @@
     "additionalProperties": false
   },
   "produces": [],
+  "thirdParty": {
+    "sends": "the terms of a sequence, or its number, to the OEIS"
+  },
   "timeoutMs": 30000,
   "summary": [
     "count"

@@ -9,7 +9,7 @@ export function toolName(id: string): string {
 }
 
 /** Tools a session has besides its capabilities: a capability's tool name never takes one (a pack's all start with `pack_`). */
-export const BUILTIN_TOOL_NAMES: readonly string[] = ["lean_check", "expand", "graph_query", "tool_search"];
+export const BUILTIN_TOOL_NAMES: readonly string[] = ["lean_check", "expand", "graph_query", "tool_search", "consult"];
 
 /** Problems with the capabilities a run gives its provers besides `lean_check`; empty when they are fine. */
 export function checkTools(registry: Registry, ids: readonly string[]): string[] {
@@ -31,6 +31,8 @@ export function checkTools(registry: Registry, ids: readonly string[]): string[]
       problems.push(`${id} is not a direct capability (its exposure is ${capability.manifest.exposure})`);
     }
     if (!registry.offers(id)) problems.push(`host ${registry.host.host} does not offer ${id}`);
+    const refusal = registry.thirdPartyRefusal(id);
+    if (refusal !== undefined) problems.push(refusal);
     if (names.has(toolName(id))) problems.push(`${id}: the tool name ${toolName(id)} is taken`);
     names.add(toolName(id));
   }
@@ -53,23 +55,30 @@ export interface PinnedTool {
 export async function pinTools(
   registry: Registry,
   ids: readonly string[],
-): Promise<{ tools: PinnedTool[]; problems: string[]; notes: string[] }> {
+  optional: readonly string[] = [],
+): Promise<{ tools: PinnedTool[]; problems: string[]; notes: string[]; dropped: Array<{ capability: string; reason: string }> }> {
   const tools: PinnedTool[] = [];
   const problems: string[] = [];
   const notes: string[] = [];
+  const dropped: Array<{ capability: string; reason: string }> = [];
   for (const id of ids) {
     const health = await registry.health(id);
     const index = health.findIndex((h) => h.ok);
     const down = health.slice(0, index === -1 ? health.length : index).map((h) => `${h.implementation}: ${h.detail}`);
     const up = health[index];
     if (up === undefined) {
-      problems.push(`${id} cannot be reached on host ${registry.host.host} (${down.join("; ")})`);
+      // A tool the set added (`RunConfig.optionalTools`) and the person did not name is dropped with a warning: only a named tool fails the run.
+      if (optional.includes(id)) {
+        const reason = `cannot be reached on host ${registry.host.host} (${down.join("; ")})`;
+        dropped.push({ capability: id, reason });
+        notes.push(`${id} was dropped: ${reason}${id === "lean.lsp" ? "; install uv to use it, see documentation/lean-lsp.md" : ""}`);
+      } else problems.push(`${id} cannot be reached on host ${registry.host.host} (${down.join("; ")})`);
       continue;
     }
     tools.push({ capability: id, implementation: up.implementation, version: up.version });
     if (down.length > 0) notes.push(`${id} uses ${up.implementation}, because ${down.join("; ")}`);
   }
-  return { tools, problems, notes };
+  return { tools, problems, notes, dropped };
 }
 
 /**

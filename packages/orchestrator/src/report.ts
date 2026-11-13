@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  BlobStore,
   chainOfJournal,
   type EventDataMap,
   type HarnessEvent,
@@ -17,7 +18,12 @@ import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/
 import { type LibraryReport, libraryReport, renderLibraryReport } from "@seshat/library";
 import { type Redundancy, redundancy } from "@seshat/memory";
 import { type CacheReport, cacheReport } from "./cache-report.ts";
+import { type RoleLine, roleReport } from "./role-report.ts";
+import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.ts";
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
+import { type GraphReport, graphReport, renderGraphReport } from "./graph-report.ts";
+import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
+import { informalLines, type InformalLine, renderInformal } from "./informal-view.ts";
 
 export interface ProblemLine {
   problemId: string;
@@ -37,6 +43,8 @@ export interface ProblemLine {
 
 /** What a run did, read from its journal alone. */
 export interface RunReport {
+  /** Where the dollars and minutes of the loop go (plan change CA3, documentation/report.md); absent when the run made no attempt. */
+  loop?: LoopTelemetry;
   runId: string;
   benchId: string;
   host: string;
@@ -85,6 +93,13 @@ export interface RunReport {
   attempts: { total: number; outcomes: Record<string, number>; stoppedBy: Record<string, number>; failures: Record<string, number> };
   leanChecks: { total: number; outcomes: Record<string, number>; medianMs?: number; p90Ms?: number };
   /**
+   * The harness's search of Lean declarations (`RunConfig.leanSearch`): the requests to `lean.search` and the `lean.check` runs that verify
+   * their hits, apart from `leanChecks`, which counts the provers' and the validator's own. Absent when the run made none.
+   */
+  leanSearch?: { requests: number; requestMs: number; checks: number; checkMs: number };
+  /** What lines M2 and M4 did (`graph-report.ts`), from the journal alone. Absent when neither was enabled. */
+  graph?: GraphReport;
+  /**
    * The provers' calls of each capability besides lean.check: calls by outcome, the attempts that
    * made them, and how many of those attempts found a proof.
    */
@@ -94,11 +109,22 @@ export interface RunReport {
    * cost is in `usd` and the token counts.
    */
   modelCalls?: { total: number; outcomes: Record<string, number>; lines: Record<string, number> };
+  /** The tool `consult` (`RunConfig.consult`, plan change NL3, beta): the model, the calls the provers made and what they cost. Absent when the run was not configured with it and made none. */
+  consult?: { model: string; calls: number; usd: number };
+  /** Calls and cost per role (`RunConfig.roles`, documentation/models.md, "Roles"): one entry for each role the run named. Absent when it named none. */
+  roles?: RoleLine[];
   /**
    * The sessions' requests sent again after a transient error cut their response (documentation/m0-loop.md, "Transient errors"):
    * how many, in how many attempts, and what the cut responses were charged (in `usd` already). Absent when there was none.
    */
   retries?: { requests: number; attempts: number; usd: number };
+  /**
+   * The sessions that the repeat rule of line M6 ended (plan change CA7, documentation/guards.md): the reason each journaled, which names the
+   * failure and the strategy. Absent when there was none.
+   */
+  repeatStops?: string[];
+  /** The run's budget in rounds (plan change CA8): the rounds that began and the problems parked, with the round and what they had spent. Absent when the run had none. */
+  rounds?: { rounds: number; capUsd: number; parked: Array<{ problemId: string; round: number; usd: number }> };
   /**
    * The spend by site, the biggest first: the provers' sessions under `prover.session`, the lines'
    * one-shot calls under the site they name, and `unknown` for a call recorded before the tags. It
@@ -143,6 +169,13 @@ export interface RunReport {
    * credited to them.
    */
   memory?: MemoryLine;
+  /**
+   * The informal proof first of each problem that has one (plan changes PA13, AL3, documentation/informal.md): added by `writeReport`, which reads the blobs.
+   * The text of an accepted proof is there, cut at 4000 characters, only when no Lean proof of the problem was certified. Absent when the run had none.
+   */
+  informal?: InformalLine[];
+  /** The intake step of each problem that had one (Task 36, documentation/literature.md); absent for a run without it. */
+  intake?: IntakeLine[];
 }
 
 /** Off-peak spend and waits (documentation/human.md, "Off-peak"). */
@@ -365,6 +398,7 @@ export function rungSpend(events: readonly HarnessEvent[]): Map<string, { endedA
 }
 
 export function buildReport(events: readonly HarnessEvent[]): RunReport {
+  const loop = loopTelemetry(events);
   const started = events.find((e) => e.type === "run.started")?.data as EventDataMap["run.started"] | undefined;
   if (started === undefined) throw new Error("the journal has no run.started event");
   // A run that was resumed finishes again: its end is the last one, if no resumption came after it.
@@ -387,11 +421,17 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const problems: ProblemLine[] = [];
   const outcomes: Record<string, number> = {};
   const attempts = { total: 0, outcomes: {} as Record<string, number>, stoppedBy: {} as Record<string, number>, failures: {} as Record<string, number> };
+  const repeatStops: string[] = [];
+  const rotation = { rounds: 0, capUsd: 0, parked: [] as Array<{ problemId: string; round: number; usd: number }> };
   const capabilities = new Map<string, string>();
   const checks: { total: number; outcomes: Record<string, number>; durations: number[] } = { total: 0, outcomes: {}, durations: [] };
+  // The search's own runs (actor `lean.search`): its requests, and the Lean checks that verify its hits. They are not the provers' checks.
+  const search = { requests: 0, requestMs: 0, checks: 0, checkMs: 0 };
+  const searchRuns = new Map<string, "requests" | "checks">();
   const tools = new Map<string, { calls: number; outcomes: Record<string, number>; attempts: Set<string> }>();
   const proofAttempts = new Set<string>();
   const modelCalls = { total: 0, outcomes: {} as Record<string, number>, lines: {} as Record<string, number> };
+  const consult = { calls: 0, usd: 0, model: undefined as string | undefined };
   // What a session that never finished cost, from its charges.
   const charges = new Map<string, { usd: number; inputTokens: number; outputTokens: number; cachedInputTokens: number }>();
   let usd = 0;
@@ -481,11 +521,30 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         offPeakUsd += Math.max(d.offPeakUsd ?? 0, offPeakCharged.get(d.attemptId) ?? 0);
         break;
       }
+      case "budget.round":
+        rotation.rounds += 1;
+        rotation.capUsd = event.data.capUsd;
+        break;
+      case "problem.parked":
+        rotation.parked.push({ problemId: event.data.problemId, round: event.data.round, usd: event.data.usd });
+        break;
+      case "node.recorded": {
+        const d = event.data.data;
+        if (event.data.kind === "drift" && typeof d === "object" && d !== null && !Array.isArray(d) && d.kind === "repeated_failure" && d.action === "stopped_session" && typeof d.detail === "string") {
+          repeatStops.push(d.detail);
+        }
+        break;
+      }
       case "model_call.finished": {
         const d = event.data;
         modelCalls.total += 1;
         count(modelCalls.outcomes, d.outcome);
         count(modelCalls.lines, d.line);
+        if (d.site === "consult") {
+          consult.calls += 1;
+          consult.usd += d.usd;
+          consult.model ??= d.model;
+        }
         usd += d.usd;
         inputTokens += d.inputTokens;
         outputTokens += d.outputTokens;
@@ -504,6 +563,10 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       case "tool_run.started": {
         const d = event.data;
         capabilities.set(d.toolRunId, d.capability);
+        if (event.actor === "lean.search" && (d.capability === "lean.check" || d.capability === "lean.search")) {
+          searchRuns.set(d.toolRunId, d.capability === "lean.check" ? "checks" : "requests");
+          break;
+        }
         // Only the provers' calls: an attempt's, and not the validator's Lean checks.
         if (d.capability === "lean.check" || d.attemptId === undefined) break;
         const use = tools.get(d.capability) ?? { calls: 0, outcomes: {}, attempts: new Set<string>() };
@@ -513,6 +576,12 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
         break;
       }
       case "tool_run.finished": {
+        const searchKind = searchRuns.get(event.data.toolRunId);
+        if (searchKind !== undefined) {
+          search[searchKind] += 1;
+          search[searchKind === "checks" ? "checkMs" : "requestMs"] += event.data.durationMs;
+          break;
+        }
         const capability = capabilities.get(event.data.toolRunId);
         if (capability !== "lean.check") {
           const use = capability === undefined ? undefined : tools.get(capability);
@@ -536,6 +605,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   }
   for (const [attemptId, value] of offPeakCharged) if (charges.has(attemptId)) offPeakUsd += value;
   const proofs = (outcomes.proved ?? 0) + (outcomes.refuted ?? 0) + (outcomes.candidate ?? 0);
+  const graph = graphReport(events, (started.config as { lines?: Array<{ id?: unknown }> } | null)?.lines?.flatMap((l) => (typeof l.id === "string" ? [l.id] : [])));
   const durations = [...checks.durations].sort((a, b) => a - b);
   const medianMs = percentile(durations, 0.5);
   const p90Ms = percentile(durations, 0.9);
@@ -603,6 +673,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ...(medianMs !== undefined ? { medianMs } : {}),
       ...(p90Ms !== undefined ? { p90Ms } : {}),
     },
+    ...(search.requests > 0 || search.checks > 0 ? { leanSearch: search } : {}),
+    ...(graph !== undefined ? { graph } : {}),
     tools: Object.fromEntries(
       [...tools].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, use]) => [
         id,
@@ -610,6 +682,14 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
       ]),
     ),
     ...(modelCalls.total > 0 ? { modelCalls } : {}),
+    ...(() => {
+      const model = (started.config as { consult?: { model?: unknown } } | null)?.consult?.model;
+      const named = typeof model === "string" ? model : consult.model;
+      return named !== undefined ? { consult: { model: named, calls: consult.calls, usd: consult.usd } } : {};
+    })(),
+    ...(roleReport(events) !== undefined ? { roles: roleReport(events) as RoleLine[] } : {}),
+    ...(repeatStops.length > 0 ? { repeatStops } : {}),
+    ...(rotation.rounds > 0 ? { rounds: rotation } : {}),
     ...(retries.requests > 0 ? { retries: { requests: retries.requests, attempts: retries.attempts.size, usd: retries.usd } } : {}),
     sites: siteSpend(events),
     ...(gateReport(events) !== undefined ? { gate: gateReport(events) as GateReport } : {}),
@@ -618,6 +698,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(lessons !== undefined ? { lessons } : {}),
     ...(heuristics !== undefined ? { heuristics } : {}),
     ...(archive !== undefined ? { archive } : {}),
+    ...(loop.attempts.length > 0 ? { loop } : {}),
+    ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
   };
 }
 
@@ -691,7 +773,7 @@ function memoryParagraph(m: MemoryLine): string[] {
 
 export function renderRunReport(report: RunReport): string {
   const c = report.config as
-    | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[] }
+    | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[]; toolsDropped?: { capability: string; reason: string }[] }
     | null;
   const o = report.outcomes;
   const given = c?.tools ?? [];
@@ -705,6 +787,7 @@ export function renderRunReport(report: RunReport): string {
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
       `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}` +
       `${report.packs !== undefined ? ` Packs: ${report.packs.map((p) => `${p.name} ${p.version} (${p.hash.slice(0, 12)})`).join(", ")}.` : ""}`,
+    ...(c?.toolsDropped ?? []).map((d) => `${d.capability} was dropped: ${d.reason}${d.capability === "lean.lsp" ? "; install uv to use it, see documentation/lean-lsp.md" : ""}.`),
     report.finished
       ? report.stopped !== undefined
         ? `The run stopped early: ${report.stopped}.`
@@ -741,6 +824,15 @@ export function renderRunReport(report: RunReport): string {
     ...(report.priceGaps !== undefined ? [priceGapsParagraph(report.priceGaps)] : []),
     `Attempts: ${report.attempts.total} (${counts(report.attempts.outcomes)}). Sessions ended by: ${counts(report.attempts.stoppedBy)}. ` +
       `Last check of the invalid ones: ${counts(report.attempts.failures)}.`,
+    ...(report.rounds !== undefined
+      ? [
+          `The run's budget in rounds: ${report.rounds.rounds} round(s), the last allowing each problem ${money(report.rounds.capUsd)} in all; ${report.rounds.parked.length} parking(s)` +
+            `${report.rounds.parked.length > 0 ? ` (${report.rounds.parked.slice(0, 5).map((p) => `${p.problemId} in round ${p.round} at ${money(p.usd)}`).join("; ")}${report.rounds.parked.length > 5 ? "; and more" : ""})` : ""}.`,
+        ]
+      : []),
+    ...(report.repeatStops !== undefined
+      ? [`Sessions ended by the repeat rule (${report.repeatStops.length}): ${report.repeatStops.slice(0, 5).join("; ")}${report.repeatStops.length > 5 ? `; and ${report.repeatStops.length - 5} more` : ""}.`]
+      : []),
     ...(report.retries !== undefined
       ? [
           `Requests sent again after a transient error (a cut stream, a reset connection, a 5xx or a 429): ${report.retries.requests} ` +
@@ -750,11 +842,20 @@ export function renderRunReport(report: RunReport): string {
     `Lean checks: ${report.leanChecks.total} (${counts(report.leanChecks.outcomes)})` +
       `${report.leanChecks.medianMs !== undefined ? `; median ${(report.leanChecks.medianMs / 1000).toFixed(1)} s` : ""}` +
       `${report.leanChecks.p90Ms !== undefined ? `, 90th percentile ${(report.leanChecks.p90Ms / 1000).toFixed(1)} s` : ""}.`,
+    ...(report.leanSearch !== undefined
+      ? [
+          `Lean search (not in the checks above): ${report.leanSearch.requests} request(s), ${(report.leanSearch.requestMs / 1000).toFixed(1)} s; ` +
+            `${report.leanSearch.checks} Lean check(s) of the hits, ${(report.leanSearch.checkMs / 1000).toFixed(1)} s.`,
+        ]
+      : []),
+    ...(report.graph !== undefined ? renderGraphReport(report.graph) : []),
     ...tools.map(
       ([id, use]) =>
         `${id}: ${use.calls} call(s) (${counts(use.outcomes)}) in ${use.attempts} attempt(s), ` +
         `${use.proofs} of which found a proof.`,
     ),
+    ...(report.consult !== undefined ? [`Consult (beta): ${report.consult.calls} call(s) to ${report.consult.model}, ${money(report.consult.usd)}; its answers are advice, no status came from them.`] : []),
+    ...(report.roles ?? []).map((r) => `Role ${r.role}: ${r.models.join(", ")}, ${r.calls} ${r.role === "prover" ? "session(s)" : "call(s)"}, ${money(r.usd)}.`),
     ...(report.modelCalls !== undefined
       ? [`The lines' model calls: ${report.modelCalls.total} (${counts(report.modelCalls.outcomes)}); by line: ${counts(report.modelCalls.lines)}.`]
       : []),
@@ -775,6 +876,7 @@ export function renderRunReport(report: RunReport): string {
     ...(report.heuristics !== undefined ? [renderHeuristicReport(report.heuristics)] : []),
     ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
+    ...(report.intake !== undefined ? [...renderIntake(report.intake), ""] : []),
     "Measured: validity and cost. Not measured here: the fidelity of the formal statements, taken as given by the bench, " +
       "and novelty, since the bench's problems are solved ones.",
     "",
@@ -803,6 +905,8 @@ export function renderRunReport(report: RunReport): string {
           ),
         ]
       : []),
+    ...(report.loop !== undefined ? ["", ...renderLoop(report.loop)] : []),
+    ...(report.informal !== undefined ? renderInformal(report.informal) : []),
   ];
   return `${lines.join("\n")}\n`;
 }
@@ -834,6 +938,15 @@ export function writeReport(dir: string): RunReport {
   const report = buildReport(events);
   const memory = memoryLine(join(dir, "journal.jsonl"), events);
   if (memory !== undefined) report.memory = memory;
+  const blobs = new BlobStore(join(dir, "blobs"));
+  const informal = informalLines(events, (hash) => {
+    try {
+      return blobs.get(hash);
+    } catch {
+      return undefined;
+    }
+  });
+  if (informal.length > 0) report.informal = informal;
   writeFileSync(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   writeFileSync(join(dir, "report.md"), renderRunReport(report));
   return report;

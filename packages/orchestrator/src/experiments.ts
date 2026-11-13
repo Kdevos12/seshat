@@ -1,7 +1,8 @@
 import { DECISION_SITES } from "@seshat/core";
-import { type AblationName, ablationLines, LINE_ORDER, SUSPENDED_LINES } from "@seshat/lines";
+import { type AblationName, ablationLines, type JsonObject, LINE_ORDER, SUSPENDED_LINES } from "@seshat/lines";
 import type { Arm } from "./ablation.ts";
-import { RunSetupError } from "./run.ts";
+import { type RunConfig, RunSetupError } from "./run.ts";
+import { benchAdditions, type DefaultsName, setConfig } from "./student.ts";
 
 /**
  * The experiments of the amendments (documentation/ablate.md, "Experiments"): each is a short list of arms that differ by one
@@ -23,6 +24,8 @@ export interface ExperimentContext {
   lines: string[];
   /** The models of the renderings experiment, one arm per rendering and model. */
   models: string[];
+  /** The host's profile, for the arms that are what `solve` would do there: the capabilities it offers and its check timeout. Absent: it offers everything. */
+  host?: { capabilities: Readonly<Record<string, unknown>>; checkTimeoutSec?: number };
 }
 
 /** The lines of the full cumulative configuration. */
@@ -37,6 +40,29 @@ const RUNG_LINES = ["M18", "M15", "M16"];
 export const DECIDE_SITES: string[] = Object.keys(DECISION_SITES).filter((site) => !site.startsWith("budget."));
 
 const arm = (name: string, description: string, lines: string[], rest: Partial<Arm> = {}): Arm => ({ name, description, lines, ...rest });
+
+/**
+ * An arm that is what `harness solve` gives a problem under a defaults set (Task 34b, decision I): the set's fields, lines and options, the
+ * budget gate (`setConfig`, the function `studentConfig` itself uses), and the set's `solve`-level switches as a bench problem gets them
+ * (`benchAdditions`: the intake with the bench's yes, the compute tool and `lean.search` if the host offers them). `plus` is what a later arm
+ * adds to a set, one line with its options, for example `{ lines: ["M12"], lineOptions: { M12: { blueprints: true } } }`.
+ */
+export function solveArm(name: string, description: string, defaults: DefaultsName, context: Pick<ExperimentContext, "host">, rest: Partial<Arm> = {}, plus: { lines?: string[]; lineOptions?: Record<string, JsonObject>; config?: Arm["config"] } = {}): Arm {
+  const host = context.host;
+  const set = setConfig(defaults, host?.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: host.checkTimeoutSec } : {});
+  const { lines, lineOptions, gate, tools: addedTools, ...config } = { ...set, ...benchAdditions(defaults, host === undefined ? undefined : (id) => id in host.capabilities) };
+  const options = { ...lineOptions, ...plus.lineOptions };
+  return {
+    name,
+    description,
+    lines: [...new Set([...(lines ?? []), ...(plus.lines ?? [])])],
+    ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
+    ...(gate !== undefined ? { gate } : {}),
+    ...(addedTools !== undefined && addedTools.length > 0 ? { tools: [...addedTools] } : {}),
+    config: { ...config, ...plus.config },
+    ...rest,
+  };
+}
 
 export const EXPERIMENTS: Experiment[] = [
   {
@@ -159,6 +185,24 @@ export const EXPERIMENTS: Experiment[] = [
     ],
   },
   {
+    name: "solve-defaults",
+    amendment: "CA2, CA21 (Task 34b)",
+    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, a fourth adds lines M2 (the graph) and M4 (the context compiler), neither of which is a default, a fifth adds refinement rounds (M12's option refine) to the blueprints arm, and its planner gets the informal proof too (`informalFirst`); a sixth, `solve-v2-informal`, adds only the informal proof first (a natural-language proof read by a verifier until three passes in a row say it is correct, handed on as a hint that Lean has not checked) to v2.",
+    notRun: "No number of the target exists until the arms run on real problems with a real model and Lean; the compute tool and lean.search are in an arm only if the host profile offers them. The turn limit, the signature and the question are what `solve` has because a person is there, and are not in the arms.",
+    arms: (context) => [
+      solveArm("solve-v1", "solve's configuration under defaults v1: the baseline", "v1", context),
+      solveArm("solve-v2", "solve's configuration under defaults v2, with the intake gate, the compute tool and lean.search as the host offers them", "v2", context, { versus: "solve-v1" }),
+      // Line M12's blueprints are not in v2: they have not run on a real Lean. This arm measures what they would add to it.
+      solveArm("solve-v2-blueprints", "solve-v2 plus line M12 with its option blueprints: holes that depend on each other, a session with tools per hole", "v2", context, { versus: "solve-v2" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true } } }),
+      // Lines M2 and M4 are not in v2: they have never run with a real model. This arm measures what they cost and what they add to it (plan change KG1).
+      solveArm("solve-v2-graph", "solve-v2 plus line M2 (the graph of claims and variants) and line M4 (the context compiler), with their default options", "v2", context, { versus: "solve-v2" }, { lines: ["M2", "M4"] }),
+      // Refinement rounds (CA12, PA11) and the repair pass (CA13): a planner call rewrites a blueprint that was refused or whose holes did not all get proved, and a session that ends on errors is cut to a blueprint. Set against the blueprints arm: only `refine` and `repair` differ.
+      solveArm("solve-v2-blueprints-refine", "solve-v2-blueprints plus M12's options refine and repair: a planner call rewrites a refused or stuck blueprint, at most 8 rounds a problem, and a session that ends on Lean errors has its failing blocks cut to sorry, at most 2 repairs a problem", "v2", context, { versus: "solve-v2-blueprints" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true, refine: true, repair: true } }, config: { informalFirst: {} } }),
+      // The informal proof first (PA13, NL2, AL1, AL2): a natural-language proof, read by a verifier until three passes in a row say it is correct (at most four generate-or-revise calls), goes to the outer prover's first briefing and to the planner as a hint that Lean has not checked. Set against solve-v2: only `informalFirst` differs.
+      solveArm("solve-v2-informal", "solve-v2 plus the informal proof first: a proof in natural language, generated and read by a verifier until 3 passes in a row (at most 4 generate-or-revise calls), handed to the first briefing as a hint not checked by Lean", "v2", context, { versus: "solve-v2" }, { config: { informalFirst: {} } }),
+    ],
+  },
+  {
     name: "m17",
     amendment: "LC3",
     description: "The run with the library environment extended (line M17) against the run without it.",
@@ -179,6 +223,6 @@ export function experiment(name: string): Experiment {
 
 /** The arms of an experiment. `lines` defaults to every line of the cumulative table. */
 export function experimentArms(name: string, context: Partial<ExperimentContext> = {}): Arm[] {
-  return experiment(name).arms({ lines: context.lines ?? allLines(), models: context.models ?? [] });
+  return experiment(name).arms({ lines: context.lines ?? allLines(), models: context.models ?? [], ...(context.host !== undefined ? { host: context.host } : {}) });
 }
 

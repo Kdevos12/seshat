@@ -11,7 +11,7 @@ the capability registry (manifests, host profiles, MCP boundary, contract tests)
 (independent provers on pi, in sessions that pass on their notes) and seventeen lines (M1: shared claims
 and negative memory; M2: the variant graph and its logical propagation; M11: small models and
 counter-models; M6: guards and drift detectors; M12: the scheduler and its ladder; M18: a curriculum of variants on its first rung; M15: an archive of alternative decompositions and the schemas of the closed ones, on its second rung, documented in [documentation/archive.md](documentation/archive.md); M17: a run in an extended Lean environment; the fleet policy, with sampled session settings, informal-first sessions and a soft failure memory; M8: data tables, hypotheses as programs run in a sandbox and a pool of conjectures; M13: theory exploration; M3: the lemma library, promoted auxiliary lemmas with BM25 and hybrid search, documented in [documentation/library.md](documentation/library.md); M4: the context compiler, a packet in place of the history, documented in [documentation/context.md](documentation/context.md); M5: lessons from accepted proofs and from failures that recur, judged by their effect, documented in [documentation/lessons.md](documentation/lessons.md); M14: typed repairs and Lakatos-style repair; M16: program search for scored subgoals; M10: a classical battery, a domain router, z3 and Vampire with reconstruction in Lean, before any model; documented in [documentation/induction.md](documentation/induction.md), [documentation/repair.md](documentation/repair.md) and [documentation/classical.md](documentation/classical.md)) are written and tested with a
-simulated model and a simulated Lean, and all of them work in one run (M7 and M9 are suspended). `harness ablate` runs the cumulative configurations, M0 and then each line in turn, or one experiment, on the same problems at the same budget and writes the comparison table; it reads everything from the journals, together with the reliability of the typed decisions, the cost-to-first-success curves and an entrenchment probe of the memory ([documentation/ablate.md](documentation/ablate.md)). `harness optimize-prompts` rewrites the prover's prompt (a file) GEPA-style on a dev split and proposes patches that beat the merged prompt on a held-out split and a temporal holdout; a person merges them ([documentation/prompts.md](documentation/prompts.md)). The bench also holds sequences of related problems and analogy and induction tags, and `bench-ext` converts the equational-theories data from a local cache ([documentation/bench.md](documentation/bench.md)). The work of a run is recorded as tasks in a ledger, and a run
+simulated model and a simulated Lean, and all of them work in one run (M7 and M9 are suspended). `harness ablate` runs the cumulative configurations, M0 and then each line in turn, or one experiment, on the same problems at the same budget and writes the comparison table; it reads everything from the journals, together with the reliability of the typed decisions, the cost-to-first-success curves and an entrenchment probe of the memory ([documentation/ablate.md](documentation/ablate.md)). `harness optimize-prompts` rewrites the prover's prompt (a file) GEPA-style on a dev split and proposes patches that beat the merged prompt on a held-out split and a temporal holdout; a person merges them ([documentation/prompts.md](documentation/prompts.md)). The graded bench (`bench/graded-v1.json`, built by `harness-bench graded` from local checkouts of formal-conjectures and PutnamBench, never vendored: grade A exercises, B competition problems, C research problems with a formal proof elsewhere, each admitted only if its statement compiles under the base Lean environment) is the yardstick of the capability work; `harness ablate` reads it through `--bench` and `--grade`, prints the paired protocol (Wilson intervals, an exact McNemar test, dollars per solved problem, problems solved per dollar against a baseline arm and the target line), and every run report gains a Loop section (checks and their seconds, output tokens per check, dollars by cache hit, miss and output, end context, repeated failures, open holes over time) ([documentation/bench.md](documentation/bench.md), [documentation/ablate.md](documentation/ablate.md)); the builder is tested on fixture checkouts and no index is committed, and no real Lean admission or paired run has been made. The bench also holds sequences of related problems and analogy and induction tags, and `bench-ext` converts the equational-theories data from a local cache ([documentation/bench.md](documentation/bench.md)). The work of a run is recorded as tasks in a ledger, and a run
 whose process ended is continued from its journal ([documentation/ledger.md](documentation/ledger.md)). A run can also stop by itself at a
 token, dollar or time limit or at a breakpoint, write an account of where it stands and wait for the research team, whose hints, signatures and
 steers go into the journal and change no claim's status ([documentation/human.md](documentation/human.md)). The Lean the harness runs against is written
@@ -22,7 +22,7 @@ The provers can also be given SageMath, an external program installed with Docke
 ([documentation/compute.md](documentation/compute.md)). Tools and skills can also be installed as packs (`harness add`), which add tools at level 2, human-written skills and heuristic cards and can never write a claim's status ([documentation/packs.md](documentation/packs.md)). With the fleet's option `heuristics`, each session can be given one heuristic card, a method of reasoning written by a person ("vary one parameter at a time"), drawn by family and card against a control share of sessions that get none, and `harness heuristics stats` counts what each family did against that control ([documentation/heuristics.md](documentation/heuristics.md)). A run can start on the memory of an earlier
 one (`--memory-from`), its learned records are stamped with where they come from, and the memory store can
 draw the unverified items a briefing shows at random and measure their effect, which lines M3 and M5 use
-([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance. A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); `harness ui` is a local web page (a loopback server with a per-session token, Host and Origin checks and a content security policy, a journal reader, provider settings with each key in a 0600 file outside the repository, and screens to start a problem, sign its statement, watch the spend and stop, read the result, continue, hint or steer, and see the read-only graph) that starts the same commands as subprocesses and cannot change a claim's status ([documentation/ui.md](documentation/ui.md); tested with a fake subprocess, the faux provider and one headless-browser smoke test, never with a real browser session by a person); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
+([documentation/memory.md](documentation/memory.md)). `harness solve` takes a problem of one's own, in Lean or in prose, with the defaults of a student: a mandatory small dollar allowance, the budget gate and probe first, the classical lines M1 and M10, the cheapest model that has a price, and a stop with an account at half the allowance; its defaults set `v2` (`--defaults v1` keeps the older one) also gives the provers an edit tool in place of a rewritten file, masks old check results, bounds the Lean checks, opens each session with a state card built from the journal in place of long notes and shares the run budget among its problems in rounds with a doubling cap (not yet run against a real Kimina or model). An option, `--lean-search`, makes the harness search Lean declarations after a check that did not accept the file (an unknown identifier, a hole's goal; a remote service, a local index or a pattern search, as the host sets them up), check every hit with Lean in the run's environment and append the names and signatures Lean printed to the check's answer; it is off in `harness run` and on in the defaults set `v2` of `harness solve` when the host offers it (`--no-lean-search` turns it off), asks the person's agreement in `harness solve` before it may use a remote service, is local with a private run, and is not run against a real Lean or search service ([documentation/lean.md](documentation/lean.md#search-pushed-by-the-harness)). A prose statement is formalized, shown with test lemmas on its first cases and signed by the person before any spend (a `statement.signed` event); `harness doctor` says what the machine lacks (Lean, the Kimina server, credentials, prices, network) and the Kimina settings that fit its memory and writes the host profile that isolates the certifier when bubblewrap or Docker works, and without isolation a run says plainly that its results stay `computed`. Before any paid session a run can take an intake step (on in `harness solve`'s set `v2`, with the compute tool for finite, graph and number statements when the host offers it; `--no-intake`, `--no-auto-tool` and `--no-lean-search` turn one off, `--defaults v1` none; the literature still needs the person's yes, and the intake's judge call is capped at 5% of a solve's allowance) ([documentation/literature.md](documentation/literature.md)): the literature is searched (`lit.search`: OpenAlex, arXiv, Semantic Scholar, zbMATH, a bench checkout's metadata), one judge call under a cap of $0.05 says whether a hit proves, refutes or restricts the exact statement, a quote counts only when it is in the fetched text, and the statement itself is tested (vacuity, `plausible`, the first cases); a settled hit or a vacuous statement is a breakpoint in a run with a person, and `--private` is one rule, enforced by the registry, for every capability that sends content of the problem to a third party (the literature, `lean.search`, the OEIS, LMFDB, FindStat and a hosted decision model: [documentation/trust.md](documentation/trust.md#third-parties)); none of it has run against a real site, model or Lean. Every run leaves `RESULT.md` beside its journal (built from the journal by code, rewritten after every certified result and every stop, rebuilt by `harness report`), and `harness view` writes one static HTML page of it ([documentation/quickstart.md](documentation/quickstart.md)); `harness ui` is a local web page (a loopback server with a per-session token, Host and Origin checks and a content security policy, a journal reader, provider settings with each key in a 0600 file outside the repository, and screens to start a problem, sign its statement, watch the spend and stop, read the result, continue, hint or steer, and see the read-only graph) that starts the same commands as subprocesses and cannot change a claim's status ([documentation/ui.md](documentation/ui.md); tested with a fake subprocess, the faux provider and one headless-browser smoke test, never with a real browser session by a person); none of it has run against a real model, Lean, bubblewrap or Docker. Nothing has run against a real
 Lean or a real model yet.
 
 ## How research flows
@@ -36,6 +36,8 @@ flowchart TB
   bench["Bench<br/>575 Lean problems"]:::built
   benchseq["Bench sequences and tags<br/>variants, shared files,<br/>analogy and induction"]:::built
   benchext["bench-ext<br/>equational-theories rows from a<br/>local cache, never vendored"]:::wait
+  protocol["Paired protocol<br/>Wilson intervals, exact McNemar,<br/>solved per dollar, target line"]:::built
+  graded["Graded bench<br/>A exercises, B competition, C research,<br/>admitted by Lean, from local checkouts"]:::wait
   ablate["harness ablate<br/>M0 then each line, or one experiment:<br/>same problems, same budget"]:::built
   measures["Measures from the journals<br/>spend per site, reliability and ECE,<br/>cache per rung and line, curves"]:::built
   probe["Entrenchment probe<br/>memory on against verified facts<br/>only, alarm in the report"]:::built
@@ -53,13 +55,14 @@ flowchart TB
   orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
+  graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
   defreview["Definition review<br/>new definitions unreviewed:<br/>not in claim statements"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
   m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::built
-  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers"]:::wait
+  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers<br/>blueprint: holes that use holes,<br/>hole sessions with tools, verdicts,<br/>refinement rounds: a planner call<br/>rewrites the blueprint (CA12)"]:::wait
   ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m18["Line M18: variant curriculum<br/>rung 1: special cases of a hard<br/>problem, a capped share of budget"]:::wait
   m15["Line M15: archive of decompositions<br/>cells, a Thompson pick of the one to extend,<br/>schemas from closed sub-DAGs"]:::wait
@@ -75,11 +78,16 @@ flowchart TB
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
-  solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults: small cap, gate, M1 and M10"]:::built
+  solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults v1 or v2: small cap, gate, M1 and M10"]:::built
+  consolidate["Consolidation pass (CA24, harness consolidate)<br/>cards, duplicate and unsupported lessons, a page whose<br/>every sentence cites journal events; a new run on the old one"]:::wait
+  hotloop["Cheaper hot loop (solve defaults v2)<br/>lean_edit in place of a rewritten file, old check results<br/>masked in batches, bounded Lean checks, a state card<br/>from the journal, the run budget in rounds"]:::wait
+  leanpush["Premises pushed (CA22, option leanSearch)<br/>after a check: a name search on each unknown identifier,<br/>a goal search on each hole; each hit checked with Lean"]:::wait
   signature["Signature of a prose statement<br/>formalized, shown with test lemmas,<br/>statement.signed before any spend"]:::wait
   doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::wait
   resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
   viewhtml["harness view<br/>one static HTML page from the journal,<br/>no server, no network, all text escaped"]:::built
+  intake["Intake, before any paid session<br/>three queries, one judge call under $0.05, a quote that must be<br/>in the fetched text; vacuity, plausible, test lemmas; off with --private"]:::wait
+  informal["Informal proof first (PA13, option informalFirst)<br/>a proof in natural language, a verifier reads the final text:<br/>correct x3 in a row, or revised, or regenerated; a hint,<br/>never a status; shown as not checked by Lean"]:::wait
   uipage["harness ui<br/>local page on 127.0.0.1: token, Host and Origin checks,<br/>escaped text, keys in a 0600 file, starts the commands"]:::built
 
   subgraph TOOLS["Capability registry"]
@@ -88,9 +96,11 @@ flowchart TB
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
     leanlsp["lean_lsp<br/>Lean language server"]:::wait
+    leansearch["lean_search<br/>premise search: remote service,<br/>local index, pattern"]:::wait
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
+    litsearch["lit_search<br/>OpenAlex, arXiv, Semantic Scholar,<br/>zbMATH, bench metadata"]:::wait
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
     smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
     vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
@@ -138,6 +148,11 @@ flowchart TB
   narrative -.->|"marked model-written"| account
   solve -->|"one-problem index,<br/>student config"| orchestrator
   solve -->|"prose"| signature
+  solve -->|"defaults v2"| hotloop
+  journal -->|"a finished run"| consolidate
+  llm -.->|"one call per open problem, capped"| consolidate
+  consolidate -->|"stamped cards and pages, as a new run<br/>(--memory-from)"| journal
+  hotloop -->|"edits, masked history,<br/>time-limited checks, state card,<br/>budget in rounds"| provers
   llm -.->|"formalizes prose"| signature
   signature -->|"statement.signed, as human"| journal
   doctor -->|"checks; writes the isolated<br/>host profile when it can"| certifier
@@ -164,6 +179,9 @@ flowchart TB
   m11 -->|"sequences"| oeis
   m11 -->|"negation proofs"| fast
   m11 -->|"nodes, computed edges"| journal
+  m11 -->|"statements about graphs,<br/>option M11.graphs"| graphhunt
+  graphhunt -->|"nauty graphs to 10 vertices"| sage
+  graphhunt -->|"negation from the witness"| fast
   bench -->|"problems, when<br/>M8 is on"| m8
   llm -->|"hypotheses as programs,<br/>step DAGs, programs"| m8
   m8 -->|"columns and hypotheses<br/>run in"| sandbox
@@ -228,6 +246,17 @@ flowchart TB
   provers --> leangoals
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
+  bench -->|"each problem, when intake is on"| intake
+  bench -->|"each problem, when informalFirst is on"| informal
+  informal -->|"an informal_proof node<br/>of the claim, never a status"| journal
+  informal -.->|"an accepted proof, marked,<br/>in the first briefing and the planner's prompt"| provers
+  intake -->|"queries, hits as data"| litsearch
+  intake -->|"literature and hygiene nodes,<br/>never a status"| journal
+  intake -.->|"a settled hit or a vacuous statement:<br/>a breakpoint"| team
+  fast -->|"unknown identifiers,<br/>holes' goals"| leanpush
+  leanpush -->|"at most 3 queries,<br/>5 hits each; never private"| leansearch
+  leanpush -->|"#check of the names,<br/>one Lean call"| leancheck
+  leanpush -->|"verified names and Lean's<br/>signatures, appended to the answer"| provers
   fleet -.->|"cold start:<br/>capped pseudo-counts"| decide
   libbuilder -->|"every file it wrote"| libgate
   libgate -->|"new theorems"| certifier
@@ -271,6 +300,9 @@ flowchart TB
   optprompts -.->|"real runs"| realopt
   ablate -.->|"real runs"| realablate
   benchext -.-> realablate
+  graded -->|"problems of one grade"| orchestrator
+  ablate -->|"same problems, same dollars"| protocol
+  graded -.-> realablate
 ```
 
 Blue: built and tested with the simulated model and Lean. Orange: written and tested with simulations, but it
@@ -316,7 +348,7 @@ loses being stopped ([documentation/graph.md](documentation/graph.md)). M2 waits
 like the fast check. M11: a statement of magmas or of a number is tried on batteries of small
 objects, a counter-model becomes a proof of the negation that Lean must check, and the verdicts
 give candidate edges between claims and a lookup of the numbers where it holds as a sequence
-([documentation/models.md](documentation/models.md)); it waits for a Lean server too. M6 adds the
+([documentation/models.md](documentation/models.md)); it waits for a Lean server too. With its option `graphs` (off by default) M11 also reads statements about simple graphs: a program the model writes (run in the sandbox) is tried on every graph up to isomorphism to 8 vertices, and to 10 through SageMath's nauty when the host has it; a hit becomes a Lean refutation from the templates of `lean/SeshatLib/Finite`, through `validate`, and stays evidence until Lean accepts it; "none found up to N vertices" is evidence with its filters, never a status; a local search on a model-written score and M16's program search for families go beyond the lists ([documentation/models.md](documentation/models.md#statements-about-graphs), [documentation/finite-lean.md](documentation/finite-lean.md)); the Lean templates have never been compiled, and SageMath's generator and a real model have not run. M6 adds the
 guards against hallucination and the drift detectors: neutral framing, citations that must
 resolve, no raw error text, anchored revisions, and sessions stopped when they loop
 ([documentation/guards.md](documentation/guards.md)). The fleet policy chooses what each session
@@ -325,7 +357,7 @@ where one does badly, and sends hard decisions to a stronger model. It samples e
 (temperature, thinking level, a diversity directive, standard or informal-first mode), discounts old failures per run and keeps
 a floor of exploration, so that a failure of a weaker configuration does not close a door for good
 ([documentation/fleet.md](documentation/fleet.md)). Informal-first sessions and the multi-call `judge` helper
-have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover, chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); M18, the first rung, solves easier variants of a hard problem with a capped share of its budget and feeds their proofs to later sessions ([documentation/curriculum.md](documentation/curriculum.md)); M15, the second rung, keeps several decompositions of a problem alive in cells, chooses by Thompson sampling the one a session extends, and shows the schemas of closed decompositions to the sessions of other problems through the randomized inclusion ([documentation/archive.md](documentation/archive.md)); all three have only run against a simulated model and Lean, and nothing says M18 or M15 pays.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
+have only run against a simulated model. M12 schedules the work between sessions: a prover's sketch with named `sorry` holes becomes claims joined by a decomposition that Lean checks, each hole is a task for a short inner prover (with the option `blueprints`, the holes may declare that they use each other, `-- uses: aux_a`, and a blueprint with a cycle, a hole that reaches no target or one that restates the target is refused; each hole is then worked in a short session with tools on a small file of stubs, after a pre-flight with no model, and ends `proved`, `statement_wrong` or `too_hard`, a negation becoming `computed` only through a Lean-checked proof; none of it has run against a real Lean or model), chosen by a given-clause loop with weighted proof numbers, and a problem that spends its budget without Lean progress moves up a ladder of lines ([documentation/scheduler.md](documentation/scheduler.md)); M18, the first rung, solves easier variants of a hard problem with a capped share of its budget and feeds their proofs to later sessions ([documentation/curriculum.md](documentation/curriculum.md)); M15, the second rung, keeps several decompositions of a problem alive in cells, chooses by Thompson sampling the one a session extends, and shows the schemas of closed decompositions to the sessions of other problems through the randomized inclusion ([documentation/archive.md](documentation/archive.md)); all three have only run against a simulated model and Lean, and nothing says M18 or M15 pays.  `decide` puts a typed choice, score or yes/no to a decision-only model (Jev, optional, off by default,
 with the run's own model as the default and the fallback) to order work, never to change a claim's status; with Jev on, short proof states go to a third party, and it has never run against the real service
 ([documentation/decide.md](documentation/decide.md)). The mechanisms are lines that a
 run switches on (`harness run --lines M1,M10` or `--ablation M10`), so that each is measured against
@@ -336,6 +368,8 @@ real ablation waits for a model, a Lean server and, for the decisions and the eq
 This diagram changes with the code: a change to the research flow updates it in the same commit
 ([documentation/development.md](documentation/development.md#conventions)).
 
+The consolidation pass (`harness consolidate RUN_DIR`) looks backward over a finished or paused run and writes, in a new run started on it, the state card of each open problem, merged duplicate lessons, flagged unsupported ones and, with a model and a dollar cap, one page per problem of which every sentence cites journal events; `harness run --consolidation` shows the page to a later run, drawn and judged by effect ([documentation/consolidation.md](documentation/consolidation.md)); a real model has not run it.
+
 ## Commands
 
 ```sh
@@ -344,6 +378,7 @@ pnpm check
 pnpm harness capabilities
 pnpm harness models
 pnpm harness doctor    # what this machine lacks, and the isolated host profile when it can write one
+pnpm harness lit probe [--out DIR]    # asks each literature site once and shows what it answers and what the parser makes of it (never run against a real site yet)
 pnpm harness solve "Every even number above two is a sum of two primes." --max-usd 2    # or Lean, or a file; RESULT.md in the run directory
 pnpm harness view runs/RUN_ID    # runs/RUN_ID/view.html, static
 pnpm harness ui [--port N] [--open]    # the local interface on 127.0.0.1 only; the address it prints carries a token
@@ -351,10 +386,12 @@ pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --mod
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --tool compute.sage
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
 pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5 --turn-usd 2
+pnpm harness consolidate runs/RUN_ID [--model PROVIDER/ID --max-usd 1]    # a new run on the old one: cards, merged lessons, a cited page; --consolidation on run shows it
 pnpm harness hint runs/RUN_ID --claim CLAIM_ID "text"    # then sign, steer, and: harness resume runs/RUN_ID --checkout ...
 pnpm harness lean-env resolve base
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation    # the cumulative configurations
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --experiment ladder
+pnpm harness ablate --experiment solve-defaults --bench bench/graded-v1.json --grade B --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID    # solve under defaults v1 against v2
 pnpm harness optimize-prompts --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 40 --cutoff 2026-01-01 --split dev --max-usd 300   # proposals/ID: candidates, evidence, patches; changes no prompt
 pnpm harness chunks runs/RUN_ID    # cost to first success for K provers in parallel
 pnpm harness probe runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID

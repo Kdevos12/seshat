@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type ProblemEntry } from "@seshat/bench";
-import { ablateCommand, chunksCommand, commandArms, splitBench } from "../src/ablate-command.ts";
+import { ablateCommand, ablateHost, chunksCommand, commandArms, splitBench } from "../src/ablate-command.ts";
 import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
 import { consortium } from "./turns-helpers.ts";
 import { scriptedRun, type ScriptedSpec } from "./ablate-helpers.ts";
@@ -69,6 +69,28 @@ describe("harness ablate", () => {
     assert.throws(() => commandArms({ lines: ["M1"] }), RunSetupError);
   });
 
+  it("runs only the arms --arms names, in the experiment's order, and refuses an unknown name with the list", () => {
+    const names = (arms: readonly string[]) => commandArms({ experiment: "packet-mode", arms }).map((a) => a.name);
+    assert.deepEqual(names(["naive", "append_only"]), ["append_only", "naive"], "the experiment's order, not the order given");
+    assert.deepEqual(commandArms({ experiment: "packet-mode" }).map((a) => a.name), ["prefix_tail", "append_only", "recompiled", "naive"], "absent: every arm");
+    assert.throws(() => names(["naive", "nope"]), (e: unknown) => e instanceof RunSetupError && /"nope"/.test(e.message) && /prefix_tail, append_only, recompiled, naive/.test(e.message));
+    assert.throws(() => commandArms({ arms: ["M0"] }), RunSetupError);
+    const kept = commandArms({ experiment: "packet-mode", arms: ["append_only", "naive"] });
+    assert.equal(kept[0]?.versus, undefined, "versus prefix_tail, which is not chosen");
+    assert.equal(kept[1]?.versus, undefined);
+    assert.equal(commandArms({ experiment: "renderings", arms: ["list", "merged"] })[1]?.versus, "list", "a versus arm that is chosen stays");
+  });
+
+  it("runs one arm whose versus arm is not chosen, without a comparison", async () => {
+    const dir = join(tempDir("mh-ablate-arms-"), "out");
+    const seen: RunOptions[] = [];
+    const result = await ablateCommand({ template, config: base, problems, dir, experiment: "packet-mode", arms: ["naive"], lines: ["M1", "M4"], run: fake(seen), print: () => undefined });
+    assert.equal(seen.length, 1);
+    assert.equal(result.arms.length, 1);
+    assert.equal(result.arms[0]?.comparison, undefined);
+    assert.ok(existsSync(join(dir, "ablation.md")));
+  });
+
   it("runs an experiment, writes ablation.md and ablation.json, and prints the table with what was not run", async () => {
     const dir = join(tempDir("mh-ablate-cmd-"), "out");
     const printed: string[] = [];
@@ -101,6 +123,46 @@ describe("harness ablate", () => {
   });
 });
 
+describe("problems out of reach (PA6)", () => {
+  const tagged = problems.map((p) => (p.id === "p2" ? { ...p, reach: "small_budget_out_of_reach" as const, reachReason: "no Mathlib" } : p));
+  const twoSpec: ScriptedSpec = { problems: [{ id: "p1", outcome: "proved", attempts: [{ outcome: "valid", usd: 0.4 }] }, { id: "p2", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p3", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p4", outcome: "unsolved", attempts: [{ usd: 0.5 }] }, { id: "p5", outcome: "unsolved", attempts: [{ usd: 0.5 }] }] };
+  const run = async (o: RunOptions): Promise<RunResult> => {
+    const r = scriptedRun(twoSpec, o.dir);
+    const report = buildReport(r.events);
+    return { runId: report.runId, dir: o.dir, problems: [], usd: report.usd, report };
+  };
+
+  it("reports all problems and the problems in reach apart, and pairs on the ones in reach", async () => {
+    const dir = join(tempDir("mh-ablate-reach-"), "out");
+    const result = await ablateCommand({ template, config: base, problems: tagged, dir, configs: ["M0", "M1"], run, print: () => undefined });
+    assert.deepEqual(result.outOfReach, ["p2"]);
+    assert.equal(result.protocolAll?.arms[0]?.problems, 5);
+    assert.equal(result.protocol?.arms[0]?.problems, 4, "the verdicts use the problems in reach");
+    const text = readFileSync(join(dir, "ablation.md"), "utf8");
+    assert.match(text, /### All problems/);
+    assert.match(text, /### Problems in reach/);
+    assert.match(text, /The same 4 problem\(s\)/);
+  });
+
+  it("keeps the one table when nothing is tagged", async () => {
+    const dir = join(tempDir("mh-ablate-reach-"), "out");
+    const result = await ablateCommand({ template, config: base, problems, dir, configs: ["M0", "M1"], run, print: () => undefined });
+    assert.equal(result.outOfReach, undefined);
+    assert.equal(result.protocolAll, undefined);
+    assert.doesNotMatch(readFileSync(join(dir, "ablation.md"), "utf8"), /### All problems/);
+  });
+
+  it("warns when the run budget is below sample x cap, and not otherwise", async () => {
+    const lines: string[] = [];
+    const config = { ...base, budget: { problemUsd: 1, runUsd: 3 } };
+    await ablateCommand({ template, config, problems, dir: join(tempDir("mh-ablate-reach-"), "out"), configs: ["M0"], run, print: () => undefined, log: (l) => lines.push(l) });
+    assert.equal(lines.filter((l) => /below 5 problem\(s\) x the cap of \$1/.test(l)).length, 1);
+    const quiet: string[] = [];
+    await ablateCommand({ template, config: { ...base, budget: { problemUsd: 1, runUsd: 5 } }, problems, dir: join(tempDir("mh-ablate-reach-"), "out"), configs: ["M0"], run, print: () => undefined, log: (l) => quiet.push(l) });
+    assert.equal(quiet.filter((l) => /^warning/.test(l)).length, 0);
+  });
+});
+
 describe("harness chunks", () => {
   it("prints the curves of a run directory and refuses one without a journal", () => {
     const dir = tempDir("mh-chunks-");
@@ -110,5 +172,28 @@ describe("harness chunks", () => {
     assert.match(out.join(""), /Cost to first success/);
     assert.throws(() => chunksCommand([tempDir("mh-chunks-empty-")], () => undefined), /no journal/);
     assert.throws(() => chunksCommand([], () => undefined), /needs a run directory/);
+  });
+});
+
+describe("the host of the solve-defaults arms", () => {
+  it("is the one solve takes, and every other experiment keeps its default", () => {
+    const saved = process.env.HARNESS_HOST;
+    delete process.env.HARNESS_HOST;
+    const withProfile = tempDir("mh-hosts-");
+    const without = tempDir("mh-hosts-");
+    mkdirSync(join(withProfile, "hosts"), { recursive: true });
+    writeFileSync(join(withProfile, "hosts", "sandboxed.json"), "{}");
+    try {
+      assert.equal(ablateHost("solve-defaults", undefined, withProfile), "sandboxed");
+      assert.equal(ablateHost("solve-defaults", undefined, without), "local");
+      assert.equal(ablateHost("solve-defaults", "mine", withProfile), "mine");
+      assert.equal(ablateHost("ladder", undefined, withProfile), "local");
+      assert.equal(ablateHost(undefined, undefined, withProfile), "local");
+      process.env.HARNESS_HOST = "fromenv";
+      assert.equal(ablateHost("solve-defaults", undefined, withProfile), "fromenv");
+    } finally {
+      if (saved === undefined) delete process.env.HARNESS_HOST;
+      else process.env.HARNESS_HOST = saved;
+    }
   });
 });

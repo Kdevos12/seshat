@@ -124,6 +124,8 @@ decides and a model does not:
 | `impasse` | Every open task of a problem is blocked; or, after `--impasse-attempts` finished attempts (default 8), the mean of the problem's success posterior is at or below `--impasse-posterior` (default 0.1). The posterior is Beta(1 + accepted, 1 + failed) over the problem's attempts whose outcome is `valid` or `invalid`; the attempts that were cut, aborted or errored say nothing about the proof. An attempt that is accepted ends the problem, so a problem that is still searched has no accepted attempt and its mean after n failed attempts is 1/(2 + n): exactly 0.1 at 8. The boundary is included, so the defaults fire at the 8th failed attempt, as "8 attempts" says (a test pins it). Also when a problem ends `unsolved` |
 | `settled` | A problem ends `proved` or `refuted`: a certified result is worth a person's eyes before the run goes on |
 | `disagreement` | A `judgment` node with `data.disagreement: true` is recorded: two informal validators did not agree (plan change PC9). The node is the lines' to write; the harness only reads it |
+| `literature` | The intake step ([literature.md](literature.md)) kept a hit that a judge says proves or refutes the exact statement, with a quote that is in the fetched text (`settled`). Struck before any session is paid for; the problem waits, the account lists the source, its link, the verdict and the quote as data, and the next turn goes on without searching again. Only with `--lit` or an `intake` in the run's configuration |
+| `vacuous` | The intake step's vacuity test: Lean proved that no values satisfy the statement's hypotheses. The same stop, before any session |
 
 With the budget gate on ([scheduler.md](scheduler.md#the-budget-gate)), a problem the gate stopped after its probe is an impasse too: the turn ends with the `impasse` breakpoint (the gate's own, written whatever the attempt count is), the problem is not finished, and the next turn asks the gate again, with a new round of draws, after the team's answer.
 
@@ -228,6 +230,14 @@ last line a crash cut (resume first).
 
 A focus or a drop names a claim that exists: the claim of a problem the run has begun. A problem that has
 not begun has no claim yet.
+
+### A person's sketch (CA14)
+
+`harness solve --sketch FILE` gives the run your own informal proof, or a hint, before it starts: a text file of at most 20 000 characters (longer, empty or unreadable is a `RunSetupError`, before anything is spent). It goes with one statement: `RunOptions.sketch` of a run with several problems is a `RunSetupError`, and `harness run` has no `--sketch`. The run journals it once, right after `problem.registered`, as a `hint` node of the problem's claim with `provenance: "human"` and `sketch: true`, written by `human:NAME`, where NAME is the person the run is on behalf of (`--as NAME`, else `SESHAT_USER`, else the login name; `human:person` when a run has no name at all). It is evidence of what a person said and nothing more: no status of any claim is set or touched by it, and a proof that follows it is checked like any other.
+
+It reaches two places, as unverified data and never as a system instruction. The outer prover's first briefing (the first session of each prover, not the later ones) gets a section "A sketch from NAME": the text quoted line by line, with a sentence saying it is informal, unchecked, possibly wrong, and that only Lean's check says a proof is right. It is not among the "Hints from the team", which are the team's answers to an account. And the planner's prompt of a refinement round ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)) has the same text under "A sketch from NAME", before the format of a blueprint; a prompt without a sketch is what it was. Both readers read the node from the journal, so a resumed run keeps it.
+
+The screen is the hygiene the literature gives fetched text ([literature.md](literature.md)), with the lines kept (`screenSketch` in `@seshat/memory`): control, bidirectional and zero-width characters go, a run of three `<` or `>` becomes two so that the text cannot forge a delimiter, line ends are made `\n` and runs of empty lines one. It is not the strict screen of `screenProse` (a lemma's gloss, a lesson): that refuses code, `$`, `:=` and underscores, which a person's mathematics has, and the sketch is the person's own words, not a model's. Not run with a real model: `sketch.test.ts` checks the node and its actor, that no status moves, the first briefing and only it, the planner's prompt, the limits, and `harness solve`.
 
 ### What an answer can and cannot change
 

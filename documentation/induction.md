@@ -121,6 +121,24 @@ value of the other, over at least three distinct values: every column is a funct
 `monotone` (a never-decreasing relation that is not a function). They are facts about the table, which
 the conjecturing then turns into claims to prove.
 
+## The first cases the harness pushes
+
+A table of small cases does not need line M8 when the statement itself says what to evaluate. With `RunConfig.firstCases` (plan change PA10; on in
+`harness solve`'s set `v2`, off in `v1`) and a compute tool in the run (`autoTool`, or `compute.sage` among the tools), the harness does this once for
+each problem before the provers start, with no model call: it reads the statement's own expression (`first-cases.ts`), asks the compute capability
+for its values at n = 0 or 1 (1 when a hypothesis says n is positive) up to 8 values, and, when the host offers `oeis.search`, the run is not private
+and the person did not refuse third parties, looks the left side's integer sequence up in the OEIS. The first session's opening message then has a
+section "First cases (computed by the harness)": the table, and the ids and names of up to three OEIS matches, marked as computed data and not a
+proof. The table's computation and the OEIS call are tool runs of the journal (actors `harness:first_cases` and `harness:first_cases_oeis`); nothing
+here changes a claim's status or writes a claim.
+
+The translator reads these shapes and no other: a signature with exactly one binder `(n : ℕ)` or `(n : ℤ)` (the other binders are hypotheses),
+whose conclusion is one equation, a side of which is built from numerals, the parameter, `+ - * ^`, parentheses, type ascriptions, `Nat.choose a b`,
+`Nat.factorial a`, and sums or products over `Finset.range`, `Finset.Icc` or `Finset.Ico`. Division and `%` are not read, nor is a subtraction in ℕ
+(it truncates; it is read only when the statement itself names ℤ, ℚ or ℝ), nor a quantifier or another relation. A statement outside them, with no
+sum, product, binomial or factorial, or whose computation fails gets no section and nothing is said of it. Not run: a real Sage or OEIS; the tests
+use a stand-in for each.
+
 ## Hypotheses, informal steps, test lemmas, interest and the pool
 
 `proposeHypotheses(llm, {target, table, count, known, round, model})` asks a model (site
@@ -286,6 +304,25 @@ verdict) or `failed` (a search that threw, or a claim with no specification). An
 `running`; the resumed run makes it ready again and the search is run again from the journal (model calls `reuse`d, a
 finished search read from its `search_result` node). The briefing reads those nodes, so a resumed process has it too. Sage scoring
 ran against a stand-in only.
+
+## Graph search beyond the lists
+
+Plan change CA20 (Task 41), for line M11's option `graphs` ([models.md](models.md#statements-about-graphs)); `graphSearch` in
+`graph-search.ts`, which the orchestrator gives M11. M11 asks the model for a predicate and a score about graphs and tries the predicate on every
+graph of a battery; when nothing is found and a score exists, two searches run, in the sandbox above, bounded by `GRAPH_SEARCH_BOUNDS`
+(120 steps, 6 restarts, 20 s of wall time, at most 12 vertices, 24 moves scored in each step):
+
+- **Local search.** Hill climbing with restarts: a random graph, then each step scores `neighbors` moves (add or remove an edge, add or
+  remove a vertex within the filter's range) in one sandbox run and takes the best, sideways moves included; a climb that does not
+  improve for 25 steps restarts. A graph whose score reaches 1 (and that passes the filter) is a hit. The draws come from `seeded(seed)`, the seed
+  M11 derives from the run's seed and journals, so the same seed and score give the same graph (unless the wall time cuts the search).
+- **Families.** M16's program search (`runSearch`: islands, the same prompt, the sandbox, `reuse`d model requests) with a `SearchSpec`
+  whose programs map a parameter `k` (1 to 8) to a graph `{n, edges}` and whose score is the model's graph score summed over the
+  parameters. This is the hook: no change to `evolve.ts` or `m16.ts` was needed (the smallest change is none). Each program that
+  scored is run on the parameters and its graphs are tested with the predicate. Model requests are the ones M11 has left of its cap; none left, none made.
+
+Every field of the filter M11 records (vertex range, edge range, connectivity) is applied to a graph before it counts as a hit, on both paths; `bounds.callMs` (default 500) is the sandbox's time for one call. A hit is returned to M11, which writes the Lean refutation and submits it through `validate`: neither search changes a status. The tests are in
+`test/graph-search.test.ts` (a planted counterexample found with a fixed seed and found again by a replay, the bounds, a family proposed by the faux model).
 
 ## The counterexample set (the CEGIS rule, PD5)
 

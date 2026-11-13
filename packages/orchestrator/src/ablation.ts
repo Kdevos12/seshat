@@ -11,6 +11,8 @@ import { LINES } from "./lines.ts";
 import { type LabeledDecision, labelDecisions, reliability, type SiteReliability } from "./reliability.ts";
 import { type RunLabel, runLabel } from "./run-label.ts";
 import { signTest } from "./probe.ts";
+import { refusalLine } from "./provider-errors.ts";
+import { type Protocol, pairedProtocol } from "./protocol.ts";
 import { measureRun, type RunMeasures } from "./measures.ts";
 import { buildReport, type RunReport } from "./report.ts";
 import { checkConfig, RunSetupError, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
@@ -38,6 +40,11 @@ export interface Arm {
   tools?: string[];
   /** A candidate prompt in place of the merged one (`harness optimize-prompts` measures its candidates as arms; documentation/prompts.md). */
   prompts?: RunConfig["prompts"];
+  /**
+   * Other `RunConfig` fields of this arm, laid over the table's after everything above (additive; `lines`, `lineOptions`, `gate` and `tools`
+   * have their own fields). The `solve-defaults` experiment puts the set's flags, the intake, `autoTool` and `leanSearch` here.
+   */
+  config?: Partial<Omit<RunConfig, "lines" | "lineOptions" | "gate" | "tools">>;
   /** The arm this one is compared with. Default: the arm before it in the table. */
   versus?: string;
 }
@@ -61,6 +68,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
   const gate = arm.gate === undefined ? baseGate : arm.gate === false ? undefined : arm.gate;
   return {
     ...shared,
+    ...(arm.config ?? {}),
     ...(arm.model !== undefined ? { model: arm.model } : {}),
     tools: arm.tools ?? base.tools,
     ...(arm.lines.length > 0 ? { lines: arm.lines } : {}),
@@ -77,7 +85,7 @@ export function armConfig(base: RunConfig, arm: Arm): RunConfig {
  * changes what the models see, so the arms would no longer differ by their lines alone), a configuration a run would refuse, a
  * suspended or unknown line, an option a line does not have, two arms with one name.
  */
-export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES): string[] {
+export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemented: LineRegistry = LINES, options: { baseline?: string; target?: number } = {}): string[] {
   const problems: string[] = [];
   const refusal = ablationRefusal({ consortium: base.consortium });
   if (refusal !== undefined) problems.push(refusal);
@@ -92,6 +100,8 @@ export function ablationProblems(base: RunConfig, arms: readonly Arm[], implemen
     if (arm.packetMode !== undefined && !PACKET_MODES.includes(arm.packetMode)) problems.push(`arm ${arm.name}: unknown packet mode ${String(arm.packetMode)}`);
     problems.push(...checkDecideSettings(arm.decide).map((p) => `arm ${arm.name}: ${p}`));
   }
+  if (options.target !== undefined && !(Number.isFinite(options.target) && options.target > 0)) problems.push(`--target is a ratio above 0, got ${options.target}`);
+  if (options.baseline !== undefined && !names.has(options.baseline)) problems.push(`the baseline arm ${options.baseline} is not in the table`);
   for (const arm of arms) if (arm.versus !== undefined && !names.has(arm.versus)) problems.push(`arm ${arm.name} is compared with ${arm.versus}, which is not in the table`);
   return problems;
 }
@@ -151,6 +161,19 @@ export interface AblationResult {
   label: RunLabel;
   /** What the difficulty tiers come from: `M0` (its row has no split), a pilot run, or absent when the table has neither. */
   difficultyBasis?: string;
+  /** The paired protocol of plan change CA2 (documentation/ablate.md): intervals, dollars, the pairs against the baseline arm and the target. */
+  protocol?: Protocol;
+  /**
+   * The problems among `problems` that the bench tags `small_budget_out_of_reach` (plan change PA6); absent when there are none. When present,
+   * `protocol` is over the others (the verdicts use the problems in reach) and `protocolAll` is the same protocol over every problem.
+   */
+  outOfReach?: string[];
+  protocolAll?: Protocol;
+  /**
+   * Set when an arm's run ended on a refusal of the model provider (a balance, a key): the arm that was refused and why, and the arms
+   * that were not run. The comparison is not valid: `arms` holds only the arms that finished before it, and there is no protocol.
+   */
+  refusal?: { arm: string; reason: string; notRun: string[] };
   arms: ArmResult[];
 }
 
@@ -242,6 +265,9 @@ export interface AblationInput {
   notRun?: readonly string[];
   /** The outcomes of a pilot run, which the difficulty tiers come from. Default: the arm M0 when the table has one (its own row is not split). */
   pilot?: RunMeasures;
+  /** The arm the protocol sets the others against (default: the first) and the ratio of problems solved per dollar it must reach (default 1.5). */
+  baseline?: string;
+  target?: number;
   log?: (line: string) => void;
 }
 
@@ -256,7 +282,7 @@ const slug = (name: string): string => name.replace(/[^A-Za-z0-9._-]+/g, "_");
  * that stops early (the run budget, Lean down) is measured as it stands and says why.
  */
 export async function runAblation(input: AblationInput): Promise<AblationResult> {
-  const problems = ablationProblems(input.config, input.arms);
+  const problems = ablationProblems(input.config, input.arms, LINES, { ...(input.baseline !== undefined ? { baseline: input.baseline } : {}), ...(input.target !== undefined ? { target: input.target } : {}) });
   if (problems.length > 0) throw new RunSetupError(`the ablation cannot start: ${problems.join("; ")}`);
   if (input.arms.length === 0) throw new RunSetupError("the ablation has no configuration to run");
   const run = input.run ?? runBench;
@@ -264,6 +290,7 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
   mkdirSync(join(input.dir, "arms"), { recursive: true });
   const config: RunConfig = { ...input.config, seed: input.config.seed ?? "ablate" };
   const results: ArmResult[] = [];
+  let refusal: AblationResult["refusal"];
   const identity = hashJson({ problems: input.problems.map((p) => p.id), build: input.buildProblems?.map((p) => p.id) ?? null, bench: input.template.index.benchId });
   for (const arm of input.arms) {
     const armDir = join(input.dir, "arms", slug(arm.name));
@@ -271,12 +298,12 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     const marker = join(armDir, ARM_DONE);
     const fingerprint = hashJson({ identity, arm: armRun as unknown as Json });
     const measureDir = join(armDir, "measure");
-    let finished: { runId: string; stopped?: string } | undefined;
+    let finished: { runId: string; stopped?: string; providerRefusal?: string } | undefined;
     if (existsSync(armDir)) {
       // An arm that finished is taken as it stands, and nothing is spent on it again; a half-written one is set aside, never deleted.
-      const done = existsSync(marker) ? (JSON.parse(readFileSync(marker, "utf8")) as { fingerprint: string; runId: string; stopped?: string }) : undefined;
+      const done = existsSync(marker) ? (JSON.parse(readFileSync(marker, "utf8")) as { fingerprint: string; runId: string; stopped?: string; providerRefusal?: string }) : undefined;
       if (done !== undefined && done.fingerprint === fingerprint) {
-        finished = { runId: done.runId, ...(done.stopped !== undefined ? { stopped: done.stopped } : {}) };
+        finished = { runId: done.runId, ...(done.stopped !== undefined ? { stopped: done.stopped } : {}), ...(done.providerRefusal !== undefined ? { providerRefusal: done.providerRefusal } : {}) };
         log(`ablate: ${arm.name} finished in an earlier call: measured again from its journal, nothing spent`);
       } else if (done !== undefined) {
         throw new RunSetupError(`${armDir} holds a finished arm made with another configuration, other problems or another bench: an ablation resumes only its own; use a new directory`);
@@ -294,13 +321,23 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
       let memoryFrom: string | undefined;
       if (input.buildProblems !== undefined) {
         const buildDir = join(armDir, "build");
-        await run({ ...input.template, config: armRun, problems: input.buildProblems, dir: buildDir });
+        const built = await run({ ...input.template, config: armRun, problems: input.buildProblems, dir: buildDir });
+        if (built.providerRefusal !== undefined) {
+          refusal = { arm: arm.name, reason: built.providerRefusal, notRun: input.arms.slice(input.arms.indexOf(arm) + 1).map((x) => x.name) };
+          log(`ablate: ${refusalLine(built.providerRefusal)}; ${arm.name} and the arms after it are not run`);
+          break;
+        }
         memoryFrom = buildDir;
       }
       const result = await run({ ...input.template, config: armRun, problems: input.problems, dir: measureDir, ...(memoryFrom !== undefined ? { memoryFrom } : {}) });
-      finished = { runId: result.runId, ...(result.stopped !== undefined ? { stopped: result.stopped } : {}) };
+      finished = { runId: result.runId, ...(result.stopped !== undefined ? { stopped: result.stopped } : {}), ...(result.providerRefusal !== undefined ? { providerRefusal: result.providerRefusal } : {}) };
       report = result.report;
       writeFileSync(marker, `${JSON.stringify({ fingerprint, ...finished })}\n`);
+    }
+    if (finished.providerRefusal !== undefined) {
+      refusal = { arm: arm.name, reason: finished.providerRefusal, notRun: input.arms.slice(input.arms.indexOf(arm) + 1).map((x) => x.name) };
+      log(`ablate: ${refusalLine(finished.providerRefusal)}; ${arm.name} is not measured and the arms after it are not run`);
+      break;
     }
     const buildDir = join(armDir, "build");
     if (input.buildProblems !== undefined) {
@@ -331,6 +368,10 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     const against = r.arm.versus !== undefined ? results.find((x) => x.arm.name === r.arm.versus) : results[i - 1];
     if (against !== undefined) r.comparison = compareArms(r.arm.name, r.measures, { name: against.arm.name, measures: against.measures });
   });
+  const outOfReach = input.problems.filter((p) => p.reach !== undefined).map((p) => p.id);
+  const out = new Set(outOfReach);
+  const measured = results.map((r) => ({ name: r.arm.name, measures: r.measures }));
+  const inReach = outOfReach.length > 0 && outOfReach.length < input.problems.length ? measured.map((m) => ({ ...m, measures: { ...m.measures, perProblem: m.measures.perProblem.filter((p) => !out.has(p.problemId)) } })) : measured;
   const result: AblationResult = {
     benchId: input.template.index.benchId,
     label: runLabel(input.config.model, input.notRun),
@@ -341,6 +382,8 @@ export async function runAblation(input: AblationInput): Promise<AblationResult>
     problems: input.problems.map((p) => p.id),
     ...(input.buildProblems !== undefined ? { buildProblems: input.buildProblems.map((p) => p.id) } : {}),
     ...(basisName !== undefined ? { difficultyBasis: basisName } : {}),
+    ...(outOfReach.length > 0 ? { outOfReach } : {}),
+    ...(refusal === undefined ? { protocol: pairedProtocol(inReach, input.baseline, input.target), ...(inReach !== measured ? { protocolAll: pairedProtocol(measured, input.baseline, input.target) } : {}) } : { refusal }),
     arms: results,
   };
   writeFileSync(join(input.dir, "ablation.json"), `${JSON.stringify(result, null, 2)}\n`);

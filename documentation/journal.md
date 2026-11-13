@@ -45,14 +45,14 @@ Event types:
 | `turn.deferred` | `runId`, `scope` (`turn` or `session`), `turn?`, `problemId?`, `prover?`, `from`, `nextStart`, `until`, `bounded`: the run waits for off-peak hours before starting this ([human.md](human.md#off-peak)) |
 | `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`): a turn of a consortium run begins ([human.md](human.md)) |
 | `turn.ended` | `runId`, `turn`, `reason` (`tokens`, `usd`, `minutes`, `impasse`, `settled`, `disagreement`, `interrupted`, `finished` or why the run stopped), `detail`, `spent` (`turn` and `run`: `usd`, `inputTokens`, `outputTokens`), `minutes`, `waiting` (problem ids), `breakpoint?` (`kind`, `problemId?`, `nodeId?`), `narrative?` (`hash?`, `rejected?`) |
-| `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain` |
+| `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain`, `allowanceUsd?` (the cap the problem's ledger was opened with, recorded only under `budgetShare`) |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |
 | `claim.status_changed` | `claimId`, `from`, `to`, `reason`, `attemptId?`, `validationId?` |
 | `attempt.started` | `attemptId`, `claimId`, `prover`, `iteration`, `model`, `role?` (`prove`, `refute`, `explore`), `strategy?`, `subgoal?`, `taskId?`, `site?`, `provenance?`, `included?`, `withheld?`, `settings?`, `exploration?` |
-| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache), `savedUsd?` (what that cache saved against the no-cache price), `offPeakUsd?` (the part of `usd` charged at the off-peak rate), `unchargedUsd?` (what pi-ai reported above the host's table), `retry?` (`retry`, `error`, `delayMs`: the response was cut by a transient error and its request sent again, [m0-loop.md](m0-loop.md#transient-errors)): one model response of a session |
-| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `retries?` (requests sent again after a transient error), `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?`, `toolTokens?` (the size, in tokens, of the tool declarations the session sent with every request: an upper bound by the packet's own rule, read by `harness ablate`), `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
-| `tool_run.started` | `toolRunId`, `capability`, `implementation`, `version` (for a Lean tool in a resolved environment, followed by `+env:NAME@` and the first 12 digits of the environment hash), `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
+| `attempt.charged` | `attemptId`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?` (the part of `inputTokens` read from the provider's prompt cache), `savedUsd?` (what that cache saved against the no-cache price), `offPeakUsd?` (the part of `usd` charged at the off-peak rate), `unchargedUsd?` (what pi-ai reported above the host's table), `outputUsd?` and `cacheReadUsd?` (of `usd`, the output tokens' dollars and the cache reads' at the prices that charged the response: the report's Loop section splits the dollars with them), `retry?` (`retry`, `error`, `delayMs`: the response was cut by a transient error and its request sent again, [m0-loop.md](m0-loop.md#transient-errors)): one model response of a session |
+| `attempt.finished` | `attemptId`, `outcome`, `failureClass?`, `stoppedBy?`, `error?`, `durationMs`, `turns`, `retries?` (requests sent again after a transient error), `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?`, `checks?` (the Lean checks the session made), `holes?` (the open holes each check left, in order: read by the report's Loop section), `toolTokens?` (the size, in tokens, of the tool declarations the session sent with every request: an upper bound by the packet's own rule, read by `harness ablate`), `strategy?`, `declaredStrategy?`, `premises?`, `failureDetail?`, `lastCheckClass?` (only with the budget in rounds: the class of the last check of a session that a round's slice cut, which is no failure, so `failureClass` stays absent; read only by the rotation's measure of Lean progress), `carry?` (`regions`, `lastCheck?`, `notes?`: blob hashes) |
+| `tool_run.started` | `toolRunId`, `capability` (also a line's tool that is journaled: `expand` and `graph_query` of line M4, with `implementation` `line:M4`), `implementation`, `version` (for a Lean tool in a resolved environment, followed by `+env:NAME@` and the first 12 digits of the environment hash), `inputHash`, `timeoutMs?`, `attemptId?`, `scope?` |
 | `tool_run.finished` | `toolRunId`, `outcome` (`ok`, `error`, `timeout`, `aborted`), `durationMs`, `outputHash?`, `summary?` |
 | `lesson.recorded` | `attemptId`, `claimId`, `text`, `provenance?` |
 | `validation.finished` | `validationId`, `claimId`, `attemptId?`, `method` (`repl`, `kernel_replay`), `verdict`, `reasons`, `axioms`, `submissionHash`, `negation?`, `problemId?` |
@@ -60,8 +60,8 @@ Event types:
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
-| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?` |
-| `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget`, `parentTaskId?`, `proposedBy?`, `title?` |
+| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?`, `role?`, `settings?`, `escalation?` (a run with `RunConfig.roles`: [models-setup.md](models-setup.md#roles-a-model-and-settings-for-each-place-a-model-is-called-ca15-ca23)) |
+| `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget` (`usd?`, `sessions?`, `turns?`: the bound of a session in model responses, for M12's hole sessions), `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |
 | `task.routed` | `taskId`, `action`, `signal` (`type`, `value`), `reason`, `attemptId?`, `nodeId?` |
@@ -70,6 +70,10 @@ Event types:
 | `decision.made` | `decisionId`, `key`, `line`, `problemId`, `claimId?`, `site`, `backend`, `requested`, `fallback?`, `model`, `type`, `labels`, `requestHash`, `stateHash`, `answer`, `probabilities`, `costUsd`, `modelCallIds`, `toolRunId?` |
 | `budget.gated` | `problemId`, `site` (`wave`, `session`, `task`, `judge`), `action` (`launch`, `probe`, `skip`, `widen`), `by` (`rule`, `floor`, `probe`, `progress`, `decide`, `memory`), `estimateUsd`, `remainingUsd`, `budgetUsd`, `share`, `pSuccess?`, `thresholdUsd?`, `rung`, `exploration`, `progress?`, `prover?`, `session?`, `taskId?`, `decisionId?`, `reason` |
 | `statement.signed` | `source` (`prose`, `lean`), `prose?`, `statement`, `statementId`, `problemId`, `model?`, `formalization?` (`requestHash`, `responseHash`, `usd`, `inputTokens`, `outputTokens`), `testLemmas?` (`result`, `tried`, `failedAt?`, `note?`), `trivial?` (`by`): a person signed the Lean statement a run works on, as the first event after `run.started` ([quickstart.md](quickstart.md#a-statement-in-words)). Written by `human:NAME` only; it changes no claim |
+| `intake.consented` | `problemId`, `allowed`, `via` (`asked`, `flag`, `bench`, `private`, `default`): whether the statement may go to third parties for the intake step ([literature.md](literature.md#third-parties)). `asked` and `flag` are a person's answer (`human:NAME`); the others are the orchestrator's. `private` never allows. It changes no claim |
+| `intake.finished` | `problemId`, `claimId`, `state` (`done`, `skipped`), `reason?`, `queries` (`{form, query}`), `hits`, `kept`, `dropped` (`{backend, url, title, why}`), `settled`, `usd`, `capUsd`, `modelCallId?`: the intake step of a problem, before any paid session; the hits are `literature` nodes. Orchestrator only; it changes no claim |
+| `budget.round` | `round`, `capUsd`, `runUsd`, `problems` (in the order the slices are given), `marks?` (where each problem stood at the round's start), `resumed?` (the parked problems it takes up again) |
+| `problem.parked` | `problemId`, `round`, `usd`, `capUsd`, `reason` |
 | `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `heuristics` (the ids of its heuristic cards, optional), `programs`, `source` |
 | `pack.removed` | `name`, `version`, `hash` |
 
@@ -93,7 +97,7 @@ to several for `decomposes_into`; its kinds are `implies`, `equiv`, `special_cas
 `instance_of`. Its `link` names the Lean lemma that makes it true, for the kinds a lemma can check
 (all but `uses`, `derived_from` and `cites`). A node is a record of any other kind (a lemma, a
 lesson, a fingerprint...): its `kind` is a short lowercase word, its `data` belongs to the package
-that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it.
+that owns the kind, and each `node.updated` applies a JSON merge patch (RFC 7386) to it. Line M11 with the option `graphs` writes two kinds, both additive ([models.md](models.md#statements-about-graphs)): `graph_hit` (a graph a program called a counterexample, its certificate's blob hash, `confirmation` `confirmed` or `unconfirmed` and, for the latter, the class of Lean's error) and `graph_search` (what a search covered: its filters, the battery's size and digest, the program's hash, the seed and bounds of a local search, the outcome `none_found`, `incomplete`, `hit`, `not_run`, `failed` (the search threw: `reason`) or `cut`, a one-line `summary` and `final`, which says whether a resumed process does more; evidence, never a status). A `graph_hit` that was not sent to Lean because the graph was too large has the error class `too_large`.
 
 A `model_call.finished` records a one-shot model call a mechanism made outside a prover session
 (a line's `llm`, [lines.md](lines.md#llm)), with its cost; its request and response are blobs. Its
@@ -140,6 +144,11 @@ this one starts on. `relative` is its directory relative to the new run's, tried
 whose directories moved together still reads; `path` is the absolute one it falls back to. The projection replays that journal before this one, and the run is refused when the
 journal no longer ends at `lastHash` ([memory.md](memory.md#memory-across-runs)).
 
+`run.started`'s `config` may carry `leanSearch: true` and `private: true` (`RunConfig.leanSearch`, `RunConfig.private`; optional, present only when
+on, so that a run without them records what it always did). The search that `leanSearch` makes after a check adds no event: each search is a tool
+run of `lean.search` and each verification of its hits a tool run of `lean.check`, both by the actor `lean.search` and with no `attemptId`
+([lean.md](lean.md#search-pushed-by-the-harness)). A hit is not a claim and changes no status.
+
 Mechanisms write claims, edges and nodes through the memory store ([memory.md](memory.md)).
 
 Attempt outcomes: `valid`, `invalid`, `no_submission`, `budget_exhausted`, `aborted`, `error`.
@@ -152,6 +161,16 @@ tool run is `aborted` when its caller gave up (a budget ran out, a run was stopp
 a failure of the tool. Its `summary` holds the output paths the manifest names, or the error. The
 tool runs of a stateful capability carry their `scope`: the calls with the same scope share state
 (the variables of a SageMath session), in the journal's order.
+
+### Consolidation nodes
+
+Four node kinds are written by the consolidation pass alone, as the actor `consolidation` (the journal refuses them from any other actor, and
+refuses a `node.updated` on them from any actor but `consolidation` and `orchestrator`, which switches a page off): `consolidation_card`
+(`passId`, `problemId`, `target`, `card`, `text`), `consolidation_page` (`passId`, `problemId`, `text`, `sentences`, `dropped`, `modelCallId`,
+`usd`, `active`, `supersedes?`, `deactivated?`), `consolidation_pass` (a problem's step: `status` `page`, `no_page`, `skipped_budget`, `failed` or
+`no_model`, with its counts) and `consolidation_lesson` (a lesson `merged` or `flagged`). Pages and cards carry the provenance stamp. The model call
+is a `model_call.finished` at the site `consolidation.page`. Optional fields added to the data of a `lesson` node: `mergedInto`, `flagged`. Optional
+field of a consortium run's configuration: `consolidation`; of a run's: `consolidation`. See [consolidation.md](consolidation.md).
 
 ## Writing
 
@@ -286,3 +305,5 @@ header has the hash of its text alone, which is the id the bench gives each prob
 textual duplicates only: statements that differ in the name of a bound variable, in notation or by
 an unfolding get different ids. P0b replaces it with a hash of the elaborated, normalized Lean
 term (`st1_` prefix); ids of different versions never compare equal.
+
+Memory node kinds M12 adds with blueprints (additive, [scheduler.md](scheduler.md#verdicts-plan-change-ca11)): `m12_preflight`, `hole_verdict` (`verdict`, `claimId`, `sessionId`, `negationValidated?`) and `suspect_false` (`checked: false`); `m12_sketch` and `m12_session` gain optional fields (`m12_sketch`: `dropped`, the holes of a blueprint left out because nothing reaches the target; `editsOutsideRegions` and `leanHoles`, the check's flags). Hole sessions' responses are `model_call.finished` events at the site `scheduler.hole`.

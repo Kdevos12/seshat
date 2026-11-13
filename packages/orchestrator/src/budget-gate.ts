@@ -22,6 +22,12 @@ import type { Ledger } from "./budget.ts";
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
 export const PROGRESS_DEPTH = 5;
 
+/** The length, in model responses, of the session the mean cost (or the first guess) stands for: a task bounded in turns is priced in proportion (12 is M12's `holeTurns`). */
+const USUAL_SESSION_TURNS = 12;
+
+/** The reason the gate gives when an accepted informal proof is what lets the problem widen. */
+export const INFORMAL_PROGRESS = "an informal proof was accepted (not checked by Lean)";
+
 type Gated = EventDataMap["budget.gated"];
 
 export interface BudgetGateOptions {
@@ -41,6 +47,8 @@ export interface BudgetGateOptions {
   attemptIds: () => readonly string[];
   /** The ladder's measure of Lean progress now (new subclaims proved, fewer holes), when the run has a memory. */
   leanProgress?: () => Progress;
+  /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
+  informalAccepted?: () => boolean;
   /** The weight of an attempt of an older epoch (`MemoryStore.weightOf`); absent: 1. */
   epochWeight?: (epoch: number) => number;
   /** Where the rule has no numbers; absent, or a site `off`: the rule alone. */
@@ -98,6 +106,21 @@ export class BudgetGate {
     return waves.some((g) => g.action === "probe") ? "probing" : "start";
   }
 
+  /** Whether a probe a cap cut may run one extension (`probeExtend`). */
+  get probeExtend(): boolean {
+    return this.o.settings.probeExtend;
+  }
+
+  /** The most the probe may spend in all: its cap, and three times it once its one extension is granted. */
+  probeTotalUsd(capUsd: number): number {
+    return capUsd * (this.extensions() > 0 ? 3 : 1);
+  }
+
+  /** The extensions granted to this problem: the probe rows after the first (a resumed run reads this, so that it grants none twice). */
+  private extensions(): number {
+    return Math.max(0, this.rows().filter((g) => g.site === "wave" && g.action === "probe").length - 1);
+  }
+
   /** What the problem has left: the least of its own and its ancestors' limits less their spending. */
   remainingUsd(): number {
     let left = Number.POSITIVE_INFINITY;
@@ -152,8 +175,10 @@ export class BudgetGate {
    * What a task costs if it uses its sessions: the sessions times what a session costs. The chance of success is not in the price: the
    * rule weighs the price by it (`share x remaining x pSuccess`), and counting it here too would count it twice.
    */
-  taskUsd(sessions: number): number {
-    return this.sessionUsd() * Math.max(1, sessions);
+  taskUsd(sessions: number, turns?: number): number {
+    // A session that is bounded in turns costs in proportion to its bound: the mean (or the first guess) is for a session of the usual length.
+    const scale = turns === undefined ? 1 : Math.max(1, turns) / USUAL_SESSION_TURNS;
+    return this.sessionUsd() * Math.max(1, sessions) * scale;
   }
 
   /**
@@ -281,6 +306,32 @@ export class BudgetGate {
     return { capUsd };
   }
 
+  /**
+   * After a probe: whether its session was cut by the probe's own cap, while it was still working (the attempt ended for want of budget, and
+   * what the task spent reached the cap) after at least one Lean check, with no Lean progress to show for it. Then the probe has told the
+   * gate nothing and gets one extension, journaled as a second `probe` row of the wave with the reason in words (no new field): the
+   * cap of the new probe ledger is twice the probe's. At most one per problem. Undefined: no extension.
+   */
+  extension(who: { taskId: string; capUsd: number }): { capUsd: number } | undefined {
+    if (!this.o.settings.probeExtend || this.extensions() > 0 || this.remainingUsd() <= 0) return undefined;
+    const projection = this.o.journal.projection;
+    const attempts = projection.attemptsOfTask(who.taskId);
+    const last = attempts.at(-1);
+    if (last === undefined || last.finished_seq === null || last.outcome !== "budget_exhausted") return undefined;
+    if (attempts.reduce((sum, a) => sum + (a.usd ?? 0), 0) < who.capUsd * (1 - 1e-9)) return undefined;
+    const ids = new Set(attempts.map((a) => a.attempt_id));
+    const checks = projection.validationsOfProblem(this.o.problemId).filter((v) => v.attempt_id !== null && ids.has(v.attempt_id)).length;
+    if (checks < 1 || this.progress() !== undefined) return undefined;
+    const state = this.state();
+    const extensionUsd = 2 * who.capUsd;
+    const verdict = probeVerdict({ estimateUsd: this.sessionUsd(), rung: this.o.rung() }, state, this.o.settings);
+    this.write(
+      { ...verdict, share: Math.min(1, 2 * this.o.settings.probeFraction), reason: `the probe was cut by its cap after ${checks} Lean check${checks === 1 ? "" : "s"}: one extension of ${extensionUsd.toFixed(4)} dollars` },
+      { prover: "p1", session: last.iteration + 1 },
+    );
+    return { capUsd: extensionUsd };
+  }
+
   /** The Lean progress since the problem began: the ladder's measure, else the depth of the probe's check. Undefined: none. */
   progress(): string | undefined {
     if (this.o.leanProgress !== undefined) {
@@ -301,12 +352,14 @@ export class BudgetGate {
 
   /** After the probe: whether the problem widens to `provers` provers (PB2). Only Lean progress widens, except for the floor's fraction. */
   async widen(provers: number): Promise<GateOutcome> {
-    const why = this.progress();
+    let why = this.progress();
+    // An accepted informal proof counts as progress once (PA5): a later probe or judgement does not count it again.
+    if (why === undefined && this.o.informalAccepted?.() === true && !this.rows().some((g) => g.site === "wave" && g.reason.includes(INFORMAL_PROGRESS))) why = INFORMAL_PROGRESS;
     const estimate = Math.max(1, provers) * this.sessionUsd();
     const query = { ...this.query("wave", estimate, `wave:${this.rows().filter((g) => g.site === "wave").length}`), progress: why !== undefined };
     const answer = widenRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
-    return this.write(why === undefined ? verdict : { ...verdict, reason: `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
+    return this.write(why === undefined ? verdict : { ...verdict, reason: why === INFORMAL_PROGRESS ? `${verdict.reason} (${why})` : `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
   }
 
   /** Before a session of a widened prover. */
@@ -317,9 +370,9 @@ export class BudgetGate {
     return this.write(verdict, who, decisionId);
   }
 
-  /** Before a line's task is worked (`budget.line` where there are no numbers). `sessions` is the task's budget in sessions. */
-  async task(who: { taskId: string; sessions?: number }): Promise<GateOutcome> {
-    const query = this.query("task", this.taskUsd(who.sessions ?? 1), `task:${who.taskId}:${this.round("task", who.taskId)}`);
+  /** Before a line's task is worked (`budget.line` where there are no numbers). `sessions` is the task's budget in sessions, `turns` the bound of a session in model responses when it has one. */
+  async task(who: { taskId: string; sessions?: number; turns?: number }): Promise<GateOutcome> {
+    const query = this.query("task", this.taskUsd(who.sessions ?? 1, who.turns), `task:${who.taskId}:${this.round("task", who.taskId)}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(verdict, { taskId: who.taskId }, decisionId);

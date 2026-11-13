@@ -21,6 +21,7 @@ import {
   verifyChain,
 } from "@seshat/core";
 import type { JsonObject, ResumedProblem } from "@seshat/lines";
+import type { IntakeConfig } from "./intake.ts";
 import { messageOf } from "@seshat/registry";
 import type { TaskLedger } from "@seshat/scheduler";
 import { chargedTotals } from "./budget.ts";
@@ -28,6 +29,8 @@ import { readConsortium } from "./consortium.ts";
 import type { Candidate, RecordedCertification, Workbench } from "./problem.ts";
 import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
+import type { RolesConfig } from "./roles.ts";
+import type { InformalFirst } from "./informal.ts";
 import { RunSetupError } from "./setup-error.ts";
 
 /**
@@ -94,6 +97,24 @@ function problemIdsOf(dir: string): string[] | undefined {
   }
 }
 
+/**
+ * The intake section as `runBench` recorded it, with its consent: a resumed run applies the answer on third parties the run was started with
+ * (a no keeps `lean.search` local), so it must be read back. Only the fields the section has are kept.
+ */
+function intakeOf(recorded: unknown): IntakeConfig | undefined {
+  if (typeof recorded !== "object" || recorded === null || Array.isArray(recorded)) return undefined;
+  const r = recorded as Record<string, unknown>;
+  const consent = r.consent as { allowed?: unknown; via?: unknown } | undefined;
+  const validConsent = consent !== undefined && typeof consent.allowed === "boolean" && (consent.via === "asked" || consent.via === "flag" || consent.via === "bench");
+  return {
+    ...(r.literature === true ? { literature: true } : {}),
+    ...(r.hygiene === true ? { hygiene: true } : {}),
+    ...(typeof r.capUsd === "number" ? { capUsd: r.capUsd } : {}),
+    ...(typeof r.capShare === "number" ? { capShare: r.capShare } : {}),
+    ...(validConsent ? { consent: { allowed: consent.allowed as boolean, via: consent.via as "asked" | "flag" | "bench" } } : {}),
+  };
+}
+
 /** The run's configuration, as `runBench` recorded it in `run.started`. */
 function configOf(recorded: unknown): RunConfig {
   const missing = (what: string): never => {
@@ -123,6 +144,30 @@ function configOf(recorded: unknown): RunConfig {
     concurrency: whole("concurrency", r.concurrency),
     ...(r.cacheRetention === "none" || r.cacheRetention === "short" || r.cacheRetention === "long" ? { cacheRetention: r.cacheRetention } : {}),
     ...(r.packetMode === "prefix_tail" || r.packetMode === "append_only" || r.packetMode === "recompiled" ? { packetMode: r.packetMode } : {}),
+    ...(typeof r.defaults === "string" ? { defaults: r.defaults } : {}),
+    ...(r.editTool === true ? { editTool: true } : {}),
+    ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
+    ...(typeof r.consult === "object" && r.consult !== null && typeof (r.consult as Record<string, unknown>).model === "string"
+      ? {
+          consult: {
+            model: (r.consult as { model: string }).model,
+            ...(typeof (r.consult as Record<string, unknown>).maxCalls === "number" ? { maxCalls: (r.consult as { maxCalls: number }).maxCalls } : {}),
+            ...(typeof (r.consult as Record<string, unknown>).maxOutputTokens === "number" ? { maxOutputTokens: (r.consult as { maxOutputTokens: number }).maxOutputTokens } : {}),
+          },
+        }
+      : {}),
+    ...(typeof r.roles === "object" && r.roles !== null && !Array.isArray(r.roles) ? { roles: r.roles as RolesConfig } : {}),
+    ...(r.leanSearch === true ? { leanSearch: true } : {}),
+    ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
+    ...(r.firstCases === true ? { firstCases: true } : {}),
+    ...(typeof r.informalFirst === "object" && r.informalFirst !== null && !Array.isArray(r.informalFirst) ? { informalFirst: r.informalFirst as InformalFirst } : {}),
+    ...(r.private === true ? { private: true } : {}),
+    ...(r.stateCard === true ? { stateCard: true } : {}),
+    ...(r.consolidation === true ? { consolidation: true } : {}),
+    ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
+    ...(typeof r.budgetShare === "number" ? { budgetShare: r.budgetShare } : {}),
+    ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
+    ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"
       ? { prompts: { proverSystem: (r.prompts as { proverSystem: string }).proverSystem } }
       : {}),

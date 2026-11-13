@@ -1,3 +1,4 @@
+import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -14,6 +15,7 @@ import {
   verifyChain,
 } from "@seshat/core";
 import { type RecordLine, recordLine } from "./account.ts";
+import { informalLines, type InformalLine, renderInformal } from "./informal-view.ts";
 import { buildReport, type RunReport, type SiteLine } from "./report.ts";
 
 /**
@@ -102,6 +104,10 @@ export interface Result {
   errors: string[];
   /** What the certifier was: `null` for none, with the reason when the run recorded one. */
   certifier: { name: string | null; unavailable?: string };
+  /** The intake step of each problem that had one: the literature and the statement's hygiene, as data (Task 36). */
+  intake?: IntakeLine[];
+  /** The informal proof first of each problem that has one (plan changes PA13, AL3): shown only when accepted and no Lean proof was certified. */
+  informal?: InformalLine[];
   /** The signature of a prose statement (`harness solve`), when the run has one. */
   signature?: EventDataMap["statement.signed"] & { by: string; seq: number };
   spend: { usd: number; inputTokens: number; outputTokens: number; budgetUsd?: number; sites: SiteLine[]; rungs?: Record<string, number>; formalizationUsd?: number };
@@ -129,9 +135,9 @@ const MAX_RECORDS = 12;
 const MAX_FILE_CHARS = 20_000;
 
 /** Node kinds a program writes as a finding with a model or an instance: a refutation attempt, not a Lean-checked refutation. */
-const COUNTEREXAMPLE_KINDS = ["counter_model", "counterexample", "refuted_hypothesis"];
+const COUNTEREXAMPLE_KINDS = ["counter_model", "counterexample", "refuted_hypothesis", "graph_hit"];
 /** Node kinds that are evidence or a lead: a tool's output, a fingerprint, a guess. None of them is a proof. */
-const EVIDENCE_KINDS = ["fingerprint", "identification", "battery", "integer_relation", "recurrence", "search_result", "conjecture", "obstruction", "datatable"];
+const EVIDENCE_KINDS = ["suspect_false", "fingerprint", "identification", "battery", "integer_relation", "recurrence", "search_result", "graph_search", "conjecture", "obstruction", "datatable"];
 
 function clip(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -148,6 +154,7 @@ export function stopWords(reason: string): string {
     budget_exhausted: "the dollar budget ran out",
     aborted: "the run was stopped (Ctrl-C, a kill, or a problem cut before its end)",
     errors: "three problems in a row ended with a harness error, or the run crashed",
+    provider_refused: "the model provider refused the request (a balance, a key): the run stopped",
     lean_unavailable: "the Lean server could not be reached",
     lean_environment: "the Lean server cannot import the libraries of the run's environment",
     tokens: "the turn's token limit was reached",
@@ -356,6 +363,7 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
         }, {})
       : undefined;
 
+    const informal = informalLines(events, blob);
     const seconds = Math.max(0, (Date.parse(last.ts) - Date.parse((events[0] as HarnessEvent).ts)) / 1000);
     return {
       version: 1,
@@ -376,6 +384,8 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
       errors,
       certifier,
       ...(signature !== undefined ? { signature } : {}),
+      ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
+      ...(informal.length > 0 ? { informal } : {}),
       spend: {
         usd: report.usd,
         inputTokens: report.inputTokens,
@@ -459,6 +469,8 @@ function counts(map: Record<string, number>): string {
 function headline(r: Result): string[] {
   if (r.problems.length === 0) return ["**No problem was registered.** The run ended before it began on one."];
   return r.problems.map((x) => {
+    // The informal proof first looked for an argument and accepted none: no Lean proof was certified either, and no attempt is shown.
+    const informal = r.informal?.find((l) => l.problemId === x.problemId);
     const target = code(x.target);
     if (x.claimStatus === "proved" && x.certified) return `**Proved.** The Lean kernel certified a proof of ${target} (claim ${x.claimId}).`;
     if (x.claimStatus === "refuted" && x.certified) return `**Refuted.** The Lean kernel certified a proof of the negation of ${target} (claim ${x.claimId}).`;
@@ -467,6 +479,7 @@ function headline(r: Result): string[] {
       return `**Not proved: a candidate.** A proof of ${target} passed the fast Lean check and was not certified${r.certifier.name === null || r.certifier.unavailable !== undefined ? " (there was no certifier; see below)" : ""}. The claim's status is \`computed\`.`;
     }
     const why = x.reason !== undefined ? ` ${md(x.reason)}` : "";
+    if (informal !== undefined && !informal.accepted) return `**No solution found.** No Lean proof of ${target} was certified and no informal argument was accepted. The claim is \`${x.claimStatus}\`${x.outcome !== undefined ? `; the problem ended as ${x.outcome}.${why}` : "; the problem has no outcome in the journal."}`;
     return `**Not solved yet.** ${target} is \`${x.claimStatus}\`${x.outcome !== undefined ? `; the problem ended as ${x.outcome}.${why}` : "; the problem has no outcome in the journal."}`;
   });
 }
@@ -512,6 +525,8 @@ export function renderResult(r: Result): string {
     lines.push("", ...table(["Claim", "Status", "Statement"], r.claims.listed.map((c) => [c.id, c.status, c.statement])));
     if (r.claims.omitted > 0) lines.push("", `(${r.claims.omitted} more in the journal.)`);
   }
+  // The informal proof first (AL3): an accepted one that no certified Lean proof replaces, with its label.
+  if (r.informal !== undefined) lines.push(...renderInformal(r.informal));
   // Certified.
   lines.push("", "## Lean proofs certified so far", "");
   if (r.certified.length === 0) lines.push("None yet. A claim is `proved` or `refuted` only when the kernel replay certified a proof; nothing below counts as one.");
@@ -553,6 +568,7 @@ export function renderResult(r: Result): string {
   if (r.evidence.length > 0) {
     lines.push("", "## Indicative evidence (not proofs)", "", "What tools, fingerprints and conjectures found. Marked as evidence: none of it changes a claim's status.", "", ...r.evidence.map((c) => `- [evidence] ${c.id}${c.claimId !== undefined ? ` (about ${c.claimId})` : ""}, ${c.kind}: ${md(c.text)}`));
   }
+  if (r.intake !== undefined) lines.push("", ...renderIntake(r.intake));
   // Failed.
   lines.push("", "## What was tried and failed", "");
   if (r.failed.length === 0 && r.errors.length === 0) lines.push("Nothing failed yet, or no session has ended.");

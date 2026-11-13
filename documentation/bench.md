@@ -107,6 +107,30 @@ Rules (`harness-bench tags validate --index FILE --annotations FILE`): the probl
 - **The row shape is an assumption** from the dataset's description: `id`, `equation1`, `equation2` (written with `◇`), and `answer` (true or false), with the aliases `eq1`, `eq2`, `implies` and `name`. It must be checked against the real files the first time they are read.
 - **The share closed without a model**, per step of plan section 15's order: `harness-bench ext steps RUN_DIR` reads the journal of a run over these problems and gives, for each problem, the first step that closed it (subsumption by M12, fingerprint or small model by M11, battery or ATP and SMT by M10, then the model), and the share closed without a model. The run itself, with Tasks 6 and 7, has not been made.
 
+## The graded bench (CA1)
+
+The bench of 575 research results cannot show a gain: today's harness solves few of them. `bench/graded-v1.json` is the yardstick of the capability plan change ([plan-change-capabilities.md](../plans/plan-change-capabilities.md), section 2): three grades, on which the harness does not score zero. (Not the escalation ladder of line M12: "grade" is the word here.) It is built by `harness-bench graded` from local checkouts, and nothing of the sources is vendored.
+
+| Grade | Level | Source | Rule |
+|---|---|---|---|
+| A | exercise | formal-conjectures at the bench tag | every `textbook` and `test` theorem with discrete AMS codes only (05, 06, 08, 11, 20), without `sorry` in the statement, not proved in its file, no sorried definition above it |
+| B | competition | PutnamBench (`lean4/src`) | a seeded sample of 100 of its problems, with the same last three conditions (a Putnam problem whose answer is a definition still `sorry`, `..._solution`, is left out: the sketch cannot fill it) |
+| C | research | formal-conjectures | a seeded sample of at most 70 of `fc-bench-v1-discrete`'s problems with a formal proof elsewhere (`formal_proof`) |
+
+```sh
+node packages/bench/src/cli.ts graded --fc ../formal-conjectures --putnam ../PutnamBench --seed graded-v1 \
+  --lean-project lean/env/base --out bench/graded-v1.json      # [--size-b 100] [--size-c 70]
+```
+
+- **The file.** `v`, `kind: "graded"`, `benchId`, the `seed` of the samples, `sources` (repository, commit, tag, Lean toolchain and licence of each checkout), `grades` (what each rule is, the number of candidates, entries and statements Lean rejected) and `entries`, with a `hash` of all of it that reading checks. Each entry is a problem entry of the bench (statement, file hash, imports) with its `grade`, `source`, `sourceCommit`, `statementHash` (sha256 of the statement), `licence` and `admission`.
+- **The sample is seeded.** Candidates are put in the order of the hash of the seed, the grade and their id, and the sample is the first ones: the same seed and checkouts give the same sample (`sample` of this page is that prefix), and a statement Lean rejects is replaced by the next one.
+- **Admission.** A statement is admitted only when it compiles under the Lean environment: the file up to the theorem, its proof `sorry`, is run with `lake env lean` in the project of `lean/env/base` (`--lean-project`, built by `harness lean-env build base`). A statement Lean cannot read is never an "unsolved" problem. A known-good probe statement runs first, and the build stops with an error when it does not compile (an unbuilt project, a wrong `--lean-project`); a timeout or a missing `lake` also stops it, and is never a rejection; a grade that ends with no entry fails the build. Without `--lean-project` the builder records every entry as `unchecked`, and a run refuses unchecked entries unless it is given `--allow-unchecked`.
+- **Running.** `harness run` and `harness ablate` take `--bench bench/graded-v1.json --grade A|B|C` (`--allow-unchecked` for an unchecked file). Every entry of a grade has one source, so one `--checkout` serves a run: formal-conjectures for A and C, PutnamBench for B. A grade needs the bench to be graded, and `--grade` is refused with an ordinary index.
+- **Out of reach (PA6).** An entry may carry `reach: "small_budget_out_of_reach"` and a `reachReason`, set from the committed list `config/bench/out-of-reach.json` (`[{id, reason}]`, matched against an entry's id or its full name; today `putnam_1967_a5`, the isodiametric inequality absent from Mathlib, and `putnam_2025_b5`, whose published formal proof has 1,495 lines). The tags are applied when the index is built and again when it is read (`readGraded`), so a file built before the list existed keeps working: an absent list or an absent field means "in reach". `harness ablate` reports the tagged problems apart (documentation/ablate.md).
+- **PutnamBench's layout.** It writes `theorem name`, then each binder and the statement at column 0. The command splitter of `@seshat/core` treats a line that begins with `(`, `{`, `[`, `⦃` or `:` as a continuation, since no Lean command starts with one (a change to `splitCommands`, tested in `sketch.test.ts`); formal-conjectures files read as before.
+
+What was and was not done where this was written. The sources could be fetched (a shallow `git clone` of each into a temporary directory): formal-conjectures at `bench-v1-lean4.27.0` gave 111 grade A candidates and 70 for grade C (the whole of the 70 with a formal proof elsewhere), PutnamBench's default branch (commit `a635813f`) gave 326 candidates for a sample of 100, all unchecked. **No index is committed**: no Lean was available to admit the statements, and an unchecked file would be refused by every run. PutnamBench's head is on Lean v4.33.1, not v4.27.0, so a commit of it that builds under the base environment is still to find (or its own environment through `lean/env/NAME.toml`, as M17 does), and the licences are read from the checkouts' LICENSE files (Apache-2.0 for formal-conjectures and for PutnamBench's Lean part) and are to be confirmed before an index is shared. The builder is tested on fixture checkouts and with a fake `lake`. Not run: the real sources through a real admission, and any run on a grade.
+
 ## Commands
 
 ```sh

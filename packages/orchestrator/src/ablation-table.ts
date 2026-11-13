@@ -1,6 +1,7 @@
 import type { AblationResult, ArmResult } from "./ablation.ts";
 import type { CacheStat } from "./cache-report.ts";
 import type { Share } from "./measures.ts";
+import { refusalLine } from "./provider-errors.ts";
 import { labelLines, type RunLabel } from "./run-label.ts";
 import { agreement } from "./reliability.ts";
 
@@ -25,6 +26,13 @@ export function renderAblation(result: AblationResult): string {
   const out: string[] = [
     "# Ablation",
     "",
+    ...(result.refusal === undefined
+      ? []
+      : [
+          `**This comparison is not valid.** ${refusalLine(result.refusal.reason)} (arm ${result.refusal.arm}). ` +
+            `${result.refusal.arm}${result.refusal.notRun.length > 0 ? ` and ${result.refusal.notRun.join(", ")}` : ""} did not reach the model for good, so no arm is set against another, and there is no verdict on the target.`,
+          "",
+        ]),
     ...labelLines(result.label),
     `Bench ${result.benchId}; model ${result.model}; ${result.problems.length} problem(s)${result.buildProblems !== undefined ? ` measured on a memory built on ${result.buildProblems.length} others` : ""}; ` +
       `${result.provers} prover(s) of at most ${result.sessions} session(s) and ${money(result.budget.problemUsd, 2)} per problem in every configuration. `,
@@ -52,6 +60,9 @@ export function renderAblation(result: AblationResult): string {
     "",
     "Solved: problems with a Lean-checked proof, certified or a candidate; the dollars and tokens per solve divide by it. A configuration that is set against another is read below.",
     "",
+    ...(result.refusal === undefined ? [] : ["The arms above finished before the refusal; their rows are kept as they stand."]),
+    ...(result.refusal === undefined ? [] : [""]),
+    ...protocol(result),
     "## Does it beat the one before it",
     "",
     ...arms.flatMap((a) =>
@@ -79,6 +90,56 @@ export function renderAblation(result: AblationResult): string {
     ...extras(arms),
   ];
   return `${out.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+}
+
+const minutes = (ms: number): string => (ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${(ms / 1000).toFixed(0)} s`);
+
+/** The paired protocol (plan change CA2): per arm, then against the baseline arm; the target line last. */
+function protocol(result: AblationResult): string[] {
+  const p = result.protocol;
+  if (p === undefined) return [];
+  if (result.protocolAll !== undefined) {
+    const n = result.outOfReach?.length ?? 0;
+    return [
+      "## Paired protocol",
+      "",
+      `${n} of the ${result.problems.length} problem(s) are tagged out of reach at a small budget (${(result.outOfReach ?? []).join(", ")}): the verdicts use the others, and the first table is set beside them.`,
+      "",
+      ...protocolTable(result, result.protocolAll, "All problems", result.problems.length),
+      ...protocolTable(result, p, "Problems in reach", result.problems.length - n),
+    ];
+  }
+  return protocolTable(result, p, "", result.problems.length, true);
+}
+
+function protocolTable(result: AblationResult, p: NonNullable<AblationResult["protocol"]>, title: string, count: number, header = false): string[] {
+  const range = (x: { low: number; high: number }) => `${(x.low * 100).toFixed(0)}% to ${(x.high * 100).toFixed(0)}%`;
+  const out = [
+    ...(header ? ["## Paired protocol", ""] : title !== "" ? [`### ${title}`, ""] : []),
+    `The same ${count} problem(s) at ${money(result.budget.problemUsd, 2)} per problem in every arm; the baseline is ${p.baseline}. The interval is Wilson's, 95%, of the share solved.`,
+    "",
+    ...table(
+      ["Arm", "Solved", "95% interval", "Dollars", "$ per solved", "Solved per $", "Wall-clock", "Certified refutations", "Settled in the literature"],
+      p.arms.map((a) => [a.name, `${a.solved}/${a.problems}`, range(a.interval), money(a.usd), money(a.usdPerSolved), a.solvedPerUsd === undefined ? "none" : a.solvedPerUsd.toFixed(2), minutes(a.wallMs), String(a.refuted), String(a.settledInLiterature)]),
+    ),
+    "",
+  ];
+  const against = p.arms.filter((a) => a.versus !== undefined);
+  if (against.length > 0) {
+    out.push(
+      ...table(
+        ["Arm", "Only this arm", `Only ${p.baseline}`, "McNemar p (exact, two-sided)", "Solved per $, ratio"],
+        against.map((a) => {
+          const v = a.versus as NonNullable<typeof a.versus>;
+          return [a.name, String(v.onlyThis), String(v.onlyBaseline), `${v.p.toFixed(4)}${v.comparable ? "" : " (not the same problems)"}`, v.ratio === undefined ? "none" : v.ratio.toFixed(2)];
+        }),
+      ),
+      "",
+    );
+  }
+  if (p.verdict !== undefined) out.push(p.verdict.line, "");
+  out.push("Wall-clock is the journal's first event to its last. Settled in the literature counts claims with a `literature` node whose `settled` is true: zero until that node is written.", "");
+  return out;
 }
 
 function difficulty(result: AblationResult): string[] {
@@ -194,6 +255,24 @@ function extras(arms: readonly ArmResult[]): string[] {
       "Candidates dropped by the set before anything was spent on them, and the tokens that saves against a baseline without the set (an estimate, not calibrated against a model).",
       "",
       ...table(["Configuration", "Dropped", "Tokens saved", "By line", "By source"], cegis.map((a) => { const c = a.measures.cegis as NonNullable<typeof a.measures.cegis>; return [a.arm.name, String(c.dropped), String(c.tokensSaved), Object.entries(c.byLine).map(([k, n]) => `${k} ${n}`).join(", "), Object.entries(c.bySource).map(([k, n]) => `${k} ${n}`).join(", ")]; })),
+      "",
+    );
+  }
+  const graphed = arms.filter((a) => a.measures.graph !== undefined);
+  if (graphed.length > 0) {
+    out.push(
+      "## Graph and context counts",
+      "",
+      "From the journal: M4's packets, the facts they showed and the provers' calls of expand and graph_query; M2's variants and edges (plan change KG1). A dash is a line the arm did not run.",
+      "",
+      ...table(
+        ["Configuration", "Packets", "Packet tokens", "Facts shown", "expand", "graph_query", "Variants", "Edges", "lean_checked"],
+        graphed.map((a) => {
+          const { context, graph } = a.measures.graph as NonNullable<typeof a.measures.graph>;
+          const n = (value: number | undefined) => (value === undefined ? "-" : String(value));
+          return [a.arm.name, n(context?.packets), n(context?.packetTokens), n(context?.factsShown), n(context?.expandCalls), n(context?.graphQueryCalls), n(graph?.variants), n(graph?.edges), n(graph?.leanCheckedEdges)];
+        }),
+      ),
       "",
     );
   }

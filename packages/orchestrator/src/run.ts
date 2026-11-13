@@ -20,6 +20,7 @@ import {
   ProofValidator,
   type ProvenanceContext,
   type Reference,
+  readEvents,
   SKETCH_POLICY,
   sha256Hex,
   stampProvenance,
@@ -28,9 +29,12 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { MemoryStore, type ModelRanking, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
+import { maskedCount } from "./mask.ts";
+import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
-import { type GateSettings, gateSettings, progressOf, TaskLedger } from "@seshat/scheduler";
+import { type GateSettings, gateSettings, NO_PROGRESS, progressOf, TaskLedger } from "@seshat/scheduler";
+import { type Grant, markOf, NO_MARK, recordedRounds, Rotation } from "./rounds.ts";
 import { Breakpoints } from "./breakpoints.ts";
 import { BudgetGate } from "./budget-gate.ts";
 import { problemDecide } from "./decide.ts";
@@ -62,15 +66,26 @@ import {
   type RecordedRun,
 } from "./resume.ts";
 import { Router } from "./routing.ts";
-import { applyDrops, claimAndParts, steering } from "./team.ts";
+import { applyDrops, claimAndParts, HINT_KIND, steering } from "./team.ts";
 import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type TurnLimit } from "./turns.ts";
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
+import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolidate.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
+import { refusalLine } from "./provider-errors.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
+import { docstringOf, LIT_SEARCH } from "@seshat/lit";
+import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
+import { checkConsult, type ConsultConfig } from "./consult.ts";
+import { describeRoles, RoleBook, type RolesConfig, resolveRoles } from "./roles.ts";
+import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
+import { fileStatement } from "./solve-tools.ts";
+import { computeFirstCases } from "./first-cases.ts";
+import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
+import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
 /** Everything that decides what a run does, recorded in `run.started`. */
@@ -93,6 +108,33 @@ export interface RunConfig {
   concurrency: number;
   /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
   tools: string[];
+  /**
+   * The capabilities of `tools` that the defaults set added and the person did not name (`lean.lsp` in `v2`): one that cannot be reached at the
+   * start is dropped with a warning in the log and the report instead of failing the run. A tool the person named still fails it. Absent: none.
+   */
+  optionalTools?: string[];
+  /**
+   * A `direct` capability (the host's compute tool, `compute.sage`) that a problem's sessions get besides `tools` when the router files
+   * the problem's statement as finite, about a graph or about numbers (`fileStatement`, documentation/literature.md, "Solve options"). It is
+   * checked and pinned at the start of the run like a tool, and recorded as `autoTool` in `run.started`; the problems that are not filed do
+   * not get it. Absent: none, and a run that records and prompts as it always did.
+   */
+  autoTool?: string;
+  /**
+   * With a compute tool in the run (`autoTool`, or `tools` naming it), the harness computes the first cases of a statement that has one natural-number or integer
+   * parameter (no model call, through the compute capability), looks the sequence up in the OEIS when the host offers it and the run may send
+   * numbers to a third party, and puts the table in the provers' first briefing as computed data (plan change PA10, documentation/induction.md,
+   * "The first cases the harness pushes"). Absent: off, and a run that records and prompts as it always did.
+   */
+  firstCases?: boolean;
+  /**
+   * The informal proof first (plan changes PA13, NL2, AL1, AL2, documentation/informal.md): once per problem, before the first outer prover session and
+   * before M12's first blueprint, a generator (role `planner`) writes a proof in natural language, a verifier (role `verifier`) reads the final text in a
+   * fresh context, and the proof is revised or regenerated until `passes` verifier passes in a row say `correct` (default 3) or `rounds` generate-or-revise
+   * calls are made (default 4). An accepted proof is a hint journaled as an `informal_proof` node, shown to the outer prover and to the planner as not
+   * checked by Lean; it never changes a claim's status. Absent: off, and a run that records and prompts as it always did.
+   */
+  informalFirst?: InformalFirst;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -100,6 +142,71 @@ export interface RunConfig {
    * `prefix_tail` (absent: the default), `append_only`, or `recompiled`, the measurement arm of PE5.
    */
   packetMode?: PacketMode;
+  /**
+   * The seconds a prover's Lean check may take (plan change CA4, documentation/lean.md, "Bounded checks"); the validator's policy and
+   * the certifier keep their limits. Absent: the provers' checks run under the validator's policy (300 s), as they always did.
+   * `harness solve`'s defaults set `v2` gives it the host's `checkTimeoutSec` (120).
+   */
+  checkTimeoutSec?: number;
+  /** The name of the defaults set the configuration was made from (`harness solve --defaults`, `student.ts`), for the record; it changes nothing. */
+  defaults?: string;
+  /**
+   * The sessions get the tool `lean_edit(region, old, new)` (plan change CA5, documentation/m0-loop.md, "The edit tool") and a prover prompt
+   * that says to use `lean_check` for the first draft and `lean_edit` after it. Absent: off, and a run that records and prompts as it always did.
+   */
+  editTool?: boolean;
+  /**
+   * The sessions send the model the one-line summary in place of a check result older than the last four, in batches of four (plan change CA6,
+   * documentation/m0-loop.md, "Masked old checks"). The journal is not touched. Absent: off, and a run that records and sends what it always did.
+   */
+  maskOldChecks?: boolean;
+  /**
+   * After a check that did not accept the file, the harness searches Lean declarations for each unknown identifier and each hole's goal
+   * (capability `lean.search`), checks every hit against the run's Lean, and appends the names and the signatures Lean printed to the
+   * check's answer (plan change CA22, documentation/lean.md, "Search pushed by the harness"). The host must offer `lean.search`.
+   * Absent: off, and a run that records and answers what it always did.
+   */
+  leanSearch?: boolean;
+  /**
+   * The next session's opening message carries the state card, built by code from the journal, and the model's own notes are limited to
+   * `CARD_NOTES_CHARS` characters (plan change CA7, documentation/m0-loop.md, "The state card"). Absent: off, and a run that records and
+   * prompts as it always did.
+   */
+  stateCard?: boolean;
+  /**
+   * The sessions are shown the newest page "what was tried and why it stopped" that a consolidation pass left in the run's memory chain for
+   * the problem's claim (`harness consolidate`, documentation/consolidation.md): drawn like a lesson, in the first user message only, judged
+   * by its measured effect and switched off when that is negative. Absent: off, and a run that records and prompts as it always did.
+   */
+  consolidation?: boolean;
+  /**
+   * With a run budget and more than one problem, the problems are worked round-robin with a cap that doubles from round to round, and a
+   * problem without Lean progress at the end of its round is parked (plan change CA8, documentation/scheduler.md, "The budget in rounds").
+   * Absent: off, and a problem is worked until its allowance is spent, as it always was.
+   */
+  budgetRounds?: boolean;
+  /**
+   * With a run budget, a problem's ledger is capped when it is opened (or resumed) at `min(problemUsd, budgetShare x what remains of the run
+   * budget / the problems not yet finished, this one included)`, so that one problem cannot starve the ones after it (plan change PA4,
+   * documentation/scheduler.md). With `budgetRounds` the slices of a problem are cut from this ledger, so the bound holds for its total.
+   * Absent, or a run without a run budget: today's behaviour exactly. A number above 0.
+   */
+  budgetShare?: number;
+  /**
+   * The tool `consult` for the outer provers (plan change NL3, documentation/models-setup.md, "Consult", beta): one question, as text, to another configured
+   * model, `maxCalls` times a session (default 2), charged to the problem's ledger and journaled at the site `consult`. Its answer is advice in the
+   * prover's context and never changes a claim or a status. Absent: off, no defaults set and no arm turns it on, and a run that records and prompts as it always did.
+   */
+  consult?: ConsultConfig;
+  /**
+   * A model, and sampling settings, for each place the harness calls a model from (plan changes CA15 and CA23, documentation/models-setup.md, "Roles"): `prover`
+   * (the outer sessions), `planner` (the refinement rounds' call, `scheduler.planner`), `hole` (M12's hole sessions), `verifier` and `consult` (whose `model` is
+   * another way to name `consult.model`, which wins when both are given), and `escalation` (`{ model, maxShare }`: the planner's next calls after two rounds
+   * without Lean progress, within `maxShare` of the allowance). A model is resolved like the run's own and an unknown one stops the run at its start; each call
+   * is charged at its own model's price to the same ledgers. A setting the model's family ignores (the host profile) is not sent and is recorded as ignored.
+   * Absent, or a role not named: the run's model and its default settings, and a run that records and sends what it always did.
+   */
+  roles?: RolesConfig;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -141,6 +248,19 @@ export interface RunConfig {
    * stamps what the run learns with a prompt version of its own. Absent: the merged prompt, and a run that records what it always did.
    */
   prompts?: { proverSystem?: string };
+  /**
+   * The intake step (Task 36, documentation/literature.md): before any paid session of a problem, a search of the literature (a judge call
+   * under a cap, `literature` nodes, a breakpoint in a run with a person) and tests of the statement itself (vacuity, `plausible`, the first
+   * cases). Absent: no intake, and a run that records what it always did.
+   */
+  intake?: IntakeConfig;
+  /**
+   * `--private`: nothing of the problem is sent outside the machine and the model provider (documentation/literature.md, "Third
+   * parties"). It wins over every option that sends something: the literature step is skipped with the reason, and a run that also asks
+   * Jev for decisions is refused, and the backends of `lean.search` that send a query to a service stay off (documentation/lean.md). The
+   * one place later tasks read it from. Absent or false: no restriction.
+   */
+  private?: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
@@ -153,6 +273,11 @@ export const DEFAULT_CONFIG: Omit<RunConfig, "selection" | "model"> = {
   concurrency: 1,
   tools: [],
 };
+
+/** The limit of a prover's notes: the run's, or `CARD_NOTES_CHARS` when the state card carries the rest. */
+function effectiveNotesChars(config: Pick<RunConfig, "notesChars" | "stateCard">): number {
+  return config.stateCard === true ? Math.min(config.notesChars, CARD_NOTES_CHARS) : config.notesChars;
+}
 
 export interface RunOptions {
   config: RunConfig;
@@ -224,6 +349,19 @@ export interface RunOptions {
    * records the person's signature of the statement here (documentation/quickstart.md). It may write events; it may not spend.
    */
   afterStart?: (journal: Journal) => void;
+  /** The person's words, when the statement was formalized from them (`harness solve`): the literature queries use them. */
+  prose?: string;
+  /**
+   * A person's sketch of the proof, or a hint (`harness solve --sketch FILE`, documentation/human.md, "A person's sketch"): at most 20 000 characters, for a run of
+   * one problem. It is journaled once, when the problem is registered, as a `hint` node of its claim written by `human:NAME` (`user`; `human:person` when the
+   * run has no name), and reaches the first briefing of the outer provers and the planner's prompt. It changes no status. Ignored by a resume, which finds it in the journal.
+   */
+  sketch?: string;
+  /**
+   * Test lemmas the caller already ran for a problem's statement, by problem id (`harness solve` runs them to show them before the signature):
+   * the intake step records them and does not run them again.
+   */
+  testLemmas?: ReadonlyMap<string, TestLemmas>;
 }
 
 /** The parts of a consortium run that belong to the process that works a turn (documentation/human.md). */
@@ -254,6 +392,8 @@ export interface RunResult {
   usd: number;
   /** Why the run stopped before its last problem. */
   stopped?: string;
+  /** The error text of the model provider's refusal (a balance, a key) that stopped the run, when `stopped` is `provider_refused`. */
+  providerRefusal?: string;
   /** The report written in the run directory. */
   report: RunReport;
   /** The turn this process worked, for a consortium run: how it ended, and where its account is. */
@@ -300,11 +440,15 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.packetMode !== undefined && !PACKET_MODES.includes(config.packetMode)) {
     problems.push(`packetMode must be one of ${PACKET_MODES.join(", ")}, got ${String(config.packetMode)}`);
   }
+  if (config.checkTimeoutSec !== undefined && !(config.checkTimeoutSec >= 1)) problems.push(`checkTimeoutSec must be at least 1 second, got ${config.checkTimeoutSec}`);
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
+  if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
+  if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
+  if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -436,6 +580,12 @@ interface QueuedProblem {
 async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> {
   const { config } = o;
   const problems = checkConfig(config);
+  // The person of a run is the one it began with: a resumed run names none of its own, and a recorded answer of a person's stays theirs.
+  const person = o.user ?? resume?.events.find((e) => e.type === "run.started")?.user;
+  problems.push(...checkIntake(config.intake, { user: person }));
+  if (config.private === true && sitesSentOutside(resolveDecideSettings(config.decide)).length > 0) {
+    problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
+  }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
   const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
@@ -447,7 +597,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // What of the run is known before the registry is built: the prompts, the policy and the lines.
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(config.notesChars, config.tools.map(toolName), proverTemplate) };
+  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...config.tools, ...(config.autoTool !== undefined ? [config.autoTool] : [])].map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -491,6 +641,25 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     }
   }
   const model = await resolveModel(o.models, config.model);
+  if (config.consult !== undefined) {
+    const problems = checkConsult(config.consult);
+    if (problems.length > 0) throw new RunSetupError(problems.join("; "));
+    // Looked up now, so that a model or a key that is missing stops the run before any spend.
+    await resolveModel(o.models, config.consult.model);
+  }
+  // The roles' models, looked up now for the same reason; an error names the role.
+  if (config.roles !== undefined) await resolveRoles(config.roles, (name) => resolveModel(o.models, name));
+  // A person's sketch: refused before anything is written when it is empty or too long, or when the run has more than one problem to give it to.
+  if (o.sketch !== undefined && resume === undefined) {
+    const flaw = sketchProblem(o.sketch);
+    if (flaw !== undefined) throw new RunSetupError(flaw);
+    if (o.problems.length !== 1) throw new RunSetupError(`a sketch is for one problem, and this run has ${o.problems.length}: --sketch goes with a single statement`);
+  }
+  const proverRoleModel = config.roles?.prover?.model;
+  const proverModel = proverRoleModel === undefined || proverRoleModel === config.model ? model : await resolveModel(o.models, proverRoleModel);
+  // The tool consult: `RunConfig.consult`, or the `consult` role's model alone (`consult.model` wins when both name one).
+  const consultConfig: ConsultConfig | undefined =
+    config.consult ?? (config.roles?.consult?.model !== undefined ? { model: config.roles.consult.model } : undefined);
   if (resume === undefined && existsSync(join(o.dir, "journal.jsonl")) && statSync(join(o.dir, "journal.jsonl")).size > 0) {
     throw new RunSetupError(`${o.dir} already holds a run; choose another directory`);
   }
@@ -533,9 +702,42 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   } catch (error) {
     return await abandon(`the registry of the run: ${messageOf(error)}`, error);
   }
+  // The third-party policy, set once for the whole run and read nowhere else (documentation/trust.md, "Third parties"): `--private` is for every
+  // capability; a person who did not agree to the statement going outside (`harness solve`) leaves `lean.search` and `lit.search` to their local
+  // forms. A run without an `intake` config (`harness run` as it was) says nothing and keeps the third parties on.
+  registry.restrictThirdParties({
+    ...(config.private === true ? { private: true } : {}),
+    ...(config.intake !== undefined && config.intake.consent?.allowed !== true ? { local: [LEAN_SEARCH, LIT_SEARCH] } : {}),
+  });
+  if (config.leanSearch === true && !registry.offers(LEAN_SEARCH)) {
+    return await abandon(`leanSearch needs the capability ${LEAN_SEARCH}: host ${registry.host.host} does not offer it`, undefined, registry);
+  }
+  // The push of verified hits into the provers' check answers (plan change CA22): one for the run, so that a name is checked once per environment.
+  const leanSearch =
+    config.leanSearch === true
+      ? new LeanSearchPush({
+          checker: new RegistryLeanChecker(registry, { actor: LEAN_SEARCH }),
+          // A name is hidden again only once the answer that showed it has been masked in the history (`mask.ts`); without masking, never.
+          ...(config.maskOldChecks === true ? { masked: (shownAt: number, now: number) => shownAt <= maskedCount(now) } : {}),
+          search: async (request, signal) => {
+            const found = await new RegistryLeanSearch(registry).search(
+              { ...request, ...(config.private === true ? { private: true } : {}) },
+              { actor: LEAN_SEARCH, ...(signal !== undefined ? { signal } : {}) },
+            );
+            // A backend that failed makes the answer partial, and a partial answer is not kept; one a private run left out by design is not a failure.
+            return found === undefined ? undefined : { names: found.hits.map((hit) => hit.name), complete: found.skipped.every((s) => s.reason === PRIVATE_REASON) };
+          },
+        })
+      : undefined;
+  if (leanSearch !== undefined) {
+    // Said once, at the start: a search with no backend, or none usable, changes nothing and would otherwise do so silently.
+    const entry = (await registry.health(LEAN_SEARCH))[0];
+    if (entry === undefined || !entry.ok) log(`warning: leanSearch is on, but ${LEAN_SEARCH} has no usable backend on host ${registry.host.host}: ${entry?.detail ?? "none is set up"}; no hit will be added to the checks' answers`);
+  }
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
   // host cannot give is refused here, before `run.started` or `run.resumed` is written.
   const prices = new PriceBook(registry.host.models, o.wallClock);
+  const roleBook = config.roles !== undefined ? new RoleBook(config.roles, { model: config.model, thinkingLevel: config.thinkingLevel }, prices) : undefined;
   if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
     return await abandon(
       `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
@@ -585,11 +787,15 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // certification of the run: the run says so now, and the journal records why.
   const unusable = o.certifier === undefined && certifier !== undefined ? await registry.usable(LEAN_CERTIFY) : undefined;
   const certifierDown = unusable !== undefined && !unusable.ok ? unusable.detail : undefined;
-  const toolProblems = checkTools(registry, config.tools);
+  const autoIds = config.autoTool !== undefined ? [config.autoTool] : [];
+  const toolProblems = checkTools(registry, [...config.tools, ...autoIds]);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
   // A tool that cannot be reached now would answer every prover's call with an error.
-  const pinned = await pinTools(registry, config.tools);
-  if (pinned.problems.length > 0) return await abandon(pinned.problems.join("; "), undefined, registry);
+  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? []);
+  if (pinnedAll.problems.length > 0) return await abandon(pinnedAll.problems.join("; "), undefined, registry);
+  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`): pinned together, recorded apart.
+  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => t.capability !== config.autoTool) };
+  const pinnedAuto = pinnedAll.tools.find((t) => t.capability === config.autoTool);
   // The statement identity of the run is the one an enabled line gives; without one, the text's.
   const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
   let identity: StatementIdentity | undefined;
@@ -644,8 +850,23 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only when given, so that a run without it records what it always did.
       ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
       ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+      ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+      ...(config.defaults !== undefined ? { defaults: config.defaults } : {}),
+      ...(config.editTool === true ? { editTool: true } : {}),
+      ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+      ...(config.consult !== undefined ? { consult: { ...config.consult } } : {}),
+      ...(config.roles !== undefined ? { roles: JSON.parse(JSON.stringify(config.roles)) as Json } : {}),
+      ...(config.leanSearch === true ? { leanSearch: true } : {}),
+      ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
+      ...(config.firstCases === true ? { firstCases: true } : {}),
+      ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
+      ...(config.stateCard === true ? { stateCard: true } : {}),
+      ...(config.consolidation === true ? { consolidation: true } : {}),
+      ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
+      ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
+      ...(pinnedAll.dropped.length > 0 ? { toolsDropped: pinnedAll.dropped.map((d) => ({ ...d })) } : {}),
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
       // The host's prices have a hash of their own, which a resumption compares as a warning (documentation/m0-loop.md, "Prices").
@@ -666,6 +887,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // Only when given, so that a run without it records what it always did.
       ...(config.decide !== undefined ? { decide: config.decide as unknown as Json } : {}),
       ...(config.gate !== undefined ? { gate: config.gate as unknown as Json } : {}),
+      // Only when given, for the same reason; `private` is the single place the run's privacy is read from.
+      ...(config.intake !== undefined ? { intake: config.intake as unknown as Json } : {}),
+      ...(config.private === true ? { private: true } : {}),
     };
     writeFileSync(
       join(o.dir, "config.json"),
@@ -691,6 +915,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     );
     o.afterStart?.(journal);
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
+    if (config.roles !== undefined && describeRoles(config.roles) !== "") log(`roles: ${describeRoles(config.roles)}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
     if (leanEnvNote !== undefined) log(leanEnvNote);
@@ -731,13 +956,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // A model with no price anywhere is charged $0, and no dollar cap can then stop it: refused when a dollar cap is
   // given on purpose (--run-budget-usd, a turn's usd), and said in the log otherwise (the default per-problem budget
   // is always there, and a free local model is legitimate).
-  for (const name of ranking.order) {
+  const roleModels = new Set<string>(
+    config.roles === undefined ? [] : [...Object.entries(config.roles).flatMap(([, role]) => (typeof (role as { model?: unknown }).model === "string" ? [(role as { model: string }).model] : []))],
+  );
+  for (const name of [...new Set([...ranking.order, ...roleModels])]) {
     const slash = name.indexOf("/");
     const known = slash > 0 ? o.models.getModel(name.slice(0, slash), name.slice(slash + 1)) : undefined;
     if (known === undefined || !prices.isFree(known)) continue;
     const capped = config.budget.runUsd !== undefined || config.consortium?.limit.usd !== undefined;
     const advice = `give it a pricing entry in the host profile's models (documentation/m0-loop.md, "Prices")`;
-    if (capped && name === config.model) {
+    if (capped && (name === config.model || roleModels.has(name))) {
       return await abandon(`${name} has no price in host ${registry.host.host} or in pi-ai, so it would be charged $0 and --run-budget-usd or the turn's usd limit could never stop it: ${advice}`, undefined, registry);
     }
     log(`warning: ${name} has no price in host ${registry.host.host} or in pi-ai: its responses are charged $0 and no dollar budget sees them; ${advice}`);
@@ -777,7 +1005,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   let benches: ClaimBenches | undefined;
   let memory: MemoryStore | undefined;
   const libraryDefinitions = resume === undefined && o.libraryRegistry !== undefined ? registryDefinitions(o.libraryRegistry) : [];
-  if (enabled.lines.length > 0 || journal.chain !== undefined || libraryDefinitions.length > 0) {
+  if (enabled.lines.length > 0 || journal.chain !== undefined || libraryDefinitions.length > 0 || config.intake !== undefined) {
     memory = new MemoryStore({ journal, blobs, provenance, ...(identity !== undefined ? { identity } : {}) });
     if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
     if (libraryDefinitions.length > 0) log(`the run starts with ${seedDefinitions(memory, libraryDefinitions).length} definition(s) of the library registry`);
@@ -803,8 +1031,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ranking,
       decide: resolveDecideSettings(config.decide),
       prices,
+      ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
+      ...(roleBook !== undefined ? { roles: roleBook } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
     const outside = sitesSentOutside(resolveDecideSettings(config.decide));
@@ -827,6 +1057,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     results.push({ problemId: problem.problemId, outcome: "aborted", reason: "dropped by the team", attempts: problem.attempts, usd: problem.usd, durationMs: problem.durationMs });
   }
   let stopped: string | undefined;
+  let providerRefusal: string | undefined;
   let failedInARow = 0;
   const stopReason = (): string | undefined => {
     if (stopped !== undefined) return stopped;
@@ -835,8 +1066,67 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     return undefined;
   };
 
+  /**
+   * The run's budget in rounds (CA8): with a run budget and several problems, the problems take turns, a slice at a time. A run of one problem,
+   * or without a run budget, is worked as it always was.
+   */
+  let rounds: Rotation | undefined;
+  if (config.budgetRounds === true && config.budget.runUsd !== undefined) {
+    const { runUsd, problemUsd } = config.budget;
+    const k = o.problems.length;
+    if (resume === undefined && problemUsd > runUsd / k + 1e-9) {
+      log(`warning: the problem allowance ($${problemUsd}) is above its fair share of the run's budget ($${(runUsd / k).toFixed(4)} = $${runUsd} / ${k} problem${k === 1 ? "" : "s"}): one problem can still take more than its share, up to the round's cap`);
+    }
+    // PA5: with the gate on (so with a probe), round 0 gives a problem at least what the probe may spend, a fraction of the problem allowance.
+    const floorUsd = config.gate === undefined ? 0 : Math.min(gateSettings(config.gate).probeFraction * problemUsd, problemUsd);
+    if (resume === undefined && k > 1 && floorUsd * k > runUsd + 1e-9) {
+      log(`warning: the run's budget ($${runUsd}) cannot give each of the ${k} problems the probe's cap ($${floorUsd.toFixed(4)}): the problems are served in the run's order until the budget is spent, and the last may never begin`);
+    }
+    const earlier = resume === undefined ? undefined : recordedRounds(resume.events);
+    if (k > 1) {
+      rounds = new Rotation({
+        runUsd,
+        k,
+        ...(floorUsd > 0 ? { floorUsd } : {}),
+        concurrency: config.concurrency,
+        order: o.problems.map((p) => p.id),
+        journal,
+        measure: (id) => {
+          const claimId = journal.projection.problem(id)?.claim_id;
+          return claimId === undefined ? { ...NO_MARK } : markOf(memory !== undefined ? progressOf(memory, id, claimId) : NO_PROGRESS, journal.projection.attempts(claimId));
+        },
+        spent: (id) => journal.projection.problemSpend(id).usd,
+        found: (id) => {
+          const claimId = journal.projection.problem(id)?.claim_id;
+          const status = claimId === undefined ? undefined : journal.projection.claim(claimId)?.status;
+          return status === "computed" || status === "proved" || status === "refuted";
+        },
+        over: () => turn?.ended !== undefined || stopReason() !== undefined,
+        log,
+        ...(earlier !== undefined ? { recorded: earlier } : {}),
+        finished: new Set(results.map((r) => r.problemId)),
+      });
+    }
+  }
+
   const runProblem = async ({ entry, k, again }: QueuedProblem): Promise<void> => {
-    const result = await solveProblem(entry, again);
+    let grant: Grant | undefined;
+    let rotation = rounds;
+    if (rounds !== undefined) {
+      grant = await rounds.acquire(entry.id);
+      // The run is over for a problem that never began; one that was begun is taken up to its end, as it is without the rotation.
+      if (grant === undefined && again === undefined) {
+        rounds.done(entry.id);
+        return;
+      }
+      if (grant === undefined) rotation = undefined;
+    }
+    let result: ProblemResult | undefined;
+    try {
+      result = await solveProblem(entry, again, rotation, grant);
+    } finally {
+      rounds?.done(entry.id);
+    }
     if (result === undefined) {
       log(`[${k + 1}/${o.problems.length}] ${entry.fullName}: waits for the next turn`);
       return;
@@ -868,10 +1158,21 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
    * and its registration, its tasks, its spend, the candidate it found and what its provers carried are
    * taken from the journal (documentation/ledger.md, "Resume").
    */
-  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem): Promise<ProblemResult | undefined> => {
+  const problemCap = (ownSpentUsd: number): number => {
+    const { problemUsd, runUsd } = config.budget;
+    if (config.budgetShare === undefined || runUsd === undefined) return problemUsd;
+    const unfinished = Math.max(1, o.problems.length - results.length);
+    return Math.min(problemUsd, (config.budgetShare * Math.max(0, runUsd - runLedger.usd + ownSpentUsd)) / unfinished);
+  };
+
+  const solveProblem = async (entry: ProblemEntry, again?: InterruptedProblem, rotation?: Rotation, grant?: Grant): Promise<ProblemResult | undefined> => {
     const started = performance.now();
-    const ledger = runLedger.child(config.budget.problemUsd);
-    if (again !== undefined) ledger.seed(journal.projection.problemSpend(entry.id));
+    // The problem's cap (PA4): the allowance, bounded by its share of what the run has left. A resumed problem's own spend is part of what the
+    // journal says the run has spent, so it counts as left, and the bound is the one the problem was opened with.
+    const priorSpend = again !== undefined ? journal.projection.problemSpend(entry.id) : undefined;
+    const capUsd = problemCap(priorSpend?.usd ?? 0);
+    const ledger = runLedger.child(capUsd);
+    if (priorSpend !== undefined) ledger.seed(priorSpend);
     const domain = entry.ams.map((code) => `msc:${String(code).padStart(2, "0")}`);
     let attempts = 0;
     // The problem's file is read before its claim is made: its prefix is the header the statement is read under.
@@ -920,9 +1221,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           target: entry.fullName,
           source: { repo: o.index.source.repo, rev: o.index.source.rev, path: entry.path, line: entry.line },
           domain,
+          ...(config.budgetShare !== undefined && config.budget.runUsd !== undefined ? { allowanceUsd: capUsd } : {}),
         },
         "orchestrator",
       );
+      // The person's sketch, once, as a hint of the claim (never a status); the first briefing and the planner read it from the journal.
+      if (o.sketch !== undefined) recordSketch(journal, { ...(o.user !== undefined ? { by: o.user } : {}), claimId, text: o.sketch });
     }
     const finish = (outcome: ProblemOutcome, reason?: string, proof?: string): ProblemResult => {
       const durationMs = Math.round(performance.now() - started);
@@ -1001,6 +1305,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 rung: () => live.lines?.rung ?? 0,
                 ...(turn !== undefined ? { turn: () => turn.number } : {}),
                 attemptIds: () => live.workbench?.attemptIds ?? [],
+                ...(memory !== undefined ? { informalAccepted: () => informalProofOfNodes(memory.nodes(INFORMAL_PROOF_KIND, { claimId }), () => undefined)?.accepted === true } : {}),
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
                 decide: problemDecide({
                   line: GATE_LINE,
@@ -1082,7 +1387,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         theorem: entry.fullName,
         provers: config.provers,
         sessions: config.sessions,
-        problemUsd: config.budget.problemUsd,
+        problemUsd: capUsd,
       });
       // The provers had started if any of their tasks ever ran: the lines' `beforeProvers` came before that.
       const begun = again !== undefined && proverTasks.some((task) => (tasks.get(task.taskId)?.running_seq ?? null) !== null);
@@ -1104,6 +1409,168 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           } else {
             endProverTask(tasks, task, { stop: "aborted", sessions: config.sessions, budget });
           }
+        }
+      }
+
+      // The answer on third parties is journaled for every problem the policy applies to, whether or not the intake step runs below (Task 36b).
+      if (config.private === true || config.intake !== undefined) {
+        recordConsent({ journal, config: config.intake, private: config.private === true, leanSearch: config.leanSearch === true, events: resume?.events ?? [], problemId: entry.id, ...(person !== undefined ? { user: person } : {}) });
+      }
+
+      // The intake step (Task 36): the literature and the statement's hygiene, before any paid session. A problem whose step was written by
+      // the process before is not tested again.
+      if (config.intake !== undefined && memory !== undefined && !adopted && !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id)) {
+        try {
+          const intakeModel = await resolveModel(o.models, config.model);
+          const perMillion = (() => {
+            const host = prices.pricingOf(intakeModel);
+            return host !== undefined ? { inputPerM: host.cacheMiss, outputPerM: host.output } : { inputPerM: intakeModel.cost.input, outputPerM: intakeModel.cost.output };
+          })();
+          const step = await intakeStep({
+            config: config.intake,
+            private: config.private === true,
+            leanSearch: config.leanSearch === true,
+            consentRecorded: true,
+            journal,
+            memory: memory.withActor("orchestrator"),
+            registry,
+            llm: lineLlm({
+              line: "intake" as LineId,
+              journal,
+              blobs,
+              models: o.models,
+              model: config.model,
+              resolveModel: (name) => (name === config.model ? Promise.resolve(intakeModel) : resolveModel(o.models, name)),
+              thinkingLevel: "off",
+              ledger,
+              problemId: entry.id,
+              signal: controller.signal,
+              ...(turn !== undefined ? { turn } : {}),
+              prices,
+            }),
+            price: perMillion,
+            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "judge", estimateUsd, pSuccess: INTAKE_P_SUCCESS }); return { action: a.action, reason: a.reason }; } } : {}),
+            checker: new RegistryLeanChecker(registry, { actor: "orchestrator" }),
+            allowanceUsd: capUsd,
+            ...(o.testLemmas?.get(entry.id) !== undefined ? { testLemmas: o.testLemmas.get(entry.id) as TestLemmas } : {}),
+            problemId: entry.id,
+            claimId,
+            statement: entry.statement,
+            ...(o.prose !== undefined ? { prose: o.prose } : {}),
+            name: entry.fullName,
+            ...(docstringOf(problem.sketch) !== undefined ? { doc: docstringOf(problem.sketch) as string } : {}),
+            header: problem.sketch.prefix,
+            ...(o.user !== undefined ? { user: o.user } : {}),
+            events: resume?.events ?? [],
+            signal: controller.signal,
+            log: (text) => log(`${entry.fullName}: ${text}`),
+          });
+          if (step.breakpoint !== undefined && turn !== undefined) {
+            // A run with a person stops here, before anything is spent on proving: the problem waits for the next turn.
+            turn.strike({ reason: step.breakpoint.reason, detail: `${entry.fullName}: ${step.breakpoint.detail}`, breakpoint: { kind: step.breakpoint.reason, problemId: entry.id } });
+            return undefined;
+          }
+          if (step.breakpoint !== undefined) log(`${entry.fullName}: ${step.breakpoint.detail} (recorded in the report; the run goes on)`);
+        } catch (error) {
+          if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
+          if (!controller.signal.aborted) log(`${entry.fullName}: the intake step failed and was left out: ${messageOf(error)}`);
+        }
+      }
+
+      // The first cases of the statement (`RunConfig.firstCases`). The compute tool is the run's `autoTool` (or a compute tool it was given by name), whether or not the
+      // router files this statement: the router does not read big operators, and a sum is the shape the table is for. Computed once, on first use.
+      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
+      let casesDone: { value: Awaited<ReturnType<typeof computeFirstCases>> } | undefined;
+      const casesOnce = async (): Promise<Awaited<ReturnType<typeof computeFirstCases>>> => {
+        casesDone ??= {
+          value:
+            config.firstCases === true && computeTool !== undefined
+              ? await computeFirstCases(entry.statement, {
+                  registry,
+                  capability: computeTool.capability,
+                  implementation: computeTool.implementation,
+                  // Numbers go to the OEIS only when the run is not private and the person did not refuse third parties (the intake's answer, when there is one).
+                  oeis: registry.offers("oeis.search") && config.private !== true && (config.intake === undefined || config.intake.consent?.allowed === true),
+                  signal: controller.signal,
+                })
+              : undefined,
+        };
+        return casesDone.value;
+      };
+
+      // The informal proof first (PA13, NL2, AL1, AL2): once per problem, before the lines and the provers. A problem whose node exists does not run it again; a loop
+      // that was cut mid-way (no node) is run again from its start. The result is a hint of the claim: no status changes.
+      if (config.informalFirst !== undefined && !adopted && !hasInformalProof(journal.projection, claimId, entry.id)) {
+        const settings = informalSettings(config.informalFirst);
+        try {
+          if (resume !== undefined) log(`${entry.fullName}: the informal proof has no record in the journal: its loop is run again from its start`);
+          const planner = roleBook?.has("planner") === true ? roleBook.use("planner") : undefined;
+          const verifier = roleBook?.has("verifier") === true ? roleBook.use("verifier") : undefined;
+          const informalCases = await casesOnce();
+          const prose = o.prose !== undefined && String(o.prose).trim() !== "" ? String(o.prose) : docstringOf(problem.sketch);
+          const person = sketchOfNodes(journal.projection.nodes(HINT_KIND, claimId));
+          const llm = lineLlm({
+            line: INFORMAL_LINE as LineId,
+            journal,
+            blobs,
+            models: o.models,
+            model: config.model,
+            resolveModel: (name) => (name === config.model ? Promise.resolve(model) : resolveModel(o.models, name)),
+            thinkingLevel: config.thinkingLevel,
+            ledger,
+            problemId: entry.id,
+            signal: controller.signal,
+            ...(turn !== undefined ? { turn } : {}),
+            prices,
+            // The generator and the reviser are the planner's role, the verifier is its own.
+            roleFor: (site) => {
+              const use = site === "informal.verify" ? verifier : planner;
+              return use === undefined ? undefined : { use };
+            },
+          });
+          const outcome = await runInformalLoop({
+            settings,
+            llm,
+            statement: entry.statement,
+            ...(prose !== undefined ? { doc: prose } : {}),
+            ...(informalCases !== undefined ? { firstCases: informalCases.section } : {}),
+            ...(person !== undefined ? { sketch: person } : {}),
+            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "task", estimateUsd }); return { action: a.action, reason: a.reason }; } } : {}),
+            estimateUsd: capUsd * INFORMAL_CALL_SHARE,
+            signal: controller.signal,
+            interrupted: (error) => turn?.ended !== undefined && isTurnEnded(error),
+            log: (text) => log(`${entry.fullName}: ${text}`),
+          });
+          if (outcome.stop === "stopped") {
+            log(`${entry.fullName}: the informal proof was cut by the end of the problem and is not recorded`);
+          } else {
+            // The facts of an accepted proof are looked up with lean.search when the host offers it: at most five queries, no model call, tool runs in the journal.
+            const hits =
+              outcome.accepted && outcome.facts.length > 0 && registry.offers(LEAN_SEARCH)
+                ? await lookupFacts(outcome.facts, async (query) => {
+                    const found = await new RegistryLeanSearch(registry).search(
+                      { query, kind: "name", limit: HITS_PER_FACT, ...(config.private === true ? { private: true } : {}) },
+                      { actor: "harness:informal", signal: controller.signal },
+                    );
+                    return found?.hits.map((hit) => hit.name);
+                  })
+                : [];
+            recordInformalProof(journal, blobs, {
+              claimId,
+              problemId: entry.id,
+              outcome,
+              required: settings.passes,
+              models: { planner: planner?.model ?? config.model, verifier: verifier?.model ?? planner?.model ?? config.model },
+              hits,
+            });
+            log(
+              `${entry.fullName}: the informal proof is ${outcome.accepted ? `accepted after ${outcome.passes} verifier pass(es)` : `not accepted (${outcome.stop}${outcome.detail !== undefined ? `: ${outcome.detail}` : ""})`}` +
+                `, ${outcome.rounds} generate-or-revise call(s); a hint, not checked by Lean`,
+            );
+          }
+        } catch (error) {
+          if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
+          if (!controller.signal.aborted) log(`${entry.fullName}: the informal proof failed and was left out: ${messageOf(error)}`);
         }
       }
 
@@ -1145,8 +1612,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       }
       // The provers that have work: all of them in a fresh problem, the ones that are `ready` in a problem
       // that was begun, each with what it carried. The journal has to give that back before any prover starts.
-      const working = again === undefined ? proverTasks : proverTasks.filter((task) => tasks.get(task.taskId)?.status === "ready");
+      let working = again === undefined ? proverTasks : proverTasks.filter((task) => tasks.get(task.taskId)?.status === "ready");
       const carried = new Map<string, ProverResume>();
+      // The slice of the run's budget in rounds this problem is working (CA8): a child of the problem's ledger, which pauses the provers when spent.
+      let sliceLedger: Ledger | undefined;
       let resumeFailure: string | undefined;
       if (again !== undefined && !adopted) {
         try {
@@ -1164,6 +1633,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         adopted ||
         resumeFailure !== undefined ||
         (lines !== undefined && (lineFailure !== undefined || workbench.candidate !== undefined || controller.signal.aborted));
+      // The compute tool a problem gets only when the router files its statement (`RunConfig.autoTool`).
+      const autoToolFiled = pinnedAuto !== undefined ? fileStatement(entry.statement) : undefined;
+      if (autoToolFiled !== undefined && pinnedAuto !== undefined) log(`${entry.fullName}: the statement is filed as ${autoToolFiled}: the provers get ${pinnedAuto.capability}`);
+      // The first cases of the statement, once per problem before the provers start (`RunConfig.firstCases`). They are computed when asked for (above, for the informal
+      // proof, which comes before the lines; here otherwise), and once.
+      const firstCases = idle ? undefined : await casesOnce();
+      if (firstCases !== undefined) log(`${entry.fullName}: the first cases are computed (${firstCases.table.rows.length} rows${firstCases.hits.length > 0 ? `, ${firstCases.hits.length} OEIS match(es)` : ""})`);
       /**
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
        * prover that was started before carries; `probe` makes it a probe: `sessions` sessions under a ledger of its own, then it pauses.
@@ -1186,24 +1662,34 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           workbench,
           journal,
           models: o.models,
-          model,
-          modelName: config.model,
-          thinkingLevel: config.thinkingLevel,
+          model: proverModel,
+          modelName: proverRoleModel ?? config.model,
+          thinkingLevel: config.roles?.prover?.settings?.thinking ?? config.thinkingLevel,
+          ...(roleBook !== undefined ? { roles: roleBook } : {}),
           sessions: config.sessions,
           limits: config.limits,
-          notesChars: config.notesChars,
+          notesChars: effectiveNotesChars(config),
+          ...(config.stateCard === true ? { stateCard: true } : {}),
+          ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
+          ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+          ...(config.editTool === true ? { editTool: true } : {}),
+          ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
+          ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
+          ...(leanSearch !== undefined ? { leanSearch } : {}),
+          ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,
           ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
-          ledger: how.probe?.ledger ?? ledger,
+          ledger: how.probe?.ledger ?? sliceLedger ?? ledger,
+          ...(sliceLedger !== undefined ? { slice: () => sliceLedger !== undefined && sliceLedger.exhausted && !ledger.exhausted } : {}),
           ...(how.probe !== undefined ? { probe: { sessions: how.probe.sessions } } : {}),
           ...(gate !== undefined ? { gate } : {}),
           signal: controller.signal,
           transcript,
-          tools: pinned.tools,
+          tools: autoToolFiled !== undefined && pinnedAuto !== undefined ? [...pinned.tools, pinnedAuto] : pinned.tools,
           stamp: (modelId) => stampProvenance(provenance, { modelId }),
           onAttemptEnd: (attempt) => {
             void router.attemptEnded({ ...attempt, taskId: task.taskId, claimId });
@@ -1211,7 +1697,14 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           },
           // A prover that the turn interrupted has not ended: its task stays running, as a process that ended leaves it.
           onEnd: (result) => {
-            if (result.stop === "turn" || result.stop === "probe") return;
+            if (result.stop === "turn" || result.stop === "probe" || result.stop === "slice") return;
+            if (result.refusal !== undefined) {
+              // Every later request would be refused the same way: no other prover, no other problem starts.
+              if (providerRefusal === undefined) log(refusalLine(result.refusal));
+              providerRefusal ??= result.refusal;
+              stopped = "provider_refused";
+              controller.abort(ABORT_STOPPED);
+            }
             end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
           },
           ...(turn !== undefined ? { turn } : {}),
@@ -1236,17 +1729,48 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
        * the problem's budget, and the problem widens (the other provers start, the first goes on) only if the probe made Lean progress, or
        * the exploration floor lets it through. Without the gate every prover starts at once.
        */
+      /** How a prover starts: from `ready` as ever, or, when a slice of the rotation paused it, from where the journal says it stopped. */
+      const launch = (task: ProverTask): { begin: boolean; resumed: ProverResume | undefined } => {
+        const paused = tasks.get(task.taskId)?.status === "running";
+        return { begin: !paused, resumed: carried.get(task.taskId) ?? (paused ? proverResumeOf(journal, blobs, task.taskId) : undefined) };
+      };
+      /** Set when a slice of the rotation paused the probe's prover: the next slice takes the probe up where it stopped. */
+      let probeCut = false;
+      /** What a task's attempts have cost so far, in dollars. */
+      const spentBy = (taskId: string): number => journal.projection.attemptsOfTask(taskId).reduce((sum, a) => sum + (a.usd ?? 0), 0);
       const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
         const [first, ...rest] = working;
-        if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))));
+        if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, launch(task)))));
         let stage = gate.stage;
         if (stage === "start" || stage === "probing") {
           const { capUsd } = gate.probe();
           const resumedFirst = carried.get(first.taskId);
-          // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
-          if (resumedFirst === undefined || resumedFirst.session < 1) {
-            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: ledger.child(capUsd) } }));
+          if (probeCut) {
+            // A slice paused the probe's session (its task is still running): the probe goes on from where the journal says it stopped, still a probe,
+            // under what is left of its cap, for one more session. Nothing left of the cap, or no session left: the gate judges.
+            probeCut = false;
+            const resumed = proverResumeOf(journal, blobs, first.taskId);
+            const left = gate.probeTotalUsd(capUsd) - spentBy(first.taskId);
+            if (resumed !== undefined && resumed.session < config.sessions && left > 1e-9) {
+              const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
+              if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
+              if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+            }
+          } else if (resumedFirst === undefined || resumedFirst.session < 1) {
+            // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
+            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
+            if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+          }
+          // A probe its cap cut while it was still working, with no Lean progress, has told the gate nothing: one extension (`probeExtend`).
+          const extension = gate.extension({ taskId: first.taskId, capUsd });
+          if (extension !== undefined) {
+            const resumed = proverResumeOf(journal, blobs, first.taskId);
+            if (resumed !== undefined && resumed.session < config.sessions) {
+              const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(extension.capUsd) } }));
+              if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
+              if (result.status === "rejected" || result.value.stop !== "probe") return [result];
+            }
           }
           const widened = await gate.widen(working.length);
           if (widened.action === "skip" && turn !== undefined) {
@@ -1260,6 +1784,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             return [{ status: "fulfilled", value: { name: first.name, attempts: workbench.attemptIds.length, stop: "turn" } }];
           }
           if (widened.action === "skip") {
+            // After a resumption the probe's task is `ready` again: it takes up its place before it ends.
+            if (tasks.get(first.taskId)?.status === "ready") tasks.start(first.taskId, `prover ${first.name} resumes after the interruption, to end at the gate`);
             endProverTask(tasks, first, { stop: "gate", sessions: config.sessions, budget: "the problem's budget" });
             for (const task of rest) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");
             tasks.promote(entry.id);
@@ -1277,10 +1803,25 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         const probed = proverResumeOf(journal, blobs, first.taskId);
         return Promise.all([
           settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed })),
-          ...rest.map((task) => settleRun(startProver(task, { begin: true, resumed: carried.get(task.taskId) }))),
+          ...rest.map((task) => settleRun(startProver(task, launch(task)))),
         ]);
       };
-      const settled: PromiseSettledResult<ProverResult>[] = idle ? [] : await gated();
+      // Without the rotation a problem is worked until its allowance is spent. With it (CA8) the provers work one slice at a time: when the
+      // slice's allowance is spent they pause, the problem waits for its next round, and this loop goes on with the same provers from where
+      // the journal says they stopped. Nothing inside a slice differs from a problem worked alone.
+      let settled: PromiseSettledResult<ProverResult>[];
+      for (let current = grant; ; ) {
+        if (current !== undefined && !idle) sliceLedger = ledger.child(Math.max(0, Math.min(current.capUsd, capUsd) - ledger.usd));
+        settled = idle ? [] : await gated();
+        const paused =
+          rotation !== undefined && current !== undefined && !idle && workbench.candidate === undefined && !controller.signal.aborted && !ledger.exhausted && turn?.ended === undefined &&
+          settled.every((s) => s.status === "fulfilled") && settled.some((s) => s.status === "fulfilled" && s.value.stop === "slice");
+        if (!paused || rotation === undefined) break;
+        carried.clear();
+        working = proverTasks.filter((task) => !isFinalTaskStatus(tasks.get(task.taskId)?.status ?? "ready"));
+        current = await rotation.next(entry.id);
+        if (current === undefined) break;
+      }
       const provers = settled.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
       attempts = workbench.attemptIds.length;
       const crash = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
@@ -1326,6 +1867,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       if (lineFailure !== undefined) return await end("error", lineFailure);
       if (resumeFailure !== undefined) return await end("error", resumeFailure);
       if (crash !== undefined) return await end("error", `the harness failed: ${messageOf(crash.reason)}`);
+      if (providerRefusal !== undefined) return await end("error", `the model provider refused the request (${providerRefusal})`);
       if (o.signal?.aborted) return await end("aborted", "the run was stopped");
       if (ledger.exhausted) return await end("unsolved", runLedger.exhausted ? "the run's budget ran out" : "the problem's budget ran out");
       if (provers.length > 0 && provers.every((p) => p.stop === "errors")) return await end("error", proverErrors(journal, workbench.attemptIds));
@@ -1378,13 +1920,19 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   }
   let crashed: { error: unknown } | undefined;
   let turnSummary: TurnSummary | undefined;
+  let consolidationSection: string | undefined;
   try {
-    await pool(
-      queue,
-      config.concurrency,
-      runProblem,
-      (next) => turn?.ended !== undefined || (next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined),
-    );
+    if (rounds !== undefined) {
+      rounds.begin();
+      await Promise.all(queue.map((q) => runProblem(q)));
+    } else {
+      await pool(
+        queue,
+        config.concurrency,
+        runProblem,
+        (next) => turn?.ended !== undefined || (next.again !== undefined ? stopped !== undefined || o.signal?.aborted === true : stopReason() !== undefined),
+      );
+    }
   } catch (error) {
     crashed = { error };
     stopped ??= "errors";
@@ -1415,6 +1963,15 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         waiting,
         ...(narrative !== undefined ? { narrative } : {}),
       });
+      if (config.consortium?.consolidation === true) {
+        try {
+          const store = new MemoryStore({ journal, blobs, actor: "orchestrator" });
+          const part = modelFreePart(store, chainProblems([...(journal.chain?.segments ?? []).flatMap((s) => s.events), ...readEvents(journal.log.path)]));
+          consolidationSection = renderModelFreeSection(part);
+        } catch (error) {
+          log(`the consolidation section of the turn's report could not be computed: ${messageOf(error)}`);
+        }
+      }
       turnSummary = { number: turn.number, reason, detail, paused, account: `turns/${turn.number}/report.md` };
     }
     if (!paused) {
@@ -1447,13 +2004,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // The account is built from the journal alone, once it is closed (documentation/human.md).
   if (turnSummary !== undefined) {
     try {
-      writeAccount(o.dir, turnSummary.number);
+      writeAccount(o.dir, turnSummary.number, consolidationSection !== undefined ? { consolidation: consolidationSection } : {});
     } catch (error) {
       log(`the account of turn ${turnSummary.number} could not be written: ${messageOf(error)}`);
     }
   }
   const report = writeReport(o.dir);
-  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
+  return { runId, dir: o.dir, problems: results, usd: runLedger.usd, ...(stopped !== undefined ? { stopped } : {}), ...(providerRefusal !== undefined ? { providerRefusal } : {}), report, ...(turnSummary !== undefined ? { turn: turnSummary } : {}) };
 }
 
 /**

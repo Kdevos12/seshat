@@ -37,6 +37,7 @@ code and long descriptions live in their own files.
 | `produces`, `certificate` | Claim statuses a result can justify; `proved` and `refuted` need a `certificate` saying what makes the result trustworthy. |
 | `timeoutMs` | Default time limit of one call. |
 | `timeoutField` | A number field of the input, in seconds, that sets the tool's own time limit; the registry then allows that plus 15 seconds. |
+| `thirdParty` | Optional. What the capability sends to a party other than the model provider, see [Third parties](#third-parties). Absent: nothing leaves the machine. |
 | `stateful` | `true` when calls keep state between them, such as the variables of a computer algebra session ([scopes](#scopes)). |
 | `summary` | Paths of the output recorded in each tool run, such as `results.*.status`. |
 | `examples` | Inputs with their outputs, shown to models. |
@@ -55,6 +56,42 @@ are unique, every example and every contract input is valid for the schemas, sum
 expectation paths parse, every regular expression compiles, the MCP implementations of a stateful
 capability name their scope argument (and only theirs do), and `timeoutField` is a number field of
 the input with both bounds. All problems of the catalog are reported together.
+
+### Third parties
+
+A capability that sends content of the problem to a party other than the model provider says so in
+its manifest, in the optional field `thirdParty`:
+
+```json
+"thirdParty": { "sends": "the terms of a sequence, or its number, to the OEIS" }
+```
+
+| Field | Meaning |
+|---|---|
+| `sends` | What leaves, in a few words. It is what the refusal and the consent question say. |
+| `implementations` | The implementations that send it; absent: every one does. The others stay usable in a private run (`decide.ask`: `jev` sends, `faux` does not). |
+| `privateInput` | Input fields that make the call stay on the machine, when the capability can answer locally (`lean.search`: `{"private": true}`; `lit.search`: `{"backends": ["bench-metadata"]}`). Absent: the capability cannot work locally. |
+
+The marked capabilities are `oeis.search`, `lmfdb.query`, `findstat.identify`, `lit.search`,
+`lean.search` and `decide.ask`; [trust.md](trust.md#third-parties) says what each sends and what governs it. The
+field is additive: a manifest, or a pack, without it loads as before and sends nothing outside as far as the
+harness knows (a pack's manifest is its author's word, which is one more reason a pack is `deferred`
+and asked for by name).
+
+The rule is the registry's, in one place. A run calls `registry.restrictThirdParties({ private: true })` once, from
+`--private`, and `{ local: ["lean.search"] }` when the person did not agree to the statement going outside
+([lean.md](lean.md#search-pushed-by-the-harness)); the policy only ever tightens. From then on, in `invoke`, before any
+implementation is reached:
+
+- a capability with `privateInput` is called with those fields added to the input, whatever the caller gave, so no caller can forget it;
+- otherwise the call goes only to the implementations that do not send, and with none left it is refused with the error
+  code `private`, whose message names `--private`. The refusal is a tool run that never reached an implementation: `tool_run.started`
+  and `tool_run.finished` with the outcome `error` and the summary `error: "private"`. `registry.thirdPartyRefusal(id)` says in advance,
+  without calling, whether every call would be refused (`harness solve --private --tool oeis.search` stops on it, before any spend).
+
+A refusal is not `unavailable`: a caller does not retry it and a model's tool does not mark the tool as gone for the session. The lines
+that call a third-party capability (`RegistryOeis`, the tools given with `--tool`) already go on without an answer they cannot get, and
+take the refusal the same way.
 
 ### Schemas
 
@@ -156,7 +193,7 @@ the capabilities the host offers; a capability it does not name is unavailable t
   implementation of it that does not answer as `warn` and does not fail on it, also when the
   capability is named; a run that asks for its tool still stops when nothing answers. Without it, an
   implementation that does not answer is `FAIL` and the command exits with 1. The repository's profiles
-  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `smt.z3`, `atp.vampire`, `atp.eprover` and `decide.ask`, and no other capability.
+  mark `oeis.search`, `lmfdb.query` and `findstat.identify` optional, as are `lit.search`, `smt.z3`, `atp.vampire`, `atp.eprover`, `decide.ask` and `lean.search`, and no other capability.
 
 The host is chosen with `--host`, or `HARNESS_HOST`, and defaults to `local`. The repository has
 `local` (a workstation) and `server` (the dedicated server, where the Lean server's key is
@@ -181,6 +218,7 @@ are `CapabilityError`s:
 |---|---|---|
 | `unknown_capability` | No such manifest. | none |
 | `invalid_input` | The input breaks the schema, or a call of a stateful capability has no scope. | none |
+| `private` | The run is private (`--private`), or a person did not agree to the statement going outside, and the capability sends it to a third party and cannot work locally ([third parties](#third-parties)). | `error`, with the summary `error: "private"`; no implementation was called |
 | `unavailable` | The host does not offer the capability, or no implementation could be reached. | `error`, for each one tried |
 | `timeout` | The time limit passed. | `timeout` |
 | `aborted` | The caller's signal aborted, for instance when a budget ran out. | `aborted` |
@@ -330,6 +368,22 @@ through `RegistryOeis`, so its lookups are tool runs from `line:M11`. Its contra
 search by terms, one by number, one without an answer (`count` 0, not an error), and a call with
 neither or both of `terms` and `id` (refused before any request). It has not run against the site.
 
+## `lit.search`
+
+The literature, for the intake step of a run ([literature.md](literature.md)): a `query` goes to every backend the host profile
+enables (OpenAlex, arXiv, Semantic Scholar, zbMATH, and the docstrings and `formal_proof` attributes of a local bench checkout) and
+gives, for each backend, the request made and how many hits it returned or why it failed, and the hits: backend, link, title and the
+`text` the site gave (an abstract, a review, a docstring). Its exposure is `auto`: no prover has it as a tool, because everything it
+returns is text from a third party. It justifies no status. Its implementation `sources` (factory `lit`, version `backends-1`) is one
+implementation whose host settings choose the backends (`backends.ID.baseUrl`, or `dir` for `bench-metadata`; a backend with an empty
+setting is off), each with its `allowedHosts`: the address must be on that list, https is required (a loopback address is allowed for a
+test), a redirect is an error, an answer over `maxBytes` (1 MiB) is refused, only a text content type is read, one request at a time
+with a pause. A backend that fails is named in `answers` and the others still answer; the call is `unavailable` when none did.
+Replacing a backend is a change of the setting; replacing the whole implementation is another implementation id in the profile's `use`.
+A backend also takes the optional settings `apiKeyEnv` (the name of an environment variable holding a key, sent as `x-api-key`; `semantic-scholar` only), `minIntervalMs` (the least time between two requests to that site) and `retry429Ms` (one retry of an HTTP 429 after that pause).
+Two more settings keep the answers of the sites: `cacheDir` (absent: no cache) and `cacheDays` (default 7); an answer is stored under the sha256 of backend, method and address, a failure is never stored, and an entry of `answers` read from the cache says `cached: true`. The input takes an optional `keepRaw` that puts the body a backend answered in `raw` of its entry (it is what `harness lit probe --out` writes), and both fields are optional, so existing callers are unchanged.
+Its contract has 3 cases (a query with hits, one without, a blank one) against a fake server; it has not run against any site.
+
 ## `lmfdb.query`
 
 Records of the L-functions and modular forms database: a collection of its API, such as `nf_fields`
@@ -349,6 +403,28 @@ version `statistic-finder+client-1`) posts the collection and the data to the st
 takes the address from `baseUrl` (`FINDSTAT_URL`). Its contract has 2 cases: the number of
 inversions on the permutations of 1, 2 and 3, and values that no statistic has. The request and the
 answer are guesses from the site's documentation as remembered and have never been made.
+
+## `lean.search`
+
+Premise search for the harness's own use (plan change CA22): the missing name of an `unknown identifier`, or the goal of a hole, in; names
+out (`hits`, each with the backend that found it, the backends that answered in `used`, those left out or failed in `skipped` with why).
+It is `auto`: the model never calls it, the harness does, after a Lean check, and pushes the hits that Lean confirms into the check's
+answer ([lean.md](lean.md#search-pushed-by-the-harness)). It justifies no status. Its implementation `search` (factory `lean-search`,
+in `@seshat/lean-search`, version `backends-1`) runs the backends the host profile sets up, together, and merges their hits, each name once:
+
+| Backend | Setting | What it is |
+|---|---|---|
+| `remote` | `remoteUrl` (`LEAN_SEARCH_URL`), `remoteQuery` (`LEAN_SEARCH_QUERY`) | an HTTP search service for natural-language and goal queries: `POST` of `{"query", "num_results"}`, the query as a text or, with `remoteQuery` `list`, as a list of one text (leansearch.net), answered as a list of declarations |
+| `local` | `index` (`LEAN_SEARCH_INDEX`) | a file of declarations (a JSON array or one object a line: `name`, `type`, optional `doc`) ranked by BM25, no model |
+| `pattern` | `patternUrl` (`LEAN_PATTERN_URL`) | a Loogle-like service (`GET` with `q`), or, when no address is set, a match of a goal's conclusion over the index |
+
+Each is optional; none set up is a capability that answers no hit (`harness health lean.search` says `warn`: the profiles mark it optional).
+A service is reached over https only, at a host of the `allowedHosts` setting (none listed: no service), with no credentials in its address, no redirect followed, an answer read up to 256 KB and 8 s of
+waiting (`timeoutSec`, `maxResponseBytes`); one that fails is `skipped` and the others still answer. With `private` set no backend that
+sends the query to a third party is asked: `remote` is skipped, and `pattern` falls back to the index when there is one. The answer holds
+names only: what a backend says besides (types, doc strings) ranks inside the index and goes no further. Its contract has 2 cases (names
+for a name query, and a private call that asks no service), which need a backend set up. The local profile sets leansearch.net and Loogle
+when `LEAN_SEARCH_URL` and `LEAN_PATTERN_URL` are not set; their answers' shapes were recorded by a probe ([lean.md](lean.md#search-pushed-by-the-harness)), but no run has used them, and no index of Mathlib has been built.
 
 ## `decide.ask`
 

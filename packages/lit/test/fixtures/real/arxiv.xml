@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/q3nhG+ldFj3J4EOYYOrXZMkjFKg</id>
+  <title>arXiv Query: search_query=all:Graffiti OR all:conjecture OR all:independence OR all:number OR all:counterexample&amp;id_list=&amp;start=0&amp;max_results=3</title>
+  <updated>2026-11-12T04:34:58Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=all:Graffiti+OR+(all:conjecture+OR+(all:independence+OR+(all:number+OR+all:counterexample)))&amp;start=0&amp;max_results=3&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <opensearch:totalResults>649626</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/0706.4354v2</id>
+    <title>A counterexample to generalizations of the Milnor-Bloch-Kato conjecture</title>
+    <updated>2007-09-07T05:58:57Z</updated>
+    <link href="https://arxiv.org/abs/0706.4354v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/0706.4354v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>  We construct an example of a torus $T$ over a field $K$ for which the Galois symbol $K(K; T,T)/n K(K; T,T) \to H^2(K, T[n]\otimes T[n])$ is not injective for some $n$. Here $K(K; T,T)$ is the Milnor $K$-group attached to $T$ introduced by Somekawa. We show also that the motive $M(T\times T)$ gives a counterexample to another generalization of the Milnor-Bloch-Kato conjecture (proposed by Beilinson).</summary>
+    <category term="math.KT" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2007-06-29T06:10:55Z</published>
+    <arxiv:comment>13 pages, The previous version was entitled `A counterexample to a conjecture of Somekawa'</arxiv:comment>
+    <arxiv:primary_category term="math.KT"/>
+    <author>
+      <name>Michael Spiess</name>
+    </author>
+    <author>
+      <name>Takao Yamazaki</name>
+    </author>
+  </entry>
+</feed>
