@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { HarnessEvent } from "@seshat/core";
 import { createM12Line } from "@seshat/scheduler";
 import { buildReport, describeSet, RunSetupError, renderRunReport } from "../src/index.ts";
-import { checkRoles, describeRoles, RoleBook } from "../src/roles.ts";
+import { checkRoles, describeRoles, PlannerEscalation, RoleBook } from "../src/roles.ts";
 import { BP_AUX, BP_PROOF, blueprintAnswer, LEFT_STUB } from "./blueprint-helpers.ts";
 import { call, check, DemoLean, demoRun, ofType, pricedRegistry, say } from "./m0-helpers.ts";
 import { sessionPromptOf } from "./resume-helpers.ts";
@@ -188,5 +188,123 @@ describe("roles (CA15, CA23)", () => {
     const book = new RoleBook(roles, { model: "faux/prover", thinkingLevel: "medium" });
     assert.equal(book.use("hole").model, "faux/prover");
     assert.equal(book.use("planner").record?.temperature, 0.2);
+  });
+});
+
+/** A chain of refinements: each round replaces the hole that ended too hard by one that refines it, so that Lean never sees progress. */
+const link = (k: number): string => `-- refines: aux_a${k - 1}
+lemma aux_a${k} (n : ℕ) : n + ${k + 2} = ${k + 2} + n := by
+  sorry`;
+const FIRST = `lemma aux_a0 (n : ℕ) : n + 2 = 2 + n := by
+  sorry`;
+
+describe("the planner's escalation (CA15)", () => {
+  const stuck = async (rounds: number, escalation: Record<string, unknown>, extra: { price?: number } = {}) => {
+    const seen: Seen[] = [];
+    const run = await demoRun({
+      lines: { M12: createM12Line() },
+      config: {
+        lines: ["M12"], provers: 1, sessions: 1, lineOptions: { M12: { ...OPTIONS, maxInnerTasks: 1, maxRefinements: rounds } },
+        roles: { planner: { model: PLANNER }, escalation },
+      } as never,
+      lean: new DemoLean(blueprintAnswer),
+      extraModels: ["planner", "advisor"],
+      extraPrices: { planner: 6, advisor: extra.price ?? 30 },
+      responses: [
+        check("exact main_ok aux_a0", FIRST),
+        say("One lemma is left."),
+        say("too hard"),
+        ...Array.from({ length: rounds }, (_, k) => [watching(seen, answer(link(k + 1), `exact main_ok aux_a${k + 1}`)) as never, say("too hard")]).flat(),
+      ],
+    });
+    return { ...run, seen };
+  };
+
+  it("two rounds in a row without Lean progress send the planner's next call to the escalation model, recorded on the call", { timeout: 60000 }, async () => {
+    const { events, seen } = await stuck(3, { model: ADVISOR });
+    assert.deepEqual(seen.map((s) => s.model), ["planner", "planner", "advisor"]);
+    const calls = planned(events);
+    assert.deepEqual(calls.map((c) => c.data.model), [PLANNER, PLANNER, ADVISOR]);
+    assert.ok(calls.every((c) => c.data.site === "scheduler.planner" && c.data.role === "planner"), "the site stays the planner's");
+    assert.deepEqual(calls.map((c) => c.data.escalation), [undefined, undefined, { from: PLANNER, rounds: 2 }]);
+    assert.ok(Math.abs((calls[2]?.data.usd ?? 0) - dollars(calls[2] as never, 30)) < 1e-9, "charged at the escalation model's price");
+    assert.ok(Math.abs((calls[1]?.data.usd ?? 0) - dollars(calls[1] as never, 6)) < 1e-9);
+  });
+
+  it("goes back to the planner's own model once the escalated calls have cost their share of the allowance", { timeout: 60000 }, async () => {
+    // The allowance is $5 (the default): a share of 0.0001 is $0.0005, which one escalated call passes.
+    const { events, seen } = await stuck(4, { model: ADVISOR, maxShare: 0.0001 });
+    assert.deepEqual(seen.map((s) => s.model), ["planner", "planner", "advisor", "planner"]);
+    assert.deepEqual(planned(events).map((c) => c.data.escalation?.rounds), [undefined, undefined, 2, undefined]);
+    // With the default share ($1.25) every later call stays escalated.
+    const roomy = await stuck(4, { model: ADVISOR });
+    assert.deepEqual(roomy.seen.map((s) => s.model), ["planner", "planner", "advisor", "advisor"]);
+    assert.deepEqual(planned(roomy.events).map((c) => c.data.escalation?.rounds), [undefined, undefined, 2, 3]);
+  });
+
+  it("never escalates without the escalation setting", { timeout: 60000 }, async () => {
+    const run = await demoRun({
+      lines: { M12: createM12Line() },
+      config: { lines: ["M12"], provers: 1, sessions: 1, lineOptions: { M12: { ...OPTIONS, maxInnerTasks: 1, maxRefinements: 3 } }, roles: { planner: { model: PLANNER } } } as never,
+      lean: new DemoLean(blueprintAnswer),
+      extraModels: ["planner"],
+      responses: [check("exact main_ok aux_a0", FIRST), say("One lemma is left."), say("too hard"), ...[1, 2, 3].flatMap((k) => [answer(link(k), `exact main_ok aux_a${k}`), say("too hard")])],
+    });
+    assert.deepEqual(planned(run.events).map((c) => [c.data.model, c.data.escalation]), [[PLANNER, undefined], [PLANNER, undefined], [PLANNER, undefined]]);
+  });
+});
+
+describe("PlannerEscalation", () => {
+  const book = new RoleBook({ planner: { model: PLANNER }, escalation: { model: ADVISOR, maxShare: 0.25 } }, { model: "faux/prover", thinkingLevel: "off" });
+  /** A script of the problem's state: the rounds made and the Lean progress at each call. */
+  const script = (states: Array<{ rounds: number; proved?: number; holes?: number | undefined }>, spent: () => number = () => 0, allowance: number | null = 10) => {
+    let at = 0;
+    const escalation = new PlannerEscalation(book, {
+      rounds: () => states[at]?.rounds ?? 0,
+      progress: () => ({ proved: states[at]?.proved ?? 0, holes: states[at]?.holes }),
+      allowanceUsd: () => allowance ?? undefined,
+      spentOn: () => spent(),
+    });
+    return () => {
+      const choice = escalation.choose();
+      at += 1;
+      return choice.use.model;
+    };
+  };
+
+  it("counts rounds without progress, escalates at two and resets on a round with progress", () => {
+    const next = script([
+      { rounds: 0, holes: 2 },
+      { rounds: 1, holes: 2 }, // round 1 made no progress: one
+      { rounds: 2, holes: 2 }, // round 2 made none: two, so this call escalates
+      { rounds: 3, holes: 1 }, // round 3 made progress: back to the planner's own, count 0
+      { rounds: 4, holes: 1 }, // none: one
+      { rounds: 5, holes: 1 }, // none: two: escalates again
+    ]);
+    assert.deepEqual([next(), next(), next(), next(), next(), next()], [PLANNER, PLANNER, ADVISOR, PLANNER, PLANNER, ADVISOR]);
+  });
+
+  it("a proved subclaim is progress, and a second call in the same round is no new round", () => {
+    const next = script([
+      { rounds: 0, proved: 0, holes: 3 },
+      { rounds: 1, proved: 0, holes: 3 },
+      { rounds: 1, proved: 0, holes: 3 }, // a JSON retry of round 2's call: the same round
+      { rounds: 2, proved: 1, holes: 3 }, // progress: reset
+      { rounds: 3, proved: 1, holes: 3 },
+    ]);
+    assert.deepEqual([next(), next(), next(), next(), next()], [PLANNER, PLANNER, PLANNER, PLANNER, PLANNER]);
+  });
+
+  it("stays on the planner's model with no allowance, and past the share", () => {
+    const stuck = (n: number) => Array.from({ length: n }, (_, k) => ({ rounds: k, holes: 2 }));
+    assert.deepEqual(Array.from({ length: 4 }, script(stuck(4), () => 0, null)), [PLANNER, PLANNER, PLANNER, PLANNER]);
+    // The share is 0.25 of 10: $2.50 spent on the escalation model ends it.
+    let spent = 0;
+    const next = script(stuck(5), () => spent, 10);
+    assert.deepEqual([next(), next(), next()], [PLANNER, PLANNER, ADVISOR]);
+    spent = 2.4;
+    assert.equal(next(), ADVISOR);
+    spent = 2.5;
+    assert.equal(next(), PLANNER);
   });
 });
