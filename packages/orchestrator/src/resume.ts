@@ -147,6 +147,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.maskOldChecks === true ? { maskOldChecks: true } : {}),
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
     ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
+    ...(r.firstCases === true ? { firstCases: true } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.consolidation === true ? { consolidation: true } : {}),

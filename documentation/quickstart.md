@@ -116,6 +116,11 @@ explicit flags `--intake`, `--lit`, `--auto-tool` and `--lean-search` still turn
 `lean_check`, when the host profile offers the capability (otherwise one note and the run goes on); `--no-tool lean.lsp` turns it off, and `v1` never
 has it. The report's `tools` block counts its calls like those of any capability. It never judges a proof: only `lean_check` does.
 
+`v2` also sets `firstCases`: for a statement with one natural-number or integer parameter and an equation of sums, products, binomials or factorials,
+and when the run has the compute tool, the harness computes the first cases itself (no model) and, if the host offers `oeis.search` and the run is not
+private, looks the sequence up; the table reaches the first briefing as computed data
+([induction.md](induction.md#the-first-cases-the-harness-pushes)).
+
 The intake's judge call is proportionate to the allowance: when `--intake-usd` is not given, its cap is the smaller of the default ($0.05) and 5% of the
 run's allowance (`--max-usd`), so a $0.40 run spends at most $0.02 on it. The test lemmas that `solve` runs to show them before the signature are the ones the intake
 records: they are not run a second time. Not run on a real Lean, model, search service or literature site: the target of the plan change (at least 1.5 times the

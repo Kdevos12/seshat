@@ -121,6 +121,24 @@ value of the other, over at least three distinct values: every column is a funct
 `monotone` (a never-decreasing relation that is not a function). They are facts about the table, which
 the conjecturing then turns into claims to prove.
 
+## The first cases the harness pushes
+
+A table of small cases does not need line M8 when the statement itself says what to evaluate. With `RunConfig.firstCases` (plan change PA10; on in
+`harness solve`'s set `v2`, off in `v1`) and a compute tool in the run (`autoTool`, or `compute.sage` among the tools), the harness does this once for
+each problem before the provers start, with no model call: it reads the statement's own expression (`first-cases.ts`), asks the compute capability
+for its values at n = 0 or 1 (1 when a hypothesis says n is positive) up to 8 values, and, when the host offers `oeis.search`, the run is not private
+and the person did not refuse third parties, looks the left side's integer sequence up in the OEIS. The first session's opening message then has a
+section "First cases (computed by the harness)": the table, and the ids and names of up to three OEIS matches, marked as computed data and not a
+proof. The table's computation and the OEIS call are tool runs of the journal (actors `harness:first_cases` and `harness:first_cases_oeis`); nothing
+here changes a claim's status or writes a claim.
+
+The translator reads these shapes and no other: a signature with exactly one binder `(n : ℕ)` or `(n : ℤ)` (the other binders are hypotheses),
+whose conclusion is one equation, a side of which is built from numerals, the parameter, `+ - * ^`, parentheses, type ascriptions, `Nat.choose a b`,
+`Nat.factorial a`, and sums or products over `Finset.range`, `Finset.Icc` or `Finset.Ico`. Division and `%` are not read, nor is a subtraction in ℕ
+(it truncates; it is read only when the statement itself names ℤ, ℚ or ℝ), nor a quantifier or another relation. A statement outside them, with no
+sum, product, binomial or factorial, or whose computation fails gets no section and nothing is said of it. Not run: a real Sage or OEIS; the tests
+use a stand-in for each.
+
 ## Hypotheses, informal steps, test lemmas, interest and the pool
 
 `proposeHypotheses(llm, {target, table, count, known, round, model})` asks a model (site
