@@ -114,7 +114,7 @@ explicit flags `--intake`, `--lit`, `--auto-tool` and `--lean-search` still turn
 
 `v2` also gives the prover `lean.lsp` (the tool `lean_lsp`: goals, diagnostics, several tactics at a line, Mathlib search; plan change NL1) beside
 `lean_check`, when the host profile offers the capability (otherwise one note and the run goes on); `--no-tool lean.lsp` turns it off, and `v1` never
-has it. The report's `tools` block counts its calls like those of any capability. It never judges a proof: only `lean_check` does.
+has it. A `lean.lsp` that the set added and that cannot be reached at the start (no `uvx`: `pipx install uv`) is dropped with one warning in the log and the report, and the run goes on; one you named with `--tool` still fails the run ([lean-lsp.md](lean-lsp.md)). The report's `tools` block counts its calls like those of any capability. It never judges a proof: only `lean_check` does.
 
 `v2` also sets `firstCases`: for a statement with one natural-number or integer parameter and an equation of sums, products, binomials or factorials,
 and when the run has the compute tool, the harness computes the first cases itself (no model) and, if the host offers `oeis.search` and the run is not

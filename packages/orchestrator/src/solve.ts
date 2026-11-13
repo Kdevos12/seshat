@@ -318,6 +318,8 @@ export interface SolveOptions {
   lib?: Pick<RunOptions, "libraryRegistry" | "memoryFrom">;
   /** `--tool ID` (CA17): capabilities the provers get besides lean_check. Default: none. */
   tools?: readonly string[];
+  /** The ones of `tools` that the defaults set added and the person did not name: dropped with a warning when they cannot be reached (`RunConfig.optionalTools`). */
+  optionalTools?: readonly string[];
   /**
    * The host's compute tool (`compute.sage`), given to the provers when the router files the statement as finite, about a graph or about
    * numbers (`fileStatement`). Absent: nothing is added. The caller passes it only when the host offers the capability.
@@ -444,6 +446,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   if (intake !== undefined && intake.capUsd === undefined && intake.capShare === undefined) intake = { ...intake, capShare: INTAKE_ALLOWANCE_SHARE };
   // The compute tool is decided by the run, per problem (`RunConfig.autoTool`); a tool the person named is run-wide and is not added twice.
   const tools = [...new Set(o.tools ?? [])];
+  const optionalTools = [...new Set(o.optionalTools ?? [])].filter((id) => tools.includes(id));
   const autoTool = o.autoTool !== undefined && !tools.includes(o.autoTool) ? o.autoTool : undefined;
   const config = studentConfig({
     selection: { ids: [problem.entry.id] },
@@ -454,7 +457,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(o.defaults !== undefined ? { defaults: o.defaults } : {}),
     ...(o.hostCheckTimeoutSec !== undefined ? { hostCheckTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
-    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(autoTool !== undefined ? { autoTool } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
+    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(optionalTools.length > 0 ? { optionalTools } : {}), ...(autoTool !== undefined ? { autoTool } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
   });
   const result = await runBench({
     config,

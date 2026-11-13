@@ -773,7 +773,7 @@ function memoryParagraph(m: MemoryLine): string[] {
 
 export function renderRunReport(report: RunReport): string {
   const c = report.config as
-    | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[] }
+    | { model?: string; provers?: number; sessions?: number; budget?: { problemUsd?: number }; tools?: { capability: string; implementation: string; version: string }[]; toolsDropped?: { capability: string; reason: string }[] }
     | null;
   const o = report.outcomes;
   const given = c?.tools ?? [];
@@ -787,6 +787,7 @@ export function renderRunReport(report: RunReport): string {
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +
       `${report.leanEnv !== undefined ? ` Lean environment: ${report.leanEnv.name}${report.leanEnv.hash !== null ? ` (${report.leanEnv.hash.slice(0, 12)})` : ", not resolved"}.` : ""}` +
       `${report.packs !== undefined ? ` Packs: ${report.packs.map((p) => `${p.name} ${p.version} (${p.hash.slice(0, 12)})`).join(", ")}.` : ""}`,
+    ...(c?.toolsDropped ?? []).map((d) => `${d.capability} was dropped: ${d.reason}${d.capability === "lean.lsp" ? "; install uv to use it, see documentation/lean-lsp.md" : ""}.`),
     report.finished
       ? report.stopped !== undefined
         ? `The run stopped early: ${report.stopped}.`
