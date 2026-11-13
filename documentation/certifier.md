@@ -132,7 +132,13 @@ candidate's code: it reads the two object files as data, with the imports loaded
 initializers (`importModules (loadExts := false)`, passed explicitly). It
 
 1. refuses a candidate whose imports differ from the reference's, or that declares an unsafe or
-   partial constant (`Environment.replay` skips those);
+   partial constant (`Environment.replay` skips those). One partial constant is not the candidate's:
+   Lean v4.27.0 adds `X._unsafe_rec`, marked partial, for every recursive definition `X`, structural
+   or well-founded, as the compiler's implementation of it; it is let through when `X` is declared in
+   the same module and is neither unsafe nor partial (`compilerAux`), so a `partial def` stays refused.
+   Until 2026-11-13 it was refused too: in the third real run six candidates that the fast check had
+   accepted (Putnam 1994 A1 twice, 1997 B5 three times, 2000 A2 once) were rejected for it, and 1997 B5,
+   whose own statement defines `tetration` by structural recursion, could not be certified at all;
 2. imports the imports once and sends every constant of the reference's module, then of the
    candidate's, through the kernel (`Lean.Environment.replay`, as lean4checker does; core's
    version in Lean v4.27.0 needs no separate package). A constant the kernel refuses is a reason;
