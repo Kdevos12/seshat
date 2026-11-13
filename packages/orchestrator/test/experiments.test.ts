@@ -97,7 +97,7 @@ const withoutTableFields = (c: RunConfig): Record<string, unknown> => {
   return copy;
 };
 const tableBase: RunConfig = { ...DEFAULT_CONFIG, selection: { all: true }, model: "faux/prover", budget: { problemUsd: 1, runUsd: 1 } };
-const offersAll = { capabilities: { "compute.sage": {}, "lean.search": {} } };
+const offersAll = { capabilities: { "compute.sage": {}, "lean.search": {}, "lean.lsp": {} } };
 
 describe("the solve-defaults experiment", () => {
   const arms = experimentArms("solve-defaults", { host: offersAll });
@@ -128,7 +128,7 @@ describe("the solve-defaults experiment", () => {
     it(`gives the ${defaults} arm what solve builds, but for the table's fields and the person's yes`, () => {
       const additions: Partial<RunConfig> =
         defaults === "v2"
-          ? { autoTool: "compute.sage", leanSearch: true, intake: { hygiene: true, literature: true, consent: { allowed: true, via: "asked" }, capShare: INTAKE_ALLOWANCE_SHARE } }
+          ? { autoTool: "compute.sage", leanSearch: true, tools: ["lean.lsp"], intake: { hygiene: true, literature: true, consent: { allowed: true, via: "asked" }, capShare: INTAKE_ALLOWANCE_SHARE } }
           : {};
       assert.equal(COMPUTE_TOOL, "compute.sage");
       const solved = studentConfig({ selection: { all: true }, model: "faux/prover", maxUsd: 1, defaults, base: additions });
@@ -153,6 +153,9 @@ describe("the solve-defaults experiment", () => {
     assert.equal(config.intake?.consent?.allowed, true);
     assert.equal(armConfig(base, arm("solve-v2")).autoTool, "compute.sage");
     assert.equal(armConfig(base, arm("solve-v2")).leanSearch, true);
+    assert.equal(config.tools, base.tools, "no lean.lsp where the host lacks it");
+    assert.deepEqual(armConfig(base, arm("solve-v2")).tools, ["lean.lsp"]);
+    assert.deepEqual(armConfig(base, arm("solve-v1")).tools, base.tools, "v1 adds no tool");
   });
 
   const problems = ["p1", "p2"].map((id) => ({ id, path: "Bench.lean" }) as unknown as ProblemEntry);

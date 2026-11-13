@@ -50,7 +50,7 @@ const arm = (name: string, description: string, lines: string[], rest: Partial<A
 export function solveArm(name: string, description: string, defaults: DefaultsName, context: Pick<ExperimentContext, "host">, rest: Partial<Arm> = {}, plus: { lines?: string[]; lineOptions?: Record<string, JsonObject> } = {}): Arm {
   const host = context.host;
   const set = setConfig(defaults, host?.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: host.checkTimeoutSec } : {});
-  const { lines, lineOptions, gate, tools: _tools, ...config } = { ...set, ...benchAdditions(defaults, host === undefined ? undefined : (id) => id in host.capabilities) };
+  const { lines, lineOptions, gate, tools: addedTools, ...config } = { ...set, ...benchAdditions(defaults, host === undefined ? undefined : (id) => id in host.capabilities) };
   const options = { ...lineOptions, ...plus.lineOptions };
   return {
     name,
@@ -58,6 +58,7 @@ export function solveArm(name: string, description: string, defaults: DefaultsNa
     lines: [...new Set([...(lines ?? []), ...(plus.lines ?? [])])],
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    ...(addedTools !== undefined && addedTools.length > 0 ? { tools: [...addedTools] } : {}),
     config,
     ...rest,
   };

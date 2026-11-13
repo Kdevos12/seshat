@@ -8,6 +8,7 @@ import { type HostProfile, hostProfilePath, leanCheckImplementation, loadCatalog
 import { type FakeLit, startFakeLit } from "../../lit/test/fake-lit.ts";
 import { hostAt } from "../../lit/test/helpers.ts";
 import {
+  benchAdditions,
   consentOptions,
   DEFAULTS_SETS,
   describeSet,
@@ -39,17 +40,19 @@ class SearchLean implements LeanChecker {
 describe("what the sets turn on, from one source", () => {
   const flags = (f: SolveFlags = {}): SolveFlags => f;
   it("v1 turns none of the three on, v2 all three, from SOLVE_SWITCHES", () => {
-    assert.deepEqual(effectiveSwitches(flags(), "v1"), { intake: false, autoTool: false, leanSearch: false });
-    assert.deepEqual(effectiveSwitches(flags(), "v2"), { intake: true, autoTool: true, leanSearch: true });
-    assert.deepEqual(SOLVE_SWITCHES.v2, { intake: true, autoTool: true, leanSearch: true });
+    assert.deepEqual(effectiveSwitches(flags(), "v1"), { intake: false, autoTool: false, leanSearch: false, leanLsp: false });
+    assert.deepEqual(effectiveSwitches(flags(), "v2"), { intake: true, autoTool: true, leanSearch: true, leanLsp: true });
+    assert.deepEqual(SOLVE_SWITCHES.v2, { intake: true, autoTool: true, leanSearch: true, leanLsp: true });
   });
 
   it("keeps the explicit flags working with v1, and lets each --no-... turn one addition of v2 off alone", () => {
-    assert.deepEqual(effectiveSwitches(flags({ intake: true, autoTool: true, leanSearch: true }), "v1"), { intake: true, autoTool: true, leanSearch: true });
-    assert.deepEqual(effectiveSwitches(flags({ lit: true }), "v1"), { intake: true, autoTool: false, leanSearch: false });
-    assert.deepEqual(effectiveSwitches(flags({ noIntake: true }), "v2"), { intake: false, autoTool: true, leanSearch: true });
-    assert.deepEqual(effectiveSwitches(flags({ noAutoTool: true }), "v2"), { intake: true, autoTool: false, leanSearch: true });
-    assert.deepEqual(effectiveSwitches(flags({ noLeanSearch: true }), "v2"), { intake: true, autoTool: true, leanSearch: false });
+    assert.deepEqual(effectiveSwitches(flags({ intake: true, autoTool: true, leanSearch: true }), "v1"), { intake: true, autoTool: true, leanSearch: true, leanLsp: false });
+    assert.deepEqual(effectiveSwitches(flags({ lit: true }), "v1"), { intake: true, autoTool: false, leanSearch: false, leanLsp: false });
+    assert.deepEqual(effectiveSwitches(flags({ noIntake: true }), "v2"), { intake: false, autoTool: true, leanSearch: true, leanLsp: true });
+    assert.deepEqual(effectiveSwitches(flags({ noAutoTool: true }), "v2"), { intake: true, autoTool: false, leanSearch: true, leanLsp: true });
+    assert.deepEqual(effectiveSwitches(flags({ noLeanSearch: true }), "v2"), { intake: true, autoTool: true, leanSearch: false, leanLsp: true });
+    assert.deepEqual(effectiveSwitches(flags({ noTools: ["lean.lsp"] }), "v2"), { intake: true, autoTool: true, leanSearch: true, leanLsp: false });
+    assert.ok("conflict" in effectiveSwitches(flags({ noTools: ["compute.sage"] }), "v2"), "only lean.lsp can be dropped");
     for (const f of [flags({ intake: true, noIntake: true }), flags({ lit: true, noIntake: true }), flags({ autoTool: true, noAutoTool: true }), flags({ leanSearch: true, noLeanSearch: true })]) {
       assert.ok("conflict" in effectiveSwitches(f, "v2"), "a flag and its --no- cannot both be given");
     }
@@ -59,7 +62,7 @@ describe("what the sets turn on, from one source", () => {
     const all = describeSet("v2").join("; ");
     for (const part of ["edit tool", "intake gate", "compute.sage", "lean.search", "repeat rule"]) assert.match(all, new RegExp(part));
     assert.deepEqual(describeSet("v1"), []);
-    assert.match(describeSet("v2", () => false).join("; "), /compute\.sage.*does not offer it.*lean\.search.*does not offer it/s);
+    assert.match(describeSet("v2", () => false).join("; "), /compute\.sage.*does not offer it.*lean\.search.*does not offer it.*lean\.lsp.*does not offer it/s);
   });
 
   it("turns on the probe's extension in v2 and not in v1: the gate of v1 is what it was", () => {
@@ -72,17 +75,25 @@ describe("what the sets turn on, from one source", () => {
 
   it("keeps v1's RunConfig exactly as it was, and none of the three in the RunConfig of any set", () => {
     assert.deepEqual(DEFAULTS_SETS.v1, {});
-    for (const set of Object.values(DEFAULTS_SETS)) for (const key of ["intake", "leanSearch", "autoTool"]) assert.equal(key in set, false);
+    for (const set of Object.values(DEFAULTS_SETS)) for (const key of ["intake", "leanSearch", "autoTool", "tools"]) assert.equal(key in set, false);
     assert.equal("intake" in studentConfig({ selection: { ids: ["p"] }, model: "faux/m", maxUsd: 2, defaults: "v1" }), false);
   });
 
   it("gives v2 without lean.search or the compute tool one line each and goes on", () => {
     const none = resolveAdditions({}, "v2", effectiveSwitches({}, "v2") as { autoTool: boolean; leanSearch: boolean }, "local", () => false);
     assert.deepEqual([none.autoTool, none.leanSearch], [false, false]);
-    assert.equal(none.notes.length, 2);
+    assert.equal(none.notes.length, 3);
     assert.match(none.notes.join("\n"), /v2 defaults has nothing to add: host local does not offer compute\.sage[\s\S]*lean\.search; the run goes on without it/);
     const both = resolveAdditions({}, "v2", { autoTool: true, leanSearch: true }, "local", () => true);
     assert.deepEqual([both.autoTool, both.leanSearch, both.notes.length], [true, true, 0]);
+    const lsp = (offers: boolean, defaults: "v1" | "v2") => resolveAdditions({}, defaults, effectiveSwitches({}, defaults) as { autoTool: boolean; leanSearch: boolean; leanLsp: boolean }, "local", (c) => c === "lean.lsp" && offers);
+    assert.equal(lsp(true, "v2").leanLsp, true);
+    assert.equal(lsp(false, "v2").leanLsp, false);
+    assert.match(lsp(false, "v2").notes.join("\n"), /does not offer lean\.lsp/);
+    assert.equal(lsp(true, "v1").leanLsp, false);
+    assert.deepEqual(benchAdditions("v2", (c) => c === "lean.lsp").tools, ["lean.lsp"]);
+    assert.equal(benchAdditions("v2", () => false).tools, undefined);
+    assert.equal(benchAdditions("v1").tools, undefined);
     assert.equal(resolveAdditions({}, "v1", { autoTool: false, leanSearch: false }, "local", () => false).notes.length, 0, "v1 asks for nothing, so says nothing");
   });
 });
