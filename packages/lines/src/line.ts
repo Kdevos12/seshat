@@ -401,7 +401,7 @@ export interface HolePreflightResult {
   proved: boolean;
   /** The battery proved the claim's negation and `validate` accepted it with the negation flag. */
   refuted: boolean;
-  /** `plausible`'s result (`counterexample`, `no_counterexample`, `unavailable`, `skipped`), when it ran. */
+  /** `plausible`'s result (`counterexample`, `no_counterexample`, `unavailable`, `not_testable`, `error`, `skipped`), when it ran. */
   plausible?: string;
   /** A line on each test that ran. */
   notes: string[];
