@@ -310,6 +310,10 @@ The model rewrites its whole Lean file at every check, and output tokens were ab
 option is on; without it the prompt is the merged prompt byte for byte, and the prompt hash in `run.started` is unchanged. The
 option is off in `harness run` and on in `harness solve`'s defaults set `v2` ([quickstart.md](quickstart.md#defaults-sets)).
 
+### Exploring is not checking
+
+A session with a tool besides `lean_check` and `lean_edit` (`lean.lsp`, `lean.search`, any `--tool`) can spend its turns looking: in two real runs on 2026-11-13, 15 of 24 and 6 of 12 prover sessions never called `lean_check`, and progress, the budget gate and the ladder are measured on checks. The session therefore counts its model turns since its last `lean_check` or `lean_edit` (or since its start). When `TURNS_BEFORE_CHECK` (6) turns have passed without one, or when the session has `TURNS_LEFT_TO_CHECK` (2) turns left, this one included, and has made no check, every such tool answers, without being called: "Submit your file now with lean_check (AUX and PROOF, with `sorry` for what is not proved yet): until you do, only lean_check and lean_edit answer." The answer is an error result of the tool, journaled like any other tool answer; a check resets the count and the tools answer again. A session with only `lean_check` and `lean_edit` is unchanged, and so is the prover's system prompt. A hole session names its `hole_verdict` as an ending tool (`SessionOptions.endingTools`): it is neither counted nor refused. The guard of `lean.lsp` (8 calls without a check, [lean-lsp.md](lean-lsp.md)) stays; in practice the guard of the turns is the first to answer unless a turn makes several calls (`orchestrator/test/turn-guard.test.ts`).
+
 ### The state card
 
 A session that starts on long notes starts on what the model chose to remember. With `RunConfig.stateCard` (plan change CA7; `card.ts` of

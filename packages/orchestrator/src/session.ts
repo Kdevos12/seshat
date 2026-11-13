@@ -87,6 +87,11 @@ export interface SessionOptions {
   teamSections?: ReadonlyArray<{ title: string; text: string }>;
   /** Tools besides lean_check, for this session's attempt. */
   tools?: AgentTool<never, unknown>[];
+  /**
+   * Names of the ones of `tools` that end the session's work (a hole session's verdict) and do not explore: the turn guard (task 51d)
+   * neither counts them as exploring tools nor refuses them. Absent, every tool of `tools` explores.
+   */
+  endingTools?: readonly string[];
   /** The enabled lines' hooks inside the session: the context packet, and the look at each check. */
   lines?: SessionHooks;
   /**
@@ -162,6 +167,13 @@ export const LSP_CALLS_BEFORE_CHECK = 8;
 /** The answer the harness gives to the call past the limit; the capability is not called. */
 export const LSP_CHECK_REMINDER = "Check your file with lean_check now: only lean_check counts, and its answer is what the harness measures. lean.lsp answers again after that check.";
 
+/** Model turns an exploring session may make without a `lean_check`: the next turn's exploring tools answer `SUBMIT_NOW` (documentation/m0-loop.md, "Exploring is not checking"). */
+export const TURNS_BEFORE_CHECK = 6;
+/** Turns left (this one included) at which a session that has made no check gets the same answer. */
+export const TURNS_LEFT_TO_CHECK = 2;
+/** The answer the exploring tools give while a check is due; the tools are not called. */
+export const SUBMIT_NOW = "Submit your file now with lean_check (AUX and PROOF, with `sorry` for what is not proved yet): until you do, only lean_check and lean_edit answer.";
+
 /** Lean answers `server_error` this many times in a row: the session ends with an error. */
 const MAX_UNREACHABLE = 3;
 
@@ -210,8 +222,13 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
    */
   // The `lean.lsp` calls since the last check (or the start).
   let lspCalls = 0;
+  // The value of `turns` at the last check (or 0 at the start), and whether the session has made one.
+  let turnsAtCheck = 0;
+  let checked = false;
   const doCheck = async (given: { aux: string; proof: string; strategy?: unknown }, signal?: AbortSignal): Promise<AgentToolResult<{ summary: string }>> => {
     lspCalls = 0;
+    turnsAtCheck = turns;
+    checked = true;
     let params = given;
     let rewriteNote: string | undefined;
     if (o.lines?.rewriteCheck !== undefined) {
@@ -358,7 +375,22 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
             return tool.execute(id, params, signal, onUpdate);
           },
         };
-  const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? []).map(guardLsp)];
+  // A session that only explores makes no check either (task 51d): after TURNS_BEFORE_CHECK turns without one, or with TURNS_LEFT_TO_CHECK turns
+  // left and none made, every exploring tool answers SUBMIT_NOW, as a tool answer, and the tool is not called. `turns` already counts the
+  // response that makes the call, hence the `- 1`.
+  const ending = new Set(o.endingTools ?? []);
+  const guardTurns = (tool: AgentTool<never, unknown>): AgentTool<never, unknown> =>
+    ending.has(tool.name)
+      ? tool
+      : {
+          ...tool,
+          execute: async (id, params, signal, onUpdate) => {
+            const due = turns - 1 - turnsAtCheck >= TURNS_BEFORE_CHECK || (!checked && o.limits.turns - turns + 1 <= TURNS_LEFT_TO_CHECK);
+            if (due) return { content: [{ type: "text", text: SUBMIT_NOW }], details: { summary: `${tool.name} refused: submit with lean_check` } as never, isError: true };
+            return tool.execute(id, params, signal, onUpdate);
+          },
+        };
+  const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? []).map(guardLsp).map(guardTurns)];
 
   const rewriteHistory: SessionOptions["rewriteHistory"] =
     o.maskOldChecks === true ? async (messages) => (o.rewriteHistory === undefined ? maskOldChecks(messages) : await o.rewriteHistory(maskOldChecks(messages))) : o.rewriteHistory;
