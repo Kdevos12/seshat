@@ -104,7 +104,7 @@ describe("the solve-defaults experiment", () => {
   const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
 
   it("sets solve-v2 against solve-v1, the baseline", () => {
-    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"]]);
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"]]);
   });
 
   it("makes the blueprints arm solve-v2 plus line M12 with blueprints, and nothing else", () => {
@@ -113,6 +113,14 @@ describe("the solve-defaults experiment", () => {
     assert.deepEqual(blueprints, v2);
     assert.deepEqual(lines, [...(v2Lines ?? []), "M12"]);
     assert.deepEqual(lineOptions, { ...v2Options, M12: { blueprints: true } });
+  });
+
+  it("makes the refine arm the blueprints arm plus refine, and nothing else", () => {
+    const { lines: bpLines, lineOptions: bpOptions, ...blueprints } = armConfig(base, arm("solve-v2-blueprints"));
+    const { lines, lineOptions, ...refine } = armConfig(base, arm("solve-v2-blueprints-refine"));
+    assert.deepEqual(refine, blueprints);
+    assert.deepEqual(lines, bpLines);
+    assert.deepEqual(lineOptions, { ...bpOptions, M12: { blueprints: true, refine: true } });
   });
 
   it("makes the graph arm solve-v2 plus lines M2 and M4 with their default options, and nothing else", () => {

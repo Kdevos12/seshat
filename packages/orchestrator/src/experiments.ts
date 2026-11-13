@@ -187,7 +187,7 @@ export const EXPERIMENTS: Experiment[] = [
   {
     name: "solve-defaults",
     amendment: "CA2, CA21 (Task 34b)",
-    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, and a fourth adds lines M2 (the graph) and M4 (the context compiler), neither of which is a default.",
+    description: "What `harness solve` does under defaults v1 (the baseline, solve as it was at ae3b2a0) against v2 (the edit tool, masked and bounded checks, the state card, budget rounds, M6's repeat rule, the intake gate, the compute tool and lean.search), on bench problems at the protocol's cap per problem; a third arm adds line M12's blueprints to v2, a fourth adds lines M2 (the graph) and M4 (the context compiler), neither of which is a default, and a fifth adds refinement rounds (M12's option refine) to the blueprints arm.",
     notRun: "No number of the target exists until the arms run on real problems with a real model and Lean; the compute tool and lean.search are in an arm only if the host profile offers them. The turn limit, the signature and the question are what `solve` has because a person is there, and are not in the arms.",
     arms: (context) => [
       solveArm("solve-v1", "solve's configuration under defaults v1: the baseline", "v1", context),
@@ -196,6 +196,8 @@ export const EXPERIMENTS: Experiment[] = [
       solveArm("solve-v2-blueprints", "solve-v2 plus line M12 with its option blueprints: holes that depend on each other, a session with tools per hole", "v2", context, { versus: "solve-v2" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true } } }),
       // Lines M2 and M4 are not in v2: they have never run with a real model. This arm measures what they cost and what they add to it (plan change KG1).
       solveArm("solve-v2-graph", "solve-v2 plus line M2 (the graph of claims and variants) and line M4 (the context compiler), with their default options", "v2", context, { versus: "solve-v2" }, { lines: ["M2", "M4"] }),
+      // Refinement rounds (CA12, PA11): a planner call rewrites a blueprint that was refused or whose holes did not all get proved. Set against the blueprints arm: only `refine` differs.
+      solveArm("solve-v2-blueprints-refine", "solve-v2-blueprints plus M12's option refine: a planner call rewrites a refused or stuck blueprint, at most 8 rounds a problem", "v2", context, { versus: "solve-v2-blueprints" }, { lines: ["M12"], lineOptions: { M12: { blueprints: true, refine: true } } }),
     ],
   },
   {
