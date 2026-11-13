@@ -346,6 +346,25 @@ describe("the run with --tool lean.lsp", () => {
     assert.match(message, /^lean\.lsp cannot be reached on host test \(lean-lsp-mcp: .*reports version 0\.30\.0, the manifest pins 0\.31\.0.*\)$/);
   });
 
+  it("drops a lean.lsp the set added and the person did not name, with one warning, and goes on; a named one still fails", async () => {
+    const logged: string[] = [];
+    const { events } = await demoRun({
+      responses: [check("exact trivial_proof")],
+      config: { tools: ["lean.lsp"], optionalTools: ["lean.lsp"] },
+      registry: lspRegistry(new FakeLeanLspMcp({ version: "0.30.0" }), leanProject()),
+      log: (line) => logged.push(line),
+    });
+    const warnings = logged.filter((l) => l.startsWith("lean.lsp was dropped: "));
+    assert.equal(warnings.length, 1, logged.join("\n"));
+    assert.match(warnings[0] ?? "", /cannot be reached on host test .*; install uv to use it, see documentation\/lean-lsp\.md$/);
+    const started = ofType(events, "run.started")[0]?.data.config as { tools: unknown[]; toolsDropped?: Array<{ capability: string; reason: string }> };
+    assert.deepEqual(started.tools, []);
+    assert.equal(started.toolsDropped?.[0]?.capability, "lean.lsp");
+    assert.ok(events.some((e) => e.type === "run.finished"), "the run went on to its end");
+    // The same host and the same tool, named by the person: the run does not start.
+    assert.match(await attempt(lspRegistry(new FakeLeanLspMcp({ version: "0.30.0" }), leanProject())), /^lean\.lsp cannot be reached on host test/);
+  });
+
   it("refuses to start without a Lean project, saying how to name one", async () => {
     const message = await attempt(lspRegistry(new FakeLeanLspMcp(), undefined));
     assert.match(message, /^lean\.lsp cannot be reached on host test \(lean-lsp-mcp: lean\.lsp needs the Lean project it works in: set LEAN_PROJECT_DIR/);

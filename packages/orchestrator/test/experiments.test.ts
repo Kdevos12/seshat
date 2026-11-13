@@ -146,7 +146,7 @@ describe("the solve-defaults experiment", () => {
     it(`gives the ${defaults} arm what solve builds, but for the table's fields and the person's yes`, () => {
       const additions: Partial<RunConfig> =
         defaults === "v2"
-          ? { autoTool: "compute.sage", leanSearch: true, tools: ["lean.lsp"], intake: { hygiene: true, literature: true, consent: { allowed: true, via: "asked" }, capShare: INTAKE_ALLOWANCE_SHARE } }
+          ? { autoTool: "compute.sage", leanSearch: true, tools: ["lean.lsp"], optionalTools: ["lean.lsp"], intake: { hygiene: true, literature: true, consent: { allowed: true, via: "asked" }, capShare: INTAKE_ALLOWANCE_SHARE } }
           : {};
       assert.equal(COMPUTE_TOOL, "compute.sage");
       const solved = studentConfig({ selection: { all: true }, model: "faux/prover", maxUsd: 1, defaults, base: additions });

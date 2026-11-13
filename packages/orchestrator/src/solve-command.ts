@@ -380,6 +380,8 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
       ...(tools.length > 0 ? { tools } : {}),
+      // `lean.lsp` the set added (not named with --tool) is dropped with a warning when it cannot be reached.
+      ...(leanLsp && !(flags.tools ?? []).includes(LEAN_LSP_TOOL) ? { optionalTools: [LEAN_LSP_TOOL] } : {}),
       ...(autoTool ? { autoTool: COMPUTE_TOOL } : {}),
       ...(flags.private === true ? { private: true } : {}),
       ...consentOptions({ ...flags, intake: switches.intake, leanSearch }, io, profile),

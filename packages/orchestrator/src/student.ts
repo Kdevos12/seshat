@@ -230,7 +230,7 @@ export function benchAdditions(defaults: DefaultsName, offers: (capability: stri
     ...(sw.intake ? { intake: { hygiene: true, literature: true, consent: { allowed: true, via: "bench" as const }, capShare: INTAKE_ALLOWANCE_SHARE } } : {}),
     ...(sw.autoTool && offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
     ...(sw.leanSearch && offers(SEARCH_CAPABILITY) ? { leanSearch: true } : {}),
-    ...(sw.leanLsp && offers(LEAN_LSP_TOOL) ? { tools: [LEAN_LSP_TOOL] } : {}),
+    ...(sw.leanLsp && offers(LEAN_LSP_TOOL) ? { tools: [LEAN_LSP_TOOL], optionalTools: [LEAN_LSP_TOOL] } : {}),
   };
 }
 

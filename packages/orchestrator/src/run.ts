@@ -109,6 +109,11 @@ export interface RunConfig {
   /** `direct` capabilities given to the provers besides lean_check, such as `compute.sage`. */
   tools: string[];
   /**
+   * The capabilities of `tools` that the defaults set added and the person did not name (`lean.lsp` in `v2`): one that cannot be reached at the
+   * start is dropped with a warning in the log and the report instead of failing the run. A tool the person named still fails it. Absent: none.
+   */
+  optionalTools?: string[];
+  /**
    * A `direct` capability (the host's compute tool, `compute.sage`) that a problem's sessions get besides `tools` when the router files
    * the problem's statement as finite, about a graph or about numbers (`fileStatement`, documentation/literature.md, "Solve options"). It is
    * checked and pinned at the start of the run like a tool, and recorded as `autoTool` in `run.started`; the problems that are not filed do
@@ -786,7 +791,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const toolProblems = checkTools(registry, [...config.tools, ...autoIds]);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
   // A tool that cannot be reached now would answer every prover's call with an error.
-  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds]);
+  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? []);
   if (pinnedAll.problems.length > 0) return await abandon(pinnedAll.problems.join("; "), undefined, registry);
   // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`): pinned together, recorded apart.
   const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => t.capability !== config.autoTool) };
@@ -861,6 +866,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
+      ...(pinnedAll.dropped.length > 0 ? { toolsDropped: pinnedAll.dropped.map((d) => ({ ...d })) } : {}),
       bench: { hash: o.index.hash, source: { ...o.index.source } },
       registry: registry.hash,
       // The host's prices have a hash of their own, which a resumption compares as a warning (documentation/m0-loop.md, "Prices").
