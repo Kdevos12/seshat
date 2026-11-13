@@ -103,6 +103,8 @@ export interface PreflightRecord {
   proved: boolean;
   refuted: boolean;
   plausible?: string;
+  /** Lean's first error when the hole's file did not type-check: the hole got no session (task 51). */
+  compileError?: string;
   notes: string[];
 }
 

@@ -9,7 +9,7 @@ import {
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
 import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
-import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, dropHeaderImports, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
+import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, contextFor, dependencyOrder, dropHeaderImports, headerWithContext, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import { cutFailures } from "./repair.ts";
@@ -219,6 +219,14 @@ function verdictsOf(problem: ProblemContext, claimId: string): Array<{ verdict: 
 /** Lean accepted a proof of the hole's negation: the one thing that makes a hole false for the scheduler. */
 const falseOf = (problem: ProblemContext, claimId: string): boolean => verdictsOf(problem, claimId).some((v) => v.verdict === HOLE_FALSE_VERDICT && v.negationValidated);
 
+/** Lean's first error when this problem's pre-flight of the hole found that its file does not type-check (task 51), else undefined. */
+function compileErrorOf(problem: ProblemContext, claimId: string): string | undefined {
+  return problem.memory
+    .nodes(PREFLIGHT_KIND, { claimId })
+    .map((n) => asRecord<PreflightRecord>(n.data))
+    .find((r) => r.problemId === problem.problemId && r.compileError !== undefined)?.compileError;
+}
+
 /** The text without the indentation all its lines share. */
 function dedent(text: string): string {
   const lines = text.replace(/\s+$/, "").split("\n");
@@ -310,6 +318,8 @@ export function createM12Line(): Line {
         if (problem.memory.claim(claimId)?.status !== "open") continue;
         // A blueprint's hole whose work is done waits for its dependencies (the graph derives it when they are accepted), and one whose negation Lean accepted is false.
         if (record.blueprint === true && (workOf(problem, claimId) !== undefined || falseOf(problem, claimId))) continue;
+        // A hole whose file does not compile gets no session (task 51): the planner's next round hears of it.
+        if (compileErrorOf(problem, claimId) !== undefined) continue;
         const mine = tasks.filter((task) => task.claimId === claimId);
         if (mine.some((task) => task.status !== "done" && task.status !== "failed" && task.status !== "cancelled")) continue;
         // PC4 item 1: the cap is per outer session, that is per sketch: the tasks of this sketch's holes, not of every sketch the problem has had.
@@ -355,8 +365,12 @@ export function createM12Line(): Line {
       }
       const holes: string[] = [];
       for (const hole of reading.holes) {
+        // The blueprint's context (task 51): the definitions and proved lemmas of the AUX that this hole's statement, or the statements of the holes it uses,
+        // name (and what they name in turn) go in the hole's header, so that its statement, its file and its pre-flight are read with them.
+        const statements = dependencyOrder(reading.holes, hole.name).map((name) => reading.holes.find((h) => h.name === name)?.statement ?? "");
+        const holeHeader = headerWithContext(header, contextFor(reading.others, statements));
         const ensured = await problem.memory.ensureClaim({
-          statement: hole.statement, header, origin: ACTOR, parentId: problem.claimId, kind: "formal",
+          statement: hole.statement, header: holeHeader, origin: ACTOR, parentId: problem.claimId, kind: "formal",
           gloss: `${hole.name}, a hole of the sketch of attempt ${record.attemptId}`,
         });
         holes.push(ensured.claimId);
@@ -438,6 +452,11 @@ export function createM12Line(): Line {
         failed = true;
         continue;
       }
+      // A hole whose file did not compile has no session and no verdict: it has failed all the same.
+      if (compileErrorOf(problem, id) !== undefined) {
+        failed = true;
+        continue;
+      }
       if (tasks.some((task) => task.claimId === id && live(task))) return false;
       const last = verdictsOf(problem, id).at(-1);
       if (last === undefined) return false;
@@ -468,7 +487,8 @@ export function createM12Line(): Line {
       const claim = id === undefined ? undefined : problem.memory.claim(id);
       const verdict = id === undefined ? undefined : verdictsOf(problem, id).at(-1);
       const session = id === undefined ? undefined : sessionRecords(problem).filter((r) => r.claimId === id).at(-1);
-      const detail = verdict?.argument ?? session?.reasons[0];
+      const compile = id === undefined ? undefined : compileErrorOf(problem, id);
+      const detail = compile !== undefined ? `its statement does not compile: ${compile}` : (verdict?.argument ?? session?.reasons[0]);
       return {
         name,
         status: claim?.status ?? "not registered",
@@ -701,7 +721,8 @@ export function createM12Line(): Line {
    */
   async function preflight(problem: ProblemContext, work: Work, task: TaskInfo, info: HoleInfo): Promise<TaskEnd | undefined> {
     if (problem.holePreflight === undefined) return undefined;
-    if (problem.memory.nodes(PREFLIGHT_KIND, { claimId: info.claimId }).some((n) => asRecord<PreflightRecord>(n.data).problemId === problem.problemId)) return undefined;
+    const ran = problem.memory.nodes(PREFLIGHT_KIND, { claimId: info.claimId }).map((n) => asRecord<PreflightRecord>(n.data)).find((r) => r.problemId === problem.problemId);
+    if (ran !== undefined) return ran.compileError !== undefined ? { ended: "failed", reason: `its statement does not compile: ${ran.compileError}` } : undefined;
     let found;
     try {
       found = await problem.holePreflight({ claimId: info.claimId });
@@ -711,8 +732,13 @@ export function createM12Line(): Line {
       found = { proved: false, refuted: false, notes: [`the pre-flight failed: ${clip(error instanceof Error ? error.message : String(error), 160)}`] } as Awaited<ReturnType<NonNullable<ProblemContext["holePreflight"]>>>;
     }
     if (problem.signal.aborted) return { ended: "failed", reason: "the problem ended" };
-    const record: PreflightRecord = { problemId: problem.problemId, claimId: info.claimId, proved: found.proved, refuted: found.refuted, ...(found.plausible !== undefined ? { plausible: found.plausible } : {}), notes: found.notes.map((n) => clip(n, 200)) };
+    const record: PreflightRecord = { problemId: problem.problemId, claimId: info.claimId, proved: found.proved, refuted: found.refuted, ...(found.plausible !== undefined ? { plausible: found.plausible } : {}), ...(found.compileError !== undefined ? { compileError: clip(found.compileError, 300) } : {}), notes: found.notes.map((n) => clip(n, 200)) };
     problem.log(`pre-flight of ${info.name}: ${found.notes.join("; ")}`);
+    // A hole whose file does not type-check gets no session (task 51): the record says so, and the planner's next round sees the error.
+    if (found.compileError !== undefined) {
+      problem.memory.recordNode({ kind: PREFLIGHT_KIND, claimId: info.claimId, data: { ...record } });
+      return { ended: "failed", reason: `its statement does not compile: ${record.compileError}` };
+    }
     const sessionId = `${task.taskId}:preflight`;
     // The verdict comes before the record that says the pre-flight ran, so that a cut between them runs it again (a verdict is written once).
     if (found.proved) recordVerdict(problem, task, info.claimId, sessionId, "proved");
@@ -737,18 +763,23 @@ export function createM12Line(): Line {
     const binders = parseSignature(problem.memory.claim(info.claimId)?.statement ?? "").binders;
     const link = linkProof({ aux: helpers, proof }, reading, binders);
     const check = await checkEdge(
-      { memory: problem.memory, validate: problem.validate, header: work.header, closers: [], propose: async () => [{ proof: link.proof, aux: link.aux }], log: problem.log },
+      // The hole's own header: it carries the blueprint's context that the hole and its dependencies name.
+      { memory: problem.memory, validate: problem.validate, header: problem.memory.claim(info.claimId)?.header ?? work.header, closers: [], propose: async () => [{ proof: link.proof, aux: link.aux }], log: problem.log },
       edge.edgeId,
     );
     return { checked: check.checked, reason: check.reason };
   }
 
   function holePrompt(problem: ProblemContext, work: Work, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[]): string {
-    const header = cutHeader(problem.memory.claim(info.claimId)?.header ?? work.header);
+    const own = problem.memory.claim(info.claimId)?.header ?? work.header;
+    // The blueprint's context (definitions and proved lemmas the hole names) is the end of the claim's header: shown whole, apart from the problem's own header, which may be cut.
+    const context = own.length > work.header.length && own.startsWith(work.header) ? own.slice(work.header.length).trim() : "";
+    const header = cutHeader(context === "" ? own : work.header);
     const stubs = stubsRegion(info.deps);
     return [
       `Session ${session} of ${limit}: prove the lemma ${info.name} in Lean 4, in at most ${turns} model responses.`,
       `The file you work on is small. Its header (imports, opens, definitions):\n${header}`,
+      context !== "" ? `The blueprint's own definitions and lemmas, already proved, that the lemma names; they follow the header in the file (use them, do not redefine them):\n${context.length > 4000 ? `${context.slice(0, 4000)}\n-- (cut here)` : context}` : "",
       info.deps.length > 0
         ? `These lemmas are given, with the proof \`sorry\`; use them by name, only inside the proof of ${info.name} itself (a helper lemma you add must not use them), and keep them exactly as they are in the aux region of every check:\n${stubs}`
         : "No lemma is given: prove it from the header.",

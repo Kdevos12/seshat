@@ -162,6 +162,48 @@ function depthOf(hole: NamedHole, base: BaseDepths): number {
   return base.byStatement.get(statementIdV0(hole.statement)) ?? 0;
 }
 
+const NAMED_KEYWORDS = new Set(["def", "abbrev", "lemma", "theorem", "structure", "inductive", "class", "opaque"]);
+
+/** The name a context command declares, or undefined for a command that declares none (`open Nat`, `variable ...`, `set_option ...`, a notation). */
+function declaredName(command: string): string | undefined {
+  // `open X in def f ...` declares `f`.
+  const text = command.replace(/^\s*open\s+[^\n]*?\s+in\s+/u, "");
+  const head = readDeclarationHead(text);
+  return head !== undefined && NAMED_KEYWORDS.has(head.keyword) && head.name !== "" ? head.name : undefined;
+}
+
+/**
+ * The context of a blueprint's holes (task 51): the aux commands that are not holes (`SketchReading.others`: definitions, abbreviations,
+ * lemmas with complete proofs) that the given texts need, so that a hole's claim can state them in its header. A command is needed when a
+ * text names what it declares, or when a needed command does (transitively); the commands that declare no name (`open`, `variable`,
+ * `set_option`) come with them. The result is in file order, and empty when no text names a context command (a hole that stands alone has the
+ * problem's header and nothing more). The closure is computed, not "all of them": it is a few regular expressions over a handful of commands.
+ */
+export function contextFor(others: readonly string[], texts: readonly string[]): string[] {
+  const named = others.map((text) => ({ text, name: declaredName(text) }));
+  const chosen = new Set<number>();
+  const take = (haystack: readonly string[]): boolean => {
+    let grew = false;
+    named.forEach((entry, k) => {
+      if (entry.name === undefined || chosen.has(k)) return;
+      if (haystack.some((text) => mentions(text, [entry.name as string]) !== undefined)) {
+        chosen.add(k);
+        grew = true;
+      }
+    });
+    return grew;
+  };
+  let grew = take(texts);
+  while (grew) grew = take([...chosen].map((k) => (named[k] as { text: string }).text));
+  if (chosen.size === 0) return [];
+  return named.flatMap((entry, k) => (entry.name === undefined || chosen.has(k) ? [entry.text] : []));
+}
+
+/** A header with context commands under it (the problem's own, when there are none). */
+export function headerWithContext(header: string, context: readonly string[]): string {
+  return context.length === 0 ? header : `${header.replace(/\s+$/, "")}\n\n${context.join("\n\n")}\n`;
+}
+
 /** The names a text uses among `names`, in the order of `names`. */
 export function namesUsed(text: string, names: readonly string[]): string[] {
   return names.filter((name) => mentions(text, [name]) !== undefined);

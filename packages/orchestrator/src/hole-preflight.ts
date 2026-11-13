@@ -37,6 +37,17 @@ export async function holePreflight(d: HolePreflightDeps, request: HolePreflight
     checker, memory: d.memory, validate, host: NO_EXTRA_TACTICS, settings, random: randomFor(d.seed, `${request.claimId}:${salt}`), signal: d.signal, log: d.log,
   });
 
+  // Step 1, a gate: the hole's file must type-check (its statement, under its header). One that does not gets no session, and the planner is told why.
+  const typed = await checker.check([{ id: "typecheck", code: `${header}\n\nexample ${claim.statement} := by\n  sorry\n` }], { timeoutSec: BATTERY_SEC, ...(d.signal !== undefined ? { signal: d.signal } : {}) });
+  const broken = typed[0];
+  if (broken?.status === "lean_error") {
+    const error = broken.messages.find((m) => m.severity === "error");
+    if (error !== undefined) {
+      const first = (error.text.split("\n").find((l) => l.trim() !== "") ?? error.text).replace(/\s+/g, " ").trim().slice(0, 300);
+      return { proved: false, refuted: false, compileError: first, notes: [`the hole's file does not type-check: ${first}`] };
+    }
+  }
+
   const forward = await solveGoal(context(d.validate, "preflight"), { claimId: request.claimId, header, statement: claim.statement });
   if (forward.settled) return { proved: true, refuted: false, notes: [`the battery proved the hole with ${forward.winner?.tactic ?? "a tactic"}`] };
   notes.push(`the battery did not close the hole (${forward.tries.length} tries)`);
