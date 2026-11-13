@@ -157,6 +157,11 @@ export interface SessionResult {
   error?: string;
 }
 
+/** The `lean.lsp` calls a prover may make without a `lean_check` in between: the next one is answered with a reminder (documentation/lean-lsp.md). */
+export const LSP_CALLS_BEFORE_CHECK = 8;
+/** The answer the harness gives to the call past the limit; the capability is not called. */
+export const LSP_CHECK_REMINDER = "Check your file with lean_check now: only lean_check counts, and its answer is what the harness measures. lean.lsp answers again after that check.";
+
 /** Lean answers `server_error` this many times in a row: the session ends with an error. */
 const MAX_UNREACHABLE = 3;
 
@@ -203,7 +208,10 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
    * `lean_check` runs it with the regions the model wrote, `lean_edit` with the regions that its edit made, so that the two are the
    * same check and the journal stores the same full submission for both.
    */
+  // The `lean.lsp` calls since the last check (or the start).
+  let lspCalls = 0;
   const doCheck = async (given: { aux: string; proof: string; strategy?: unknown }, signal?: AbortSignal): Promise<AgentToolResult<{ summary: string }>> => {
+    lspCalls = 0;
     let params = given;
     let rewriteNote: string | undefined;
     if (o.lines?.rewriteCheck !== undefined) {
@@ -337,7 +345,20 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       return await doCheck(region === "aux" ? { aux: edited, proof: submission.proof } : { aux: submission.aux, proof: edited }, signal);
     },
   };
-  const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? [])];
+  // A prover that only looks (`lean.lsp`) makes no check, and progress is measured on checks: past LSP_CALLS_BEFORE_CHECK calls without one,
+  // the next call is refused with a reminder, as a tool answer, and the capability is not called.
+  const guardLsp = (tool: AgentTool<never, unknown>): AgentTool<never, unknown> =>
+    tool.name !== "lean_lsp"
+      ? tool
+      : {
+          ...tool,
+          execute: async (id, params, signal, onUpdate) => {
+            if (lspCalls >= LSP_CALLS_BEFORE_CHECK) return { content: [{ type: "text", text: LSP_CHECK_REMINDER }], details: { summary: "lean.lsp refused: check with lean_check" } as never, isError: true };
+            lspCalls += 1;
+            return tool.execute(id, params, signal, onUpdate);
+          },
+        };
+  const sessionTools = [leanCheck, ...(o.editTool === true ? [leanEdit] : []), ...(o.tools ?? []).map(guardLsp)];
 
   const rewriteHistory: SessionOptions["rewriteHistory"] =
     o.maskOldChecks === true ? async (messages) => (o.rewriteHistory === undefined ? maskOldChecks(messages) : await o.rewriteHistory(maskOldChecks(messages))) : o.rewriteHistory;
