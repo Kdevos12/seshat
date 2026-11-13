@@ -80,6 +80,7 @@ import { docstringOf, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
+import { computeFirstCases } from "./first-cases.ts";
 import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
 
@@ -110,6 +111,13 @@ export interface RunConfig {
    * not get it. Absent: none, and a run that records and prompts as it always did.
    */
   autoTool?: string;
+  /**
+   * With a compute tool in the run (`autoTool`, or `tools` naming it), the harness computes the first cases of a statement that has one natural-number or integer
+   * parameter (no model call, through the compute capability), looks the sequence up in the OEIS when the host offers it and the run may send
+   * numbers to a third party, and puts the table in the provers' first briefing as computed data (plan change PA10, documentation/induction.md,
+   * "The first cases the harness pushes"). Absent: off, and a run that records and prompts as it always did.
+   */
+  firstCases?: boolean;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -789,6 +797,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
+      ...(config.firstCases === true ? { firstCases: true } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
@@ -1453,6 +1462,22 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // The compute tool a problem gets only when the router files its statement (`RunConfig.autoTool`).
       const autoToolFiled = pinnedAuto !== undefined ? fileStatement(entry.statement) : undefined;
       if (autoToolFiled !== undefined && pinnedAuto !== undefined) log(`${entry.fullName}: the statement is filed as ${autoToolFiled}: the provers get ${pinnedAuto.capability}`);
+      // The first cases of the statement, once per problem before the provers start (`RunConfig.firstCases`). The compute tool is the run's `autoTool`
+      // (or a compute tool it was given by name), whether or not the router files this statement: the router does not read big operators, and a sum is
+      // the shape the table is for.
+      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
+      const firstCases =
+        config.firstCases === true && computeTool !== undefined && !idle
+          ? await computeFirstCases(entry.statement, {
+              registry,
+              capability: computeTool.capability,
+              implementation: computeTool.implementation,
+              // Numbers go to the OEIS only when the run is not private and the person did not refuse third parties (the intake's answer, when there is one).
+              oeis: registry.offers("oeis.search") && config.private !== true && (config.intake === undefined || config.intake.consent?.allowed === true),
+              signal: controller.signal,
+            })
+          : undefined;
+      if (firstCases !== undefined) log(`${entry.fullName}: the first cases are computed (${firstCases.table.rows.length} rows${firstCases.hits.length > 0 ? `, ${firstCases.hits.length} OEIS match(es)` : ""})`);
       /**
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
        * prover that was started before carries; `probe` makes it a probe: `sessions` sessions under a ledger of its own, then it pauses.
@@ -1489,6 +1514,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.editTool === true ? { editTool: true } : {}),
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
+          ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,

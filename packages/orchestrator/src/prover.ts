@@ -51,6 +51,8 @@ export interface ProverOptions {
   maskOldChecks?: boolean;
   /** The run's push of verified `lean.search` hits into the check answers (`SessionOptions.appendToCheck`); absent: none. */
   leanSearch?: LeanSearchPush;
+  /** The first cases of the statement, computed by the harness (`RunConfig.firstCases`): a titled section of the first session's opening message only. */
+  firstCases?: { title: string; text: string };
   /**
    * The next session's opening message carries the state card (plan change CA7, documentation/m0-loop.md, "The state card"), and the
    * prover records what the card needs (the typed detail of the failure, the lemmas Lean accepted). The caller limits `notesChars` to
@@ -274,7 +276,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const start = regions;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
-      const sections = [...(opened?.sections ?? []), ...(pageSection !== undefined ? [pageSection] : []), ...team];
+      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
       const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;

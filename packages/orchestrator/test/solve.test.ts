@@ -245,6 +245,7 @@ describe("the defaults sets of solve", () => {
       stateCard: true,
       budgetRounds: true,
       budgetShare: 2,
+      firstCases: true,
     });
     assert.deepEqual(DEFAULTS_SETS.v1, {});
   });
@@ -267,7 +268,7 @@ describe("the defaults sets of solve", () => {
     const old = await solve(v1.o);
     const kept = JSON.parse(readFileSync(join(old.dir, "config.json"), "utf8")) as Record<string, unknown>;
     assert.equal(kept.defaults, "v1");
-    for (const key of ["editTool", "maskOldChecks", "checkTimeoutSec", "stateCard", "budgetRounds", "budgetShare"]) assert.equal(key in kept, false, `${key} is not in a v1 run`);
+    for (const key of ["editTool", "maskOldChecks", "checkTimeoutSec", "stateCard", "budgetRounds", "budgetShare", "firstCases"]) assert.equal(key in kept, false, `${key} is not in a v1 run`);
     // v1 sends the prover's checks under the validator's policy, as before: both checks and the prompt are the merged ones.
     assert.equal(old.result?.problems[0]?.outcome, "proved");
   });

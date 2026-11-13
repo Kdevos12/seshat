@@ -42,6 +42,7 @@ export const DEFAULTS_SETS: Readonly<Record<DefaultsName, Readonly<Partial<RunCo
     stateCard: true,
     budgetRounds: true,
     budgetShare: 2,
+    firstCases: true,
   },
 };
 
@@ -88,6 +89,7 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
     ["stateCard", "the state card"],
     ["budgetRounds", "the budget in rounds"],
     ["budgetShare", "a problem's cap bounded by its share of the run budget"],
+    ["firstCases", "the first cases of a statement with a number parameter, computed by the harness (with the compute tool)"],
   ];
   for (const [key, what] of config) if (set[key] !== undefined && set[key] !== false) lines.push(what);
   if (name === "v2") lines.push("line M6's repeat rule");
