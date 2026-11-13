@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ValidationReport } from "@seshat/core";
-import { Type } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import { Ledger } from "../src/budget.ts";
 import type { Workbench } from "../src/problem.ts";
 import { LSP_CALLS_BEFORE_CHECK, LSP_CHECK_REMINDER, runSession } from "../src/session.ts";
-import { call, check, fauxModels, say } from "./m0-helpers.ts";
+import { check, fauxModels, say } from "./m0-helpers.ts";
 
 const REPORT: ValidationReport = {
   verdict: "invalid",
@@ -23,10 +24,25 @@ const REPORT: ValidationReport = {
 };
 const workbench = { check: async () => ({ report: REPORT, accepted: false }) } as unknown as Workbench;
 
-/** A session whose model makes the given calls, then ends; the `lean_lsp` tool counts the calls that reach it. */
+/**
+ * A session whose model makes the given calls, then ends; the `lean_lsp` tool counts the calls that reach it. The lsp calls go four to a
+ * turn, so that the guard of the turns (turn-guard.test.ts) does not stand in front of this one.
+ */
 async function run(script: Array<"lsp" | "check">, withLsp = true): Promise<{ reached: number; answers: string[] }> {
   const { models, faux, name } = fauxModels();
-  faux.setResponses([...script.map((s) => (s === "lsp" ? call("lean_lsp", { op: "diagnostics" }) : check("bad"))), say("Notes.")]);
+  const steps: AssistantMessage[] = [];
+  for (let i = 0; i < script.length; ) {
+    if (script[i] === "check") {
+      steps.push(check("bad"));
+      i += 1;
+      continue;
+    }
+    let n = 0;
+    while (i + n < script.length && script[i + n] === "lsp" && n < 4) n += 1;
+    steps.push(fauxAssistantMessage(Array.from({ length: n }, () => fauxToolCall("lean_lsp", { op: "diagnostics" })), { stopReason: "toolUse" }));
+    i += n;
+  }
+  faux.setResponses([...steps, say("Notes.")]);
   let reached = 0;
   const lsp = {
     name: "lean_lsp",

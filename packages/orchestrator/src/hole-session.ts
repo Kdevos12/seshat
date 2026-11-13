@@ -132,6 +132,7 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     ...(d.turn !== undefined ? { turn: d.turn } : {}),
     ...(d.prices !== undefined ? { prices: d.prices } : {}),
     tools: [verdictTool as AgentTool<never, unknown>],
+    endingTools: ["hole_verdict"],
     editTool: true,
     maskOldChecks: true,
     ...(d.checkTimeoutSec !== undefined ? { checkTimeoutSec: d.checkTimeoutSec } : {}),
