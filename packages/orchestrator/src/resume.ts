@@ -29,6 +29,7 @@ import { readConsortium } from "./consortium.ts";
 import type { Candidate, RecordedCertification, Workbench } from "./problem.ts";
 import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
+import type { RolesConfig } from "./roles.ts";
 import { RunSetupError } from "./setup-error.ts";
 
 /**
@@ -154,6 +155,7 @@ function configOf(recorded: unknown): RunConfig {
           },
         }
       : {}),
+    ...(typeof r.roles === "object" && r.roles !== null && !Array.isArray(r.roles) ? { roles: r.roles as RolesConfig } : {}),
     ...(r.leanSearch === true ? { leanSearch: true } : {}),
     ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
     ...(r.firstCases === true ? { firstCases: true } : {}),

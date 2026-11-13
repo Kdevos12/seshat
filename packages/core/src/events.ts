@@ -480,6 +480,12 @@ export interface EventDataMap {
     responseHash?: string;
     error?: string;
     durationMs: number;
+    /** The role the call was made for (`RunConfig.roles`, documentation/models-setup.md, "Roles"). Absent: the run set no role for it. */
+    role?: string;
+    /** The sampling settings the call was sent with, and `ignored`, the ones its model's family ignores and that were not sent. Absent: the role's own settings are none. */
+    settings?: { [key: string]: Json };
+    /** Set when the planner's call went to the escalation model: the planner's own model, and the refinement rounds in a row without Lean progress that led there. */
+    escalation?: { from: string; rounds: number };
   };
   /**
    * A task of the ledger (documentation/ledger.md). Written by the orchestrator only: a line

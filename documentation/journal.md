@@ -60,7 +60,7 @@ Event types:
 | `edge.status_changed` | `edgeId`, `from`, `to`, `reason`, `validationId?` |
 | `node.recorded` | `nodeId`, `kind`, `claimId?`, `data` (JSON), `provenance?` |
 | `node.updated` | `nodeId`, `patch` (a JSON merge patch), `reason` |
-| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?` |
+| `model_call.finished` | `modelCallId`, `line`, `problemId?`, `attemptId?`, `model`, `outcome` (`ok`, `error`, `aborted`), `site?`, `requestHash`, `responseHash?`, `error?`, `durationMs`, `usd`, `inputTokens`, `outputTokens`, `cachedInputTokens?`, `savedUsd?`, `offPeakUsd?`, `role?`, `settings?`, `escalation?` (a run with `RunConfig.roles`: [models-setup.md](models-setup.md#roles-a-model-and-settings-for-each-place-a-model-is-called-ca15-ca23)) |
 | `task.created` | `taskId`, `kind`, `problemId?`, `claimId?`, `edgeId?`, `dependsOn`, `owner?`, `acceptance`, `budget` (`usd?`, `sessions?`, `turns?`: the bound of a session in model responses, for M12's hole sessions), `parentTaskId?`, `proposedBy?`, `title?` |
 | `task.assigned` | `taskId`, `owner`, `reason` |
 | `task.status_changed` | `taskId`, `from`, `to`, `reason`, `blockedBy?` |

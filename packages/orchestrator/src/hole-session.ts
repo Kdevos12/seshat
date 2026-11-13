@@ -6,6 +6,7 @@ import { type BlobStore, HOLE_VERDICTS, type Journal, newId } from "@seshat/core
 import type { HoleSessionRequest, HoleSessionResult, HoleVerdictCall } from "@seshat/lines";
 import type { Ledger } from "./budget.ts";
 import type { PriceBook } from "./prices.ts";
+import type { RoleUse } from "./roles.ts";
 import type { Workbench } from "./problem.ts";
 import { runSession } from "./session.ts";
 import type { Turn } from "./turns.ts";
@@ -40,6 +41,11 @@ export interface HoleSessionDeps {
   contextTokens: number;
   /** The seconds a Lean check may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
+  /**
+   * The `hole` role of the run (`RunConfig.roles`): its model and thinking level are `model` and `thinkingLevel` above; this carries what it adds, the sampling
+   * settings sent with each request and recorded on each response's event. Absent: none, and the events are what they always were.
+   */
+  role?: Pick<RoleUse, "temperature" | "topP" | "record">;
 }
 
 /** The arguments of `hole_verdict`. */
@@ -90,6 +96,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     models: d.models,
     model,
     thinkingLevel: d.thinkingLevel,
+    ...(d.role?.temperature !== undefined ? { temperature: d.role.temperature } : {}),
+    ...(d.role?.topP !== undefined ? { topP: d.role.topP } : {}),
     systemPrompt: HOLE_SYSTEM,
     prompt: request.prompt,
     workbench: bench,
@@ -107,6 +115,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
           model: d.model,
           outcome: "ok",
           site: SITE_HOLE,
+          ...(d.role !== undefined ? { role: "hole" } : {}),
+          ...(d.role?.record !== undefined ? { settings: d.role.record } : {}),
           requestHash: d.blobs.put(JSON.stringify({ session: request.key, claimId: request.claimId })),
           durationMs: 0,
           usd: cost.usd,

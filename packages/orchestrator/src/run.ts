@@ -79,6 +79,7 @@ import { RunSetupError } from "./setup-error.ts";
 import { docstringOf, LIT_SEARCH } from "@seshat/lit";
 import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordConsent } from "./intake.ts";
 import { checkConsult, type ConsultConfig } from "./consult.ts";
+import { describeRoles, RoleBook, type RolesConfig, resolveRoles } from "./roles.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
@@ -182,6 +183,15 @@ export interface RunConfig {
    * prover's context and never changes a claim or a status. Absent: off, no defaults set and no arm turns it on, and a run that records and prompts as it always did.
    */
   consult?: ConsultConfig;
+  /**
+   * A model, and sampling settings, for each place the harness calls a model from (plan changes CA15 and CA23, documentation/models-setup.md, "Roles"): `prover`
+   * (the outer sessions), `planner` (the refinement rounds' call, `scheduler.planner`), `hole` (M12's hole sessions), `verifier` and `consult` (whose `model` is
+   * another way to name `consult.model`, which wins when both are given), and `escalation` (`{ model, maxShare }`: the planner's next calls after two rounds
+   * without Lean progress, within `maxShare` of the allowance). A model is resolved like the run's own and an unknown one stops the run at its start; each call
+   * is charged at its own model's price to the same ledgers. A setting the model's family ignores (the host profile) is not sent and is recorded as ignored.
+   * Absent, or a role not named: the run's model and its default settings, and a run that records and sends what it always did.
+   */
+  roles?: RolesConfig;
   /** The lines the run enables, such as `M1` (documentation/lines.md). None, or absent: M0. */
   lines?: string[];
   /** Options of the enabled lines, by line id: they replace the lines' defaults key by key. */
@@ -615,6 +625,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     // Looked up now, so that a model or a key that is missing stops the run before any spend.
     await resolveModel(o.models, config.consult.model);
   }
+  // The roles' models, looked up now for the same reason; an error names the role.
+  if (config.roles !== undefined) await resolveRoles(config.roles, (name) => resolveModel(o.models, name));
+  const proverRoleModel = config.roles?.prover?.model;
+  const proverModel = proverRoleModel === undefined || proverRoleModel === config.model ? model : await resolveModel(o.models, proverRoleModel);
+  // The tool consult: `RunConfig.consult`, or the `consult` role's model alone (`consult.model` wins when both name one).
+  const consultConfig: ConsultConfig | undefined =
+    config.consult ?? (config.roles?.consult?.model !== undefined ? { model: config.roles.consult.model } : undefined);
   if (resume === undefined && existsSync(join(o.dir, "journal.jsonl")) && statSync(join(o.dir, "journal.jsonl")).size > 0) {
     throw new RunSetupError(`${o.dir} already holds a run; choose another directory`);
   }
@@ -692,6 +709,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // The host's prices, with the clock its calendar is read against (documentation/m0-loop.md, "Prices"). What the
   // host cannot give is refused here, before `run.started` or `run.resumed` is written.
   const prices = new PriceBook(registry.host.models, o.wallClock);
+  const roleBook = config.roles !== undefined ? new RoleBook(config.roles, { model: config.model, thinkingLevel: config.thinkingLevel }, prices) : undefined;
   if (config.offpeak !== undefined && prices.calendarOf(config.model) === undefined) {
     return await abandon(
       `--offpeak needs the host's pricing calendar for ${config.model}: host ${registry.host.host} gives it ${prices.entry(config.model)?.pricing === undefined ? "no pricing table" : "a pricing table without a calendar"} ` +
@@ -809,6 +827,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.editTool === true ? { editTool: true } : {}),
       ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
       ...(config.consult !== undefined ? { consult: { ...config.consult } } : {}),
+      ...(config.roles !== undefined ? { roles: JSON.parse(JSON.stringify(config.roles)) as Json } : {}),
       ...(config.leanSearch === true ? { leanSearch: true } : {}),
       ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
       ...(config.firstCases === true ? { firstCases: true } : {}),
@@ -866,6 +885,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     );
     o.afterStart?.(journal);
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
+    if (config.roles !== undefined && describeRoles(config.roles) !== "") log(`roles: ${describeRoles(config.roles)}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
     if (leanEnvNote !== undefined) log(leanEnvNote);
@@ -906,13 +926,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   // A model with no price anywhere is charged $0, and no dollar cap can then stop it: refused when a dollar cap is
   // given on purpose (--run-budget-usd, a turn's usd), and said in the log otherwise (the default per-problem budget
   // is always there, and a free local model is legitimate).
-  for (const name of ranking.order) {
+  const roleModels = new Set<string>(
+    config.roles === undefined ? [] : [...Object.entries(config.roles).flatMap(([, role]) => (typeof (role as { model?: unknown }).model === "string" ? [(role as { model: string }).model] : []))],
+  );
+  for (const name of [...new Set([...ranking.order, ...roleModels])]) {
     const slash = name.indexOf("/");
     const known = slash > 0 ? o.models.getModel(name.slice(0, slash), name.slice(slash + 1)) : undefined;
     if (known === undefined || !prices.isFree(known)) continue;
     const capped = config.budget.runUsd !== undefined || config.consortium?.limit.usd !== undefined;
     const advice = `give it a pricing entry in the host profile's models (documentation/m0-loop.md, "Prices")`;
-    if (capped && name === config.model) {
+    if (capped && (name === config.model || roleModels.has(name))) {
       return await abandon(`${name} has no price in host ${registry.host.host} or in pi-ai, so it would be charged $0 and --run-budget-usd or the turn's usd limit could never stop it: ${advice}`, undefined, registry);
     }
     log(`warning: ${name} has no price in host ${registry.host.host} or in pi-ai: its responses are charged $0 and no dollar budget sees them; ${advice}`);
@@ -981,6 +1004,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
+      ...(roleBook !== undefined ? { roles: roleBook } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
     const outside = sitesSentOutside(resolveDecideSettings(config.decide));
@@ -1520,9 +1544,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           workbench,
           journal,
           models: o.models,
-          model,
-          modelName: config.model,
-          thinkingLevel: config.thinkingLevel,
+          model: proverModel,
+          modelName: proverRoleModel ?? config.model,
+          thinkingLevel: config.roles?.prover?.settings?.thinking ?? config.thinkingLevel,
+          ...(roleBook !== undefined ? { roles: roleBook } : {}),
           sessions: config.sessions,
           limits: config.limits,
           notesChars: effectiveNotesChars(config),
@@ -1533,7 +1558,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
           ...(config.editTool === true ? { editTool: true } : {}),
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
-          ...(config.consult !== undefined ? { consult: { config: config.consult, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
+          ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),

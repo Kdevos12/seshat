@@ -205,7 +205,7 @@ Task 38. In the third real run M12 stated blueprints and never revised one: a re
 
 A blueprint record is revised once (a record that a planner record names in `refinedFrom` is not revised again), and a round whose blueprint is not healthy leaves the problem in case a: the next round, in the same step, revises it, up to the cap. A problem has at most `maxRefinements` rounds (default 8), counted from the `m12_sketch` records with `planner: true`.
 
-**The call.** One model call in a **fresh context** (no conversation history), through the same one-call path as the other M12 calls (`problem.llm.completeJson`), at the site **`scheduler.planner`**: a `model_call.finished` of `line:M12`, charged to the problem's ledger. Its prompt is `plannerPrompt` in `refine.ts`, a constant with a version (`PLANNER_VERSION`, in its first line), and holds only:
+**The call.** One model call in a **fresh context** (no conversation history), through the same one-call path as the other M12 calls (`problem.llm.completeJson`), at the site **`scheduler.planner`**: a `model_call.finished` of `line:M12`, charged to the problem's ledger. Its prompt is `plannerPrompt` in `refine.ts`, a constant with a version (`PLANNER_VERSION`, in its first line), and holds only: With `RunConfig.roles.planner` the call goes to the planner's own model, at its settings, and is charged at its price ([models-setup.md](models-setup.md#roles-a-model-and-settings-for-each-place-a-model-is-called-ca15-ca23)); without it, to the run's.
 
 - the target theorem's statement;
 - the current blueprint, AUX and PROOF as submitted;

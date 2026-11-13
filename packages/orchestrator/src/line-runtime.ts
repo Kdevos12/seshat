@@ -34,13 +34,14 @@ import type { DecideConfig } from "@seshat/decide";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
-import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
+import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
 import { holePreflight } from "./hole-preflight.ts";
 import { runHoleSession } from "./hole-session.ts";
 import { lineLlm } from "./llm.ts";
+import { type PlannerChoice, PlannerEscalation, type RoleBook, roleOfSite, THINKING_LEVELS } from "./roles.ts";
 import type { PriceBook } from "./prices.ts";
 import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
@@ -101,6 +102,8 @@ export interface RunLinesOptions {
   prices?: PriceBook;
   /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
+  /** The run's roles (`RunConfig.roles`): each site gets the `llm` of its role (`scheduler.planner` the planner's, the hole sessions the hole's). Absent: the run's model everywhere. */
+  roles?: RoleBook;
 }
 
 export interface ProblemLinesOptions {
@@ -190,7 +193,7 @@ export interface SessionPlan {
 }
 
 /** The thinking levels a line may sample for a session (the run's providers' own scale). */
-export const SESSION_THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const SESSION_THINKING_LEVELS: readonly ThinkingLevel[] = THINKING_LEVELS;
 
 /** What is wrong with the settings a line sampled, or undefined: the keys that act on a session are checked here. */
 export function settingsProblem(settings: JsonObject): string | undefined {
@@ -243,6 +246,8 @@ export class ProblemLines {
   private readonly fractions: number[];
   /** The Lean progress the ladder last saw, and the problem's spend then. Read from the memory the first time it is needed. */
   private mark: { progress: Progress; atUsd: number } | undefined;
+  /** The planner's escalation (`RunConfig.roles.escalation`): one state for the problem, whichever context the call is made from. */
+  private escalation: PlannerEscalation | undefined;
 
   constructor(run: RunLines, options: ProblemLinesOptions) {
     this.run = run;
@@ -300,7 +305,9 @@ export class ProblemLines {
       signal: own,
       ...(o.turn !== undefined ? { turn: o.turn } : {}),
       ...(o.prices !== undefined ? { prices: o.prices } : {}),
+      ...(o.roles !== undefined ? { roleFor: (site: string) => this.roleFor(site) } : {}),
     });
+    const hole = o.roles?.has("hole") === true ? o.roles.use("hole") : undefined;
     const context: ProblemContext = {
       line: id,
       runId: o.runId,
@@ -337,7 +344,8 @@ export class ProblemLines {
             holeSession: (request: HoleSessionRequest) =>
               runHoleSession(
                 {
-                  journal: o.journal, blobs: o.blobs, models: o.models, model: o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: o.thinkingLevel,
+                  journal: o.journal, blobs: o.blobs, models: o.models, model: hole?.model ?? o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: hole?.thinkingLevel ?? o.thinkingLevel,
+                  ...(hole !== undefined ? { role: hole } : {}),
                   ledger: this.p.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
                   ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
                   workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
@@ -372,6 +380,26 @@ export class ProblemLines {
     };
     if (signal === undefined) this.contexts.set(id, context);
     return context;
+  }
+
+  /**
+   * The role of a call's site, when the run names that role: the planner's call (`scheduler.planner`) is the planner's, and goes to the escalation
+   * model when the planner has made two refinement rounds in a row without Lean progress and its escalated calls are within their share of the allowance.
+   */
+  private roleFor(site: string): PlannerChoice | undefined {
+    const roles = this.run.o.roles;
+    if (roles === undefined || roleOfSite(site) !== "planner" || !roles.has("planner")) return undefined;
+    this.escalation ??= new PlannerEscalation(roles, {
+      rounds: () => this.run.o.memory.nodes(SKETCH_KIND, { claimId: this.p.claimId }).filter((node) => {
+        const record = asRecord<SketchRecord>(node.data);
+        return record.problemId === this.p.problemId && record.planner === true;
+      }).length,
+      progress: () => progressOf(this.run.o.memory, this.p.problemId, this.p.claimId),
+      allowanceUsd: () => this.p.ledger.limitUsd,
+      spentOn: (model) =>
+        this.run.o.journal.projection.modelCallsOfProblem(this.p.problemId).filter((call) => call.site === site && call.model === model).reduce((sum, call) => sum + call.usd, 0),
+    });
+    return this.escalation.choose();
   }
 
   /** `deciding`: the session has not started, so a draw can still be recorded on its `attempt.started`. */

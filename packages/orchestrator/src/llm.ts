@@ -4,6 +4,8 @@ import { type BlobStore, type Journal, newId, SITE } from "@seshat/core";
 import { type LineId, type Llm, type LlmRequest, type LlmResult, withJson } from "@seshat/lines";
 import { type Ledger, messageCost } from "./budget.ts";
 import type { PriceBook } from "./prices.ts";
+import type { PlannerChoice } from "./roles.ts";
+import { sampling } from "./roles.ts";
 import { type Turn, TurnEndedError } from "./turns.ts";
 
 export interface LineLlmOptions {
@@ -24,6 +26,11 @@ export interface LineLlmOptions {
   turn?: Turn;
   /** The host's prices; absent: pi-ai's numbers. */
   prices?: PriceBook;
+  /**
+   * The role of a site, when the run names one for it (`RunConfig.roles`): its model, thinking level and sampling settings for this call. A request that names
+   * its own model keeps it. Absent, or undefined for a site: the run's model and defaults, as before.
+   */
+  roleFor?: (site: string) => PlannerChoice | undefined;
 }
 
 /**
@@ -40,7 +47,9 @@ export function lineLlm(o: LineLlmOptions): Llm {
     // Checked before the call is paid for: the journal refuses a site that is not a dotted lowercase name.
     const site = request.site ?? `${o.line.toLowerCase()}.unlabeled`;
     if (!SITE.test(site)) throw new Error(`line ${o.line}: ${JSON.stringify(site)} is not a site: use dotted lowercase words such as graph.attempt`);
-    const name = request.model ?? o.model;
+    const bound = request.model === undefined ? o.roleFor?.(site) : undefined;
+    const name = request.model ?? bound?.use.model ?? o.model;
+    const thinkingLevel = bound?.use.thinkingLevel ?? o.thinkingLevel;
     const model = await o.resolveModel(name);
     const requestHash = o.blobs.putJson({
       model: name,
@@ -72,7 +81,8 @@ export function lineLlm(o: LineLlmOptions): Llm {
     const options: SimpleStreamOptions = {
       signal: o.signal,
       ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
-      ...(o.thinkingLevel !== "off" ? { reasoning: o.thinkingLevel as NonNullable<SimpleStreamOptions["reasoning"]> } : {}),
+      ...(thinkingLevel !== "off" ? { reasoning: thinkingLevel as NonNullable<SimpleStreamOptions["reasoning"]> } : {}),
+      ...(bound !== undefined ? sampling(bound.use) : {}),
     };
     const message = await o.models.completeSimple(
       model,
@@ -97,6 +107,9 @@ export function lineLlm(o: LineLlmOptions): Llm {
         outcome,
         site,
         requestHash,
+        ...(bound !== undefined ? { role: bound.use.role } : {}),
+        ...(bound?.use.record !== undefined ? { settings: bound.use.record } : {}),
+        ...(bound?.escalated !== undefined ? { escalation: bound.escalated } : {}),
         ...(outcome === "ok" ? { responseHash: o.blobs.put(text) } : {}),
         ...(error !== undefined ? { error: error.slice(0, 1000) } : {}),
         durationMs: Math.round(performance.now() - started),
