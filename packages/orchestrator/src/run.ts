@@ -1009,11 +1009,17 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (resume === undefined && problemUsd > runUsd / k + 1e-9) {
       log(`warning: the problem allowance ($${problemUsd}) is above its fair share of the run's budget ($${(runUsd / k).toFixed(4)} = $${runUsd} / ${k} problem${k === 1 ? "" : "s"}): one problem can still take more than its share, up to the round's cap`);
     }
+    // PA5: with the gate on (so with a probe), round 0 gives a problem at least what the probe may spend, a fraction of the problem allowance.
+    const floorUsd = config.gate === undefined ? 0 : Math.min(gateSettings(config.gate).probeFraction * problemUsd, problemUsd);
+    if (resume === undefined && k > 1 && floorUsd * k > runUsd + 1e-9) {
+      log(`warning: the run's budget ($${runUsd}) cannot give each of the ${k} problems the probe's cap ($${floorUsd.toFixed(4)}): the problems are served in the run's order until the budget is spent, and the last may never begin`);
+    }
     const earlier = resume === undefined ? undefined : recordedRounds(resume.events);
     if (k > 1) {
       rounds = new Rotation({
         runUsd,
         k,
+        ...(floorUsd > 0 ? { floorUsd } : {}),
         concurrency: config.concurrency,
         order: o.problems.map((p) => p.id),
         journal,
