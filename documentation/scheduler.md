@@ -225,7 +225,26 @@ It answers with JSON `{aux, proof}`, the two regions. An answer that is not JSON
 
 **Resuming.** M12 is `resume: "rebuild"`: the rounds made are counted from the `m12_sketch` records with `planner: true`, a record the planner wrote is registered like any other whose registration a cut left undone, and a round whose record exists is not made again. A round cut while its call was in flight is **lost and asked again**, as a hole session is (the call that was paid for before the cut is returned at no charge, `LlmRequest.reuse`; one that was cut before its `model_call.finished` is asked again).
 
-**Not built, and not run.** Sub-blueprints for a single hole (a planner call whose target is a hole): a split happens inside the global blueprint. The repair pass (CA13) and the `consult` tool (NL3) are the next part of the plan. Nothing has run against a real Lean or model: the planner's prompt, whether a model writes a `-- refines:` split that Lean accepts, and the price of a round (a twelfth of a session is a guess) are untested; the arm `solve-v2-blueprints-refine` of the experiment `solve-defaults` ([ablate.md](ablate.md)) measures it against `solve-v2-blueprints`. `refine.test.ts` runs it with the simulated Lean and the faux model: a refused blueprint revised into a healthy one (case a), a hole that ended too hard split with `-- refines:` while the hole that did not change keeps its claim and gets no session (case b), a statement already computed reused under another name, depth 4 refused, `maxRefinements`, the gate skipping a round, a planner that fails, an answer that is no blueprint, and a resumption cut after a round's record and one cut while the call was in flight.
+**Not built, and not run.** Sub-blueprints for a single hole (a planner call whose target is a hole): a split happens inside the global blueprint. The `consult` tool (NL3) is the next part of the plan. Nothing has run against a real Lean or model: the planner's prompt, whether a model writes a `-- refines:` split that Lean accepts, and the price of a round (a twelfth of a session is a guess) are untested; the arm `solve-v2-blueprints-refine` of the experiment `solve-defaults` ([ablate.md](ablate.md)) measures it against `solve-v2-blueprints`. `refine.test.ts` runs it with the simulated Lean and the faux model: a refused blueprint revised into a healthy one (case a), a hole that ended too hard split with `-- refines:` while the hole that did not change keeps its claim and gets no session (case b), a statement already computed reused under another name, depth 4 refused, `maxRefinements`, the gate skipping a round, a planner that fails, an answer that is no blueprint, and a resumption cut after a round's record and one cut while the call was in flight.
+
+## The repair pass (CA13)
+
+Task 38. With `blueprints` **and** `repair` (both off by default; `--line-option M12.repair=true`; on in the arm `solve-v2-blueprints-refine`), an outer prover session that ends on a file whose last check has **Lean errors** (not a refusal before Lean, not a timeout or an unreachable Lean) gets a repair, with **no model call** (APOLLO's sorrifier and auto-solver):
+
+1. `cutFailures` (`repair.ts`) cuts each failing block to `sorry`, placing the cuts by the check report's positions in the AUX and PROOF regions of the checked file (the regions `locate` in `feedback.ts` reads);
+2. the cut file is checked once through `ProblemContext.checkSketch`, the check a planner's blueprint gets;
+3. read like any blueprint (`readSketch` with M12's options), it is recorded as an `m12_sketch` with `repairOf` (the attempt it repairs), healthy or not, and registered between sessions like any other: its holes get the pre-flight of [CA11](#pre-flight-plan-change-ca11), whose battery (M10) runs on every hole before any paid session. That is the point. A cut file that `readSketch` refuses (no hole, a hole that names a hole) is a line in the log and no record, and no Lean call.
+
+At most one repair per attempt and `maxRepairs` (default 2) per problem, counted from the records with `repairOf`. A repair record is never the base of a refinement round (case a revises the prover's or the planner's records only). Nothing here sets a status: a hole becomes `computed` only through `validate`, by the battery or a session.
+
+**The shapes handled.** The cut is all or nothing: one error that cannot be cut gives no repair.
+
+- An **`aux_` lemma or theorem** whose proof holds an error: its whole proof becomes `:= by sorry`, its statement unchanged (a term proof too). It is a hole afterwards.
+- A **top-level `have name : T := ...` of the main proof**, with a block (`:= by ...`) or a term, over one or several lines, whose block holds an error: it is **lifted** into a new hole `aux_name` with the theorem's binders and `T` (`lemma aux_name <binders> : T := by sorry`, added at the end of AUX), and the `have` becomes `have name : T := aux_name <explicit binders>`. Only when `T` mentions nothing the main proof bound before the `have` (any word of `T` that is not a binder of the theorem and that occurs earlier in the proof, `intro k` then `have h : k = k`, refuses the repair: it is conservative, a global name used earlier refuses it too). A `have` is top-level when it stands at the main proof's own indentation.
+
+**Not handled: no repair.** An error in a statement (of a lemma or of a `have`); in the fixed part of the file; in a declaration of AUX that is not an `aux_` lemma or theorem; in the main proof outside a top-level `have` (the final `exact`, a `have` inside `induction`, `cases` or a bullet); a `have` with no name or no type (`have : T`, `have h := t`, `have h (x : A) : T`).
+
+**Not run.** Whether Lean's positions for a real error fall where `cutFailures` expects (an "unsolved goals" error at the `by`, an error in a term at the term) is untested: only the simulated Lean has run (`repair.test.ts`: two failing AUX lemmas become a blueprint of two holes and the battery proves one, a failing `have` with only the theorem's binders becomes a hole, an error in a statement gives no repair, `maxRepairs`, without `repair` nothing changes, and `cutFailures` on its shapes and refusals).
 
 ## Options of M12
 
@@ -242,9 +261,11 @@ It answers with JSON `{aux, proof}`, the two regions. An answer that is not JSON
 | `holeSessions` | 2 | sessions of a hole's task (blueprints only) |
 | `refine` | false | refinement rounds: a planner call rewrites a blueprint Lean refused, or whose holes had their sessions with one not proved (blueprints only; CA12, PA11) |
 | `maxRefinements` | 8 | the most refinement rounds for a problem (refine only) |
+| `repair` | false | the repair pass: a session that ends on Lean errors has its failing blocks cut to `sorry`, checked once, and recorded as a blueprint (blueprints only; CA13) |
+| `maxRepairs` | 2 | the most repairs for a problem (repair only) |
 | `seed` | null | the scheduler's draws |
 
-What M12 records: `m12_sketch` (a sketch; `editsOutsideRegions` and `leanHoles`, the check's flags; with blueprints also `blueprint`, `uses`, `failureClass`, `dropped`; with `refine` also `depth`, `errors`, and for a planner's blueprint `planner`, `refinedFrom`, `round`), `m12_session` (a session; with blueprints also `stop`, `turns`, `verdict`, `workDone`, `work`, `workHash`, `negationValidated`, `argument`),
+What M12 records: `m12_sketch` (a sketch; `editsOutsideRegions` and `leanHoles`, the check's flags; with blueprints also `blueprint`, `uses`, `failureClass`, `dropped`; with `refine` also `depth`, `errors`, and for a planner's blueprint `planner`, `refinedFrom`, `round`; for a repair `repairOf`), `m12_session` (a session; with blueprints also `stop`, `turns`, `verdict`, `workDone`, `work`, `workHash`, `negationValidated`, `argument`),
 `m12_subsumption`, `m12_preflight`, `m12_refine_stop` (a planner call that failed), `hole_verdict`, `suspect_false`. All are facts, none a status, none learned.
 
 ## Inner provers and tasks (PC4 item 1)

@@ -4,13 +4,14 @@ import {
 } from "@seshat/graph";
 import { LeanMeta } from "@seshat/lean-meta";
 import {
-  type Briefing, completeJson, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
+  type Briefing, completeJson, type FinishedAttempt, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
 import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
 import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, dropHeaderImports, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
+import { cutFailures } from "./repair.ts";
 import { PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
   asRecord, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
@@ -50,6 +51,10 @@ export const M12_OPTIONS = {
   refine: false,
   /** The most refinement rounds for one problem (refine only). */
   maxRefinements: 8,
+  /** The repair pass (CA13, blueprints only): an outer session that ends on a file with Lean errors has its failing blocks cut to `sorry`, with no model call, and the result is a blueprint if Lean and M12 read it as one. */
+  repair: false,
+  /** The most repairs for one problem (repair only). */
+  maxRepairs: 2,
   /** Seeds the scheduler's draws. Null: the run's seed. */
   seed: null,
 } satisfies JsonObject;
@@ -69,6 +74,8 @@ interface Settings {
   holeSessions: number;
   refine: boolean;
   maxRefinements: number;
+  repair: boolean;
+  maxRepairs: number;
   seed: string | number | null;
 }
 
@@ -94,6 +101,8 @@ function settings(options: Readonly<JsonObject>): Settings {
     holeSessions: num("holeSessions", 1),
     refine: flag("refine"),
     maxRefinements: num("maxRefinements", 0),
+    repair: flag("repair"),
+    maxRepairs: num("maxRepairs", 0),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -447,7 +456,7 @@ export function createM12Line(): Line {
       return { ...current, case: "b" };
     }
     // The last one Lean checked, or a planner's answer that was no blueprint (it has no check, and revises what the round before revised).
-    const checked = records.filter(({ record }) => record.editsOutsideRegions !== undefined || record.planner === true).at(-1);
+    const checked = records.filter(({ record }) => record.repairOf === undefined && (record.editsOutsideRegions !== undefined || record.planner === true)).at(-1);
     return checked === undefined || refined.has(checked.nodeId) ? undefined : { ...checked, case: "a" };
   }
 
@@ -549,6 +558,39 @@ export function createM12Line(): Line {
     problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
     problem.log(`refinement round ${round} (case ${base.case}): ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`}`);
     return true;
+  }
+
+  /**
+   * The repair pass (CA13): a session that ended on a file with Lean errors has each failing block cut to `sorry` (`cutFailures`, no model call), the
+   * cut file is checked once the way a planner's blueprint is, and, read as a blueprint, recorded as an `m12_sketch` with `repairOf`, to be registered
+   * between sessions like any other: its holes get the pre-flight (the battery of M10) before any paid session. At most one per attempt and `maxRepairs`
+   * per problem. A repair that cannot be made is a line in the log and nothing else; nothing here sets a status.
+   */
+  async function repair(problem: ProblemContext, s: Settings, attempt: FinishedAttempt): Promise<void> {
+    if (!s.blueprints || !s.repair || problem.checkSketch === undefined) return;
+    const report = attempt.report;
+    // A refusal before Lean, a timeout and an unreachable Lean have no errors to cut.
+    if (report === undefined || attempt.submission === undefined || report.leanStatus === undefined || report.leanStatus === "timeout" || report.leanStatus === "server_error") return;
+    if (!report.messages.some((m) => m.severity === "error")) return;
+    const target = problem.memory.claim(problem.claimId);
+    if (target === undefined || accepted(target.status) || problem.signal.aborted || problem.budget.exhausted) return;
+    const made = sketchRecords(problem).filter(({ record }) => record.repairOf !== undefined);
+    if (made.some(({ record }) => record.repairOf === attempt.attemptId) || made.length >= s.maxRepairs) return;
+    const cut = cutFailures({ checked: report.checked, messages: report.messages, target: target.statement });
+    if ("reason" in cut) {
+      problem.log(`repair of ${attempt.attemptId}: none (${cut.reason})`);
+      return;
+    }
+    const regions = { aux: cut.aux, proof: cut.proof };
+    const reading = readSketch(regions, readOptions(s, target.statement));
+    if (reading.holes.length === 0 || reading.problem !== undefined) {
+      problem.log(`repair of ${attempt.attemptId}: none (the cut file is no blueprint: ${reading.problem ?? "no named hole"})`);
+      return;
+    }
+    const checked = await problem.checkSketch(regions);
+    const record = sketchRecordOf(problem, s, `${attempt.attemptId}:repair`, regions, reading, checked, { repairOf: attempt.attemptId });
+    problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
+    problem.log(`repair of ${attempt.attemptId}: ${cut.cuts.join("; ")}; ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${(record.errors ?? [])[0] ?? "Lean's check"})`}`);
   }
 
   async function begin(problem: ProblemContext): Promise<void> {
@@ -887,12 +929,15 @@ export function createM12Line(): Line {
         const s = settings(problem.options);
         if (work === undefined || !s.subgoals || attempt.submission === undefined) return undefined;
         // Only the record, which is cheap and has no Lean in it: the claims and the edge are made between sessions (`registerAll`).
-        if (sketchRecords(problem).some(({ record }) => record.attemptId === attempt.attemptId)) return undefined;
-        const target = problem.memory.claim(problem.claimId)?.statement;
-        const reading = readSketch(attempt.submission, readOptions(s, target));
-        if (reading.holes.length === 0) return undefined;
-        const record = sketchRecordOf(problem, s, attempt.attemptId, attempt.submission, reading, attempt.report);
-        problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
+        if (!sketchRecords(problem).some(({ record }) => record.attemptId === attempt.attemptId)) {
+          const target = problem.memory.claim(problem.claimId)?.statement;
+          const reading = readSketch(attempt.submission, readOptions(s, target));
+          if (reading.holes.length > 0) {
+            const record = sketchRecordOf(problem, s, attempt.attemptId, attempt.submission, reading, attempt.report);
+            problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
+          }
+        }
+        await soft(problem, "the repair pass", () => repair(problem, s, attempt));
         return undefined;
       },
 

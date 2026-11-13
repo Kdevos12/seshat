@@ -11,6 +11,7 @@ export * from "./kernel.ts";
 export * from "./proofnumbers.ts";
 export * from "./holes.ts";
 export * from "./refine.ts";
+export * from "./repair.ts";
 export * from "./records.ts";
 export * from "./pricing.ts";
 export * from "./subsume.ts";

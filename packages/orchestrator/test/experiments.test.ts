@@ -115,12 +115,12 @@ describe("the solve-defaults experiment", () => {
     assert.deepEqual(lineOptions, { ...v2Options, M12: { blueprints: true } });
   });
 
-  it("makes the refine arm the blueprints arm plus refine, and nothing else", () => {
+  it("makes the refine arm the blueprints arm plus refine and repair, and nothing else", () => {
     const { lines: bpLines, lineOptions: bpOptions, ...blueprints } = armConfig(base, arm("solve-v2-blueprints"));
     const { lines, lineOptions, ...refine } = armConfig(base, arm("solve-v2-blueprints-refine"));
     assert.deepEqual(refine, blueprints);
     assert.deepEqual(lines, bpLines);
-    assert.deepEqual(lineOptions, { ...bpOptions, M12: { blueprints: true, refine: true } });
+    assert.deepEqual(lineOptions, { ...bpOptions, M12: { blueprints: true, refine: true, repair: true } });
   });
 
   it("makes the graph arm solve-v2 plus lines M2 and M4 with their default options, and nothing else", () => {
