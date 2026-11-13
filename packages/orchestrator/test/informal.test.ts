@@ -33,7 +33,7 @@ const PROOF_C = "Proof C, the repaired one. Induct on n; the step uses the hypot
 const FACTS = "\n\nMathlib facts:\n- Nat.add_zero\n- Nat.succ_add";
 const gen = (proof: string, facts = FACTS) => say(`${proof}${facts}`);
 const verdict = (v: string, findings: string[] = []) => say(JSON.stringify({ verdict: v, findings }));
-const correct = () => verdict("correct");
+const correct = () => verdict("correct", ["The induction step uses the hypothesis and the second equation of addition."]);
 /** A prover that does not solve: one failing check, then its notes. The claim stays open. */
 const failingProver = () => [check("exact bad"), say("Notes.")];
 
@@ -263,17 +263,17 @@ describe("the informal proof first (PA13, NL2, AL1)", () => {
 describe("the informal loop, alone", () => {
   /** An `Llm` that answers from a script, recording each request. */
   function scripted(answers: string[]) {
-    const requests: Array<{ site?: string; prompt: string }> = [];
+    const requests: Array<{ site?: string; system?: string; prompt: string }> = [];
     const queue = [...answers];
     const llm: Llm = withJson(async (request) => {
-      requests.push({ ...(request.site !== undefined ? { site: request.site } : {}), prompt: request.prompt });
+      requests.push({ ...(request.site !== undefined ? { site: request.site } : {}), ...(request.system !== undefined ? { system: request.system } : {}), prompt: request.prompt });
       const text = queue.shift() ?? "";
       return { text, cost: { usd: 0, inputTokens: 0, outputTokens: 0 }, model: "m", modelCallId: `mc${requests.length}` };
     });
     return { llm, requests };
   }
   const base = { statement: "(n : ℕ) : n + 0 = n", signal: new AbortController().signal, estimateUsd: 0.01 };
-  const json = (v: string, findings: string[] = []) => JSON.stringify({ verdict: v, findings });
+  const json = (v: string, findings: string[] = v === "correct" ? ["The induction step holds."] : []) => JSON.stringify({ verdict: v, findings });
 
   it("is asked of the gate before every call, and a skip ends the loop with what it has", async () => {
     const { llm, requests } = scripted([PROOF_A, json("correct"), json("correct"), json("correct")]);
@@ -311,6 +311,24 @@ describe("the informal loop, alone", () => {
     assert.equal(outcome.stop, "failed");
     assert.match(outcome.detail ?? "", /verifier's answer was not a verdict/);
     assert.equal(outcome.proof, PROOF_A);
+  });
+
+  it("reads a correct verdict with no findings as fixable: the verifier gave no reasons", async () => {
+    const { llm, requests } = scripted([PROOF_A, JSON.stringify({ verdict: "correct", findings: [] }), PROOF_C, json("correct")]);
+    const outcome = await runInformalLoop({ ...base, llm, settings: { passes: 1, rounds: 2 } });
+    assert.deepEqual(outcome.verdicts, ["fixable", "correct"]);
+    assert.equal(outcome.accepted, true);
+    assert.match(requests[2]?.prompt ?? "", /What the reader found:\n- the verifier gave no reasons/, "the revision is told so");
+    assert.match(requests[1]?.system ?? "", /Look for the first gap or error/);
+    assert.match(requests[1]?.prompt ?? "", /each key step and why it holds/);
+  });
+
+  it("shows the verifier the first-cases table and tells it to check the proof against it", async () => {
+    const { llm, requests } = scripted([PROOF_A, json("correct")]);
+    await runInformalLoop({ ...base, llm, settings: { passes: 1, rounds: 1 }, firstCases: { title: "The first cases", text: "| n | f(n) |\n| 1 | 7 |" } });
+    assert.match(requests[1]?.prompt ?? "", /The first cases, computed by the harness \(check the proof's claims against them/);
+    assert.match(requests[1]?.prompt ?? "", /\| 1 \| 7 \|/);
+    assert.doesNotMatch(requests[0]?.prompt ?? "", /check the proof's claims against them/, "the generator's prompt is as it was");
   });
 
   it("counts one pass per correct verdict, at one pass accepts at once", async () => {

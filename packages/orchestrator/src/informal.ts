@@ -50,8 +50,12 @@ export type Verdict = "correct" | "fixable" | "wrong";
 
 const GENERATOR_SYSTEM =
   "You are a careful mathematician. You write complete, rigorous proofs in natural language. You have no tools, and a reader will check every step.";
+/** The version of the verifier's prompt (journaled in the node as `verifierPrompt`). v2 (task 51): look for the first gap, name each key step to say `correct`, check against the first cases. */
+export const VERIFIER_PROMPT_VERSION = "v2";
 const VERIFIER_SYSTEM =
-  "You are a strict referee. You read one proof of a statement and judge it as it stands, step by step. You do not repair it, and you do not trust a claim that is not shown.";
+  "You are a strict referee. You read one proof of a statement and judge it as it stands, step by step. You do not repair it, and you do not trust a claim that is not shown. " +
+  "Look for the first gap or error. Any unjustified step, any appeal to \"it is well known\" or \"clearly\" without a reference, and any case left out is `fixable` at least. " +
+  "Answer `correct` only if you can name, in your findings, each key step of the proof and why it holds.";
 
 const FORMAT =
   "Write the whole proof in natural language, every step justified. Then, on its own line, write `Mathlib facts:` followed by at most 5 lines, each `- ` and the name or a short description of a fact from Mathlib the proof relies on.";
@@ -85,13 +89,16 @@ export function revisePrompt(o: { statement: string; doc?: string; proof: string
  * The text of the verification call. It holds the statement and the final proof text, and nothing else: no reasoning content, no earlier round and no
  * finding of an earlier pass (AL1).
  */
-export function verifyPrompt(o: { statement: string; doc?: string; proof: string }): string {
+export function verifyPrompt(o: { statement: string; doc?: string; proof: string; firstCases?: { title: string; text: string } }): string {
   return [
     "Judge the proof below of the following theorem.",
     `The statement, in Lean 4:\ntheorem target ${o.statement.trim()}`,
     o.doc !== undefined && o.doc.trim() !== "" ? `Its description in words:\n${o.doc.trim()}` : "",
+    o.firstCases !== undefined ? `${o.firstCases.title}, computed by the harness (check the proof's claims against them: a claim they contradict is wrong):\n${o.firstCases.text}` : "",
     `The proof:\n${o.proof.trim()}`,
-    'Answer `correct` if every step holds and the proof is complete, `fixable` if it has gaps or errors that a repair of the same argument would fix, `wrong` if the approach cannot work or proves something else. List what you found in "findings", one short sentence each (none for a correct proof).',
+    'Look for the first gap or error. Treat any unjustified step, any appeal to "it is well known" or "clearly" without a reference, and any case left out as `fixable` at least. ' +
+      'Answer `correct` only if every step holds and the proof is complete, and you can name each key step and why it holds. `fixable` if it has gaps or errors that a repair of the same argument would fix, `wrong` if the approach cannot work or proves something else. ' +
+      'List what you found in "findings", one short sentence each: for a `correct` proof, each key step and why it holds; otherwise each gap or error. A `correct` with no findings is read as `fixable`.',
   ].filter((t) => t !== "").join("\n\n");
 }
 
@@ -238,11 +245,16 @@ export async function runInformalLoop(o: InformalLoopOptions): Promise<InformalO
         const answer = await (o.llm.completeJson ?? (() => Promise.reject(new Error("the model client cannot answer in JSON"))))<{ verdict: Verdict; findings: string[] }>({
           site: SITE_INFORMAL_VERIFY,
           system: VERIFIER_SYSTEM,
-          prompt: verifyPrompt({ statement: o.statement, ...(o.doc !== undefined ? { doc: o.doc } : {}), proof }),
+          prompt: verifyPrompt({ statement: o.statement, ...(o.doc !== undefined ? { doc: o.doc } : {}), ...(o.firstCases !== undefined ? { firstCases: o.firstCases } : {}), proof }),
           schema: VERDICT_SCHEMA as never,
         });
         verdict = answer.value.verdict;
-        found = answer.value.findings.map(String);
+        found = answer.value.findings.map(String).filter((f) => f.trim() !== "");
+        // A `correct` that names no step is no reason to accept: it is read as `fixable`.
+        if (verdict === "correct" && found.length === 0) {
+          verdict = "fixable";
+          found = ["the verifier gave no reasons"];
+        }
       } catch (error) {
         if (error instanceof JsonAnswerError && !o.signal.aborted) return end("failed", `the verifier's answer was not a verdict: ${error.message.slice(0, 160)}`);
         return failure(error) as InformalOutcome;
@@ -296,6 +308,7 @@ export function recordInformalProof(
     ...(o.outcome.proof !== undefined ? { proofHash: blobs.put(o.outcome.proof) } : {}),
     facts: o.outcome.facts,
     hits: o.hits,
+    verifierPrompt: VERIFIER_PROMPT_VERSION,
   };
   journal.emit("node.recorded", { nodeId, kind: INFORMAL_PROOF_KIND, claimId: o.claimId, data: data as unknown as Json }, "orchestrator");
   return nodeId;

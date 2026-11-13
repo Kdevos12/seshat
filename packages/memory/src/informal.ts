@@ -30,6 +30,8 @@ export interface InformalProofData {
   facts: string[];
   /** The names `lean.search` found for them. */
   hits: string[];
+  /** The version of the verifier's prompt the loop ran under (absent in a node of an older run). */
+  verifierPrompt?: string;
 }
 
 /** An informal proof as the nodes of a claim hold it, with its text read from the blobs. */

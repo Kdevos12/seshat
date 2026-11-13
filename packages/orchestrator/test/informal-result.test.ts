@@ -12,7 +12,7 @@ import { certifyingRegistry, check, demoRun, ofType, say } from "./m0-helpers.ts
 const PROOF = "Proof A. Zero is the identity of addition: induct on n.";
 const gen = (proof = PROOF) => say(`${proof}\n\nMathlib facts:\n- Nat.add_zero`);
 const verdict = (v: string, findings: string[] = []) => say(JSON.stringify({ verdict: v, findings }));
-const accepted = (proof = PROOF) => [gen(proof), verdict("correct"), verdict("correct"), verdict("correct")];
+const accepted = (proof = PROOF) => [gen(proof), verdict("correct", ["Induction on n is set up right."]), verdict("correct", ["Induction on n is set up right."]), verdict("correct", ["Induction on n is set up right."])];
 const failing = [check("exact bad"), say("Notes.")];
 const resultOf = (dir: string) => readFileSync(join(dir, "RESULT.md"), "utf8");
 
