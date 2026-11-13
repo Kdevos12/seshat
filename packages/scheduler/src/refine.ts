@@ -47,6 +47,8 @@ export interface PlannerInput {
   refused?: { problem?: string; errors: readonly string[] };
   /** A person's sketch of the proof (`harness solve --sketch`): shown as unverified data, after the blueprint's holes. Absent: the prompt is what it always was. */
   sketch?: { by: string; text: string };
+  /** An informal proof that the verifier accepted (`RunConfig.informalFirst`): shown as a hint, with its title saying that Lean has not checked it. Absent: the prompt is what it always was. */
+  informal?: { title: string; text: string };
 }
 
 /** The most Lean errors the prompt shows, and the most characters of each. */
@@ -92,6 +94,7 @@ export function plannerPrompt(input: PlannerInput): string {
     input.sketch !== undefined
       ? `A sketch from ${input.sketch.by}, who gave it for this theorem. It is informal and unchecked: it may be wrong or incomplete. Use it as a hint for the shape of the blueprint; Lean decides what is true.\n${quotedSketch(input.sketch.text)}`
       : "",
+    input.informal !== undefined ? `${input.informal.title}. Use it as a hint for the shape of the blueprint; Lean decides what is true.\n${input.informal.text}` : "",
     `The format of a blueprint:\n${BLUEPRINT_FORMAT}`,
     INSTRUCTIONS,
     'Answer with JSON: {"aux": the AUX region, "proof": the PROOF region (the tactic proof without the leading "by")}.',

@@ -87,6 +87,7 @@ flowchart TB
   resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
   viewhtml["harness view<br/>one static HTML page from the journal,<br/>no server, no network, all text escaped"]:::built
   intake["Intake, before any paid session<br/>three queries, one judge call under $0.05, a quote that must be<br/>in the fetched text; vacuity, plausible, test lemmas; off with --private"]:::wait
+  informal["Informal proof first (PA13, option informalFirst)<br/>a proof in natural language, a verifier reads the final text:<br/>correct x3 in a row, or revised, or regenerated; a hint,<br/>never a status; shown as not checked by Lean"]:::wait
   uipage["harness ui<br/>local page on 127.0.0.1: token, Host and Origin checks,<br/>escaped text, keys in a 0600 file, starts the commands"]:::built
 
   subgraph TOOLS["Capability registry"]
@@ -246,6 +247,9 @@ flowchart TB
   provers --> leanlsp
   provers --> oeis & lmfdb & findstat
   bench -->|"each problem, when intake is on"| intake
+  bench -->|"each problem, when informalFirst is on"| informal
+  informal -->|"an informal_proof node<br/>of the claim, never a status"| journal
+  informal -.->|"an accepted proof, marked,<br/>in the first briefing and the planner's prompt"| provers
   intake -->|"queries, hits as data"| litsearch
   intake -->|"literature and hygiene nodes,<br/>never a status"| journal
   intake -.->|"a settled hit or a vacuous statement:<br/>a breakpoint"| team

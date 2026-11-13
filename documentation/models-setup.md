@@ -74,9 +74,9 @@ of the provider chosen, so change it with `JEV_PROVIDER` (an OpenRouter key is r
 | Role | The calls it governs |
 |---|---|
 | `prover` | the outer prover's sessions (`prover.session`) |
-| `planner` | the refinement rounds' call of M12, at the site `scheduler.planner` ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)) |
+| `planner` | the refinement rounds' call of M12, at the site `scheduler.planner` ([scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11)), and the informal proof's generator and reviser |
 | `hole` | M12's hole sessions, at the site `scheduler.hole` |
-| `verifier` | reserved for the verifier that a later part of Task 39 adds: the setting is checked and kept, and nothing reads it yet |
+| `verifier` | the verifier of the informal proof first, at the site `informal.verify` ([informal.md](informal.md)); with no `verifier` role it is the generator's model in a fresh context. The generator and the reviser (`informal.generate`, `informal.revise`) are the `planner` role's |
 | `consult` | the consult tool: `roles.consult.model` is another way to name `consult.model`, which wins when both are given |
 
 `roles.escalation` (`{ model, maxShare? }`) is the planner's: see [scheduler.md](scheduler.md#refinement-rounds-plan-change-ca12-pa11).
