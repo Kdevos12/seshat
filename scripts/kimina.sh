@@ -19,7 +19,7 @@ PROJECT="${LEAN_SERVER_PROJECT_DIR:-$ROOT/lean/env/base}"
 
 # Memory: as harness doctor advises, one REPL per 4 GB of 60% of the memory, recycled every 50 uses
 # (100 above 32 GB). MAX_REPL_MEM is a limit on virtual memory: below about 12G Lean does not start
-# (first real run, 2026-11-07), so 12G is the floor here.
+# (seen on a 13 GB machine), so 12G is the floor here.
 total_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 if [ "$total_mb" = 0 ] && command -v sysctl >/dev/null; then total_mb=$(( $(sysctl -n hw.memsize) / 1048576 )); fi
 repls=$(( total_mb * 6 / 10 / 4096 )); [ "$repls" -lt 1 ] && repls=1; [ "$repls" -gt 32 ] && repls=32

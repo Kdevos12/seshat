@@ -9,9 +9,8 @@ the one you need:
 | [2. A real run](#2-a-real-run) | `harness solve` on a statement of your own, proofs certified by Lean's kernel | Lean 4.27.0, a built Lean environment, a Kimina Lean server, a sandbox, a model key; about an hour the first time and about 15 GB of disk |
 | [3. Optional tools](#3-optional-tools) | computer algebra, ATPs and SMT, Lean's language server, literature search, Jev | each one on its own |
 
-Seshat runs on Linux and macOS. On Windows, install WSL2 with Ubuntu and do everything inside it. The
-machine it has run on for real is a 4-core Linux laptop with 13 GB of memory
-([status.md](status.md)).
+Seshat runs on Linux and macOS. On Windows, install WSL2 with Ubuntu and do everything inside it. A 4-core laptop with 13 GB of memory is
+enough.
 
 ## In one command
 
@@ -156,8 +155,8 @@ pnpm harness solve "The sum of two odd numbers is even." --max-usd 0.50
 The first one is proved by the classical tactic battery before any model is asked, for $0.00, which checks
 Lean, the server and the certifier end to end. The second may need the model: a statement in prose is
 formalized and shown for your signature before anything is spent. Each run leaves `runs/RUN_ID/RESULT.md`;
-`pnpm harness view runs/RUN_ID` draws it. [quickstart.md](quickstart.md) is the guide to `solve`, and the
-[measured runs](status.md#measured-runs) say what it costs on competition problems (cents each).
+`pnpm harness view runs/RUN_ID` draws it. [quickstart.md](quickstart.md) is the guide to `solve`, and
+[status.md](status.md) says which parts have run for real.
 
 ## 3. Optional tools
 

@@ -720,10 +720,8 @@ as the tests expect. It is not part of `pnpm test`, which needs no SageMath.
 
 Not done yet:
 
-- The loop has run against a real model and a real Lean between 2026-11-11 and 2026-11-13, through
-  the certifier's kernel replay ([status.md](status.md)); the runs were small (at most 20 problems of
-  grade B) and are listed in [status.md](status.md#measured-runs). The tests still use a faux model and
-  a simulated Lean.
+- The loop runs against a real model and a real Lean, through the certifier's kernel replay
+  ([status.md](status.md)). The tests still use a faux model and a simulated Lean.
 - No run has been resumed against a real model or a real Lean: the tests stand a faux model and a
   simulated Lean in for them, and the process that ends is a copy of a journal cut at an event or a
   child process killed with SIGKILL. `harness run --resume` has not been run from the command line

@@ -27,7 +27,7 @@ pnpm harness solve "The sum of two odd numbers is even." --max-usd 0.50
 pnpm harness solve "(n : ℕ) : n + 0 = n" --max-usd 0.10
 ```
 
-A statement in words is formalized and shown to you to sign before anything is spent. On the first real run, the tactic battery closed `n + 0 = n` before any model was called and the certifier replayed it through the kernel: proved, for $0.00. Whatever the outcome, the run leaves `RESULT.md`, a static page of the run and its journal.
+A statement in words is formalized and shown to you to sign before anything is spent. The tactic battery closes `n + 0 = n` before any model is called, and the certifier replays it through the kernel: proved, for $0.00. Whatever the outcome, the run leaves `RESULT.md`, a static page of the run and its journal.
 
 ## Why Seshat
 
@@ -62,7 +62,7 @@ A statement in words is formalized and shown to you to sign before anything is s
 
 ## Results
 
-On 20 Putnam competition problems, the baseline certified 16 through Lean's kernel for **$1.27 of model calls in all**, with DeepSeek through its API and Lean 4.27.0 on a laptop. The sample is small and every PutnamBench problem has a public Lean proof that a model may have seen, so these are first measurements, not a benchmark claim. [documentation/status.md](documentation/status.md) has every run, what it taught, and which parts have run for real.
+On 20 Putnam competition problems, the baseline certified 16 through Lean's kernel for **$1.27 of model calls in all**, with DeepSeek through its API and Lean 4.27.0 on a laptop. The sample is small and every PutnamBench problem has a public Lean proof that a model may have seen, so these are first measurements, not a benchmark claim. [documentation/status.md](documentation/status.md) says which parts have run for real.
 
 ## Getting started
 
@@ -124,7 +124,7 @@ Seshat is a TypeScript monorepo on top of [pi](https://github.com/earendil-works
 
 ## Status
 
-Beta, version 1.0.0-beta.1. The core loop runs for real: `harness solve` with a real model and Lean 4.27.0, the fast check, the certifier's kernel replay, the budget gate, the tactic battery, Lean's language server and search. Many research lines (lemma library, lessons, curriculum, ATP and SMT with reconstruction, the heuristic card bank, consortium turns) are built and tested against a simulated Lean and model and wait for their first real runs. [documentation/status.md](documentation/status.md) keeps the full account.
+Beta, version 1.0.0-beta.1. The core loop runs for real: `harness solve` with a real model and Lean 4.27.0, the fast check, the certifier's kernel replay, the budget gate, the tactic battery, Lean's language server and search. Many research lines (lemma library, lessons, curriculum, ATP and SMT with reconstruction, the heuristic card bank, consortium turns) are built and tested against a simulated Lean and model and wait for their first real runs. [documentation/status.md](documentation/status.md) has the details.
 
 ## Contributing
 

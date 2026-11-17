@@ -13,7 +13,7 @@
 set -euo pipefail
 
 LEAN_VERSION="v4.27.0"
-# The Kimina commit that ran for real with Seshat (2026-11-07, documentation/status.md).
+# The Kimina commit Seshat has run with.
 KIMINA_REPO="https://github.com/project-numina/kimina-lean-server.git"
 KIMINA_REV="fb2393d"
 
