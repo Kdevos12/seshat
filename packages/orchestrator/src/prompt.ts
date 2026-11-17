@@ -61,11 +61,18 @@ export interface SessionContext {
   card?: string;
   /** One line of data at the end of the message: the budget left and the verified frontier (`RunConfig.frontier`, plan change LH8). Absent: no such line. */
   budgetLine?: string;
+  /** A cold restart (`RunConfig.restarts`): the notes and the last check of the previous session are not shown; this line says so. `overlay`: the session has the tool `previous_attempt`. Absent: today's prompt. */
+  cold?: { overlay: boolean };
+}
+
+/** The line a cold session reads where the notes would be. */
+export function coldNotes(overlay: boolean): string {
+  return `(none: this session starts cold. The harness gives you only the state above and the original file. ${overlay ? "The tool previous_attempt returns the previous attempt's last file and notes on request: that attempt failed, and it may be wrong." : "The previous attempt's file and notes are not shown."})`;
 }
 
 /** The first message of a session: the theorem, the notes, the file, the last check, and the lines' sections. */
 export function sessionPrompt(c: SessionContext): string {
-  const notes = c.notes ?? "(none: this is your first session on this theorem)";
+  const notes = c.cold !== undefined ? coldNotes(c.cold.overlay) : c.notes ?? "(none: this is your first session on this theorem)";
   const lastCheck = c.lastCheck ?? "(the file has not been checked yet)";
   const sections = (c.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
   const card = c.card === undefined ? "" : `\n# Where the problem stands\n${c.card}\n`;

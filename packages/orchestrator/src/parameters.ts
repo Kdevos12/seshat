@@ -409,6 +409,18 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     status: "experimental",
     ui: "advanced",
   },
+  restarts: {
+    group: "session",
+    type: "{ schedule?: geometric | luby, base?: integer, stuckChecks?: integer }",
+    default: "absent (off)",
+    summary: "Cold restarts of a prover's sessions: after its first, a session starts from the original file with the frontier, the dead ends and the state card (and the tool `previous_attempt`), has the step limit of the schedule (base 6: 6, 12, 24, ... or Luby's 6, 6, 12, 6, 6, 12, 24, ...; at most `limits.steps`), and ends early when the same failure class on the same goal repeats in `stuckChecks` (3) consecutive checks.",
+    cli: [],
+    sets: "neither (settings file)",
+    docs: "runs.md#Restarts",
+    tested: "restarts.test.ts",
+    status: "experimental",
+    ui: "advanced",
+  },
   consult: {
     group: "model",
     type: "{ model: provider/id, maxCalls?: integer, maxOutputTokens?: integer }",

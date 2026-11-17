@@ -56,6 +56,18 @@ limit in a configuration that cannot supply one) is refused at the start. So `so
 The commands differ because their rules differ; the axes are what changes inside the first purpose.
 `harness parameters` and [parameters.md](parameters.md) list every flag and key. `harness frontier` reads a run's verified frontier ([frontier.md](frontier.md)) and writes nothing.
 
+## Restarts
+
+`RunConfig.restarts` (plan change LH3; a settings-file key, off by default, so `solve`'s sets `v1` and `v2` send byte-identical requests) restarts a prover's sessions cold on a schedule, so that a long trajectory does not condition itself on its own failures. It is an option of a run, so an episode can use it as a campaign will (Task 59).
+
+`{ schedule?: "geometric" | "luby", base?: number, stuckChecks?: number }`, with `base` 6 and `stuckChecks` 3 by default.
+
+- **The schedule** gives the step limit of a session by its index for that prover: `geometric` base, 2 x base, 4 x base, ...; `luby` base times Luby's sequence 1, 1, 2, 1, 1, 2, 4, ... Never above the run's `limits.steps`. A session that reaches it ends as before (`stoppedBy: "turns"`, notes asked for) and is journaled as a restart, `attempt.finished.restart: { reason: "schedule" }`.
+- **Cold.** A prover's session after its first starts from the original file (an empty AUX and the original proof), with no notes and no last check of the previous session. Its opening message carries what the harness builds from the journal: the signed statement (the file's), the state card as it is today (when `stateCard` is on), the dead ends and the lines' sections, and, with `frontier.show`, the frontier's top entries (the card's, or alone when the card is off). The previous session's file and notes are still what the journal's `carry` holds, for a resumption.
+- **Stuck.** A session ends early when `stuckChecks` consecutive `lean_check` or `lean_edit` checks fail with the same class (the one the state card counts) on the same goal (the first error's text, or the first `sorry`'s goal, normalized as the card does); a check that says nothing about the proof (Lean unreachable, a timeout, a refusal) neither counts nor resets. The stop is `stuck`, the model is asked for its notes, and the attempt records `restart: { reason: "stuck", class }`. M6's repeat rule (`line:M6`, cause `repeated_failure`), when that line is on, is the same signal and is recorded the same way.
+
+Nothing here changes a claim's status: a restart is a different way to brief a session, and Lean still judges every file. Tested with the faux provider and a simulated Lean (`orchestrator/test/restarts.test.ts`); whether restarts help on a real open problem has not been measured (LH7).
+
 ## Children
 
 A child is one delegated piece of work inside a run (plan change LH9). Seven kinds exist today. They were

@@ -20,6 +20,7 @@ export * from "./implementations.ts";
 export * from "./first-cases.ts";
 export * from "./frontier-command.ts";
 export * from "./frontier-view.ts";
+export * from "./restarts.ts";
 export * from "./intake.ts";
 export * from "./line-runtime.ts";
 export * from "./lines.ts";
