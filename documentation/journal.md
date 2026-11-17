@@ -39,7 +39,7 @@ Event types:
 
 | Type | Data |
 |---|---|
-| `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `codeRev?` |
+| `run.started` | `runId`, `benchId`, `problems`, `host`, `config`, `horizon?`, `human?`, `codeRev?` (`horizon` and `human` are the run's two axes, [runs.md](runs.md#the-two-axes); a journal written before them has neither) |
 | `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
 | `run.resumed` | `runId`, `resumption` (1, 2...), `tornTail?` (`action`, `bytes`, `sha256`), `spent` (`usd`, `inputTokens`, `outputTokens`), `interrupted` (`attempts`, `toolRuns`, `tasks`), `codeRev?` |
 | `turn.deferred` | `runId`, `scope` (`turn` or `session`), `turn?`, `problemId?`, `prover?`, `from`, `nextStart`, `until`, `bounded`: the run waits for off-peak hours before starting this ([human.md](human.md#off-peak)) |

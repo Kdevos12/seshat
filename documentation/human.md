@@ -18,6 +18,8 @@ pnpm harness steer  runs/RUN_ID --forbid automation --turn-usd 5
 pnpm harness resume runs/RUN_ID --checkout DIR                                   # turn 2 begins
 ```
 
+Consortium mode is the value `consortium` of the run's `human` axis (`--human`, `none|consortium`), next to `horizon`; see [runs.md](runs.md#the-two-axes). A bare `--human` still means `--human consortium`.
+
 ## Turns
 
 A turn is the work between two stops. Turn 1 begins when the run starts, and each later turn when the run

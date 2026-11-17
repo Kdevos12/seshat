@@ -50,6 +50,9 @@ export interface SolveFlags extends DoctorFlags {
   /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
   consolidation?: boolean;
   offpeak?: RunConfig["offpeak"];
+  /** `--horizon` and `--human` (plan change LH9, documentation/runs.md): `solve` is always `episode` and `consortium`; a word that contradicts it, or that is not built yet, is refused when the run starts. */
+  horizon?: NonNullable<RunConfig["horizon"]>;
+  human?: NonNullable<RunConfig["human"]>;
   lines?: string[];
   /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
   defaults?: string;
@@ -284,6 +287,8 @@ export function solveSettings(flags: SolveFlags, file: Settings | undefined): { 
     ...(flags.consolidation === true ? { consolidation: true } : {}),
     ...(flags.consult !== undefined ? { consult: flags.consult } : {}),
     ...(flags.roles !== undefined ? { roles: flags.roles } : {}),
+    ...(flags.horizon !== undefined ? { horizon: flags.horizon } : {}),
+    ...(flags.human !== undefined ? { human: flags.human } : {}),
   };
   const overruled = [...Object.keys({ ...fromFlags, ...(flags.leanSearch === true ? { leanSearch: true } : {}) }).filter((k) => k in rest), ...(flags.lines !== undefined && fileLines !== undefined ? ["lines"] : []), ...(flags.offpeak !== undefined && fileOffpeak !== undefined ? ["offpeak"] : [])];
   const lines = flags.lines ?? fileLines;

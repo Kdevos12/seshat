@@ -134,6 +134,12 @@ export interface EventDataMap {
     config: Json;
     codeRev?: string;
     /**
+     * The axes of the run (plan change LH9, documentation/runs.md): how long it is bound, and whether it stops for a person. Absent in a journal
+     * written before them, which was an `episode` with `consortium` when it has `turn.started` events and `none` otherwise.
+     */
+    horizon?: "episode" | "campaign";
+    human?: "none" | "consortium" | "digest";
+    /**
      * The earlier run this one starts on: its journal is replayed before this one, checked against
      * `lastHash` (documentation/memory.md, "Memory across runs"). Absent: a run from nothing.
      */

@@ -40,6 +40,7 @@ import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type Sp
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
+import { HORIZONS, HUMAN_MODES, type Horizon, type HumanMode } from "./run-shape.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
 import { describeSettings, mergeSettings, readSettingsFile } from "./settings-file.ts";
@@ -57,7 +58,7 @@ const usage = `usage:
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
+              [--horizon episode] [--human none|consortium] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
@@ -91,7 +92,7 @@ const usage = `usage:
   harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
-  harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
+  harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
@@ -187,6 +188,9 @@ from the journal in RUN_DIR. The run's configuration is the one it began with, s
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
 with a line that cannot be resumed (a line that keeps state in the process and cannot rebuild it) is refused when it
 starts as a consortium run and when it is resumed.
+Two axes of a run (documentation/runs.md): --horizon episode (the only one built; campaign is Task 59) and --human none|consortium
+(digest is Task 59). A bare --human is --human consortium, which is consortium mode below; without it a run has no person (none).
+solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest).
 Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
 two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer
@@ -199,7 +203,16 @@ run's model says its prices are at the off-peak rate, and otherwise waits (a tur
 --offpeak-max-wait MINUTES bounds each wait, after which the work runs anyway. It needs the pricing calendar of the
 model in the host profile and is refused without one. A resumed run keeps the option it began with.`;
 
+/**
+ * `--human` began as a switch (consortium mode) and is now the axis `--human none|consortium|digest` (documentation/runs.md): a bare `--human`,
+ * one not followed by a word, still means `--human consortium`.
+ */
+function normalizeHumanFlag(args: readonly string[]): string[] {
+  return args.map((arg, i) => (arg === "--human" && (args[i + 1] === undefined || args[i + 1]?.startsWith("-") === true) ? "--human=consortium" : arg));
+}
+
 const { positionals, values } = parseArgs({
+  args: normalizeHumanFlag(process.argv.slice(2)),
   allowPositionals: true,
   options: CLI_OPTIONS,
 });
@@ -511,6 +524,22 @@ function turnLimit(): TurnLimit | undefined {
   return Object.keys(limit).length > 0 ? limit : undefined;
 }
 
+/** `--human`: one of the words of the axis, or nothing. */
+function humanFlag(): HumanMode | undefined {
+  const given = values.human;
+  if (given === undefined) return undefined;
+  if (!(HUMAN_MODES as readonly string[]).includes(given)) throw new UsageError(`--human must be one of ${HUMAN_MODES.join(", ")}, got ${JSON.stringify(given)}`);
+  return given as HumanMode;
+}
+
+/** `--horizon`: one of the words of the axis, or nothing. A word that does not work yet is refused at the start of the run, naming its task. */
+function horizonFlag(): Horizon | undefined {
+  const given = values.horizon;
+  if (given === undefined) return undefined;
+  if (!(HORIZONS as readonly string[]).includes(given)) throw new UsageError(`--horizon must be one of ${HORIZONS.join(", ")}, got ${JSON.stringify(given)}`);
+  return given as Horizon;
+}
+
 /** Consortium mode: on with --human, and implied by a turn limit or --turn-narrative (documentation/human.md). */
 function consortiumFlags(): ConsortiumConfig | undefined {
   const limit = turnLimit();
@@ -518,7 +547,7 @@ function consortiumFlags(): ConsortiumConfig | undefined {
   const consolidation = values["turn-consolidation"] === true;
   const posterior = number("impasse-posterior", values["impasse-posterior"], undefined);
   const attempts = number("impasse-attempts", values["impasse-attempts"], undefined);
-  if (values.human !== true && limit === undefined && !narrative && !consolidation) {
+  if (humanFlag() !== "consortium" && limit === undefined && !narrative && !consolidation) {
     if (posterior !== undefined || attempts !== undefined) throw new UsageError("--impasse-posterior and --impasse-attempts go with --human or a turn limit");
     return undefined;
   }
@@ -738,6 +767,7 @@ async function run(): Promise<number> {
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
+  horizonFlag();
   const offpeak = offpeakFlags();
   if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
   const checkout = values.checkout;
@@ -757,6 +787,8 @@ async function run(): Promise<number> {
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
+    ...(horizonFlag() !== undefined ? { horizon: horizonFlag() as Horizon } : {}),
+    ...(humanFlag() !== undefined ? { human: humanFlag() as HumanMode } : {}),
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
@@ -770,6 +802,8 @@ async function run(): Promise<number> {
     config = merged.config;
     console.error(describeSettings(file, merged.fromFile, merged.overruled));
   }
+  // `"human": "consortium"` in the file, with no turn limit anywhere: consortium mode with its defaults, as a bare --human gives.
+  if (config.human === "consortium" && config.consortium === undefined) config = { ...config, consortium: { limit: {}, impasse: { ...DEFAULT_IMPASSE }, narrative: false } };
   if (config.intake?.literature === true && process.env.BENCH_CHECKOUT === undefined) process.env.BENCH_CHECKOUT = resolve(checkout);
   const host = hostName(values.host);
   const runId = newId("run");
@@ -1049,7 +1083,7 @@ async function resume(directory: string): Promise<number> {
   const controller = stoppable();
   const codeRev = codeRevision();
   const limit = turnLimit();
-  if (values.human === true) throw new UsageError("--human is given when a run begins; a run resumed keeps the mode it began with");
+  if (values.human !== undefined || values.horizon !== undefined) throw new UsageError("--human and --horizon are given when a run begins; a run resumed keeps the mode it began with");
   const result = await resumeBench({
     dir,
     index,
@@ -1144,6 +1178,8 @@ async function solve(): Promise<number> {
       ...(lines !== undefined ? { lines } : {}),
       ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),
       ...(values.settings !== undefined ? { settings: values.settings } : {}),
+      ...(horizonFlag() !== undefined ? { horizon: horizonFlag() as Horizon } : {}),
+      ...(humanFlag() !== undefined ? { human: humanFlag() as HumanMode } : {}),
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );

@@ -28,6 +28,7 @@ export * from "./prover.ts";
 export * from "./report.ts";
 export * from "./result.ts";
 export * from "./resume.ts";
+export * from "./run-shape.ts";
 export * from "./run.ts";
 export * from "./session.ts";
 export * from "./solve.ts";
