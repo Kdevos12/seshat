@@ -1,5 +1,7 @@
 # Scheduler: the saturation kernel, subgoals and the escalation ladder
 
+![Line M12 blueprints: planner, holes, pre-flight, hole sessions, refinement and repair](images/blueprints.svg)
+
 Line `M12` ([lines.md](lines.md)) is the plan's saturation kernel (§6, Task 10) and the part of the
 harness that decides which piece of work comes next. It is `@seshat/scheduler` (`packages/scheduler`),
 whose other half is the `TaskLedger` ([ledger.md](ledger.md)). A run enables it with

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 640" width="1060" height="640" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">The heuristic card bank: methods of reasoning, measured</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1059" height="639" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">The heuristic card bank: methods of reasoning, measured</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">A card is a method (a question), never a tool or a fact. Nothing here has been measured on a real run yet.</text>
+<rect x="20" y="75" width="320" height="78" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="180.0" y="101.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Built-in cards: 33</text>
+<text x="180.0" y="118.5" font-size="13" text-anchor="middle" fill="#1b2230">the six directives and 27 starter</text>
+<text x="180.0" y="135.5" font-size="13" text-anchor="middle" fill="#1b2230">cards from ten traditions</text>
+<rect x="20" y="175" width="320" height="62" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="180.0" y="193.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Pack cards</text>
+<text x="180.0" y="210.5" font-size="13" text-anchor="middle" fill="#1b2230">written by people, in a pack's</text>
+<text x="180.0" y="227.5" font-size="13" text-anchor="middle" fill="#1b2230">`pack.json` (`harness add`)</text>
+<rect x="400" y="100" width="340" height="100" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="570.0" y="129.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">The bank (@seshat/heuristics)</text>
+<text x="570.0" y="146.0" font-size="13" text-anchor="middle" fill="#1b2230">a card: id, family (22 closed), level,</text>
+<text x="570.0" y="163.0" font-size="13" text-anchor="middle" fill="#1b2230">`ask`, `when`, tools, expects, tradition;</text>
+<text x="570.0" y="180.0" font-size="13" text-anchor="middle" fill="#1b2230">an overlap check keeps cards apart</text>
+<rect x="400" y="240" width="340" height="78" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="570.0" y="258.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Statement features, no model</text>
+<text x="570.0" y="275.0" font-size="13" text-anchor="middle" fill="#1b2230">`statementFeatures` reads the text:</text>
+<text x="570.0" y="292.0" font-size="13" text-anchor="middle" fill="#1b2230">forall_nat, finset_sum, divisibility...</text>
+<text x="570.0" y="309.0" font-size="13" text-anchor="middle" fill="#1b2230">a bucket = domain + two features</text>
+<rect x="780" y="240" width="260" height="78" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="910.0" y="258.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Eligibility</text>
+<text x="910.0" y="275.0" font-size="13" text-anchor="middle" fill="#1b2230">a card's `when` must hold</text>
+<text x="910.0" y="292.0" font-size="13" text-anchor="middle" fill="#1b2230">for the statement's features;</text>
+<text x="910.0" y="309.0" font-size="13" text-anchor="middle" fill="#1b2230">tools it names must exist</text>
+<rect x="20" y="360" width="500" height="92" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="270.0" y="385.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Fleet sessions (option heuristics)</text>
+<text x="270.0" y="402.0" font-size="13" text-anchor="middle" fill="#1b2230">at most one card per session, drawn per bucket</text>
+<text x="270.0" y="419.0" font-size="13" text-anchor="middle" fill="#1b2230">(Thompson); some sessions draw none: the control;</text>
+<text x="270.0" y="436.0" font-size="13" text-anchor="middle" fill="#1b2230">a card whose effect is negative is left out</text>
+<rect x="540" y="360" width="500" height="92" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="790.0" y="385.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">`solve`'s first briefing (option cards)</text>
+<text x="790.0" y="402.0" font-size="13" text-anchor="middle" fill="#1b2230">once per problem, before the first outer session:</text>
+<text x="790.0" y="419.0" font-size="13" text-anchor="middle" fill="#1b2230">the best-matching card, up to `max` (default 1);</text>
+<text x="790.0" y="436.0" font-size="13" text-anchor="middle" fill="#1b2230">no draw, no model call; control: the arm without</text>
+<rect x="270" y="490" width="500" height="62" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="520.0" y="508.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Shown in the briefing: 'Heuristic for this session'</text>
+<text x="520.0" y="525.5" font-size="13" text-anchor="middle" fill="#1b2230">the card's `ask`, as a question to try;</text>
+<text x="520.0" y="542.5" font-size="13" text-anchor="middle" fill="#1b2230">never a fact, a tool or a status</text>
+<rect x="20" y="570" width="500" height="56" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="270.0" y="594.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Measured against control sessions</text>
+<text x="270.0" y="611.0" font-size="13" text-anchor="middle" fill="#1b2230">same buckets, standardized to the card's mix</text>
+<rect x="540" y="570" width="500" height="56" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="790.0" y="594.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Effect: two Beta posteriors, P(effect &lt; 0)</text>
+<text x="790.0" y="611.0" font-size="13" text-anchor="middle" fill="#1b2230">deactivated above 0.9, 8 observations a side</text>
+<polyline points="340,114 370,114 370,150 400,150" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="340,206 370,206 370,160 400,160" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="570,200 570,240" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="740,279 780,279" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="910,318 910,340 270,340 270,360" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="790,340 790,360" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="270,452 270,470 440,470 440,490" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="790,452 790,470 600,470 600,490" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="400,552 400,570" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="660,552 660,570" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="20" y="624" width="22" height="14" rx="3" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="48" y="636" font-size="12" text-anchor="start" fill="#1b2230">built; simulations only, no real run</text>
+</svg>

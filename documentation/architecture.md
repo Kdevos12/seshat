@@ -1,5 +1,7 @@
 # Architecture
 
+![How a run flows through the packages: orchestrator, lines, registry, models, Lean, journal and UI](images/architecture.svg)
+
 ## Shape
 
 - **Worker agents** are [pi](https://github.com/earendil-works/pi) sessions (TypeScript, MIT). Each

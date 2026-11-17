@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1090 535" width="1090" height="535" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">Blueprints (line M12): a hard problem split into holes</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1089" height="534" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">Blueprints (line M12): a hard problem split into holes</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Option `blueprints`, off by default. Nothing here sets a status: the assembled file goes through `validate` and the certifier.</text>
+<rect x="20" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="104.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">1. The outer prover writes a sketch</text>
+<text x="185.0" y="121.0" font-size="13" text-anchor="middle" fill="#1b2230">its briefing has a section 'How to</text>
+<text x="185.0" y="138.0" font-size="13" text-anchor="middle" fill="#1b2230">write a blueprint'; each check answer</text>
+<text x="185.0" y="155.0" font-size="13" text-anchor="middle" fill="#1b2230">says how M12 reads the file</text>
+<rect x="378" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="543.0" y="104.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">2. The blueprint</text>
+<text x="543.0" y="121.0" font-size="13" text-anchor="middle" fill="#1b2230">holes: `aux_` lemmas proved by `sorry`</text>
+<text x="543.0" y="138.0" font-size="13" text-anchor="middle" fill="#1b2230">`-- uses: aux_a` above a hole that</text>
+<text x="543.0" y="155.0" font-size="13" text-anchor="middle" fill="#1b2230">needs it; a main proof naming the holes</text>
+<rect x="736" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="901.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">3. Checks (no model)</text>
+<text x="901.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">Lean compiles it; every `uses` is a hole;</text>
+<text x="901.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">no hole restates the target; no cycle;</text>
+<text x="901.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">a hole nothing reaches is dropped;</text>
+<text x="901.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">a refused blueprint makes no claim</text>
+<rect x="736" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="901.0" y="245.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">4. Claims and edges</text>
+<text x="901.0" y="262.5" font-size="13" text-anchor="middle" fill="#1b2230">a claim per hole, `decomposes_into` edges;</text>
+<text x="901.0" y="279.5" font-size="13" text-anchor="middle" fill="#1b2230">a link lemma that Lean proves from the</text>
+<text x="901.0" y="296.5" font-size="13" text-anchor="middle" fill="#1b2230">main proof; a hole's link lemma takes</text>
+<text x="901.0" y="313.5" font-size="13" text-anchor="middle" fill="#1b2230">its dependencies as hypotheses</text>
+<rect x="378" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="543.0" y="254.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">5. Pre-flight, once per hole, no model</text>
+<text x="543.0" y="271.0" font-size="13" text-anchor="middle" fill="#1b2230">type-check gate: no compile, no session;</text>
+<text x="543.0" y="288.0" font-size="13" text-anchor="middle" fill="#1b2230">M10 battery on the hole; `plausible`;</text>
+<text x="543.0" y="305.0" font-size="13" text-anchor="middle" fill="#1b2230">a short battery on its negation</text>
+<rect x="20" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="245.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">6. Hole sessions</text>
+<text x="185.0" y="262.5" font-size="13" text-anchor="middle" fill="#1b2230">one prover session per hole, with tools;</text>
+<text x="185.0" y="279.5" font-size="13" text-anchor="middle" fill="#1b2230">its header holds the definitions and</text>
+<text x="185.0" y="296.5" font-size="13" text-anchor="middle" fill="#1b2230">proved lemmas its statement names;</text>
+<text x="185.0" y="313.5" font-size="13" text-anchor="middle" fill="#1b2230">verdict: proved, statement_wrong, too_hard</text>
+<rect x="20" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">7. Assembly</text>
+<text x="185.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">holes replaced by their accepted proofs</text>
+<text x="185.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">in dependency order; the whole file goes</text>
+<text x="185.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">through `validate`, then the certifier:</text>
+<text x="185.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">only then is the problem settled</text>
+<rect x="378" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="543.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Refinement rounds (option refine)</text>
+<text x="543.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">after a refused blueprint, or when every</text>
+<text x="543.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">hole has a verdict and one is not proved:</text>
+<text x="543.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">one planner call, fresh context, at most</text>
+<text x="543.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">8 rounds; the answer is checked as in 3</text>
+<rect x="736" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="901.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Repair pass (option repair)</text>
+<text x="901.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">a session that ends on Lean errors is cut,</text>
+<text x="901.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">with no model call: a failing `aux_` proof</text>
+<text x="901.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">becomes `sorry`, a failing `have` is lifted</text>
+<text x="901.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">into a hole; checked as in 3</text>
+<polyline points="350,125 378,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="708,125 736,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="901,175 901,225" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="736,275 708,275" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="378,275 350,275" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="185,325 185,375" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="378,410 364,410 364,150 378,150" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
+<polyline points="1066,410 1078,410 1078,125 1066,125" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
+<rect x="20" y="504" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="48" y="516" font-size="12" text-anchor="start" fill="#1b2230">M12 with option blueprints</text>
+<rect x="251.4" y="504" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="279.4" y="516" font-size="12" text-anchor="start" fill="#1b2230">a further option, off by default</text>
+</svg>

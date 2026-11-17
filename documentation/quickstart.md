@@ -1,5 +1,7 @@
 # Quickstart: a problem of your own
 
+![harness solve from a statement to RESULT.md](images/solve-loop.svg)
+
 This page is for someone who has a problem and wants Seshat to work on it at the lowest cost, without
 learning the flag list: a student, a researcher with an afternoon. It covers `harness solve` (a problem of
 your own), `harness doctor` (what is missing on this machine), `RESULT.md` (what a run leaves, whatever

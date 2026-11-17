@@ -1,5 +1,7 @@
 # Heuristics: the bank of heuristic cards
 
+![The heuristic card bank: cards, features, selection, measurement](images/heuristics.svg)
+
 A **heuristic** is a method of reasoning: it says where to look ("Can you solve a special case?"). It is
 not a tool and never a fact. Tools stay capabilities of the registry ([capabilities.md](capabilities.md));
 facts come from Lean. The bank of heuristic cards is the part of Seshat that holds these methods, gives one

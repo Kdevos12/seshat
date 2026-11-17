@@ -1,5 +1,7 @@
 # Capabilities
 
+![The capability registry and the tools behind it](images/tools.svg)
+
 Every tool the harness uses sits behind a capability: a stable contract with a dotted id such as
 `lean.check` or, later, `counterexample.finite_model`. Callers name the capability, never the
 tool. The host profile picks the implementation, so replacing Kimina by another Lean server, or

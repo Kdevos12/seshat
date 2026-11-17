@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 610" width="1060" height="610" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">Trust: who may change a claim's status</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1059" height="609" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">Trust: who may change a claim's status</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Only Lean decides. Everything else is evidence or a hint, recorded in the journal and labelled unverified.</text>
+<rect x="20" y="75" width="290" height="58" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="165.0" y="91.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Tool output</text>
+<text x="165.0" y="108.5" font-size="13" text-anchor="middle" fill="#1b2230">SMT, an ATP without reconstruction,</text>
+<text x="165.0" y="125.5" font-size="13" text-anchor="middle" fill="#1b2230">computer algebra, a fingerprint</text>
+<rect x="20" y="143" width="290" height="58" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="165.0" y="159.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Informal proofs</text>
+<text x="165.0" y="176.5" font-size="13" text-anchor="middle" fill="#1b2230">a proof in prose, read by a verifier:</text>
+<text x="165.0" y="193.5" font-size="13" text-anchor="middle" fill="#1b2230">a hint that Lean has not checked</text>
+<rect x="20" y="211" width="290" height="58" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="165.0" y="227.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Cards and lessons</text>
+<text x="165.0" y="244.5" font-size="13" text-anchor="middle" fill="#1b2230">methods and advice in a briefing,</text>
+<text x="165.0" y="261.5" font-size="13" text-anchor="middle" fill="#1b2230">measured by effect, never facts</text>
+<rect x="20" y="279" width="290" height="58" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="165.0" y="295.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">A model saying 'proved'</text>
+<text x="165.0" y="312.5" font-size="13" text-anchor="middle" fill="#1b2230">counts for nothing without</text>
+<text x="165.0" y="329.5" font-size="13" text-anchor="middle" fill="#1b2230">a passing Lean check</text>
+<rect x="20" y="347" width="290" height="58" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="165.0" y="363.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Literature and search hits</text>
+<text x="165.0" y="380.5" font-size="13" text-anchor="middle" fill="#1b2230">evidence nodes, shown as</text>
+<text x="165.0" y="397.5" font-size="13" text-anchor="middle" fill="#1b2230">unverified</text>
+<rect x="370" y="75" width="330" height="62" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="535.0" y="93.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">A candidate Lean proof</text>
+<text x="535.0" y="110.5" font-size="13" text-anchor="middle" fill="#1b2230">from a prover, a line or the M10 battery,</text>
+<text x="535.0" y="127.5" font-size="13" text-anchor="middle" fill="#1b2230">always submitted through `validate`</text>
+<rect x="370" y="175" width="330" height="78" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="535.0" y="201.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Fast check (Lean REPL)</text>
+<text x="535.0" y="218.5" font-size="13" text-anchor="middle" fill="#1b2230">no error; only propext, Classical.choice,</text>
+<text x="535.0" y="235.5" font-size="13" text-anchor="middle" fill="#1b2230">Quot.sound; the target's type unchanged</text>
+<rect x="370" y="295" width="330" height="78" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="535.0" y="321.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Certifier: kernel replay</text>
+<text x="535.0" y="338.5" font-size="13" text-anchor="middle" fill="#1b2230">fresh process, every declaration replayed;</text>
+<text x="535.0" y="355.5" font-size="13" text-anchor="middle" fill="#1b2230">axioms and statement compared as terms</text>
+<rect x="760" y="75" width="280" height="52" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="900.0" y="97.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">open</text>
+<text x="900.0" y="114.0" font-size="13" text-anchor="middle" fill="#1b2230">a conjecture: nothing established</text>
+<rect x="760" y="175" width="280" height="78" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="900.0" y="201.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">computed</text>
+<text x="900.0" y="218.5" font-size="13" text-anchor="middle" fill="#1b2230">a candidate: the fast check passed</text>
+<text x="900.0" y="235.5" font-size="13" text-anchor="middle" fill="#1b2230">(only a Lean check makes it)</text>
+<rect x="760" y="290" width="280" height="40" rx="6" fill="#e3f4e8" stroke="#1e7a3c" stroke-width="2"/>
+<text x="900.0" y="314.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">proved: a certified Lean proof</text>
+<rect x="760" y="345" width="280" height="40" rx="6" fill="#e3f4e8" stroke="#1e7a3c" stroke-width="2"/>
+<text x="900.0" y="369.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">refuted: a certified negation</text>
+<rect x="760" y="425" width="280" height="52" rx="6" fill="#fbe9e7" stroke="#b3261e" stroke-width="2"/>
+<text x="900.0" y="447.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">retracted</text>
+<text x="900.0" y="464.0" font-size="13" text-anchor="middle" fill="#1b2230">withdrawn, with a reason (M2)</text>
+<rect x="370" y="425" width="330" height="62" rx="6" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="535.0" y="443.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Evidence, a hint or a `computed` edge</text>
+<text x="535.0" y="460.5" font-size="13" text-anchor="middle" fill="#1b2230">recorded in the journal, shown as</text>
+<text x="535.0" y="477.5" font-size="13" text-anchor="middle" fill="#1b2230">unverified; no status changes</text>
+<polyline points="535,137 535,175" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="535,253 535,295" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="537" y="267" width="50.400000000000006" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="540" y="280" font-size="12" text-anchor="start" fill="#2c3345">passes</text>
+<polyline points="700,214 760,214" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="705" y="192" width="50.400000000000006" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="708" y="205" font-size="12" text-anchor="start" fill="#2c3345">passes</text>
+<polyline points="900,127 900,175" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="905" y="144" width="94.80000000000001" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="908" y="157" font-size="12" text-anchor="start" fill="#2c3345">a Lean check</text>
+<polyline points="700,325 730,325 730,310 760,310" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="730,325 730,365 760,365" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="844,385 844,425" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="847" y="399" width="94.80000000000001" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="850" y="412" font-size="12" text-anchor="start" fill="#2c3345">retractClaim</text>
+<polyline points="310,104 340,104" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="310,172 340,172" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="310,240 340,240" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="310,308 340,308" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="310,376 340,376" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="340,104 340,456" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4"/>
+<polyline points="340,456 370,456" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
+<rect x="20" y="515" width="1020" height="52" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="530.0" y="537.0" font-size="13" text-anchor="middle" fill="#1b2230">Rule: a line changes a claim's status only by submitting a Lean proof through `validate`.</text>
+<text x="530.0" y="554.0" font-size="13" text-anchor="middle" fill="#1b2230">Only a Lean check makes `computed`; only the certifier's kernel replay makes `proved` or `refuted`.</text>
+<rect x="20" y="580" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="48" y="592" font-size="12" text-anchor="start" fill="#1b2230">a Lean check</text>
+<rect x="154.8" y="580" width="22" height="14" rx="3" fill="#e3f4e8" stroke="#1e7a3c" stroke-width="2"/>
+<text x="182.8" y="592" font-size="12" text-anchor="start" fill="#1b2230">a status only the kernel replay gives</text>
+<rect x="462.1" y="580" width="22" height="14" rx="3" fill="#f1f3f6" stroke="#6b7385" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="490.1" y="592" font-size="12" text-anchor="start" fill="#1b2230">evidence or hint, never a status</text>
+</svg>
