@@ -157,7 +157,7 @@ The first one is proved by the classical tactic battery before any model is aske
 Lean, the server and the certifier end to end. The second may need the model: a statement in prose is
 formalized and shown for your signature before anything is spent. Each run leaves `runs/RUN_ID/RESULT.md`;
 `pnpm harness view runs/RUN_ID` draws it. [quickstart.md](quickstart.md) is the guide to `solve`, and the
-README's [results](../README.md#results-so-far) say what it costs on competition problems (cents each).
+[measured runs](status.md#measured-runs) say what it costs on competition problems (cents each).
 
 ## 3. Optional tools
 

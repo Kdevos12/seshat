@@ -18,78 +18,76 @@
 
 </p>
 
-A harness for autonomous mathematical research with language models: models through their APIs, Lean as the judge, classical tools first.
+A harness for autonomous mathematical research with language models: **models through their APIs, Lean as the judge, classical tools first.**
 
-**Cheap, verified, open.** Give Seshat a statement in Lean or in plain English and a dollar cap. It tries classical tools first, then lets open-weight models (DeepSeek by default) write Lean proofs, and says *proved* only when Lean's kernel has replayed the proof. In its largest measured run it certified 16 of 20 Putnam competition problems for $1.27 of model calls in all ([results](#results-so-far), with their caveats).
+Give Seshat a mathematical statement, in Lean or in plain English, and a dollar cap. It tries fifty years of classical tools before asking any model, lets language models write Lean proofs in short fresh sessions, and calls a statement *proved* only when Lean's kernel has replayed the proof. Every step is written to a hash-chained journal, and every paid step is priced before it starts, so a competition problem typically costs cents and leaves a record anyone can check.
 
 ```sh
-git clone https://github.com/Kdevos12/seshat.git && cd seshat
-scripts/setup.sh                                   # Node packages, Lean 4.27.0, the Lean server: documentation/install.md
 pnpm harness solve "The sum of two odd numbers is even." --max-usd 0.50
-```
-
-Seshat takes a mathematical statement, in Lean or in prose, and works on it under a dollar allowance: it tries classical tools before any model, lets models propose Lean proofs in fresh sessions, and calls a statement proved only when Lean's kernel has replayed the proof. Its principles:
-
-![Seshat at a glance: a statement goes through intake, classical tools, provers and Lean; every paid launch is priced first, and the journal records everything](documentation/images/overview.svg)
-
-- **Models through their APIs only.** No training and no fine-tuning; small learned components (an online k-NN, a published premise selector) are used as they are.
-- **Lean is the judge.** A claim is `proved` or `refuted` only after the certifier's kernel replay; a model's word, a tool's output, an informal proof or a heuristic is evidence or a hint, never a status ([trust](documentation/trust.md)).
-- **Classical tools first.** Decision procedures, a tactic battery, computer algebra, SMT and ATPs run before a model is asked, and what they find still goes through Lean.
-- **The journal is the only source of truth.** Every fact is an event in a hash-chained JSONL journal; tables, indexes and reports are projections rebuilt from it, and a run whose process ended resumes from it ([journal](documentation/journal.md)).
-- **Every action is proportionate to a budget.** A probe and a budget gate put a price against a chance of success before each paid launch, and a run stops with an account of why ([scheduler](documentation/scheduler.md#the-budget-gate)).
-
-## Status: beta v1
-
-Version 1.0.0-beta.1. The core runs for real: on the owner's machine, with Lean 4.27.0 and a real model through its API, `harness solve` has certified Putnam problems of competition level through the kernel replay, and the graded bench was admitted by the real Lean. Most of the research lines (lemma library, lessons, small models, curriculum, archive, program search, repairs), the heuristic card bank, ATP and SMT with reconstruction, the consortium turns and the consolidation pass have only been tested with a simulated model and a simulated Lean; they are written against their interfaces and drawn in orange in the diagram below. The measured runs are small (at most 20 problems and a few dollars each) and their comparisons are not statistically conclusive. [documentation/status.md](documentation/status.md) has the full account.
-
-## Results so far
-
-All numbers are from the task ledger ([plans/seshat-plan-ledger.md](plans/seshat-plan-ledger.md)), on grade B problems (Putnam competition problems) of the graded bench, on the owner's machine, with a real Lean and a real model.
-
-| Run | Date | What it measured | Result |
-|---|---|---|---|
-| Pilot | 2026-11-11 | 6 problems, cap $0.50 each, `solve` with the baseline defaults `v1` | 6 of 6 certified by kernel replay for $0.126 in all; the other two arms were not valid (the provider's balance ran out) |
-| Second run | 2026-11-12 | the same 6 problems | `v1` 4 of 6 for $0.205: the baseline varies from run to run; two defects found and fixed |
-| Third run | 2026-11-12 to 13 | 20 problems, cap $0.50 each, three arms: `v1`, `v2` and `v2` with blueprints | after the certifier fix: `v1` 16 of 20, `v2` 14, blueprints 15; $4.02 in all with a one-problem trial; no arm beats another |
-| Replay | 2026-11-13 | the 6 problems left unsolved, the arm with blueprints, refinement rounds, repair and the informal proof first | 0 of 6 certified for $1.41 |
-| Graph smoke run | 2026-11-13 | lines M2 and M4 on 4 of those problems | 0 of 4 for $0.67; they ran without error and added nothing in a single fresh run |
-
-What the runs taught, and what was fixed because of them:
-
-- The third run's first scores (13, 13, 13) were wrong: the certifier refused `X._unsafe_rec`, a constant that Lean 4.27.0 adds for every recursive definition, and rejected six good proofs. After the fix, checked on a real Lean on 2026-11-13, the same candidates certify (`v1` 16, `v2` 14, blueprints 15 of 20). A `partial def` is still refused.
-- The blueprints of the third run were all judged unhealthy because the blueprint format was in no prompt; it is now in the briefing, and the check answer says how a blueprint is read.
-- The replay (0 of 6) showed that four of the six problems were stopped by the budget gate after the probe, that the verifier of the informal proof (the same model) was too lenient, and that a hole's file did not carry its context; the fixes are in the ledger. These six are the hard end of the set: no claim is made that blueprints help.
-- A yardstick caveat: every PutnamBench problem has a public Lean proof, which a model may have seen.
-
-## Install
-
-Seshat runs on Linux and macOS (Windows through WSL2). [documentation/install.md](documentation/install.md) is the whole road, in three levels:
-
-| Level | You get | You need |
-|---|---|---|
-| Try it | the command line, the local interface, the heuristic card bank | Node 22.19 or later and pnpm 10: `scripts/setup.sh --no-lean` (or `pnpm install`) |
-| A real run | `harness solve` with proofs certified by Lean's kernel | Lean 4.27.0 through elan, the Lean environment `base` (30 to 60 minutes to build the first time), the Kimina Lean server, bubblewrap, a model key: `scripts/setup.sh` |
-| Optional tools | SageMath, z3, E and Vampire, Lean's language server, literature search, Jev | each one on its own |
-
-```sh
-scripts/setup.sh              # does every step it can, skips what is done, never uses sudo
-$EDITOR .env                  # DEEPSEEK_API_KEY=...; `pnpm harness` reads .env by itself
-scripts/kimina.sh             # the Lean server, in a terminal of its own
-pnpm harness doctor           # what this machine still lacks, and how to fix it
 pnpm harness solve "(n : ℕ) : n + 0 = n" --max-usd 0.10
-pnpm harness ui               # the local interface, on 127.0.0.1 only
 ```
 
-`solve` takes a statement in prose, in Lean or a `.lean` file; prose is formalized and shown for your signature before anything is spent. It always runs under a dollar allowance, and leaves `RESULT.md` in the run directory whatever stopped it. [documentation/quickstart.md](documentation/quickstart.md) is the guide to `solve`. To work on the code: [CONTRIBUTING.md](CONTRIBUTING.md).
+A statement in words is formalized and shown to you to sign before anything is spent. On the first real run, the tactic battery closed `n + 0 = n` before any model was called and the certifier replayed it through the kernel: proved, for $0.00. Whatever the outcome, the run leaves `RESULT.md`, a static page of the run and its journal.
+
+## Why Seshat
+
+- **Trust comes from Lean, not from a model.** A claim is `proved` or `refuted` only after the certifier compiles the candidate in a sandbox and replays it through Lean's kernel. A model's answer, a tool's output, an informal proof or a heuristic is recorded as evidence and never changes a status ([trust](documentation/trust.md)).
+- **Classical tools first.** Decision procedures, a tactic battery, computer algebra, SMT solvers and first-order provers run before a model is asked, and whatever they find still goes through Lean ([classical tools](documentation/classical.md)).
+- **Cheap by design.** Open-weight models through their APIs (DeepSeek by default, any provider of [pi-ai](https://github.com/earendil-works/pi) works), prompt caching, a probe and a budget gate that weigh the price of each launch against its chance of success, and a hard dollar cap per problem ([budget gate](documentation/scheduler.md#the-budget-gate)).
+- **No context rot.** Provers work in short fresh sessions that pass on compact notes; the research state lives in the journal and the claim graph, not in a growing chat ([fresh sessions](documentation/m0-loop.md)).
+- **Reproducible and auditable.** The journal is the only source of truth: tables, reports and the interface are rebuilt from it, and a run whose process died resumes from it ([journal](documentation/journal.md)).
+- **Modular.** Every external tool is a capability behind a registry, with a manifest, a contract test and host profiles, so any tool can be swapped without touching the rest ([capabilities](documentation/capabilities.md)).
+- **No training.** Models are used through their APIs only; no fine-tuning, no reinforcement learning.
 
 ## How it works
 
-![harness solve from a statement to RESULT.md](documentation/images/solve-loop.svg)
+![Seshat at a glance: a statement goes through intake, classical tools, provers and Lean; every paid launch is priced first, and the journal records everything](documentation/images/overview.svg)
+
+1. **Read and sign.** A statement in prose is formalized, shown with test cases and signed by you before anything is spent; a Lean statement is used as it is. A literature search asks whether it is already known.
+2. **Classical tools.** A tactic battery, decision procedures and, where installed, computer algebra, SMT and ATPs try the statement, and later every hole a prover leaves.
+3. **Priced launches.** A probe and a budget gate decide whether a model is worth its price on this problem, and escalate only when Lean shows progress.
+4. **Provers.** Models write Lean in fresh sessions, with Lean's feedback, search over Mathlib and the claim graph as tools; heuristic cards (Pólya's methods and others) suggest how to attack the problem; blueprints split a hard problem into holes.
+5. **Lean decides.** A fast check in a pool of Lean processes, then the certifier's kernel replay in a sandbox: only that makes a claim `proved`.
+6. **The result.** `RESULT.md`, a static page of the run (`harness view`), and the journal, whatever stopped the run.
+
+![harness solve, from a statement to RESULT.md](documentation/images/solve-loop.svg)
+
+## What you can do with it
+
+- **Prove or refute a statement** of your own, at competition level, for cents: `harness solve`.
+- **Explore a conjecture**: small cases, computer algebra and the literature before any proof attempt, and a verified frontier of what has been established (`harness frontier`).
+- **Run a long campaign** that continues alone for days under a budget, in turns, with a digest at each turn: `harness campaign`.
+- **Work with a team**: consortium mode pauses after a budget, reports from the journal without a model call, and waits for your hints and signatures.
+- **Measure a research method**: every mechanism is a *line* that a run switches on, and `harness ablate` compares configurations on the same problems at the same budget, with a statistical test.
+
+## Results
+
+On 20 Putnam competition problems, the baseline certified 16 through Lean's kernel for **$1.27 of model calls in all**, with DeepSeek through its API and Lean 4.27.0 on a laptop. The sample is small and every PutnamBench problem has a public Lean proof that a model may have seen, so these are first measurements, not a benchmark claim. [documentation/status.md](documentation/status.md) has every run, what it taught, and which parts have run for real.
+
+## Getting started
+
+Seshat runs on Linux and macOS (Windows through WSL2) with Node 22.19 or later.
+
+```sh
+git clone https://github.com/Kdevos12/seshat.git && cd seshat
+scripts/setup.sh              # Node packages, Lean 4.27.0, the Lean environment, the Kimina Lean server
+$EDITOR .env                  # your model key: DEEPSEEK_API_KEY=...
+scripts/kimina.sh             # the Lean server, in a terminal of its own
+pnpm harness doctor           # what this machine still lacks, and how to fix it
+pnpm harness solve "(n : ℕ) : n + 0 = n" --max-usd 0.10
+```
+
+`scripts/setup.sh --no-lean` sets up only the Node side, enough for the interface and the tests. The first full setup takes about an hour (Mathlib's cache and a Lean build) and 15 GB of disk. [documentation/install.md](documentation/install.md) has every step by hand, the optional tools (SageMath, z3, E, Vampire, Lean's language server) and the fixes for common problems; [documentation/quickstart.md](documentation/quickstart.md) is the guide to `solve`.
+
+`pnpm harness ui` opens a local interface, on 127.0.0.1 only: give a problem, watch the run, read the result, and change every setting from one menu.
+
+![The local interface's settings menu](documentation/images/ui-settings.png)
+
+## Architecture
 
 ![The packages as layers, with Lean beside them as the judge](documentation/images/architecture.svg)
 
-Each compartment has a page and a figure, all drawn by code ([documentation/figures.md](documentation/figures.md)); the
-[documentation's home](documentation/README.md#figures) shows them together.
+Seshat is a TypeScript monorepo on top of [pi](https://github.com/earendil-works/pi)'s agent packages, with Lean libraries of its own for certification. Each compartment has a page and a figure, all drawn by code ([figures](documentation/figures.md)):
 
 | Compartment | Page | Figure |
 |---|---|---|
@@ -112,7 +110,51 @@ Each compartment has a page and a figure, all drawn by code ([documentation/figu
 | Campaigns, judged by the verified frontier | [campaign.md](documentation/campaign.md) | [campaign](documentation/images/campaign.svg) |
 | Measuring a line | [ablate.md](documentation/ablate.md) | [ablation](documentation/images/ablation.svg) |
 
-## The research flow
+## Extending Seshat
+
+- **A tool**: write a capability (a manifest, an implementation and a contract test) and list it in a host profile ([capabilities](documentation/capabilities.md)).
+- **A pack** of tools, skills or heuristic cards, installed with `pnpm harness add PATH|GIT_URL` ([packs](documentation/packs.md)).
+- **A heuristic card**: a method of attack the provers can draw on ([heuristics](documentation/heuristics.md)).
+- **A model provider**: any provider pi-ai supports, priced in a host profile ([models](documentation/models-setup.md)).
+- **A research line**: a mechanism that a run switches on and that is measured against the line before it ([lines](documentation/lines.md)).
+
+## Documentation
+
+[documentation/](documentation/README.md) is the wiki: concepts, one page per compartment with its figure, the command reference ([capabilities.md](documentation/capabilities.md#the-harness-command)) and every setting ([parameters.md](documentation/parameters.md)).
+
+## Status
+
+Beta, version 1.0.0-beta.1. The core loop runs for real: `harness solve` with a real model and Lean 4.27.0, the fast check, the certifier's kernel replay, the budget gate, the tactic battery, Lean's language server and search. Many research lines (lemma library, lessons, curriculum, ATP and SMT with reconstruction, the heuristic card bank, consortium turns) are built and tested against a simulated Lean and model and wait for their first real runs. [documentation/status.md](documentation/status.md) keeps the full account.
+
+## Contributing
+
+Bug reports, run reports (solved or not), new tools and heuristic cards are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md). Seshat is built by following one plan, in [plans/](plans/seshat-plan.md); agents that work on it read [CLAUDE.md](CLAUDE.md) first.
+
+## Citing Seshat
+
+If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub):
+
+```bibtex
+@software{devos2026seshat,
+  author  = {de Vos, Kyllian},
+  title   = {Seshat: a harness for autonomous mathematical research with language models},
+  year    = {2026},
+  version = {1.0.0-beta.1},
+  url     = {https://github.com/Kdevos12/seshat},
+  license = {Apache-2.0}
+}
+```
+
+Seshat is designed and engineered by Kyllian de Vos ([@Kdevos12](https://github.com/Kdevos12)), built with Claude Code as coding agents.
+
+## License
+
+[Apache License 2.0](LICENSE), copyright 2026 Kyllian de Vos. A redistribution, modified or not, keeps the [NOTICE](NOTICE) file with its attribution.
+
+## Appendix: the research flow, node by node
+
+<details>
+<summary>Every step a statement can go through and every tool a prover can call, marked by how far it has gone (click to open).</summary>
 
 Green: has run for real, on the owner's machine with Lean 4.27.0 and a real model, or against the real program or
 service ([documentation/status.md](documentation/status.md) has the dates and the runs). Blue: built and tested with the
@@ -397,42 +439,7 @@ flowchart TB
   ablate -->|"same problems, same dollars"| protocol
   graded -.-> realablate
 ```
-This diagram changes with the code: a change to the research flow updates it in the same commit
-([documentation/development.md](documentation/development.md#conventions)).
 
-## Commands
+This diagram changes with the code: a change to the research flow updates it in the same commit ([development notes](documentation/development.md#conventions)).
 
-```sh
-pnpm harness --help       # the full command line
-pnpm harness doctor       # what this machine lacks
-pnpm harness models       # the models, and whether their credentials are set
-pnpm harness capabilities # the capability registry
-pnpm harness solve "STATEMENT" --max-usd 2    # a statement in Lean or prose, or a file; RESULT.md in the run directory
-pnpm harness view runs/RUN_ID                  # one static HTML page of a run
-pnpm harness ui [--port N] [--open]            # the local interface
-pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 5
-pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
-pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation
-pnpm harness audit runs/RUN_ID                 # one dossier per problem that was not certified
-pnpm harness frontier runs/RUN_ID              # what a run has established, from its journal alone
-pnpm harness campaign "STATEMENT" --max-usd 20 # a run that continues alone, in turns, under a dollar allowance
-pnpm harness consolidate runs/RUN_ID           # the pass between runs: state cards, duplicate lessons
-pnpm harness add PATH|GIT_URL                  # install a pack of tools, skills or heuristic cards (also: packs, remove)
-pnpm harness heuristics list                   # the heuristic card bank (also: stats RUN_DIR, mine RUN_DIR)
-```
-
-The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0` ([documentation/m0-loop.md](documentation/m0-loop.md#commands)). The full command reference is in [documentation/capabilities.md](documentation/capabilities.md#the-harness-command) and every flag and run setting is audited in [documentation/parameters.md](documentation/parameters.md).
-
-## Documentation
-
-[documentation/](documentation/README.md) is the home page of the wiki: concepts, one page per compartment, the reference and the development notes. Installing: [documentation/install.md](documentation/install.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md); security: [SECURITY.md](SECURITY.md). Working on Seshat, alone or with other agents: [CLAUDE.md](CLAUDE.md). The plan and the state of its build: [plans/](plans/seshat-plan-ledger.md).
-
-## Author and citation
-
-Seshat is designed and engineered by Kyllian de Vos (GitHub [@Kdevos12](https://github.com/Kdevos12)), built with Claude Code as coding agents.
-
-If you use Seshat in your work, please cite it (see `CITATION.cff`).
-
-## License
-
-Seshat is licensed under the [Apache License 2.0](LICENSE), copyright 2026 Kyllian de Vos. A redistribution, modified or not, must keep the [NOTICE](NOTICE) file with its attribution. If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff)).
+</details>

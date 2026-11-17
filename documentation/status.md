@@ -2,8 +2,8 @@
 
 Seshat is released as beta v1 (version 1.0.0-beta.1). This page says what has run for real, what has only
 run against a simulated model and Lean, and keeps the longer status text that the README used to carry.
-The measured runs are in the task ledger ([plans/seshat-plan-ledger.md](../plans/seshat-plan-ledger.md)); the
-README's "Results so far" summarizes them with their dates.
+The measured runs are below, with their dates; the task ledger
+([plans/seshat-plan-ledger.md](../plans/seshat-plan-ledger.md)) has every detail.
 
 ## What has run for real
 
@@ -20,6 +20,25 @@ between 2026-11-11 and 2026-11-13:
   with blueprints, refinement rounds, the repair pass and the informal proof first (in the replay);
 - the certifier was checked on a real Lean on 2026-11-13: six candidates that it had wrongly refused for
   `X._unsafe_rec` certified after the fix, and a `partial def` is still refused.
+
+## Measured runs
+
+All numbers are from the task ledger ([plans/seshat-plan-ledger.md](../plans/seshat-plan-ledger.md)), on grade B problems (Putnam competition problems) of the graded bench, on the owner's machine, with a real Lean and a real model.
+
+| Run | Date | What it measured | Result |
+|---|---|---|---|
+| Pilot | 2026-11-11 | 6 problems, cap $0.50 each, `solve` with the baseline defaults `v1` | 6 of 6 certified by kernel replay for $0.126 in all; the other two arms were not valid (the provider's balance ran out) |
+| Second run | 2026-11-12 | the same 6 problems | `v1` 4 of 6 for $0.205: the baseline varies from run to run; two defects found and fixed |
+| Third run | 2026-11-12 to 13 | 20 problems, cap $0.50 each, three arms: `v1`, `v2` and `v2` with blueprints | after the certifier fix: `v1` 16 of 20, `v2` 14, blueprints 15; $4.02 in all with a one-problem trial; no arm beats another |
+| Replay | 2026-11-13 | the 6 problems left unsolved, the arm with blueprints, refinement rounds, repair and the informal proof first | 0 of 6 certified for $1.41 |
+| Graph smoke run | 2026-11-13 | lines M2 and M4 on 4 of those problems | 0 of 4 for $0.67; they ran without error and added nothing in a single fresh run |
+
+What the runs taught, and what was fixed because of them:
+
+- The third run's first scores (13, 13, 13) were wrong: the certifier refused `X._unsafe_rec`, a constant that Lean 4.27.0 adds for every recursive definition, and rejected six good proofs. After the fix, checked on a real Lean on 2026-11-13, the same candidates certify (`v1` 16, `v2` 14, blueprints 15 of 20). A `partial def` is still refused.
+- The blueprints of the third run were all judged unhealthy because the blueprint format was in no prompt; it is now in the briefing, and the check answer says how a blueprint is read.
+- The replay (0 of 6) showed that four of the six problems were stopped by the budget gate after the probe, that the verifier of the informal proof (the same model) was too lenient, and that a hole's file did not carry its context; the fixes are in the ledger. These six are the hard end of the set: no claim is made that blueprints help.
+- A yardstick caveat: every PutnamBench problem has a public Lean proof, which a model may have seen.
 
 ## What has not run for real
 
