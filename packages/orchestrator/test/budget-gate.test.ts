@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { BenchIndex } from "@seshat/bench";
 import { join } from "node:path";
-import { BlobStore, type HarnessEvent } from "@seshat/core";
-import { buildReport, renderRunReport } from "../src/index.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { BlobStore, type HarnessEvent, Journal, statementIdV0 } from "@seshat/core";
+import type { FrontierEntry, FrontierKind } from "@seshat/memory";
+import { gateSettings } from "@seshat/scheduler";
+import { BudgetGate, buildReport, Ledger, renderRunReport } from "../src/index.ts";
 import { consortium } from "./turns-helpers.ts";
 import { assertSound, certifier } from "./resume-helpers.ts";
 import { createM12Line } from "@seshat/scheduler";
@@ -478,5 +482,44 @@ describe("the budget gate: in a run with a team", () => {
     const { events, result } = await demoRun({ responses: [check("bad"), say("notes")], config: { ...WIDE, gate: { floor: 0 } } });
     assert.equal(gates(events)[1]?.turn, undefined);
     assert.equal(result.problems[0]?.outcome, "unsolved");
+  });
+});
+
+describe("the probe reads the frontier (LH3)", () => {
+  // `bad` is an unknown identifier (depth 2, no Lean progress of the old measure); the `aux_` lemma outside any blueprint is accepted by Lean.
+  const LEMMA = "theorem aux_a : True := trivial";
+  const run = (frontier: { show: boolean } | undefined) =>
+    demoRun({ responses: [check("bad", LEMMA), say("notes"), check("exact trivial_proof"), check("exact trivial_proof")], config: { ...WIDE, provers: 2, sessions: 2, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } }, ...(frontier !== undefined ? { frontier } : {}) } });
+
+  it("widens on an accepted aux_ lemma outside a blueprint, and says why", async () => {
+    const { events } = await run({ show: true });
+    assert.deepEqual(summary(events).slice(0, 2), ["wave:probe:probe", "wave:widen:rule"]);
+    assert.match(gates(events)[1]?.reason ?? "", /the frontier grew: subclaim: aux_a/);
+    assert.equal(gates(events)[1]?.progress, true);
+  });
+
+  it("does not widen without the setting", async () => {
+    const { events } = await run(undefined);
+    assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+    const off = await run({ show: false });
+    assert.deepEqual(summary(off.events), ["wave:probe:probe", "wave:skip:progress"]);
+  });
+
+  it("does not count an evidence entry, and counts a baseline entry once the probe has begun", async () => {
+    const journal = Journal.open(mkdtempSync(join(tmpdir(), "mh-gate-front-")), "run_1");
+    try {
+      journal.emit("claim.created", { claimId: "clm_1", statementId: statementIdV0(": True"), statement: ": True", origin: "test", status: "open" }, "test");
+      journal.emit("problem.registered", { problemId: "P1", claimId: "clm_1", target: "T", source: { repo: "r", rev: "x", path: "p", line: 1 }, domain: [] }, "orchestrator");
+      const entry = (kind: FrontierKind, id: string, evidence: boolean): FrontierEntry => ({ kind, id, statement: id, seq: 1, provenance: { seqs: [1] }, evidence });
+      let entries: FrontierEntry[] = [entry("subclaim", "old", false)];
+      const gate = new BudgetGate({ settings: gateSettings({ floor: 0 }), journal, problemId: "P1", claimId: "clm_1", ledger: new Ledger(5).child(5), seed: "unit", rung: () => 0, attemptIds: () => [], frontierEntries: () => entries, log: () => {} });
+      gate.probe();
+      entries = [...entries, entry("evidence", "ev", true), entry("dead_end", "de", false)];
+      assert.equal(gate.progress(), undefined, "evidence and a dead end are not progress, and the entry before the probe is not new");
+      entries = [...entries, entry("reduction", "r1", false)];
+      assert.match(gate.progress() ?? "", /^the frontier grew: reduction: r1$/);
+    } finally {
+      journal.close();
+    }
   });
 });
