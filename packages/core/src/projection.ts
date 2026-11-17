@@ -381,6 +381,8 @@ const INHERITED_SKIPPED: readonly string[] = [
   "budget.gated",
   "budget.round",
   "problem.parked",
+  "child.started",
+  "child.finished",
 ];
 
 /**
@@ -826,6 +828,10 @@ export class Projection {
       // The rounds of a run's budget are read from the events by the orchestrator (`budget.round`, `problem.parked`): no table.
       case "budget.round":
       case "problem.parked":
+        return;
+      // A child's start and end are read from the events by the orchestrator (`runChild`): no table.
+      case "child.started":
+      case "child.finished":
         return;
       // A person's signature of the statement a run works on: a record for the account and the view, no table.
       case "statement.signed":

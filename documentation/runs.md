@@ -93,3 +93,28 @@ What differs, and matters for one contract:
 - M18's variant is not a separate code path: it is a `prove` task that the line proposes and works through
   `runTask`, started where every task is. M16's search is the same. Both already have one start (`runTasks`) and
   one record (the task ledger); what they lack is the common ledger carve and the common resume key.
+
+### One contract: `ChildSpec` and `runChild`
+
+`packages/orchestrator/src/child.ts` gives the kinds above one way to start. A `ChildSpec` says what the
+child is: its `kind` (`probe`, `prover`, `hole`, `informal`, `planner`, `program_search`, `variant`), its `goal`
+(a claim id, or an evidence need as text), its `parent` (the problem, and the child that started it, if
+any), the `ledger` carved for it (a cap in dollars and, where the kind has one, in tokens), the `tools` it may
+use (capability ids), the `output` it writes (a node or event kind) and its `resumeKey`.
+
+`runChild(spec, { journal, ledger }, body)` does what is common, once:
+
+1. A child whose `resumeKey` was finished `done` in this run's journal is skipped (`{ skipped: true }`), unless
+   the spec says `resume: "run"` (a kind whose result is the caller's input and cannot be rebuilt from the
+   journal is recorded, and runs again).
+2. The child's ledger is `ledger.child(cap)`: the cap is the least of the spec's and what the parent and its
+   ancestors have left, and a token cap ends the child's ledger too (`Ledger.limitTokens`). What the body
+   charges to it is charged to the parent as it is spent, so the parent's account is always whole.
+3. `child.started` is journaled (kind, goal, problem, caps, tools, output, resume key), the body runs with
+   its `childId` and ledger, and `child.finished` is journaled with the status and what the child spent
+   ([journal.md](journal.md)). `done` is what a resume skips; `failed` (the body threw: the error goes on) and
+   `stopped` (the body's `statusOf` says its output was not written) are run again.
+4. The body's typed result is returned. The body is the kind's own code, unchanged inside.
+
+The events are the orchestrator's alone and change no claim. A journal written before them has none: a resume
+of it runs a child again, as it always did.

@@ -9,6 +9,8 @@ import type { PriceBook } from "./prices.ts";
  */
 export class Ledger {
   readonly limitUsd: number | undefined;
+  /** An optional cap on input plus output tokens, for a child's ledger (`runChild`); absent on every other ledger. */
+  readonly limitTokens: number | undefined;
   readonly parent: Ledger | undefined;
   usd = 0;
   inputTokens = 0;
@@ -18,15 +20,23 @@ export class Ledger {
   private readonly observers: Array<(cost: TokenCost) => void> = [];
   private announced = false;
 
-  constructor(limitUsd?: number, parent?: Ledger) {
+  constructor(limitUsd?: number, parent?: Ledger, limitTokens?: number) {
     if (limitUsd !== undefined && !(limitUsd >= 0)) throw new Error(`budget must be a non-negative number, got ${limitUsd}`);
     this.limitUsd = limitUsd;
+    this.limitTokens = limitTokens;
     this.parent = parent;
     parent?.onExhausted(() => this.announce());
   }
 
-  child(limitUsd?: number): Ledger {
-    return new Ledger(limitUsd, this);
+  child(limitUsd?: number, limitTokens?: number): Ledger {
+    return new Ledger(limitUsd, this, limitTokens);
+  }
+
+  /** What this ledger and its ancestors still allow in dollars: the least of their remainders, or undefined when none has a limit. */
+  get remainingUsd(): number | undefined {
+    const own = this.limitUsd === undefined ? undefined : Math.max(0, this.limitUsd - this.usd);
+    const above = this.parent?.remainingUsd;
+    return own === undefined ? above : above === undefined ? own : Math.min(own, above);
   }
 
   /**
@@ -62,7 +72,7 @@ export class Ledger {
   }
 
   get exhausted(): boolean {
-    return (this.limitUsd !== undefined && this.usd >= this.limitUsd) || (this.parent?.exhausted ?? false);
+    return (this.limitUsd !== undefined && this.usd >= this.limitUsd) || (this.limitTokens !== undefined && this.inputTokens + this.outputTokens >= this.limitTokens) || (this.parent?.exhausted ?? false);
   }
 
   /** Whether a charge of `usd` would leave this ledger or an ancestor exhausted: true for one that already is. */
