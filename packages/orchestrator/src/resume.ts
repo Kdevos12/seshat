@@ -33,6 +33,8 @@ import type { ProblemResult, RunConfig } from "./run.ts";
 import type { RolesConfig } from "./roles.ts";
 import type { CardsConfig } from "./cards.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
+import { readCampaignConfig } from "./campaign-config.ts";
+import { type RestartsConfig, restartsConfigProblems } from "./restarts.ts";
 import type { InformalFirst } from "./informal.ts";
 import { RunSetupError } from "./setup-error.ts";
 
@@ -175,6 +177,8 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
     ...(typeof r.budgetShare === "number" ? { budgetShare: r.budgetShare } : {}),
     ...(r.frontier !== null && typeof r.frontier === "object" && !Array.isArray(r.frontier) && frontierConfigProblems(r.frontier).length === 0 ? { frontier: r.frontier as RunConfig["frontier"] & object } : {}),
+    ...(r.restarts !== null && typeof r.restarts === "object" && !Array.isArray(r.restarts) && restartsConfigProblems(r.restarts).length === 0 ? { restarts: r.restarts as RestartsConfig } : {}),
+    ...(readCampaignConfig(r.campaign) !== undefined ? { campaign: readCampaignConfig(r.campaign) as NonNullable<RunConfig["campaign"]> } : {}),
     ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"

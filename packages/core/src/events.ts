@@ -206,6 +206,61 @@ export interface EventDataMap {
     source: string;
     /** The run's spend when the turn began. */
     startSpend: TokenCost;
+    /** When the turn began, an ISO instant in UTC by the process's wall clock: a campaign's daily cap counts a turn's spend on this instant's day (documentation/campaign.md). Absent in older journals. */
+    at?: string;
+  };
+  /**
+   * A campaign supervisor took up the run (`harness campaign`, documentation/campaign.md): written by the orchestrator between turns, once each
+   * time a supervisor starts, a new one or one that resumes a run whose supervisor ended.
+   */
+  "campaign.started": {
+    runId: string;
+    /** 1 for the first supervisor of the run, then 2... */
+    supervision: number;
+    pid: number;
+    /** The pacing: dollars a UTC day may spend, the wall-clock end (an ISO instant), and whether turns wait for the off-peak window. */
+    usdPerDay?: number;
+    until?: string;
+    offPeak: boolean;
+    /** True when the supervisor took up a run an earlier one had begun. */
+    resumed: boolean;
+  };
+  /**
+   * The campaign waits before its next turn: the day's cap is spent (until the next UTC day), or the model provider's usage limit was reached
+   * (until the backoff ends). Written by the orchestrator before the wait begins.
+   */
+  "campaign.waiting": {
+    runId: string;
+    reason: "daily_cap" | "usage_limit";
+    /** ISO instants in UTC: when the wait began and when the next turn may start. */
+    from: string;
+    until: string;
+    detail: string;
+  };
+  /**
+   * A turn of a campaign ended at an impasse and the next one changes mode (plan change LH2: an impasse breakpoint is "change mode" in a
+   * campaign, not "stop and wait"). Today the only mode is `cold_restart`: the next turn's sessions start cold; Task 60 adds the others.
+   */
+  "campaign.mode_changed": {
+    runId: string;
+    /** The turn that ended at the impasse. */
+    turn: number;
+    mode: string;
+    reason: string;
+    problemId?: string;
+  };
+  /**
+   * The campaign is over. `settled`: the certifier's kernel replay settled the target (the only end that is not a stop). Every other reason is a
+   * stop, with the frontier at that point: `allowance` (the run's budget is spent), `until` (the wall-clock end), `spiral` (turns that spent without
+   * the frontier growing), `ended` (the run finished some other way), `aborted` (the supervisor was stopped).
+   */
+  "campaign.stopped": {
+    runId: string;
+    reason: "settled" | "allowance" | "until" | "spiral" | "ended" | "aborted";
+    detail: string;
+    turns: number;
+    usd: number;
+    frontier?: { score: number; entries: number };
   };
   /**
    * The run waits for the host's off-peak hours before it starts a turn or a session (`--offpeak`,
@@ -846,6 +901,10 @@ export const EVENT_TYPES: readonly EventType[] = [
   "turn.started",
   "turn.ended",
   "turn.deferred",
+  "campaign.started",
+  "campaign.waiting",
+  "campaign.mode_changed",
+  "campaign.stopped",
   "attempt.charged",
   "task.created",
   "task.assigned",

@@ -1,3 +1,4 @@
+import { UNBOUNDED_SESSIONS } from "./campaign-config.ts";
 import { readFileSync } from "node:fs";
 import { sha256Hex } from "@seshat/core";
 
@@ -77,7 +78,7 @@ export function sessionPrompt(c: SessionContext): string {
   const sections = (c.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("");
   const card = c.card === undefined ? "" : `\n# Where the problem stands\n${c.card}\n`;
   return `Theorem: ${c.theorem}
-This is session ${c.session} of at most ${c.sessions}.
+This is session ${c.session}${c.sessions >= UNBOUNDED_SESSIONS ? "" : ` of at most ${c.sessions}`}.
 ${card}
 # Your notes from the previous sessions
 ${notes}

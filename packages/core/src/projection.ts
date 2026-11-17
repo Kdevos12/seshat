@@ -368,6 +368,10 @@ const INHERITED_SKIPPED: readonly string[] = [
   "turn.started",
   "turn.ended",
   "turn.deferred",
+  "campaign.started",
+  "campaign.waiting",
+  "campaign.mode_changed",
+  "campaign.stopped",
   "problem.registered",
   "problem.finished",
   "model_call.finished",
@@ -627,6 +631,10 @@ export class Projection {
         this.setMeta("turn_ended", String(event.data.turn));
         return;
       case "turn.deferred":
+      case "campaign.started":
+      case "campaign.waiting":
+      case "campaign.mode_changed":
+      case "campaign.stopped":
         return;
       case "run.resumed": {
         db.prepare("insert into resumptions (seq, resumption, data_json) values (?, ?, ?)").run(

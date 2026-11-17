@@ -29,6 +29,8 @@ picture.
 
 ## harness solve
 
+To let a problem run for days instead of one sitting, `harness campaign STATEMENT --max-usd X` takes the same input and continues alone ([campaign.md](campaign.md)).
+
 `harness solve STATEMENT [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes]` takes one
 statement and works on it. Nothing here is a new mechanism of a run: `solve` prepares the inputs of
 `harness run` and calls it (`packages/orchestrator/src/solve.ts`, `student.ts`, `solve-command.ts`).

@@ -12,7 +12,10 @@ import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signatu
 import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
-import type { RunConfig, RunOptions } from "./run.ts";
+import { resumeBench, type RunConfig, type RunOptions } from "./run.ts";
+import type { CampaignConfig } from "./campaign-config.ts";
+import { runCampaign } from "./campaign.ts";
+import { campaignBase, campaignTurnUsd } from "./campaign-start.ts";
 import { describeSettings, readSettingsFile, type Settings } from "./settings-file.ts";
 
 /** The flags of `harness doctor` and `harness solve` that the commands read. */
@@ -53,6 +56,8 @@ export interface SolveFlags extends DoctorFlags {
   /** `--horizon` and `--human` (plan change LH9, documentation/runs.md): `solve` is always `episode` and `consortium`; a word that contradicts it, or that is not built yet, is refused when the run starts. */
   horizon?: NonNullable<RunConfig["horizon"]>;
   human?: NonNullable<RunConfig["human"]>;
+  /** `harness campaign` (documentation/campaign.md): the run is a campaign under a supervisor, with this pacing. `offPeak` defaults on. */
+  campaign?: CampaignConfig & { offPeak?: boolean };
   lines?: string[];
   /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
   defaults?: string;
@@ -311,6 +316,15 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   // The settings file is read and checked before anything is spent: an unknown key or a value that fails is a setup error.
   const file = flags.settings !== undefined ? readSettingsFile(flags.settings, "solve") : undefined;
   const settings = solveSettings(flags, file);
+  const campaign = flags.campaign;
+  if (campaign !== undefined) {
+    if ((flags.horizon !== undefined && flags.horizon !== "campaign") || (flags.human !== undefined && flags.human !== "digest")) {
+      io.err("harness campaign never waits for a person: --horizon campaign and --human digest are what it has");
+      return 2;
+    }
+    settings.base = { ...campaignBase(campaign), ...settings.base };
+    if (campaign.offPeak !== false && settings.offpeak === undefined) settings.offpeak = {};
+  }
   const statement = readStatement(argument, flags);
   // Read and checked before anything is spent: a file that is missing, empty or too long is a setup error.
   const sketch = flags.sketch !== undefined ? readSketchFile(flags.sketch) : undefined;
@@ -331,8 +345,13 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   } else {
     io.out(`Model: ${model} (named by you).`);
   }
-  const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
-  io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
+  const turnUsd = campaign !== undefined ? campaignTurnUsd({ ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}), maxUsd, ...(campaign.usdPerDay !== undefined ? { usdPerDay: campaign.usdPerDay } : {}) }) : flags.turnUsd;
+  const turn = turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
+  if (campaign !== undefined) {
+    io.out(`Allowance: $${maxUsd} in all. The campaign works in turns of $${turn} that start by themselves, with no cap on sessions; it writes campaign/digest.md after each turn and ends when the allowance is spent${campaign.usdPerDay !== undefined ? `, paced at $${campaign.usdPerDay} a day` : ""}${campaign.until !== undefined ? `, at ${campaign.until} at the latest` : ""}, when the certifier settles the target, or when turns spend without the frontier growing.`);
+  } else {
+    io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
+  }
   io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName, undefined, flags).length > 0 ? `: ${describeSet(defaults as DefaultsName, undefined, flags).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
   if (file !== undefined) io.out(describeSettings(file, settings.fromFile, settings.overruled));
   const switches = effectiveSwitches(flags, defaults as DefaultsName);
@@ -388,7 +407,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
   try {
-    result = await solve({
+    const runSolve = (): Promise<SolveResult> => solve({
       statement: statement.text,
       mode,
       dir,
@@ -401,7 +420,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       header: DEFAULT_HEADER,
       checker: new RegistryLeanChecker(checkerRegistry, { actor: "orchestrator" }),
       ...(sketch !== undefined ? { sketch } : {}),
-      ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
+      ...(turnUsd !== undefined ? { turnUsd } : {}),
       ...(settings.offpeak !== undefined ? { offpeak: settings.offpeak } : {}),
       ...(settings.lines !== undefined ? { lines: settings.lines } : {}),
       ...(leanSearch || Object.keys(settings.base).length > 0
@@ -443,6 +462,39 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       log: (line) => io.err(line),
       ...(io.codeRev !== undefined ? { codeRev: io.codeRev } : {}),
     });
+    if (campaign === undefined) result = await runSolve();
+    else {
+      // The first turn is `solve` (the signature, then the run); the others are what `harness resume` does, after the supervisor has read the journal.
+      let solved: SolveResult | undefined;
+      const end = await runCampaign({
+        dir,
+        settings: campaign,
+        first: async () => {
+          solved = await runSolve();
+          return solved.result;
+        },
+        next: async ({ limit }) => {
+          const problem = (solved as SolveResult).problem;
+          return await resumeBench({
+            dir,
+            index: problem.index,
+            checkout: problem.checkout,
+            models: io.models,
+            registry,
+            ...(io.signal !== undefined ? { signal: io.signal } : {}),
+            log: (line) => io.err(line),
+            ...(io.codeRev !== undefined ? { codeRev: io.codeRev } : {}),
+            ...(limit !== undefined ? { turns: { limit } } : {}),
+          });
+        },
+        ...(io.signal !== undefined ? { signal: io.signal } : {}),
+        log: (line) => io.err(line),
+      });
+      if (end.reason === "not_started") return 1;
+      io.out(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}.`);
+      io.out(`Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}. The result: ${join(dir, "RESULT.md")}. The picture: harness view ${dir}`);
+      return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
+    }
   } catch (error) {
     if (error instanceof SolveInputError) {
       io.err(error.message);
