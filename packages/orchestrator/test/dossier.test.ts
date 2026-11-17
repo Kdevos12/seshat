@@ -37,6 +37,7 @@ describe("the dossier's dead-end store", () => {
     assert.match(a, /Statement \(signed\): theorem t : 1 = 1/);
     assert.match(a, /less active dead end/);
     assert.doesNotMatch(a, /xxxx/, "an unverified section that does not fit is left out");
+    assert.match(a, /and 1 unverified note\(s\) not shown/, "and says so");
     assert.ok(a.length < 300 * 4 + 400);
   });
 

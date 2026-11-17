@@ -1142,7 +1142,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ...(config.consortium !== undefined ? { human: true } : {}),
-      ...(config.horizon === "campaign"
+      // Without a plateau window (no `plateauUsd` and no run allowance) no mode is ever entered, so the lines are not gated: they run as before the modes.
+      ...(config.horizon === "campaign" && (config.campaign?.plateauUsd !== undefined || config.budget.runUsd !== undefined)
         ? { modeGate: { gated: GATED_LINES, on: plateauMode !== undefined && MODE_LINES[plateauMode] !== undefined ? [MODE_LINES[plateauMode] as string] : [], options: plateauMode === "construct" ? { M16: { ...CONSTRUCT_OPTIONS } } : {} } }
         : {}),
       ranking,
@@ -2154,6 +2155,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       if (config.horizon === "campaign" && config.campaign?.reflect === true && config.frontier?.show === true && turn.ended !== undefined) {
         const row = journal.projection.problems()[0];
         if (row !== undefined) {
+          // One cap for the run (LH4): what the journal already shows the reflection spent counts against it, so a later turn, or a resume, cannot spend it again.
+          const reflectLedger = (): Ledger => {
+            const ledger = runLedger.child(REFLECT_USD);
+            const spent = journal.projection.spendBySite().find((s) => s.site === SITE_CAMPAIGN_REFLECT);
+            if (spent !== undefined) ledger.seed(spent);
+            return ledger;
+          };
           await reflectOnce({
             journal,
             store: new MemoryStore({ journal, blobs, actor: "orchestrator" }),
@@ -2162,7 +2170,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             claimId: row.claim_id,
             statement: row.target,
             frontier: config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {},
-            call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(REFLECT_USD), signal: o.signal, prices, site: SITE_CAMPAIGN_REFLECT, problemId: row.problem_id }),
+            call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: reflectLedger(), signal: o.signal, prices, site: SITE_CAMPAIGN_REFLECT, problemId: row.problem_id }),
             log,
           });
         }

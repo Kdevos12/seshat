@@ -75,7 +75,7 @@ place in the opening message. Its tiers:
   [runs.md](runs.md#restarts)). Each is a delta merged into the store by key, so a dead end that repeats is one item with a count: the key is the
   failure class and the detail, or the refuted statement, both through `normalizeDetail`.
 - **L3**, unverified items (lessons, the consolidation page): the ones the randomized inclusion already drew for the session
-  ([memory.md](memory.md#randomized-inclusion)), shown last and the first to be left out when the bound is reached.
+  ([memory.md](memory.md#randomized-inclusion)), shown last and the first to be left out when the bound is reached; the text says how many notes are not shown.
 
 Each L2 item has an activity, counted from the journal: the sessions it was shown to (started after it existed and before it was retired), those
 among them in which the frontier grew (followed) and those in which it did not (ignored), and the sessions that recalled it (whose last failure was
@@ -85,7 +85,7 @@ plus the recalled count, then the latest).
 When the store holds more than `campaign.deadEnds` items (12), the least active half of the items past that bound is retired after the turn:
 `campaign.dossier` records the keys and scores, they stay in the journal and are no longer shown.
 
-With `campaign.reflect` (off by default) one capped model call a turn (site `campaign.reflect`, at most $0.25 of the run's allowance, journaled with
+With `campaign.reflect` (off by default) one capped model call a turn (site `campaign.reflect`, $0.25 in all for the run, counted from the journal so a resume keeps it, journaled with
 the problem it is for) proposes new items as a JSON array. Code reads it under a strict format: an answer that is not a JSON array is dropped
 whole, an item without a text `approach` and `why`, or whose text the prose screen refuses, is dropped alone, at most three are kept. What is kept is
 journaled as a delta (`campaign.dossier`, `added`) and shown as "proposed by a model, not checked". The model proposes; code merges.
@@ -114,7 +114,7 @@ modes gone through since the frontier last grew. The order is fixed:
 A mode that does not apply is skipped, with its reason in the event. A mode that adds to the frontier keeps the run on it; a turn in it that adds
 nothing passes to the next mode that applies, and after the fifth the first comes again. Lines M18, M11 and M16 are dormant in a campaign outside
 their mode (`ProblemLines` gives their hooks only for the turn of their mode; the run's configuration still lists them, so a resumed run is the same
-run). The mode a turn works in is the last `campaign.mode_changed` of the journal. The signed statement is never touched by a mode: every goal a
+run). With no plateau window (neither `plateauUsd` nor a run allowance) no mode is ever entered, and then the lines are not gated: they run as without modes. The mode a turn works in is the last `campaign.mode_changed` of the journal. The signed statement is never touched by a mode: every goal a
 mode adds is a Lean statement or an evidence need, and only the certifier's kernel replay changes a claim's status.
 
 ## Guards
@@ -122,8 +122,7 @@ mode adds is a Lean statement or an evidence need, and only the certifier's kern
 - **No "done" without Lean.** A campaign ends `settled` only through the certifier ([The trust rule](#the-trust-rule)); every other end is `stopped`, with the frontier.
 - **The spiral detector.** Spend without frontier growth across two full cycles of the five plateau modes (ten turns in a row that worked in a mode and spent money, none of
   which grew the frontier) ends the campaign `stopped` with the reason `spiral`. Turns, not modes passed over, are counted, so a statement for which few modes apply is
-  not stopped early: its modes come round more often within the same ten turns. The older rule (`spiralTurns`, 8) stays: that many turns in a row without growth, in a
-  mode or not. A mode that grows the frontier starts the count again. The guard reads the journal alone, so a resumed supervisor finds it where it was.
+  not stopped early: its modes come round more often within the same ten turns. The older rule (`spiralTurns`, 8) stays for a campaign without modes: it does not count a turn that worked in a mode, which the rule above governs. A mode that grows the frontier starts the count again. The guard reads the journal alone, so a resumed supervisor finds it where it was.
   The second rule of plan change LH6, the same plan revision three times, has nothing to read: there is no plan without the research agent (Tasks 46 to 48). It does not apply.
 - **The honest report.** A spiral writes "Out of reach at this budget; here is what is established" in the digest (above the frontier) and in `RESULT.md`
   (under the headline, with the turns and dollars spent), and the frontier follows in both. Nothing in the frontier is a proof of the target.

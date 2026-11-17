@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HarnessEvent } from "@seshat/core";
-import { ofType } from "./m0-helpers.ts";
+import type { Line } from "@seshat/lines";
+import { demoRun, ofType } from "./m0-helpers.ts";
 import { campaignConfig, failing, simulatedCampaign } from "./campaign-helpers.ts";
 import { applies, currentMode, decidePlateau, frontierTerms, modeOfTurn, PLATEAU_MODES, type PlateauContext, reformulations, spiralOf, stepsSinceGrowth, type TurnScore } from "../src/index.ts";
 
@@ -123,6 +124,39 @@ describe("plateau modes in a campaign", () => {
     const target = claims[0]?.data;
     assert.ok(claims.filter((c) => c.data.origin === "campaign.reformulate").every((c) => c.data.statement !== target?.statement && c.data.claimId !== target?.claimId));
     assert.equal(ofType(run.events, "statement.signed").length, 0, "no mode signs or re-signs a statement");
+  });
+
+  it("at the default spiral setting, a campaign in modes reaches the LH6 stop, not the older one", async () => {
+    const run = await simulatedCampaign({
+      config: campaignConfig({ turnUsd: 0.03, allowance: 20, over: { campaign: { plateauUsd: 0.05 } } }),
+      responses: () => failing(120),
+    });
+    assert.equal(run.end.reason, "spiral");
+    assert.match(run.end.detail, /two full cycles/);
+    assert.doesNotMatch(run.end.detail, /turns in a row spent money/);
+  });
+
+  it("gates the mode lines only when a plateau window exists: with no allowance and no plateauUsd they run as before", async () => {
+    const worked = async (over: Partial<Parameters<typeof campaignConfig>[0]> & { runUsd?: boolean }) => {
+      let ran = 0;
+      const m11: Line = { id: "M11", title: "a counter-model line", requires: [], resume: "stateless", hooks: { beforeProvers: async () => { ran += 1; } } };
+      const config = { ...campaignConfig({ turnUsd: 0.03, allowance: 1 }), lines: ["M11"], budget: over.runUsd === true ? { problemUsd: 1, runUsd: 1 } : { problemUsd: 1 } };
+      await demoRun({ lines: { M11: m11 }, config, responses: failing(20) });
+      return ran;
+    };
+    assert.ok((await worked({})) > 0, "no plateau window: M11 is not gated");
+    assert.equal(await worked({ runUsd: true }), 0, "with an allowance the lines wait for their mode");
+  });
+
+  it("caps the reflection once for the run: a later turn cannot spend the cap again", async () => {
+    const run = await simulatedCampaign({
+      config: campaignConfig({ turnUsd: 5, allowance: 1000, over: { limits: { turns: 2, contextTokens: 120_000 }, campaign: { reflect: true, spiralTurns: 1000, plateauUsd: 1e9 } } }),
+      responses: () => failing(200),
+      pricePerMillion: 3000,
+    });
+    assert.ok(run.turns.length >= 2, "the campaign ran several turns");
+    const reflections = ofType(run.events, "model_call.finished").filter((e) => e.data.site === "campaign.reflect");
+    assert.equal(reflections.length, 1, "the first call spent past the cap, so no later turn asks again");
   });
 
   it("does not stop when the frontier grows in the second cycle", () => {
