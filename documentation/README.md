@@ -12,7 +12,9 @@ in the same commit.
 - [quickstart.md](quickstart.md): a problem of your own with the least friction: `harness solve`, `harness doctor`, `RESULT.md`.
 - [status.md](status.md): beta v1: what has run for real, what has only run with simulations.
 - [parameters.md](parameters.md): every setting, flag and host profile key.
-- [ui.md](ui.md): the local interface, `harness ui`.
+- [ui.md](ui.md): the local interface, `harness ui`, and its settings menu drawn from the parameter catalogue.
+
+  ![The settings menu](images/ui-settings.png)
 
 ## Concepts
 
