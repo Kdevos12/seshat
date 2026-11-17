@@ -315,17 +315,33 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       }
       const appended = o.appendToCheck === undefined || result.accepted || failure !== undefined || lineStop !== undefined ? undefined : await o.appendToCheck(report, signal).catch(() => undefined);
       let battery: string | undefined;
+      let completed = false;
       if (o.sorryBattery !== undefined && !result.accepted && failure === undefined && lineStop === undefined && limit !== "turn" && !(signal?.aborted ?? false)) {
         const closed = await o.sorryBattery(submission, report, signal).catch(() => undefined);
         if (closed !== undefined) {
           battery = closed.text;
-          if (closed.submission !== undefined) submission = closed.submission;
+          if (closed.submission !== undefined) {
+            submission = closed.submission;
+            // When the battery closed every `sorry`, the completed file is checked here, as a submission of its own, so that a
+            // session that ends now does not lose it; only this check can make it a candidate (Ruling 40).
+            if (!/\bsorry\b/.test(`${submission.aux}\n${submission.proof}`)) {
+              submissions += 1;
+              const done = await o.workbench.check(submission, { attemptId: o.attemptId, actor: o.actor, ...(signal ? { signal } : {}), ...(o.checkTimeoutSec !== undefined ? { timeoutSec: o.checkTimeoutSec } : {}) });
+              report = done.report;
+              if (report.leanStatus === undefined) holes.push(report.sorries.length);
+              accepted ||= done.accepted;
+              completed = done.accepted;
+              battery += done.accepted
+                ? "\n\nThe harness checked the completed file: Lean accepts it, with no `sorry`. The session ends here."
+                : `\n\nThe harness checked the completed file: ${summarizeCheck(done.report)}`;
+            }
+          }
         }
       }
       return {
         content: [{ type: "text", text: [formatCheck(report), ...(rewriteNote === undefined ? [] : [rewriteNote]), ...(battery === undefined ? [] : [battery]), ...(appended === undefined || appended === "" ? [] : [appended]), ...(lineNotice === undefined ? [] : [lineNotice])].join("\n\n") }],
         details: { summary: summarizeCheck(report) },
-        ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
+        ...(result.accepted || completed || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
       };
     } catch (error) {
       failure = `the harness failed during a check: ${messageOf(error)}`;
