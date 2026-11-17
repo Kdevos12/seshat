@@ -7,6 +7,67 @@ solvers, computer algebra, decision procedures) are used wherever they can do th
 This folder describes the code as it is. A change to the code updates the page that describes it,
 in the same commit.
 
+## Start here
+
+- [quickstart.md](quickstart.md): a problem of your own with the least friction: `harness solve`, `harness doctor`, `RESULT.md`.
+- [status.md](status.md): beta v1: what has run for real, what has only run with simulations.
+- [parameters.md](parameters.md): every setting, flag and host profile key.
+- [ui.md](ui.md): the local interface, `harness ui`.
+
+## Concepts
+
+- [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved. Lean is the judge.
+- [journal.md](journal.md): the hash-chained journal, the only source of truth, and its projections.
+- [lines.md](lines.md): the plan's mechanisms as lines a run switches on, and how they are measured one by one.
+- [scheduler.md](scheduler.md): the escalation ladder and the budget gate, which put a price against a chance of success before each paid launch.
+
+## Compartments
+
+Each picture is drawn from the page next to it.
+
+- [architecture.md](architecture.md): the packages and how a run flows through them.
+
+  ![The architecture](images/architecture.svg)
+
+- [quickstart.md](quickstart.md): the solve loop, from a statement to `RESULT.md`.
+
+  ![The solve loop](images/solve-loop.svg)
+
+- [scheduler.md](scheduler.md#blueprints-plan-change-ca9): blueprints, a hard problem split into holes (line M12).
+
+  ![Blueprints](images/blueprints.svg)
+
+- [trust.md](trust.md): who may change a claim's status.
+
+  ![Trust](images/trust.svg)
+
+- [capabilities.md](capabilities.md): the capability registry and the tools behind it.
+
+  ![Tools](images/tools.svg)
+
+- [heuristics.md](heuristics.md): the heuristic card bank.
+
+  ![Heuristic cards](images/heuristics.svg)
+
+- [memory.md](memory.md): the journal, its projections and the lines that read them.
+
+  ![Memory](images/memory.svg)
+
+## Reference
+
+- The command line: `pnpm harness --help`, and [capabilities.md](capabilities.md#the-harness-command) for the `harness` command.
+- [parameters.md](parameters.md): the audit of every setting.
+- [schemas.md](schemas.md): the schemas of line M15 (the capabilities' schemas are in [capabilities.md](capabilities.md#schemas)).
+- [capabilities.md](capabilities.md): manifests, host profiles, contract tests, one section per capability.
+
+## Development
+
+- [development.md](development.md): conventions, tests, commits.
+- [CLAUDE.md](../CLAUDE.md): what every agent that works on Seshat reads first.
+- [plans/](../plans/seshat-plan-ledger.md): the plan, its rulings and the ledger of the build.
+
+The full list of pages is at the end of this page.
+
 ## Status
 
 Phase P0a builds the parts that need neither Lean nor a model, and the M0 loop, tested with a
@@ -63,6 +124,7 @@ blocks the Lean toolchain downloads and has no model credentials.
 
 ## Pages
 
+- [status.md](status.md): beta v1: what has run for real, what has only run with simulations, and the status text the README used to carry.
 - [architecture.md](architecture.md): packages, data flow, design rules.
 - [parameters.md](parameters.md): the audit of every setting: the run configuration's keys, the flags of every command, the host profile keys, and the findings (generated from `parameters.ts`).
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
