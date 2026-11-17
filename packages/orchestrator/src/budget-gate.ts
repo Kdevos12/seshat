@@ -1,7 +1,7 @@
 import { type EventDataMap, hash32, type Journal, seeded, TASK_WRITER } from "@seshat/core";
 import { attemptWeights, DEFAULT_GAMMA, posteriorOf, sample, UNIFORM } from "@seshat/fleet";
 import { type BudgetAnswer, type BudgetAsk, type Decide, isInterrupted } from "@seshat/lines";
-import { type Attempt, failureDepth } from "@seshat/memory";
+import { type Attempt, failureDepth, type FrontierEntry, type FrontierKind } from "@seshat/memory";
 import {
   type GateAnswer,
   type GateQuery,
@@ -22,6 +22,9 @@ import { SHORT_PROBES, type TriageResult } from "./triage.ts";
 
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
 export const PROGRESS_DEPTH = 5;
+
+/** The kinds of frontier entry that count as Lean progress at the probe: a proved subclaim or `aux_` lemma, a case, a reduction. */
+const FRONTIER_PROGRESS_KINDS: readonly FrontierKind[] = ["subclaim", "case", "reduction"];
 
 /** The length, in model responses, of the session the mean cost (or the first guess) stands for: a task bounded in turns is priced in proportion (12 is M12's `holeTurns`). */
 const USUAL_SESSION_TURNS = 12;
@@ -48,6 +51,11 @@ export interface BudgetGateOptions {
   attemptIds: () => readonly string[];
   /** The ladder's measure of Lean progress now (new subclaims proved, fewer holes), when the run has a memory. */
   leanProgress?: () => Progress;
+  /**
+   * The verified frontier's entries now (`RunConfig.frontier.show`, plan change LH3): the probe counts a new one of the kinds subclaim (an accepted `aux_`
+   * lemma included), case or reduction as Lean progress, outside a blueprint too. `evidence` entries never count. Absent: the measure is what it was.
+   */
+  frontierEntries?: () => readonly FrontierEntry[];
   /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
   informalAccepted?: () => boolean;
   /** The problem's formal-cost triage, when the run has one and it is journaled (PA14): read from the journal, so a resumed run reads the same. */
@@ -78,6 +86,8 @@ export class BudgetGate {
   private readonly o: BudgetGateOptions;
   /** The Lean progress at the start, which a later measure is compared with. */
   private baseline: Progress | undefined;
+  /** The ids of the frontier's entries when the probe began. */
+  private frontierBaseline: Set<string> | undefined;
 
   constructor(options: BudgetGateOptions) {
     this.o = options;
@@ -302,6 +312,8 @@ export class BudgetGate {
 
   /** The problem's first launch (PB2): one prover, one session, at most a tenth of its budget. Recorded once. */
   probe(): { capUsd: number } {
+    // The frontier's growth is read from here on: the probe's own.
+    if (this.o.frontierEntries !== undefined) this.frontierBaseline = new Set(this.o.frontierEntries().map((e) => e.id));
     const state = this.state();
     const capUsd = probeCapUsd(state.budgetUsd, this.o.settings);
     if (this.rows().some((g) => g.site === "wave" && g.action === "probe")) return { capUsd };
@@ -341,6 +353,11 @@ export class BudgetGate {
       this.baseline ??= this.o.leanProgress();
       const why = progressed(this.baseline, this.o.leanProgress());
       if (why !== undefined) return why;
+    }
+    if (this.o.frontierEntries !== undefined) {
+      this.frontierBaseline ??= new Set();
+      const grew = this.o.frontierEntries().find((e) => !e.evidence && FRONTIER_PROGRESS_KINDS.includes(e.kind) && !this.frontierBaseline?.has(e.id));
+      if (grew !== undefined) return `the frontier grew: ${grew.kind}: ${grew.statement}`;
     }
     const projection = this.o.journal.projection;
     for (const id of this.o.attemptIds()) {

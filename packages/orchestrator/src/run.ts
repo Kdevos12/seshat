@@ -29,7 +29,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { CARD_NOTES_CHARS, type FrontierKind, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, frontier as frontierOf, type FrontierKind, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
 import { maskedCount } from "./mask.ts";
 import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -1401,6 +1401,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 ...(config.triage === true ? { triage: () => triageOfNodes(journal.projection.nodes(TRIAGE_KIND, claimId)) } : {}),
                 ...(memory !== undefined ? { informalAccepted: () => informalProofOfNodes(memory.nodes(INFORMAL_PROOF_KIND, { claimId }), () => undefined)?.accepted === true } : {}),
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
+                ...(config.frontier?.show === true ? (() => { const store = memory ?? new MemoryStore({ journal, blobs }); return { frontierEntries: () => frontierOf(store, claimId, config.frontier?.weights !== undefined ? { weights: config.frontier.weights } : {}).entries }; })() : {}),
                 decide: problemDecide({
                   line: GATE_LINE,
                   config: resolveDecideSettings(config.decide),

@@ -41,6 +41,8 @@ Only with `RunConfig.frontier.show` (a settings-file key, `--settings FILE`; off
 - each outer prover session's opening user message ends with one line of data: the budget left for the session and the problem, and the
   frontier's size, score and last entry (LH8). The system prompt does not change. The dollars are the ledgers': what the session's ledger (the probe's or slice's cap, or the problem's) and the problem's ledger still allow, each the least of its own and its ancestors' remainders.
 
+With `show`, the budget gate's probe also reads the frontier: a new subclaim, case, reduction or accepted `aux_` lemma counts as Lean progress at the widening, an `evidence` entry never does ([scheduler.md](scheduler.md#the-budget-gate)); and a cold session ([runs.md](runs.md#restarts)) carries the frontier's top entries even when the state card is off.
+
 `harness frontier RUN_DIR [--claim ID] [--json]` prints the frontier of each problem of a run that no process works on, with no model and
 no Lean.
 
