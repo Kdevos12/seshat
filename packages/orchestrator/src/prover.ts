@@ -13,6 +13,7 @@ import { failureClass, formatCheck } from "./feedback.ts";
 import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts";
 import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
+import { previousAttemptTool } from "./previous-attempt.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { type ResolvedRestarts, sessionSteps, stuckSignature } from "./restarts.ts";
 import { fatalProviderError } from "./provider-errors.ts";
@@ -247,6 +248,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     const attemptId = newId("att");
     // A cold session (`restarts`, after the prover's first) starts from the original file: what the previous session left is only what `previous` holds.
     const cold = o.restarts !== undefined && session > 1;
+    const overlay = cold ? previousAttemptTool({ regions, notes }) : undefined;
     const fresh: Submission = { aux: "", proof: workbench.sketch.originalProof };
     const shown = cold ? fresh : regions;
     let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions: shown };
@@ -355,6 +357,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
               }) as never]
             : []),
           ...(opened?.tools ?? []),
+          ...(overlay !== undefined ? [overlay.tool] : []),
         ],
         models: o.models,
         model,
@@ -367,7 +370,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           file: workbench.render(shown),
           notes: cold ? undefined : notes,
           lastCheck: cold ? undefined : lastCheck,
-          ...(cold ? { cold: { overlay: false } } : {}),
+          ...(cold ? { cold: { overlay: true } } : {}),
           session,
           sessions: o.sessions,
           ...(card !== undefined ? { card } : {}),
@@ -498,6 +501,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         : {}),
       stoppedBy: result.stop,
       ...(restart !== undefined ? { restart } : {}),
+      ...(overlay !== undefined && overlay.calls() > 0 ? { previousAttemptCalls: overlay.calls() } : {}),
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
       durationMs: o.lines === undefined ? Math.round(performance.now() - started) : durationMs,
