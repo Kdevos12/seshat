@@ -64,6 +64,7 @@ blocks the Lean toolchain downloads and has no model credentials.
 ## Pages
 
 - [architecture.md](architecture.md): packages, data flow, design rules.
+- [parameters.md](parameters.md): the audit of every setting: the run configuration's keys, the flags of every command, the host profile keys, and the findings (generated from `parameters.ts`).
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
 - [ledger.md](ledger.md): the task ledger: tasks and their transitions, acceptance criteria, what
