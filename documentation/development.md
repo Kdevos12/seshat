@@ -10,6 +10,7 @@
 pnpm install
 pnpm check        # tsc --noEmit, then all tests
 pnpm test
+pnpm figures      # redraws documentation/images from packages/figures (figures.md)
 ```
 
 ## Conventions

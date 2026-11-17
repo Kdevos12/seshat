@@ -1,5 +1,7 @@
 # The archive of decompositions (line M15)
 
+![The escalation ladder: spend without Lean progress moves a problem up; rung 1 is the curriculum M18, rung 2 the archive M15 and program search M16](images/ladder.svg)
+
 Line `M15` ([lines.md](lines.md)) is rung 2 of the escalation ladder ([scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change)),
 plan change PC13, amended by PE1 and PE2 of the memory-evolution change. It is ProofEvolve (arXiv 2608.26334) without training: a problem
 that has spent its budget without Lean progress keeps **several** decompositions alive, not one best-first frontier, and the proofs that

@@ -1,6 +1,6 @@
 # Quickstart: a problem of your own
 
-![harness solve from a statement to RESULT.md](images/solve-loop.svg)
+![harness solve from a statement to RESULT.md: read, screen, formalize and sign before any spend; intake, student defaults, provers, the fast check, the certifier; a stop is not the end](images/solve-loop.svg)
 
 This page is for someone who has a problem and wants Seshat to work on it at the lowest cost, without
 learning the flag list: a student, a researcher with an afternoon. It covers `harness solve` (a problem of
@@ -94,6 +94,8 @@ quoted (a newline, a backtick) gives the placeholder command instead.
 | User | `--as`, `SESHAT_USER`, then the operating system's login name, which is then journaled (`user`, `human:NAME`) as it is; every event of the run carries it as `user` | the envelope's optional `user` ([journal.md](journal.md)) |
 
 ### Defaults sets
+
+![A prover in fresh sessions: what carries over through the journal, and what a session sends the model (lean_edit, masked old checks, bounded checks)](images/sessions.svg)
 
 `harness solve --defaults v1|v2` picks a named set of defaults (`DEFAULTS_SETS` in `student.ts`; the default is `v2`). The set's name is
 recorded in the run's configuration (`defaults` in `config.json` and in `run.started`), and a resumption reads it back.

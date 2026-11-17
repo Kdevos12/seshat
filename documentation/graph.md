@@ -1,5 +1,7 @@
 # The graph: variants and propagation (M2)
 
+![Line M2 as a worked example: propose, check the link, propagate to a composed proof, revoke; the prove/refute twin](images/graph.svg)
+
 The memory stores claims and the edges between them ([memory.md](memory.md)). The line M2 (plan
 §3.2) makes the edges work, in `@seshat/graph`:
 

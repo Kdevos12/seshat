@@ -1,5 +1,7 @@
 # The M0 loop
 
+![A prover in fresh sessions: what carries over through the journal, and what a session sends the model (lean_edit, masked old checks, bounded checks)](images/sessions.svg)
+
 M0 is the baseline that every later mechanism has to beat at equal budget: agent (A) of
 AlphaProof Nexus, rebuilt on pi. For each problem, independent provers work on a Lean sketch of
 the theorem, each in a Ralph loop: a session is a fresh model context, and only the file as the

@@ -26,11 +26,16 @@ in the same commit.
 - [lines.md](lines.md): the plan's mechanisms as lines a run switches on, and how they are measured one by one.
 - [scheduler.md](scheduler.md): the escalation ladder and the budget gate, which put a price against a chance of success before each paid launch.
 
-## Compartments
+## Figures
 
-Each picture is drawn from the page next to it.
+Each figure is drawn by code from the page it sits in ([figures.md](figures.md): how they are made, and how to read
+their colours and borders). Solid border: has run for real; dashed: tested with simulations only.
 
-- [architecture.md](architecture.md): the packages and how a run flows through them.
+![Seshat at a glance](images/overview.svg)
+
+### The whole
+
+- [architecture.md](architecture.md): the packages as layers, and Lean beside them as the judge.
 
   ![The architecture](images/architecture.svg)
 
@@ -38,25 +43,91 @@ Each picture is drawn from the page next to it.
 
   ![The solve loop](images/solve-loop.svg)
 
-- [scheduler.md](scheduler.md#blueprints-plan-change-ca9): blueprints, a hard problem split into holes (line M12).
+### Trust and Lean
 
-  ![Blueprints](images/blueprints.svg)
-
-- [trust.md](trust.md): who may change a claim's status.
+- [trust.md](trust.md): claim statuses, and who may cause each transition.
 
   ![Trust](images/trust.svg)
 
-- [capabilities.md](capabilities.md): the capability registry and the tools behind it.
+- [certifier.md](certifier.md): the fast check makes a candidate; the kernel replay in a fresh, sandboxed process makes a proof.
+
+  ![Certification](images/certification.svg)
+
+- [lean-env.md](lean-env.md): Lean environments as data, and the gate in front of new Lean ([library-builder.md](library-builder.md)).
+
+  ![Lean environments](images/lean-env.svg)
+
+### Truth and memory
+
+- [journal.md](journal.md): a hash chain of events; everything else rebuilt from it.
+
+  ![The journal](images/journal.svg)
+
+- [memory.md](memory.md): the memory store, the one interface over the journal.
+
+  ![Memory](images/memory.svg)
+
+- [graph.md](graph.md): line M2 as a worked example: a result on one claim becomes a result on its neighbour.
+
+  ![The graph](images/graph.svg)
+
+- [context.md](context.md): line M4, a packet under a token budget instead of the whole history.
+
+  ![Context](images/context.svg)
+
+### Tools
+
+- [capabilities.md](capabilities.md): every tool behind a capability; levels, packs, the one rule for third parties.
 
   ![Tools](images/tools.svg)
 
-- [heuristics.md](heuristics.md): the heuristic card bank.
+- [classical.md](classical.md): line M10, classical tools before any model.
 
-  ![Heuristic cards](images/heuristics.svg)
+  ![The classical battery](images/battery.svg)
 
-- [memory.md](memory.md): the journal, its projections and the lines that read them.
+### Provers and search
 
-  ![Memory](images/memory.svg)
+- [m0-loop.md](m0-loop.md): a prover in fresh sessions; what carries over, and what each request sends.
+
+  ![Sessions](images/sessions.svg)
+
+- [scheduler.md](scheduler.md#blueprints-plan-change-ca9): blueprints, a hard problem as a graph of named holes (line M12; [repair.md](repair.md)).
+
+  ![Blueprints](images/blueprints.svg)
+
+- [fleet.md](fleet.md): Thompson draws before every session, one heuristic card or none ([heuristics.md](heuristics.md)).
+
+  ![The fleet and the heuristic cards](images/fleet.svg)
+
+### Budgets
+
+- [scheduler.md](scheduler.md#the-budget-gate): the budget gate, a price against a chance, the probe first, rounds.
+
+  ![The budget gate](images/budget.svg)
+
+- [scheduler.md](scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change): the escalation ladder ([curriculum.md](curriculum.md), [archive.md](archive.md)).
+
+  ![The escalation ladder](images/ladder.svg)
+
+### Runs, people and campaigns
+
+- [runs.md](runs.md): the two axes of a run, and the seven nested words.
+
+  ![Runs](images/runs.svg)
+
+- [human.md](human.md): consortium mode, turns that stop and wait for the team.
+
+  ![Consortium mode](images/consortium.svg)
+
+- [campaign.md](campaign.md): a run that continues alone, judged by the verified frontier ([frontier.md](frontier.md)).
+
+  ![Campaigns](images/campaign.svg)
+
+### Measurement
+
+- [ablate.md](ablate.md): one line at a time, same problems, same dollars, paired ([bench.md](bench.md)).
+
+  ![Ablation](images/ablation.svg)
 
 ## Reference
 
@@ -83,6 +154,7 @@ are in the task ledger ([plans/seshat-plan-ledger.md](../plans/seshat-plan-ledge
 ## Pages
 
 - [status.md](status.md): beta v1: what has run for real, what has only run with simulations, and the status text the README used to carry.
+- [figures.md](figures.md): how the figures are drawn by code (`pnpm figures`), and how to read their colours and borders.
 - [architecture.md](architecture.md): packages, data flow, design rules.
 - [runs.md](runs.md): the words for runs (series, run, turn, problem, child, session, step), the two axes `horizon` and `human`, and which command is for which purpose.
 - [campaign.md](campaign.md): `harness campaign`: a run that continues alone, turns that do not wait, the digest, how it ends.

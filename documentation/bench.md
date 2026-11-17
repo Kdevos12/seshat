@@ -1,5 +1,7 @@
 # Bench
 
+![harness ablate: cumulative arms on the same problems and budget, the paired protocol, the graded bench admitted by Lean](images/ablation.svg)
+
 ## Source
 
 Problems come from [formal-conjectures](https://github.com/google-deepmind/formal-conjectures)

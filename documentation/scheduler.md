@@ -1,6 +1,6 @@
 # Scheduler: the saturation kernel, subgoals and the escalation ladder
 
-![Line M12 blueprints: planner, holes, pre-flight, hole sessions, refinement and repair](images/blueprints.svg)
+![The escalation ladder: spend without Lean progress moves a problem up; rung 1 is the curriculum M18, rung 2 the archive M15 and program search M16](images/ladder.svg)
 
 Line `M12` ([lines.md](lines.md)) is the plan's saturation kernel (§6, Task 10) and the part of the
 harness that decides which piece of work comes next. It is `@seshat/scheduler` (`packages/scheduler`),
@@ -94,6 +94,8 @@ A split sketch gives:
   the parent is not derived from them.
 
 ## Blueprints (plan change CA9)
+
+![Line M12 blueprints as a worked example: the dependency graph of holes, pre-flight, hole sessions and verdicts, refinement rounds and the repair pass](images/blueprints.svg)
 
 Task 37. The option `blueprints` (off by default; `--line-option M12.blueprints=true`) reads a sketch as a **blueprint**: a sketch whose holes may
 depend on each other. Without it nothing in this section applies, a `-- uses:` line is a comment, and M12 reads a sketch as described above.
@@ -339,6 +341,8 @@ with a stand-in line of rung 1, with M18 and with M15. Dollars that a rung's lin
 progress, so M18's variants hasten the move to the next rung; a proved variant is not Lean progress (it is no subclaim of the target).
 
 ## The budget gate
+
+![The budget gate: a price against a chance before each paid launch, the probe first, and a run budget shared in rounds](images/budget.svg)
 
 Task 29 (PB1 to PB5 of `plans/plan-change-proportional-budgets.md`, Ruling 31). Before this, a problem spent its whole budget whatever its chance of success was: every prover started at once and every session ran until the budget stopped it. The gate puts a price against a chance before each paid launch. It is **off by default** (`harness run --gate`, `RunConfig.gate`); without it nothing here applies and the run is as it was. The rule and the probe live in `@seshat/scheduler` (`gate.ts`), the orchestrator applies them (`budget-gate.ts`), and the answer is journaled as `budget.gated` ([journal.md](journal.md)).
 

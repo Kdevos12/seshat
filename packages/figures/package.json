@@ -1,0 +1,13 @@
+{
+  "name": "@seshat/figures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The figures of the documentation as code: a small SVG toolkit, one function per figure, and the command that writes documentation/images.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "seshat-figures": "./src/cli.ts"
+  }
+}

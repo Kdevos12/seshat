@@ -1,82 +1,121 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1090 600" width="1090" height="600" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">Memory: the journal is the only source of truth</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
-<rect x="0.5" y="0.5" width="1089" height="599" rx="6" fill="#ffffff" stroke="#d0d5df"/>
-<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">Memory: the journal is the only source of truth</text>
-<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Everything else (tables, indexes, graphs, reports) is a projection that can be rebuilt from the journal.</text>
-<rect x="20" y="75" width="290" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="165.0" y="97.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Orchestrator, provers, tools</text>
-<text x="165.0" y="114.5" font-size="13" text-anchor="middle" fill="#1b2230">tasks, sessions, checks, tool runs,</text>
-<text x="165.0" y="131.5" font-size="13" text-anchor="middle" fill="#1b2230">charges: one event each</text>
-<rect x="20" y="160" width="290" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="165.0" y="182.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Lines</text>
-<text x="165.0" y="199.5" font-size="13" text-anchor="middle" fill="#1b2230">write through a view of the store</text>
-<text x="165.0" y="216.5" font-size="13" text-anchor="middle" fill="#1b2230">that stamps their name (`line:M1`)</text>
-<rect x="20" y="245" width="290" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="165.0" y="267.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">The research team</text>
-<text x="165.0" y="284.5" font-size="13" text-anchor="middle" fill="#1b2230">hints, signatures, steers, as</text>
-<text x="165.0" y="301.5" font-size="13" text-anchor="middle" fill="#1b2230">`human:NAME`; they change no status</text>
-<rect x="370" y="100" width="320" height="130" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="530.0" y="135.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Event journal (@seshat/core)</text>
-<text x="530.0" y="152.5" font-size="13" text-anchor="middle" fill="#1b2230">JSONL, one event a line, each with the</text>
-<text x="530.0" y="169.5" font-size="13" text-anchor="middle" fill="#1b2230">hash of the one before; blobs for large</text>
-<text x="530.0" y="186.5" font-size="13" text-anchor="middle" fill="#1b2230">contents; every event checked against</text>
-<text x="530.0" y="203.5" font-size="13" text-anchor="middle" fill="#1b2230">the invariants before it is written</text>
-<rect x="370" y="265" width="320" height="80" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="530.0" y="284.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Resume and carry-over</text>
-<text x="530.0" y="301.0" font-size="13" text-anchor="middle" fill="#1b2230">a run whose process ended continues</text>
-<text x="530.0" y="318.0" font-size="13" text-anchor="middle" fill="#1b2230">from its journal alone; `--memory-from`</text>
-<text x="530.0" y="335.0" font-size="13" text-anchor="middle" fill="#1b2230">takes an earlier journal by its last hash</text>
-<rect x="750" y="75" width="290" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="895.0" y="97.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">SQLite projection</text>
-<text x="895.0" y="114.5" font-size="13" text-anchor="middle" fill="#1b2230">claims, edges, nodes, tasks:</text>
-<text x="895.0" y="131.5" font-size="13" text-anchor="middle" fill="#1b2230">rebuilt from the journal</text>
-<rect x="750" y="160" width="290" height="70" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
-<text x="895.0" y="182.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Indexes</text>
-<text x="895.0" y="199.5" font-size="13" text-anchor="middle" fill="#1b2230">BM25 library index (M3), graph labels</text>
-<text x="895.0" y="216.5" font-size="13" text-anchor="middle" fill="#1b2230">and PageRank (M2)</text>
-<rect x="750" y="245" width="290" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="895.0" y="267.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Readers, no model</text>
-<text x="895.0" y="284.5" font-size="13" text-anchor="middle" fill="#1b2230">RESULT.md, view.html,</text>
-<text x="895.0" y="301.5" font-size="13" text-anchor="middle" fill="#1b2230">`harness audit`, `harness ui`</text>
-<polyline points="310,110 340,110" fill="none" stroke="#3a4256" stroke-width="1.8"/>
-<polyline points="310,195 340,195" fill="none" stroke="#3a4256" stroke-width="1.8"/>
-<polyline points="310,280 340,280" fill="none" stroke="#3a4256" stroke-width="1.8"/>
-<polyline points="340,110 340,280" fill="none" stroke="#3a4256" stroke-width="1.8"/>
-<polyline points="340,165 370,165" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="690,165 720,165" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="720,110 720,280" fill="none" stroke="#3a4256" stroke-width="1.8"/>
-<polyline points="720,110 750,110" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="720,195 750,195" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="720,280 750,280" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="530,230 530,265" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<rect x="20" y="375" width="1020" height="48" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="530.0" y="395.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">MemoryStore: the one interface lines read and write</text>
-<text x="530.0" y="412.0" font-size="13" text-anchor="middle" fill="#1b2230">reads come from the projection; every write is an event in the journal</text>
-<polyline points="1040,110 1056,110 1056,399 1040,399" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<rect x="20" y="470" width="250" height="84" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="145.0" y="491.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">M1: claims, negative memory</text>
-<text x="145.0" y="508.0" font-size="13" text-anchor="middle" fill="#1b2230">one claim per statement; the</text>
-<text x="145.0" y="525.0" font-size="13" text-anchor="middle" fill="#1b2230">'already tried' list: strategies</text>
-<text x="145.0" y="542.0" font-size="13" text-anchor="middle" fill="#1b2230">and how each one failed</text>
-<rect x="286" y="470" width="250" height="84" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="411.0" y="499.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">M2: the variant graph</text>
-<text x="411.0" y="516.5" font-size="13" text-anchor="middle" fill="#1b2230">variants, edges checked by Lean,</text>
-<text x="411.0" y="533.5" font-size="13" text-anchor="middle" fill="#1b2230">propagation, the twin</text>
-<rect x="552" y="470" width="250" height="84" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
-<text x="677.0" y="491.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">M5: lessons</text>
-<text x="677.0" y="508.0" font-size="13" text-anchor="middle" fill="#1b2230">learned from accepted proofs</text>
-<text x="677.0" y="525.0" font-size="13" text-anchor="middle" fill="#1b2230">and recurring failures; off when</text>
-<text x="677.0" y="542.0" font-size="13" text-anchor="middle" fill="#1b2230">their effect is negative</text>
-<rect x="818" y="470" width="250" height="84" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
-<text x="943.0" y="491.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">M3: the lemma library</text>
-<text x="943.0" y="508.0" font-size="13" text-anchor="middle" fill="#1b2230">promoted auxiliary lemmas,</text>
-<text x="943.0" y="525.0" font-size="13" text-anchor="middle" fill="#1b2230">found again by BM25 search</text>
-<text x="943.0" y="542.0" font-size="13" text-anchor="middle" fill="#1b2230">and `library_search`</text>
-<polyline points="145,470 145,423" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
-<polyline points="411,470 411,423" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
-<polyline points="677,470 677,423" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
-<polyline points="943,470 943,423" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
-<rect x="20" y="572" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="48" y="584" font-size="12" text-anchor="start" fill="#1b2230">built; run for real, or needs neither Lean nor a model</text>
-<rect x="444.6" y="572" width="22" height="14" rx="3" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
-<text x="472.6" y="584" font-size="12" text-anchor="start" fill="#1b2230">built; simulations only</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 780" width="1000" height="780" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Memory: one interface over the journal</title>
+<defs><marker id="ah-2e7448" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#2e7448"/></marker><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker><marker id="ah-8b94a5" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#8b94a5"/></marker><marker id="ah-a87414" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#a87414"/></marker></defs>
+<rect x="0" y="0" width="1000" height="780" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Memory: one interface over the journal</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Lines read and write claims, edges and nodes only through the store; unverified records are stamped, drawn at random and judged by effect.</text>
+<rect x="24" y="76" width="952" height="144" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) ONE INTERFACE: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">MEMORYSTORE</tspan></text>
+<rect x="24" y="232" width="952" height="196" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="250" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) WHAT IT HOLDS</text>
+<rect x="24" y="440" width="466" height="176" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="458" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) PROVENANCE AND EPOCHS</text>
+<rect x="506" y="440" width="470" height="176" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="518" y="458" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(d) RANDOMIZED INCLUSION</text>
+<rect x="24" y="628" width="952" height="122" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="646" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(e) MEMORY ACROSS RUNS: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--MEMORY-FROM</tspan>, PINNED BY THE EARLIER JOURNAL'S LAST HASH</text>
+<rect x="36" y="104" width="190" height="92" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="80.5" y="134.1" font-size="11.5" fill="#2b3340" font-weight="700">Lines, orchestrator</text>
+<text x="131" y="148.5" font-size="10.5" fill="#1f2633" text-anchor="middle">a line gets a view:</text>
+<text x="131" y="162.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">withActor(&quot;line:M1&quot;)</tspan>;</text>
+<text x="131" y="175.8" font-size="10.5" fill="#1f2633" text-anchor="middle">none holds the journal</text>
+<rect x="266" y="104" width="260" height="92" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="2.4" />
+<text x="358.1" y="134.1" font-size="11.5" fill="#6b4a0c" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">MemoryStore</tspan></text>
+<text x="396" y="148.5" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">ensureClaim</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">addEdge</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">recordNode</tspan>,</text>
+<text x="396" y="162.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">updateNode</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">retractClaim</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">draw</tspan>;</text>
+<text x="396" y="175.8" font-size="10.5" fill="#1f2633" text-anchor="middle">reads: claims, edges, nodes, attempts</text>
+<rect x="566" y="104" width="170" height="92" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(620,121.2) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+<text x="642" y="134.1" font-size="11.5" fill="#6b4a0c" font-weight="700">Journal</text>
+<text x="651" y="148.5" font-size="10.5" fill="#1f2633" text-anchor="middle">one event per write,</text>
+<text x="651" y="162.2" font-size="10.5" fill="#1f2633" text-anchor="middle">invariants checked</text>
+<text x="651" y="175.8" font-size="10.5" fill="#1f2633" text-anchor="middle">before it is appended</text>
+<rect x="776" y="104" width="188" height="92" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<text x="811.4" y="140.9" font-size="11.5" fill="#6b4a0c" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">projection.sqlite</tspan></text>
+<text x="870" y="155.4" font-size="10.5" fill="#1f2633" text-anchor="middle">rebuilt from the journal;</text>
+<text x="870" y="169" font-size="10.5" fill="#1f2633" text-anchor="middle">every read comes from it</text>
+<path d="M226,150 L266,150" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)" marker-start="url(#ah-3b4456)"/>
+<path d="M526,150 L566,150" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<path d="M736,150 L776,150" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<path d="M870,196 L870,202 Q870,208 864,208 L402,208 Q396,208 396,202 L396,196" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<rect x="48" y="266" width="220" height="52" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="121.4" y="289.8" font-size="11.5" fill="#1d4a2e" font-weight="700">claim <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">proved</tspan></text>
+<text x="158" y="304.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">(n : ℕ) : n + 0 = n</tspan></text>
+<rect x="48" y="366" width="220" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="128.3" y="389.8" font-size="11.5" fill="#2b3340" font-weight="700">claim <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="158" y="404.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">: 0 + 0 = 0</tspan>, a variant</text>
+<path d="M213,366 L213,318" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="224" y="332" width="88" height="19" rx="9.5" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2" />
+<text x="268" y="345.1" font-size="10" fill="#1d4a2e" text-anchor="middle" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan></text>
+<rect x="336" y="266" width="232" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="416.1" y="289.8" font-size="11.5" fill="#2b3340" font-weight="700">node <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">lesson</tspan></text>
+<text x="452" y="304.2" font-size="10.5" fill="#1f2633" text-anchor="middle">about the claim; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">learned</tspan>, stamped</text>
+<rect x="336" y="366" width="232" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="398.8" y="389.8" font-size="11.5" fill="#2b3340" font-weight="700">node <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">fingerprint</tspan></text>
+<text x="452" y="404.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">data</tspan>: JSON; large parts in blobs</text>
+<path d="M336,292 L268,292" fill="none" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-8b94a5)"/>
+<path d="M336,392 L268,392" fill="none" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-8b94a5)"/>
+<rect x="36" y="468" width="216" height="136" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="89.8" y="506.5" font-size="11.5" fill="#2b3340" font-weight="700">Unverified: stamped</text>
+<text x="144" y="520.9" font-size="10.5" fill="#1f2633" text-anchor="middle">lesson, attempt record,</text>
+<text x="144" y="534.6" font-size="10.5" fill="#1f2633" text-anchor="middle">posterior, learned node:</text>
+<text x="144" y="548.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">modelId</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">promptVersion</tspan>,</text>
+<text x="144" y="561.9" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">mathlibRev</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">harnessVersion</tspan>,</text>
+<text x="144" y="575.5" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">budgetClass</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">createdAt</tspan></text>
+<rect x="264" y="468" width="214" height="48" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="324" y="489.9" font-size="11" fill="#1d4a2e" font-weight="700">Verified: no stamp</text>
+<text x="371" y="503.7" font-size="10" fill="#1f2633" text-anchor="middle">proved claim, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan> edge</text>
+<rect x="264" y="528" width="214" height="76" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="311.7" y="550.1" font-size="11.5" fill="#2b3340" font-weight="700">New epoch: probation</text>
+<text x="371" y="564.6" font-size="10.5" fill="#1f2633" text-anchor="middle">model family, prompt major or</text>
+<text x="371" y="578.2" font-size="10.5" fill="#1f2633" text-anchor="middle">Mathlib revision changes: old</text>
+<text x="371" y="591.9" font-size="10.5" fill="#1f2633" text-anchor="middle">counters shrink, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">k</tspan> = 0.25</text>
+<rect x="518" y="466" width="128" height="78" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="535" y="489.9" font-size="11" fill="#2b3340" font-weight="700">Items a line chose</text>
+<text x="582" y="503.7" font-size="10" fill="#1f2633" text-anchor="middle">claims and verified</text>
+<text x="582" y="516.7" font-size="10" fill="#1f2633" text-anchor="middle">facts are never drawn,</text>
+<text x="582" y="529.7" font-size="10" fill="#1f2633" text-anchor="middle">always shown</text>
+<rect x="670" y="466" width="136" height="78" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<text x="702.4" y="489.9" font-size="11" fill="#6b4a0c" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.1">draw</tspan>, seeded</text>
+<text x="738" y="503.7" font-size="10" fill="#1f2633" text-anchor="middle">in with <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">pNew</tspan> 0.5,</text>
+<text x="738" y="516.7" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">p</tspan> 0.9 after 20 uses</text>
+<text x="738" y="529.7" font-size="10" fill="#1f2633" text-anchor="middle">in the epoch</text>
+<rect x="834" y="466" width="130" height="36" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="857.2" y="488.4" font-size="11" fill="#1d4a2e" font-weight="700">included: shown</text>
+<rect x="834" y="508" width="130" height="36" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="877.6" y="530.4" font-size="11" fill="#2b3340" font-weight="700">withheld</text>
+<path d="M646,505 L670,505" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M806,489.4 L834,484" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M806,520.6 L834,526" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="518" y="564" width="446" height="42" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="741" y="582.9" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-weight="700">effect</tspan> = success rate with the item vs without, two Beta posteriors;</text>
+<text x="741" y="596.5" font-size="10.5" fill="#1f2633" text-anchor="middle">deactivate when P(effect &lt; 0) &gt; 0.9 after enough observations</text>
+<path d="M899,544 L899,564" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="656" width="300" height="84" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="84" y="688.9" font-size="11.5" fill="#1d4a2e" font-weight="700">Same Lean environment (equal hash)</text>
+<text x="186" y="703.4" font-size="10.5" fill="#1f2633" text-anchor="middle">claims keep their status, validations</text>
+<text x="186" y="717" font-size="10.5" fill="#1f2633" text-anchor="middle">count, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_checked</tspan> edges propagate</text>
+<rect x="352" y="656" width="300" height="84" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="412.2" y="682.1" font-size="11.5" fill="#2b3340" font-weight="700">Another or unknown environment</text>
+<text x="502" y="696.6" font-size="10.5" fill="#1f2633" text-anchor="middle">claims <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">open</tspan>, edges <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proposed</tspan>; the old</text>
+<text x="502" y="710.2" font-size="10.5" fill="#1f2633" text-anchor="middle">status stays as <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">earlierStatus</tspan>; prove</text>
+<text x="502" y="723.9" font-size="10.5" fill="#1f2633" text-anchor="middle">again through <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validate</tspan></text>
+<rect x="668" y="656" width="296" height="84" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="787.5" y="682.1" font-size="11.5" fill="#2b3340" font-weight="700">Either way</text>
+<text x="816" y="696.6" font-size="10.5" fill="#1f2633" text-anchor="middle">attempts, lessons, nodes carry as memory,</text>
+<text x="816" y="710.2" font-size="10.5" fill="#1f2633" text-anchor="middle">stamped and unverified; a problem's outcome,</text>
+<text x="816" y="723.9" font-size="10.5" fill="#1f2633" text-anchor="middle">tasks and spend do not carry</text>
+<text x="640" y="211.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">reads</text>
+<text x="205" y="346" font-size="10" fill="#5b6475" text-anchor="end"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">special_case_of</tspan></text>
+<text x="302" y="287.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">claimId</tspan></text>
+<text x="302" y="387.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">claimId</tspan></text>
+<text x="612" y="262" font-size="10.5" fill="#1f2633"><tspan font-weight="700">Claims</tspan>: one per statement id, a hash of the statement and its</text>
+<text x="612" y="276" font-size="10.5" fill="#1f2633">header (same hash, same claim); a status that only Lean raises.</text>
+<text x="612" y="308" font-size="10.5" fill="#1f2633"><tspan font-weight="700">Edges</tspan>: 11 kinds (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">implies</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">equiv</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">special_case_of</tspan>...);</text>
+<text x="612" y="322" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proposed</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">informal_checked</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">human_signed</tspan>,</text>
+<text x="612" y="336" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_checked</tspan>: only the last propagates proofs.</text>
+<text x="612" y="368" font-size="10.5" fill="#1f2633"><tspan font-weight="700">Nodes</tspan>: any lowercase kind (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lemma</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lesson</tspan>...); the package</text>
+<text x="612" y="382" font-size="10.5" fill="#1f2633">that owns a kind owns its <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">data</tspan>; edits are JSON merge patches;</text>
+<text x="612" y="396" font-size="10.5" fill="#1f2633">nobody edits a <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">hint</tspan> or a <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">steer</tspan>.</text>
+<text x="891" y="558" font-size="9.5" fill="#5b6475" text-anchor="end">both lists on <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="8.7">attempt.started</tspan></text>
 </svg>

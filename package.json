@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --disable-warning=ExperimentalWarning --test \"packages/*/test/**/*.test.ts\"",
     "check": "pnpm typecheck && pnpm test",
-    "harness": "node --disable-warning=ExperimentalWarning packages/orchestrator/src/cli.ts"
+    "harness": "node --disable-warning=ExperimentalWarning packages/orchestrator/src/cli.ts",
+    "figures": "node --disable-warning=ExperimentalWarning packages/figures/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "22.19.19",

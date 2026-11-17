@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" width="1000" height="640" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Certification: a fast check, then a kernel replay</title>
+<defs><marker id="ah-2e7448" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#2e7448"/></marker><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="640" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Certification: a fast check, then a kernel replay</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">The fast check gives a prover exact feedback and makes a candidate; only a replay in a fresh, sandboxed process makes a proof.</text>
+<rect x="24" y="80" width="952" height="206" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="98" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) FAST CHECK: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">PROOFVALIDATOR.VALIDATE</tspan></text>
+<rect x="24" y="300" width="952" height="270" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="318" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) CERTIFICATION, CALLED BY THE ORCHESTRATOR ON A CANDIDATE</text>
+<rect x="214" y="328" width="488" height="226" rx="10" fill="#f6f8fa" stroke="#4a5567" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="6 4"/>
+<rect x="36" y="118" width="164" height="22" rx="4" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="118" y="133.7" font-size="10.5" fill="#1f2633" text-anchor="middle">prefix</text>
+<rect x="36" y="144" width="164" height="22" rx="4" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="118" y="159.7" font-size="10.5" fill="#1f2633" text-anchor="middle">auxiliary lemmas</text>
+<rect x="36" y="170" width="164" height="22" rx="4" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="118" y="185.7" font-size="10.5" fill="#1f2633" text-anchor="middle">header: statement</text>
+<rect x="36" y="196" width="164" height="22" rx="4" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="118" y="211.7" font-size="10.5" fill="#1f2633" text-anchor="middle">proof region</text>
+<rect x="36" y="222" width="164" height="22" rx="4" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="118" y="237.7" font-size="10.5" fill="#1f2633" text-anchor="middle">suffix</text>
+<rect x="218" y="118" width="142" height="132" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="263.3" y="161.3" font-size="11.5" fill="#2b3340" font-weight="700">1 Rebuild</text>
+<text x="289" y="175.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the file from the fixed</text>
+<text x="289" y="189.4" font-size="10.5" fill="#1f2633" text-anchor="middle">parts and the two</text>
+<text x="289" y="203" font-size="10.5" fill="#1f2633" text-anchor="middle">regions; edits outside</text>
+<text x="289" y="216.7" font-size="10.5" fill="#1f2633" text-anchor="middle">them are discarded</text>
+<rect x="378" y="118" width="142" height="132" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="407" y="154.4" font-size="11.5" fill="#2b3340" font-weight="700">2 Token screen</text>
+<text x="449" y="168.9" font-size="10.5" fill="#1f2633" text-anchor="middle">refuses <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">axiom</tspan>,</text>
+<text x="449" y="182.5" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">native_decide</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">#eval</tspan>,</text>
+<text x="449" y="196.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">run_cmd</tspan>, the meta level:</text>
+<text x="449" y="209.8" font-size="10.5" fill="#1f2633" text-anchor="middle">a refused file never</text>
+<text x="449" y="223.5" font-size="10.5" fill="#1f2633" text-anchor="middle">reaches Lean</text>
+<rect x="538" y="118" width="142" height="132" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<g transform="translate(556.7,148.3) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="578.7" y="161.3" font-size="11.5" fill="#1d4a2e" font-weight="700">3 Kimina REPL</text>
+<text x="609" y="175.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the file, then</text>
+<text x="609" y="189.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">#print axioms</tspan> and</text>
+<text x="609" y="203" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">#check @T</tspan> with</text>
+<text x="609" y="216.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">pp.all</tspan></text>
+<rect x="698" y="118" width="150" height="132" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="726.2" y="154.4" font-size="11.5" fill="#1d4a2e" font-weight="700">4 Accepted when</text>
+<text x="773" y="168.9" font-size="10.5" fill="#1f2633" text-anchor="middle">no error in the file;</text>
+<text x="773" y="182.5" font-size="10.5" fill="#1f2633" text-anchor="middle">axioms within <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">propext</tspan>,</text>
+<text x="773" y="196.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">Classical.choice</tspan>,</text>
+<text x="773" y="209.8" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">Quot.sound</tspan>; type equal</text>
+<text x="773" y="223.5" font-size="10.5" fill="#1f2633" text-anchor="middle">to the original's</text>
+<rect x="866" y="118" width="98" height="132" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<text x="888.2" y="174.9" font-size="11.5" fill="#1d4a2e" font-weight="700">computed</text>
+<text x="915" y="189.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a candidate,</text>
+<text x="915" y="203" font-size="10.5" fill="#1f2633" text-anchor="middle">not a proof</text>
+<path d="M200,184 L218,184" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M360,184 L378,184" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M520,184 L538,184" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M680,184 L698,184" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M848,184 L866,184" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="36" y="358" width="150" height="86" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="83.2" y="391.9" font-size="11.5" fill="#2b3340" font-weight="700">Candidate</text>
+<text x="111" y="406.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the file that passed</text>
+<text x="111" y="420" font-size="10.5" fill="#1f2633" text-anchor="middle">the fast check</text>
+<rect x="36" y="458" width="150" height="86" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="82.9" y="485.1" font-size="11.5" fill="#2b3340" font-weight="700">Reference</text>
+<text x="111" y="499.6" font-size="10.5" fill="#1f2633" text-anchor="middle">the problem's file, or one</text>
+<text x="111" y="513.2" font-size="10.5" fill="#1f2633" text-anchor="middle">rebuilt from the claim's</text>
+<text x="111" y="526.9" font-size="10.5" fill="#1f2633" text-anchor="middle">journaled statement</text>
+<rect x="230" y="358" width="146" height="86" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="252.5" y="385.1" font-size="11.5" fill="#1d4a2e" font-weight="700">Compile candidate</text>
+<text x="303" y="399.6" font-size="10.5" fill="#1f2633" text-anchor="middle">fresh process, own dir;</text>
+<text x="303" y="413.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the proof's code runs</text>
+<text x="303" y="426.8" font-size="10.5" fill="#1f2633" text-anchor="middle">here: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">.olean</tspan> out</text>
+<rect x="230" y="458" width="146" height="86" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="253.2" y="485.1" font-size="11.5" fill="#1d4a2e" font-weight="700">Compile reference</text>
+<text x="303" y="499.6" font-size="10.5" fill="#1f2633" text-anchor="middle">fresh process, own dir,</text>
+<text x="303" y="513.2" font-size="10.5" fill="#1f2633" text-anchor="middle">after the first has ended;</text>
+<text x="303" y="526.9" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">.olean</tspan> out</text>
+<rect x="410" y="358" width="280" height="186" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(449.1,388.1) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="471.1" y="401" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">SeshatCertify</tspan>, a fresh process</text>
+<text x="550" y="415.4" font-size="10.5" fill="#1f2633" text-anchor="middle">reads both <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">.olean</tspan> files as data;</text>
+<text x="550" y="429.1" font-size="10.5" fill="#1f2633" text-anchor="middle">none of their code is loaded</text>
+<text x="550" y="442.7" font-size="10.5" fill="#1f2633" text-anchor="middle"></text>
+<text x="550" y="456.4" font-size="10.5" fill="#1f2633" text-anchor="middle">1 same imports; no unsafe, partial constant</text>
+<text x="550" y="470" font-size="10.5" fill="#1f2633" text-anchor="middle">2 kernel replay of every constant</text>
+<text x="550" y="483.7" font-size="10.5" fill="#1f2633" text-anchor="middle">3  target type compared as terms, with what it</text>
+<text x="550" y="497.3" font-size="10.5" fill="#1f2633" text-anchor="middle">   rests on (a definition by value, no proofs)</text>
+<text x="550" y="511" font-size="10.5" fill="#1f2633" text-anchor="middle">4  axioms collected by the program itself</text>
+<path d="M186,401 L230,401" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M186,501 L230,501" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M376,401 L410,401" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M376,501 L410,501" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="722" y="357" width="242" height="58" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<text x="812" y="376.9" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">certified</tspan></text>
+<text x="843" y="391.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proved</tspan>; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">refuted</tspan> for a proof</text>
+<text x="843" y="405" font-size="10.5" fill="#1f2633" text-anchor="middle">of the negation</text>
+<rect x="722" y="422" width="242" height="58" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="815.4" y="441.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">rejected</tspan></text>
+<text x="843" y="456.4" font-size="10.5" fill="#1f2633" text-anchor="middle">stays <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>; the reasons</text>
+<text x="843" y="470" font-size="10.5" fill="#1f2633" text-anchor="middle">go in the validation</text>
+<rect x="722" y="487" width="242" height="58" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="814.9" y="506.9" font-size="11.5" fill="#2b3340" font-weight="700">no answer</text>
+<text x="843" y="521.4" font-size="10.5" fill="#1f2633" text-anchor="middle">timeout, aborted, unavailable:</text>
+<text x="843" y="535" font-size="10.5" fill="#1f2633" text-anchor="middle">stays <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>, no verdict</text>
+<path d="M690,385.9 L722,386" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<path d="M690,451 L722,451" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M690,516.1 L722,516" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<text x="118" y="262" font-size="10" fill="#5b6475" text-anchor="middle">the prover edits two regions</text>
+<text x="226" y="346" font-size="10" fill="#2b3340" font-weight="700">SANDBOX BEFORE EVERY <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">LAKE</tspan> CALL</text>
+<text x="690" y="346" font-size="10" fill="#5b6475" text-anchor="end" font-style="italic">bubblewrap or Docker, per host profile</text>
+<rect x="24" y="591" width="22" height="14" rx="3" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="52" y="602" font-size="10.5" fill="#5b6475">file</text>
+<rect x="91.4" y="591" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="119.4" y="602" font-size="10.5" fill="#5b6475">edited by the prover</text>
+<rect x="238.2" y="591" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="266.2" y="602" font-size="10.5" fill="#5b6475">harness code, no Lean</text>
+<rect x="399" y="591" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="427" y="602" font-size="10.5" fill="#5b6475">Lean</text>
+<rect x="560" y="591" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="588" y="602" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+</svg>

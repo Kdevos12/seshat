@@ -1,68 +1,126 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1090 535" width="1090" height="535" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">Blueprints (line M12): a hard problem split into holes</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
-<rect x="0.5" y="0.5" width="1089" height="534" rx="6" fill="#ffffff" stroke="#d0d5df"/>
-<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">Blueprints (line M12): a hard problem split into holes</text>
-<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Option `blueprints`, off by default. Nothing here sets a status: the assembled file goes through `validate` and the certifier.</text>
-<rect x="20" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="185.0" y="104.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">1. The outer prover writes a sketch</text>
-<text x="185.0" y="121.0" font-size="13" text-anchor="middle" fill="#1b2230">its briefing has a section 'How to</text>
-<text x="185.0" y="138.0" font-size="13" text-anchor="middle" fill="#1b2230">write a blueprint'; each check answer</text>
-<text x="185.0" y="155.0" font-size="13" text-anchor="middle" fill="#1b2230">says how M12 reads the file</text>
-<rect x="378" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="543.0" y="104.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">2. The blueprint</text>
-<text x="543.0" y="121.0" font-size="13" text-anchor="middle" fill="#1b2230">holes: `aux_` lemmas proved by `sorry`</text>
-<text x="543.0" y="138.0" font-size="13" text-anchor="middle" fill="#1b2230">`-- uses: aux_a` above a hole that</text>
-<text x="543.0" y="155.0" font-size="13" text-anchor="middle" fill="#1b2230">needs it; a main proof naming the holes</text>
-<rect x="736" y="75" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="901.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">3. Checks (no model)</text>
-<text x="901.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">Lean compiles it; every `uses` is a hole;</text>
-<text x="901.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">no hole restates the target; no cycle;</text>
-<text x="901.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">a hole nothing reaches is dropped;</text>
-<text x="901.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">a refused blueprint makes no claim</text>
-<rect x="736" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="901.0" y="245.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">4. Claims and edges</text>
-<text x="901.0" y="262.5" font-size="13" text-anchor="middle" fill="#1b2230">a claim per hole, `decomposes_into` edges;</text>
-<text x="901.0" y="279.5" font-size="13" text-anchor="middle" fill="#1b2230">a link lemma that Lean proves from the</text>
-<text x="901.0" y="296.5" font-size="13" text-anchor="middle" fill="#1b2230">main proof; a hole's link lemma takes</text>
-<text x="901.0" y="313.5" font-size="13" text-anchor="middle" fill="#1b2230">its dependencies as hypotheses</text>
-<rect x="378" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="543.0" y="254.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">5. Pre-flight, once per hole, no model</text>
-<text x="543.0" y="271.0" font-size="13" text-anchor="middle" fill="#1b2230">type-check gate: no compile, no session;</text>
-<text x="543.0" y="288.0" font-size="13" text-anchor="middle" fill="#1b2230">M10 battery on the hole; `plausible`;</text>
-<text x="543.0" y="305.0" font-size="13" text-anchor="middle" fill="#1b2230">a short battery on its negation</text>
-<rect x="20" y="225" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="185.0" y="245.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">6. Hole sessions</text>
-<text x="185.0" y="262.5" font-size="13" text-anchor="middle" fill="#1b2230">one prover session per hole, with tools;</text>
-<text x="185.0" y="279.5" font-size="13" text-anchor="middle" fill="#1b2230">its header holds the definitions and</text>
-<text x="185.0" y="296.5" font-size="13" text-anchor="middle" fill="#1b2230">proved lemmas its statement names;</text>
-<text x="185.0" y="313.5" font-size="13" text-anchor="middle" fill="#1b2230">verdict: proved, statement_wrong, too_hard</text>
-<rect x="20" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="185.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">7. Assembly</text>
-<text x="185.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">holes replaced by their accepted proofs</text>
-<text x="185.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">in dependency order; the whole file goes</text>
-<text x="185.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">through `validate`, then the certifier:</text>
-<text x="185.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">only then is the problem settled</text>
-<rect x="378" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
-<text x="543.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Refinement rounds (option refine)</text>
-<text x="543.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">after a refused blueprint, or when every</text>
-<text x="543.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">hole has a verdict and one is not proved:</text>
-<text x="543.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">one planner call, fresh context, at most</text>
-<text x="543.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">8 rounds; the answer is checked as in 3</text>
-<rect x="736" y="375" width="330" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
-<text x="901.0" y="395.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Repair pass (option repair)</text>
-<text x="901.0" y="412.5" font-size="13" text-anchor="middle" fill="#1b2230">a session that ends on Lean errors is cut,</text>
-<text x="901.0" y="429.5" font-size="13" text-anchor="middle" fill="#1b2230">with no model call: a failing `aux_` proof</text>
-<text x="901.0" y="446.5" font-size="13" text-anchor="middle" fill="#1b2230">becomes `sorry`, a failing `have` is lifted</text>
-<text x="901.0" y="463.5" font-size="13" text-anchor="middle" fill="#1b2230">into a hole; checked as in 3</text>
-<polyline points="350,125 378,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="708,125 736,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="901,175 901,225" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="736,275 708,275" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="378,275 350,275" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="185,325 185,375" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
-<polyline points="378,410 364,410 364,150 378,150" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
-<polyline points="1066,410 1078,410 1078,125 1066,125" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
-<rect x="20" y="504" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
-<text x="48" y="516" font-size="12" text-anchor="start" fill="#1b2230">M12 with option blueprints</text>
-<rect x="251.4" y="504" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
-<text x="279.4" y="516" font-size="12" text-anchor="start" fill="#1b2230">a further option, off by default</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 728" width="1000" height="728" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Blueprints: a sketch with named holes, worked one hole at a time</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="728" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Blueprints: a sketch with named holes, worked one hole at a time</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">A prover states the proof as a DAG of <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11">sorry</tspan> holes; no model checks the plan first, small sessions fill the holes, and a planner or a repair mends a plan that falls short.</text>
+<rect x="24" y="76" width="952" height="232" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) A BLUEPRINT AND THE RULES THAT ACCEPT IT</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;Blueprints&quot;</text>
+<rect x="24" y="322" width="952" height="214" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="340" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) THE HOLES, ONE SMALL SESSION EACH</text>
+<text x="964" y="340" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;Pre-flight&quot;, &quot;Hole sessions&quot;, &quot;Verdicts&quot;</text>
+<rect x="24" y="550" width="952" height="134" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="568" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) WHEN A PLAN FALLS SHORT</text>
+<text x="964" y="568" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;Refinement rounds&quot;, &quot;The repair pass&quot;</text>
+<rect x="36" y="104" width="310" height="138" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<g transform="translate(46,116.9) scale(0.8)" fill="none" stroke="#8b94a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="68" y="129.8" font-size="11.5" fill="#2b3340" font-weight="700">A sketch the prover writes</text>
+<text x="46" y="144.3" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lemma aux_left (n : ℕ) : 0 + n = n := by</tspan></text>
+<text x="46" y="157.9" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">  sorry</tspan></text>
+<text x="46" y="171.6" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">-- uses: aux_left</tspan></text>
+<text x="46" y="185.2" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lemma aux_right (n : ℕ) : n + 0 = 0 + n := by</tspan></text>
+<text x="46" y="198.9" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">  sorry</tspan></text>
+<text x="46" y="212.5" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">theorem solve_target ... := by</tspan></text>
+<text x="46" y="226.2" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">  ... aux_right ...</tspan></text>
+<rect x="392" y="112" width="116" height="36" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="428.7" y="134.6" font-size="11.5" fill="#45306a" font-weight="700">aux_left</text>
+<rect x="392" y="176" width="116" height="36" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="424.9" y="198.6" font-size="11.5" fill="#45306a" font-weight="700">aux_right</text>
+<rect x="392" y="240" width="116" height="44" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<text x="416.8" y="259.8" font-size="11.5" fill="#1d4a2e" font-weight="700">solve_target</text>
+<text x="450" y="274.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the sink</text>
+<rect x="528" y="176" width="100" height="44" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="551.2" y="195.8" font-size="11.5" fill="#2b3340" font-weight="700">aux_extra</text>
+<text x="578" y="210.2" font-size="10.5" fill="#1f2633" text-anchor="middle">dropped</text>
+<path d="M450,148 L450,176" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M450,212 L450,240" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="648" y="104" width="316" height="138" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="658" y="136.6" font-size="11.5" fill="#2b3340" font-weight="700">Accepted when</text>
+<text x="658" y="151.1" font-size="10.5" fill="#1f2633"><tspan font-weight="700">1</tspan> Lean checks the file: no error (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan></text>
+<text x="658" y="164.7" font-size="10.5" fill="#1f2633">warnings allowed)</text>
+<text x="658" y="178.4" font-size="10.5" fill="#1f2633"><tspan font-weight="700">2</tspan> every name in a <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">uses</tspan> line is a hole</text>
+<text x="658" y="192" font-size="10.5" fill="#1f2633"><tspan font-weight="700">3</tspan> no hole restates the target</text>
+<text x="658" y="205.7" font-size="10.5" fill="#1f2633"><tspan font-weight="700">4</tspan> the dependency graph has no cycle</text>
+<text x="658" y="219.3" font-size="10.5" fill="#1f2633"><tspan font-weight="700">5</tspan> at least one hole reaches the target</text>
+<rect x="648" y="250" width="316" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="783.3" y="265.9" font-size="11.5" fill="#2b3340" font-weight="700">Refused</text>
+<text x="806" y="280.4" font-size="10.5" fill="#1f2633" text-anchor="middle">no claim, edge or task; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">healthy: false</tspan> and</text>
+<text x="806" y="294" font-size="10.5" fill="#1f2633" text-anchor="middle">the reason (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">aux_a -&gt; aux_b -&gt; aux_a</tspan>)</text>
+<rect x="36" y="350" width="210" height="172" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<g transform="translate(46,379.9) scale(0.8)" fill="none" stroke="#2a6496" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="10" height="10" rx="1.5"/><rect x="8" y="8" width="4" height="4"/><path d="M8 2v3M12 2v3M8 15v3M12 15v3M2 8h3M2 12h3M15 8h3M15 12h3"/></g>
+<text x="68" y="392.8" font-size="11.5" fill="#1b4266" font-weight="700">Pre-flight: no model</text>
+<text x="46" y="407.3" font-size="10.5" fill="#1f2633"><tspan font-weight="700">1</tspan> the hole type-checks, as</text>
+<text x="46" y="420.9" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">example ... := by sorry</tspan>: a gate,</text>
+<text x="46" y="434.5" font-size="10.5" fill="#1f2633">no compile, no session</text>
+<text x="46" y="448.2" font-size="10.5" fill="#1f2633"><tspan font-weight="700">2</tspan> the M10 battery, 30 Lean seconds</text>
+<text x="46" y="461.8" font-size="10.5" fill="#1f2633"><tspan font-weight="700">3</tspan> <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">plausible</tspan>: a counterexample</text>
+<text x="46" y="475.5" font-size="10.5" fill="#1f2633">only raises a suspicion</text>
+<text x="46" y="489.1" font-size="10.5" fill="#1f2633"><tspan font-weight="700">4</tspan> the battery on the negation</text>
+<rect x="268" y="350" width="230" height="172" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(278,379.9) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="300" y="392.8" font-size="11.5" fill="#45306a" font-weight="700">Hole session</text>
+<text x="278" y="407.3" font-size="10.5" fill="#1f2633">a small file: the header, the</text>
+<text x="278" y="420.9" font-size="10.5" fill="#1f2633">dependencies as stubs</text>
+<text x="278" y="434.5" font-size="10.5" fill="#1f2633">(<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lemma aux_a ... := by sorry</tspan>),</text>
+<text x="278" y="448.2" font-size="10.5" fill="#1f2633">and the hole; nothing else</text>
+<text x="278" y="461.8" font-size="10.5" fill="#1f2633">tools: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_check</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_edit</tspan>,</text>
+<text x="278" y="475.5" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">hole_verdict</tspan>; 12 turns, 2 sessions</text>
+<text x="278" y="489.1" font-size="10.5" fill="#1f2633">per hole, priced by the gate</text>
+<rect x="520" y="350" width="236" height="52" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="617.3" y="366.9" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">proved</tspan></text>
+<text x="638" y="381.4" font-size="10.5" fill="#1f2633" text-anchor="middle">work done on the stubs, or <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validate</tspan></text>
+<text x="638" y="395" font-size="10.5" fill="#1f2633" text-anchor="middle">accepted the hole, or the battery did</text>
+<rect x="520" y="410" width="236" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="586.3" y="426.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">statement_wrong</tspan></text>
+<text x="638" y="441.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a Lean-checked negation, else only a</text>
+<text x="638" y="455" font-size="10.5" fill="#1f2633" text-anchor="middle">suspicion: no status changes</text>
+<rect x="520" y="470" width="236" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="610.4" y="486.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">too_hard</tspan></text>
+<text x="638" y="501.4" font-size="10.5" fill="#1f2633" text-anchor="middle">no proof: turns or budget ended,</text>
+<text x="638" y="515" font-size="10.5" fill="#1f2633" text-anchor="middle">or the model said so</text>
+<rect x="778" y="350" width="186" height="172" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(833.2,379.9) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="855.2" y="392.8" font-size="11.5" fill="#1d4a2e" font-weight="700">Assemble</text>
+<text x="871" y="407.3" font-size="10.5" fill="#1f2633" text-anchor="middle">the holes' proofs in</text>
+<text x="871" y="420.9" font-size="10.5" fill="#1f2633" text-anchor="middle">dependency order, under</text>
+<text x="871" y="434.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the link lemma of the</text>
+<text x="871" y="448.2" font-size="10.5" fill="#1f2633" text-anchor="middle">target, go through</text>
+<text x="871" y="461.8" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validate</tspan>: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>;</text>
+<text x="871" y="475.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the certifier then</text>
+<text x="871" y="489.1" font-size="10.5" fill="#1f2633" text-anchor="middle">decides <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proved</tspan></text>
+<path d="M246,436 L268,436" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M498,376 L520,376" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M498,436 L520,436" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M498,496 L520,496" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M756,376 L778,376" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="578" width="454" height="94" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(46,589.4) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7"/><path d="M15 1.8v4h-4"/></g>
+<text x="68" y="602.3" font-size="11.5" fill="#45306a" font-weight="700">Refinement round (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">refine</tspan>)</text>
+<text x="46" y="616.7" font-size="10.5" fill="#1f2633">a blueprint refused, or a hole <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">too_hard</tspan> or wrong: one model call, fresh context,</text>
+<text x="46" y="630.4" font-size="10.5" fill="#1f2633">rewrites it (site <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">scheduler.planner</tspan>): keep what is proved, split a hole with</text>
+<text x="46" y="644" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">-- refines: aux_old</tspan> (depth at most 3), drop or mend a wrong one. At most 8</text>
+<text x="46" y="657.7" font-size="10.5" fill="#1f2633">rounds, each priced by the gate; an unchanged hole keeps its claim and its proof</text>
+<rect x="510" y="578" width="454" height="94" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<g transform="translate(520,596.2) scale(0.8)" fill="none" stroke="#2a6496" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="10" height="10" rx="1.5"/><rect x="8" y="8" width="4" height="4"/><path d="M8 2v3M12 2v3M8 15v3M12 15v3M2 8h3M2 12h3M15 8h3M15 12h3"/></g>
+<text x="542" y="609.1" font-size="11.5" fill="#1b4266" font-weight="700">Repair pass (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">repair</tspan>): no model</text>
+<text x="520" y="623.6" font-size="10.5" fill="#1f2633">a session ends on a file with Lean errors: each failing <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">aux_</tspan> proof is cut to</text>
+<text x="520" y="637.2" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan>, a failing top-level <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">have</tspan> is lifted into a new hole; one check, read as</text>
+<text x="520" y="650.9" font-size="10.5" fill="#1f2633">a blueprint, and the M10 battery runs on every hole before any paid session</text>
+<text x="36" y="262" font-size="10.5" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">-- uses:</tspan> on the line directly above a hole names the</text>
+<text x="36" y="275.6" font-size="10.5" fill="#5b6475">holes its proof may use; no line, no dependency.</text>
+<text x="458" y="165.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">used by</text>
+<text x="458" y="229.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">used by</text>
+<text x="528" y="242" font-size="10.5" fill="#5b6475">reaches nothing: left</text>
+<text x="528" y="255.7" font-size="10.5" fill="#5b6475">out, not fatal</text>
+<rect x="24" y="699" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="710" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="420" y="699" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="448" y="710" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="511.3" y="699" width="22" height="14" rx="3" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<text x="539.3" y="710" font-size="10.5" fill="#5b6475">no model</text>
+<rect x="608.5" y="699" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="636.5" y="710" font-size="10.5" fill="#5b6475">Lean</text>
+<rect x="685.9" y="699" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="713.9" y="710" font-size="10.5" fill="#5b6475">rules</text>
 </svg>

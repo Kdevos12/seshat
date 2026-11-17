@@ -1,5 +1,7 @@
 # Fleet policy
 
+![The fleet: Thompson draws of strategy, model, settings and heuristic card before every session; the control arm; statistics against it](images/fleet.svg)
+
 The fleet policy is an ablation line, `fleet` ([lines.md](lines.md)). A run enables it with
 `harness run --lines M1,fleet` (the cumulative config `--ablation fleet` is M0 plus every line before
 it in the plan's order, so it will run once those lines are built); without it the provers of a run

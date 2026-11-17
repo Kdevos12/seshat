@@ -1,5 +1,7 @@
 # Campaigns
 
+![harness campaign: turns that do not wait, the verified frontier and plateau modes, cold restarts, guards, how it ends](images/campaign.svg)
+
 A campaign is a run that continues alone (plan change LH2, `plans/plan-change-long-horizon.md`): a loop of
 consortium turns that do not wait for a person. `harness campaign STATEMENT` takes what `harness solve`
 takes (one problem, the signature, the allowance) and runs it for as long as money, time and the claim

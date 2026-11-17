@@ -1,6 +1,6 @@
 # Capabilities
 
-![The capability registry and the tools behind it](images/tools.svg)
+![The capability registry: one call from manifest to journal, levels and packs, the one rule for third parties](images/tools.svg)
 
 Every tool the harness uses sits behind a capability: a stable contract with a dotted id such as
 `lean.check` or, later, `counterexample.finite_model`. Callers name the capability, never the

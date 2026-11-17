@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 688" width="1000" height="688" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">A prover in fresh sessions: the context never rots</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker><marker id="ah-a87414" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#a87414"/></marker></defs>
+<rect x="0" y="0" width="1000" height="688" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">A prover in fresh sessions: the context never rots</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Each session starts empty from the file as left, short notes and a state card; inside a session, edits are small and old check results are masked.</text>
+<rect x="24" y="76" width="952" height="304" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">ACROSS SESSIONS: A FRESH CONTEXT EACH TIME</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">m0-loop.md, &quot;A prover&quot; and &quot;The state card&quot;</text>
+<rect x="36" y="262" width="928" height="106" rx="10" fill="#fdf9f0" stroke="#a87414" stroke-opacity="0.55" stroke-width="1.2"/>
+<text x="48" y="280" font-size="10.5" fill="#6b4a0c" font-weight="700" letter-spacing="0.8">JOURNAL: WHAT THE NEXT SESSION STARTS FROM</text>
+<rect x="24" y="394" width="952" height="232" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="412" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">INSIDE A SESSION</text>
+<text x="964" y="412" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">m0-loop.md, &quot;The edit tool&quot;, &quot;Masked old checks&quot;; lean.md, &quot;Bounded checks&quot;</text>
+<rect x="36" y="104" width="270" height="128" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(133.2,139.2) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="155.2" y="152.1" font-size="11.5" fill="#45306a" font-weight="700">Session 1</text>
+<text x="171" y="166.5" font-size="10.5" fill="#1f2633" text-anchor="middle">a fresh context. The opening message</text>
+<text x="171" y="180.2" font-size="10.5" fill="#1f2633" text-anchor="middle">holds the theorem, the file (at first</text>
+<text x="171" y="193.8" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan>) and what Lean said of it</text>
+<rect x="365" y="104" width="270" height="128" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(462.2,139.2) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="484.2" y="152.1" font-size="11.5" fill="#45306a" font-weight="700">Session 2</text>
+<text x="500" y="166.5" font-size="10.5" fill="#1f2633" text-anchor="middle">a fresh context again, opened with the</text>
+<text x="500" y="180.2" font-size="10.5" fill="#1f2633" text-anchor="middle">file as the last check left it, the model's</text>
+<text x="500" y="193.8" font-size="10.5" fill="#1f2633" text-anchor="middle">notes and, in <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">v2</tspan>, the state card</text>
+<rect x="694" y="104" width="270" height="128" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(791.6,139.2) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="813.6" y="152.1" font-size="11.5" fill="#45306a" font-weight="700">Session k</text>
+<text x="829" y="166.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the same, until a check passes, or <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">turns</tspan>,</text>
+<text x="829" y="180.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">context</tspan>, the budget or the sessions run</text>
+<text x="829" y="193.8" font-size="10.5" fill="#1f2633" text-anchor="middle">out: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">stoppedBy</tspan> in <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">attempt.finished</tspan></text>
+<path d="M306,155.2 L365,155.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M635,155.2 L694,155.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="48" y="290" width="290" height="66" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(144.1,301) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="166.1" y="313.9" font-size="11.5" fill="#6b4a0c" font-weight="700">The file as left</text>
+<text x="193" y="328.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the AUX and PROOF regions of the last check</text>
+<text x="193" y="342" font-size="10.5" fill="#1f2633" text-anchor="middle">and the text of that check, as blobs</text>
+<rect x="354" y="290" width="290" height="66" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(416.9,294.2) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+<text x="438.9" y="307.1" font-size="11.5" fill="#6b4a0c" font-weight="700">Notes: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">lesson.recorded</tspan></text>
+<text x="499" y="321.6" font-size="10.5" fill="#1f2633" text-anchor="middle">the model's last message, rewritten in full</text>
+<text x="499" y="335.2" font-size="10.5" fill="#1f2633" text-anchor="middle">and cut at <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">notesChars</tspan>; 1500 characters</text>
+<text x="499" y="348.8" font-size="10.5" fill="#1f2633" text-anchor="middle">when the card is on</text>
+<rect x="660" y="290" width="290" height="66" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(753.6,294.2) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="15" r="2.3"/><circle cx="16" cy="15" r="2.3"/><circle cx="10" cy="4.5" r="2.3"/><path d="M5.2 13l3.6-6.4M14.8 13l-3.6-6.4M6.3 15h7.4"/></g>
+<text x="775.6" y="307.1" font-size="11.5" fill="#6b4a0c" font-weight="700">State card (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">v2</tspan>)</text>
+<text x="805" y="321.6" font-size="10.5" fill="#1f2633" text-anchor="middle">built from the journal by code, no model:</text>
+<text x="805" y="335.2" font-size="10.5" fill="#1f2633" text-anchor="middle">goal, holes, accepted lemmas, failed</text>
+<text x="805" y="348.8" font-size="10.5" fill="#1f2633" text-anchor="middle">approaches with counts, timeouts</text>
+<path d="M279,232 L279,262" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<path d="M392,262 L392,232" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<path d="M608,232 L608,262" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<path d="M721,262 L721,232" fill="none" stroke="#a87414" stroke-width="1.4" marker-end="url(#ah-a87414)"/>
+<rect x="36" y="424" width="290" height="100" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<g transform="translate(76.9,431.5) scale(0.8)" fill="none" stroke="#8b94a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="3" width="16.4" height="14" rx="1.5"/><path d="M5.5 8l3 2.5-3 2.5M10.5 13.5h4"/></g>
+<text x="98.9" y="444.5" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">lean_edit(region, old, new)</tspan></text>
+<text x="181" y="458.9" font-size="10.5" fill="#1f2633" text-anchor="middle">patches the region as last checked; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">old</tspan> must</text>
+<text x="181" y="472.6" font-size="10.5" fill="#1f2633" text-anchor="middle">occur exactly once, else <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">not found</tspan> or</text>
+<text x="181" y="486.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">found N times</tspan> and nothing is checked.</text>
+<text x="181" y="499.8" font-size="10.5" fill="#1f2633" text-anchor="middle">On success it runs the same check as</text>
+<text x="181" y="513.5" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_check</tspan>, and the journal is unchanged</text>
+<rect x="355" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="379" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="403" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="427" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="451" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="475" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="499" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="523" y="490" width="18" height="12" rx="3" fill="#eceff3" stroke="#9aa2b1" stroke-width="1.2"/><rect x="547" y="456" width="18" height="46" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2"/><rect x="571" y="456" width="18" height="46" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2"/><rect x="595" y="456" width="18" height="46" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2"/><rect x="619" y="456" width="18" height="46" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2"/><path d="M355,508 v4 H559 v-4" fill="none" stroke="#5b6475" stroke-width="1.2"/><path d="M547,508 v4 H637 v-4" fill="none" stroke="#2e7448" stroke-width="1.2"/><text x="457" y="526" font-size="10.5" fill="#5b6475" text-anchor="middle">8 oldest: one line each</text><text x="592" y="526" font-size="10.5" fill="#1d4a2e" text-anchor="middle">last 4: whole</text>
+<rect x="666" y="424" width="298" height="100" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<g transform="translate(741.7,431.5) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M10 5.5V10l3 2"/></g>
+<text x="763.7" y="444.5" font-size="11.5" fill="#1d4a2e" font-weight="700">A bounded Lean check</text>
+<text x="815" y="458.9" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_check</tspan> and <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">lean_edit</tspan> end in the fast check,</text>
+<text x="815" y="472.6" font-size="10.5" fill="#1f2633" text-anchor="middle">bounded at the host's <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">checkTimeoutSec</tspan> (120 s):</text>
+<text x="815" y="486.2" font-size="10.5" fill="#1f2633" text-anchor="middle">&quot;did not finish&quot; costs one turn, not 300 s.</text>
+<text x="815" y="499.8" font-size="10.5" fill="#1f2633" text-anchor="middle">A check with holes or without an answer is no</text>
+<text x="815" y="513.5" font-size="10.5" fill="#1f2633" text-anchor="middle">validation</text>
+<rect x="666" y="540" width="298" height="72" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(742.7,547.2) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="764.7" y="560.1" font-size="11.5" fill="#1d4a2e" font-weight="700">A first valid check wins</text>
+<text x="815" y="574.6" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validation.finished</tspan>: the claim is <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>;</text>
+<text x="815" y="588.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the session ends, the problem's other</text>
+<text x="815" y="601.9" font-size="10.5" fill="#1f2633" text-anchor="middle">provers abort; the certifier decides</text>
+<path d="M815,524 L815,540" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="48" y="216" width="246" height="8" rx="4" fill="#ffffff" stroke="#6a4c9c" stroke-width="1"/><rect x="48" y="216" width="123.0" height="8" rx="4" fill="#6a4c9c" fill-opacity="0.35"/><line x1="77.5" y1="216" x2="77.5" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="114.4" y1="216" x2="114.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="146.4" y1="216" x2="146.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><text x="294" y="212" font-size="9.5" fill="#5b6475" text-anchor="end">context, with its checks</text>
+<rect x="377" y="216" width="246" height="8" rx="4" fill="#ffffff" stroke="#6a4c9c" stroke-width="1"/><rect x="377" y="216" width="172.2" height="8" rx="4" fill="#6a4c9c" fill-opacity="0.35"/><line x1="406.5" y1="216" x2="406.5" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="443.4" y1="216" x2="443.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="475.4" y1="216" x2="475.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="512.3" y1="216" x2="512.3" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><text x="623" y="212" font-size="9.5" fill="#5b6475" text-anchor="end">context, with its checks</text>
+<rect x="706" y="216" width="246" height="8" rx="4" fill="#ffffff" stroke="#6a4c9c" stroke-width="1"/><rect x="706" y="216" width="221.4" height="8" rx="4" fill="#6a4c9c" fill-opacity="0.35"/><line x1="735.5" y1="216" x2="735.5" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="772.4" y1="216" x2="772.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="804.4" y1="216" x2="804.4" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="841.3" y1="216" x2="841.3" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="878.2" y1="216" x2="878.2" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><line x1="915.1" y1="216" x2="915.1" y2="224" stroke="#6a4c9c" stroke-width="1.4"/><text x="952" y="212" font-size="9.5" fill="#5b6475" text-anchor="end">context, with its checks</text>
+<text x="285" y="251.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">carry out</text>
+<text x="398" y="251.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">carry in</text>
+<text x="614" y="251.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">carry out</text>
+<text x="727" y="251.7" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">carry in</text>
+<text x="36" y="542" font-size="10.5" fill="#5b6475">Why: output tokens were about 90% of the dollars</text>
+<text x="36" y="555.6" font-size="10.5" fill="#5b6475">of the first real runs, the file being rewritten</text>
+<text x="36" y="569.3" font-size="10.5" fill="#5b6475">whole at every check.</text>
+<text x="346" y="434" font-size="11" fill="#1f2633" font-weight="700">What the model is sent of 12 checks</text>
+<text x="346" y="554" font-size="10.5" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">Earlier check, masked: 3 error(s), 0 hole(s).</tspan></text>
+<text x="346" y="567.6" font-size="10.5" fill="#5b6475">In batches of four, so the cached prefix survives;</text>
+<text x="346" y="581.3" font-size="10.5" fill="#5b6475">none masked below 8 results. The journal keeps all.</text>
+<rect x="24" y="647" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="658" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="330" y="647" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="358" y="658" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="421.3" y="647" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="449.3" y="658" font-size="10.5" fill="#5b6475">Lean</text>
+<rect x="498.7" y="647" width="22" height="14" rx="3" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<text x="526.7" y="658" font-size="10.5" fill="#5b6475">journal</text>
+</svg>

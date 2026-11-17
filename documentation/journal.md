@@ -1,5 +1,7 @@
 # Journal
 
+![The journal: a hash chain of events, invariants checked before a write, projections rebuilt, resume and memory across runs](images/journal.svg)
+
 Every fact the harness learns is an event appended to a run's journal. The journal is the only
 source of truth; the SQLite projection is a view of it and can be deleted at any time.
 

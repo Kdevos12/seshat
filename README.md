@@ -4,6 +4,8 @@ A harness for autonomous mathematical research with language models: models thro
 
 Seshat takes a mathematical statement, in Lean or in prose, and works on it under a dollar allowance: it tries classical tools before any model, lets models propose Lean proofs in fresh sessions, and calls a statement proved only when Lean's kernel has replayed the proof. Its principles:
 
+![Seshat at a glance: a statement goes through intake, classical tools, provers and Lean; every paid launch is priced first, and the journal records everything](documentation/images/overview.svg)
+
 - **Models through their APIs only.** No training and no fine-tuning; small learned components (an online k-NN, a published premise selector) are used as they are.
 - **Lean is the judge.** A claim is `proved` or `refuted` only after the certifier's kernel replay; a model's word, a tool's output, an informal proof or a heuristic is evidence or a hint, never a status ([trust](documentation/trust.md)).
 - **Classical tools first.** Decision procedures, a tactic battery, computer algebra, SMT and ATPs run before a model is asked, and what they find still goes through Lean.
@@ -51,17 +53,31 @@ pnpm harness ui             # the local interface, on 127.0.0.1 only
 
 ![harness solve from a statement to RESULT.md](documentation/images/solve-loop.svg)
 
-![How a run flows through the packages](documentation/images/architecture.svg)
+![The packages as layers, with Lean beside them as the judge](documentation/images/architecture.svg)
 
-Each compartment has a page and a picture:
+Each compartment has a page and a figure, all drawn by code ([documentation/figures.md](documentation/figures.md)); the
+[documentation's home](documentation/README.md#figures) shows them together.
 
-- [Architecture](documentation/architecture.md): the packages and how a run flows through them.
-- [The solve loop](documentation/quickstart.md): `harness solve`, `harness doctor`, `RESULT.md`.
-- [Blueprints](documentation/scheduler.md#blueprints-plan-change-ca9): a hard problem split into holes (line M12).
-- [Trust](documentation/trust.md): who may change a claim's status.
-- [Tools](documentation/capabilities.md): the capability registry, host profiles and the tools behind it.
-- [Heuristic cards](documentation/heuristics.md): methods of reasoning, and how their effect is measured.
-- [Memory](documentation/memory.md): the journal, its projections and the lines that read them.
+| Compartment | Page | Figure |
+|---|---|---|
+| Trust: who may change a claim's status | [trust.md](documentation/trust.md) | [trust](documentation/images/trust.svg) |
+| The fast check and the kernel replay | [certifier.md](documentation/certifier.md) | [certification](documentation/images/certification.svg) |
+| Lean environments, and the gate in front of new Lean | [lean-env.md](documentation/lean-env.md) | [lean-env](documentation/images/lean-env.svg) |
+| The journal, the only source of truth | [journal.md](documentation/journal.md) | [journal](documentation/images/journal.svg) |
+| The memory store | [memory.md](documentation/memory.md) | [memory](documentation/images/memory.svg) |
+| The variant graph (line M2) | [graph.md](documentation/graph.md) | [graph](documentation/images/graph.svg) |
+| The context packet (line M4) | [context.md](documentation/context.md) | [context](documentation/images/context.svg) |
+| Tools behind capabilities | [capabilities.md](documentation/capabilities.md) | [tools](documentation/images/tools.svg) |
+| Classical tools before any model (line M10) | [classical.md](documentation/classical.md) | [battery](documentation/images/battery.svg) |
+| A prover in fresh sessions | [m0-loop.md](documentation/m0-loop.md) | [sessions](documentation/images/sessions.svg) |
+| Blueprints: a problem as a graph of holes (line M12) | [scheduler.md](documentation/scheduler.md#blueprints-plan-change-ca9) | [blueprints](documentation/images/blueprints.svg) |
+| The fleet and the heuristic cards | [fleet.md](documentation/fleet.md), [heuristics.md](documentation/heuristics.md) | [fleet](documentation/images/fleet.svg) |
+| The budget gate | [scheduler.md](documentation/scheduler.md#the-budget-gate) | [budget](documentation/images/budget.svg) |
+| The escalation ladder | [scheduler.md](documentation/scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change) | [ladder](documentation/images/ladder.svg) |
+| Runs: two axes, seven words | [runs.md](documentation/runs.md) | [runs](documentation/images/runs.svg) |
+| Consortium mode | [human.md](documentation/human.md) | [consortium](documentation/images/consortium.svg) |
+| Campaigns, judged by the verified frontier | [campaign.md](documentation/campaign.md) | [campaign](documentation/images/campaign.svg) |
+| Measuring a line | [ablate.md](documentation/ablate.md) | [ablation](documentation/images/ablation.svg) |
 
 ## The research flow
 

@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 780" width="1000" height="780" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">harness campaign: a run that continues alone</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="780" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">harness campaign: a run that continues alone</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Turns follow each other without waiting; Lean's verified frontier is the progress meter, and only the certifier can end a campaign as settled.</text>
+<rect x="24" y="76" width="952" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) TURNS THAT DO NOT WAIT, AND THE FRONTIER THEY ARE JUDGED BY</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">campaign.md; frontier.md</text>
+<rect x="24" y="352" width="952" height="192" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="370" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) COLD RESTARTS, AND THE GUARDS</text>
+<text x="964" y="370" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">runs.md, &quot;Restarts&quot;; campaign.md, &quot;The dossier&quot;, &quot;Guards&quot;</text>
+<rect x="24" y="558" width="952" height="178" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="576" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) HOW IT ENDS, AND HOW IT SURVIVES</text>
+<text x="964" y="576" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">campaign.md, &quot;How it ends&quot;, &quot;Pacing&quot;, &quot;The watchdog&quot;</text>
+<rect x="36" y="104" width="134" height="104" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(67.9,113.5) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7"/><path d="M15 1.8v4h-4"/></g>
+<text x="89.9" y="126.4" font-size="11.5" fill="#2b3340" font-weight="700">1 Decide</text>
+<text x="103" y="140.9" font-size="10.5" fill="#1f2633" text-anchor="middle">reads the journal:</text>
+<text x="103" y="154.5" font-size="10.5" fill="#1f2633" text-anchor="middle">over? waiting for</text>
+<text x="103" y="168.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the day's cap or a</text>
+<text x="103" y="181.8" font-size="10.5" fill="#1f2633" text-anchor="middle">usage limit? the</text>
+<text x="103" y="195.5" font-size="10.5" fill="#1f2633" text-anchor="middle">turn's limit</text>
+<rect x="190" y="104" width="134" height="104" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(209.4,120.4) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="231.4" y="133.3" font-size="11.5" fill="#45306a" font-weight="700">2 Work a turn</text>
+<text x="257" y="147.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the path of</text>
+<text x="257" y="161.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">harness resume</tspan>;</text>
+<text x="257" y="175" font-size="10.5" fill="#1f2633" text-anchor="middle">sessions start cold</text>
+<text x="257" y="188.7" font-size="10.5" fill="#1f2633" text-anchor="middle">from the dossier</text>
+<rect x="344" y="104" width="134" height="104" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(382,120.4) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="404" y="133.3" font-size="11.5" fill="#2b3340" font-weight="700">3 After</text>
+<text x="411" y="147.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">digest.md</tspan> rebuilt</text>
+<text x="411" y="161.4" font-size="10.5" fill="#1f2633" text-anchor="middle">by code; an impasse</text>
+<text x="411" y="175" font-size="10.5" fill="#1f2633" text-anchor="middle">or a plateau changes</text>
+<text x="411" y="188.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the mode</text>
+<path d="M170,156 L190,156" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M324,156 L344,156" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M411,208 L411,221 Q411,228 404,228 L110,228 Q103,228 103,221 L103,208" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="250" width="442" height="76" rx="6" fill="#fae8ee" stroke="#ad4468" stroke-width="1.4" />
+<g transform="translate(179.9,259.2) scale(0.8)" fill="none" stroke="#ad4468" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6" r="3.3"/><path d="M3.5 18c0-3.9 2.9-6.5 6.5-6.5s6.5 2.6 6.5 6.5"/></g>
+<text x="201.9" y="272.1" font-size="11.5" fill="#6e2540" font-weight="700">A person, between turns</text>
+<text x="257" y="286.6" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">hint</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sign</tspan> and <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">steer</tspan> tell the next turn; a question a line would ask</text>
+<text x="257" y="300.2" font-size="10.5" fill="#1f2633" text-anchor="middle">goes into the digest and the work goes on. They change what sessions</text>
+<text x="257" y="313.8" font-size="10.5" fill="#1f2633" text-anchor="middle">are told and the order of work, never a status</text>
+<rect x="536" y="262" width="64.9" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="568.4" y="275.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">specialise</text>
+<rect x="608.9" y="262" width="33.9" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="625.8" y="275.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">test</text>
+<rect x="650.8" y="262" width="61.2" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="681.4" y="275.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">construct</text>
+<rect x="720" y="262" width="38.3" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="739.1" y="275.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">read</text>
+<rect x="766.2" y="262" width="72.3" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="802.4" y="275.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">reformulate</text>
+<rect x="36" y="380" width="470" height="154" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(46,400.9) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="68" y="413.8" font-size="11.5" fill="#45306a" font-weight="700">A session starts cold, from a dossier</text>
+<text x="46" y="428.3" font-size="10.5" fill="#1f2633">from the original file (empty AUX, the original proof), no notes;</text>
+<text x="46" y="441.9" font-size="10.5" fill="#1f2633">the opening message holds a dossier built by code, at most 750 tokens:</text>
+<text x="46" y="455.5" font-size="10.5" fill="#1f2633"><tspan font-weight="700">L0</tspan> the signed statement and the frontier's top entries</text>
+<text x="46" y="469.2" font-size="10.5" fill="#1f2633"><tspan font-weight="700">L2</tspan> dead ends with counts: failure class, first error, refuted subclaims</text>
+<text x="46" y="482.8" font-size="10.5" fill="#1f2633"><tspan font-weight="700">L3</tspan> unverified lessons, the first to be cut at the bound</text>
+<text x="46" y="496.5" font-size="10.5" fill="#1f2633">its steps follow a geometric schedule; three failures of one class on one</text>
+<text x="46" y="510.1" font-size="10.5" fill="#1f2633">goal end it early; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">previous_attempt</tspan> shows the last file on request</text>
+<rect x="526" y="380" width="438" height="50" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(536,383) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18.5V2"/><path d="M4 3h11l-2.5 4L15 11H4"/></g>
+<text x="558" y="395.9" font-size="11.5" fill="#2b3340" font-weight="700">Spiral</text>
+<text x="536" y="410.4" font-size="10.5" fill="#1f2633">ten turns in a row that spent money in a mode and grew nothing:</text>
+<text x="536" y="424" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">stopped</tspan>, reason <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">spiral</tspan>, &quot;out of reach at this budget&quot;</text>
+<rect x="526" y="434" width="438" height="50" rx="6" fill="#fae8ee" stroke="#ad4468" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(536,437) scale(0.8)" fill="none" stroke="#ad4468" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="9" width="13" height="9" rx="1.5"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9"/></g>
+<text x="558" y="449.9" font-size="11.5" fill="#6e2540" font-weight="700">A locked statement</text>
+<text x="536" y="464.4" font-size="10.5" fill="#1f2633">no mode signs, re-signs or edits it; every goal a mode adds is a</text>
+<text x="536" y="478" font-size="10.5" fill="#1f2633">Lean statement or an evidence need, never prose</text>
+<rect x="526" y="488" width="438" height="50" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(536,491) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="558" y="503.9" font-size="11.5" fill="#1d4a2e" font-weight="700">No &quot;done&quot; without Lean</text>
+<text x="536" y="518.4" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">settled</tspan> only by the certifier's kernel replay; the frontier is</text>
+<text x="536" y="532" font-size="10.5" fill="#1f2633">evidence of progress, never a status</text>
+<rect x="36" y="596" width="190" height="58" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" stroke-dasharray="5 3"/>
+<text x="106.8" y="615.9" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">settled</tspan></text>
+<text x="131" y="630.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the certifier's kernel replay</text>
+<text x="131" y="644" font-size="10.5" fill="#1f2633" text-anchor="middle">made a claim <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proved</tspan>/<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">refuted</tspan></text>
+<rect x="244" y="600" width="136" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="280.9" y="617.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">allowance</tspan></text>
+<text x="312" y="632.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the run's budget</text>
+<text x="312" y="646" font-size="10.5" fill="#1f2633" text-anchor="middle">is spent</text>
+<rect x="388" y="600" width="136" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="438.8" y="617.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">until</tspan></text>
+<text x="456" y="632.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--until</tspan>: the</text>
+<text x="456" y="646" font-size="10.5" fill="#1f2633" text-anchor="middle">wall-clock end</text>
+<rect x="532" y="600" width="136" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="579.3" y="617.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">spiral</tspan></text>
+<text x="600" y="632.4" font-size="10.5" fill="#1f2633" text-anchor="middle">no frontier growth</text>
+<text x="600" y="646" font-size="10.5" fill="#1f2633" text-anchor="middle">over ten turns</text>
+<rect x="676" y="600" width="136" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="726.8" y="617.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">ended</tspan></text>
+<text x="744" y="632.4" font-size="10.5" fill="#1f2633" text-anchor="middle">an error, no Lean,</text>
+<text x="744" y="646" font-size="10.5" fill="#1f2633" text-anchor="middle">a provider refusal</text>
+<rect x="820" y="600" width="136" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="863.9" y="617.9" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">aborted</tspan></text>
+<text x="888" y="632.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the supervisor</text>
+<text x="888" y="646" font-size="10.5" fill="#1f2633" text-anchor="middle">was stopped</text>
+<rect x="36" y="664" width="454" height="52" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(46,668) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M10 5.5V10l3 2"/></g>
+<text x="68" y="680.9" font-size="11.5" fill="#2b3340" font-weight="700">Pacing</text>
+<text x="46" y="695.4" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--usd-per-day</tspan> pauses a day, it does not end the campaign; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--until</tspan>;</text>
+<text x="46" y="709" font-size="10.5" fill="#1f2633">off-peak by default</text>
+<rect x="510" y="664" width="454" height="52" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(520,668) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="3" width="16.4" height="14" rx="1.5"/><path d="M5.5 8l3 2.5-3 2.5M10.5 13.5h4"/></g>
+<text x="542" y="680.9" font-size="11.5" fill="#2b3340" font-weight="700">Watchdog</text>
+<text x="520" y="695.4" font-size="10.5" fill="#1f2633">lock and heartbeat; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">harness campaign --watch</tspan> restarts a dead supervisor;</text>
+<text x="520" y="709" font-size="10.5" fill="#1f2633">a usage limit waits 1, 2, 4 ... 60 minutes</text>
+<text x="257" y="231.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">the next turn starts: nobody is asked</text>
+<rect x="750.24" y="122" width="123.59999999999991" height="110" fill="#4a5567" fill-opacity="0.1"/><path d="M536,122 V232 H948" fill="none" stroke="#9aa2b1" stroke-width="1.2"/><path d="M536,232 L577.2,232.0 L577.2,221.6 L618.4,221.6 L618.4,205.0 L667.8,205.0 L667.8,190.4 L709.0,190.4 L709.0,173.8 L750.2,173.8 L750.2,155.0 L873.8,155.0 L873.8,155.0 L873.8,155.0 L873.8,136.3 L948.0,136.3 L948.0,136.3" fill="none" stroke="#2e7448" stroke-width="2"/><line x1="873.8399999999999" y1="122" x2="873.8399999999999" y2="232" stroke="#4a5567" stroke-width="1.2" stroke-dasharray="4 3"/><text x="536" y="118" font-size="10.5" fill="#1d4a2e" font-weight="700">frontier score, from Lean's accepted facts</text><text x="948" y="246" font-size="10.5" fill="#5b6475" text-anchor="end">dollars spent</text><text x="812" y="184" font-size="10.5" fill="#2b3340" text-anchor="middle">no growth over</text><text x="812" y="197" font-size="10.5" fill="#2b3340" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">plateauUsd</tspan></text><text x="867.8" y="222" font-size="10.5" fill="#2b3340" text-anchor="end"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">campaign.mode_changed</tspan></text>
+<path d="M601.8607,272 l4,0" stroke="#1f2633" stroke-width="1.2"/>
+<path d="M643.8022599999999,272 l4,0" stroke="#1f2633" stroke-width="1.2"/>
+<path d="M712.9566699999999,272 l4,0" stroke="#1f2633" stroke-width="1.2"/>
+<path d="M759.2277999999999,272 l4,0" stroke="#1f2633" stroke-width="1.2"/>
+<text x="536" y="308" font-size="10.5" fill="#5b6475">A plateau changes the mode for a turn, by rule, no model; a mode that</text>
+<text x="536" y="321.6" font-size="10.5" fill="#5b6475">grows the frontier stays, one that adds nothing passes to the next.</text>
+<text x="536" y="330" font-size="10" fill="#1f2633"></text>
+<text x="542" y="247" font-size="9.5" fill="#5b6475">subclaim, reduction 3; other entries 1; evidence 0.5</text>
+<text x="244" y="592" font-size="10.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">stopped</tspan>, with the frontier and &quot;here is what is established&quot;:</text>
+<rect x="24" y="749" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="52" y="760" font-size="10.5" fill="#5b6475">built, tested with simulations only</text>
+<rect x="330" y="749" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="358" y="760" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="421.3" y="749" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="449.3" y="760" font-size="10.5" fill="#5b6475">supervisor, rules</text>
+<rect x="552.4" y="749" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="580.4" y="760" font-size="10.5" fill="#5b6475">Lean</text>
+<rect x="629.7" y="749" width="22" height="14" rx="3" fill="#fae8ee" stroke="#ad4468" stroke-width="1.4" />
+<text x="657.7" y="760" font-size="10.5" fill="#5b6475">a person</text>
+</svg>

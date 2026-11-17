@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="1000" height="680" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Graph: a result on one claim becomes a result on its neighbour</title>
+<defs><marker id="ah-2e7448" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#2e7448"/></marker><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker><marker id="ah-8b94a5" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#8b94a5"/></marker></defs>
+<rect x="0" y="0" width="1000" height="680" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Graph: a result on one claim becomes a result on its neighbour</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Only <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11">lean_checked</tspan> edges propagate; what a rule derives is a proposal, a composed proof that must pass <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11">validate</tspan> like any other.</text>
+<rect x="24" y="76" width="226" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">1 PROPOSE</text>
+<rect x="266" y="76" width="226" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="278" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">2 CHECK THE LINK</text>
+<rect x="508" y="76" width="226" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="520" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">3 SETTLE AND PROPAGATE</text>
+<rect x="750" y="76" width="226" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="762" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">4 REVOKE</text>
+<rect x="24" y="350" width="952" height="134" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="368" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">WHAT <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">REALIZE</tspan> COMPOSES IN STEP 3</text>
+<rect x="24" y="496" width="952" height="168" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="514" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">THE PROVE/REFUTE TWIN</text>
+<rect x="40" y="106" width="194" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="115.7" y="128.8" font-size="11.5" fill="#2b3340" font-weight="700">V  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="137" y="143.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n ∧ 0 + n = n</tspan></text>
+<rect x="40" y="202" width="194" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="115.4" y="224.8" font-size="11.5" fill="#2b3340" font-weight="700">C  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="137" y="239.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n</tspan></text>
+<path d="M76,156 L76,202" fill="none" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-8b94a5)"/>
+<rect x="86" y="176" width="64" height="19" rx="9.5" fill="#f6f7f9" stroke="#9aa2b1" stroke-width="1.2" stroke-dasharray="1.5 3"/>
+<text x="118" y="189.1" font-size="10" fill="#2b3340" text-anchor="middle" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">proposed</tspan></text>
+<rect x="282" y="106" width="194" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="357.7" y="128.8" font-size="11.5" fill="#2b3340" font-weight="700">V  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="379" y="143.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n ∧ 0 + n = n</tspan></text>
+<rect x="282" y="202" width="194" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="357.4" y="224.8" font-size="11.5" fill="#2b3340" font-weight="700">C  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="379" y="239.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n</tspan></text>
+<path d="M318,156 L318,202" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="328" y="176" width="88" height="19" rx="9.5" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2" />
+<text x="372" y="189.1" font-size="10" fill="#1d4a2e" text-anchor="middle" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan></text>
+<rect x="524" y="106" width="194" height="50" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<text x="592.8" y="128.8" font-size="11.5" fill="#1d4a2e" font-weight="700">V  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">proved</tspan></text>
+<text x="621" y="143.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n ∧ 0 + n = n</tspan></text>
+<rect x="524" y="202" width="194" height="50" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="585.6" y="224.8" font-size="11.5" fill="#1d4a2e" font-weight="700">C  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">computed</tspan></text>
+<text x="621" y="239.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n</tspan></text>
+<path d="M560,156 L560,202" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="570" y="176" width="88" height="19" rx="9.5" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2" />
+<text x="614" y="189.1" font-size="10" fill="#1d4a2e" text-anchor="middle" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan></text>
+<rect x="766" y="106" width="194" height="50" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="824.5" y="128.8" font-size="11.5" fill="#2b3340" font-weight="700">V  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">retracted</tspan></text>
+<text x="863" y="143.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n ∧ 0 + n = n</tspan></text>
+<rect x="766" y="202" width="194" height="50" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="841.4" y="224.8" font-size="11.5" fill="#2b3340" font-weight="700">C  <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="863" y="239.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n</tspan></text>
+<path d="M802,156 L802,202" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="812" y="176" width="88" height="19" rx="9.5" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.2" />
+<text x="856" y="189.1" font-size="10" fill="#1d4a2e" text-anchor="middle" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan></text>
+<rect x="36" y="380" width="340" height="44" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="174.9" y="399.8" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">aux_m2_p1</tspan></text>
+<text x="206" y="414.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the proof of V, from the memory</text>
+<rect x="36" y="432" width="340" height="44" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="174.9" y="451.8" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">aux_m2_l1</tspan></text>
+<text x="206" y="466.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the link lemma <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">V → C</tspan>, with the proof that checked it</text>
+<rect x="412" y="380" width="212" height="96" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="486.9" y="405.3" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">aux_m2_d1</tspan></text>
+<text x="518" y="419.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">exact L X n</tspan>:</text>
+<text x="518" y="433.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the step of the rule</text>
+<text x="518" y="447" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">strengthens/proved</tspan>,</text>
+<text x="518" y="460.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the submitted proof</text>
+<rect x="660" y="380" width="140" height="96" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(691.4,412.8) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="713.4" y="425.8" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">validate</tspan></text>
+<text x="730" y="440.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the fast check</text>
+<rect x="836" y="380" width="128" height="96" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="866.3" y="418.9" font-size="11.5" fill="#1d4a2e" font-weight="700">C <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">computed</tspan></text>
+<text x="900" y="433.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proved</tspan> once the</text>
+<text x="900" y="447" font-size="10.5" fill="#1f2633" text-anchor="middle">certifier replays it</text>
+<path d="M376,402 L412,402" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M376,454 L412,454" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M624,428 L660,428" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M800,428 L836,428" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="36" y="526" width="170" height="40" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="100" y="543.8" font-size="11.5" fill="#45306a" font-weight="700">Provers</text>
+<text x="121" y="558.2" font-size="10.5" fill="#1f2633" text-anchor="middle">try C</text>
+<rect x="36" y="606" width="170" height="40" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="96.8" y="623.8" font-size="11.5" fill="#45306a" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">runTwin</tspan></text>
+<text x="121" y="638.2" font-size="10.5" fill="#1f2633" text-anchor="middle">try <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">¬ C</tspan>, up to N calls</text>
+<rect x="250" y="526" width="150" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="305.1" y="543.8" font-size="11.5" fill="#2b3340" font-weight="700">C <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="325" y="558.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">n + 0 = n</tspan></text>
+<rect x="250" y="606" width="150" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="299.2" y="623.8" font-size="11.5" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">¬ C</tspan> <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">open</tspan></text>
+<text x="325" y="638.2" font-size="10.5" fill="#1f2633" text-anchor="middle">its negation, a claim</text>
+<path d="M206,546 L250,546" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M206,626 L250,626" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M325,566 L325,606" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)" marker-start="url(#ah-2e7448)"/>
+<rect x="560" y="526" width="404" height="120" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="702" y="549.6" font-size="11.5" fill="#2b3340" font-weight="700">When one side settles</text>
+<text x="762" y="564.1" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">twinSettled</tspan> reads the graph: a proof of C refutes <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">¬ C</tspan></text>
+<text x="762" y="577.7" font-size="10.5" fill="#1f2633" text-anchor="middle">and a proof of <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">¬ C</tspan> refutes C (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">negation_of/proved</tspan>,</text>
+<text x="762" y="591.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">negation_of/proved-back</tspan>); the other side stops.</text>
+<text x="762" y="605" font-size="10.5" fill="#1f2633" text-anchor="middle"></text>
+<text x="762" y="618.7" font-size="10.5" fill="#1f2633" text-anchor="middle">Framing is neutral: the model is never told whether</text>
+<text x="762" y="632.3" font-size="10.5" fill="#1f2633" text-anchor="middle">the statement is true or false.</text>
+<path d="M400,546 L560,546" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<path d="M400,626 L560,626" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<text x="86" y="170" font-size="10" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">strengthens</tspan></text>
+<text x="38" y="276" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">createVariant</tspan>: V is a claim</text>
+<text x="38" y="289.6" font-size="10.5" fill="#1f2633">of its own (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">ensureClaim</tspan>), and</text>
+<text x="38" y="303.3" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proposeEdge</tspan> writes the link</text>
+<text x="38" y="316.9" font-size="10.5" fill="#1f2633">lemma <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">V → C</tspan>. No status moves.</text>
+<text x="328" y="170" font-size="10" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">strengthens</tspan></text>
+<text x="280" y="276" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">checkEdge</tspan> states the lemma as</text>
+<text x="280" y="289.6" font-size="10.5" fill="#1f2633">a claim; cheap tactics (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">tauto</tspan>,</text>
+<text x="280" y="303.3" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">omega</tspan>...) go through <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validate</tspan>;</text>
+<text x="280" y="316.9" font-size="10.5" fill="#1f2633">a valid proof checks the edge.</text>
+<text x="570" y="170" font-size="10" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">strengthens</tspan></text>
+<text x="522" y="276" font-size="10.5" fill="#1f2633">A prover settles V. Rule</text>
+<text x="522" y="289.6" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">strengthens/proved</tspan> derives C;</text>
+<text x="522" y="303.3" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">realize</tspan> composes a proof and</text>
+<text x="522" y="316.9" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">validate</tspan> accepts it (below).</text>
+<text x="812" y="170" font-size="10" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">strengthens</tspan></text>
+<text x="764" y="276" font-size="10.5" fill="#1f2633">V is retracted: what rested on</text>
+<text x="764" y="289.6" font-size="10.5" fill="#1f2633">it is deleted and re-derived;</text>
+<text x="764" y="303.3" font-size="10.5" fill="#1f2633">C held only by a composed proof,</text>
+<text x="764" y="316.9" font-size="10.5" fill="#1f2633">so <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">revokeUnsupported</tspan> reopens it.</text>
+<text x="337" y="590" font-size="10" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">negation_of</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">lean_checked</tspan></text>
+</svg>

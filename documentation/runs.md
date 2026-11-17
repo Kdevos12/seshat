@@ -1,5 +1,7 @@
 # Runs: one vocabulary
 
+![Runs: the two axes horizon and human with the command for each cell, and the seven nested words from series to step](images/runs.svg)
+
 The words below are the ones every flag, key and page uses (plan change LH9). A level contains the ones
 below it, and only the run has a journal: the journal is the one source of truth of a run
 ([journal.md](journal.md)), and a run is the unit of replay.

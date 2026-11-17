@@ -1,6 +1,6 @@
 # Architecture
 
-![How a run flows through the packages: orchestrator, lines, registry, models, Lean, journal and UI](images/architecture.svg)
+![The packages as layers: commands, orchestration, research lines, capabilities, the journal; Lean at the side as the judge](images/architecture.svg)
 
 ## Shape
 
@@ -47,6 +47,7 @@
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
 | `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: every line but the suspended M7 and M9), the M1 line, the `harness` command and its subcommands (`solve`, `campaign`, `ablate`, `consolidate`, `add`, `lean-env` and the rest of `harness --help`) | every other package, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 | `@seshat/ui` | The local interface, `harness ui`: the journal reader, the loopback server and its guards, the process manager, provider settings, the static front end ([ui.md](ui.md)); depends on the orchestrator for the readers and the commands, which loads it only for `harness ui` | orchestrator, core, hono, pi-ai |
+| `@seshat/figures` | The figures of the documentation as code: an SVG toolkit with no dependency, one function per figure, `pnpm figures` ([figures.md](figures.md)); used by no other package | Node built-ins only |
 | `@seshat/classical` | Line M10: the domain router, the Lean tactic battery ordered by Beta posteriors, the hammer at several cutoffs, the non-triviality test ([classical.md](classical.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
 | `@seshat/context` | Line M4: the context compiler, `expand` and `graph_query` ([context.md](context.md)) | classical, core, graph, lessons, library, lines, memory, registry |
 | `@seshat/library` | Line M3: the growing lemma library, its BM25 search ([library.md](library.md)) | core, lines, memory, registry |
