@@ -54,7 +54,7 @@ limit in a configuration that cannot supply one) is refused at the start. So `so
 | maintenance between runs | `consolidate`, `optimize-prompts`, `library build` | they never change a claim's status |
 
 The commands differ because their rules differ; the axes are what changes inside the first purpose.
-`harness parameters` and [parameters.md](parameters.md) list every flag and key.
+`harness parameters` and [parameters.md](parameters.md) list every flag and key. `harness frontier` reads a run's verified frontier ([frontier.md](frontier.md)) and writes nothing.
 
 ## Children
 

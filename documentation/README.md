@@ -21,6 +21,7 @@ in the same commit.
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved. Lean is the judge.
 - [journal.md](journal.md): the hash-chained journal, the only source of truth, and its projections.
 - [runs.md](runs.md): the words for runs (series, run, turn, problem, child, session, step), the two axes `horizon` and `human`, and which command is for which purpose.
+- [frontier.md](frontier.md): the verified frontier, what a run has established about a problem, computed from the journal with no model call, and where it is shown.
 - [lines.md](lines.md): the plan's mechanisms as lines a run switches on, and how they are measured one by one.
 - [scheduler.md](scheduler.md): the escalation ladder and the budget gate, which put a price against a chance of success before each paid launch.
 

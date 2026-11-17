@@ -468,6 +468,7 @@ trust rules are in [trust.md](trust.md#memory-across-runs).
 flagged) are learned records like any other, stamped and unverified, and a later run reads them through the chain ([consolidation.md](consolidation.md)).
 A page is an item of the draw and is judged by `itemEffect` as a lesson is. `stateCardData` takes `{acrossRuns: true}` for the pass, which counts the
 attempts of every run of the chain; a session's own card counts the current run's alone.
+The verified frontier (`frontier`, [frontier.md](frontier.md)) is a second projection beside the card: what Lean accepted about the problem, with no model call.
 
 **Limits.**
 

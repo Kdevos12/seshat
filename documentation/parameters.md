@@ -345,13 +345,13 @@ One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options
 | `--offpeak-max-wait` | run, solve | RunConfig.offpeak.maxWaitMinutes | The longest wait in minutes; goes with --offpeak. |
 | `--impasse-posterior` | run | RunConfig.consortium.impasse.posteriorBelow | The posterior mean at or below which a problem is at an impasse (default 0.1). |
 | `--impasse-attempts` | run | RunConfig.consortium.impasse.minAttempts | Finished attempts before an impasse can be declared (default 8). |
-| `--claim` | hint, steer | the claim a hint or a steer is about | hint: the claim the hint is about (required); steer --forbid: the claim it applies to. |
+| `--claim` | hint, steer, frontier | the claim a hint, a steer or a frontier is about | hint: the claim the hint is about (required); steer --forbid: the claim it applies to; frontier: only this claim's frontier. |
 | `--as` | hint, sign, steer, solve, library, lessons | the person's name | The name the answer or signature is recorded under. |
 | `--note` | sign, library, lessons | a note | A note recorded with the answer. |
 | `--focus` | steer | a claim to focus on | Focus the next turn on this claim. |
 | `--drop` | steer | a claim to drop | Drop this claim. |
 | `--forbid` | steer | a strategy to forbid | Forbid this strategy (with --claim, for that claim only). |
-| `--json` | report | print JSON | The report as JSON. |
+| `--json` | report, frontier | print JSON | The report, or the frontier, as JSON. |
 | `--find` | lean-env | resolve option | lean-env resolve: look the environment up. |
 | `--env-dir` | lean-env | the environments directory | Default SESHAT_LEAN_ENV_DIR or lean/env. |
 | `--allow-programs` | add | admit a pack whose tools start programs or reach servers | Needed for such a pack. |
