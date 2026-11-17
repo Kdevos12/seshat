@@ -186,6 +186,10 @@ Not built (Ruling 32): a card's `prepare` step (HB4, site `heuristic.prepare` of
 the battery after a new lemma (HB5b, site `heuristic.replay`), and the extra features `claim_kind`,
 `origin_informal`, `closed_fast` and `informal_sketch`.
 
+## Cards in solve
+
+`harness solve` has no fleet, so no card was ever drawn for it (plan change PA7). With `RunConfig.cards` (`{ max?: number }`, default 1, at most 5), set by the arm `solve-v2-cards` of the experiment `solve-defaults` and by no defaults set (`v1` and `v2` are unchanged), the harness picks, once per problem and before the first outer session, the cards of the bank that key on the statement: those whose `when` names statement features (`features` or `anyFeatures`) and holds on the statement's features (`statementFeatures`, no model) and its domains at no attempts yet, the one matching the most features first, then in the bank's order. A card with no such condition holds for every statement and says nothing of this one, so it is never picked here; a statement no card keys on gets none. Each card goes in the first prover's first briefing, and in no later one, as the fleet's sessions have it (`heuristicSection`, the same wording). The session's `attempt.started` records it as the fleet records a card shown (`heuristic`, `heuristicFamily`, `heuristicBucket`, and `heuristicRule: "solve"`; `heuristicCards` lists them all when `max` is above 1), so `harness heuristics stats` reads it, and the report adds a line: the cards shown, and the problems certified with and without a card. There is no control share and no draw: the control is the arm without `cards`. Whether a card helps is a model's behaviour, and nothing here has run against a real model.
+
 ## Trust
 
 A card never changes a claim's status, never states a fact and never reaches a system prompt. Built-in
