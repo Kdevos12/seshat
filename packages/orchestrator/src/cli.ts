@@ -34,7 +34,7 @@ import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } fr
 import { buildReport, renderRunReport } from "./report.ts";
 import { writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
-import { doctorCommand, solveCommand } from "./solve-command.ts";
+import { doctorCommand, type SolveFlags, solveCommand } from "./solve-command.ts";
 import { litProbeCommand } from "./lit-command.ts";
 import { refusalLine } from "./provider-errors.ts";
 import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
@@ -59,7 +59,7 @@ const usage = `usage:
               [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--steps N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--horizon episode] [--human none|consortium] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
+              [--horizon episode|campaign] [--human none|consortium|digest] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
@@ -94,6 +94,8 @@ const usage = `usage:
   harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
+  harness campaign STATEMENT|FILE [--max-usd X] [--usd-per-day X] [--until ISO_TIME] [--no-off-peak] [--spiral-turns N] [--turn-usd X] [the other flags of solve]
+              (a run that continues alone: turns that do not wait, the digest campaign/digest.md after each; documentation/campaign.md)
   harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
@@ -190,9 +192,9 @@ from the journal in RUN_DIR. The run's configuration is the one it began with, s
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
 with a line that cannot be resumed (a line that keeps state in the process and cannot rebuild it) is refused when it
 starts as a consortium run and when it is resumed.
-Two axes of a run (documentation/runs.md): --horizon episode (the only one built; campaign is Task 59) and --human none|consortium
-(digest is Task 59). A bare --human is --human consortium, which is consortium mode below; without it a run has no person (none).
-solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest). --steps N is the
+Two axes of a run (documentation/runs.md): --horizon episode|campaign (a campaign has no session cap; harness campaign runs one under a
+supervisor, documentation/campaign.md) and --human none|consortium|digest (digest, which goes with campaign, never waits for a person). A bare --human is --human consortium, which is consortium mode below; without it a run has no person (none).
+solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest); campaign is always campaign and digest. --steps N is the
 limit of model responses in one session (--turns is its old name; give one, or the same number): it is not a consortium turn.
 Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
@@ -246,6 +248,7 @@ async function main(): Promise<number> {
     if (command === "report") return report();
     if (command === "view") return view();
     if (command === "solve") return await solve();
+    if (command === "campaign") return await campaignCommand();
     if (command === "doctor") return await doctor();
     if (command === "lit") return await lit();
     if (command === "ui") return await ui();
@@ -551,7 +554,7 @@ function consortiumFlags(): ConsortiumConfig | undefined {
   const consolidation = values["turn-consolidation"] === true;
   const posterior = number("impasse-posterior", values["impasse-posterior"], undefined);
   const attempts = number("impasse-attempts", values["impasse-attempts"], undefined);
-  if (humanFlag() !== "consortium" && limit === undefined && !narrative && !consolidation) {
+  if (humanFlag() !== "consortium" && humanFlag() !== "digest" && limit === undefined && !narrative && !consolidation) {
     if (posterior !== undefined || attempts !== undefined) throw new UsageError("--impasse-posterior and --impasse-attempts go with --human or a turn limit");
     return undefined;
   }
@@ -813,7 +816,7 @@ async function run(): Promise<number> {
     console.error(describeSettings(file, merged.fromFile, merged.overruled));
   }
   // `"human": "consortium"` in the file, with no turn limit anywhere: consortium mode with its defaults, as a bare --human gives.
-  if (config.human === "consortium" && config.consortium === undefined) config = { ...config, consortium: { limit: {}, impasse: { ...DEFAULT_IMPASSE }, narrative: false } };
+  if ((config.human === "consortium" || config.human === "digest") && config.consortium === undefined) config = { ...config, consortium: { limit: {}, impasse: { ...DEFAULT_IMPASSE }, narrative: false } };
   if (config.intake?.literature === true && process.env.BENCH_CHECKOUT === undefined) process.env.BENCH_CHECKOUT = resolve(checkout);
   const host = hostName(values.host);
   const runId = newId("run");
@@ -1141,9 +1144,9 @@ async function listModels(provider: string | undefined): Promise<number> {
 }
 
 /** `harness solve STATEMENT`: documentation/quickstart.md. */
-async function solve(): Promise<number> {
-  if (target === undefined) throw new UsageError("solve needs a statement: Lean, prose, or a file that holds one");
-  if (third !== undefined) throw new UsageError(`solve takes one statement: put it in quotes (got a second argument, ${JSON.stringify(third)})`);
+async function solve(campaign?: NonNullable<SolveFlags["campaign"]>): Promise<number> {
+  if (target === undefined) throw new UsageError(`${campaign !== undefined ? "campaign" : "solve"} needs a statement: Lean, prose, or a file that holds one`);
+  if (third !== undefined) throw new UsageError(`${campaign !== undefined ? "campaign" : "solve"} takes one statement: put it in quotes (got a second argument, ${JSON.stringify(third)})`);
   if (values.lean === true && values.prose === true) throw new UsageError("--lean and --prose cannot both be given");
   const maxUsd = number("max-usd", values["max-usd"], undefined);
   const turnUsd = number("turn-usd", values["turn-usd"], undefined);
@@ -1190,9 +1193,26 @@ async function solve(): Promise<number> {
       ...(values.settings !== undefined ? { settings: values.settings } : {}),
       ...(horizonFlag() !== undefined ? { horizon: horizonFlag() as Horizon } : {}),
       ...(humanFlag() !== undefined ? { human: humanFlag() as HumanMode } : {}),
+      ...(campaign !== undefined ? { campaign } : {}),
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );
+}
+
+/** `harness campaign STATEMENT [--usd-per-day X] [--until ISO] [--no-off-peak]`: a run that continues alone (documentation/campaign.md). */
+async function campaignCommand(): Promise<number> {
+  const usdPerDay = number("usd-per-day", values["usd-per-day"], undefined);
+  if (usdPerDay !== undefined && !(usdPerDay > 0)) throw new UsageError(`--usd-per-day must be positive, got ${usdPerDay}`);
+  const until = values.until;
+  if (until !== undefined && Number.isNaN(Date.parse(until))) throw new UsageError(`--until must be an ISO time such as 2026-12-01T00:00:00Z, got ${JSON.stringify(until)}`);
+  const spiralTurns = number("spiral-turns", values["spiral-turns"], undefined);
+  if (values["off-peak"] === true && values["no-off-peak"] === true) throw new UsageError("--off-peak and --no-off-peak cannot both be given");
+  return await solve({
+    ...(usdPerDay !== undefined ? { usdPerDay } : {}),
+    ...(until !== undefined ? { until } : {}),
+    ...(spiralTurns !== undefined ? { spiralTurns } : {}),
+    offPeak: values["no-off-peak"] !== true,
+  });
 }
 
 /** `harness parameters [--markdown [--out FILE]]`: the catalogue of every parameter (documentation/parameters.md). */

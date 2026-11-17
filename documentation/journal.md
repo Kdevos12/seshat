@@ -43,8 +43,12 @@ Event types:
 | `run.finished` | `runId`, `attempted`, `solved`, `refuted?`, `candidates`, `usd`, `stopped?` |
 | `run.resumed` | `runId`, `resumption` (1, 2...), `tornTail?` (`action`, `bytes`, `sha256`), `spent` (`usd`, `inputTokens`, `outputTokens`), `interrupted` (`attempts`, `toolRuns`, `tasks`), `codeRev?` |
 | `turn.deferred` | `runId`, `scope` (`turn` or `session`), `turn?`, `problemId?`, `prover?`, `from`, `nextStart`, `until`, `bounded`: the run waits for off-peak hours before starting this ([human.md](human.md#off-peak)) |
-| `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`): a turn of a consortium run begins ([human.md](human.md)) |
+| `turn.started` | `runId`, `turn` (1, 2...), `limit` (`tokens?`, `usd?`, `minutes?`), `source`, `startSpend` (`usd`, `inputTokens`, `outputTokens`), `at?` (the instant it began, by the process's wall clock: a campaign's daily cap counts a turn on its day): a turn of a consortium run begins ([human.md](human.md)) |
 | `turn.ended` | `runId`, `turn`, `reason` (`tokens`, `usd`, `minutes`, `impasse`, `settled`, `disagreement`, `interrupted`, `finished` or why the run stopped), `detail`, `spent` (`turn` and `run`: `usd`, `inputTokens`, `outputTokens`), `minutes`, `waiting` (problem ids), `breakpoint?` (`kind`, `problemId?`, `nodeId?`), `narrative?` (`hash?`, `rejected?`) |
+| `campaign.started` | `runId`, `supervision` (1, 2...), `pid`, `usdPerDay?`, `until?`, `offPeak`, `resumed`: a campaign supervisor took up the run, written between turns ([campaign.md](campaign.md)) |
+| `campaign.waiting` | `runId`, `reason` (`daily_cap` or `usage_limit`), `from`, `until`, `detail`: the campaign waits before its next turn, written before the wait begins |
+| `campaign.mode_changed` | `runId`, `turn`, `mode` (`cold_restart` for now), `reason`, `problemId?`: a turn of a campaign ended at an impasse and the next one changes mode |
+| `campaign.stopped` | `runId`, `reason` (`settled`, `allowance`, `until`, `spiral`, `ended`, `aborted`), `detail`, `turns`, `usd`, `frontier?` (`score`, `entries`): the campaign is over; only `settled` is not a stop |
 | `problem.registered` | `problemId`, `claimId`, `target`, `source` (`repo`, `rev`, `path`, `line?`), `domain`, `allowanceUsd?` (the cap the problem's ledger was opened with, recorded only under `budgetShare`) |
 | `problem.finished` | `problemId`, `claimId`, `outcome`, `reason?`, `attempts`, `usd`, `durationMs` |
 | `claim.created` | `claimId`, `statementId`, `statement`, `origin`, `status`, `gloss?`, `domain?`, `kind?` (`formal`, `informal`), `parentId?`, `header?` |

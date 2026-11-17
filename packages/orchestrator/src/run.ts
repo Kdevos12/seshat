@@ -75,6 +75,7 @@ import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./acc
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { refusalLine } from "./provider-errors.ts";
 import { describeShape, type Horizon, type HumanMode, runShape, shapeProblems } from "./run-shape.ts";
+import { type CampaignConfig, campaignConfigProblems, UNBOUNDED_SESSIONS } from "./campaign-config.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { docstringOf, LIT_SEARCH } from "@seshat/lit";
@@ -263,15 +264,19 @@ export interface RunConfig {
    */
   consortium?: ConsortiumConfig;
   /**
-   * The run's horizon (plan change LH9, documentation/runs.md): `episode`, a bounded number of sessions. `campaign` is reserved for Task 59 and
-   * refused at the start. Absent: `episode`, recorded as such in `run.started`.
+   * The run's horizon (plan change LH9, documentation/runs.md): `episode`, a bounded number of sessions; or `campaign` (documentation/campaign.md):
+   * a prover's sessions are not capped (`sessions` is ignored) and money, time and the claim bound the run; it works in turns, so it needs `human`
+   * `digest` or `consortium`. Absent: `episode`, recorded as such in `run.started`.
    */
   horizon?: Horizon;
   /**
-   * Whether the run stops for a person (LH9): `none`, `consortium` (turns that wait; it needs `consortium`) or `digest` (Task 59, refused at the
-   * start). Absent: `consortium` when the run has consortium turns, `none` otherwise (`runShape`).
+   * Whether the run stops for a person (LH9): `none`, `consortium` (turns that wait; it needs `consortium`) or `digest` (turns that do not wait: a
+   * campaign's supervisor starts the next by itself; it needs `consortium` turns and `horizon` `campaign`). Absent: `consortium` when the run has
+   * consortium turns, `none` otherwise (`runShape`).
    */
   human?: HumanMode;
+  /** The pacing and the guard of a campaign (`harness campaign`, documentation/campaign.md); it goes with `horizon` `campaign`. */
+  campaign?: CampaignConfig;
   /**
    * The off-peak option (`harness run --offpeak`, documentation/human.md, "Off-peak"): a turn or a session starts only
    * when the host's pricing calendar for the run's model says off-peak, and otherwise waits for the next window
@@ -524,6 +529,8 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   problems.push(...frontierConfigProblems(config.frontier));
   problems.push(...restartsConfigProblems(config.restarts));
+  problems.push(...campaignConfigProblems(config.campaign));
+  if (config.campaign !== undefined && config.horizon !== "campaign") problems.push("campaign settings go with horizon campaign");
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -663,6 +670,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const problems = checkConfig(o.config);
   // `limits.steps` and `limits.turns` are one value from here on; the journal records `turns`.
   const config: RunConfig = { ...o.config, limits: normalizeLimits(o.config.limits) };
+  // A campaign's sessions are not capped (documentation/campaign.md): money, time and the claim bound it.
+  const sessionCap = config.horizon === "campaign" ? UNBOUNDED_SESSIONS : config.sessions;
   // The person of a run is the one it began with: a resumed run names none of its own, and a recorded answer of a person's stays theirs.
   const person = o.user ?? resume?.events.find((e) => e.type === "run.started")?.user;
   problems.push(...checkIntake(config.intake, { user: person }));
@@ -952,6 +961,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
       ...(config.frontier?.show === true ? { frontier: { show: true, ...(config.frontier.weights !== undefined ? { weights: { ...config.frontier.weights } } : {}) } } : {}),
       ...(config.restarts !== undefined ? { restarts: { ...config.restarts } } : {}),
+      ...(config.campaign !== undefined ? { campaign: { ...config.campaign } } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       ...(pinnedAll.dropped.length > 0 ? { toolsDropped: pinnedAll.dropped.map((d) => ({ ...d })) } : {}),
@@ -1083,7 +1093,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const turn: Turn | undefined =
     config.consortium === undefined
       ? undefined
-      : beginTurn(journal, { consortium: config.consortium, ...(o.turns?.limit !== undefined ? { flag: o.turns.limit } : {}), ...(o.turns?.clock !== undefined ? { now: o.turns.clock } : {}) });
+      : beginTurn(journal, {
+          consortium: config.consortium,
+          ...(o.turns?.limit !== undefined ? { flag: o.turns.limit } : {}),
+          ...(o.turns?.clock !== undefined ? { now: o.turns.clock } : {}),
+          // A campaign counts a turn's spend on the day it began (documentation/campaign.md, "Pacing").
+          at: new Date((o.wallClock ?? Date.now)()).toISOString(),
+        });
   if (turn !== undefined) {
     const limit = Object.entries(turn.limit).map(([name, value]) => `${value} ${name}`).join(", ");
     log(`turn ${turn.number} begins: ${limit === "" ? "no limit, only the breakpoints end it" : `it ends at ${limit}`} (${turn.source})`);
@@ -1481,7 +1497,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         claimId,
         theorem: entry.fullName,
         provers: config.provers,
-        sessions: config.sessions,
+        sessions: sessionCap,
         problemUsd: capUsd,
       });
       // The provers had started if any of their tasks ever ran: the lines' `beforeProvers` came before that.
@@ -1500,9 +1516,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           const budget = "the problem's budget";
           if (task.taskId === finder) {
             tasks.start(task.taskId, `prover ${task.name} resumes after the interruption: its proof had passed the fast check`);
-            endProverTask(tasks, task, { stop: "solved", sessions: config.sessions, budget });
+            endProverTask(tasks, task, { stop: "solved", sessions: sessionCap, budget });
           } else {
-            endProverTask(tasks, task, { stop: "aborted", sessions: config.sessions, budget });
+            endProverTask(tasks, task, { stop: "aborted", sessions: sessionCap, budget });
           }
         }
       }
@@ -1796,7 +1812,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           modelName: proverRoleModel ?? config.model,
           thinkingLevel: config.roles?.prover?.settings?.thinking ?? config.thinkingLevel,
           ...(roleBook !== undefined ? { roles: roleBook } : {}),
-          sessions: config.sessions,
+          sessions: sessionCap,
           limits: config.limits,
           notesChars: effectiveNotesChars(config),
           ...(config.stateCard === true ? { stateCard: true } : {}),
@@ -1839,7 +1855,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
               stopped = "provider_refused";
               controller.abort(ABORT_STOPPED);
             }
-            end({ stop: result.stop, sessions: config.sessions, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
+            end({ stop: result.stop, sessions: sessionCap, budget: runLedger.exhausted ? "the run's budget" : "the problem's budget" });
           },
           ...(turn !== undefined ? { turn } : {}),
           ...(resumed !== undefined ? { resume: resumed } : {}),
@@ -1885,7 +1901,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             probeCut = false;
             const resumed = proverResumeOf(journal, blobs, first.taskId);
             const left = gate.probeTotalUsd(capUsd) - spentBy(first.taskId);
-            if (resumed !== undefined && resumed.session < config.sessions && left > 1e-9) {
+            if (resumed !== undefined && resumed.session < sessionCap && left > 1e-9) {
               const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
               if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
               if (result.status === "rejected" || result.value.stop !== "probe") return [result];
@@ -1900,7 +1916,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           const extension = gate.extension({ taskId: first.taskId, capUsd });
           if (extension !== undefined) {
             const resumed = proverResumeOf(journal, blobs, first.taskId);
-            if (resumed !== undefined && resumed.session < config.sessions) {
+            if (resumed !== undefined && resumed.session < sessionCap) {
               const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(extension.capUsd) } }));
               if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
               if (result.status === "rejected" || result.value.stop !== "probe") return [result];
@@ -1920,7 +1936,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           if (widened.action === "skip") {
             // After a resumption the probe's task is `ready` again: it takes up its place before it ends.
             if (tasks.get(first.taskId)?.status === "ready") tasks.start(first.taskId, `prover ${first.name} resumes after the interruption, to end at the gate`);
-            endProverTask(tasks, first, { stop: "gate", sessions: config.sessions, budget: "the problem's budget" });
+            endProverTask(tasks, first, { stop: "gate", sessions: sessionCap, budget: "the problem's budget" });
             for (const task of rest) tasks.cancel(task.taskId, "the budget gate did not widen the problem past its probe");
             tasks.promote(entry.id);
             return [{ status: "fulfilled", value: { name: first.name, attempts: workbench.attemptIds.length, stop: "gate" } }];

@@ -49,9 +49,9 @@ describe("the axes of a run", () => {
     assert.deepEqual(runShape({ human: "none" }), { horizon: "episode", human: "none" });
   });
 
-  it("refuses campaign and digest as not built yet, and an axis that contradicts the run", () => {
-    assert.match(shapeProblems({ horizon: "campaign" }).join(";"), /campaign is not built yet: Task 59/);
-    assert.match(shapeProblems({ human: "digest" }).join(";"), /digest is not built yet: Task 59/);
+  it("refuses a campaign without turns, digest without campaign, and an axis that contradicts the run", () => {
+    assert.match(shapeProblems({ horizon: "campaign" }).join(";"), /campaign works in turns/);
+    assert.match(shapeProblems({ human: "digest" }).join(";"), /digest goes with horizon campaign/);
     assert.match(shapeProblems({ human: "none", consortium: consortium() }).join(";"), /contradicts/);
     assert.match(shapeProblems({ human: "consortium" }).join(";"), /needs consortium turns/);
     assert.deepEqual(shapeProblems({ horizon: "episode", human: "consortium", consortium: consortium() }), []);
@@ -99,7 +99,7 @@ describe("what a run records", () => {
   });
 
   it("fails at the start for campaign and digest, before anything is written or spent", async () => {
-    for (const [config, pattern] of [[{ horizon: "campaign" }, /not built yet: Task 59/], [{ human: "digest" }, /not built yet: Task 59/], [{ human: "none", consortium: consortium() }, /contradicts/]] as const) {
+    for (const [config, pattern] of [[{ horizon: "campaign" }, /campaign works in turns/], [{ human: "digest" }, /digest goes with horizon campaign/], [{ human: "none", consortium: consortium() }, /contradicts/]] as const) {
       const dir = join(tempDir(), "run");
       await assert.rejects(demoRun({ responses: [], config: config as Partial<RunConfig>, dir }), (error: unknown) => error instanceof RunSetupError && pattern.test(error.message));
     }
@@ -140,9 +140,9 @@ describe("solve and its sets", () => {
     });
   }
 
-  it("refuses --human none, and campaign, with solve", async () => {
+  it("refuses --human none, and digest without campaign, with solve", async () => {
     await assert.rejects(solve(solveOptions("v1", { base: { human: "none" } })), /contradicts/);
-    await assert.rejects(solve(solveOptions("v1", { base: { horizon: "campaign" } })), /not built yet: Task 59/);
+    await assert.rejects(solve(solveOptions("v1", { base: { human: "digest" } })), /digest goes with horizon campaign/);
   });
 });
 

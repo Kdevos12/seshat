@@ -31,12 +31,13 @@ configuration, and both are recorded in `run.started` (`horizon`, `human`), show
 (`shape: horizon episode, human consortium`) and in the header of the report.
 
 - **`horizon`** (`--horizon`): `episode` is a bounded number of sessions; the run ends when they are used.
-  Every run is an episode today. `campaign` (money, time and a verified frontier bound it) is the work of
-  Task 59 and is refused at the start with "not built yet: Task 59".
+  `campaign` (money, time and a verified frontier bound it; its sessions are not capped) is what
+  `harness campaign` runs ([campaign.md](campaign.md)); every other run is an episode.
 - **`human`** (`--human`): `none` means nobody is asked; a measurement uses it, and `harness ablate` always
   does, because a turn boundary changes what the models see. `consortium` means a turn ends at a limit or a
   breakpoint and waits for the team ([human.md](human.md)); a bare `--human` is `--human consortium`.
-  `digest` (it never waits, a question freezes only its branch) is Task 59 and refused the same way.
+  `digest` (a turn that ends by itself and is followed by the next, with what a person would be asked
+  written into the digest) goes with `campaign` and is refused without it ([campaign.md](campaign.md)).
 
 The value is derived from what the run has, in one function (`runShape` in `run-shape.ts`): `human` is
 `consortium` when the run has consortium turns and `none` otherwise, `horizon` is `episode`. Giving a
@@ -58,7 +59,7 @@ The commands differ because their rules differ; the axes are what changes inside
 
 ## Restarts
 
-`RunConfig.restarts` (plan change LH3; a settings-file key, off by default, so `solve`'s sets `v1` and `v2` send byte-identical requests) restarts a prover's sessions cold on a schedule, so that a long trajectory does not condition itself on its own failures. It is an option of a run, so an episode can use it as a campaign will (Task 59).
+`RunConfig.restarts` (plan change LH3; a settings-file key, off by default, so `solve`'s sets `v1` and `v2` send byte-identical requests) restarts a prover's sessions cold on a schedule, so that a long trajectory does not condition itself on its own failures. It is an option of a run, so an episode can use it as a campaign does ([campaign.md](campaign.md)).
 
 `{ schedule?: "geometric" | "luby", base?: number, stuckChecks?: number }`, with `base` 6 and `stuckChecks` 3 by default.
 

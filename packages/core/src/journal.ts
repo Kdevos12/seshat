@@ -352,6 +352,10 @@ export class Journal {
         return;
       }
       case "turn.deferred":
+      case "campaign.started":
+      case "campaign.waiting":
+      case "campaign.mode_changed":
+      case "campaign.stopped":
         this.onlyOrchestrator(event.type, actor);
         return;
       case "turn.ended": {
