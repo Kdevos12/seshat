@@ -103,7 +103,11 @@ export interface RunConfig {
   provers: number;
   /** Sessions per prover. */
   sessions: number;
-  limits: SessionLimits;
+  /**
+   * What ends a session. `steps` is the new name of `turns` (model responses; plan change LH9): give either, or both when equal (`checkConfig`
+   * refuses two different values), and `normalizeLimits` reads one. The journal keeps recording `turns`, so old journals still resume.
+   */
+  limits: SessionLimits & { steps?: number };
   /** Length limit of a prover's notes. */
   notesChars: number;
   /** Dollars per problem, and for the whole run. */
@@ -458,15 +462,36 @@ export { RunSetupError };
 export const CACHE_RETENTIONS: readonly CacheRetention[] = ["none", "short", "long"];
 
 /** The problems of a configuration, or an empty list when it is sound. */
+/** The limits as one value: `steps` and its old name `turns` are the same number, and only `turns` is recorded and read below this point. */
+export function normalizeLimits(limits: RunConfig["limits"]): SessionLimits {
+  return { turns: limits.steps ?? limits.turns, contextTokens: limits.contextTokens };
+}
+
+/** `limits.steps` and `limits.turns` both given and different: the one problem of the alias. */
+export function limitsProblem(limits: Partial<RunConfig["limits"]>): string | undefined {
+  return limits.steps !== undefined && limits.turns !== undefined && limits.steps !== limits.turns
+    ? `limits.steps (${limits.steps}) and limits.turns (${limits.turns}) are the same limit under two names: give one, or the same value`
+    : undefined;
+}
+
+/** The one value of `--steps` and its old name `--turns` (or of the two keys), or undefined when neither is given; two different values are a `RunSetupError`. */
+export function resolveSteps(steps: number | undefined, turns: number | undefined): number | undefined {
+  const problem = limitsProblem({ ...(steps !== undefined ? { steps } : {}), ...(turns !== undefined ? { turns } : {}) });
+  if (problem !== undefined) throw new RunSetupError(problem.replace(/limits\.steps/, "steps").replace(/limits\.turns/, "turns"));
+  return steps ?? turns;
+}
+
 export function checkConfig(config: RunConfig): string[] {
   const problems: string[] = [];
+  const aliasProblem = limitsProblem(config.limits);
+  if (aliasProblem !== undefined) problems.push(aliasProblem);
   problems.push(...shapeProblems(config));
   const whole = (name: string, value: number, min: number) => {
     if (!Number.isInteger(value) || value < min) problems.push(`${name} must be an integer of at least ${min}, got ${value}`);
   };
   whole("provers", config.provers, 1);
   whole("sessions", config.sessions, 1);
-  whole("limits.turns", config.limits.turns, 1);
+  whole("limits.steps", config.limits.steps ?? config.limits.turns, 1);
   whole("limits.contextTokens", config.limits.contextTokens, 1000);
   whole("notesChars", config.notesChars, 100);
   whole("concurrency", config.concurrency, 1);
@@ -616,8 +641,9 @@ interface QueuedProblem {
 }
 
 async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> {
-  const { config } = o;
-  const problems = checkConfig(config);
+  const problems = checkConfig(o.config);
+  // `limits.steps` and `limits.turns` are one value from here on; the journal records `turns`.
+  const config: RunConfig = { ...o.config, limits: normalizeLimits(o.config.limits) };
   // The person of a run is the one it began with: a resumed run names none of its own, and a recorded answer of a person's stays theirs.
   const person = o.user ?? resume?.events.find((e) => e.type === "run.started")?.user;
   problems.push(...checkIntake(config.intake, { user: person }));

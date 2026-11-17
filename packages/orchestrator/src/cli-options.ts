@@ -33,6 +33,7 @@ export const CLI_OPTIONS = {
   provers: { type: "string" },
   sessions: { type: "string" },
   turns: { type: "string" },
+  steps: { type: "string" },
   "context-tokens": { type: "string" },
   "notes-chars": { type: "string" },
   "cache-retention": { type: "string" },

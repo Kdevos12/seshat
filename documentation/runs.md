@@ -1,6 +1,28 @@
 # Runs: one vocabulary
 
-A run has two orthogonal settings (plan change LH9). The rest of the vocabulary follows in the next commit of this task.
+The words below are the ones every flag, key and page uses (plan change LH9). A level contains the ones
+below it, and only the run has a journal: the journal is the one source of truth of a run
+([journal.md](journal.md)), and a run is the unit of replay.
+
+## The levels
+
+| Level | What it is | Bounded by | Set by |
+|---|---|---|---|
+| series | runs chained by `--memory-from`, with a consolidation pass between them | the person | `--memory-from`, `harness consolidate` ([memory.md](memory.md)) |
+| run | one directory, one journal, one configuration | its allowance | `--run-budget-usd` (`budget.runUsd`), `--max-usd` in `solve` |
+| turn | the work between two stops of a run: a consortium limit or breakpoint, a crash, a usage limit | a turn limit | `--turn-usd`, `--turn-tokens`, `--turn-minutes` (`consortium.limit`) ([human.md](human.md)) |
+| problem | one target claim inside a run | its share of the allowance | `--budget-usd` (`budget.problemUsd`), `budgetShare` |
+| child | a delegated piece of work with its own contract: a probe, a prover task, a hole session, an informal loop, a planner round, a search, a variant | a ledger carved from its parent | the line or the loop that starts it |
+| session | one fresh model context | steps, context size | `--sessions` (per prover), `--steps`, `--context-tokens` (`limits`) |
+| step | one model response | the session's `steps` | `--steps` (`limits.steps`) |
+
+A step used to be called a turn in `--turns` and `limits.turns`, which collided with the consortium turn.
+`--steps` and `limits.steps` are the names now; `--turns` and `limits.turns` stay as aliases (give one, or
+the same number: two different values are refused at the start). The journal still records `turns` in
+`run.started`, so a journal written before the rename reads and resumes as it always did.
+
+A child is not a run. It has no journal of its own: it writes to the journal of the run that started it,
+so that the truth of the run is one chain and replay stays exact.
 
 ## The two axes
 

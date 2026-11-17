@@ -12,9 +12,12 @@ import { consortium } from "./turns-helpers.ts";
 import { armConfig, cumulativeArms, runAblation } from "../src/ablation.ts";
 import {
   buildReport,
+  checkConfig,
   DEFAULT_CONFIG,
+  normalizeLimits,
   readRecordedRun,
   renderRunReport,
+  resolveSteps,
   type RunConfig,
   type RunOptions,
   RunSetupError,
@@ -161,5 +164,54 @@ describe("the command line", () => {
     // `--human` before another flag is the old switch: it reaches the ablation refusal as before.
     assert.match((await harness([...base, "--ablation", "M1", "--human"])).stderr, /a turn limit or --human cannot go with an ablation/);
     assert.match((await harness([...base, "--ablation", "M1", "--human", "consortium"])).stderr, /a turn limit or --human cannot go with an ablation/);
+  });
+});
+
+describe("steps, the new name of turns", () => {
+  it("gives one value for --steps, --turns, or both when equal, and refuses two", () => {
+    assert.equal(resolveSteps(5, undefined), 5);
+    assert.equal(resolveSteps(undefined, 5), 5);
+    assert.equal(resolveSteps(5, 5), 5);
+    assert.equal(resolveSteps(undefined, undefined), undefined);
+    assert.throws(() => resolveSteps(5, 6), (e: unknown) => e instanceof RunSetupError && /steps \(5\) and turns \(6\)/.test(e.message));
+  });
+
+  it("builds the same limits from limits.steps and limits.turns, and refuses two different ones", () => {
+    const limits = { contextTokens: 120_000 };
+    assert.deepEqual(normalizeLimits({ ...limits, steps: 5 } as RunConfig["limits"]), normalizeLimits({ ...limits, turns: 5 }));
+    assert.deepEqual(normalizeLimits({ ...limits, steps: 5, turns: 5 }), { turns: 5, contextTokens: 120_000 });
+    const config: RunConfig = { ...DEFAULT_CONFIG, selection: { all: true }, model: "faux/m", limits: { turns: 5, steps: 6, contextTokens: 120_000 } };
+    assert.match(checkConfig(config).join(";"), /limits\.steps \(6\) and limits\.turns \(5\)/);
+    assert.deepEqual(checkConfig({ ...config, limits: { turns: 5, steps: 5, contextTokens: 120_000 } }), []);
+  });
+
+  it("refuses --steps and --turns that differ, at the command line, and accepts the same number", async () => {
+    const base = ["run", "--model", "faux/prover", "--checkout", "/nonexistent", "--sample", "1"];
+    const run = async (args: string[]): Promise<string> => {
+      try {
+        await exec(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...base, ...args], { env: { ...process.env, HARNESS_HOST: "" } });
+        return "";
+      } catch (error) {
+        return (error as { stderr: string }).stderr;
+      }
+    };
+    assert.match(await run(["--steps", "5", "--turns", "6"]), /--steps \(5\) and --turns \(6\)|steps \(5\) and turns \(6\)/);
+    assert.doesNotMatch(await run(["--steps", "5", "--turns", "5"]), /steps \(5\)/);
+  });
+
+  it("runs on limits.steps and records turns, as the journal always has", async () => {
+    const run = await demoRun({ responses: [check("bad"), check("bad"), check("bad")], config: { limits: { steps: 2, contextTokens: 120_000 } as RunConfig["limits"] } });
+    const started = startedOf(run.events);
+    assert.deepEqual((started?.config as { limits: unknown }).limits, { turns: 2, contextTokens: 120_000 });
+    assert.deepEqual(JSON.parse(readFileSync(join(run.dir, "config.json"), "utf8")).limits, { turns: 2, contextTokens: 120_000 });
+  });
+
+  it("resumes a journal that records turns", async () => {
+    const whole = await demoRun({ responses: [check("bad"), say("NOTES: bad is not a lemma."), check("exact trivial_proof")], config: { sessions: 3, limits: { turns: 7, contextTokens: 120_000 } } });
+    const cut = whole.events.findIndex((e) => e.type === "attempt.started" && ofType(whole.events, "attempt.started").indexOf(e) === 1);
+    const dir = killedAt(whole.dir, cut);
+    assert.equal(readRecordedRun(dir).config.limits.turns, 7);
+    const resumed = await demoResume({ dir, bench: whole.bench, responses: [check("exact trivial_proof")] });
+    assert.equal(resumed.result.problems[0]?.outcome, whole.result.problems[0]?.outcome);
   });
 });

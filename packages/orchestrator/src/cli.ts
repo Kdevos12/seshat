@@ -44,7 +44,7 @@ import { HORIZONS, HUMAN_MODES, type Horizon, type HumanMode } from "./run-shape
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
 import { describeSettings, mergeSettings, readSettingsFile } from "./settings-file.ts";
-import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
+import { CACHE_RETENTIONS, DEFAULT_CONFIG, resolveSteps, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
@@ -55,7 +55,7 @@ const usage = `usage:
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
+              [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--steps N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
               [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
               [--horizon episode] [--human none|consortium] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
@@ -190,7 +190,8 @@ with a line that cannot be resumed (a line that keeps state in the process and c
 starts as a consortium run and when it is resumed.
 Two axes of a run (documentation/runs.md): --horizon episode (the only one built; campaign is Task 59) and --human none|consortium
 (digest is Task 59). A bare --human is --human consortium, which is consortium mode below; without it a run has no person (none).
-solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest).
+solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest). --steps N is the
+limit of model responses in one session (--turns is its old name; give one, or the same number): it is not a consortium turn.
 Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
 two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer
@@ -713,6 +714,11 @@ function readInput<T>(read: () => T): T {
 }
 
 /** The configuration the flags describe, besides the lines, the consortium, the off-peak wait and the typed decisions. */
+/** `--steps N` (model responses per session), and `--turns N`, its old name: either, or both when equal; two different values are a `RunSetupError`. */
+function stepsFlag(): number {
+  return resolveSteps(number("steps", values.steps, undefined), number("turns", values.turns, undefined)) ?? DEFAULT_CONFIG.limits.turns;
+}
+
 function sharedConfig(selection: RunConfig["selection"], model: string, thinking: ThinkingLevel): RunConfig {
   const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
   const cacheRetention = values["cache-retention"];
@@ -730,7 +736,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     provers: number("provers", values.provers, DEFAULT_CONFIG.provers),
     sessions: number("sessions", values.sessions, DEFAULT_CONFIG.sessions),
     limits: {
-      turns: number("turns", values.turns, DEFAULT_CONFIG.limits.turns),
+      turns: stepsFlag(),
       contextTokens: number("context-tokens", values["context-tokens"], DEFAULT_CONFIG.limits.contextTokens),
     },
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
@@ -768,6 +774,7 @@ async function run(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
   horizonFlag();
+  stepsFlag();
   const offpeak = offpeakFlags();
   if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
   const checkout = values.checkout;
@@ -1058,7 +1065,7 @@ function finished(result: RunResult, dir: string): number {
 
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
-  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
+  "model", "thinking", "provers", "sessions", "turns", "steps", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
   "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "role", "role-setting", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
   "offpeak", "offpeak-max-wait", "settings",
 ] as const;
