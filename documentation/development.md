@@ -53,6 +53,13 @@ pnpm figures      # redraws documentation/images from packages/figures (figures.
   capability's tool is missing from the diagram or a node has none of the four marks
   (`packages/orchestrator/test/readme.test.ts`).
 
+## Continuous integration
+
+`.github/workflows/check.yml` runs on every push to `main` and every pull request: `pnpm install`, `pnpm typecheck`,
+the tests that keep the README, the documentation's home and the figures in step with the code, and a syntax check of
+`scripts/*.sh`. It does not run the full suite, whose timed tests depend on the machine: `pnpm check` runs on a developer's
+machine before a merge.
+
 ## Tests that use real data
 
 Some tests run only when their data is on disk:

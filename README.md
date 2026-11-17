@@ -1,5 +1,6 @@
 # Seshat
 
+[![Check](https://github.com/Kdevos12/seshat/actions/workflows/check.yml/badge.svg)](https://github.com/Kdevos12/seshat/actions/workflows/check.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Status: beta v1](https://img.shields.io/badge/status-beta%20v1-orange.svg)](documentation/status.md)
 [![Lean 4.27.0](https://img.shields.io/badge/Lean-4.27.0-2e7d32.svg)](documentation/lean-env.md)
