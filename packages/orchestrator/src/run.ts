@@ -88,6 +88,7 @@ import { computeFirstCases } from "./first-cases.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
+import { runChild } from "./child.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -1582,65 +1583,83 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           const informalCases = await casesOnce();
           const prose = o.prose !== undefined && String(o.prose).trim() !== "" ? String(o.prose) : docstringOf(problem.sketch);
           const person = sketchOfNodes(journal.projection.nodes(HINT_KIND, claimId));
-          const llm = lineLlm({
-            line: INFORMAL_LINE as LineId,
-            journal,
-            blobs,
-            models: o.models,
-            model: config.model,
-            resolveModel: (name) => (name === config.model ? Promise.resolve(model) : resolveModel(o.models, name)),
-            thinkingLevel: config.thinkingLevel,
-            ledger,
-            problemId: entry.id,
-            signal: controller.signal,
-            ...(turn !== undefined ? { turn } : {}),
-            prices,
-            // The generator and the reviser are the planner's role, the verifier is its own.
-            roleFor: (site) => {
-              const use = site === "informal.verify" ? verifier : planner;
-              return use === undefined ? undefined : { use };
+          // The loop is a child of the problem (`runChild`): it is carved a ledger from the problem's, journaled start and end, and a resume
+          // that finds it done does not start it. The node below is its output; a loop cut by the end of the problem has none and is `stopped`.
+          await runChild(
+            {
+              kind: "informal",
+              goal: { claimId },
+              parent: { problemId: entry.id },
+              ledger: {},
+              tools: registry.offers(LEAN_SEARCH) ? [LEAN_SEARCH] : [],
+              output: INFORMAL_PROOF_KIND,
+              resumeKey: `informal:${entry.id}:${claimId}`,
             },
-          });
-          const outcome = await runInformalLoop({
-            settings,
-            llm,
-            statement: entry.statement,
-            ...(prose !== undefined ? { doc: prose } : {}),
-            ...(informalCases !== undefined ? { firstCases: informalCases.section } : {}),
-            ...(person !== undefined ? { sketch: person } : {}),
-            ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "task", estimateUsd }); return { action: a.action, reason: a.reason }; } } : {}),
-            estimateUsd: capUsd * INFORMAL_CALL_SHARE,
-            signal: controller.signal,
-            interrupted: (error) => turn?.ended !== undefined && isTurnEnded(error),
-            log: (text) => log(`${entry.fullName}: ${text}`),
-          });
-          if (outcome.stop === "stopped") {
-            log(`${entry.fullName}: the informal proof was cut by the end of the problem and is not recorded`);
-          } else {
-            // The facts of an accepted proof are looked up with lean.search when the host offers it: at most five queries, no model call, tool runs in the journal.
-            const hits =
-              outcome.accepted && outcome.facts.length > 0 && registry.offers(LEAN_SEARCH)
-                ? await lookupFacts(outcome.facts, async (query) => {
-                    const found = await new RegistryLeanSearch(registry).search(
-                      { query, kind: "name", limit: HITS_PER_FACT, ...(config.private === true ? { private: true } : {}) },
-                      { actor: "harness:informal", signal: controller.signal },
-                    );
-                    return found?.hits.map((hit) => hit.name);
-                  })
-                : [];
-            recordInformalProof(journal, blobs, {
-              claimId,
-              problemId: entry.id,
-              outcome,
-              required: settings.passes,
-              models: { planner: planner?.model ?? config.model, verifier: verifier?.model ?? planner?.model ?? config.model },
-              hits,
-            });
-            log(
-              `${entry.fullName}: the informal proof is ${outcome.accepted ? `accepted after ${outcome.passes} verifier pass(es)` : `not accepted (${outcome.stop}${outcome.detail !== undefined ? `: ${outcome.detail}` : ""})`}` +
-                `, ${outcome.rounds} generate-or-revise call(s); a hint, not checked by Lean`,
-            );
-          }
+            { journal, ledger },
+            async (child) => {
+              const llm = lineLlm({
+                line: INFORMAL_LINE as LineId,
+                journal,
+                blobs,
+                models: o.models,
+                model: config.model,
+                resolveModel: (name) => (name === config.model ? Promise.resolve(model) : resolveModel(o.models, name)),
+                thinkingLevel: config.thinkingLevel,
+                ledger: child.ledger,
+                problemId: entry.id,
+                signal: controller.signal,
+                ...(turn !== undefined ? { turn } : {}),
+                prices,
+                // The generator and the reviser are the planner's role, the verifier is its own.
+                roleFor: (site) => {
+                  const use = site === "informal.verify" ? verifier : planner;
+                  return use === undefined ? undefined : { use };
+                },
+              });
+              const outcome = await runInformalLoop({
+                settings,
+                llm,
+                statement: entry.statement,
+                ...(prose !== undefined ? { doc: prose } : {}),
+                ...(informalCases !== undefined ? { firstCases: informalCases.section } : {}),
+                ...(person !== undefined ? { sketch: person } : {}),
+                ...(gate !== undefined ? { ask: async (estimateUsd: number) => { const a = await gate.ask({ site: "task", estimateUsd }); return { action: a.action, reason: a.reason }; } } : {}),
+                estimateUsd: capUsd * INFORMAL_CALL_SHARE,
+                signal: controller.signal,
+                interrupted: (error) => turn?.ended !== undefined && isTurnEnded(error),
+                log: (text) => log(`${entry.fullName}: ${text}`),
+              });
+              if (outcome.stop === "stopped") {
+                log(`${entry.fullName}: the informal proof was cut by the end of the problem and is not recorded`);
+              } else {
+                // The facts of an accepted proof are looked up with lean.search when the host offers it: at most five queries, no model call, tool runs in the journal.
+                const hits =
+                  outcome.accepted && outcome.facts.length > 0 && registry.offers(LEAN_SEARCH)
+                    ? await lookupFacts(outcome.facts, async (query) => {
+                        const found = await new RegistryLeanSearch(registry).search(
+                          { query, kind: "name", limit: HITS_PER_FACT, ...(config.private === true ? { private: true } : {}) },
+                          { actor: "harness:informal", signal: controller.signal },
+                        );
+                        return found?.hits.map((hit) => hit.name);
+                      })
+                    : [];
+                recordInformalProof(journal, blobs, {
+                  claimId,
+                  problemId: entry.id,
+                  outcome,
+                  required: settings.passes,
+                  models: { planner: planner?.model ?? config.model, verifier: verifier?.model ?? planner?.model ?? config.model },
+                  hits,
+                });
+                log(
+                  `${entry.fullName}: the informal proof is ${outcome.accepted ? `accepted after ${outcome.passes} verifier pass(es)` : `not accepted (${outcome.stop}${outcome.detail !== undefined ? `: ${outcome.detail}` : ""})`}` +
+                    `, ${outcome.rounds} generate-or-revise call(s); a hint, not checked by Lean`,
+                );
+              }
+              return outcome;
+            },
+            { statusOf: (outcome) => (outcome.stop === "stopped" ? { status: "stopped", reason: "the problem ended" } : { status: "done" }) },
+          );
         } catch (error) {
           if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
           if (!controller.signal.aborted) log(`${entry.fullName}: the informal proof failed and was left out: ${messageOf(error)}`);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type HarnessEvent, Journal, readEvents, statementIdV0 } from "@seshat/core";
 import { type ChildSpec, Ledger, runChild } from "../src/index.ts";
-import { ofType } from "./m0-helpers.ts";
+import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 
 /**
  * One contract for a run's children (plan change LH9, Task 56): the common path `runChild` and each kind that was moved onto it, with the
@@ -98,5 +98,37 @@ describe("runChild, the common path", () => {
   it("is written by the orchestrator only", () => {
     const journal = open();
     assert.throws(() => journal.emit("child.started", { childId: "c", kind: "hole", goal: {}, tools: [], output: "x", resumeKey: "k" }, "line:M12"), /orchestrator only|by the orchestrator/);
+  });
+});
+
+describe("the informal loop through the common path", () => {
+  const gen = () => say("Proof A. Zero is the identity of addition, by induction on n.\n\nMathlib facts:\n- Nat.add_zero");
+  const correct = () => say(JSON.stringify({ verdict: "correct", findings: ["The induction step uses the hypothesis."] }));
+  const script = () => [gen(), correct(), correct(), correct(), check("exact bad"), say("Notes.")];
+  const informalChildren = (events: readonly HarnessEvent[]) => ofType(events, "child.started").filter((e) => e.data.kind === "informal");
+
+  it("is started, charged and recorded as a child of its problem, and a resumed run does not start it again", async () => {
+    const whole = await demoRun({ config: { sessions: 1, informalFirst: {} }, responses: script() as never });
+    const [started] = informalChildren(whole.events);
+    assert.ok(started !== undefined);
+    assert.equal(started.data.output, "informal_proof");
+    assert.equal(started.data.resumeKey.startsWith("informal:"), true);
+    const finished = ofType(whole.events, "child.finished").find((e) => e.data.childId === started.data.childId);
+    assert.equal(finished?.data.status, "done");
+    const calls = ofType(whole.events, "model_call.finished").filter((m) => String(m.data.site).startsWith("informal."));
+    assert.equal(calls.length, 4);
+    assert.ok(Math.abs((finished?.data.usd ?? 0) - calls.reduce((sum, m) => sum + m.data.usd, 0)) < 1e-9, "the child's spend is its four calls");
+    assert.ok(whole.events.findIndex((e) => e.type === "child.started") < whole.events.findIndex((e) => e.type === "child.finished"));
+    // Cut after the child ended: the resumed process starts no informal child and makes no informal call.
+    const after = killedAt(whole.dir, (e) => e.type === "attempt.started");
+    const kept = await demoResume({ dir: after, bench: whole.bench, responses: [check("exact bad"), say("Notes.")] as never });
+    assert.equal(informalChildren(kept.events).length, 1);
+    assert.equal(ofType(kept.events, "model_call.finished").filter((m) => String(m.data.site).startsWith("informal.")).length, 4);
+    // Cut mid-way: a child that started and did not end is run again, from its start.
+    let made = 0;
+    const mid = killedAt(whole.dir, (e) => e.type === "model_call.finished" && String(e.data.site).startsWith("informal.") && ++made === 3);
+    const again = await demoResume({ dir: mid, bench: whole.bench, responses: script() as never });
+    assert.equal(informalChildren(again.events).length, 2);
+    assert.deepEqual(ofType(again.events, "child.finished").map((e) => e.data.status), ["done"], "only the second start ended");
   });
 });

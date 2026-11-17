@@ -118,3 +118,11 @@ use (capability ids), the `output` it writes (a node or event kind) and its `res
 
 The events are the orchestrator's alone and change no claim. A journal written before them has none: a resume
 of it runs a child again, as it always did.
+
+### Which kinds are on it
+
+- **informal loop**: moved. `run.ts` starts it with `runChild` (`kind: "informal"`, resume key
+  `informal:PROBLEM:CLAIM`, output `informal_proof`, no cap of its own: the gate and `rounds` bound it). The
+  loop and the `informal_proof` node are the body, unchanged; a loop cut by the end of the problem ends
+  `stopped` and is run again by a resume, as before. The earlier guard (`hasInformalProof`) stays, for the
+  journals written before `child.finished`.
