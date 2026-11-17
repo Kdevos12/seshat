@@ -55,3 +55,41 @@ limit in a configuration that cannot supply one) is refused at the start. So `so
 
 The commands differ because their rules differ; the axes are what changes inside the first purpose.
 `harness parameters` and [parameters.md](parameters.md) list every flag and key.
+
+## Children
+
+A child is one delegated piece of work inside a run (plan change LH9). Seven kinds exist today. They were
+written one by one, so each carries its own handling of budget, journal records and resume. This is the
+inventory, read from the code at the time of Task 56; the common contract that the next sections describe
+(`ChildSpec`, `runChild`) is built on it.
+
+| Kind | Started by (caller) | Budget | Actor, site | Writes | Resume | May call |
+|---|---|---|---|---|---|---|
+| probe | `runProbe` in `probe.ts` (`harness probe`, after a finished run) | no ledger of its own: it runs the probe set twice with `runBench`, each arm a run with its own `--run-budget-usd` | each arm is a whole run: its own journal, `orchestrator` and the usual line actors; the parent journal is never written | `probe.json` and the directories `on/`, `off/`, `verified/` beside the run; no event or node in the parent | the arms are runs and resume as runs; the verified-only memory refuses an existing journal; `set.txt` freezes the set | whatever a run may: lines, models, Lean |
+| prover task | `run.ts` (`runProblem`: `createProverTasks`, `startProver`, `prover.ts`) | the problem's ledger (`runLedger.child(capUsd)`), shared by every prover of the problem; a probe slice or an extension is `ledger.child(cap)`; the task row carries `budget {usd, sessions}` | `prover:pN`; site is the session's (`attempt.*`, `attempt.charged`) | `task.created`, `task.status_changed`, `attempt.started/finished/charged`, `model_call.finished`, `validation.finished`, edges and nodes through `validate` | `resume.ts`: the journal's `task.*` and `attempt.*` events; a `running` task goes back to `ready` after `run.resumed`; sessions resume from the attempts | `lean_check`, `lean_edit`, the run's tools (`tools.ts`), `consult`, the model of the run |
+| hole session | `runHoleSession` in `hole-session.ts`, from `line-runtime.ts` (`context.holeSession`, line M12) | the problem's ledger directly, no cap of its own; `request.turns` bounds the steps, the budget gate is asked by the line before it asks for a session (site `task`) | the line's actor (`line:M12`), site `scheduler.hole` | `model_call.finished` for each response; the line writes the `m12_*` nodes and the claim's checks through `validate` (`hole_verdict` is a tool, not a status) | by the line's nodes in the memory (`resume: rebuild`): a session cut mid-way is asked again; nothing in the journal says a session ended | `lean_check`, `lean_edit`, `hole_verdict`; the `hole` role's model |
+| informal loop | `runInformalLoop` in `informal.ts`, from `run.ts` (once per problem, before the lines and provers, `informalFirst`) | the problem's ledger through `lineLlm`; the gate is asked before every call (site `task`, estimate `capUsd * INFORMAL_CALL_SHARE`); `rounds` and `passes` bound it | `harness:informal` for the facts lookup, the line id `informal` for the calls; sites `informal.generate`, `informal.verify`, `informal.revise` | an `informal_proof` node (a hint, no status) with its blob; `model_call.finished`; `tool_run` of `lean.search` for the facts | `hasInformalProof`: the node of the claim for this problem means done; a loop cut mid-way has no node and is run again from its start | models (planner and verifier roles), `lean.search` for the facts; no Lean check |
+| planner round | `refine` in `packages/scheduler/src/line.ts` (line M12, `refine` option), through `problem.llm` | the problem's ledger through the line's `llm`; the gate is asked as a task of one call (`PLANNER_CALL_SHARE` of a session's cost); `maxRefinements` rounds | `line:M12`, site `scheduler.planner` (the `planner` role may escalate its model) | an `m12_sketch` node with `planner: true` (or `m12_refine_stop` when the model call fails), `model_call.finished`, one `checkSketch` | the sketch nodes: rounds made are counted from them; a round cut while its call was in flight is asked again | the planner's model, `checkSketch` (a Lean check of the file) |
+| M16 program search | `work` in `packages/induction/src/m16.ts`, as the `runTask` of a `search` task of line M16, started by `LineRuntime.runTasks` | no ledger of its own: the line stops when `problem.budget.exhausted`; the task is opened through the budget gate (site `task`) | `line:M16`; the model calls of the search are `reuse`d | `search_program`, `search_result` nodes, a `derived_from` edge and a claim for a witness, `validate` for the witness's proof | the task row (`running` goes back to `ready`) and the `search_result` node of the spec's key: a finished spec is returned, an unfinished one is run again at no cost (seeded, answers reused) | the search model, a sandboxed program runner, `sage` through the registry when the spec has a scorer, `validate` |
+| M18 variant | `runTask` of a `prove` task in `packages/scheduler/src/curriculum.ts`, started by `LineRuntime.runTasks`; the variants are made by the same line's request | the line's own share of the problem's budget (`share`, default 20%), counted from its own records (`roomFor`), not a carved ledger; the task row carries `budget.sessions`; the gate is asked when the task opens | `line:M18`, sites `curriculum.variants` and the inner sessions' | `m18_generation`, `m18_variant`, `m18_session` nodes, a claim and a `derived_from` edge per variant, `validate` for each proof | the task row and the nodes: a variant already proved or failed is not redone, a session cut mid-way is counted from its recorded cost | the line's model, `validate`; a variant's status never moves the target's |
+
+What differs, and matters for one contract:
+
+- Four kinds are asked of the budget gate before they start (informal loop, planner round, M16 and M18 tasks);
+  the hole session is asked by its line, and the prover's session by the wave and session gates; the probe is
+  never asked, because it is a set of runs with their own allowance.
+- Three ledgers are in play: the problem's own (hole session, informal loop, planner round, prover), a line's
+  share counted from its records (M18), and none (probe, M16). Only the prover carves `ledger.child(cap)` today.
+- A start and an end are recorded for two kinds only, and both as ledger tasks (`task.created` to
+  `task.status_changed`): the prover and the tasks of M16 and M18. The hole session, the informal loop and the
+  planner round leave only their results (nodes) and their calls (`model_call.finished`); a resume infers "done"
+  from the node.
+- Resume is by the task row (prover, M16, M18), by a result node (informal loop, planner round, M16) or by
+  running again (hole session, an informal loop that has no node). No kind has a common "finished" key.
+- The probe is a set of runs with their own journals, not a child of its parent's journal: a finished run is
+  pinned by other runs and is never added to. It cannot be started through a record of the parent run, so
+  it stays what it is; it is the one kind that is not a child in the sense of this page, and `ChildSpec`
+  names its kind for the campaign's use only.
+- M18's variant is not a separate code path: it is a `prove` task that the line proposes and works through
+  `runTask`, started where every task is. M16's search is the same. Both already have one start (`runTasks`) and
+  one record (the task ledger); what they lack is the common ledger carve and the common resume key.
