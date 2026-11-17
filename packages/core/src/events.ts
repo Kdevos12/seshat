@@ -243,11 +243,27 @@ export interface EventDataMap {
    */
   "campaign.mode_changed": {
     runId: string;
-    /** The turn that ended at the impasse. */
+    /** The turn that ended at the impasse, or the turn after which a plateau mode begins (plan change LH5). */
     turn: number;
+    /** `cold_restart` (an impasse), or one of the plateau modes `specialise`, `test`, `construct`, `read`, `reformulate` (documentation/campaign.md, "Plateau modes"). */
     mode: string;
     reason: string;
     problemId?: string;
+    /** For a plateau mode: the modes the rule passed over because they do not apply to the statement or the run, each with why. Absent: none. */
+    skipped?: Array<{ mode: string; why: string }>;
+    /** For a plateau mode: how many modes the rule has gone through since the frontier last grew, the skipped ones included; two full cycles of five end the campaign (LH6). */
+    step?: number;
+  };
+  /**
+   * The campaign's dead-end store changed (plan change LH4, documentation/campaign.md, "The dossier"), written by the orchestrator between turns: `added`, the
+   * items a reflection call proposed that code validated (a model only proposes; the dossier is never a model's rewrite), and `retired`, the keys of the
+   * items the least active half of the store past its bound dropped from view. A retired item stays in the journal. Absent fields: none.
+   */
+  "campaign.dossier": {
+    runId: string;
+    turn: number;
+    added?: Array<{ approach: string; why: string; evidence?: string }>;
+    retired?: Array<{ key: string; score: number }>;
   };
   /**
    * The campaign is over. `settled`: the certifier's kernel replay settled the target (the only end that is not a stop). Every other reason is a
@@ -904,6 +920,7 @@ export const EVENT_TYPES: readonly EventType[] = [
   "campaign.started",
   "campaign.waiting",
   "campaign.mode_changed",
+  "campaign.dossier",
   "campaign.stopped",
   "attempt.charged",
   "task.created",

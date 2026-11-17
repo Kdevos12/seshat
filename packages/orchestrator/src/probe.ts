@@ -43,7 +43,7 @@ export function chooseProbeSet(problems: readonly ProblemEntry[], options: { siz
 /** Event types that carry a learned, unverified record, or only the account of how a run went: left out of the verified-only memory. */
 const DROPPED = new Set<EventType>([
   "run.finished", "run.resumed", "problem.finished", "attempt.started", "attempt.finished", "attempt.charged", "model_call.finished", "lesson.recorded",
-  "turn.started", "turn.ended", "turn.deferred", "campaign.started", "campaign.waiting", "campaign.mode_changed", "campaign.stopped", "task.created", "task.assigned", "task.status_changed", "task.routed", "ladder.escalated",
+  "turn.started", "turn.ended", "turn.deferred", "campaign.started", "campaign.waiting", "campaign.mode_changed", "campaign.dossier", "campaign.stopped", "task.created", "task.assigned", "task.status_changed", "task.routed", "ladder.escalated",
   "memory.epoch_opened", "decision.made", "budget.gated", "pack.installed", "pack.removed", "budget.round", "problem.parked", "child.started", "child.finished",
 ]);
 /** Fields that name a record of a dropped event. */

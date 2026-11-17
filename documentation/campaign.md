@@ -60,6 +60,36 @@ against the cap). It also counts what CA24's model-free consolidation finds (ope
 unsupported lessons). No model writes it. It is bounded: each list shows at most eight lines and the page at
 most 7000 characters, so it does not grow with the campaign's age.
 
+## The dossier
+
+Each session of a campaign is briefed by a dossier (plan change LH4): a text rebuilt by code from the journal at the session's start, never
+rewritten by a model, within `campaign.dossierTokens` tokens (default 750, the state card's bound of 3000 characters). It takes the state card's
+place in the opening message. Its tiers:
+
+- **L0**, always shown: the signed statement and the frontier's top entries.
+- **L1**, the plan and the top obstacles: skipped. There is no plan without the research agent (Tasks 46 to 48); the tier is empty and the
+  code says so in a comment.
+- **L2**, the dead-end store: dead ends and failed approaches as items (approach, why it failed, the Lean evidence if any: the first error and
+  its goal). They are built from the journal: refuted subclaims and variants and counter-models Lean checked (the frontier's `dead_end`
+  entries), failed sessions (their strategy, failure class and first error), and the sessions that ended stuck (the restarts of
+  [runs.md](runs.md#restarts)). Each is a delta merged into the store by key, so a dead end that repeats is one item with a count: the key is the
+  failure class and the detail, or the refuted statement, both through `normalizeDetail`.
+- **L3**, unverified items (lessons, the consolidation page): the ones the randomized inclusion already drew for the session
+  ([memory.md](memory.md#randomized-inclusion)), shown last and the first to be left out when the bound is reached.
+
+Each L2 item has an activity, counted from the journal: the sessions it was shown to (started after it existed and before it was retired), those
+among them in which the frontier grew (followed) and those in which it did not (ignored), and the sessions that recalled it (whose last failure was
+the item, or that called `previous_attempt` right after the session that left it). Items are shown from the most active (twice the followed count
+plus the recalled count, then the latest).
+
+When the store holds more than `campaign.deadEnds` items (12), the least active half of the items past that bound is retired after the turn:
+`campaign.dossier` records the keys and scores, they stay in the journal and are no longer shown.
+
+With `campaign.reflect` (off by default) one capped model call a turn (site `campaign.reflect`, at most $0.25 of the run's allowance, journaled with
+the problem it is for) proposes new items as a JSON array. Code reads it under a strict format: an answer that is not a JSON array is dropped
+whole, an item without a text `approach` and `why`, or whose text the prose screen refuses, is dropped alone, at most three are kept. What is kept is
+journaled as a delta (`campaign.dossier`, `added`) and shown as "proposed by a model, not checked". The model proposes; code merges.
+
 ## Pacing
 
 - **`--usd-per-day X`** (`campaign.usdPerDay`): the day's spend is counted from the journal by UTC day. Each

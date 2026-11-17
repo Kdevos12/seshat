@@ -46,6 +46,8 @@ With `show`, the budget gate's probe also reads the frontier: a new subclaim, ca
 `harness frontier RUN_DIR [--claim ID] [--json]` prints the frontier of each problem of a run that no process works on, with no model and
 no Lean.
 
+In a campaign the frontier's top entries are the L0 of each session's dossier, and its `dead_end` entries feed the dead-end store ([campaign.md](campaign.md#the-dossier)).
+
 ## The trust rule
 
 The frontier is a projection. It never changes a claim's status, and no model, tool or person can through it. An `evidence` entry is

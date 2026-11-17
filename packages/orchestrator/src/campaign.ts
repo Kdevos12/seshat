@@ -5,6 +5,8 @@ import { frontier, type FrontierOptions, frontierScore, MemoryStore } from "@ses
 import { type CampaignConfig, DEFAULT_SPIRAL_TURNS, readCampaignConfig } from "./campaign-config.ts";
 import { type DigestContext, renderDigest, scoresByTurn, writeDigest } from "./campaign-digest.ts";
 import { acquireLock, backoffMinutes, beat } from "./campaign-watch.ts";
+import { DEFAULT_DEAD_ENDS } from "./dossier.ts";
+import { retirementOf } from "./dossier-build.ts";
 import { sleepFor } from "./offpeak.ts";
 import { usageLimitError } from "./provider-errors.ts";
 import { consortiumOf } from "./consortium.ts";
@@ -363,6 +365,13 @@ export async function runCampaign(o: CampaignOptions): Promise<CampaignEnd> {
         const reason = last.end.detail;
         const runId = view.runId;
         pending.add((journal) => journal.emit("campaign.mode_changed", { runId, turn, mode: "cold_restart", reason, ...(bp.problemId !== undefined ? { problemId: bp.problemId } : {}) }, "orchestrator"));
+      }
+      // The dead-end store past its bound: the least active half of what is past it is retired, in the journal and out of view (LH4).
+      {
+        const retire = retirementOf(view.events, MemoryStore.readOnly(view.p), view.p.problems().map((row) => row.claim_id), view.frontierOptions, view.settings.deadEnds ?? DEFAULT_DEAD_ENDS);
+        const runId = view.runId;
+        const turn = view.p.turns().ended;
+        if (retire.length > 0) pending.add((journal) => journal.emit("campaign.dossier", { runId, turn, retired: retire }, "orchestrator"));
       }
       pending.flush(view);
       view.close();

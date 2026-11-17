@@ -71,6 +71,7 @@ import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type Tu
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
 import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolidate.ts";
+import { REFLECT_USD, reflectOnce, SITE_CAMPAIGN_REFLECT } from "./dossier-build.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { refusalLine } from "./provider-errors.ts";
@@ -1819,6 +1820,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.frontier?.show === true ? { frontier: { problemLedger: ledger, ...(config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {}) } } : {}),
           ...(config.restarts !== undefined ? { restarts: resolveRestarts(config.restarts) } : {}),
           ...(config.horizon === "campaign" ? { usageLimit: true } : {}),
+          ...(config.horizon === "campaign" && config.frontier?.show === true ? { dossier: config.campaign?.dossierTokens !== undefined ? { tokens: config.campaign.dossierTokens } : {} } : {}),
           ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),
@@ -2111,6 +2113,22 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           log,
           call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(NARRATIVE_USD), signal: o.signal, prices }),
         }).catch((error: unknown) => ({ rejected: messageOf(error) }));
+      }
+      if (config.horizon === "campaign" && config.campaign?.reflect === true && config.frontier?.show === true && turn.ended !== undefined) {
+        const row = journal.projection.problems()[0];
+        if (row !== undefined) {
+          await reflectOnce({
+            journal,
+            store: new MemoryStore({ journal, blobs, actor: "orchestrator" }),
+            runId,
+            turn: turn.number,
+            claimId: row.claim_id,
+            statement: row.target,
+            frontier: config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {},
+            call: narrativeCall({ journal, blobs, models: o.models, model, name: config.model, thinkingLevel: config.thinkingLevel, ledger: runLedger.child(REFLECT_USD), signal: o.signal, prices, site: SITE_CAMPAIGN_REFLECT, problemId: row.problem_id }),
+            log,
+          });
+        }
       }
       closeTurn(journal, turn, {
         reason,

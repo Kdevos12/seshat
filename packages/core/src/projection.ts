@@ -371,6 +371,7 @@ const INHERITED_SKIPPED: readonly string[] = [
   "campaign.started",
   "campaign.waiting",
   "campaign.mode_changed",
+  "campaign.dossier",
   "campaign.stopped",
   "problem.registered",
   "problem.finished",
@@ -634,6 +635,7 @@ export class Projection {
       case "campaign.started":
       case "campaign.waiting":
       case "campaign.mode_changed":
+      case "campaign.dossier":
       case "campaign.stopped":
         return;
       case "run.resumed": {
