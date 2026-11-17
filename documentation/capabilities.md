@@ -331,7 +331,7 @@ are the problem's own sketch, written by the harness. The four searches ask netw
 in the manifest's `environment` (`site.loogle`, `site.leansearch`, `site.leanfinder`,
 `site.hammer`) like the other site-backed capabilities; a site that cannot be reached is an answer
 (`status: unavailable`), not a failure. Its contract has 15 cases, for a host with a Lean project;
-they have not run against Lean. [lean-lsp.md](lean-lsp.md) covers the operations, what it never
+the capability has run for real in `harness solve` (see [status.md](status.md)). [lean-lsp.md](lean-lsp.md) covers the operations, what it never
 does, the installation and the settings. It is not sandboxed, and a run gives it to the provers
 only when asked (`--tool lean.lsp`).
 ## `lean.certify`
@@ -347,7 +347,7 @@ a `sandbox` command or opts in with `unsandboxed: true`, and neither shipped pro
 `lake-certify`, in `@seshat/lean-local`) runs `lake env lean` in the project `LEAN_PROJECT_DIR`;
 the orchestrator reaches it through `RegistryLeanCertifier.forHost(registry)`, a `LeanCertifier`
 whose certifications are tool runs, and `leanCertifyImplementation(certifier)` makes any
-`LeanCertifier` an implementation. Its contract has 9 cases, not run against Lean yet.
+`LeanCertifier` an implementation. Its contract has 9 cases; the kernel replay has run against a real Lean ([certifier.md](certifier.md#what-ran-against-a-real-lean)).
 
 ## `compute.sage`
 

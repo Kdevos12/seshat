@@ -585,7 +585,7 @@ Options of `harness run`:
 | `--run-budget-usd X` | none | Dollars for the whole run. |
 | `--concurrency N` | 1 | Problems worked on at the same time. |
 | `--tool CAPABILITY` | none | A `direct` capability given to the provers besides `lean_check`, such as `compute.sage`; repeat it for several ([other tools](#other-tools)). |
-| `--lines ID,...` | none | The lines to enable, such as `M1,M6,fleet`; repeatable. None: M0 ([lines.md](lines.md)). M1, M2, M6 and `fleet` are the lines built ([m1-identity-memory.md](m1-identity-memory.md), [graph.md](graph.md), [guards.md](guards.md), [fleet.md](fleet.md)); a run that enables a line not built yet refuses to start. |
+| `--lines ID,...` | none | The lines to enable, such as `M1,M6,fleet`; repeatable. None: M0 ([lines.md](lines.md)). Every line is built but the suspended M7 and M9 ([lines.md](lines.md), [m1-identity-memory.md](m1-identity-memory.md), [graph.md](graph.md), [guards.md](guards.md), [fleet.md](fleet.md)); a run that enables a line that is not implemented refuses to start. |
 | `--ablation NAME` | `M0` | The cumulative config that ends with line `NAME`: that line and every line before it in the plan's order ([lines.md](lines.md#cumulative-configs)). Not with `--lines`. |
 | `--line-option ID.KEY=VALUE` | none | An option of an enabled line; `VALUE` is read as JSON when it parses, as a string otherwise. Repeatable. |
 | `--human` | off | Consortium mode: the run ends a turn at a breakpoint and waits for the team ([human.md](human.md)). Implied by a turn limit or `--turn-narrative`; not with `--ablation`. |
@@ -718,13 +718,10 @@ as the tests expect. It is not part of `pnpm test`, which needs no SageMath.
 
 Not done yet:
 
-- No run against a real model or a real Lean server. The development environment cannot download
-  the Lean toolchain, so the first real run will be on the workstation or the dedicated server,
-  once `pnpm harness contract lean.check` passes there.
-- No run has gone through a real certifier. The harness side is tested with a fake `lake` and fake
-  certifiers; the Lean program `lean/SeshatCertify` has never been compiled
-  ([certifier.md](certifier.md#to-verify-against-lean)). Until it has run, a real run's best
-  outcome is `candidate` in practice, though the code paths to `proved` and `refuted` are there.
+- The loop has run against a real model and a real Lean between 2026-11-11 and 2026-11-13, through
+  the certifier's kernel replay ([status.md](status.md)); the runs were small (at most 20 problems of
+  grade B) and are summarized in the README's "Results so far". The tests still use a faux model and
+  a simulated Lean.
 - No run has been resumed against a real model or a real Lean: the tests stand a faux model and a
   simulated Lean in for them, and the process that ends is a copy of a journal cut at an event or a
   child process killed with SIGKILL. `harness run --resume` has not been run from the command line

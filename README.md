@@ -365,6 +365,11 @@ pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --mod
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation
 pnpm harness audit runs/RUN_ID                 # one dossier per problem that was not certified
+pnpm harness frontier runs/RUN_ID              # what a run has established, from its journal alone
+pnpm harness campaign "STATEMENT" --max-usd 20 # a run that continues alone, in turns, under a dollar allowance
+pnpm harness consolidate runs/RUN_ID           # the pass between runs: state cards, duplicate lessons
+pnpm harness add PATH|GIT_URL                  # install a pack of tools, skills or heuristic cards (also: packs, remove)
+pnpm harness heuristics list                   # the heuristic card bank (also: stats RUN_DIR, mine RUN_DIR)
 ```
 
 The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0` ([documentation/m0-loop.md](documentation/m0-loop.md#commands)). The full command reference is in [documentation/capabilities.md](documentation/capabilities.md#the-harness-command) and every flag and run setting is audited in [documentation/parameters.md](documentation/parameters.md).

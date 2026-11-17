@@ -29,7 +29,7 @@ The identity that names the statements is the one an enabled line gives (`Line.i
 once per run with the registry, so that an identity that needs Lean can use it). M1 gives
 `TextIdentity`: the hash of the text without comments and with whitespace collapsed, together with
 the header, normalized the same way (`st0_`). Another identity replaces it without change to the
-store, and at most one enabled line may give one. The Lean identity (`st1_`) is not built.
+store, and at most one enabled line may give one. The Lean identity (`st1_`, `LeanIdentity` in `@seshat/lean-meta`, [lean-meta.md](lean-meta.md)) is another line's, not M1's.
 
 So two problems with one statement under one prefix have one claim, in the order the run reaches
 them: the second problem's `problem.registered` carries the first one's `claimId`, and no second

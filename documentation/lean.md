@@ -256,10 +256,10 @@ services are on. In `harness solve`, `--lean-search` (and the defaults set `v2`,
 the answer is journaled as `intake.consented`, `--lit` is the non-interactive yes, `--yes` or `--ask-stdin` without `--lit` is no, and a resumed run
 reads the journaled answer. With a no, `lean.search` runs with its local backends only.
 
-**Not run.** Nothing here ran against a real Lean (the `#check` line and the lines Lean gives its messages are from its documentation as
-remembered; the verification reads the message at the line of each `#check`), a real search service (the request and the answer shape of
-`remote` and `pattern` are written from the services' documentation as remembered and may need an adapter, which is a replacement of the
-backend behind the same capability) or an index of Mathlib. The tests use a simulated Lean and fake services.
+**What has run.** The two public services were probed on the owner's machine on 2026-11-12 (leansearch.net reads the query only as a
+list, Loogle answers up to 200 hits; their recorded answers are the fixtures in `packages/lean-search/test/fixtures/real/`), and
+`lean.search` ran with a real Lean in the real runs that [status.md](status.md) lists. No local index of Mathlib has been built. The
+tests use a simulated Lean and fake services.
 
 ## To verify against Lean
 

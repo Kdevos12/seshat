@@ -41,8 +41,8 @@ pnpm test
   server an environment and a config directory of their own (`packages/ui/test/helpers.ts`), so the
   machine's model credentials and host profiles are not seen.
 - A change updates the documentation page that describes it, in the same commit.
-- The diagram in the README, "How research flows", shows the steps a statement goes through and the
-  tools a prover can call, each marked built, written but waiting for a Lean server, or planned. A
+- The diagram in the README, "The research flow", shows the steps a statement goes through and the
+  tools a prover can call, each marked built, written and waiting for something real (orange), or planned. A
   change to that flow, such as a new capability, a new step, or a planned part that gets built,
   updates the diagram in the same commit. A test fails when a capability's tool is missing from the
   diagram or a node has none of the three marks

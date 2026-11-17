@@ -8,7 +8,7 @@ server, at a pinned release. The plan asks for it in PC7: provers that can look 
 and search for lemmas do better than provers that only see `lean_check`'s verdict. Whether they do
 here is what Task 14 measures (`harness ablate --experiment lsp`), with this tool set against M0 with `lean_check` only.
 
-**Not run against a real Lean yet.** The development environment has no Lean toolchain. Most of the
+**Run against a real Lean in the first real runs (2026-11-11 to 13, [status.md](status.md)); the opt-in test below has not.** Most of the
 tests run against a stand-in server whose shapes were taken from the real release. Besides them
 there is an opt-in test of the real server (release 0.31.0, from PyPI) with its language server and
 its network call replaced by canned values: its tools, their argument checks, rate limits and error
