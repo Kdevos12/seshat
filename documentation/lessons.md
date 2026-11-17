@@ -105,6 +105,16 @@ with no consolidation has neither of the fields below.
   that flagged it, like a staged lesson. `harness lessons pending` lists it with its flag. An approval is a `lesson_decision` node, which a
   later run does not inherit, so a later run on the consolidation run sees the lesson waiting again until it is approved there.
 
+## Lessons in solve
+
+`harness solve` can switch M5 on with no new setting: the line list is the switch (`--lines M1,M5,...`, or the arm `solve-v2-lessons` of
+the experiment `solve-defaults`, [ablate.md](ablate.md), which is `solve-v2` plus `M5`; `v2` already has M1, and both defaults sets
+`v1` and `v2` stay as they are). The lessons then work as above: a lesson written when a problem ends reaches the outer prover's
+briefing of every later problem in the run (and of a run that inherits the memory of this one, [memory.md](memory.md)), drawn, with the draw
+on `attempt.started`, so that the arm measures the lessons' effect against `solve-v2` and not their presence. Without M5 nothing changes
+and no lesson is written. A lesson for the global scope still waits for a person ([Staged promotion](#staged-promotion)); the domain and
+claim lessons are active at once. Nothing has run on a real model: the tests are faux.
+
 ## Staged promotion
 
 A lesson for the global scope changes what every later problem sees, so by default it is recorded `pending` and shown to nobody until a
