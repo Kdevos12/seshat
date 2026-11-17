@@ -46,7 +46,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
     mkdirSync(shots, { recursive: true });
     const s = await started({ staticDir: STATIC_DIR });
     open.push(s);
-    const catalogue = (await s.call("GET", "/api/parameters")).json() as { groups: Array<{ id: string }>; parameters: Array<{ key: string; group: string; ui: string; status: string; default: string; solveFlag?: string }> };
+    const catalogue = (await s.call("GET", "/api/parameters?command=solve")).json() as { groups: Array<{ id: string }>; parameters: Array<{ key: string; group: string; ui: string; status: string; default: string; solveFlag?: string; solveDefault?: string }> };
     const forSolve = catalogue.parameters.filter((p) => p.solveFlag === undefined);
     const groups = catalogue.groups.map((g) => g.id).filter((g) => forSolve.some((p) => p.group === g));
     const browser = await pw.chromium.launch();
@@ -62,7 +62,10 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       const advanced = forSolve.filter((p) => p.ui === "advanced");
       assert.equal(await page.locator("details > .setting, details .setting").count() >= advanced.length, true);
       assert.ok((await page.locator(".badge.experimental").count()) >= 1 && (await page.locator(".badge.beta").count()) >= 1, "beta and experimental badges");
-      assert.equal(await page.getAttribute("#setting-budgetShare", "placeholder"), forSolve.find((p) => p.key === "budgetShare")?.default, "the default is the placeholder");
+      // The panel configures a solve: the placeholder is what solve applies (budgetShare 2 under v2), marked, not the RunConfig default.
+      assert.equal(forSolve.find((p) => p.key === "budgetShare")?.solveDefault, "2");
+      assert.equal(await page.getAttribute("#setting-budgetShare", "placeholder"), "2", "the value solve applies is the placeholder");
+      assert.match(await page.locator("label[for=setting-budgetShare] .solve-default").textContent(), /v2/, "and it is marked");
       // Open every "Advanced" and fill one number and one switch; the rest stay empty.
       for (const d of await page.locator("fieldset.group details").all()) await d.evaluate((e: any) => (e.open = true));
       await page.fill("#setting-budgetShare", "3");

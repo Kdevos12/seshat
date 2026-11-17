@@ -1,4 +1,4 @@
-import { GROUP_SUMMARY, PARAMETER_GROUPS, RUN_PARAMETERS, settingKind, settingsFileKeys, SOLVE_OWN_FLAGS, type ParameterStatus, type ParameterUi, type RunConfig, type SettingKind } from "@seshat/orchestrator";
+import { DEFAULT_DEFAULTS, GROUP_SUMMARY, PARAMETER_GROUPS, RUN_PARAMETERS, settingKind, settingsFileKeys, solveDefaultsOf, SOLVE_OWN_FLAGS, type DefaultsName, type ParameterStatus, type ParameterUi, type RunConfig, type SettingKind } from "@seshat/orchestrator";
 
 /**
  * The catalogue the settings menu is drawn from (`GET /api/parameters`): the entries of `packages/orchestrator/src/parameters.ts` that a person sees
@@ -20,6 +20,10 @@ export interface ParameterView {
   ui: Exclude<ParameterUi, "hidden">;
   /** The flag of `harness solve` that takes this key's place: a form that starts a `solve` leaves the key out. */
   solveFlag?: string;
+  /** For a `solve` (`?command=solve`): the value `solve` runs with under `solveSet` when it is not the `harness run` default shown in `default`. */
+  solveDefault?: string;
+  /** The defaults set `solveDefault` is the value of: `v1` or `v2`. */
+  solveSet?: DefaultsName;
 }
 
 export interface ParameterList {
@@ -27,7 +31,14 @@ export interface ParameterList {
   parameters: ParameterView[];
 }
 
-export function parameterList(): ParameterList {
+/**
+ * `command` is `solve` with a defaults set (`DEFAULT_DEFAULTS` when none is named): each entry then carries the value that `solve` really
+ * applies (`solveDefault`), derived from `setConfig` and `studentLines` in the orchestrator, not a second table. Any other command, or none,
+ * leaves the `RunConfig` defaults alone.
+ */
+export function parameterList(o: { command?: string; defaults?: DefaultsName } = {}): ParameterList {
+  const set = o.command === "solve" ? (o.defaults ?? DEFAULT_DEFAULTS) : undefined;
+  const effective = set !== undefined ? solveDefaultsOf(set) : {};
   const parameters = settingsFileKeys().map((key): ParameterView => {
     const info = RUN_PARAMETERS[key as keyof RunConfig];
     const { kind, choices } = settingKind(info.type);
@@ -43,6 +54,7 @@ export function parameterList(): ParameterList {
       status: info.status,
       ui: info.ui as "basic" | "advanced",
       ...(solveFlag !== undefined ? { solveFlag } : {}),
+      ...(set !== undefined && effective[key] !== undefined ? { solveDefault: effective[key], solveSet: set } : {}),
     };
   });
   return { groups: PARAMETER_GROUPS.filter((g) => parameters.some((p) => p.group === g)).map((id) => ({ id, summary: GROUP_SUMMARY[id] })), parameters };

@@ -19,6 +19,9 @@ export interface ParameterView {
   status: "stable" | "beta" | "experimental" | "internal";
   ui: "basic" | "advanced";
   solveFlag?: string;
+  /** What `solve` runs with when it is not the default of `harness run` (`default`), and the set that gives it. */
+  solveDefault?: string;
+  solveSet?: string;
 }
 
 interface ParameterList {
@@ -63,16 +66,19 @@ export function collectSettings(parameters: readonly ParameterView[], raw: Reado
 function Field(props: { p: ParameterView; value: string; set: (value: string) => void }) {
   const { p, value, set } = props;
   const id = `setting-${p.key}`;
+  const shownDefault = p.solveDefault ?? p.default;
+  const mark = p.solveDefault === undefined ? "" : p.solveDefault === "true" ? `on in ${p.solveSet}` : `${p.solveSet} default`;
   const on = (e: Event) => set((e.target as HTMLInputElement).value);
   return (
     <div class="setting">
       <label for={id}>
         <code>{p.key}</code>
         {p.status === "beta" || p.status === "experimental" ? <span class={`chip badge ${p.status}`}> {p.status}</span> : null}
+        {mark !== "" ? <span class="chip badge solve-default"> {mark}</span> : null}
       </label>
       {p.kind === "boolean" || p.kind === "choice" ? (
         <select id={id} value={value} onChange={on} aria-describedby={`${id}-help`}>
-          <option value="">Default ({p.default})</option>
+          <option value="">Default ({shownDefault})</option>
           {p.kind === "boolean" ? (
             <>
               <option value="true">On</option>
@@ -87,9 +93,9 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
           )}
         </select>
       ) : p.kind === "json" ? (
-        <textarea id={id} class="short" value={value} onInput={on} placeholder={p.default} spellcheck={false} aria-describedby={`${id}-help`} />
+        <textarea id={id} class="short" value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />
       ) : (
-        <input id={id} type={p.kind === "integer" || p.kind === "number" ? "number" : "text"} step={p.kind === "integer" ? "1" : "any"} value={value} onInput={on} placeholder={p.default} spellcheck={false} aria-describedby={`${id}-help`} />
+        <input id={id} type={p.kind === "integer" || p.kind === "number" ? "number" : "text"} step={p.kind === "integer" ? "1" : "any"} value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />
       )}
       <p class="muted small" id={`${id}-help`}>
         {p.summary} {p.kind === "json" ? `JSON: ${p.type}.` : p.kind === "list" ? "Separate the items with commas." : ""}
@@ -105,8 +111,8 @@ export function SettingsPanel(props: { command: "solve" | "run"; onChange: (sett
   const [raw, setRaw] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    get<ParameterList>("/api/parameters").then(setList, (e) => setFailed(message(e)));
-  }, []);
+    get<ParameterList>(props.command === "solve" ? "/api/parameters?command=solve" : "/api/parameters").then(setList, (e) => setFailed(message(e)));
+  }, [props.command]);
 
   const shown = (list?.parameters ?? []).filter((p) => props.command === "run" || p.solveFlag === undefined);
   const { onChange } = props;

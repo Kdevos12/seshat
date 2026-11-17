@@ -281,6 +281,26 @@ export function setConfig(defaults: DefaultsName, o: Pick<StudentOptions, "lines
   };
 }
 
+/** A value of the configuration as a short text for the page and the settings panel: a list as `a, b`, an object as JSON. */
+function showValue(value: unknown): string {
+  return Array.isArray(value) && value.every((x) => typeof x === "string") ? value.join(", ") : typeof value === "object" && value !== null ? JSON.stringify(value) : String(value);
+}
+
+/**
+ * The keys of `RunConfig` that a `solve` with the set `defaults` runs with a value other than the one `harness run` has, with that value
+ * as text (the settings panel of the interface and the "solve v2" column of documentation/parameters.md). Derived from `setConfig`, which
+ * `solve` itself calls, so that it cannot drift from what `solve` applies: there is no second table.
+ */
+export function solveDefaultsOf(defaults: DefaultsName): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(setConfig(defaults))) {
+    if (value === undefined) continue;
+    if (JSON.stringify(value) === JSON.stringify((DEFAULT_CONFIG as Record<string, unknown>)[key])) continue;
+    out[key] = showValue(value);
+  }
+  return out;
+}
+
 /**
  * What a set's `solve`-level switches (`SOLVE_SWITCHES`) give a bench problem, as `RunConfig` fields: the intake with the bench's yes (a
  * bench problem is public; `private` in the run's config wins over it), the compute tool and `lean.search` only when the host offers them.

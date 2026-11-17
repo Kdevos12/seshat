@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { readSettingsFile, RUN_PARAMETERS, settingsFileKeys } from "@seshat/orchestrator";
+import { readSettingsFile, RUN_PARAMETERS, setConfig, settingsFileKeys, solveDefaultsOf, studentLines } from "@seshat/orchestrator";
 import { started, type Started } from "./helpers.ts";
 
 const open: Started[] = [];
@@ -32,6 +32,27 @@ describe("the catalogue the settings menu reads (GET /api/parameters)", () => {
     assert.equal(parameters.find((p) => p.key === "budget")?.solveFlag, "--max-usd");
     assert.deepEqual(groups.map((g) => g.id), [...new Set(parameters.map((p) => p.group))].sort((a, b) => groups.findIndex((g) => g.id === a) - groups.findIndex((g) => g.id === b)));
     assert.ok(groups.every((g) => g.summary !== ""));
+  });
+
+  it("for a solve, gives each entry the value solve really applies, derived from setConfig and studentLines (plan change UX2)", async () => {
+    const s = await server();
+    type Entry = { key: string; default: string; solveDefault?: string; solveSet?: string };
+    const get = async (query: string) => ((await s.call("GET", `/api/parameters${query}`)).json() as { parameters: Entry[] }).parameters;
+    const v2 = await get("?command=solve&defaults=v2");
+    const of = (list: Entry[], key: string) => list.find((p) => p.key === key);
+    for (const [key, shown] of [["budgetRounds", "true"], ["editTool", "true"], ["firstCases", "true"], ["budgetShare", "2"], ["lines", "M1, M10, M6"]] as const) {
+      assert.equal(of(v2, key)?.solveDefault, shown, `${key} under v2`);
+      assert.equal(of(v2, key)?.solveSet, "v2");
+    }
+    for (const p of v2) assert.equal(p.solveDefault, solveDefaultsOf("v2")[p.key], `${p.key} is what setConfig gives, nothing else`);
+    assert.equal(of(v2, "lines")?.solveDefault, studentLines("v2").join(", "));
+    assert.deepEqual(solveDefaultsOf("v2").budgetShare, String(setConfig("v2").budgetShare));
+    const v1 = await get("?command=solve&defaults=v1");
+    assert.equal(of(v1, "budgetRounds")?.solveDefault, undefined, "v1 has no rounds");
+    assert.equal(of(v1, "lines")?.solveDefault, "M1, M10");
+    assert.equal(of(await get("?command=solve"), "budgetRounds")?.solveDefault, "true", "solve without a set is the default set, v2");
+    for (const plain of [await get(""), await get("?command=run")]) assert.equal(plain.some((p) => p.solveDefault !== undefined), false, "run and no command keep the RunConfig default");
+    assert.equal((await s.call("GET", "/api/parameters?command=solve&defaults=v9")).status, 400);
   });
 
   it("needs the session's token", async () => {

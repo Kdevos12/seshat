@@ -4,7 +4,7 @@
 
 The audit of every setting: the 45 keys of `RunConfig` (`packages/orchestrator/src/run.ts`), the 141 flags of `harness`, and the keys of the host profiles. The catalogue is typed over `RunConfig`, so a key added there without an entry does not compile; a test holds the flags to the parser's table and the host keys to the shipped profiles. It is the source a settings menu of the graphical interface ([ui.md](ui.md)) reads. Nothing in it changes what a run does.
 
-Columns: **default** is what `harness run` has when nothing sets it; **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).
+Columns: **default** is what `harness run` has when nothing sets it; **solve v2** is the value `harness solve` runs with under its default set, `-` when it is the one `harness run` has (derived from the code that builds the solve configuration); **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).
 
 ## Run configuration
 
@@ -12,21 +12,21 @@ Columns: **default** is what `harness run` has when nothing sets it; **sets** is
 
 Which problems a run works on.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `selection` | Json: {all} \| {sample, seed} \| {ids} \| {sequence} \| {tag} | required (set by the problem flags) | How the problems were chosen, for the record; it chooses nothing by itself (the CLI picks the problems, then writes this). | `--sample` `--seed` `--problem` `--all` `--sequence` `--tag` | solve writes {ids: [..]} for its one statement | m0-loop.md#Commands | `experiments.test.ts` | internal | hidden |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `selection` | Json: {all} \| {sample, seed} \| {ids} \| {sequence} \| {tag} | required (set by the problem flags) | - | How the problems were chosen, for the record; it chooses nothing by itself (the CLI picks the problems, then writes this). | `--sample` `--seed` `--problem` `--all` `--sequence` `--tag` | solve writes {ids: [..]} for its one statement | m0-loop.md#Commands | `experiments.test.ts` | internal | hidden |
 
 ### model
 
 The model of the run and how it is asked.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `model` | string (provider/id) | required (--model, else SESHAT_MODEL; solve: the host profile's recommended model, else the cheapest capable priced one) | The model the provers, and every role without a model of its own, are called on. | `--model` | - (solve picks it, then passes it) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | basic |
-| `thinkingLevel` | off \| minimal \| low \| medium \| high \| xhigh \| max | medium | The reasoning effort asked of the model for every session (a family that ignores a setting is told so by the host profile). | `--thinking` | - | m0-loop.md#Commands | `reasoning.test.ts` | stable | basic |
-| `cacheRetention` | none \| short \| long | absent (the provider's own default) | The prompt cache retention asked of the provider with every request of a session. | `--cache-retention` | - | m0-loop.md#Prices | `packet.test.ts` | stable | advanced |
-| `consult` | { model: provider/id, maxCalls?: integer, maxOutputTokens?: integer } | absent (off; in no defaults set and no arm) | The tool `consult(question)` for the outer provers: one question to another model, its answer is advice in the prover's context and never a status (beta, Ruling 39). | `--consult` `--consult-calls` `--consult-tokens` | neither (solve passes the flags through) | models-setup.md#Consult: advice from another model (beta) | `consult.test.ts` | beta | advanced |
-| `roles` | { prover?, planner?, hole?, verifier?, consult?: { model?, settings? }, escalation?: { model, maxShare } } | absent (every role has the run's model and settings) | A model, and sampling settings (temperature, topP, thinking), for each place the harness calls a model from; each call is charged at its own model's price. | `--role` `--role-setting` | neither (solve passes the flags through) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `model` | string (provider/id) | required (--model, else SESHAT_MODEL; solve: the host profile's recommended model, else the cheapest capable priced one) | - | The model the provers, and every role without a model of its own, are called on. | `--model` | - (solve picks it, then passes it) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | basic |
+| `thinkingLevel` | off \| minimal \| low \| medium \| high \| xhigh \| max | medium | - | The reasoning effort asked of the model for every session (a family that ignores a setting is told so by the host profile). | `--thinking` | - | m0-loop.md#Commands | `reasoning.test.ts` | stable | basic |
+| `cacheRetention` | none \| short \| long | absent (the provider's own default) | - | The prompt cache retention asked of the provider with every request of a session. | `--cache-retention` | - | m0-loop.md#Prices | `packet.test.ts` | stable | advanced |
+| `consult` | { model: provider/id, maxCalls?: integer, maxOutputTokens?: integer } | absent (off; in no defaults set and no arm) | - | The tool `consult(question)` for the outer provers: one question to another model, its answer is advice in the prover's context and never a status (beta, Ruling 39). | `--consult` `--consult-calls` `--consult-tokens` | neither (solve passes the flags through) | models-setup.md#Consult: advice from another model (beta) | `consult.test.ts` | beta | advanced |
+| `roles` | { prover?, planner?, hole?, verifier?, consult?: { model?, settings? }, escalation?: { model, maxShare } } | absent (every role has the run's model and settings) | - | A model, and sampling settings (temperature, topP, thinking), for each place the harness calls a model from; each call is charged at its own model's price. | `--role` `--role-setting` | neither (solve passes the flags through) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | advanced |
 
 `consult`:
 
@@ -43,9 +43,9 @@ The model of the run and how it is asked.
 
 Dollars: what a problem and a run may spend.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `budget` | { problemUsd: number > 0, runUsd?: number > 0 } | { problemUsd: 5 } | Dollars a problem may spend, and, if given, the whole run: a ledger stops what would go past it. | `--budget-usd` `--run-budget-usd` `--max-usd` | solve: both fields are --max-usd (default 2) | m0-loop.md#Budgets | `budget-gate.test.ts` | stable | basic |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `budget` | { problemUsd: number > 0, runUsd?: number > 0 } | { problemUsd: 5 } | - | Dollars a problem may spend, and, if given, the whole run: a ledger stops what would go past it. | `--budget-usd` `--run-budget-usd` `--max-usd` | solve: both fields are --max-usd (default 2) | m0-loop.md#Budgets | `budget-gate.test.ts` | stable | basic |
 
 `budget`:
 
@@ -56,19 +56,19 @@ Dollars: what a problem and a run may spend.
 
 The shape of a prover's sessions, and what the session loop does with a check.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `provers` | integer >= 1 | 4 | Independent provers per problem, each in its own loop of sessions. | `--provers` | - | m0-loop.md#Commands | `protocol.test.ts` | stable | advanced |
-| `sessions` | integer >= 1 | 8 | Sessions per prover; a session starts from the notes of the one before it. | `--sessions` | - | m0-loop.md#A prover | `resume-run.test.ts` | stable | advanced |
-| `limits` | { steps: integer >= 1, turns: integer >= 1, contextTokens: integer >= 1000 } | { steps: 40, contextTokens: 120000 } | What ends a session: the number of model responses (steps), and the prompt size past which the context degrades. | `--steps` `--turns` `--context-tokens` | - | m0-loop.md#Commands | `hot-loop.test.ts` | stable | advanced |
-| `notesChars` | integer >= 100 | 4000 | The length limit of a prover's notes; with `stateCard`, at most `CARD_NOTES_CHARS` of it. | `--notes-chars` | - | m0-loop.md#A prover | `resume-parts.test.ts` | stable | advanced |
-| `packetMode` | prefix_tail \| append_only \| recompiled | absent (prefix_tail) | How a session's requests are built from a line's context packet: a frozen prefix and a tail, the packet once then the history, or the whole packet again (the measurement arm). | `--packet-mode` | - | lines.md#Packet modes | `packet-mode.test.ts` | experimental | hidden |
-| `checkTimeoutSec` | number >= 1 (seconds) | absent (the validator's policy, 300 s) | The seconds a prover's Lean check may take; the validator and the certifier keep their own limits. | none | v2: the host profile's checkTimeoutSec (120 when it gives none) | lean.md#Bounded checks | `hot-loop.test.ts` | stable | advanced |
-| `editTool` | boolean | absent (off) | The sessions get the tool `lean_edit(region, old, new)` and a prompt that says to use `lean_check` for the first draft and `lean_edit` after it. | none | v2: true | m0-loop.md#The edit tool | `hot-loop.test.ts` | stable | advanced |
-| `maskOldChecks` | boolean | absent (off) | The model is sent a one-line summary in place of a check result older than the last four, in batches of four; the journal is not touched. | none | v2: true | m0-loop.md#Masked old checks | `hot-loop.test.ts` | stable | advanced |
-| `stateCard` | boolean | absent (off) | The next session's opening message carries a state card built by code from the journal, and the model's own notes are cut to `CARD_NOTES_CHARS`. | none | v2: true | m0-loop.md#The state card | `state-card.test.ts` | stable | advanced |
-| `frontier` | { show?: boolean, weights?: Record<kind, number> } | absent (off) | The verified frontier, a projection of the journal with no model call: with `show`, the state card, the turn's account, RESULT.md, report.md and the interface carry what Lean accepted so far (evidence apart, as evidence), and each outer session's opening message ends with one line on the budget left and the frontier. | none | neither (settings file) | frontier.md#Where it is shown | `frontier-show.test.ts` | experimental | advanced |
-| `restarts` | { schedule?: geometric \| luby, base?: integer, stuckChecks?: integer } | absent (off) | Cold restarts of a prover's sessions: after its first, a session starts from the original file with the frontier, the dead ends and the state card (and the tool `previous_attempt`), has the step limit of the schedule (base 6: 6, 12, 24, ... or Luby's 6, 6, 12, 6, 6, 12, 24, ...; at most `limits.steps`), and ends early when the same failure class on the same goal repeats in `stuckChecks` (3) consecutive checks. | none | neither (settings file) | runs.md#Restarts | `restarts.test.ts` | experimental | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `provers` | integer >= 1 | 4 | - | Independent provers per problem, each in its own loop of sessions. | `--provers` | - | m0-loop.md#Commands | `protocol.test.ts` | stable | advanced |
+| `sessions` | integer >= 1 | 8 | - | Sessions per prover; a session starts from the notes of the one before it. | `--sessions` | - | m0-loop.md#A prover | `resume-run.test.ts` | stable | advanced |
+| `limits` | { steps: integer >= 1, turns: integer >= 1, contextTokens: integer >= 1000 } | { steps: 40, contextTokens: 120000 } | - | What ends a session: the number of model responses (steps), and the prompt size past which the context degrades. | `--steps` `--turns` `--context-tokens` | - | m0-loop.md#Commands | `hot-loop.test.ts` | stable | advanced |
+| `notesChars` | integer >= 100 | 4000 | - | The length limit of a prover's notes; with `stateCard`, at most `CARD_NOTES_CHARS` of it. | `--notes-chars` | - | m0-loop.md#A prover | `resume-parts.test.ts` | stable | advanced |
+| `packetMode` | prefix_tail \| append_only \| recompiled | absent (prefix_tail) | - | How a session's requests are built from a line's context packet: a frozen prefix and a tail, the packet once then the history, or the whole packet again (the measurement arm). | `--packet-mode` | - | lines.md#Packet modes | `packet-mode.test.ts` | experimental | hidden |
+| `checkTimeoutSec` | number >= 1 (seconds) | absent (the validator's policy, 300 s) | 120 | The seconds a prover's Lean check may take; the validator and the certifier keep their own limits. | none | v2: the host profile's checkTimeoutSec (120 when it gives none) | lean.md#Bounded checks | `hot-loop.test.ts` | stable | advanced |
+| `editTool` | boolean | absent (off) | true | The sessions get the tool `lean_edit(region, old, new)` and a prompt that says to use `lean_check` for the first draft and `lean_edit` after it. | none | v2: true | m0-loop.md#The edit tool | `hot-loop.test.ts` | stable | advanced |
+| `maskOldChecks` | boolean | absent (off) | true | The model is sent a one-line summary in place of a check result older than the last four, in batches of four; the journal is not touched. | none | v2: true | m0-loop.md#Masked old checks | `hot-loop.test.ts` | stable | advanced |
+| `stateCard` | boolean | absent (off) | true | The next session's opening message carries a state card built by code from the journal, and the model's own notes are cut to `CARD_NOTES_CHARS`. | none | v2: true | m0-loop.md#The state card | `state-card.test.ts` | stable | advanced |
+| `frontier` | { show?: boolean, weights?: Record<kind, number> } | absent (off) | - | The verified frontier, a projection of the journal with no model call: with `show`, the state card, the turn's account, RESULT.md, report.md and the interface carry what Lean accepted so far (evidence apart, as evidence), and each outer session's opening message ends with one line on the budget left and the frontier. | none | neither (settings file) | frontier.md#Where it is shown | `frontier-show.test.ts` | experimental | advanced |
+| `restarts` | { schedule?: geometric \| luby, base?: integer, stuckChecks?: integer } | absent (off) | - | Cold restarts of a prover's sessions: after its first, a session starts from the original file with the frontier, the dead ends and the state card (and the tool `previous_attempt`), has the step limit of the schedule (base 6: 6, 12, 24, ... or Luby's 6, 6, 12, 6, 6, 12, 24, ...; at most `limits.steps`), and ends early when the same failure class on the same goal repeats in `stuckChecks` (3) consecutive checks. | none | neither (settings file) | runs.md#Restarts | `restarts.test.ts` | experimental | advanced |
 
 `limits`:
 
@@ -80,13 +80,13 @@ The shape of a prover's sessions, and what the session loop does with a check.
 
 How the budget is spent over problems and launches: the gate, the rounds, the share, the typed decisions.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `concurrency` | integer >= 1 | 1 | Problems worked on at the same time (1 when the problems are a sequence). | `--concurrency` | - | m0-loop.md#A run | `rounds.test.ts` | stable | advanced |
-| `budgetRounds` | boolean | absent (off) | With a run budget and several problems, the problems are worked round-robin under a cap that doubles each round, and a problem without Lean progress is parked. | none | v2: true (does nothing in solve, which has one problem) | scheduler.md#The budget in rounds | `rounds.test.ts` | stable | advanced |
-| `budgetShare` | number > 0 | absent (off) | With a run budget, a problem's ledger is capped when it is opened at min(problemUsd, budgetShare x what remains of the run budget / problems not finished). | none | v2: 2 | scheduler.md#The budget in rounds | `budget-share.test.ts` | stable | advanced |
-| `decide` | { backend?: llm \| jev, sites?: Record<site, llm \| jev \| off>, votes?: integer 1..9 } | absent (the run's model decides everywhere) | Who makes the typed decisions that order work: the run's model, or a third-party backend (Jev), per site, with one to nine votes. | `--decide-backend` `--decide-site` `--decide-votes` | - | decide.md#Backends and configuration | `decide.test.ts` | experimental | advanced |
-| `gate` | { share?, floor?, probeFraction?, margin?, minSessions?, probeExtend? } | absent (no gate: the provers start together) | The budget gate: a deterministic rule before every paid launch, a probe-first start that widens only after Lean progress, and a run on `--memory-from` that relaunches nothing already certified. | `--gate` `--gate-floor` `--gate-probe` `--gate-margin` `--gate-min-sessions` `--gate-share` | v1: {}; v2: { probeExtend: true } (solve always has the gate on) | scheduler.md#The budget gate | `budget-gate.test.ts` | stable | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `concurrency` | integer >= 1 | 1 | - | Problems worked on at the same time (1 when the problems are a sequence). | `--concurrency` | - | m0-loop.md#A run | `rounds.test.ts` | stable | advanced |
+| `budgetRounds` | boolean | absent (off) | true | With a run budget and several problems, the problems are worked round-robin under a cap that doubles each round, and a problem without Lean progress is parked. | none | v2: true (does nothing in solve, which has one problem) | scheduler.md#The budget in rounds | `rounds.test.ts` | stable | advanced |
+| `budgetShare` | number > 0 | absent (off) | 2 | With a run budget, a problem's ledger is capped when it is opened at min(problemUsd, budgetShare x what remains of the run budget / problems not finished). | none | v2: 2 | scheduler.md#The budget in rounds | `budget-share.test.ts` | stable | advanced |
+| `decide` | { backend?: llm \| jev, sites?: Record<site, llm \| jev \| off>, votes?: integer 1..9 } | absent (the run's model decides everywhere) | - | Who makes the typed decisions that order work: the run's model, or a third-party backend (Jev), per site, with one to nine votes. | `--decide-backend` `--decide-site` `--decide-votes` | - | decide.md#Backends and configuration | `decide.test.ts` | experimental | advanced |
+| `gate` | { share?, floor?, probeFraction?, margin?, minSessions?, probeExtend? } | absent (no gate: the provers start together) | {"probeExtend":true} | The budget gate: a deterministic rule before every paid launch, a probe-first start that widens only after Lean progress, and a run on `--memory-from` that relaunches nothing already certified. | `--gate` `--gate-floor` `--gate-probe` `--gate-margin` `--gate-min-sessions` `--gate-share` | v1: {}; v2: { probeExtend: true } (solve always has the gate on) | scheduler.md#The budget gate | `budget-gate.test.ts` | stable | advanced |
 
 `decide`:
 
@@ -107,13 +107,13 @@ How the budget is spent over problems and launches: the gate, the rounds, the sh
 
 The capabilities the provers are given besides `lean_check`.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `tools` | string[] (capability ids, no repeats) | [] | `direct` capabilities given to the provers besides `lean_check`, such as `compute.sage`; one that cannot be reached stops the run. | `--tool` `--no-tool` | v2: adds lean.lsp when the host offers it (and lists it in optionalTools) | m0-loop.md#Other tools | `tools.test.ts` | stable | basic |
-| `optionalTools` | string[] (a subset of tools) | absent | The tools the defaults set added and the person did not name: one that cannot be reached at the start is dropped with a warning instead of failing the run. | none | v2: [lean.lsp] when the person did not name it | lean-lsp.md#The pinned version | `lean-lsp.test.ts` | internal | hidden |
-| `autoTool` | string (a capability id) | absent | A compute capability (compute.sage) the sessions get besides `tools` when the router files the statement as finite, about a graph or about numbers. | `--auto-tool` `--no-auto-tool` | v2: compute.sage, when the host offers it (solve switch) | literature.md#Solve options | `solve-v2.test.ts` | stable | advanced |
-| `sorryBattery` | { maxSorries?: integer >= 1, timeoutSec?: number >= 1 } | absent (off) | After a check whose file has no error and still has `sorry`, the harness, with no model call, tries line M10's tactics on each `sorry`, puts what Lean accepts into the session's file and says so in the check's answer; no claim's status changes. | none | neither (the arm solve-v2-cpu of solve-defaults sets {}) | classical.md#The battery on a session's sorry | `sorry-battery.test.ts` | experimental | advanced |
-| `leanSearch` | boolean | absent (off) | After a check that did not accept the file, the harness searches Lean declarations for each unknown identifier and hole goal and appends the checked hits to the answer. | `--lean-search` `--no-lean-search` | v2: true when the host offers lean.search (solve switch) | lean.md#Search pushed by the harness | `lean-search.test.ts` | stable | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `tools` | string[] (capability ids, no repeats) | [] | - | `direct` capabilities given to the provers besides `lean_check`, such as `compute.sage`; one that cannot be reached stops the run. | `--tool` `--no-tool` | v2: adds lean.lsp when the host offers it (and lists it in optionalTools) | m0-loop.md#Other tools | `tools.test.ts` | stable | basic |
+| `optionalTools` | string[] (a subset of tools) | absent | - | The tools the defaults set added and the person did not name: one that cannot be reached at the start is dropped with a warning instead of failing the run. | none | v2: [lean.lsp] when the person did not name it | lean-lsp.md#The pinned version | `lean-lsp.test.ts` | internal | hidden |
+| `autoTool` | string (a capability id) | absent | - | A compute capability (compute.sage) the sessions get besides `tools` when the router files the statement as finite, about a graph or about numbers. | `--auto-tool` `--no-auto-tool` | v2: compute.sage, when the host offers it (solve switch) | literature.md#Solve options | `solve-v2.test.ts` | stable | advanced |
+| `sorryBattery` | { maxSorries?: integer >= 1, timeoutSec?: number >= 1 } | absent (off) | - | After a check whose file has no error and still has `sorry`, the harness, with no model call, tries line M10's tactics on each `sorry`, puts what Lean accepts into the session's file and says so in the check's answer; no claim's status changes. | none | neither (the arm solve-v2-cpu of solve-defaults sets {}) | classical.md#The battery on a session's sorry | `sorry-battery.test.ts` | experimental | advanced |
+| `leanSearch` | boolean | absent (off) | - | After a check that did not accept the file, the harness searches Lean declarations for each unknown identifier and hole goal and appends the checked hits to the answer. | `--lean-search` `--no-lean-search` | v2: true when the host offers lean.search (solve switch) | lean.md#Search pushed by the harness | `lean-search.test.ts` | stable | advanced |
 
 `sorryBattery`:
 
@@ -124,21 +124,21 @@ The capabilities the provers are given besides `lean_check`.
 
 The mechanisms of the plan a run enables, and their options.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `consolidation` | boolean | absent (off) | The sessions are shown the newest page "what was tried and why it stopped" that `harness consolidate` left in the memory chain, drawn like a lesson and switched off when its measured effect is negative. | `--consolidation` | neither (solve passes the flag through) | consolidation.md#The consolidation pass (CA24) | `consolidate.test.ts` | beta | advanced |
-| `lines` | string[] (line ids) | absent (M0: no line) | The lines of the plan the run enables, such as M1 (documentation/lines.md). | `--lines` `--ablation` | v1: M1, M10; v2: M1, M10, M6 | lines.md#A line | `lines.test.ts` | stable | basic |
-| `lineOptions` | Record<lineId, JsonObject> | absent (each line's own defaults) | Options of the enabled lines, by line id; they replace a line's defaults key by key. | `--line-option` | v2: M6 { framing, citations, rawErrors, revisions, detectors: false; repeatRule: true } | lines.md#A line | `m6.test.ts` | stable | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `consolidation` | boolean | absent (off) | - | The sessions are shown the newest page "what was tried and why it stopped" that `harness consolidate` left in the memory chain, drawn like a lesson and switched off when its measured effect is negative. | `--consolidation` | neither (solve passes the flag through) | consolidation.md#The consolidation pass (CA24) | `consolidate.test.ts` | beta | advanced |
+| `lines` | string[] (line ids) | absent (M0: no line) | M1, M10, M6 | The lines of the plan the run enables, such as M1 (documentation/lines.md). | `--lines` `--ablation` | v1: M1, M10; v2: M1, M10, M6 | lines.md#A line | `lines.test.ts` | stable | basic |
+| `lineOptions` | Record<lineId, JsonObject> | absent (each line's own defaults) | {"M6":{"framing":false,"citations":false,"rawErrors":false,"revisions":false,"detectors":false,"repeatRule":true}} | Options of the enabled lines, by line id; they replace a line's defaults key by key. | `--line-option` | v2: M6 { framing, citations, rawErrors, revisions, detectors: false; repeatRule: true } | lines.md#A line | `m6.test.ts` | stable | advanced |
 
 ### informal
 
 A proof in natural language before the first session, and the facts the harness computes for the briefing.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `firstCases` | boolean | absent (off) | With a compute tool, the harness computes the first cases of a statement with one natural-number parameter, looks the sequence up when allowed, and shows the table in the first briefing as computed data. | none | v2: true | induction.md#The first cases the harness pushes | `first-cases.test.ts` | stable | advanced |
-| `informalFirst` | { passes?: integer >= 1, rounds?: integer >= 1 } | absent (off) | An informal proof first: a generator and a fresh-context verifier until `passes` verdicts `correct` in a row or `rounds` calls; an accepted proof is a hint, never a status. | none | neither (the arm solve-v2-informal of solve-defaults sets {}) | informal.md#The informal proof first (plan changes PA13, NL2, AL1, AL2, AL3) | `informal.test.ts` | experimental | advanced |
-| `triage` | boolean | absent (off) | After the informal loop, a formal-cost triage (no model call, no Lean) classes the problem invest, short or skip, and the budget gate reads it where the probe made no Lean progress. | none | neither (the arm solve-v2-informal-triage of solve-defaults sets true) | scheduler.md#The budget gate | `triage.test.ts` | experimental | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `firstCases` | boolean | absent (off) | true | With a compute tool, the harness computes the first cases of a statement with one natural-number parameter, looks the sequence up when allowed, and shows the table in the first briefing as computed data. | none | v2: true | induction.md#The first cases the harness pushes | `first-cases.test.ts` | stable | advanced |
+| `informalFirst` | { passes?: integer >= 1, rounds?: integer >= 1 } | absent (off) | - | An informal proof first: a generator and a fresh-context verifier until `passes` verdicts `correct` in a row or `rounds` calls; an accepted proof is a hint, never a status. | none | neither (the arm solve-v2-informal of solve-defaults sets {}) | informal.md#The informal proof first (plan changes PA13, NL2, AL1, AL2, AL3) | `informal.test.ts` | experimental | advanced |
+| `triage` | boolean | absent (off) | - | After the informal loop, a formal-cost triage (no model call, no Lean) classes the problem invest, short or skip, and the budget gate reads it where the probe made no Lean progress. | none | neither (the arm solve-v2-informal-triage of solve-defaults sets true) | scheduler.md#The budget gate | `triage.test.ts` | experimental | advanced |
 
 `informalFirst`:
 
@@ -149,9 +149,9 @@ A proof in natural language before the first session, and the facts the harness 
 
 Heuristic cards in the first briefing.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `cards` | { max?: integer 1..MAX_CARDS } | absent (off) | Once per problem, up to `max` heuristic cards whose conditions hold on the statement are put in the first prover's first briefing (no model call). | none | neither (the arm solve-v2-cards of solve-defaults sets {}) | heuristics.md#Cards in solve | `solve-cards.test.ts` | experimental | advanced |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cards` | { max?: integer 1..MAX_CARDS } | absent (off) | - | Once per problem, up to `max` heuristic cards whose conditions hold on the statement are put in the first prover's first briefing (no model call). | none | neither (the arm solve-v2-cards of solve-defaults sets {}) | heuristics.md#Cards in solve | `solve-cards.test.ts` | experimental | advanced |
 
 `cards`:
 
@@ -161,10 +161,10 @@ Heuristic cards in the first briefing.
 
 What may leave the machine: the literature step, the private mode.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `intake` | { literature?, hygiene?, capUsd?, capShare?, consent?: { allowed, via } } | absent (no intake) | Before any paid session: tests of the statement (vacuity, plausible, the first cases) and, with consent, a literature search and one judge call under a cap. | `--intake` `--intake-usd` `--lit` `--no-intake` | v2: hygiene on; the literature only with the person's yes (solve switch) | literature.md#Solve options | `intake.test.ts` | stable | basic |
-| `private` | boolean | absent (no restriction) | Nothing of the problem is sent outside the machine and the model provider: the literature is skipped, lean.search keeps to local backends, third-party decisions and capabilities are refused. | `--private` | neither (solve passes the flag through) | capabilities.md#Third parties | `third-party.test.ts` | stable | basic |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `intake` | { literature?, hygiene?, capUsd?, capShare?, consent?: { allowed, via } } | absent (no intake) | - | Before any paid session: tests of the statement (vacuity, plausible, the first cases) and, with consent, a literature search and one judge call under a cap. | `--intake` `--intake-usd` `--lit` `--no-intake` | v2: hygiene on; the literature only with the person's yes (solve switch) | literature.md#Solve options | `intake.test.ts` | stable | basic |
+| `private` | boolean | absent (no restriction) | - | Nothing of the problem is sent outside the machine and the model provider: the literature is skipped, lean.search keeps to local backends, third-party decisions and capabilities are refused. | `--private` | neither (solve passes the flag through) | capabilities.md#Third parties | `third-party.test.ts` | stable | basic |
 
 `intake`:
 
@@ -178,13 +178,13 @@ What may leave the machine: the literature step, the private mode.
 
 Turns for a research team, and the off-peak option.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `consortium` | { limit: { tokens?, usd?, minutes? }, impasse: { posteriorBelow, minAttempts }, narrative: boolean, consolidation?: boolean } | absent (an ordinary run) | Consortium mode: turns that end by themselves at a limit or a breakpoint, with an account for the research team. | `--turn-tokens` `--turn-usd` `--turn-minutes` `--turn-narrative` `--turn-consolidation` `--impasse-posterior` `--impasse-attempts` | v1 and v2: always on in solve, with a turn limit of --turn-usd (default half the allowance) | human.md#Turns | `turns-equivalence.test.ts` | stable | advanced |
-| `horizon` | episode \| campaign | absent (episode) | How long the run is bound (plan change LH9): `episode`, a bounded number of sessions; or `campaign` (`harness campaign`): a prover's sessions are not capped and money, time and the claim bound the run. A campaign works in turns, so it needs `human` `digest` or `consortium`. | `--horizon` | v1 and v2: episode (not set, derived) | runs.md#The two axes | `run-shape.test.ts` | stable | advanced |
-| `human` | none \| consortium \| digest | absent (consortium when the run has consortium turns, none otherwise) | Whether the run stops for a person (plan change LH9): `none`, `consortium` (turns that wait; needs `consortium`; `--human` alone gives it) or `digest` (turns that do not wait, a campaign's: needs `consortium` turns and `horizon` `campaign`); `ablate` is always `none`. | `--human` | v1 and v2: consortium (not set, derived) | runs.md#The two axes | `run-shape.test.ts` | stable | advanced |
-| `campaign` | { usdPerDay?: number > 0, until?: ISO time, spiralTurns?: integer >= 1, dossierTokens?: integer >= 1, deadEnds?: integer >= 1, reflect?: boolean, plateauUsd?: number > 0 } | absent (no daily cap, no end time, the guard at 8 turns) | The pacing and the guard of a campaign (`harness campaign`): the dollars a UTC day may spend (a turn ends when the day's spend reaches it, the next waits for the next day), the wall-clock end, and the number of turns in a row that spend without the frontier growing that end it as `spiral`. Goes with `horizon` `campaign`. | `--usd-per-day` `--until` `--spiral-turns` | neither (`harness campaign` sets it from its flags) | campaign.md#The dossier | `campaign.test.ts` | experimental | advanced |
-| `offpeak` | { maxWaitMinutes?: number > 0 } | absent (no waiting) | A turn or a session starts only when the host's pricing calendar for the run's model says off-peak, and otherwise waits (`turn.deferred`). | `--offpeak` `--offpeak-max-wait` `--off-peak` `--no-off-peak` | neither (solve passes the flags through) | human.md#Off-peak | `offpeak.test.ts` | stable | basic |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `consortium` | { limit: { tokens?, usd?, minutes? }, impasse: { posteriorBelow, minAttempts }, narrative: boolean, consolidation?: boolean } | absent (an ordinary run) | - | Consortium mode: turns that end by themselves at a limit or a breakpoint, with an account for the research team. | `--turn-tokens` `--turn-usd` `--turn-minutes` `--turn-narrative` `--turn-consolidation` `--impasse-posterior` `--impasse-attempts` | v1 and v2: always on in solve, with a turn limit of --turn-usd (default half the allowance) | human.md#Turns | `turns-equivalence.test.ts` | stable | advanced |
+| `horizon` | episode \| campaign | absent (episode) | - | How long the run is bound (plan change LH9): `episode`, a bounded number of sessions; or `campaign` (`harness campaign`): a prover's sessions are not capped and money, time and the claim bound the run. A campaign works in turns, so it needs `human` `digest` or `consortium`. | `--horizon` | v1 and v2: episode (not set, derived) | runs.md#The two axes | `run-shape.test.ts` | stable | advanced |
+| `human` | none \| consortium \| digest | absent (consortium when the run has consortium turns, none otherwise) | - | Whether the run stops for a person (plan change LH9): `none`, `consortium` (turns that wait; needs `consortium`; `--human` alone gives it) or `digest` (turns that do not wait, a campaign's: needs `consortium` turns and `horizon` `campaign`); `ablate` is always `none`. | `--human` | v1 and v2: consortium (not set, derived) | runs.md#The two axes | `run-shape.test.ts` | stable | advanced |
+| `campaign` | { usdPerDay?: number > 0, until?: ISO time, spiralTurns?: integer >= 1, dossierTokens?: integer >= 1, deadEnds?: integer >= 1, reflect?: boolean, plateauUsd?: number > 0 } | absent (no daily cap, no end time, the guard at 8 turns) | - | The pacing and the guard of a campaign (`harness campaign`): the dollars a UTC day may spend (a turn ends when the day's spend reaches it, the next waits for the next day), the wall-clock end, and the number of turns in a row that spend without the frontier growing that end it as `spiral`. Goes with `horizon` `campaign`. | `--usd-per-day` `--until` `--spiral-turns` | neither (`harness campaign` sets it from its flags) | campaign.md#The dossier | `campaign.test.ts` | experimental | advanced |
+| `offpeak` | { maxWaitMinutes?: number > 0 } | absent (no waiting) | - | A turn or a session starts only when the host's pricing calendar for the run's model says off-peak, and otherwise waits (`turn.deferred`). | `--offpeak` `--offpeak-max-wait` `--off-peak` `--no-off-peak` | neither (solve passes the flags through) | human.md#Off-peak | `offpeak.test.ts` | stable | basic |
 
 `consortium`:
 
@@ -214,11 +214,11 @@ Turns for a research team, and the off-peak option.
 
 What the run records about its own configuration, and the prompt under measurement.
 
-| key | type | default | what it changes | flags | sets | docs | test | status | ui |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `defaults` | string (v1 \| v2) | absent | The name of the defaults set the configuration was made from, for the record; it changes nothing by itself. | `--defaults` | v1 and v2 write their own name | quickstart.md#Defaults sets | `solve.test.ts` | internal | basic |
-| `seed` | string \| number | absent (the run's id, so each run draws differently) | Seeds the draws of unverified memory items (randomized inclusion); the same seed draws the same. | `--draw-seed` | - | memory.md#Randomized inclusion | `draw.test.ts` | stable | advanced |
-| `prompts` | { proverSystem?: string } | absent (the merged prompt) | A candidate prover system prompt to measure instead of the merged one; it passes the strict screen, is recorded in `run.started`, and stamps what the run learns. | none | - | prompts.md#Measuring a candidate: `RunConfig.prompts` | `prompt-screen.test.ts` | internal | hidden |
+| key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `defaults` | string (v1 \| v2) | absent | v2 | The name of the defaults set the configuration was made from, for the record; it changes nothing by itself. | `--defaults` | v1 and v2 write their own name | quickstart.md#Defaults sets | `solve.test.ts` | internal | basic |
+| `seed` | string \| number | absent (the run's id, so each run draws differently) | - | Seeds the draws of unverified memory items (randomized inclusion); the same seed draws the same. | `--draw-seed` | - | memory.md#Randomized inclusion | `draw.test.ts` | stable | advanced |
+| `prompts` | { proverSystem?: string } | absent (the merged prompt) | - | A candidate prover system prompt to measure instead of the merged one; it passes the strict screen, is recorded in `run.started`, and stamps what the run learns. | none | - | prompts.md#Measuring a candidate: `RunConfig.prompts` | `prompt-screen.test.ts` | internal | hidden |
 
 `prompts`:
 

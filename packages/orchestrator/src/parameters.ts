@@ -1,4 +1,5 @@
 import type { RunConfig } from "./run.ts";
+import { solveDefaultsOf } from "./student.ts";
 
 /**
  * The catalogue of every parameter a person can set (documentation/parameters.md, generated from this file): the keys of `RunConfig`, the flags
@@ -884,6 +885,7 @@ const code = (text: string): string => (text === "" ? "none" : `\`${text}\``);
 export function renderParametersPage(): string {
   const lines: string[] = [];
   const keys = Object.keys(RUN_PARAMETERS) as Array<keyof RunConfig>;
+  const solveV2 = solveDefaultsOf("v2");
   lines.push(
     "# Parameters",
     "",
@@ -891,7 +893,7 @@ export function renderParametersPage(): string {
     "",
     `The audit of every setting: the ${keys.length} keys of \`RunConfig\` (\`packages/orchestrator/src/run.ts\`), the ${CLI_FLAGS.length} flags of \`harness\`, and the keys of the host profiles. The catalogue is typed over \`RunConfig\`, so a key added there without an entry does not compile; a test holds the flags to the parser's table and the host keys to the shipped profiles. It is the source a settings menu of the graphical interface ([ui.md](ui.md)) reads. Nothing in it changes what a run does.`,
     "",
-    "Columns: **default** is what `harness run` has when nothing sets it; **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).",
+    "Columns: **default** is what `harness run` has when nothing sets it; **solve v2** is the value `harness solve` runs with under its default set, `-` when it is the one `harness run` has (derived from the code that builds the solve configuration); **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).",
     "",
     "## Run configuration",
     "",
@@ -899,10 +901,10 @@ export function renderParametersPage(): string {
   for (const group of PARAMETER_GROUPS) {
     const here = keys.filter((k) => RUN_PARAMETERS[k].group === group);
     if (here.length === 0) continue;
-    lines.push(`### ${group}`, "", GROUP_SUMMARY[group], "", row(["key", "type", "default", "what it changes", "flags", "sets", "docs", "test", "status", "ui"]), row(["---", "---", "---", "---", "---", "---", "---", "---", "---", "---"]));
+    lines.push(`### ${group}`, "", GROUP_SUMMARY[group], "", row(["key", "type", "default", "solve v2", "what it changes", "flags", "sets", "docs", "test", "status", "ui"]), row(["---", "---", "---", "---", "---", "---", "---", "---", "---", "---", "---"]));
     for (const k of here) {
       const p = RUN_PARAMETERS[k];
-      lines.push(row([`\`${k}\``, p.type, p.default, p.summary, p.cli.length === 0 ? "none" : p.cli.map((f) => `\`--${f}\``).join(" "), p.sets, p.docs === "" ? "none" : p.docs, p.tested === "" ? "none" : `\`${p.tested}\``, p.status, p.ui]));
+      lines.push(row([`\`${k}\``, p.type, p.default, solveV2[k] ?? "-", p.summary, p.cli.length === 0 ? "none" : p.cli.map((f) => `\`--${f}\``).join(" "), p.sets, p.docs === "" ? "none" : p.docs, p.tested === "" ? "none" : `\`${p.tested}\``, p.status, p.ui]));
     }
     lines.push("");
     const withFields = here.filter((k) => RUN_PARAMETERS[k].fields !== undefined);
