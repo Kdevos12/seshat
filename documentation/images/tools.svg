@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 660" width="1080" height="660" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">The capability registry: every tool behind a contract</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1079" height="659" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">The capability registry: every tool behind a contract</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">A caller names a capability, never a tool; the host profile picks the implementation. No tool output sets a claim's status.</text>
+<rect x="20" y="75" width="340" height="70" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="190.0" y="97.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Manifest</text>
+<text x="190.0" y="114.5" font-size="13" text-anchor="middle" fill="#1b2230">capabilities/ID/manifest.json: the</text>
+<text x="190.0" y="131.5" font-size="13" text-anchor="middle" fill="#1b2230">contract, schemas, known implementations</text>
+<rect x="370" y="75" width="340" height="70" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="540.0" y="97.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Host profile</text>
+<text x="540.0" y="114.5" font-size="13" text-anchor="middle" fill="#1b2230">config/hosts/NAME.json: which</text>
+<text x="540.0" y="131.5" font-size="13" text-anchor="middle" fill="#1b2230">implementation, where, limits, prices</text>
+<rect x="720" y="75" width="340" height="70" rx="6" fill="#ffffff" stroke="#8a92a3" stroke-width="2"/>
+<text x="890.0" y="97.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Contract tests</text>
+<text x="890.0" y="114.5" font-size="13" text-anchor="middle" fill="#1b2230">contract.json: golden cases, run before an</text>
+<text x="890.0" y="131.5" font-size="13" text-anchor="middle" fill="#1b2230">implementation is trusted (harness contract)</text>
+<rect x="20" y="170" width="1040" height="52" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="540.0" y="192.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Registry (@seshat/registry): calls an implementation in process or over MCP, checks input and output</text>
+<text x="540.0" y="209.0" font-size="13" text-anchor="middle" fill="#1b2230">against the manifest's schemas, and records every call as a tool run in the journal</text>
+<polyline points="190,145 190,170" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="540,145 540,170" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="890,145 890,170" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="20" y="248" width="520" height="365" rx="8" fill="none" stroke="#b6bdcb" stroke-width="1.5"/>
+<text x="30" y="266" font-size="13" font-weight="700" text-anchor="start" fill="#3a4256">The harness runs these itself</text>
+<rect x="560" y="248" width="500" height="365" rx="8" fill="none" stroke="#b6bdcb" stroke-width="1.5"/>
+<text x="570" y="266" font-size="13" font-weight="700" text-anchor="start" fill="#3a4256">The model calls these, in a session</text>
+<rect x="30" y="275" width="248" height="74" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="154.0" y="291.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Intake: lit.search</text>
+<text x="154.0" y="308.0" font-size="13" text-anchor="middle" fill="#1b2230">OpenAlex, arXiv, Semantic</text>
+<text x="154.0" y="325.0" font-size="13" text-anchor="middle" fill="#1b2230">Scholar, zbMATH; probed on</text>
+<text x="154.0" y="342.0" font-size="13" text-anchor="middle" fill="#1b2230">real sites 2026-11-12</text>
+<rect x="288" y="275" width="242" height="74" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="409.0" y="291.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">First cases, `plausible`</text>
+<text x="409.0" y="308.0" font-size="13" text-anchor="middle" fill="#1b2230">a table from compute.sage,</text>
+<text x="409.0" y="325.0" font-size="13" text-anchor="middle" fill="#1b2230">OEIS matches; Lean's</text>
+<text x="409.0" y="342.0" font-size="13" text-anchor="middle" fill="#1b2230">`plausible` on the statement</text>
+<rect x="30" y="358" width="248" height="74" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="154.0" y="374.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Classical battery (M10)</text>
+<text x="154.0" y="391.0" font-size="13" text-anchor="middle" fill="#1b2230">decide, omega, norm_num, simp,</text>
+<text x="154.0" y="408.0" font-size="13" text-anchor="middle" fill="#1b2230">linarith, grind, aesop, hammer;</text>
+<text x="154.0" y="425.0" font-size="13" text-anchor="middle" fill="#1b2230">a domain router orders them</text>
+<rect x="288" y="358" width="242" height="74" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="409.0" y="374.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">ATP and SMT</text>
+<text x="409.0" y="391.0" font-size="13" text-anchor="middle" fill="#1b2230">Vampire, E, z3, with Lean</text>
+<text x="409.0" y="408.0" font-size="13" text-anchor="middle" fill="#1b2230">reconstruction; prove.auto,</text>
+<text x="409.0" y="425.0" font-size="13" text-anchor="middle" fill="#1b2230">prove.search: simulations</text>
+<rect x="30" y="441" width="248" height="74" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="154.0" y="457.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">lean.search</text>
+<text x="154.0" y="474.0" font-size="13" text-anchor="middle" fill="#1b2230">pushed into a check's answer:</text>
+<text x="154.0" y="491.0" font-size="13" text-anchor="middle" fill="#1b2230">unknown names, holes' goals;</text>
+<text x="154.0" y="508.0" font-size="13" text-anchor="middle" fill="#1b2230">remote, BM25 or pattern</text>
+<rect x="288" y="441" width="242" height="74" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="409.0" y="457.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">lean.meta, lean.goals</text>
+<text x="409.0" y="474.0" font-size="13" text-anchor="middle" fill="#1b2230">statement ids, isDefEq, goals</text>
+<text x="409.0" y="491.0" font-size="13" text-anchor="middle" fill="#1b2230">one tactic at a time</text>
+<text x="409.0" y="508.0" font-size="13" text-anchor="middle" fill="#1b2230">(Pantograph): simulations</text>
+<rect x="30" y="524" width="248" height="74" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="154.0" y="540.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">decide.ask, data sources</text>
+<text x="154.0" y="557.0" font-size="13" text-anchor="middle" fill="#1b2230">Jev ranks work, never a fact;</text>
+<text x="154.0" y="574.0" font-size="13" text-anchor="middle" fill="#1b2230">OEIS, LMFDB, FindStat (M11):</text>
+<text x="154.0" y="591.0" font-size="13" text-anchor="middle" fill="#1b2230">simulations only</text>
+<rect x="288" y="524" width="242" height="74" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="409.0" y="540.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Certifier: lean.certify</text>
+<text x="409.0" y="557.0" font-size="13" text-anchor="middle" fill="#1b2230">kernel replay, fresh process;</text>
+<text x="409.0" y="574.0" font-size="13" text-anchor="middle" fill="#1b2230">the harness only, never a</text>
+<text x="409.0" y="591.0" font-size="13" text-anchor="middle" fill="#1b2230">tool of the model</text>
+<rect x="575" y="275" width="470" height="58" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="810.0" y="291.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">lean_check, lean_edit: a session's own</text>
+<text x="810.0" y="308.5" font-size="13" text-anchor="middle" fill="#1b2230">the fast check through lean.check (Kimina);</text>
+<text x="810.0" y="325.5" font-size="13" text-anchor="middle" fill="#1b2230">lean_edit changes text in the last file</text>
+<rect x="575" y="341" width="470" height="58" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="810.0" y="357.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">lean.lsp</text>
+<text x="810.0" y="374.5" font-size="13" text-anchor="middle" fill="#1b2230">goals at a line, tactics tried at a line,</text>
+<text x="810.0" y="391.5" font-size="13" text-anchor="middle" fill="#1b2230">Mathlib search (lean-lsp-mcp 0.31.0)</text>
+<rect x="575" y="407" width="470" height="58" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="810.0" y="423.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">compute.sage</text>
+<text x="810.0" y="440.5" font-size="13" text-anchor="middle" fill="#1b2230">SageMath: `--auto-tool` adds it for finite or</text>
+<text x="810.0" y="457.5" font-size="13" text-anchor="middle" fill="#1b2230">numeric statements; or `--tool compute.sage`</text>
+<rect x="575" y="473" width="470" height="58" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="810.0" y="489.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Any capability by `--tool`; packs</text>
+<text x="810.0" y="506.5" font-size="13" text-anchor="middle" fill="#1b2230">packs add level-2 tools and skills, which</text>
+<text x="810.0" y="523.5" font-size="13" text-anchor="middle" fill="#1b2230">can never write a claim's status</text>
+<rect x="575" y="539" width="470" height="58" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="810.0" y="555.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">consult (option, off by default)</text>
+<text x="810.0" y="572.5" font-size="13" text-anchor="middle" fill="#1b2230">one question to another configured model;</text>
+<text x="810.0" y="589.5" font-size="13" text-anchor="middle" fill="#1b2230">checked by a dry run only</text>
+<rect x="20" y="628" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="48" y="640" font-size="12" text-anchor="start" fill="#1b2230">built (run for real, or needs neither Lean nor a model)</text>
+<rect x="451.5" y="628" width="22" height="14" rx="3" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="479.5" y="640" font-size="12" text-anchor="start" fill="#1b2230">built, simulations or a dry run only</text>
+</svg>

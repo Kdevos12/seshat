@@ -1,5 +1,7 @@
 # Memory
 
+![The journal as the only source of truth, its projections and the lines that read it](images/memory.svg)
+
 The memory is what a run knows besides its attempts: claims, the edges between them, and records
 of every other kind (lemmas, lessons, fingerprints...). It lives in the run's journal like every
 other fact ([journal.md](journal.md)); `@seshat/memory` gives it one interface, the `MemoryStore`,

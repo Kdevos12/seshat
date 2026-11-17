@@ -1,5 +1,7 @@
 # Trust: statuses and certification
 
+![Who may change a claim's status: only Lean checks and the certifier's kernel replay](images/trust.svg)
+
 ## Claim statuses
 
 | Status | Meaning |
