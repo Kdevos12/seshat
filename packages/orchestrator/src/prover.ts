@@ -23,6 +23,7 @@ import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type Ses
 import { informalBriefing } from "./informal.ts";
 import { sketchBriefing } from "./sketch.ts";
 import { closeSorries, recordSorryBattery, SORRY_BATTERY_ACTOR, type SorryBatteryConfig } from "./sorry-battery.ts";
+import { buildDossier } from "./dossier-build.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
 import { isTurnEnded, type Turn } from "./turns.ts";
@@ -87,6 +88,12 @@ export interface ProverOptions {
    * early when its checks keep failing the same way. Absent: off, and the sessions are what they always were.
    */
   restarts?: ResolvedRestarts;
+  /**
+   * A campaign's dossier (plan change LH4, documentation/campaign.md, "The dossier"): each session's briefing is rebuilt by code from the journal in place of the
+   * state card, within `tokens` (default the state card's bound): the signed statement and the frontier's top entries, the dead-end store, and the unverified
+   * sections the lines and the consolidation page drew. Absent: off, and the sessions are what they always were.
+   */
+  dossier?: { tokens?: number };
   /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
   stateCardChars?: number;
   /**
@@ -341,6 +348,13 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         const lines = frontierCardLines(frontierOf(cardStore, workbench.claimId, frontierOptions), 1500, frontierOptions);
         if (lines.length > 0) card = lines.join("\n");
       }
+      // A campaign's dossier takes the card's place; the unverified sections (L3) move into it, the others stay where they were.
+      let shownSections = sections;
+      if (o.dossier !== undefined && cardStore !== undefined && frontierOptions !== undefined) {
+        const unverified = [...(opened?.sections ?? []), ...(pageSection !== undefined ? [pageSection] : [])];
+        card = buildDossier({ journal, store: cardStore, claimId: workbench.claimId, statement: workbench.sketch.statement, frontier: frontierOptions, unverified, ...(o.dossier.tokens !== undefined ? { tokens: o.dossier.tokens } : {}) });
+        shownSections = sections.filter((x) => !unverified.includes(x));
+      }
       const budgetLine = cardStore === undefined || frontierOptions === undefined ? undefined : budgetLineOf(o.ledger, o.frontier?.problemLedger ?? o.ledger, frontierOf(cardStore, workbench.claimId, frontierOptions));
       result = await (o.session ?? runSession)({
         tools: [
@@ -376,7 +390,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           session,
           sessions: o.sessions,
           ...(card !== undefined ? { card } : {}),
-          ...(sections.length > 0 ? { sections } : {}),
+          ...(shownSections.length > 0 ? { sections: shownSections } : {}),
           ...(budgetLine !== undefined ? { budgetLine } : {}),
         }),
         workbench,

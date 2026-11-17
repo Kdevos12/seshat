@@ -704,6 +704,9 @@ export function narrativeCall(o: {
   ledger: Ledger;
   signal?: AbortSignal | undefined;
   prices?: PriceBook | undefined;
+  /** The site the call is journaled at (default `turn.narrative`), and the problem it is charged to (`campaign.reflect`, documentation/campaign.md). */
+  site?: string;
+  problemId?: string;
 }): NarrativeCall {
   return async (request) => {
     if (o.ledger.exhausted) throw new Error("the narrative's budget is spent");
@@ -731,7 +734,8 @@ export function narrativeCall(o: {
         line: "orchestrator",
         model: o.name,
         outcome,
-        site: SITE_TURN_NARRATIVE,
+        site: o.site ?? SITE_TURN_NARRATIVE,
+        ...(o.problemId !== undefined ? { problemId: o.problemId } : {}),
         requestHash,
         ...(outcome === "ok" ? { responseHash: o.blobs.put(answer) } : {}),
         ...(outcome !== "ok" ? { error: (message.errorMessage ?? `the model's answer was ${outcome}`).slice(0, 1000) } : {}),

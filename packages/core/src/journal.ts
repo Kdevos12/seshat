@@ -355,6 +355,7 @@ export class Journal {
       case "campaign.started":
       case "campaign.waiting":
       case "campaign.mode_changed":
+      case "campaign.dossier":
       case "campaign.stopped":
         this.onlyOrchestrator(event.type, actor);
         return;
