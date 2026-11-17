@@ -1,4 +1,13 @@
-# Seshat
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/seshat-dark.svg">
+    <img src="assets/logo/seshat.svg" alt="Seshat's logo: a big cat holding a small cat who holds π" width="170">
+  </picture>
+</p>
+
+<h1 align="center">Seshat</h1>
+
+<p align="center">
 
 [![Check](https://github.com/Kdevos12/seshat/actions/workflows/check.yml/badge.svg)](https://github.com/Kdevos12/seshat/actions/workflows/check.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -6,6 +15,8 @@
 [![Lean 4.27.0](https://img.shields.io/badge/Lean-4.27.0-2e7d32.svg)](documentation/lean-env.md)
 [![Node 22.19+](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](documentation/install.md)
 [![Cite](https://img.shields.io/badge/cite-CITATION.cff-8a2be2.svg)](CITATION.cff)
+
+</p>
 
 A harness for autonomous mathematical research with language models: models through their APIs, Lean as the judge, classical tools first.
 

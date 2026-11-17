@@ -272,7 +272,8 @@ whose process died.
 its blobs. It has no script, no link, no address and no form, and a content security policy
 (`default-src 'none'`) forbids the browser to fetch anything; open it from the disk. It changes nothing in
 the run: hints, signatures and steers stay commands ([human.md](human.md)). Every text that came from the
-journal, a model or a person is escaped, so a statement that is HTML is shown as text.
+journal, a model or a person is escaped, so a statement that is HTML is shown as text. The logo in its corner is
+`assets/logo/seshat.svg`, inline.
 
 The page has: the headline and, when the run signed a statement, the statement; **the proof** (the certified
 Lean files, then the candidates and partial sketches under a warning that they are not results); **the

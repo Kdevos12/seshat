@@ -156,6 +156,9 @@ The front end is Preact and Cytoscape (MIT, pinned in `packages/ui/package.json`
 changing anything under `packages/ui/web`, run `pnpm --filter @seshat/ui build:web`; a test compares a digest of the sources with the one the build
 wrote, so a stale build fails `pnpm check`. The digest covers the sources, the pinned versions and the lockfile entries (with their integrity hashes) of Vite, Preact, Cytoscape and what they pull in, and every built file under `static/`, so an edited bundle fails too; a second test builds again into a temporary directory and compares byte for byte, and a third scans the bundle: no `XMLHttpRequest`, `WebSocket`, `EventSource` or `sendBeacon`, no URL but the XML namespaces, and the front end calls `/api` paths only. The sources are type-checked by `packages/ui/web/tsconfig.json`, also by a test.
 
+The header carries Seshat's logo (`packages/ui/web/src/logo.tsx`, the paths of `assets/logo/seshat.svg`, its lines in the
+text colour so that it follows the theme), and the tab's icon is its 64-pixel render, inline in `index.html` as a `data:` URL.
+
 | Screen | What it does |
 |---|---|
 | **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine |

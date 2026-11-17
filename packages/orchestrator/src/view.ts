@@ -1,9 +1,24 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BlobStore, chainOfJournal, type HarnessEvent, type MemoryChain, Projection, readEvents } from "@seshat/core";
 import { type Account, buildAccount } from "./account.ts";
 import { blobReader, buildResult, money, type Result, resumeCommand, stopWords } from "./result.ts";
 import { turnRecords } from "./turns.ts";
+
+/** Seshat's logo (assets/logo/seshat.svg), inline: its lines take the text colour, so it follows the page's theme. */
+const LOGO = ((): string => {
+  try {
+    const svg = readFileSync(new URL("../../../assets/logo/seshat.svg", import.meta.url), "utf8");
+    return svg
+      .replace(/<title>[^<]*<\/title>/, "")
+      .replace(' xmlns="http://www.w3.org/2000/svg"', "") // inline in HTML: no namespace, and the page names no address
+      .replace("<svg ", '<svg class="logo" height="56" aria-hidden="true" ')
+      .replace(/ role="img" aria-label="[^"]*"/, "")
+      .replace('fill="#111111"', 'fill="currentColor"');
+  } catch {
+    return "";
+  }
+})();
 
 /**
  * `harness view RUN_DIR` (plan change PB7, documentation/quickstart.md, "The view"): one static HTML file built from the journal
@@ -282,7 +297,7 @@ const STYLE = `
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:1000px;margin:0 auto;padding:16px}
-h1{font-size:1.5rem;margin:.4em 0}h2{font-size:1.2rem;margin:1.6em 0 .4em;border-bottom:1px solid var(--line);padding-bottom:.2em}h3{font-size:1.02rem;margin:1.2em 0 .3em}h4{margin:.8em 0 .2em}
+.logo{float:right;margin:.2em 0 0 1em}h1{font-size:1.5rem;margin:.4em 0}h2{font-size:1.2rem;margin:1.6em 0 .4em;border-bottom:1px solid var(--line);padding-bottom:.2em}h3{font-size:1.02rem;margin:1.2em 0 .3em}h4{margin:.8em 0 .2em}
 code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
 pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 code{overflow-wrap:anywhere}
@@ -334,7 +349,7 @@ export function buildView(events: readonly HarnessEvent[], blobs: BlobStore, opt
     const noCertifier = result.certifier.name === null || result.certifier.unavailable !== undefined;
     const title = result.problems.length === 1 ? `Seshat: ${result.problems[0]?.target ?? ""}` : `Seshat: run ${result.runId}`;
     const body = [
-      `<h1>${esc(title)}</h1>`,
+      `${LOGO}<h1>${esc(title)}</h1>`,
       `<p class="muted">Run ${esc(result.runId)}. ${result.state === "finished" ? "Finished" : result.state === "paused" ? "Paused, waiting for the team" : "No end in the journal"}${result.stop !== undefined ? `: ${esc(result.stop.detail)}` : ""}. ${result.journal.events} events, last hash ${esc(result.journal.head.slice(0, 16))}. Built from the journal alone: static, read-only.</p>`,
       verified ? "" : `<div class="banner">The journal's hash chain ${esc(result.journal.chain)}. Nothing on this page can be trusted until the journal is restored.</div>`,
       noCertifier ? `<div class="banner">No certifier ran${result.certifier.unavailable !== undefined ? ` (${esc(clip(result.certifier.unavailable, 240))})` : ""}: a proof that passes the fast check stays <code>computed</code>.</div>` : "",

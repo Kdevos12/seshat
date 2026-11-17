@@ -7,6 +7,8 @@
  * scale, so that every figure reads the same way.
  */
 
+import { logoMark, logoWidth } from "./logo.ts";
+
 /** What a box stands for. Each role has one colour in every figure. */
 export type Role =
   | "lean" // Lean: the judge, its checks and its tools
@@ -529,8 +531,16 @@ export class Figure {
           `<marker id="ah-${c.replace("#", "")}" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="${c}"/></marker>`,
       )
       .join("");
+    // The logo, top right, above the drawing area; the title and subtitle must end before it.
+    const logoH = 40;
+    const logoX = this.width - 20 - logoWidth(logoH);
+    for (const [text, size, bold] of [[this.title, 17, true], [this.subtitle ?? "", 12, false]] as const) {
+      const end = 24 + lineWidth(text, size, bold);
+      if (end > logoX - 12) this.problems.push(`"${text.slice(0, 40)}" (ends at ${end.toFixed(0)}px) runs into the logo (${logoX.toFixed(0)}px)`);
+    }
     const head = [
       `<rect x="0" y="0" width="${this.width}" height="${this.height}" fill="#ffffff"/>`,
+      logoMark(logoX, 6, logoH),
       textLine(24, 32, this.title, { size: 17, bold: true }),
       this.subtitle ? textLine(24, 52, this.subtitle, { size: 12, color: MUTED }) : "",
     ].join("\n");

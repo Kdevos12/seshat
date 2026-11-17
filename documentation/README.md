@@ -1,3 +1,5 @@
+<img src="../assets/logo/seshat.svg" alt="Seshat's logo" width="110" align="right">
+
 # Seshat documentation
 
 Seshat is a harness for autonomous mathematical research with LLMs. Models are used only

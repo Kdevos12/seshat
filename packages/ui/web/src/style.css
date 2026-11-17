@@ -19,7 +19,8 @@ a { color: var(--accent); }
 main, .bar, footer { max-width: 980px; margin: 0 auto; padding: 0 16px; }
 main { padding-bottom: 24px; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 12px; padding-bottom: 8px; }
-.brand { font-weight: 700; font-size: 1.3rem; text-decoration: none; color: var(--fg); letter-spacing: .02em; }
+.brand { font-weight: 700; font-size: 1.3rem; text-decoration: none; color: var(--fg); letter-spacing: .02em; display: inline-flex; align-items: center; gap: 10px; }
+.brand .logo { display: block; flex: none; }
 nav { display: flex; flex-wrap: wrap; gap: 4px; }
 nav a { padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--fg); min-height: 40px; display: inline-flex; align-items: center; }
 nav a[aria-current="page"] { background: var(--card); border: 1px solid var(--line); font-weight: 600; }

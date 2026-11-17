@@ -4,6 +4,7 @@ import { Doctor } from "./doctor.tsx";
 import { RunView } from "./run.tsx";
 import { Settings } from "./settings.tsx";
 import { Start } from "./start.tsx";
+import { Logo } from "./logo.tsx";
 import "./style.css";
 
 /** The route is the part of the address after `#`: `/`, `/run/ID`, `/run/ID/job/JOB`, `/settings`, `/doctor`. */
@@ -43,6 +44,7 @@ function App() {
     <>
       <header class="bar">
         <a class="brand" href="#/">
+          <Logo size={40} class="logo" />
           Seshat
         </a>
         <nav aria-label="Main">
