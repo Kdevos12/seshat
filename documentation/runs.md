@@ -132,3 +132,17 @@ of it runs a child again, as it always did.
   finished session is not skipped by a resume, because its result (the last submission and Lean's report) is the
   line's input and the journal does not hold it; skipping would change what the line is given. A session cut
   before its end has a `child.started` and no `child.finished`.
+- **probe**: left as it is. It has no parent journal to write to: a finished run is pinned by other runs and
+  is never added to, and each arm is a run with its own journal and allowance. Its `kind` exists in `ChildSpec`
+  for the campaign (Task 59), which can start it from a run that is still open.
+- **planner round**, **M16 search**, **M18 variant**: left as they are. Their spend is charged through the
+  line's `llm` (`ProblemContext`) to the problem's ledger, which a ledger carved by the orchestrator does not
+  see: a child record around them would say `usd: 0`. Putting them on `runChild` needs a hook in
+  `ProblemContext` that hands a line the child's ledger, an interface change in `packages/lines` and
+  `packages/scheduler` that this task did not make. M16 and M18 already have one start (`LineRuntime.runTasks`)
+  and one start-and-end record (the task ledger); the planner round has its sketch nodes.
+- **prover task**: left as it is. Its start and end are the task ledger and the attempts' events, whose order
+  (`task.status_changed`, `attempt.started`, `attempt.charged`, `attempt.finished`) the resume, the report and
+  the turn machinery read; a `child.started` around them would add events inside that order and change what
+  every journal-reading test counts. It has the one real carve today (`ledger.child(cap)` for a probe slice or
+  an extension) that `runChild` copies.
