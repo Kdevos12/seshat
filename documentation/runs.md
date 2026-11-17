@@ -126,3 +126,9 @@ of it runs a child again, as it always did.
   loop and the `informal_proof` node are the body, unchanged; a loop cut by the end of the problem ends
   `stopped` and is run again by a resume, as before. The earlier guard (`hasInformalProof`) stays, for the
   journals written before `child.finished`.
+- **hole session**: moved, recorded but not skipped. `line-runtime.ts` starts it with `runChild` (`kind:
+  "hole"`, resume key `hole:PROBLEM:KEY` where the key is the line's `<task>:<session>`, `resume: "run"`).
+  `runHoleSession` is the body, unchanged, and now charges the child's ledger, which charges the problem's. A
+  finished session is not skipped by a resume, because its result (the last submission and Lean's report) is the
+  line's input and the journal does not hold it; skipping would change what the line is given. A session cut
+  before its end has a `child.started` and no `child.finished`.
