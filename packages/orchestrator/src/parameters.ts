@@ -252,6 +252,19 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     ui: "advanced",
     fields: ["max (integer 1..MAX_CARDS, 1): the most cards shown to the first session of a problem"],
   },
+  sorryBattery: {
+    group: "tools",
+    type: "{ maxSorries?: integer >= 1, timeoutSec?: number >= 1 }",
+    default: "absent (off)",
+    summary: "After a check whose file has no error and still has `sorry`, the harness, with no model call, tries line M10's tactics on each `sorry`, puts what Lean accepts into the session's file and says so in the check's answer; no claim's status changes.",
+    cli: [],
+    sets: "neither (the arm solve-v2-cpu of solve-defaults sets {})",
+    docs: "classical.md#The battery on a session's sorry",
+    tested: "sorry-battery.test.ts",
+    status: "experimental",
+    ui: "advanced",
+    fields: ["maxSorries (integer >= 1, 8): the most `sorry` tried after a check, in file order", "timeoutSec (number >= 1, the longest limit of a tactic): the seconds each Lean check of the battery may take"],
+  },
   cacheRetention: {
     group: "model",
     type: "none | short | long",
@@ -835,7 +848,7 @@ export function renderParametersPage(): string {
   lines.push("", "## Host profile keys", "", "The keys of `config/hosts/*.json` (`packages/registry/src/host.ts`). `*` stands for a model or a capability id.", "", row(["key", "type", "what it does", "in a shipped profile"]), row(["---", "---", "---", "---"]));
   for (const k of HOST_PROFILE_KEYS) lines.push(row([code(k.key), k.type, k.summary, k.shipped ? "yes" : "no"]));
   lines.push("", "## Defaults sets and arms", "", "`harness solve --defaults v1|v2` (`DEFAULTS_SETS`, `SOLVE_SWITCHES` and `setConfig` in `student.ts`):", "");
-  lines.push("- `v1`: no `RunConfig` field beyond `defaults`, `gate: {}`, the lines M1 and M10, the consortium turn limit and the budget.", "- `v2`: `v1` plus `editTool`, `maskOldChecks`, `checkTimeoutSec` (the host's, 120 by default), `stateCard`, `budgetRounds`, `budgetShare: 2`, `firstCases`, `gate.probeExtend`, line M6 with its repeat rule alone, and the solve-level switches: the intake, `autoTool`, `leanSearch` and `lean.lsp` in `tools` (the last three when the host offers them).", "- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`).", "");
+  lines.push("- `v1`: no `RunConfig` field beyond `defaults`, `gate: {}`, the lines M1 and M10, the consortium turn limit and the budget.", "- `v2`: `v1` plus `editTool`, `maskOldChecks`, `checkTimeoutSec` (the host's, 120 by default), `stateCard`, `budgetRounds`, `budgetShare: 2`, `firstCases`, `gate.probeExtend`, line M6 with its repeat rule alone, and the solve-level switches: the intake, `autoTool`, `leanSearch` and `lean.lsp` in `tools` (the last three when the host offers them).", "- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`), `solve-v2-cpu` (adds `sorryBattery`).", "");
   lines.push("## Findings", "", "What the audit found, one line each. Nothing is fixed by this page.", "", "From the tables (computed):", "");
   const computed = computedFindings();
   lines.push(...(computed.length === 0 ? ["- none"] : computed.map((c) => `- ${c}`)), "", "From reading the code:", "", ...MANUAL_FINDINGS.map((m) => `- ${m}`), "");

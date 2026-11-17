@@ -132,6 +132,12 @@ export interface SessionOptions {
    * Absent: no such hook, and the answer is what it always was.
    */
   appendToCheck?: (report: ValidationReport, signal?: AbortSignal) => Promise<string | undefined>;
+  /**
+   * The classical battery on the `sorry` a check leaves (Ruling 40, `RunConfig.sorryBattery`, documentation/classical.md, "The battery on a session's
+   * sorry"): called after a check whose file has no error and still has `sorry`, with no model call. What closes goes into the session's working file
+   * (the next `lean_edit` and the next session start from it) and its text after Lean's own answer. Never a claim's status. Absent: off.
+   */
+  sorryBattery?: (submission: Submission, report: ValidationReport, signal?: AbortSignal) => Promise<{ text: string; submission?: Submission } | undefined>;
   /** The seconds a Lean check of this session may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy (300). */
   checkTimeoutSec?: number;
   /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
@@ -308,8 +314,16 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
         }
       }
       const appended = o.appendToCheck === undefined || result.accepted || failure !== undefined || lineStop !== undefined ? undefined : await o.appendToCheck(report, signal).catch(() => undefined);
+      let battery: string | undefined;
+      if (o.sorryBattery !== undefined && !result.accepted && failure === undefined && lineStop === undefined && limit !== "turn" && !(signal?.aborted ?? false)) {
+        const closed = await o.sorryBattery(submission, report, signal).catch(() => undefined);
+        if (closed !== undefined) {
+          battery = closed.text;
+          if (closed.submission !== undefined) submission = closed.submission;
+        }
+      }
       return {
-        content: [{ type: "text", text: [formatCheck(report), ...(rewriteNote === undefined ? [] : [rewriteNote]), ...(appended === undefined || appended === "" ? [] : [appended]), ...(lineNotice === undefined ? [] : [lineNotice])].join("\n\n") }],
+        content: [{ type: "text", text: [formatCheck(report), ...(rewriteNote === undefined ? [] : [rewriteNote]), ...(battery === undefined ? [] : [battery]), ...(appended === undefined || appended === "" ? [] : [appended]), ...(lineNotice === undefined ? [] : [lineNotice])].join("\n\n") }],
         details: { summary: summarizeCheck(report) },
         ...(result.accepted || failure !== undefined || lineStop !== undefined || limit === "turn" ? { terminate: true } : {}),
       };

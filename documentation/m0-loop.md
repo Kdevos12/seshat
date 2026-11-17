@@ -334,6 +334,8 @@ card says how many were cut. Its text comes from the model's proofs and Lean's m
 byte for byte. The option is off in `harness run` and on in `harness solve`'s defaults set `v2`. Tested in `memory/test/card.test.ts` (the
 order, counts, the bound, the accepted lemmas) and `orchestrator/test/state-card.test.ts` (the opening message, the limit, off).
 
+With `RunConfig.sorryBattery` the answer of a check that left `sorry` and no error also says what the harness closed with the classical battery, and the file as it now reads (see [classical.md](classical.md#the-battery-on-a-sessions-sorry)); the system prompt does not change.
+
 ### Masked old checks
 
 In a long session the answers to old checks fill the context. With `RunConfig.maskOldChecks` (plan change CA6; `mask.ts`) the session keeps the

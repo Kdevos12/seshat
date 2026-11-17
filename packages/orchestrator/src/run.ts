@@ -84,6 +84,7 @@ import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
+import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
@@ -144,6 +145,13 @@ export interface RunConfig {
    * model call. Absent: off, and a run that records and prompts as it always did.
    */
   cards?: CardsConfig;
+  /**
+   * The classical battery on every `sorry` a prover session leaves (Ruling 40, documentation/classical.md, "The battery on a session's sorry"): after
+   * a `lean_check` whose file has no error and still has `sorry`, the harness, with no model call, tries line M10's tactics on each `sorry` (at most
+   * `maxSorries`, default 8), puts what closes into the session's working file and says so in the check's answer. `timeoutSec`: the seconds each Lean
+   * check of the battery may take (default: the longest limit of a tactic). A closed `sorry` changes no claim's status. Absent: off.
+   */
+  sorryBattery?: SorryBatteryConfig;
   /**
    * The formal-cost triage (plan change PA14, documentation/scheduler.md, "The budget gate"): after the informal loop and before the first outer session, the
    * harness classes the problem `invest`, `short` or `skip` from what the journal holds (the informal proof, its facts, `plausible`, the first cases, the
@@ -466,6 +474,7 @@ export function checkConfig(config: RunConfig): string[] {
   }
   if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
   if (config.cards !== undefined) problems.push(...checkCards(config.cards));
+  if (config.sorryBattery !== undefined) problems.push(...checkSorryBattery(config.sorryBattery));
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -878,6 +887,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.firstCases === true ? { firstCases: true } : {}),
       ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
       ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
+      ...(config.sorryBattery !== undefined ? { sorryBattery: { ...config.sorryBattery } } : {}),
       ...(config.triage === true ? { triage: true } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
@@ -1715,6 +1725,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
+          ...(config.sorryBattery !== undefined ? { sorryBattery: { config: config.sorryBattery, host: { have: new Set(m10Packages(config)) } } } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(shownCards !== undefined && task === proverTasks[0] ? { cards: shownCards } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
@@ -2163,4 +2174,10 @@ function proverErrors(journal: Journal, attemptIds: readonly string[]): string {
     return error === undefined || error === null ? [] : [error];
   });
   return `every prover failed: ${[...new Set(errors)].slice(0, 3).join("; ")}`;
+}
+
+/** The optional tactics the host's profile promises line M10 (its option `packages`), for the battery on a session's `sorry`: the hammer is there when it names it. */
+function m10Packages(config: RunConfig): string[] {
+  const packages = (config.lineOptions?.M10 as { packages?: unknown } | undefined)?.packages;
+  return typeof packages === "string" ? packages.split(",").map((p) => p.trim()).filter((p) => p !== "") : [];
 }
