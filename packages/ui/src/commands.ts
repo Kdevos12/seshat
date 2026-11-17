@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { classifyStatement } from "@seshat/orchestrator";
+import { classifyStatement, parseSettings, RunSetupError } from "@seshat/orchestrator";
 import { newId } from "@seshat/core";
 import type { KeyScope } from "./jobs.ts";
 import { readResumeInfo, readRun, runDirectory } from "./reader.ts";
@@ -116,6 +116,34 @@ function turnLimit(body: Body): string[] {
   ];
 }
 
+/**
+ * The settings a person chose in the menu (`settings`, an object of `RunConfig` keys with only the keys they filled in), checked by the reader that
+ * `--settings` uses, and the file that holds them: written beside the statement (or the run's other inputs) once nothing can refuse the command,
+ * and passed as `--settings=FILE`. No settings, no file, no flag: the command is what it was.
+ */
+function settingsFile(body: Body, kind: "run" | "solve", inputs: string, runId: string): { flags: string[]; write?: () => void; remove?: () => void } {
+  const given = body.settings;
+  if (given === undefined || given === null) return { flags: [] };
+  if (typeof given !== "object" || Array.isArray(given)) throw new RequestError("the settings are an object of keys and values");
+  if (Object.keys(given).length === 0) return { flags: [] };
+  let settings;
+  try {
+    settings = parseSettings(given, kind, "settings");
+  } catch (error) {
+    if (error instanceof RunSetupError) throw new RequestError(error.message);
+    throw error;
+  }
+  const file = join(inputs, `${runId}.settings.json`);
+  return {
+    flags: [`--settings=${file}`],
+    write: () => {
+      mkdirSync(inputs, { recursive: true, mode: 0o700 });
+      writeFileSync(file, `${JSON.stringify(settings.values, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    },
+    remove: () => rmSync(file, { force: true }),
+  };
+}
+
 /** A fresh run id: sortable by time, unique. */
 export function freshRunId(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
@@ -139,6 +167,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
       const inputs = join(ctx.runsDir, "_inputs");
       const file = join(inputs, `${runId}.${mode === "lean" ? "lean" : "txt"}`);
       const model = str(body, "model", { pattern: MODEL, what: "the model" });
+      const chosen = settingsFile(body, "solve", inputs, runId);
       const argv = [
         "solve",
         file,
@@ -148,6 +177,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         ...flag("turn-usd", num(body, "turnUsd", { max: 1000, what: "the dollar limit of the first turn" })),
         ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
         ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
+        ...chosen.flags,
         "--ask-stdin",
       ];
       return {
@@ -160,8 +190,12 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         prepare: () => {
           mkdirSync(inputs, { recursive: true, mode: 0o700 });
           writeFileSync(file, statement, { mode: 0o600, flag: "wx" });
+          chosen.write?.();
         },
-        cleanup: () => rmSync(file, { force: true }),
+        cleanup: () => {
+          rmSync(file, { force: true });
+          chosen.remove?.();
+        },
       };
     }
     case "run": {
@@ -184,6 +218,7 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
       const runBudget = num(body, "runBudgetUsd", { required: true, max: 100_000, what: "the spend ceiling of the run" }) as number;
       const runId = freshRunId();
       const dir = join(ctx.runsDir, runId);
+      const chosen = settingsFile(body, "run", join(ctx.runsDir, "_inputs"), runId);
       return {
         kind: "run",
         argv: [
@@ -199,12 +234,15 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
           ...lineFlags,
           ...turnLimit(body),
           ...(body.human === true ? ["--human"] : []),
+          ...chosen.flags,
           `--out=${dir}`,
         ],
         dir,
         runId,
         mayDetach: true,
         keys: scopeOf(model),
+        ...(chosen.write !== undefined ? { prepare: chosen.write } : {}),
+        ...(chosen.remove !== undefined ? { cleanup: chosen.remove } : {}),
       };
     }
     case "resume": {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -41,6 +41,46 @@ function hostileRun(runsDir: string): void {
 }
 
 describe("the page in a real browser", { skip: pw === undefined ? "Playwright is not installed here" : false }, () => {
+  it("draws the settings panel from the catalogue: a section per group, advanced ones behind a disclosure, badges, defaults as placeholders, and sends only what was filled in", async () => {
+    const shots = process.env.SESHAT_UI_SHOTS ?? tempDir("ui-shots-");
+    mkdirSync(shots, { recursive: true });
+    const s = await started({ staticDir: STATIC_DIR });
+    open.push(s);
+    const catalogue = (await s.call("GET", "/api/parameters")).json() as { groups: Array<{ id: string }>; parameters: Array<{ key: string; group: string; ui: string; status: string; default: string; solveFlag?: string }> };
+    const forSolve = catalogue.parameters.filter((p) => p.solveFlag === undefined);
+    const groups = catalogue.groups.map((g) => g.id).filter((g) => forSolve.some((p) => p.group === g));
+    const browser = await pw.chromium.launch();
+    try {
+      const page = await (await browser.newContext({ viewport: { width: 1000, height: 900 } })).newPage();
+      const problems: string[] = [];
+      page.on("pageerror", (e: Error) => problems.push(e.message));
+      await page.goto(s.server.url);
+      await page.waitForSelector("fieldset.group");
+      assert.deepEqual(await page.locator("fieldset.group").evaluateAll((l: any[]) => l.map((e) => e.getAttribute("data-group"))), groups, "one section per group, in the catalogue's order");
+      for (const p of forSolve) assert.equal(await page.locator(`#setting-${p.key}`).count(), 1, `${p.key} has a field`);
+      assert.equal(await page.locator("#setting-budget").count(), 0, "a setting that solve takes from its own field is not offered");
+      const advanced = forSolve.filter((p) => p.ui === "advanced");
+      assert.equal(await page.locator("details > .setting, details .setting").count() >= advanced.length, true);
+      assert.ok((await page.locator(".badge.experimental").count()) >= 1 && (await page.locator(".badge.beta").count()) >= 1, "beta and experimental badges");
+      assert.equal(await page.getAttribute("#setting-budgetShare", "placeholder"), forSolve.find((p) => p.key === "budgetShare")?.default, "the default is the placeholder");
+      // Open every "Advanced" and fill one number and one switch; the rest stay empty.
+      for (const d of await page.locator("fieldset.group details").all()) await d.evaluate((e: any) => (e.open = true));
+      await page.fill("#setting-budgetShare", "3");
+      await page.selectOption("#setting-triage", "true");
+      await page.screenshot({ path: join(shots, "settings-panel.png"), fullPage: false });
+      await page.fill("#statement", "Every number equals itself.");
+      await page.click("button:has-text('Prepare the statement')");
+      await page.waitForSelector("text=Does this say what you mean?", { timeout: 6000 });
+      const jobs = (await s.call("GET", "/api/jobs")).json().jobs as Array<{ command: string[] }>;
+      const file = jobs[0]?.command.find((a) => a.startsWith("--settings="))?.slice("--settings=".length);
+      assert.ok(file, "the start request carried the settings");
+      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { budgetShare: 3, triage: true }, "only the filled-in fields");
+      assert.deepEqual(problems, []);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("loads under the policy, shows runs and hostile text as text, and fits a phone in light and dark", async () => {
     const shots = process.env.SESHAT_UI_SHOTS ?? tempDir("ui-shots-");
     mkdirSync(shots, { recursive: true });
@@ -66,6 +106,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
           await page.waitForSelector("h1");
           assert.match(await page.textContent("h1"), /Give Seshat a problem/);
           await page.screenshot({ path: join(shots, `start-${name}-${scheme}.png`), fullPage: true });
+          assert.ok((await page.evaluate("document.documentElement.scrollWidth - window.innerWidth")) <= 0, `${name}/${scheme}: the start page, with its settings, scrolls sideways`);
 
           await page.goto(`${s.server.origin}/#/run/recorded`);
           await page.waitForSelector(".status .line");

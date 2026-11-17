@@ -871,4 +871,5 @@ export const SOLVE_OWN_FLAGS: Readonly<Partial<Record<keyof RunConfig, string>>>
   intake: "--intake",
   tools: "--tool",
   autoTool: "--auto-tool",
+  private: "--private",
 };

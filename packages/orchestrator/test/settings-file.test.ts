@@ -75,6 +75,7 @@ describe("a settings file in solve", () => {
     assert.throws(() => parseSettings({ budget: { problemUsd: 1 } }, "solve", "t"), /"budget" is set by --max-usd in solve/);
     assert.throws(() => parseSettings({ model: "a/b" }, "solve", "t"), /--model/);
     assert.throws(() => parseSettings({ tools: ["x"] }, "solve", "t"), /--tool/);
+    assert.throws(() => parseSettings({ private: true }, "solve", "t"), /--private/);
   });
 
   it("puts the file under the flags, and changes nothing without a file", () => {

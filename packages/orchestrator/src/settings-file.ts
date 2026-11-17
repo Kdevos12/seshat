@@ -27,21 +27,43 @@ export interface Settings {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** How a catalogue type is entered: one word per kind of value, which the interface's form and the check below both read. */
+export type SettingKind = "boolean" | "integer" | "number" | "list" | "text" | "text-or-number" | "choice" | "json";
+
+/** The kind of a catalogue `type` string, and for a choice its words. */
+export function settingKind(type: string): { kind: SettingKind; choices?: string[] } {
+  if (type === "boolean") return { kind: "boolean" };
+  if (type.startsWith("integer")) return { kind: "integer" };
+  if (type.startsWith("number")) return { kind: "number" };
+  if (type.startsWith("string[]")) return { kind: "list" };
+  if (type.startsWith("string | number")) return { kind: "text-or-number" };
+  if (type.startsWith("string")) return { kind: "text" };
+  const words = type.split(" | ").map((w) => w.replace(/\s*\(.*$/, ""));
+  if (words.length > 1 && words.every((w) => /^[a-z_]+$/.test(w))) return { kind: "choice", choices: words.filter((w) => w !== "absent") };
+  return { kind: "json" };
+}
+
 /** The problem with a value against the catalogue's type for it, or undefined. One small check per kind of type; `checkConfig` does the finer ones. */
 function typeProblem(type: string, value: unknown): string | undefined {
-  if (type === "boolean") return typeof value === "boolean" ? undefined : "a boolean (true or false)";
-  if (type.startsWith("integer")) return typeof value === "number" && Number.isInteger(value) ? undefined : "a whole number";
-  if (type.startsWith("number")) return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
-  if (type.startsWith("string[]")) return Array.isArray(value) && value.every((x) => typeof x === "string") ? undefined : "a list of text";
-  if (type.startsWith("string | number")) return typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? undefined : "text or a number";
-  if (type.startsWith("string")) return typeof value === "string" ? undefined : "text";
-  if (type.startsWith("{") || type.startsWith("Record<")) return isObject(value) ? undefined : "an object";
-  const words = type.split(" | ").map((w) => w.replace(/\s*\(.*$/, ""));
-  if (words.length > 1 && words.every((w) => /^[a-z_]+$/.test(w))) {
-    const choices = words.filter((w) => w !== "absent");
-    return typeof value === "string" && choices.includes(value) ? undefined : `one of ${choices.join(", ")}`;
+  const { kind, choices } = settingKind(type);
+  switch (kind) {
+    case "boolean":
+      return typeof value === "boolean" ? undefined : "a boolean (true or false)";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value) ? undefined : "a whole number";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
+    case "list":
+      return Array.isArray(value) && value.every((x) => typeof x === "string") ? undefined : "a list of text";
+    case "text-or-number":
+      return typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? undefined : "text or a number";
+    case "text":
+      return typeof value === "string" ? undefined : "text";
+    case "choice":
+      return typeof value === "string" && (choices ?? []).includes(value) ? undefined : `one of ${(choices ?? []).join(", ")}`;
+    case "json":
+      return type.startsWith("{") || type.startsWith("Record<") ? (isObject(value) ? undefined : "an object") : undefined;
   }
-  return undefined;
 }
 
 /** The problems of a settings object (a parsed file, or what the interface collected): an unknown, hidden or internal key, a key `solve` takes from a flag, a value of the wrong type, and what `checkConfig` finds. Empty: fine. */

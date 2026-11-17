@@ -109,9 +109,10 @@ always, before any spend.
 |---|---|---|
 | `GET /api/runs`, `/api/runs/ID`, `/api/runs/ID/result`, `/api/runs/ID/events` | the journal and blobs of a run, through the reader | nothing |
 | `GET /api/doctor` | the machine, as `harness doctor --no-write` does | nothing (the isolation profile is written by the command only) |
+| `GET /api/parameters` | the catalogue of settings (`parameters.ts` of the orchestrator): the entries a person sees | nothing |
 | `GET /api/providers`, `/api/providers/ID/models` | the library's providers | nothing |
 | `PUT` and `DELETE /api/providers/ID/key` | | the key file |
-| `POST /api/jobs` and the routes of a job | | a statement file under `runs/_inputs`; whatever the command it starts writes, as that command |
+| `POST /api/jobs` and the routes of a job | | a statement file and, when settings were chosen, a settings file under `runs/_inputs`; whatever the command it starts writes, as that command |
 
 ## Provider settings
 
@@ -176,6 +177,14 @@ never sets HTML (a test searches its sources for `innerHTML` and the like, and a
 **Phone width and colour schemes.** The layout is one column below 720px, buttons are at least 44px high, and the page follows the system's
 light or dark scheme. The browser test takes screenshots of every screen at phone and desktop width in both schemes, and fails when the page scrolls sideways.
 
+## Settings
+
+The start form has a "Settings" panel that covers every parameter of a run and keeps covering them as settings are added, because nothing in it is written by hand. `GET /api/parameters` (`packages/ui/src/parameters.ts`) gives the catalogue of [parameters.md](parameters.md) (`packages/orchestrator/src/parameters.ts`): the entries a person sees (`ui` is not `hidden`, `status` is not `internal`: the keys a settings file accepts), each with its group, the way it is entered (`kind`: a switch, a number, a list, a choice, text or JSON), type, default, summary and status. The page draws one section per group; the `basic` entries are shown and the `advanced` ones sit behind an "Advanced" disclosure; a `beta` or `experimental` status is a badge; each field's default is its placeholder and its summary is its help text. A key added to `RunConfig` and to the catalogue (`tsc` fails without the entry) appears in the menu with no interface code. A `solve` leaves out the settings its own fields and flags take (`budget`, `model`, and the other keys of `SOLVE_OWN_FLAGS`).
+
+A field left empty is not sent. On start, the request carries `settings`, the filled-in values; `plan` (`commands.ts`) checks them with `parseSettings`, the reader that `harness run|solve --settings FILE` uses ([quickstart.md](quickstart.md#a-settings-file)), and a refusal (an unknown key, a wrong type, a value `checkConfig` rejects) is shown in the form and starts nothing and writes nothing. Otherwise the values are written to `runs/_inputs/RUN_ID.settings.json` (mode 0600, beside the statement, removed again if the command cannot start) and the command gets `--settings=FILE`; the values are never on the command line. No setting chosen: no file and no flag. The tests are `packages/ui/test/settings.test.ts` (the API, the start request, the refusals) and the settings test of `browser.test.ts` (the panel in Chromium, skipped without Playwright).
+
+![The settings panel of the start form](images/ui-settings.png)
+
 ## Tests
 
 `packages/ui/test`: the reader against a recorded journal (`reader.test.ts`); the guards (`server-security.test.ts`); the routes, the event
@@ -183,7 +192,7 @@ streams and the doctor (`server-routes.test.ts`); commands, hostile statements, 
 (`jobs.test.ts`); the key file's mode and non-disclosure (`keys.test.ts`); a run started, signed and stopped through the API with pi-ai's faux
 provider and a simulated Lean (`faux-run.test.ts`); `harness ui` as a child process and `solve --ask-stdin` (`cli.test.ts`); the front end's
 build, sources and types (`web.test.ts`); and one smoke test in headless Chromium through Playwright, which is skipped where Playwright is not
-installed (`browser.test.ts`; `SESHAT_UI_SHOTS=DIR` keeps its screenshots).
+installed (`browser.test.ts`; `SESHAT_UI_SHOTS=DIR` keeps its screenshots); the settings API and start request (`settings.test.ts`).
 
 ## What has not been run
 
