@@ -8,4 +8,12 @@ authors:
     given-names: "Kyllian"
 repository-code: "https://github.com/Kdevos12/seshat"
 version: "1.0.0-beta.1"
+date-released: "2026-11-17"
 license: Apache-2.0
+keywords:
+  - automated theorem proving
+  - Lean 4
+  - formal verification
+  - large language models
+  - mathematical research
+  - agents

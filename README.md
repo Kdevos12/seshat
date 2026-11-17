@@ -1,6 +1,20 @@
 # Seshat
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Status: beta v1](https://img.shields.io/badge/status-beta%20v1-orange.svg)](documentation/status.md)
+[![Lean 4.27.0](https://img.shields.io/badge/Lean-4.27.0-2e7d32.svg)](documentation/lean-env.md)
+[![Node 22.19+](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](documentation/install.md)
+[![Cite](https://img.shields.io/badge/cite-CITATION.cff-8a2be2.svg)](CITATION.cff)
+
 A harness for autonomous mathematical research with language models: models through their APIs, Lean as the judge, classical tools first.
+
+**Cheap, verified, open.** Give Seshat a statement in Lean or in plain English and a dollar cap. It tries classical tools first, then lets open-weight models (DeepSeek by default) write Lean proofs, and says *proved* only when Lean's kernel has replayed the proof. In its largest measured run it certified 16 of 20 Putnam competition problems for $1.27 of model calls in all ([results](#results-so-far), with their caveats).
+
+```sh
+git clone https://github.com/Kdevos12/seshat.git && cd seshat
+scripts/setup.sh                                   # Node packages, Lean 4.27.0, the Lean server: documentation/install.md
+pnpm harness solve "The sum of two odd numbers is even." --max-usd 0.50
+```
 
 Seshat takes a mathematical statement, in Lean or in prose, and works on it under a dollar allowance: it tries classical tools before any model, lets models propose Lean proofs in fresh sessions, and calls a statement proved only when Lean's kernel has replayed the proof. Its principles:
 
@@ -35,19 +49,26 @@ What the runs taught, and what was fixed because of them:
 - The replay (0 of 6) showed that four of the six problems were stopped by the budget gate after the probe, that the verifier of the informal proof (the same model) was too lenient, and that a hole's file did not carry its context; the fixes are in the ledger. These six are the hard end of the set: no claim is made that blueprints help.
 - A yardstick caveat: every PutnamBench problem has a public Lean proof, which a model may have seen.
 
-## Quick start
+## Install
 
-Node 22.19 or later and pnpm 10 ([documentation/development.md](documentation/development.md)). Tests run without Lean, a model or a network.
+Seshat runs on Linux and macOS (Windows through WSL2). [documentation/install.md](documentation/install.md) is the whole road, in three levels:
+
+| Level | You get | You need |
+|---|---|---|
+| Try it | the command line, the local interface, the heuristic card bank | Node 22.19 or later and pnpm 10: `scripts/setup.sh --no-lean` (or `pnpm install`) |
+| A real run | `harness solve` with proofs certified by Lean's kernel | Lean 4.27.0 through elan, the Lean environment `base` (30 to 60 minutes to build the first time), the Kimina Lean server, bubblewrap, a model key: `scripts/setup.sh` |
+| Optional tools | SageMath, z3, E and Vampire, Lean's language server, literature search, Jev | each one on its own |
 
 ```sh
-pnpm install
-pnpm check                  # type-check, then every test
-pnpm harness doctor         # what this machine lacks (Lean, Kimina, credentials, isolation), and how to fix it
-pnpm harness solve "Every even number above two is a sum of two primes." --max-usd 2
-pnpm harness ui             # the local interface, on 127.0.0.1 only
+scripts/setup.sh              # does every step it can, skips what is done, never uses sudo
+$EDITOR .env                  # DEEPSEEK_API_KEY=...; `pnpm harness` reads .env by itself
+scripts/kimina.sh             # the Lean server, in a terminal of its own
+pnpm harness doctor           # what this machine still lacks, and how to fix it
+pnpm harness solve "(n : ℕ) : n + 0 = n" --max-usd 0.10
+pnpm harness ui               # the local interface, on 127.0.0.1 only
 ```
 
-`solve` takes a statement in prose, in Lean (`"(n : ℕ) : n + 0 = n"`) or a `.lean` file; prose is formalized and shown for your signature before anything is spent. It always runs under a dollar allowance, and leaves `RESULT.md` in the run directory whatever stopped it. A real run needs Lean 4.27.0 and a model key ([models setup](documentation/models-setup.md), [Lean](documentation/lean.md)); [documentation/quickstart.md](documentation/quickstart.md) is the shortest road.
+`solve` takes a statement in prose, in Lean or a `.lean` file; prose is formalized and shown for your signature before anything is spent. It always runs under a dollar allowance, and leaves `RESULT.md` in the run directory whatever stopped it. [documentation/quickstart.md](documentation/quickstart.md) is the guide to `solve`. To work on the code: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## How it works
 
@@ -392,7 +413,7 @@ The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0` ([d
 
 ## Documentation
 
-[documentation/](documentation/README.md) is the home page of the wiki: concepts, one page per compartment, the reference and the development notes. Working on Seshat, alone or with other agents: [CLAUDE.md](CLAUDE.md). The plan and the state of its build: [plans/](plans/seshat-plan-ledger.md).
+[documentation/](documentation/README.md) is the home page of the wiki: concepts, one page per compartment, the reference and the development notes. Installing: [documentation/install.md](documentation/install.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md); security: [SECURITY.md](SECURITY.md). Working on Seshat, alone or with other agents: [CLAUDE.md](CLAUDE.md). The plan and the state of its build: [plans/](plans/seshat-plan-ledger.md).
 
 ## Author and citation
 

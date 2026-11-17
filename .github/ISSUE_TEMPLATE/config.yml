@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation guide
+    url: https://github.com/Kdevos12/seshat/blob/main/documentation/install.md
+    about: Most setup problems are answered here, under "When something goes wrong".
+  - name: Report a security vulnerability
+    url: https://github.com/Kdevos12/seshat/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
