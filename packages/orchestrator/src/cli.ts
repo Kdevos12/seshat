@@ -13,6 +13,8 @@ import { type GateSettings, gateSettings } from "@seshat/scheduler";
 import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
 import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
+import { CLI_OPTIONS } from "./cli-options.ts";
+import { renderParametersList, renderParametersPage } from "./parameters.ts";
 import { renderHealth } from "./health.ts";
 import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { checkRoles, ROLES, type RolesConfig } from "./roles.ts";
@@ -94,6 +96,7 @@ const usage = `usage:
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
+  harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
 
 ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
 and written (default runs).
@@ -196,139 +199,7 @@ model in the host profile and is refused without one. A resumed run keeps the op
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
-  options: {
-    host: { type: "string" },
-    implementation: { type: "string" },
-    case: { type: "string", multiple: true },
-    out: { type: "string" },
-    reference: { type: "string" },
-    query: { type: "string" },
-    limit: { type: "string" },
-    "no-cache": { type: "boolean" },
-    "include-computed": { type: "boolean" },
-    config: { type: "string" },
-    adopt: { type: "string" },
-    approve: { type: "string" },
-    registry: { type: "string" },
-    "library-registry": { type: "string" },
-    runs: { type: "string" },
-    reason: { type: "string" },
-    bench: { type: "string" },
-    checkout: { type: "string" },
-    sample: { type: "string" },
-    seed: { type: "string" },
-    problem: { type: "string", multiple: true },
-    all: { type: "boolean" },
-    model: { type: "string" },
-    thinking: { type: "string" },
-    provers: { type: "string" },
-    sessions: { type: "string" },
-    turns: { type: "string" },
-    "context-tokens": { type: "string" },
-    "notes-chars": { type: "string" },
-    "cache-retention": { type: "string" },
-    "packet-mode": { type: "string" },
-    "budget-usd": { type: "string" },
-    "run-budget-usd": { type: "string" },
-    concurrency: { type: "string" },
-    sequence: { type: "string" },
-    tag: { type: "string" },
-    tool: { type: "string", multiple: true },
-    "no-tool": { type: "string", multiple: true },
-    lines: { type: "string", multiple: true },
-    ablation: { type: "string" },
-    configs: { type: "string" },
-    experiment: { type: "string" },
-    arms: { type: "string" },
-    models: { type: "string" },
-    split: { type: "string" },
-    "split-by": { type: "string" },
-    cutoff: { type: "string" },
-    dates: { type: "string" },
-    target: { type: "string" },
-    "reflector-model": { type: "string" },
-    iterations: { type: "string" },
-    minibatch: { type: "string" },
-    finalists: { type: "string" },
-    "reflect-budget-usd": { type: "string" },
-    alpha: { type: "string" },
-    "max-usd": { type: "string" },
-    yes: { type: "boolean" },
-    "ask-stdin": { type: "boolean" },
-    intake: { type: "boolean" },
-    lit: { type: "boolean" },
-    private: { type: "boolean" },
-    "intake-usd": { type: "string" },
-    "auto-tool": { type: "boolean" },
-    "no-intake": { type: "boolean" },
-    "no-auto-tool": { type: "boolean" },
-    "no-lean-search": { type: "boolean" },
-    port: { type: "string" },
-    open: { type: "boolean" },
-    lean: { type: "boolean" },
-    prose: { type: "boolean" },
-    "no-check": { type: "boolean" },
-    sketch: { type: "string" },
-    "lean-search": { type: "boolean" },
-    consult: { type: "string" },
-    role: { type: "string", multiple: true },
-    "role-setting": { type: "string", multiple: true },
-    "consult-calls": { type: "string" },
-    "consult-tokens": { type: "string" },
-    consolidation: { type: "boolean" },
-    defaults: { type: "string" },
-    "no-write": { type: "boolean" },
-    rewrite: { type: "boolean" },
-    "allow-unpriced": { type: "boolean" },
-    "min-gate-problems": { type: "string" },
-    ledger: { type: "string" },
-    "reuse-gates": { type: "boolean" },
-    pilot: { type: "string" },
-    grade: { type: "string" },
-    "allow-unchecked": { type: "boolean" },
-    baseline: { type: "string" },
-    "chunk-k": { type: "string" },
-    "probe-every": { type: "string" },
-    "probe-size": { type: "string" },
-    "probe-set": { type: "string" },
-    "line-option": { type: "string", multiple: true },
-    "draw-seed": { type: "string" },
-    "decide-backend": { type: "string" },
-    "decide-site": { type: "string", multiple: true },
-    "decide-votes": { type: "string" },
-    gate: { type: "boolean" },
-    "gate-floor": { type: "string" },
-    "gate-probe": { type: "string" },
-    "gate-margin": { type: "string" },
-    "gate-min-sessions": { type: "string" },
-    "gate-share": { type: "string", multiple: true },
-    "memory-from": { type: "string" },
-    resume: { type: "string" },
-    human: { type: "boolean" },
-    "turn-tokens": { type: "string" },
-    "turn-usd": { type: "string" },
-    "turn-minutes": { type: "string" },
-    "turn-narrative": { type: "boolean" },
-    "turn-consolidation": { type: "boolean" },
-    offpeak: { type: "boolean" },
-    "offpeak-max-wait": { type: "string" },
-    "impasse-posterior": { type: "string" },
-    "impasse-attempts": { type: "string" },
-    claim: { type: "string" },
-    as: { type: "string" },
-    note: { type: "string" },
-    focus: { type: "string" },
-    drop: { type: "string" },
-    forbid: { type: "string" },
-    json: { type: "boolean" },
-    find: { type: "boolean" },
-    "env-dir": { type: "string" },
-    "allow-programs": { type: "boolean" },
-    level1: { type: "boolean" },
-    replace: { type: "boolean" },
-    "packs-dir": { type: "string" },
-    help: { type: "boolean", short: "h" },
-  },
+  options: CLI_OPTIONS,
 });
 const [command, target, third] = positionals;
 
@@ -360,6 +231,7 @@ async function main(): Promise<number> {
     if (command === "doctor") return await doctor();
     if (command === "lit") return await lit();
     if (command === "ui") return await ui();
+    if (command === "parameters") return parametersCommand();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
@@ -1264,6 +1136,19 @@ async function solve(): Promise<number> {
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );
+}
+
+/** `harness parameters [--markdown [--out FILE]]`: the catalogue of every parameter (documentation/parameters.md). */
+function parametersCommand(): number {
+  if (target !== undefined) throw new UsageError(`parameters takes no argument, got ${target}`);
+  if (values.markdown !== true) {
+    for (const line of renderParametersList()) console.log(line);
+    return 0;
+  }
+  const page = renderParametersPage();
+  if (values.out !== undefined) writeFileSync(values.out, page);
+  else process.stdout.write(page);
+  return 0;
 }
 
 /** `harness ui`: the local interface (documentation/ui.md); loaded only when asked for. */
