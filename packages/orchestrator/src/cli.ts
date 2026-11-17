@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./env-file.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

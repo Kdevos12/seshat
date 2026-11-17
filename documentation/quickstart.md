@@ -14,8 +14,9 @@ that its results stay `computed`.
 
 ## The shortest road
 
+Install first: [install.md](install.md) (or `scripts/setup.sh`, which does it in one command). Then:
+
 ```sh
-pnpm install
 pnpm harness ui                           # or the same in a page: documentation/ui.md
 pnpm harness doctor                       # what is missing here, and how to fix it
 pnpm harness solve "Every even number above two is the sum of two primes." --max-usd 2

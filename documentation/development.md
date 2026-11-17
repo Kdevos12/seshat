@@ -5,6 +5,10 @@
 - Node 22.19 or later. TypeScript runs directly through Node's type stripping: there is no build
   step, and imports name `.ts` files.
 - pnpm 10 (`packageManager` in `package.json`).
+- To run Seshat for real (Lean, the Kimina server, a sandbox, a model key): [install.md](install.md).
+- `pnpm harness` loads the repository's `.env` (`packages/orchestrator/src/env-file.ts`); the tests start the
+  command line with `node` and do not read it (unless `SESHAT_ENV_FILE` is exported), so a machine's keys and settings
+  cannot change a test's result.
 
 ```sh
 pnpm install
