@@ -117,6 +117,31 @@ describe("in a session", () => {
     assert.equal(calls, 0);
     assert.deepEqual(result.submission, { aux: "A".slice(0, 0), proof: "A sorry\nB sorry" });
   });
+
+  it("checks the completed file itself when the battery closed every sorry, and ends the session on acceptance", async () => {
+    const { models, faux, name } = fauxModels();
+    void name;
+    faux.setResponses([check("A sorry"), say("Never asked.")]);
+    const lean = new FakeLean();
+    const checked: Submission[] = [];
+    const workbench = {
+      check: async (s: Submission) => {
+        checked.push(s);
+        const n = (s.proof.match(/sorry/g) ?? []).length;
+        return n === 0 ? { report: report(0, { verdict: "valid", holes: false, leanStatus: "valid", checked: render(s) }), accepted: true } : { report: report(n, { checked: render(s) }), accepted: false };
+      },
+    } as unknown as Workbench;
+    const result = await runSession({
+      models, model: faux.getModel(), thinkingLevel: "off", systemPrompt: "s", prompt: "p", workbench, attemptId: "att_x", actor: "prover:p1",
+      limits: { turns: 10, contextTokens: 100_000 }, ledger: new Ledger(), signal: new AbortController().signal, wrapUp: false,
+      sorryBattery: (sub: Submission, rep: ValidationReport, sig?: AbortSignal) => closeSorries(deps(lean), sub, rep, sig),
+    });
+    assert.deepEqual(checked, [{ aux: "", proof: "A sorry" }, { aux: "", proof: "A omega" }]);
+    assert.equal(result.stop, "solved");
+    assert.equal(result.submissions, 2);
+    const answers = result.messages.flatMap((m) => ("role" in m && m.role === "toolResult" ? m.content.map((c) => (c.type === "text" ? c.text : "")) : []));
+    assert.match(answers[0] ?? "", /The harness checked the completed file: Lean accepts it, with no `sorry`\. The session ends here\./);
+  });
 });
 
 describe("the arm, the journal and the report", () => {
