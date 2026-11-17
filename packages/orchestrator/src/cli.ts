@@ -25,6 +25,7 @@ import { auditCommand } from "./audit.ts";
 import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
 import { consolidateCommand } from "./consolidate-command.ts";
+import { frontierCommand } from "./frontier-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { measureRun } from "./measures.ts";
@@ -85,6 +86,7 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness frontier RUN_DIR [--claim ID] [--json]   (what the run has established, from its journal: no model, no Lean; documentation/frontier.md)
   harness consolidate RUN_DIR [--out DIR] [--model PROVIDER/ID --max-usd X] [--host HOST]
   harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
@@ -262,6 +264,7 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "frontier") return frontierCommand(requireTarget("frontier", "a run directory"), { claimId: values.claim, json: values.json, out: (l) => console.log(l) });
     if (command === "consolidate") {
       return await consolidateCommand(requireTarget("consolidate", "a run directory"), {
         out: values.out, model: values.model, maxUsd: number("max-usd", values["max-usd"], undefined), host: values.host, models: builtinModels(),
