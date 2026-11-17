@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 662" width="1000" height="662" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Context: a packet under a budget, not the whole history</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="662" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Context: a packet under a budget, not the whole history</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Line M4 sends each request a frozen prefix and a freshly compiled tail, with citable ids and two tools to look further.</text>
+<rect x="24" y="76" width="952" height="214" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) WHAT EACH REQUEST CARRIES</text>
+<rect x="24" y="302" width="952" height="168" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="320" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) ONE PACKET AT THE DEFAULT BUDGET: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">TOKENS</tspan> 6000, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">PREFIXSHARE</tspan> 0.8</text>
+<rect x="24" y="482" width="952" height="136" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="500" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) WHERE PREMISES COME FROM, AND THE TOOLS</text>
+<rect x="100" y="128" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="150" y="128" width="40" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="568" y="128" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="618" y="128" width="200" height="16" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="818" y="128" width="40" height="16" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="100" y="154" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="150" y="154" width="40" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="190" y="154" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="220" y="154" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="568" y="154" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="618" y="154" width="200" height="16" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="818" y="154" width="62" height="16" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="100" y="180" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="150" y="180" width="40" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="190" y="180" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="220" y="180" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="250" y="180" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="280" y="180" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="568" y="180" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="618" y="180" width="200" height="16" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="818" y="180" width="50" height="16" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="100" y="206" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="150" y="206" width="40" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="190" y="206" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="220" y="206" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="250" y="206" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="280" y="206" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="310" y="206" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="340" y="206" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="568" y="206" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="618" y="206" width="200" height="16" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="818" y="206" width="72" height="16" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="100" y="232" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="150" y="232" width="40" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="190" y="232" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="220" y="232" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="250" y="232" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="280" y="232" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="310" y="232" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="340" y="232" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="370" y="232" width="30" height="16" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1"/>
+<rect x="400" y="232" width="30" height="16" fill="#e6f2ea" stroke="#2e7448" stroke-width="1"/>
+<rect x="568" y="232" width="50" height="16" fill="#ffffff" stroke="#8b94a5" stroke-width="1"/>
+<rect x="618" y="232" width="200" height="16" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="818" y="232" width="56" height="16" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="36" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="159.73333333333335" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="283.4666666666667" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="407.20000000000005" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="530.9333333333334" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="654.6666666666667" y="350" width="123.73333333333335" height="36" fill="#eceff3" stroke="#4a5567" stroke-width="1"/>
+<rect x="778.4000000000001" y="350" width="185.5999999999999" height="36" fill="#e5eff8" stroke="#2a6496" stroke-width="1"/>
+<rect x="36" y="508" width="136" height="98" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="79.7" y="535.4" font-size="11" fill="#1b4266" font-weight="700">Selectors</text>
+<text x="104" y="549.1" font-size="10" fill="#1f2633" text-anchor="middle">MePo, SInE,</text>
+<text x="104" y="562.1" font-size="10" fill="#1f2633" text-anchor="middle">online k-NN over</text>
+<text x="104" y="575.1" font-size="10" fill="#1f2633" text-anchor="middle">the run's proofs,</text>
+<text x="104" y="588.1" font-size="10" fill="#1f2633" text-anchor="middle">pattern seeds</text>
+<rect x="202" y="508" width="120" height="98" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="231.5" y="548.4" font-size="11" fill="#1b4266" font-weight="700">Convex mix</text>
+<text x="262" y="562.1" font-size="10" fill="#1f2633" text-anchor="middle">of the channels,</text>
+<text x="262" y="575.1" font-size="10" fill="#1f2633" text-anchor="middle">no training</text>
+<rect x="352" y="508" width="150" height="98" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="395.3" y="535.4" font-size="11" fill="#1b4266" font-weight="700">Accessibility</text>
+<text x="427" y="549.1" font-size="10" fill="#1f2633" text-anchor="middle">a premise the file's</text>
+<text x="427" y="562.1" font-size="10" fill="#1f2633" text-anchor="middle">header cannot see is</text>
+<text x="427" y="575.1" font-size="10" fill="#1f2633" text-anchor="middle">not offered, or marked</text>
+<text x="427" y="588.1" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">(needs: import M)</tspan></text>
+<rect x="532" y="508" width="120" height="98" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="542.5" y="548.8" font-size="10.5" fill="#2b3340" font-weight="700">Candidate premises</text>
+<text x="592" y="561.9" font-size="9.5" fill="#1f2633" text-anchor="middle">a section of the</text>
+<text x="592" y="574.3" font-size="9.5" fill="#1f2633" text-anchor="middle">prefix, ids <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="8.7">L</tspan></text>
+<path d="M172,557 L202,557" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M322,557 L352,557" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M502,557 L532,557" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="688" y="508" width="276" height="44" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="793" y="527.9" font-size="11" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.1">expand(id)</tspan></text>
+<text x="826" y="541.6" font-size="10" fill="#1f2633" text-anchor="middle">one item in full, with its neighbours</text>
+<rect x="688" y="562" width="276" height="44" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="789.7" y="581.9" font-size="11" fill="#2b3340" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.1">graph_query</tspan></text>
+<text x="826" y="595.6" font-size="10" fill="#1f2633" text-anchor="middle">a pattern, anchors, or a typed query</text>
+<text x="36" y="114" font-size="11" fill="#1f2633"><tspan font-weight="700">Raw history</tspan>: each request resends the conversation, so it grows</text>
+<text x="504" y="114" font-size="11" fill="#1f2633"><tspan font-weight="700">Packet</tspan>: the prefix stays byte for byte, the tail is new</text>
+<text x="36" y="140" font-size="10" fill="#5b6475">request 1</text>
+<text x="504" y="140" font-size="10" fill="#5b6475">request 1</text>
+<text x="36" y="166" font-size="10" fill="#5b6475">request 2</text>
+<text x="504" y="166" font-size="10" fill="#5b6475">request 2</text>
+<text x="36" y="192" font-size="10" fill="#5b6475">request 3</text>
+<text x="504" y="192" font-size="10" fill="#5b6475">request 3</text>
+<text x="36" y="218" font-size="10" fill="#5b6475">request 4</text>
+<text x="504" y="218" font-size="10" fill="#5b6475">request 4</text>
+<text x="36" y="244" font-size="10" fill="#5b6475">request 5</text>
+<text x="504" y="244" font-size="10" fill="#5b6475">request 5</text>
+<line x1="898" x2="898" y1="124" y2="262" stroke="#4a5567" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="904" y="138" font-size="10" fill="#5b6475">token</text>
+<text x="904" y="151" font-size="10" fill="#5b6475">budget</text>
+<rect x="36" y="269" width="22" height="14" rx="3" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="64" y="280" font-size="10.5" fill="#5b6475">system, tools, opening message</text>
+<rect x="240" y="269" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="268" y="280" font-size="10.5" fill="#5b6475">a model turn</text>
+<rect x="352.3" y="269" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="380.3" y="280" font-size="10.5" fill="#5b6475">a Lean or tool result</text>
+<rect x="499.1" y="269" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="527.1" y="280" font-size="10.5" fill="#5b6475">prefix</text>
+<rect x="578.8" y="269" width="22" height="14" rx="3" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<text x="606.8" y="280" font-size="10.5" fill="#5b6475">tail</text>
+<text x="36" y="340" font-size="10.5" fill="#1f2633"><tspan font-weight="700">Prefix</tspan>, 4800 tokens: frozen at the first request, sections in a fixed order</text>
+<text x="786.4" y="340" font-size="10.5" fill="#1f2633"><tspan font-weight="700">Tail</tspan>, 1200 tokens</text>
+<text x="97.9" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Goal</text>
+<text x="41" y="402" font-size="10" fill="#2b3340">the claim's id and</text>
+<text x="41" y="415" font-size="10" fill="#2b3340">statement, as Lean;</text>
+<text x="41" y="428" font-size="10" fill="#2b3340">always kept</text>
+<text x="221.6" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Useful facts</text>
+<text x="164.7" y="402" font-size="10" fill="#2b3340">PageRank and symbol</text>
+<text x="164.7" y="415" font-size="10" fill="#2b3340">similarity; badges;</text>
+<text x="164.7" y="428" font-size="10" fill="#2b3340">ids <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">C</tspan> and <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">E</tspan></text>
+<text x="345.3" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Candidate premises</text>
+<text x="288.5" y="402" font-size="10" fill="#2b3340">local, library, other</text>
+<text x="288.5" y="415" font-size="10" fill="#2b3340">packages, Mathlib;</text>
+<text x="288.5" y="428" font-size="10" fill="#2b3340">ids <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">L</tspan></text>
+<text x="469.1" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Already tried</text>
+<text x="412.2" y="402" font-size="10" fill="#2b3340">M1's lines, at most</text>
+<text x="412.2" y="415" font-size="10" fill="#2b3340"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">maxTried</tspan></text>
+<text x="592.8" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Active lessons</text>
+<text x="535.9" y="402" font-size="10" fill="#2b3340">M5's, as the draw</text>
+<text x="535.9" y="415" font-size="10" fill="#2b3340">left them; ids <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">A</tspan></text>
+<text x="716.5" y="371.8" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">Other lines' notes</text>
+<text x="659.7" y="402" font-size="10" fill="#2b3340">briefings, screened</text>
+<text x="659.7" y="415" font-size="10" fill="#2b3340">and capped</text>
+<text x="871.2" y="371.8" font-size="10.5" fill="#1b4266" text-anchor="middle" font-weight="700">Tail</text>
+<text x="783.4" y="402" font-size="10" fill="#2b3340">where the session stands,</text>
+<text x="783.4" y="415" font-size="10" fill="#2b3340">file regions, holes,</text>
+<text x="783.4" y="428" font-size="10" fill="#2b3340">last raw Lean answer,</text>
+<text x="783.4" y="441" font-size="10" fill="#2b3340">tool answers, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">newSince</tspan></text>
+<text x="36" y="456" font-size="10" fill="#5b6475">every shown item has a citable id; an item the budget cut has none. The sections are not drawn to scale: their sizes vary.</text>
+<text x="826" y="502" font-size="9.5" fill="#5b6475" text-anchor="middle">journaled as tool runs of <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="8.7">line:M4</tspan>; answers go in the tail</text>
+<rect x="24" y="635" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="646" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="268.8" y="635" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="296.8" y="646" font-size="10.5" fill="#5b6475">built, tested with simulations only</text>
+</svg>

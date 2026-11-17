@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 774" width="1000" height="774" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">The budget gate: a price against a chance, probe first</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="774" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">The budget gate: a price against a chance, probe first</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">No paid launch goes ahead on hope: it is priced, a cheap probe comes first, and a run's budget is shared in rounds among its problems.</text>
+<rect x="24" y="76" width="952" height="154" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) BEFORE EACH PAID LAUNCH: A PRICE AGAINST A CHANCE</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;The budget gate&quot;</text>
+<rect x="24" y="244" width="952" height="206" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="262" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) PROBE FIRST: THE FLEET WIDENS ON LEAN PROGRESS</text>
+<text x="964" y="262" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;The budget gate&quot;</text>
+<rect x="24" y="464" width="952" height="262" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="482" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) A RUN'S BUDGET IN ROUNDS, SHARED AMONG ITS PROBLEMS</text>
+<text x="964" y="482" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">scheduler.md, &quot;The budget in rounds&quot;</text>
+<rect x="36" y="104" width="250" height="54" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<g transform="translate(99.5,109) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M12.6 7.2c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 2s1.1 1.7 2.6 2c1.6.3 2.7.9 2.7 2.1s-1.2 2-2.7 2c-1.2 0-2.2-.5-2.7-1.4M10 4.2v1.6M10 14v1.8"/></g>
+<text x="121.5" y="121.9" font-size="11.5" fill="#2b3340" font-weight="700">Price: the estimate</text>
+<text x="161" y="136.4" font-size="10.5" fill="#1f2633" text-anchor="middle">mean cost of the sessions already paid</text>
+<text x="161" y="150" font-size="10.5" fill="#1f2633" text-anchor="middle">on the problem; a first guess if none</text>
+<rect x="36" y="164" width="250" height="54" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<g transform="translate(98,169) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="15" r="2.3"/><circle cx="16" cy="15" r="2.3"/><circle cx="10" cy="4.5" r="2.3"/><path d="M5.2 13l3.6-6.4M14.8 13l-3.6-6.4M6.3 15h7.4"/></g>
+<text x="120" y="181.9" font-size="11.5" fill="#2b3340" font-weight="700">Chance: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">pSuccess</tspan></text>
+<text x="161" y="196.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a Thompson draw from the claim's</text>
+<text x="161" y="210" font-size="10.5" fill="#1f2633" text-anchor="middle">success posterior, a Beta from n attempts</text>
+<rect x="310" y="104" width="320" height="114" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="2.4" />
+<text x="447.6" y="131.4" font-size="11.5" fill="#2b3340" font-weight="700">The rule</text>
+<text x="470" y="145.9" font-size="10.5" fill="#1f2633" text-anchor="middle">launch when</text>
+<text x="470" y="159.5" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">estimate &lt;= share x remaining x pSuccess</tspan></text>
+<text x="470" y="173.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">remaining</tspan>: what is left of the problem's budget</text>
+<text x="470" y="186.8" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">share</tspan> of a site: wave, session 0.5; task 0.25; judge 0.1</text>
+<text x="470" y="200.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the same numbers give the same answer</text>
+<rect x="654" y="104" width="168" height="54" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="718" y="121.9" font-size="11.5" fill="#1d4a2e" font-weight="700">Launch</text>
+<text x="738" y="136.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the estimate is within</text>
+<text x="738" y="150" font-size="10.5" fill="#1f2633" text-anchor="middle">the threshold: go ahead</text>
+<rect x="654" y="164" width="168" height="54" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="726.1" y="181.9" font-size="11.5" fill="#2b3340" font-weight="700">Skip</text>
+<text x="738" y="196.4" font-size="10.5" fill="#1f2633" text-anchor="middle">over it: skipped, and the</text>
+<text x="738" y="210" font-size="10.5" fill="#1f2633" text-anchor="middle">row says why (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">budget.gated</tspan>)</text>
+<rect x="844" y="164" width="120" height="54" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="890.1" y="181.9" font-size="11.5" fill="#2b3340" font-weight="700">Floor</text>
+<text x="904" y="196.4" font-size="10.5" fill="#1f2633" text-anchor="middle">10% of the skips</text>
+<text x="904" y="210" font-size="10.5" fill="#1f2633" text-anchor="middle">go ahead anyway</text>
+<path d="M286,131 L310,131" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M286,191 L310,191" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M630,131 L654,131" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M630,191 L654,191" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M822,191 L844,191" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M904,164 L904,138 Q904,131 897,131 L822,131" fill="none" stroke="#3b4456" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="272" width="210" height="108" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(113.7,283.5) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="135.7" y="296.5" font-size="11.5" fill="#45306a" font-weight="700">Probe</text>
+<text x="141" y="310.9" font-size="10.5" fill="#1f2633" text-anchor="middle">the first prover runs one</text>
+<text x="141" y="324.6" font-size="10.5" fill="#1f2633" text-anchor="middle">session under a child ledger</text>
+<text x="141" y="338.2" font-size="10.5" fill="#1f2633" text-anchor="middle">of at most a tenth of the</text>
+<text x="141" y="351.8" font-size="10.5" fill="#1f2633" text-anchor="middle">problem's budget (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--gate-probe</tspan>);</text>
+<text x="141" y="365.5" font-size="10.5" fill="#1f2633" text-anchor="middle">its stop is a pause, not an end</text>
+<rect x="280" y="272" width="200" height="172" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="2.4" />
+<g transform="translate(326.7,315.5) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18.5V2"/><path d="M4 3h11l-2.5 4L15 11H4"/></g>
+<text x="348.7" y="328.5" font-size="11.5" fill="#2b3340" font-weight="700">Lean progress?</text>
+<text x="380" y="342.9" font-size="10.5" fill="#1f2633" text-anchor="middle">a subclaim proved, fewer open</text>
+<text x="380" y="356.6" font-size="10.5" fill="#1f2633" text-anchor="middle">holes, a failed attempt deep</text>
+<text x="380" y="370.2" font-size="10.5" fill="#1f2633" text-anchor="middle">enough, or the verified frontier</text>
+<text x="380" y="383.8" font-size="10.5" fill="#1f2633" text-anchor="middle">grew; an accepted informal proof</text>
+<text x="380" y="397.5" font-size="10.5" fill="#1f2633" text-anchor="middle">counts once, not checked by Lean</text>
+<rect x="520" y="272" width="300" height="52" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="626.3" y="288.9" font-size="11.5" fill="#1d4a2e" font-weight="700">Progress: widen</text>
+<text x="670" y="303.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the other provers start and the first resumes;</text>
+<text x="670" y="317" font-size="10.5" fill="#1f2633" text-anchor="middle">still refused if the rule finds the price too high</text>
+<rect x="520" y="332" width="300" height="52" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="578.9" y="348.9" font-size="11.5" fill="#45306a" font-weight="700">Cut by its own cap: one extension</text>
+<text x="670" y="363.4" font-size="10.5" fill="#1f2633" text-anchor="middle">after at least one Lean check, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">probeExtend</tspan>:</text>
+<text x="670" y="377" font-size="10.5" fill="#1f2633" text-anchor="middle">one more session, a ledger of twice the cap</text>
+<rect x="520" y="392" width="300" height="52" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="622.6" y="408.9" font-size="11.5" fill="#2b3340" font-weight="700">No progress: skip</text>
+<text x="670" y="423.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">by: &quot;progress&quot;</tspan>: the first prover stops with</text>
+<text x="670" y="437" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">gate</tspan>, the others never start (floor aside)</text>
+<rect x="840" y="272" width="124" height="172" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="880" y="308" font-size="11.5" fill="#2b3340" font-weight="700">Memory</text>
+<text x="902" y="322.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a claim certified</text>
+<text x="902" y="336.1" font-size="10.5" fill="#1f2633" text-anchor="middle">earlier (a run on</text>
+<text x="902" y="349.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--memory-from</tspan>)</text>
+<text x="902" y="363.4" font-size="10.5" fill="#1f2633" text-anchor="middle">is skipped:</text>
+<text x="902" y="377" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">by: &quot;memory&quot;</tspan>,</text>
+<text x="902" y="390.7" font-size="10.5" fill="#1f2633" text-anchor="middle">no model or Lean</text>
+<text x="902" y="404.3" font-size="10.5" fill="#1f2633" text-anchor="middle">call; the price</text>
+<text x="902" y="418" font-size="10.5" fill="#1f2633" text-anchor="middle">counts as avoided</text>
+<path d="M246,326 L280,326" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M480,298 L520,298" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M480,358 L520,358" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M480,418 L520,418" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="610" y="500" width="354" height="100" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="766.3" y="520.5" font-size="11.5" fill="#2b3340" font-weight="700">Parking</text>
+<text x="787" y="534.9" font-size="10.5" fill="#1f2633" text-anchor="middle">at the end of a round a problem with no Lean</text>
+<text x="787" y="548.6" font-size="10.5" fill="#1f2633" text-anchor="middle">progress is parked (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">problem.parked</tspan>) and what</text>
+<text x="787" y="562.2" font-size="10.5" fill="#1f2633" text-anchor="middle">it did not spend stays for the others; when all</text>
+<text x="787" y="575.9" font-size="10.5" fill="#1f2633" text-anchor="middle">are solved or parked, the parked ones are taken</text>
+<text x="787" y="589.5" font-size="10.5" fill="#1f2633" text-anchor="middle">up again, under the next, larger cap</text>
+<rect x="610" y="612" width="354" height="100" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="682.3" y="639.3" font-size="11.5" fill="#2b3340" font-weight="700">Share among problems: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">budgetShare</tspan></text>
+<text x="787" y="653.7" font-size="10.5" fill="#1f2633" text-anchor="middle">a problem's cap is the smaller of <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">problemUsd</tspan> and</text>
+<text x="787" y="667.4" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">budgetShare</tspan> x the run budget left / the problems</text>
+<text x="787" y="681" font-size="10.5" fill="#1f2633" text-anchor="middle">not finished; the set <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">v2</tspan> uses 2. Rounds act on a</text>
+<text x="787" y="694.7" font-size="10.5" fill="#1f2633" text-anchor="middle">run of several problems and do nothing for one</text>
+<text x="908" y="122.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">exploration</tspan></text>
+<rect x="36" y="398" width="210" height="10" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="36" y="398" width="21" height="10" rx="3" fill="#6a4c9c"/><rect x="57" y="398" width="42" height="10" fill="#6a4c9c" fill-opacity="0.3"/><text x="36" y="425" font-size="9.5" fill="#5b6475">problem budget: probe, then at most one</text><text x="36" y="437" font-size="9.5" fill="#5b6475">extension (30% in all); the rest stays</text>
+<line x1="235" y1="512" x2="235" y2="620" stroke="#9aa2b1" stroke-width="1" stroke-dasharray="3 3"/><text x="235" y="506" font-size="10.5" fill="#5b6475" text-anchor="middle">round 0: $0.05</text><line x1="340" y1="512" x2="340" y2="620" stroke="#9aa2b1" stroke-width="1" stroke-dasharray="3 3"/><text x="340" y="506" font-size="10.5" fill="#5b6475" text-anchor="middle">round 1: $0.10</text><line x1="550" y1="512" x2="550" y2="620" stroke="#9aa2b1" stroke-width="1" stroke-dasharray="3 3"/><text x="550" y="506" font-size="10.5" fill="#5b6475" text-anchor="middle">round 2: $0.20</text><text x="36" y="535" font-size="11" fill="#1f2633">problem 1</text><rect x="130" y="522" width="63" height="18" fill="#4a5567" fill-opacity="0.28" stroke="#4a5567" stroke-width="1.2"/><text x="201" y="535" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">solved in round 0</text><text x="36" y="561" font-size="11" fill="#1f2633">problem 2</text><rect x="130" y="548" width="105" height="18" fill="#4a5567" fill-opacity="0.28" stroke="#4a5567" stroke-width="1.2"/><rect x="235" y="548" width="105" height="18" fill="#6a4c9c" fill-opacity="0.4" stroke="#6a4c9c" stroke-width="1.2"/><rect x="340" y="548" width="147" height="18" fill="#2e7448" fill-opacity="0.52" stroke="#2e7448" stroke-width="1.2"/><text x="495" y="561" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">solved in round 2</text><text x="36" y="587" font-size="11" fill="#1f2633">problem 3</text><rect x="130" y="574" width="105" height="18" fill="#4a5567" fill-opacity="0.28" stroke="#4a5567" stroke-width="1.2"/><text x="243" y="587" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">parked: no Lean progress</text><text x="36" y="613" font-size="11" fill="#1f2633">problem 4</text><rect x="130" y="600" width="105" height="18" fill="#4a5567" fill-opacity="0.28" stroke="#4a5567" stroke-width="1.2"/><rect x="235" y="600" width="105" height="18" fill="#6a4c9c" fill-opacity="0.4" stroke="#6a4c9c" stroke-width="1.2"/><text x="348" y="613" font-size="10.5" fill="#5b6475" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">parked in round 1</text><text x="36" y="640" font-size="10.5" fill="#5b6475">A problem may have spent at most <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">max(runUsd / 4K, floor) x 2^r</tspan> in all by round r.</text><text x="36" y="654" font-size="10.5" fill="#5b6475">Caps of the page's example ($1.35, 20 problems, $0.50 allowance); bars are illustrative.</text><text x="36" y="693" font-size="10.5" fill="#6e2540" font-weight="700">Consortium stop in <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">solve</tspan>:</text><rect x="220" y="682" width="330" height="16" rx="3" fill="#ffffff" stroke="#ad4468" stroke-width="1.2"/><rect x="220" y="682" width="165" height="16" rx="3" fill="#ad4468" fill-opacity="0.3"/><line x1="385" y1="678" x2="385" y2="702" stroke="#ad4468" stroke-width="2"/><text x="302.5" y="695" font-size="10" fill="#6e2540" text-anchor="middle">spent</text><text x="467.5" y="695" font-size="10" fill="#5b6475" text-anchor="middle">left: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">harness resume</tspan></text><text x="385" y="714" font-size="10.5" fill="#5b6475" text-anchor="middle">a turn ends at half the allowance (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--turn-usd</tspan>)</text>
+<rect x="24" y="741" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="752" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="268.8" y="741" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="296.8" y="752" font-size="10.5" fill="#5b6475">built, tested with simulations only</text>
+<rect x="540" y="741" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="568" y="752" font-size="10.5" fill="#5b6475">budget</text>
+<rect x="626.1" y="741" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="654.1" y="752" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="717.5" y="741" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="745.5" y="752" font-size="10.5" fill="#5b6475">Lean</text>
+</svg>

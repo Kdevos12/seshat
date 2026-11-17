@@ -1,5 +1,7 @@
 # The verified frontier
 
+![harness campaign: turns that do not wait, the verified frontier and plateau modes, cold restarts, guards, how it ends](images/campaign.svg)
+
 The frontier is what a run has established about a problem, as a list the harness writes from the journal with code and no model call
 (plan change LH1, `plans/plan-change-long-horizon.md`). Lean becomes the progress meter of a long run, not only its final judge: the
 frontier only grows within a run, and its growth per dollar is what the plateau rule (Task 59) will read.

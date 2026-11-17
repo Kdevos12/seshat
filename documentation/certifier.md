@@ -1,5 +1,7 @@
 # The certifier
 
+![The two levels of checking: the fast check makes a candidate, the kernel replay in a fresh, sandboxed process makes a proof](images/certification.svg)
+
 The certifier is the second level of trust ([trust.md](trust.md#two-levels-of-checking)): the
 check that makes a claim `proved` or `refuted`. The fast check reads messages from a Lean REPL,
 and code that runs during elaboration could forge them. The certifier compiles the candidate in a

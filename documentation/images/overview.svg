@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 452" width="1000" height="452" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Seshat at a glance</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker><marker id="ah-a87414" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#a87414"/></marker></defs>
+<rect x="0" y="0" width="1000" height="452" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Seshat at a glance</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Classical tools before any model, models only through their APIs, Lean as the only judge, and a journal that records everything.</text>
+<rect x="24" y="80" width="952" height="44" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<g transform="translate(34,93.1) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M12.6 7.2c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 2s1.1 1.7 2.6 2c1.6.3 2.7.9 2.7 2.1s-1.2 2-2.7 2c-1.2 0-2.2-.5-2.7-1.4M10 4.2v1.6M10 14v1.8"/></g>
+<text x="56" y="107" font-size="12.5" fill="#2b3340" font-weight="700">Every paid launch is priced first</text>
+<rect x="24" y="150" width="140" height="128" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<g transform="translate(52.8,167.8) scale(0.8)" fill="none" stroke="#8b94a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="74.8" y="181.7" font-size="12.5" fill="#2b3340" font-weight="700">Statement</text>
+<text x="94" y="197.4" font-size="11.5" fill="#1f2633" text-anchor="middle">in Lean or in prose;</text>
+<text x="94" y="212.3" font-size="11.5" fill="#1f2633" text-anchor="middle">prose is formalized,</text>
+<text x="94" y="227.3" font-size="11.5" fill="#1f2633" text-anchor="middle">shown with test cases</text>
+<text x="94" y="242.2" font-size="11.5" fill="#1f2633" text-anchor="middle">and <tspan font-weight="700">signed</tspan> by a</text>
+<text x="94" y="257.2" font-size="11.5" fill="#1f2633" text-anchor="middle">person before spend</text>
+<rect x="184" y="150" width="140" height="128" rx="6" fill="#e4f3f2" stroke="#2b7d78" stroke-width="1.4" />
+<g transform="translate(225,167.8) scale(0.8)" fill="none" stroke="#2b7d78" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.5 12.5L18 18"/></g>
+<text x="247" y="181.7" font-size="12.5" fill="#1a4f4c" font-weight="700">Intake</text>
+<text x="254" y="197.4" font-size="11.5" fill="#1f2633" text-anchor="middle">literature search:</text>
+<text x="254" y="212.3" font-size="11.5" fill="#1f2633" text-anchor="middle">known? vacuous?</text>
+<text x="254" y="227.3" font-size="11.5" fill="#1f2633" text-anchor="middle">false on small</text>
+<text x="254" y="242.2" font-size="11.5" fill="#1f2633" text-anchor="middle">cases? evidence</text>
+<text x="254" y="257.2" font-size="11.5" fill="#1f2633" text-anchor="middle">only, never a status</text>
+<rect x="344" y="150" width="160" height="128" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<g transform="translate(370.7,167.8) scale(0.8)" fill="none" stroke="#2a6496" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="10" height="10" rx="1.5"/><rect x="8" y="8" width="4" height="4"/><path d="M8 2v3M12 2v3M8 15v3M12 15v3M2 8h3M2 12h3M15 8h3M15 12h3"/></g>
+<text x="392.7" y="181.7" font-size="12.5" fill="#1b4266" font-weight="700">Classical tools</text>
+<text x="424" y="197.4" font-size="11.5" fill="#1f2633" text-anchor="middle">a tactic battery, SMT,</text>
+<text x="424" y="212.3" font-size="11.5" fill="#1f2633" text-anchor="middle">ATPs, computer algebra,</text>
+<text x="424" y="227.3" font-size="11.5" fill="#1f2633" text-anchor="middle">small models; on the</text>
+<text x="424" y="242.2" font-size="11.5" fill="#1f2633" text-anchor="middle">statement and on each</text>
+<text x="424" y="257.2" font-size="11.5" fill="#1f2633" text-anchor="middle">remaining <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">sorry</tspan></text>
+<rect x="524" y="150" width="170" height="128" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(575.2,167.8) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="597.2" y="181.7" font-size="12.5" fill="#45306a" font-weight="700">Provers</text>
+<text x="609" y="197.4" font-size="11.5" fill="#1f2633" text-anchor="middle">fresh sessions of a model</text>
+<text x="609" y="212.3" font-size="11.5" fill="#1f2633" text-anchor="middle">through its API; they edit</text>
+<text x="609" y="227.3" font-size="11.5" fill="#1f2633" text-anchor="middle">a Lean sketch, call tools,</text>
+<text x="609" y="242.2" font-size="11.5" fill="#1f2633" text-anchor="middle">pass on short notes;</text>
+<text x="609" y="257.2" font-size="11.5" fill="#1f2633" text-anchor="middle">no training, ever</text>
+<rect x="764" y="150" width="212" height="128" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(819.6,167.8) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="841.6" y="181.7" font-size="12.5" fill="#1d4a2e" font-weight="700">Lean decides</text>
+<text x="870" y="197.4" font-size="11.5" fill="#1f2633" text-anchor="middle"><tspan font-weight="700">fast check</tspan> in a REPL:</text>
+<text x="870" y="212.3" font-size="11.5" fill="#1f2633" text-anchor="middle">a candidate, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">computed</tspan></text>
+<text x="870" y="227.3" font-size="11.5" fill="#1f2633" text-anchor="middle"><tspan font-weight="700">kernel replay</tspan>, fresh process:</text>
+<text x="870" y="242.2" font-size="11.5" fill="#1f2633" text-anchor="middle">the only way to <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">proved</tspan></text>
+<text x="870" y="257.2" font-size="11.5" fill="#1f2633" text-anchor="middle">or <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">refuted</tspan></text>
+<path d="M164,214 L184,214" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M324,214 L344,214" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M504,214 L524,214" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M694,194.8 L764,194.8" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M764,237 L694,237" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M472,278 L472,293 Q472,300 479,300 L797,300 Q804,300 804,293 L804,278" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="24" y="340" width="952" height="56" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(294.9,351.7) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+<text x="316.9" y="365.6" font-size="12.5" fill="#6b4a0c" font-weight="700">The journal: one hash-chained JSONL file, the only source of truth</text>
+<text x="500" y="381.3" font-size="11.5" fill="#1f2633" text-anchor="middle">every step above is an event; tables, memory, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">RESULT.md</tspan>, the report and the UI are rebuilt from it, and a run resumes from it</text>
+<path d="M94,278 L94,340" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<path d="M254,278 L254,340" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<path d="M424,278 L424,340" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<path d="M609,278 L609,340" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<path d="M914,278 L914,340" fill="none" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<text x="962" y="106" font-size="11" fill="#2b3340" text-anchor="end">a dollar allowance, a probe, a gate: price against chance of success</text>
+<text x="729" y="175.1" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">Lean</text>
+<text x="729" y="188.2" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">file</text>
+<text x="729" y="255.1" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">errors,</text>
+<text x="729" y="268.2" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">goals</text>
+<text x="612" y="303.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">a goal a tool closed is checked like any proof</text>
+<rect x="24" y="417" width="22" height="14" rx="3" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="52" y="428" font-size="10.5" fill="#5b6475">input</text>
+<rect x="100.8" y="417" width="22" height="14" rx="3" fill="#e4f3f2" stroke="#2b7d78" stroke-width="1.4" />
+<text x="128.8" y="428" font-size="10.5" fill="#5b6475">third parties (off with --private)</text>
+<rect x="294.2" y="417" width="22" height="14" rx="3" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<text x="322.2" y="428" font-size="10.5" fill="#5b6475">no model</text>
+<rect x="391.4" y="417" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="419.4" y="428" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="482.7" y="417" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="510.7" y="428" font-size="10.5" fill="#5b6475">Lean</text>
+<path d="M560.1,424 L586.1,424" stroke="#a87414" stroke-width="1.4" fill="none" stroke-dasharray="5 4" marker-end="url(#ah-a87414)"/>
+<text x="592.1" y="428" font-size="10.5" fill="#5b6475">written to the journal</text>
+</svg>

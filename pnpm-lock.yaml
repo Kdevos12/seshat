@@ -110,6 +110,8 @@ importers:
         specifier: workspace:*
         version: link:../registry
 
+  packages/figures: {}
+
   packages/fleet:
     dependencies:
       '@seshat/core':
@@ -428,12 +430,12 @@ importers:
       '@seshat/library-builder':
         specifier: workspace:*
         version: link:../library-builder
-      '@seshat/lit':
-        specifier: workspace:*
-        version: link:../lit
       '@seshat/lines':
         specifier: workspace:*
         version: link:../lines
+      '@seshat/lit':
+        specifier: workspace:*
+        version: link:../lit
       '@seshat/memory':
         specifier: workspace:*
         version: link:../memory

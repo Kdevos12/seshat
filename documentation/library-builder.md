@@ -1,5 +1,7 @@
 # The library builder
 
+![Lean environments as data: the resolver, the lock and hash, the build; the LibraryBuilder behind its gate](images/lean-env.svg)
+
 The library builder is an option that is off by default and outside the ablations (plan change LC4 and LC5 of
 [plan-change-lean-libraries.md](../plans/plan-change-lean-libraries.md); `@seshat/library-builder`). When a run keeps meeting a
 concept that neither Mathlib nor the harness library has, or a package has no tag for the pinned toolchain, a coding agent

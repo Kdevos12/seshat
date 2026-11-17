@@ -1,6 +1,6 @@
 # Trust: statuses and certification
 
-![Who may change a claim's status: only Lean checks and the certifier's kernel replay](images/trust.svg)
+![Claim statuses and who may cause each transition: the fast check, the certifier's kernel replay, retractClaim; everything else is evidence](images/trust.svg)
 
 ## Claim statuses
 

@@ -1,6 +1,6 @@
 # Architecture
 
-![How a run flows through the packages: orchestrator, lines, registry, models, Lean, journal and UI](images/architecture.svg)
+![The packages as layers: commands, orchestration, research lines, capabilities, the journal; Lean at the side as the judge](images/architecture.svg)
 
 ## Shape
 
@@ -9,7 +9,7 @@
 - **A thin orchestrator** decides what to attempt and with what budget, and records every fact in
   the journal.
 - **The journal** (JSONL with a hash chain) is the only source of truth. The SQLite projection, the
-  indexes and the future knowledge graph are derived from it and can be rebuilt from it. A run whose
+  indexes and the variant graph are derived from it and can be rebuilt from it. A run whose
   process ended is continued from it alone ([ledger.md](ledger.md#resume)).
 - **The task ledger** is the record of the work: what has to be done, who does it, what it may
   spend and when it is done, as tasks that point at claims and edges but never hold a claim's
@@ -29,10 +29,10 @@
 | `@seshat/core` | Ids, canonical JSON, statuses, events, journal, projection, Lean source scanning, sketches, validator, checker and certifier interfaces | Node built-ins only |
 | `@seshat/memory` | The memory store: claims (one per statement id), edges, nodes, queries, the reference file of any claim, provenance stamps and epochs, randomized inclusion and effect posteriors, memory carried across runs ([memory.md](memory.md)); M1's strategy and failure classifiers, "already tried" and redundancy ([m1-identity-memory.md](m1-identity-memory.md)); how far a check got, the measure of Lean progress that M6 and the fleet share (`progress.ts`) | core |
 | `@seshat/lines` | The line API: line ids and their order, cumulative configs, hooks and their contexts, the checks of a run's lines ([lines.md](lines.md)) | core, memory, registry |
-| `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
+| `@seshat/graph` | Variants, edges checked by their link lemma, propagation with provenance and revocation, composed proofs, the prove/refute twin, ATMS labels, PageRank, graph queries; the line M2 ([graph.md](graph.md)) | core, lines, memory, registry |
 | `@seshat/guards` | Line M6: neutral framing, resolved citations, no raw error text, anchored revisions, the drift detectors and the `drift` nodes ([guards.md](guards.md)) | core, lines, memory, registry |
 | `@seshat/fleet` | The fleet line: posteriors per strategy and model, Thompson sampling, adaptive width, escalation, the draw of heuristic cards and the `allocation` nodes ([fleet.md](fleet.md)) | core, decide, heuristics, lines, memory, registry |
-| `@seshat/heuristics` | The bank of heuristic cards: the card format and its check, the closed families, the context features computed without a model, the built-in cards (the six directives and the starter cards), the overlap check ([heuristics.md](heuristics.md)) | memory |
+| `@seshat/heuristics` | The bank of heuristic cards: the card format and its check, the closed families, the context features computed without a model, the built-in cards (the six directives and the starter cards), the overlap check ([heuristics.md](heuristics.md)) | core, memory |
 | `@seshat/registry` | Capability manifests, schemas, host profiles, in-process and MCP (stdio, HTTP) implementations, tool runs, contract tests, `lean.check` adapters, installable packs (manifest, store, skills, heuristic cards, tool index; [packs.md](packs.md)) | core, heuristics, [`@earendil-works/pi-mcp`](https://github.com/earendil-works/pi) |
 | `@seshat/lean-kimina` | `LeanChecker` over Kimina Lean Server, and its registry factory | core, registry |
 | `@seshat/lean-meta` | The Lean meta tool's client (`lean.meta`), the Lean-backed statement identity, its implementation over a `LeanChecker`, a simulated one; `lean.goals` over Pantograph's REPL | core, lines, memory, registry |
@@ -45,23 +45,20 @@
 | `@seshat/lit` | Intake (Task 36): the implementation of `lit.search`, the screened quote, the judge call, statement hygiene | core, lines, memory, registry |
 | `@seshat/scheduler` | `TaskLedger`, the orchestrator's writer of the task events ([ledger.md](ledger.md)); the saturation kernel and the subgoal scheduler of M12, the curriculum of M18, and the archive, schemas and line M15, join it | core, fleet, graph, lean-meta, library, lines, memory, registry |
 | `@seshat/bench` | formal-conjectures scanner, filters, bench index, CLI | core |
-| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: M1, M2, M6, M11, M17, fleet), the M1 line, the `harness` command (and `harness lean-env`) | all of the above, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
+| `@seshat/orchestrator` | Composition root (every implementation), the M0 loop on pi, the lines' runtime and registry (`lines.ts`: every line but the suspended M7 and M9), the M1 line, the `harness` command and its subcommands (`solve`, `campaign`, `ablate`, `consolidate`, `add`, `lean-env` and the rest of `harness --help`) | every other package, [`@earendil-works/pi-agent-core`](https://github.com/earendil-works/pi), [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) |
 | `@seshat/ui` | The local interface, `harness ui`: the journal reader, the loopback server and its guards, the process manager, provider settings, the static front end ([ui.md](ui.md)); depends on the orchestrator for the readers and the commands, which loads it only for `harness ui` | orchestrator, core, hono, pi-ai |
+| `@seshat/figures` | The figures of the documentation as code: an SVG toolkit with no dependency, one function per figure, `pnpm figures` ([figures.md](figures.md)); used by no other package | Node built-ins only |
+| `@seshat/classical` | Line M10: the domain router, the Lean tactic battery ordered by Beta posteriors, the hammer at several cutoffs, the non-triviality test ([classical.md](classical.md)) | core, decide, fleet, lean-meta, lines, memory, registry |
+| `@seshat/context` | Line M4: the context compiler, `expand` and `graph_query` ([context.md](context.md)) | classical, core, graph, lessons, library, lines, memory, registry |
+| `@seshat/library` | Line M3: the growing lemma library, its BM25 search ([library.md](library.md)) | core, lines, memory, registry |
+| `@seshat/library-builder` | The optional LibraryBuilder: a coding agent behind Seshat's gate, gap triggers, the build record ([library-builder.md](library-builder.md)) | core, lean-env, memory |
+| `@seshat/lessons` | Line M5: lessons with counters ([lessons.md](lessons.md)) | core, lines, memory, registry |
+| `@seshat/induction` | The inductive engine and theory exploration, the sandbox for programs (lines M8, M13, M16; [induction.md](induction.md)) | classical, core, fleet, library, lines, memory, models, registry |
+| `@seshat/repair` | Typed repairs and Lakatos-style repair (line M14; [repair.md](repair.md)) | core, induction, lines, memory, models, registry |
 
-The packages of the planned mechanisms exist as skeletons (a `package.json` and an empty
-`src/index.ts`), with their dependencies in the lockfile, so that the task that writes one adds
-code without touching the lockfile:
-
-| Package | Will hold | Depends on |
-|---|---|---|
-| `@seshat/classical` | The classical battery per subgoal, the domain router, ATP and SMT (M10) | core, decide, fleet, lean-meta, lines, memory, registry |
-| `@seshat/context` | The context compiler, `expand` and `graph_query` (M4) | core, classical, graph, lessons, library, lines, memory, registry |
-| `@seshat/library` | The growing lemma library (M3) | core, lines, memory, registry |
-| `@seshat/library-builder` | The optional LibraryBuilder: a coding agent behind Seshat's gate, gap triggers, the build record | core, lean-env, memory |
-| `@seshat/lessons` | Lessons with counters (M5) | core, lines, memory, registry |
-| `@seshat/abduction` | The abductive engine and its reranking (M7, M9), suspended and not built ([lines.md](lines.md#suspended-lines)) | core, graph, lean-meta, lines, memory, models, registry |
-| `@seshat/induction` | The inductive engine and theory exploration (M8, M13) | classical, core, library, lines, memory, models, registry |
-| `@seshat/repair` | Typed repairs, Lakatos-style repair (M14) | core, induction, lines, memory, registry |
+`@seshat/abduction` is the one package that is only a skeleton (a `package.json` and an empty
+`src/index.ts`, with its dependencies in the lockfile). It is for the abductive engine (lines M7 and M9),
+which is suspended and not built ([lines.md](lines.md#suspended-lines)).
 
 Data that is versioned with the code:
 
@@ -113,7 +110,7 @@ session and check, after each attempt and problem), and with no line the loop is
 - **APIs only.** Models are called through their APIs and nothing in the harness trains one. Small
   non-LLM components used as they are (an online k-NN over our own proofs, LeanHammer's premise
   selector) are allowed, and each must beat MePo alone in an ablation.
-- **Measured.** Each mechanism is an ablation line (M0 to M14 in the plan), run at equal budget on
+- **Measured.** Each mechanism is an ablation line (M0 to M18 in the plan; M7 and M9 are suspended), run at equal budget on
   the dedicated server. A line that does not beat the previous one is removed.
 - **Reproducible.** A run is determined by its journal, the bench index (pinned by its hash) and
   the code revision recorded in `run.started`.

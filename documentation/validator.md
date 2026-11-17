@@ -1,5 +1,7 @@
 # Problem sketches and the proof validator
 
+![The two levels of checking: the fast check makes a candidate, the kernel replay in a fresh, sandboxed process makes a proof](images/certification.svg)
+
 ## Sketches
 
 A problem is a theorem in a Lean file. `prepareSketch(source, target)` cuts the file around the

@@ -1,5 +1,7 @@
 # Context compiler (line M4)
 
+![Line M4: a packet of a frozen prefix and a tail under a token budget, against the growing history](images/context.svg)
+
 Line `M4` ([lines.md](lines.md)) in `@seshat/context` writes what a prover reads at each request: a packet compiled from the graph, the
 library and the lessons, in place of the conversation's history. It also gives the prover two tools, `expand` and `graph_query`, to
 look further than the packet shows. A run enables it with `harness run --lines M4` (it requires no other line, and uses whatever

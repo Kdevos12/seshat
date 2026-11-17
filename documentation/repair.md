@@ -1,5 +1,7 @@
 # Repairs (line M14)
 
+![Line M12 blueprints as a worked example: the dependency graph of holes, pre-flight, hole sessions and verdicts, refinement rounds and the repair pass](images/blueprints.svg)
+
 `@seshat/repair` mends what failed in two ways. A proof that failed is read by a table of typed repairs; a
 conjecture that a data table refuted is mended by a Lakatos-style repair. Neither proves anything: a repair is a
 suggestion in a briefing, or an `open` claim, and Lean judges what comes of it. The line is `M14`

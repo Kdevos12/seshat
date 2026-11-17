@@ -4,6 +4,8 @@ A harness for autonomous mathematical research with language models: models thro
 
 Seshat takes a mathematical statement, in Lean or in prose, and works on it under a dollar allowance: it tries classical tools before any model, lets models propose Lean proofs in fresh sessions, and calls a statement proved only when Lean's kernel has replayed the proof. Its principles:
 
+![Seshat at a glance: a statement goes through intake, classical tools, provers and Lean; every paid launch is priced first, and the journal records everything](documentation/images/overview.svg)
+
 - **Models through their APIs only.** No training and no fine-tuning; small learned components (an online k-NN, a published premise selector) are used as they are.
 - **Lean is the judge.** A claim is `proved` or `refuted` only after the certifier's kernel replay; a model's word, a tool's output, an informal proof or a heuristic is evidence or a hint, never a status ([trust](documentation/trust.md)).
 - **Classical tools first.** Decision procedures, a tactic battery, computer algebra, SMT and ATPs run before a model is asked, and what they find still goes through Lean.
@@ -51,39 +53,55 @@ pnpm harness ui             # the local interface, on 127.0.0.1 only
 
 ![harness solve from a statement to RESULT.md](documentation/images/solve-loop.svg)
 
-![How a run flows through the packages](documentation/images/architecture.svg)
+![The packages as layers, with Lean beside them as the judge](documentation/images/architecture.svg)
 
-Each compartment has a page and a picture:
+Each compartment has a page and a figure, all drawn by code ([documentation/figures.md](documentation/figures.md)); the
+[documentation's home](documentation/README.md#figures) shows them together.
 
-- [Architecture](documentation/architecture.md): the packages and how a run flows through them.
-- [The solve loop](documentation/quickstart.md): `harness solve`, `harness doctor`, `RESULT.md`.
-- [Blueprints](documentation/scheduler.md#blueprints-plan-change-ca9): a hard problem split into holes (line M12).
-- [Trust](documentation/trust.md): who may change a claim's status.
-- [Tools](documentation/capabilities.md): the capability registry, host profiles and the tools behind it.
-- [Heuristic cards](documentation/heuristics.md): methods of reasoning, and how their effect is measured.
-- [Memory](documentation/memory.md): the journal, its projections and the lines that read them.
+| Compartment | Page | Figure |
+|---|---|---|
+| Trust: who may change a claim's status | [trust.md](documentation/trust.md) | [trust](documentation/images/trust.svg) |
+| The fast check and the kernel replay | [certifier.md](documentation/certifier.md) | [certification](documentation/images/certification.svg) |
+| Lean environments, and the gate in front of new Lean | [lean-env.md](documentation/lean-env.md) | [lean-env](documentation/images/lean-env.svg) |
+| The journal, the only source of truth | [journal.md](documentation/journal.md) | [journal](documentation/images/journal.svg) |
+| The memory store | [memory.md](documentation/memory.md) | [memory](documentation/images/memory.svg) |
+| The variant graph (line M2) | [graph.md](documentation/graph.md) | [graph](documentation/images/graph.svg) |
+| The context packet (line M4) | [context.md](documentation/context.md) | [context](documentation/images/context.svg) |
+| Tools behind capabilities | [capabilities.md](documentation/capabilities.md) | [tools](documentation/images/tools.svg) |
+| Classical tools before any model (line M10) | [classical.md](documentation/classical.md) | [battery](documentation/images/battery.svg) |
+| A prover in fresh sessions | [m0-loop.md](documentation/m0-loop.md) | [sessions](documentation/images/sessions.svg) |
+| Blueprints: a problem as a graph of holes (line M12) | [scheduler.md](documentation/scheduler.md#blueprints-plan-change-ca9) | [blueprints](documentation/images/blueprints.svg) |
+| The fleet and the heuristic cards | [fleet.md](documentation/fleet.md), [heuristics.md](documentation/heuristics.md) | [fleet](documentation/images/fleet.svg) |
+| The budget gate | [scheduler.md](documentation/scheduler.md#the-budget-gate) | [budget](documentation/images/budget.svg) |
+| The escalation ladder | [scheduler.md](documentation/scheduler.md#the-escalation-ladder-pe4-of-the-memory-evolution-plan-change) | [ladder](documentation/images/ladder.svg) |
+| Runs: two axes, seven words | [runs.md](documentation/runs.md) | [runs](documentation/images/runs.svg) |
+| Consortium mode | [human.md](documentation/human.md) | [consortium](documentation/images/consortium.svg) |
+| Campaigns, judged by the verified frontier | [campaign.md](documentation/campaign.md) | [campaign](documentation/images/campaign.svg) |
+| Measuring a line | [ablate.md](documentation/ablate.md) | [ablation](documentation/images/ablation.svg) |
 
 ## The research flow
 
-Blue: built and tested with the simulated model and Lean. Orange: written and tested with simulations, but it
-needs something real before it has run: a Lean server, a model, a service (Jev, the OEIS), a program (SageMath, Vampire, E) or data (the
-equational-theories rows, the first real ablation). Grey and dashed: planned, not written (the further classical tools, such as SAT and counterexample search).
-
-Some orange nodes (the Lean server, the certifier, `lean.lsp`, `lean.search`) have since run for real: [documentation/status.md](documentation/status.md) says which.
+Green: has run for real, on the owner's machine with Lean 4.27.0 and a real model, or against the real program or
+service ([documentation/status.md](documentation/status.md) has the dates and the runs). Blue: built and tested with the
+simulated model and Lean; it needs nothing external to run as tested. Orange: written and tested with simulations, but it
+needs something real before it has run: a model, a service (Jev, the OEIS), a program (Vampire, E) or data (the
+equational-theories rows, the first real ablation). Grey and dashed: planned, not written (the further classical tools, such
+as SAT and counterexample search).
 
 ```mermaid
 flowchart TB
+  classDef real fill:#e6f2ea,stroke:#2e7448,stroke-width:2px,color:#1b2230
   classDef built fill:#e8eefa,stroke:#1f4fa3,stroke-width:2px,color:#1b2230
   classDef wait fill:#fbf1e1,stroke:#a66300,stroke-width:2px,color:#1b2230
   classDef planned fill:#f1f3f6,stroke:#8a92a3,stroke-width:2px,stroke-dasharray:6 4,color:#1b2230
 
-  bench["Bench<br/>575 Lean problems"]:::built
+  bench["Bench<br/>575 Lean problems"]:::real
   benchseq["Bench sequences and tags<br/>variants, shared files,<br/>analogy and induction"]:::built
   benchext["bench-ext<br/>equational-theories rows from a<br/>local cache, never vendored"]:::wait
-  protocol["Paired protocol<br/>Wilson intervals, exact McNemar,<br/>solved per dollar, target line"]:::built
-  graded["Graded bench<br/>A exercises, B competition, C research,<br/>admitted by Lean, from local checkouts"]:::wait
-  ablate["harness ablate<br/>M0 then each line, or one experiment:<br/>same problems, same budget"]:::built
-  measures["Measures from the journals<br/>spend per site, reliability and ECE,<br/>cache per rung and line, curves"]:::built
+  protocol["Paired protocol<br/>Wilson intervals, exact McNemar,<br/>solved per dollar, target line"]:::real
+  graded["Graded bench<br/>A exercises, B competition, C research,<br/>admitted by Lean, from local checkouts"]:::real
+  ablate["harness ablate<br/>M0 then each line, or one experiment:<br/>same problems, same budget"]:::real
+  measures["Measures from the journals<br/>spend per site, reliability and ECE,<br/>cache per rung and line, curves"]:::real
   probe["Entrenchment probe<br/>memory on against verified facts<br/>only, alarm in the report"]:::built
   optprompts["harness optimize-prompts<br/>GEPA-style rewrite on a dev split,<br/>gate: held-out and temporal,<br/>patches a person merges"]:::built
   realopt["First real prompt optimization<br/>needs a model, Lean<br/>and the dataset"]:::wait
@@ -92,12 +110,12 @@ flowchart TB
   heurbank["Heuristic card bank<br/>methods of reasoning, not tools:<br/>built-in and pack cards,<br/>a control arm per bucket"]:::built
   dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
   judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
-  guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::built
-  llm["LLMs through their APIs<br/>any provider, no training"]:::built
-  budgetgate["Budget gate (off by default)<br/>price against chance before each launch,<br/>probe first, widen on Lean progress,<br/>exploration floor, skips kept in the journal"]:::wait
-  provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::built
-  orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::built
-  ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::built
+  guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::real
+  llm["LLMs through their APIs<br/>any provider, no training"]:::real
+  budgetgate["Budget gate (off by default)<br/>price against chance before each launch,<br/>probe first, widen on Lean progress,<br/>exploration floor, skips kept in the journal"]:::real
+  provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::real
+  orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::real
+  ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::real
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
@@ -105,8 +123,8 @@ flowchart TB
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
   defreview["Definition review<br/>new definitions unreviewed:<br/>not in claim statements"]:::built
   envbuild["lean-env build<br/>cache get, lake build,<br/>time per package"]:::wait
-  m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::built
-  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers<br/>blueprint: holes that use holes,<br/>hole sessions with tools, verdicts,<br/>refinement rounds: a planner call<br/>rewrites the blueprint (CA12)"]:::wait
+  m12["Line M12: scheduler<br/>given-clause loop, proof numbers,<br/>subsumption, owners"]:::real
+  holes["Named holes of a sketch<br/>claims, a decomposes_into edge<br/>checked by Lean, inner provers<br/>blueprint: holes that use holes,<br/>hole sessions with tools, verdicts,<br/>refinement rounds: a planner call<br/>rewrites the blueprint (CA12)"]:::real
   ladder["Escalation ladder<br/>rungs move up when budget<br/>is spent without Lean progress"]:::built
   m18["Line M18: variant curriculum<br/>rung 1: special cases of a hard<br/>problem, a capped share of budget"]:::wait
   m15["Line M15: archive of decompositions<br/>cells, a Thompson pick of the one to extend,<br/>schemas from closed sub-DAGs"]:::wait
@@ -115,36 +133,36 @@ flowchart TB
   m3["Line M3: lemma library<br/>promoted aux lemmas, BM25 search,<br/>library_search"]:::built
   m13["Line M13: theory exploration<br/>minimal laws, integer relations,<br/>candidates for the library"]:::wait
   m16["Line M16: program search<br/>islands of scored programs,<br/>rung 2 of the ladder"]:::wait
-  m4["Line M4: context compiler<br/>frozen prefix, tail, premises,<br/>expand, graph_query"]:::wait
+  m4["Line M4: context compiler<br/>frozen prefix, tail, premises,<br/>expand, graph_query"]:::real
   m5["Line M5: lessons<br/>from accepted proofs and recurring<br/>failures, deactivated by effect"]:::built
   m14["Line M14: repairs<br/>typed critics, Lakatos repair<br/>of refuted conjectures"]:::wait
   sandbox["Sandbox for programs<br/>time and memory limits,<br/>no network, scratch directory"]:::built
   team["Research team<br/>reads the account,<br/>answers with hints,<br/>signatures, steers"]:::built
   account["Account of a turn<br/>turns/N/report.md,<br/>built from the journal"]:::built
   narrative["Turn narrative<br/>written by a model,<br/>every id checked"]:::wait
-  solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults v1 or v2: small cap, gate, M1 and M10"]:::built
+  solve["harness solve<br/>a statement in Lean or prose, one-problem bench,<br/>student defaults v1 or v2: small cap, gate, M1 and M10"]:::real
   consolidate["Consolidation pass (CA24, harness consolidate)<br/>cards, duplicate and unsupported lessons, a page whose<br/>every sentence cites journal events; a new run on the old one"]:::wait
-  hotloop["Cheaper hot loop (solve defaults v2)<br/>lean_edit in place of a rewritten file, old check results<br/>masked in batches, bounded Lean checks, a state card<br/>from the journal, the run budget in rounds"]:::wait
-  leanpush["Premises pushed (CA22, option leanSearch)<br/>after a check: a name search on each unknown identifier,<br/>a goal search on each hole; each hit checked with Lean"]:::wait
+  hotloop["Cheaper hot loop (solve defaults v2)<br/>lean_edit in place of a rewritten file, old check results<br/>masked in batches, bounded Lean checks, a state card<br/>from the journal, the run budget in rounds"]:::real
+  leanpush["Premises pushed (CA22, option leanSearch)<br/>after a check: a name search on each unknown identifier,<br/>a goal search on each hole; each hit checked with Lean"]:::real
   signature["Signature of a prose statement<br/>formalized, shown with test lemmas,<br/>statement.signed before any spend"]:::wait
-  doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::wait
-  resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::built
+  doctor["harness doctor<br/>Lean, Kimina, credentials, prices, network,<br/>isolation; writes the sandboxed host profile"]:::real
+  resultmd["RESULT.md<br/>built from the journal, no model,<br/>after every certified result and every stop"]:::real
   viewhtml["harness view<br/>one static HTML page from the journal,<br/>no server, no network, all text escaped"]:::built
-  intake["Intake, before any paid session<br/>three queries, one judge call under $0.05, a quote that must be<br/>in the fetched text; vacuity, plausible, test lemmas; off with --private"]:::wait
-  informal["Informal proof first (PA13, option informalFirst)<br/>a proof in natural language, a verifier reads the final text:<br/>correct x3 in a row, or revised, or regenerated; a hint,<br/>never a status; shown as not checked by Lean"]:::wait
+  intake["Intake, before any paid session<br/>three queries, one judge call under $0.05, a quote that must be<br/>in the fetched text; vacuity, plausible, test lemmas; off with --private"]:::real
+  informal["Informal proof first (PA13, option informalFirst)<br/>a proof in natural language, a verifier reads the final text:<br/>correct x3 in a row, or revised, or regenerated; a hint,<br/>never a status; shown as not checked by Lean"]:::real
   uipage["harness ui<br/>local page on 127.0.0.1: token, Host and Origin checks,<br/>escaped text, keys in a 0600 file, starts the commands"]:::built
 
   subgraph TOOLS["Capability registry"]
-    leancheck["lean_check<br/>Kimina Lean Server"]:::wait
-    sage["compute_sage<br/>SageMath"]:::built
+    leancheck["lean_check<br/>Kimina Lean Server"]:::real
+    sage["compute_sage<br/>SageMath"]:::real
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
-    leanlsp["lean_lsp<br/>Lean language server"]:::wait
-    leansearch["lean_search<br/>premise search: remote service,<br/>local index, pattern"]:::wait
+    leanlsp["lean_lsp<br/>Lean language server"]:::real
+    leansearch["lean_search<br/>premise search: remote service,<br/>local index, pattern"]:::real
     oeis["oeis_search<br/>OEIS"]:::wait
     lmfdb["lmfdb_query<br/>LMFDB"]:::wait
     findstat["findstat_identify<br/>FindStat"]:::wait
-    litsearch["lit_search<br/>OpenAlex, arXiv, Semantic Scholar,<br/>zbMATH, bench metadata"]:::wait
+    litsearch["lit_search<br/>OpenAlex, arXiv, Semantic Scholar,<br/>zbMATH, bench metadata"]:::real
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
     smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
     vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
@@ -155,22 +173,20 @@ flowchart TB
     packs["Installed packs<br/>tools at level 2 and skills,<br/>harness add, never a status"]:::built
   end
 
-  m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::wait
-  battery["Tactics in parallel<br/>decide, omega, norm_num, simp,<br/>linarith, grind, aesop, hammer..."]:::wait
-
+  m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::real
+  battery["Tactics in parallel<br/>decide, omega, norm_num, simp,<br/>linarith, grind, aesop, hammer..."]:::real
   subgraph JUDGE["Judge: Lean"]
-    fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::wait
-    certifier["Certifier (lean_certify)<br/>fresh process, kernel<br/>replay, axioms and<br/>statement compared"]:::wait
+    fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::real
+    certifier["Certifier (lean_certify)<br/>fresh process, kernel<br/>replay, axioms and<br/>statement compared"]:::real
   end
 
-  journal["Event journal<br/>the only source of truth<br/>JSONL, hash chain, blobs"]:::built
-  projection["SQLite projection"]:::built
-
+  journal["Event journal<br/>the only source of truth<br/>JSONL, hash chain, blobs"]:::real
+  projection["SQLite projection"]:::real
   subgraph MEMORY["Memory: the plan's edge"]
-    identity["M1 canonical identity<br/>one claim per statement,<br/>shared by equal problems"]:::built
-    tried["M1 negative memory<br/>strategies tried and<br/>how each one failed"]:::built
-    kg["Facts and research graph<br/>claims, edges and records<br/>in the journal"]:::built
-    prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::wait
+    identity["M1 canonical identity<br/>one claim per statement,<br/>shared by equal problems"]:::real
+    tried["M1 negative memory<br/>strategies tried and<br/>how each one failed"]:::real
+    kg["Facts and research graph<br/>claims, edges and records<br/>in the journal"]:::real
+    prop["Propagation and twin (M2)<br/>variants, checked edges,<br/>composed proofs"]:::real
     compiler["Context compiler (M4)<br/>context under<br/>a token budget"]:::wait
     earlier["Memory carried over<br/>from an earlier run,<br/>pinned by its last hash"]:::built
     learned["Stamps, epochs and draw<br/>of unverified records<br/>(lines M3 and M5 draw)"]:::built
@@ -365,6 +381,11 @@ pnpm harness run --checkout ../google-deepmind/formal-conjectures-bench-v1 --mod
 pnpm harness run --resume runs/RUN_ID --checkout ../google-deepmind/formal-conjectures-bench-v1
 pnpm harness ablate --checkout ../google-deepmind/formal-conjectures-bench-v1 --model PROVIDER/ID --sample 20 --out runs/ablation
 pnpm harness audit runs/RUN_ID                 # one dossier per problem that was not certified
+pnpm harness frontier runs/RUN_ID              # what a run has established, from its journal alone
+pnpm harness campaign "STATEMENT" --max-usd 20 # a run that continues alone, in turns, under a dollar allowance
+pnpm harness consolidate runs/RUN_ID           # the pass between runs: state cards, duplicate lessons
+pnpm harness add PATH|GIT_URL                  # install a pack of tools, skills or heuristic cards (also: packs, remove)
+pnpm harness heuristics list                   # the heuristic card bank (also: stats RUN_DIR, mine RUN_DIR)
 ```
 
 The checkout is formal-conjectures at the bench's tag, `bench-v1-lean4.27.0` ([documentation/m0-loop.md](documentation/m0-loop.md#commands)). The full command reference is in [documentation/capabilities.md](documentation/capabilities.md#the-harness-command) and every flag and run setting is audited in [documentation/parameters.md](documentation/parameters.md).

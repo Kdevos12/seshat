@@ -1,5 +1,7 @@
 # Measuring the lines: `harness ablate`
 
+![harness ablate: cumulative arms on the same problems and budget, the paired protocol, the graded bench admitted by Lean](images/ablation.svg)
+
 Plan section 6 asks of every mechanism that it earn its place: a line that does not beat the one before it at equal budget leaves
 the plan or gets simpler. `harness ablate` runs the configurations on the same problems at the same budget and puts the
 measurements side by side. Everything it prints is read from the journals of the runs it makes (a pure function of events, so that

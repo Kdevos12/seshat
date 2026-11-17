@@ -1,5 +1,7 @@
 # Lean environments
 
+![Lean environments as data: the resolver, the lock and hash, the build; the LibraryBuilder behind its gate](images/lean-env.svg)
+
 A Lean environment is the Lean the harness runs against, written as data: a toolchain, the project
 the bench is (formal-conjectures at its tag), and extra packages. The plan asks for it
 (`plans/plan-change-lean-libraries.md`, LC1) for three reasons: a library is added by naming it, not

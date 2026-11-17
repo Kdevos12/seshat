@@ -51,7 +51,7 @@ types), each with the run's model as the default:
 
 | Site | Decision | Question | Call site |
 |---|---|---|---|
-| `conjecture.relevance` | a Score per conjecture of the pool, on its statement alone (J3 item 1, plan change PC4.2) | `score`, `noul` | Task 13 (not built yet) |
+| `conjecture.relevance` | a Score per conjecture of the pool, on its statement alone (J3 item 1, plan change PC4.2) | `score`, `noul` | the conjecture pool of line M8 (`packages/induction/src/pool.ts`) |
 | `prove.search.order` | the order in which to try candidates that come without a model call: battery tactics, mined tactics, library lemmas tried by `apply`, aesop rules (J3 item 3) | `choice` | `decideOrderer` below, for Task 6 |
 | `fleet.cold_start` | a prior over strategy families, as capped pseudo-counts (J3 item 4) | `choice` | the fleet's option `coldStart` |
 | `budget.wave` | whether a wave of provers, or a session of one, is worth its price where the budget gate has no numbers (PB3) | `choice` | the budget gate ([scheduler.md](scheduler.md#the-budget-gate)) |
@@ -262,8 +262,9 @@ so in the progress log (`log`, passed by the caller; the fleet passes the sessio
   answered by `answer` and `distribution`), which matches neither provider; it was replaced on
   2026-11-05, before any real run.
 - The ablation line `D1` (J5), the reliability table and the ECE are Task 14's: `harness ablate --experiment decide` runs one arm per site asked of Jev against the model, with the agreement between the two ([ablate.md](ablate.md#experiments)). It has not run against a real Jev: only a faux Jev answers in tests.
-- Task 6's orderer and Task 13's relevance score are not built, so `prove.search.order` and
-  `conjecture.relevance` have no caller in the harness; the cold start is the only one that does.
+- `prove.search.order` is called by line M10's orderer when its option `orderer` is `decide`
+  (`packages/classical/src/line.ts`), and `conjecture.relevance` by line M8's conjecture pool; neither has run
+  against a real Jev or model. The cold start is the only site the run uses by default.
 - The `llm` backend with one vote has a one-hot distribution; a verbalized probability is not asked
   of the model.
 - Token counting is an estimate, not the provider's tokenizer.

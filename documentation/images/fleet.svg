@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 744" width="1000" height="744" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">The fleet: Thompson draws for every session, one card or none</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="744" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">The fleet: Thompson draws for every session, one card or none</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Each session's strategy, model, settings and card are drawn from what earlier attempts showed; sessions with no card are the control a card is measured against.</text>
+<rect x="24" y="76" width="952" height="198" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) BEFORE EVERY SESSION OF A PROVER</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">fleet.md, &quot;What it decides&quot;, &quot;Posteriors&quot;, &quot;Soft failure memory&quot;</text>
+<rect x="24" y="288" width="952" height="178" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="306" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) ONE CARD PER SESSION, OR NONE</text>
+<text x="964" y="306" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">fleet.md, &quot;Heuristic cards&quot;; heuristics.md</text>
+<rect x="24" y="480" width="952" height="224" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="498" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) MEASURED AGAINST THE CONTROL, NEVER TRUSTED</text>
+<text x="964" y="498" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">heuristics.md, &quot;Statistics&quot;</text>
+<rect x="36" y="104" width="210" height="154" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(102.6,131.7) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+<text x="124.6" y="144.6" font-size="11.5" fill="#6b4a0c" font-weight="700">Posteriors</text>
+<text x="141" y="159.1" font-size="10.5" fill="#1f2633" text-anchor="middle">per claim, from its attempts in</text>
+<text x="141" y="172.7" font-size="10.5" fill="#1f2633" text-anchor="middle">the memory; a failure that got far</text>
+<text x="141" y="186.4" font-size="10.5" fill="#1f2633" text-anchor="middle">counts partly (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">choice</tspan>).</text>
+<text x="141" y="200" font-size="10.5" fill="#1f2633" text-anchor="middle">Weight of an attempt:</text>
+<text x="141" y="213.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">gamma^runsAgo x probation</tspan></text>
+<text x="141" y="227.3" font-size="10.5" fill="#1f2633" text-anchor="middle">(0.8 per earlier run)</text>
+<rect x="270" y="104" width="152" height="98" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="323.3" y="130.3" font-size="11.5" fill="#2b3340" font-weight="700">Strategy</text>
+<text x="346" y="144.7" font-size="10.5" fill="#1f2633" text-anchor="middle">one of M1's labels: the</text>
+<text x="346" y="158.4" font-size="10.5" fill="#1f2633" text-anchor="middle">highest Thompson draw;</text>
+<text x="346" y="172" font-size="10.5" fill="#1f2633" text-anchor="middle">with probability 0.1 a</text>
+<text x="346" y="185.7" font-size="10.5" fill="#1f2633" text-anchor="middle">uniform draw, the floor</text>
+<rect x="450" y="104" width="152" height="98" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="509.4" y="130.3" font-size="11.5" fill="#2b3340" font-weight="700">Model</text>
+<text x="526" y="144.7" font-size="10.5" fill="#1f2633" text-anchor="middle">among <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">models</tspan>, by a</text>
+<text x="526" y="158.4" font-size="10.5" fill="#1f2633" text-anchor="middle">draw from each one's</text>
+<text x="526" y="172" font-size="10.5" fill="#1f2633" text-anchor="middle">posterior; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">escalateTo</tspan></text>
+<text x="526" y="185.7" font-size="10.5" fill="#1f2633" text-anchor="middle">after hard failures</text>
+<rect x="630" y="104" width="152" height="98" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="684" y="130.3" font-size="11.5" fill="#2b3340" font-weight="700">Settings</text>
+<text x="706" y="144.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">temperature</tspan> drawn in</text>
+<text x="706" y="158.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a range; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">thinking</tspan>,</text>
+<text x="706" y="172" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">directive</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">mode</tspan></text>
+<text x="706" y="185.7" font-size="10.5" fill="#1f2633" text-anchor="middle">learned like a strategy</text>
+<rect x="810" y="104" width="152" height="98" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(837.7,124.2) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="859.7" y="137.1" font-size="11.5" fill="#45306a" font-weight="700">Heuristic card</text>
+<text x="886" y="151.5" font-size="10.5" fill="#1f2633" text-anchor="middle">one card, or none: the</text>
+<text x="886" y="165.2" font-size="10.5" fill="#1f2633" text-anchor="middle">control arm, drawn from</text>
+<text x="886" y="178.8" font-size="10.5" fill="#1f2633" text-anchor="middle">the bank in (b)</text>
+<path d="M246,143.2 L270,143.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M422,143.2 L450,143.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M602,143.2 L630,143.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M782,143.2 L810,143.2" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="810" y="216" width="152" height="42" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(853.3,221.8) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="875.3" y="234.8" font-size="11.5" fill="#45306a" font-weight="700">Session</text>
+<text x="886" y="249.2" font-size="10.5" fill="#1f2633" text-anchor="middle">an <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">allocation</tspan> node</text>
+<rect x="578" y="216" width="190" height="42" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<g transform="translate(624.6,221.8) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="646.6" y="234.8" font-size="11.5" fill="#1d4a2e" font-weight="700">Lean's verdict</text>
+<text x="673" y="249.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">valid</tspan>, or how far it got</text>
+<path d="M886,202 L886,216" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M810,237 L768,237" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M578,237 L246,237" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="316" width="168" height="112" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(83.6,329.5) scale(0.8)" fill="none" stroke="#8b94a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="7" height="7" rx="1"/><rect x="11" y="2" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><path d="M14.5 11v7M11 14.5h7"/></g>
+<text x="105.6" y="342.5" font-size="11.5" fill="#2b3340" font-weight="700">The bank</text>
+<text x="120" y="356.9" font-size="10.5" fill="#1f2633" text-anchor="middle">cards written by people,</text>
+<text x="120" y="370.6" font-size="10.5" fill="#1f2633" text-anchor="middle">in 22 families (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">vary</tspan>,</text>
+<text x="120" y="384.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">specialize</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">decompose</tspan>...);</text>
+<text x="120" y="397.8" font-size="10.5" fill="#1f2633" text-anchor="middle">the six directives; the</text>
+<text x="120" y="411.5" font-size="10.5" fill="#1f2633" text-anchor="middle">cards of packs</text>
+<rect x="224" y="316" width="168" height="112" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="288.4" y="342.5" font-size="11.5" fill="#2b3340" font-weight="700">Eligible</text>
+<text x="308" y="356.9" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">when</tspan> holds, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">whenNot</tspan></text>
+<text x="308" y="370.6" font-size="10.5" fill="#1f2633" text-anchor="middle">does not, the card agrees</text>
+<text x="308" y="384.2" font-size="10.5" fill="#1f2633" text-anchor="middle">with the strategy; a card</text>
+<text x="308" y="397.8" font-size="10.5" fill="#1f2633" text-anchor="middle">with a negative effect in</text>
+<text x="308" y="411.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the bucket is left out</text>
+<rect x="412" y="316" width="168" height="112" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="2.4" stroke-dasharray="5 3"/>
+<text x="463.1" y="349.3" font-size="11.5" fill="#2b3340" font-weight="700">Control, first</text>
+<text x="496" y="363.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">noCardShare</tspan> = 0.2 of</text>
+<text x="496" y="377.4" font-size="10.5" fill="#1f2633" text-anchor="middle">the sessions get no card:</text>
+<text x="496" y="391" font-size="10.5" fill="#1f2633" text-anchor="middle">the control arm, recorded</text>
+<text x="496" y="404.7" font-size="10.5" fill="#1f2633" text-anchor="middle">as the rule <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">control</tspan></text>
+<rect x="600" y="316" width="168" height="112" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="637.3" y="335.6" font-size="11.5" fill="#2b3340" font-weight="700">Family, then card</text>
+<text x="684" y="350.1" font-size="10.5" fill="#1f2633" text-anchor="middle">Thompson draws over the</text>
+<text x="684" y="363.7" font-size="10.5" fill="#1f2633" text-anchor="middle">bucket's finished attempts,</text>
+<text x="684" y="377.4" font-size="10.5" fill="#1f2633" text-anchor="middle">across problems; families</text>
+<text x="684" y="391" font-size="10.5" fill="#1f2633" text-anchor="middle">other provers hold wait;</text>
+<text x="684" y="404.7" font-size="10.5" fill="#1f2633" text-anchor="middle">a new card starts at its</text>
+<text x="684" y="418.3" font-size="10.5" fill="#1f2633" text-anchor="middle">family's mean</text>
+<rect x="788" y="316" width="168" height="112" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g transform="translate(835.9,329.5) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="857.9" y="342.5" font-size="11.5" fill="#45306a" font-weight="700">One card</text>
+<text x="872" y="356.9" font-size="10.5" fill="#1f2633" text-anchor="middle">one briefing section,</text>
+<text x="872" y="370.6" font-size="10.5" fill="#1f2633" text-anchor="middle">&quot;Heuristic for this</text>
+<text x="872" y="384.2" font-size="10.5" fill="#1f2633" text-anchor="middle">session&quot;; the attempt</text>
+<text x="872" y="397.8" font-size="10.5" fill="#1f2633" text-anchor="middle">records the card, the rule</text>
+<text x="872" y="411.5" font-size="10.5" fill="#1f2633" text-anchor="middle">and the bucket</text>
+<path d="M204,372 L224,372" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M392,372 L412,372" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M580,372 L600,372" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M768,372 L788,372" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M496,428 L496,435 Q496,442 503,442 L865,442 Q872,442 872,435 L872,428" fill="none" stroke="#3b4456" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ah-3b4456)"/>
+<rect x="590" y="508" width="374" height="54" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="761.4" y="525.9" font-size="11.5" fill="#2b3340" font-weight="700">Effect</text>
+<text x="777" y="540.4" font-size="10.5" fill="#1f2633" text-anchor="middle">two Beta posteriors, the card's sessions against</text>
+<text x="777" y="554" font-size="10.5" fill="#1f2633" text-anchor="middle">the control: their difference and P(effect &lt; 0)</text>
+<rect x="590" y="570" width="374" height="66" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="743.5" y="587.1" font-size="11.5" fill="#2b3340" font-weight="700">Deactivation</text>
+<text x="777" y="601.6" font-size="10.5" fill="#1f2633" text-anchor="middle">at least 8 observations on each side and P(effect &lt; 0)</text>
+<text x="777" y="615.2" font-size="10.5" fill="#1f2633" text-anchor="middle">above 0.9: the fleet leaves the card out of the draw.</text>
+<text x="777" y="628.9" font-size="10.5" fill="#1f2633" text-anchor="middle">Nothing is deleted; more control sessions can bring it back</text>
+<rect x="590" y="644" width="374" height="48" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="701.5" y="665.8" font-size="11.5" fill="#2b3340" font-weight="700">Read, by family and by card</text>
+<text x="777" y="680.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">harness heuristics stats RUN_DIR</tspan>: no model is called</text>
+<text x="412" y="229.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">the attempt is counted, weighted</text>
+<text x="684" y="445.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">control: no card</text>
+<text x="36" y="530" font-size="10.5" fill="#5b6475" font-weight="700">bucket</text><text x="106" y="530" font-size="10.5" fill="#5b6475" font-weight="700">share of the card's</text><text x="106" y="542" font-size="10.5" fill="#5b6475" font-weight="700">sessions</text><text x="250" y="530" font-size="10.5" fill="#45306a" font-weight="700">card: valid</text><text x="250" y="542" font-size="10.5" fill="#45306a" font-weight="700">of its sessions</text><text x="400" y="530" font-size="10.5" fill="#5b6475" font-weight="700">control: valid</text><text x="400" y="542" font-size="10.5" fill="#5b6475" font-weight="700">of its sessions</text><text x="36" y="570" font-size="10.5" fill="#1f2633">bucket A</text><rect x="106" y="560" width="120" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="106" y="560" width="72.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><rect x="250" y="560" width="130" height="12" rx="3" fill="#ffffff" stroke="#6a4c9c" stroke-width="1.2"/><rect x="250" y="560" width="71.5" height="12" rx="3" fill="#6a4c9c" fill-opacity="0.35"/><rect x="400" y="560" width="130" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="400" y="560" width="52.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><text x="36" y="598" font-size="10.5" fill="#1f2633">bucket B</text><rect x="106" y="588" width="120" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="106" y="588" width="36.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><rect x="250" y="588" width="130" height="12" rx="3" fill="#ffffff" stroke="#6a4c9c" stroke-width="1.2"/><rect x="250" y="588" width="39.0" height="12" rx="3" fill="#6a4c9c" fill-opacity="0.35"/><rect x="400" y="588" width="130" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="400" y="588" width="39.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><text x="36" y="626" font-size="10.5" fill="#1f2633">bucket C</text><rect x="106" y="616" width="120" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="106" y="616" width="12.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><rect x="250" y="616" width="130" height="12" rx="3" fill="#ffffff" stroke="#6a4c9c" stroke-width="1.2"/><rect x="250" y="616" width="19.5" height="12" rx="3" fill="#6a4c9c" fill-opacity="0.35"/><rect x="400" y="616" width="130" height="12" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.2"/><rect x="400" y="616" width="26.0" height="12" rx="3" fill="#4a5567" fill-opacity="0.35"/><text x="36" y="658" font-size="10.5" fill="#5b6475">The control of a card's buckets is standardized to the card's own mix of buckets,</text><text x="36" y="671" font-size="10.5" fill="#5b6475">so a card drawn mostly in hard buckets is not set against easy ones.</text><text x="36" y="690" font-size="10.5" fill="#5b6475" font-style="italic">Bars are illustrative.</text>
+<rect x="24" y="719" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="730" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="268.8" y="719" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="296.8" y="730" font-size="10.5" fill="#5b6475">built, tested with simulations only</text>
+<rect x="540" y="719" width="22" height="14" rx="3" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<text x="568" y="730" font-size="10.5" fill="#5b6475">journal, memory</text>
+<rect x="669.3" y="719" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="697.3" y="730" font-size="10.5" fill="#5b6475">draws</text>
+<rect x="751.3" y="719" width="22" height="14" rx="3" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<text x="779.3" y="730" font-size="10.5" fill="#5b6475">a model</text>
+<rect x="842.6" y="719" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="870.6" y="730" font-size="10.5" fill="#5b6475">Lean</text>
+</svg>

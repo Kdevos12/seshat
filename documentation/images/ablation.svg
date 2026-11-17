@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 792" width="1000" height="792" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Measuring a line: same problems, same dollars, paired</title>
+<defs><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="792" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Measuring a line: same problems, same dollars, paired</text>
+<text x="24" y="52" font-size="12" fill="#5b6475"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11">harness ablate</tspan> adds one line at a time to the ones before it, runs every arm on the same admitted problems at the same budget, and compares the arms pair by pair.</text>
+<rect x="24" y="76" width="952" height="240" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) ONE LINE ADDED AT A TIME, EVERYTHING ELSE EQUAL</text>
+<text x="964" y="94" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">ablate.md, &quot;The configurations and the runner&quot;</text>
+<rect x="24" y="330" width="952" height="236" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="348" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) THE PAIRED PROTOCOL</text>
+<text x="964" y="348" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">ablate.md, &quot;The paired protocol&quot;</text>
+<rect x="24" y="580" width="952" height="174" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="598" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) THE YARDSTICK: A GRADED BENCH, EACH STATEMENT ADMITTED BY LEAN</text>
+<text x="964" y="598" font-size="10.5" fill="#5b6475" text-anchor="end" font-style="italic">bench.md, &quot;The graded bench&quot;</text>
+<rect x="36" y="104" width="220" height="120" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<g transform="translate(81.1,128.3) scale(0.8)" fill="none" stroke="#8b94a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h8l4 4v12.4H4z"/><path d="M12 1.8v4h4M7 10h6M7 13h6"/></g>
+<text x="103.1" y="141.3" font-size="11.5" fill="#2b3340" font-weight="700">The same problems</text>
+<text x="146" y="155.7" font-size="10.5" fill="#1f2633" text-anchor="middle">a sample of the graded bench</text>
+<text x="146" y="169.4" font-size="10.5" fill="#1f2633" text-anchor="middle">(c), the same seed for every arm;</text>
+<text x="146" y="183" font-size="10.5" fill="#1f2633" text-anchor="middle">the same budget: providers,</text>
+<text x="146" y="196.7" font-size="10.5" fill="#1f2633" text-anchor="middle">sessions, dollars per problem</text>
+<rect x="36" y="236" width="220" height="68" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<g transform="translate(89.9,241.2) scale(0.8)" fill="none" stroke="#4a5567" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="9" width="13" height="9" rx="1.5"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9"/></g>
+<text x="111.9" y="254.1" font-size="11.5" fill="#2b3340" font-weight="700">Nobody is asked</text>
+<text x="146" y="268.6" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">human: none</tspan>: turns and a</text>
+<text x="146" y="282.2" font-size="10.5" fill="#1f2633" text-anchor="middle">person are refused, a turn</text>
+<text x="146" y="295.8" font-size="10.5" fill="#1f2633" text-anchor="middle">boundary changes what models see</text>
+<rect x="292" y="104" width="372" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.3"/><text x="304" y="129" font-size="12" fill="#1f2633" font-weight="700">M0</text><text x="362" y="129" font-size="10.5" fill="#5b6475" font-style="italic">no line: the baseline</text><rect x="292" y="152" width="372" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.3"/><text x="304" y="177" font-size="12" fill="#1f2633" font-weight="700">M1</text><rect x="292" y="200" width="372" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.3"/><text x="304" y="225" font-size="12" fill="#1f2633" font-weight="700">M10</text><rect x="292" y="248" width="372" height="40" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.3"/><text x="304" y="273" font-size="12" fill="#1f2633" font-weight="700">...</text><text x="362" y="273" font-size="10.5" fill="#5b6475" font-style="italic">each next line in turn, M7 and M9 aside</text><path d="M290,106 H278 V286 H290" fill="none" stroke="#5b6475" stroke-width="1.3"/><path d="M666,106 H678 V286 H666" fill="none" stroke="#5b6475" stroke-width="1.3"/>
+<rect x="362" y="161" width="58" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="391" y="174.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">M1</text>
+<rect x="362" y="209" width="58" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="391" y="222.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">M1</text>
+<rect x="428" y="209" width="58" height="19.5" rx="9.8" fill="#eceff3" stroke="#4a5567" stroke-width="1.2" />
+<text x="457" y="222.5" font-size="10.5" fill="#2b3340" text-anchor="middle" font-weight="700">M10</text>
+<path d="M256,164 L278,164" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="704" y="104" width="260" height="120" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<g transform="translate(763,128.3) scale(0.8)" fill="none" stroke="#a87414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11"/><path d="M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+<text x="785" y="141.3" font-size="11.5" fill="#6b4a0c" font-weight="700">A journal for each arm</text>
+<text x="834" y="155.7" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">arms/NAME/measure</tspan>: an arm is</text>
+<text x="834" y="169.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a run of its own; every number is</text>
+<text x="834" y="183" font-size="10.5" fill="#1f2633" text-anchor="middle">read from the journals, by a pure</text>
+<text x="834" y="196.7" font-size="10.5" fill="#1f2633" text-anchor="middle">function of events (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">measureRun</tspan>)</text>
+<path d="M678,164 L704,164" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="704" y="236" width="260" height="68" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="788.3" y="260.9" font-size="11.5" fill="#2b3340" font-weight="700">One row per arm</text>
+<text x="834" y="275.4" font-size="10.5" fill="#1f2633" text-anchor="middle">solved, dollars per solve, context,</text>
+<text x="834" y="289" font-size="10.5" fill="#1f2633" text-anchor="middle">memory use, spend by site, cache...</text>
+<path d="M834,224 L834,236" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<text x="36" y="366" font-size="10.5" fill="#5b6475" font-weight="700">problem</text><text x="148" y="366" font-size="10.5" fill="#5b6475" text-anchor="middle" font-weight="700">baseline</text><text x="218" y="366" font-size="10.5" fill="#5b6475" text-anchor="middle" font-weight="700">arm</text><text x="40" y="392" font-size="10.5" fill="#1f2633">p1</text><circle cx="148" cy="387" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><circle cx="218" cy="387" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><rect x="32" y="400" width="250" height="22" rx="4" fill="#fbf2dd" stroke="#a87414" stroke-opacity="0.5" stroke-width="1"/><text x="40" y="416" font-size="10.5" fill="#1f2633">p2</text><circle cx="148" cy="411" r="6" fill="#ffffff" stroke="#9aa2b1" stroke-width="1.4"/><circle cx="218" cy="411" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><text x="262" y="416" font-size="11" fill="#6b4a0c" text-anchor="middle" font-weight="700">b</text><text x="40" y="440" font-size="10.5" fill="#1f2633">p3</text><circle cx="148" cy="435" r="6" fill="#ffffff" stroke="#9aa2b1" stroke-width="1.4"/><circle cx="218" cy="435" r="6" fill="#ffffff" stroke="#9aa2b1" stroke-width="1.4"/><rect x="32" y="448" width="250" height="22" rx="4" fill="#fbf2dd" stroke="#a87414" stroke-opacity="0.5" stroke-width="1"/><text x="40" y="464" font-size="10.5" fill="#1f2633">p4</text><circle cx="148" cy="459" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><circle cx="218" cy="459" r="6" fill="#ffffff" stroke="#9aa2b1" stroke-width="1.4"/><text x="262" y="464" font-size="11" fill="#6b4a0c" text-anchor="middle" font-weight="700">c</text><rect x="32" y="472" width="250" height="22" rx="4" fill="#fbf2dd" stroke="#a87414" stroke-opacity="0.5" stroke-width="1"/><text x="40" y="488" font-size="10.5" fill="#1f2633">p5</text><circle cx="148" cy="483" r="6" fill="#ffffff" stroke="#9aa2b1" stroke-width="1.4"/><circle cx="218" cy="483" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><text x="262" y="488" font-size="11" fill="#6b4a0c" text-anchor="middle" font-weight="700">b</text><text x="40" y="512" font-size="10.5" fill="#1f2633">p6</text><circle cx="148" cy="507" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><circle cx="218" cy="507" r="6" fill="#2e7448" stroke="#2e7448" stroke-width="1.4"/><text x="36" y="532" font-size="10.5" fill="#5b6475">filled: solved by Lean (illustrative); a pair is</text><text x="36" y="546" font-size="10.5" fill="#5b6475">one problem in both arms. <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">b</tspan>: only the arm</text><text x="36" y="560" font-size="10.5" fill="#5b6475">solved it; <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">c</tspan>: only the baseline</text>
+<rect x="300" y="358" width="330" height="98" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="310" y="384.3" font-size="11.5" fill="#2b3340" font-weight="700">Per arm</text>
+<text x="310" y="398.7" font-size="10.5" fill="#1f2633">problems solved of N, with the Wilson interval (95%)</text>
+<text x="310" y="412.4" font-size="10.5" fill="#1f2633">dollars spent, per solved problem, and problems</text>
+<text x="310" y="426" font-size="10.5" fill="#1f2633">solved per dollar</text>
+<text x="310" y="439.7" font-size="10.5" fill="#1f2633">wall-clock time; certified refutations counted apart</text>
+<rect x="300" y="464" width="330" height="90" rx="6" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="310" y="486.3" font-size="11.5" fill="#2b3340" font-weight="700">Against the baseline</text>
+<text x="310" y="500.7" font-size="10.5" fill="#1f2633">the discordant pairs <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">b</tspan> and <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">c</tspan>; the exact two-sided</text>
+<text x="310" y="514.4" font-size="10.5" fill="#1f2633">McNemar test; the ratio of problems solved per dollar,</text>
+<text x="310" y="528" font-size="10.5" fill="#1f2633">arm over baseline, on problems both finished. Arms that</text>
+<text x="310" y="541.7" font-size="10.5" fill="#1f2633">did not finish the same problems: no verdict</text>
+<text x="666" y="372" font-size="11.5" fill="#1f2633" font-weight="700">The target line</text><rect x="840" y="384" width="116" height="94" fill="#e6f2ea" stroke="#2e7448" stroke-opacity="0.5"/><line x1="782" y1="384" x2="782" y2="478" stroke="#5b6475" stroke-width="1.3" stroke-dasharray="4 3"/><line x1="840" y1="384" x2="840" y2="478" stroke="#2e7448" stroke-width="2"/><line x1="666" y1="478" x2="956" y2="478" stroke="#9aa2b1" stroke-width="1.3"/><line x1="666" y1="478" x2="666" y2="482" stroke="#9aa2b1" stroke-width="1.3"/><text x="666" y="494" font-size="10.5" fill="#5b6475" text-anchor="middle">0</text><line x1="782" y1="478" x2="782" y2="482" stroke="#9aa2b1" stroke-width="1.3"/><text x="782" y="494" font-size="10.5" fill="#5b6475" text-anchor="middle">1</text><line x1="898" y1="478" x2="898" y2="482" stroke="#9aa2b1" stroke-width="1.3"/><text x="898" y="494" font-size="10.5" fill="#5b6475" text-anchor="middle">2</text><text x="777" y="398" font-size="10.5" fill="#5b6475" text-anchor="end">baseline</text><text x="846" y="398" font-size="10.5" fill="#1d4a2e"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">--target</tspan> 1.5</text><circle cx="880.6" cy="430" r="6" fill="#2e7448"/><text x="880.6" y="452" font-size="10.5" fill="#1d4a2e" text-anchor="middle">an arm</text><text x="666" y="512" font-size="10.5" fill="#5b6475">problems solved per dollar, arm over baseline (illustrative)</text>
+<rect x="36" y="608" width="300" height="62" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="152.8" y="629.9" font-size="11.5" fill="#2b3340" font-weight="700">A: exercises</text>
+<text x="186" y="644.4" font-size="10.5" fill="#1f2633" text-anchor="middle">formal-conjectures <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">textbook</tspan> and <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">test</tspan></text>
+<text x="186" y="658" font-size="10.5" fill="#1f2633" text-anchor="middle">theorems; admitted: 111 of 111</text>
+<rect x="350" y="608" width="300" height="62" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="461.4" y="629.9" font-size="11.5" fill="#2b3340" font-weight="700">B: competition</text>
+<text x="500" y="644.4" font-size="10.5" fill="#1f2633" text-anchor="middle">PutnamBench, a seeded sample of 100;</text>
+<text x="500" y="658" font-size="10.5" fill="#1f2633" text-anchor="middle">admitted: 20 of 326 candidates</text>
+<rect x="664" y="608" width="300" height="62" rx="6" fill="#ffffff" stroke="#8b94a5" stroke-width="1.4" />
+<text x="782.5" y="629.9" font-size="11.5" fill="#2b3340" font-weight="700">C: research</text>
+<text x="814" y="644.4" font-size="10.5" fill="#1f2633" text-anchor="middle">formal-conjectures with a formal proof</text>
+<text x="814" y="658" font-size="10.5" fill="#1f2633" text-anchor="middle">elsewhere, up to 70; admitted: 10 of 70</text>
+<rect x="36" y="690" width="928" height="52" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(415.5,694) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="437.5" y="706.9" font-size="11.5" fill="#1d4a2e" font-weight="700">Admission by the real Lean</text>
+<text x="500" y="721.4" font-size="10.5" fill="#1f2633" text-anchor="middle">a statement is admitted only if it compiles with <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan> as its proof; one Lean cannot read is replaced, never counted as unsolved;</text>
+<text x="500" y="735" font-size="10.5" fill="#1f2633" text-anchor="middle">problems tagged <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">small_budget_out_of_reach</tspan> are reported apart, and the verdicts use the problems in reach</text>
+<path d="M186,670 L186,690" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M500,670 L500,690" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M814,670 L814,690" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<text x="292" y="308" font-size="10.5" fill="#5b6475">cumulative: each arm holds the lines of the arms above it</text>
+<text x="666" y="530" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">Target met</tspan>: the best arm's ratio reaches the</text>
+<text x="666" y="543.6" font-size="10.5" fill="#1f2633">target and it solves no fewer problems than</text>
+<text x="666" y="557.3" font-size="10.5" fill="#1f2633">the baseline; otherwise <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">Target not met</tspan></text>
+<rect x="24" y="763" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="774" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="540" y="763" width="22" height="14" rx="3" fill="#eceff3" stroke="#4a5567" stroke-width="1.4" />
+<text x="568" y="774" font-size="10.5" fill="#5b6475">protocol</text>
+<rect x="631.3" y="763" width="22" height="14" rx="3" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" />
+<text x="659.3" y="774" font-size="10.5" fill="#5b6475">journals</text>
+<rect x="722.1" y="763" width="22" height="14" rx="3" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="750.1" y="774" font-size="10.5" fill="#5b6475">Lean</text>
+</svg>

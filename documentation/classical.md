@@ -1,5 +1,7 @@
 # Line M10: the classical battery, the domain router, ATP and SMT
 
+![Line M10: the domain router, tactics ordered by Beta posteriors, SMT and ATPs reconstructed in Lean, before any model](images/battery.svg)
+
 Plan §7 step 4, "the cheapest gain": before any model works on a goal, classical tools try it. The
 package is `@seshat/classical`. This page describes what is built; the end of it says what has not run.
 

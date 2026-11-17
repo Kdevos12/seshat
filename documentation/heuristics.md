@@ -1,6 +1,6 @@
 # Heuristics: the bank of heuristic cards
 
-![The heuristic card bank: cards, features, selection, measurement](images/heuristics.svg)
+![The fleet draws one heuristic card per session, or none for the control arm, and measures each card against that control](images/fleet.svg)
 
 A **heuristic** is a method of reasoning: it says where to look ("Can you solve a special case?"). It is
 not a tool and never a fact. Tools stay capabilities of the registry ([capabilities.md](capabilities.md));

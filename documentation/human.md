@@ -1,5 +1,7 @@
 # The research team: turns, breakpoints and the account
 
+![Consortium mode: turns that end at a limit or breakpoint, the account built from the journal, the team answers as human:NAME, harness resume](images/consortium.svg)
+
 A run can stop by itself, say where it stands, and wait for the people who follow the research. This is
 consortium mode. It is for a team that reads an account, answers, and lets the run go on: the run does not
 ask anyone anything while it works, and it spends nothing while it waits.

@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="1000" height="700" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title">
+<title id="title">Battery: classical tools before any model</title>
+<defs><marker id="ah-2e7448" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#2e7448"/></marker><marker id="ah-3b4456" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0.5,0.8 L9.5,5 L0.5,9.2 L2.6,5 z" fill="#3b4456"/></marker></defs>
+<rect x="0" y="0" width="1000" height="700" fill="#ffffff"/>
+<text x="24" y="32" font-size="17" fill="#1f2633" font-weight="700">Battery: classical tools before any model</text>
+<text x="24" y="52" font-size="12" fill="#5b6475">Line M10 tries the cheap tactics, then SMT and ATPs reconstructed in Lean; a win goes through <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="11">validate</tspan> and is a candidate, never a status.</text>
+<rect x="24" y="76" width="952" height="86" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="94" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(a) WHERE IT RUNS, WITH NO MODEL CALL</text>
+<rect x="24" y="174" width="952" height="252" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="192" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(b) THE BATTERY ON ONE GOAL: <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">SOLVEGOAL</tspan></text>
+<rect x="222" y="202" width="480" height="208" rx="10" fill="#f3f8fc" stroke="#2a6496" stroke-opacity="0.55" stroke-width="1.2"/>
+<rect x="24" y="438" width="952" height="158" rx="10" fill="#f7f8fa" stroke="#d5dae2" stroke-opacity="1" stroke-width="1.2"/>
+<text x="36" y="456" font-size="10.5" fill="#5b6475" font-weight="700" letter-spacing="0.8">(c) SMT AND ATPS</text>
+<rect x="36" y="104" width="300" height="48" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<text x="141.2" y="125.8" font-size="11.5" fill="#1b4266" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">beforeProvers</tspan></text>
+<text x="186" y="140.2" font-size="10.5" fill="#1f2633" text-anchor="middle">the target, then each open subgoal</text>
+<rect x="350" y="104" width="300" height="48" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="432.9" y="125.8" font-size="11.5" fill="#1b4266" font-weight="700">Pre-flight of a hole (M12)</text>
+<text x="500" y="140.2" font-size="10.5" fill="#1f2633" text-anchor="middle">once, before its first paid session</text>
+<rect x="664" y="104" width="300" height="48" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="734.3" y="125.8" font-size="11.5" fill="#1b4266" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">sorryBattery</tspan>, off by default</text>
+<text x="814" y="140.2" font-size="10.5" fill="#1f2633" text-anchor="middle">on each <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">sorry</tspan> a prover's check left</text>
+<rect x="36" y="202" width="160" height="208" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" />
+<text x="79.1" y="258.4" font-size="11" fill="#1b4266" font-weight="700">Domain router</text>
+<text x="116" y="272.2" font-size="10" fill="#1f2633" text-anchor="middle">reads the statement and</text>
+<text x="116" y="285.2" font-size="10" fill="#1f2633" text-anchor="middle">names its decidable</text>
+<text x="116" y="298.2" font-size="10" fill="#1f2633" text-anchor="middle">fragment, most specific</text>
+<text x="116" y="311.2" font-size="10" fill="#1f2633" text-anchor="middle">first:</text>
+<text x="116" y="324.2" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">closed</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">presburger</tspan>,</text>
+<text x="116" y="337.2" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">linear_real</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">finite</tspan>,</text>
+<text x="116" y="350.2" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">polynomial_identity</tspan>,</text>
+<text x="116" y="363.2" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">first_order</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">general</tspan></text>
+<rect x="330" y="252" width="120" height="16" rx="3" fill="#ffffff" stroke="#c4ccd8"/><rect x="330" y="252" width="90" height="16" rx="3" fill="#e5eff8" stroke="#2a6496"/>
+<rect x="330" y="278" width="120" height="16" rx="3" fill="#ffffff" stroke="#c4ccd8"/><rect x="330" y="278" width="85.71428571428572" height="16" rx="3" fill="#e5eff8" stroke="#2a6496"/>
+<rect x="330" y="304" width="120" height="16" rx="3" fill="#ffffff" stroke="#c4ccd8"/><rect x="330" y="304" width="80" height="16" rx="3" fill="#e5eff8" stroke="#2a6496"/>
+<rect x="330" y="330" width="120" height="16" rx="3" fill="#ffffff" stroke="#c4ccd8"/><rect x="330" y="330" width="60" height="16" rx="3" fill="#e5eff8" stroke="#2a6496"/>
+<rect x="330" y="356" width="120" height="16" rx="3" fill="#ffffff" stroke="#c4ccd8"/><rect x="330" y="356" width="40" height="16" rx="3" fill="#e5eff8" stroke="#2a6496"/>
+<rect x="728" y="202" width="236" height="96" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<g transform="translate(807.4,221.2) scale(0.8)" fill="none" stroke="#2e7448" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1.5 L17.5 4.5 V10 C17.5 14.5 14 17.5 10 18.8 C6 17.5 2.5 14.5 2.5 10 V4.5 Z"/><path d="M6.5 10.2 L9 12.7 L13.8 7.6"/></g>
+<text x="829.4" y="234.1" font-size="11.5" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.6">validate</tspan></text>
+<text x="846" y="248.5" font-size="10.5" fill="#1f2633" text-anchor="middle">the winning proof takes the</text>
+<text x="846" y="262.2" font-size="10.5" fill="#1f2633" text-anchor="middle">fast check: at most <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">computed</tspan>;</text>
+<text x="846" y="275.8" font-size="10.5" fill="#1f2633" text-anchor="middle">a refused proof is put out</text>
+<rect x="728" y="322" width="236" height="88" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" />
+<text x="794.9" y="350.1" font-size="11.5" fill="#1d4a2e" font-weight="700">Kernel replay, later</text>
+<text x="846" y="364.6" font-size="10.5" fill="#1f2633" text-anchor="middle">only the certifier makes</text>
+<text x="846" y="378.2" font-size="10.5" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">proved</tspan>; a tool's answer alone</text>
+<text x="846" y="391.8" font-size="10.5" fill="#1f2633" text-anchor="middle">never changes a status</text>
+<path d="M196,306 L222,306" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M702,250 L728,250" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<path d="M846,298 L846,322" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<rect x="36" y="464" width="170" height="118" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="96.7" y="494.9" font-size="11" fill="#1b4266" font-weight="700">Translate</text>
+<text x="121" y="508.7" font-size="10" fill="#1f2633" text-anchor="middle">goal and premises to</text>
+<text x="121" y="521.7" font-size="10" fill="#1f2633" text-anchor="middle">SMT-LIB and TPTP, at</text>
+<text x="121" y="534.7" font-size="10" fill="#1f2633" text-anchor="middle">premise cutoffs 16, 64,</text>
+<text x="121" y="547.7" font-size="10" fill="#1f2633" text-anchor="middle">256; what is outside the</text>
+<text x="121" y="560.7" font-size="10" fill="#1f2633" text-anchor="middle">fragment is left out</text>
+<rect x="232" y="464" width="170" height="118" rx="6" fill="#e5eff8" stroke="#2a6496" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="278.8" y="501.4" font-size="11" fill="#1b4266" font-weight="700">z3, Vampire, E</text>
+<text x="317" y="515.1" font-size="10" fill="#1f2633" text-anchor="middle">in parallel on every</text>
+<text x="317" y="528.1" font-size="10" fill="#1f2633" text-anchor="middle">translation; the union</text>
+<text x="317" y="541.1" font-size="10" fill="#1f2633" text-anchor="middle">of the successes is</text>
+<text x="317" y="554.1" font-size="10" fill="#1f2633" text-anchor="middle">kept</text>
+<rect x="428" y="464" width="190" height="118" rx="6" fill="#fbf2dd" stroke="#a87414" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="499" y="501.4" font-size="11" fill="#6b4a0c" font-weight="700">Evidence</text>
+<text x="523" y="515.1" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">unsat</tspan> or <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">Theorem</tspan>, with</text>
+<text x="523" y="528.1" font-size="10" fill="#1f2633" text-anchor="middle">the premises of the core or</text>
+<text x="523" y="541.1" font-size="10" fill="#1f2633" text-anchor="middle">proof, in a <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">first_order_run</tspan></text>
+<text x="523" y="554.1" font-size="10" fill="#1f2633" text-anchor="middle">node: never a status</text>
+<rect x="644" y="464" width="190" height="118" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="687.2" y="501.4" font-size="11" fill="#1d4a2e" font-weight="700">Reconstruct in Lean</text>
+<text x="739" y="515.1" font-size="10" fill="#1f2633" text-anchor="middle">the premises, smallest set</text>
+<text x="739" y="528.1" font-size="10" fill="#1f2633" text-anchor="middle">first, then the union, go to</text>
+<text x="739" y="541.1" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">grind</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">aesop</tspan> and</text>
+<text x="739" y="554.1" font-size="10" fill="#1f2633" text-anchor="middle"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">hammer</tspan>, if the host has it</text>
+<rect x="860" y="464" width="104" height="118" rx="6" fill="#e6f2ea" stroke="#2e7448" stroke-width="2.4" />
+<text x="885.6" y="507.9" font-size="11" fill="#1d4a2e" font-weight="700"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="10.1">validate</tspan></text>
+<text x="912" y="521.6" font-size="10" fill="#1f2633" text-anchor="middle">only a Lean</text>
+<text x="912" y="534.6" font-size="10" fill="#1f2633" text-anchor="middle">proof so built</text>
+<text x="912" y="547.6" font-size="10" fill="#1f2633" text-anchor="middle">is submitted</text>
+<path d="M206,523 L232,523" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M402,523 L428,523" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M618,523 L644,523" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<path d="M834,523 L860,523" fill="none" stroke="#2e7448" stroke-width="1.4" marker-end="url(#ah-2e7448)"/>
+<path d="M330,410 L330,425 Q330,432 323,432 L196,432 Q189,432 189,439 L189,464" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<rect x="36" y="612" width="928" height="46" rx="6" fill="#efe9f7" stroke="#6a4c9c" stroke-width="1.4" />
+<g transform="translate(439.5,619.8) scale(0.8)" fill="none" stroke="#6a4c9c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 C8.8 6.6 10.4 8.2 15 9 C10.4 9.8 8.8 11.4 8 16 C7.2 11.4 5.6 9.8 1 9 C5.6 8.2 7.2 6.6 8 2 Z"/><path d="M15.5 12.5 C15.8 14.2 16.3 14.7 18 15 C16.3 15.3 15.8 15.8 15.5 17.5 C15.2 15.8 14.7 15.3 13 15 C14.7 14.7 15.2 14.2 15.5 12.5 Z"/></g>
+<text x="461.5" y="632.8" font-size="11.5" fill="#45306a" font-weight="700">Only then a model</text>
+<text x="500" y="647.2" font-size="10.5" fill="#1f2633" text-anchor="middle">its briefing says what was tried: the router's domain as a guess, the tactics that failed and their Lean time, what the solvers answered</text>
+<path d="M500,596 L500,612" fill="none" stroke="#3b4456" stroke-width="1.4" marker-end="url(#ah-3b4456)"/>
+<text x="234" y="222" font-size="10" fill="#1b4266" font-weight="700">TACTICS ORDERED BY BETA POSTERIOR</text>
+<text x="234" y="236" font-size="10" fill="#5b6475">prior for <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">polynomial_identity</tspan>, drawn by Thompson sampling</text>
+<text x="322" y="264" font-size="10" fill="#1f2633" text-anchor="end"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">ring</tspan></text>
+<text x="458" y="264" font-size="10" fill="#5b6475">Beta(3, 1)</text>
+<text x="322" y="290" font-size="10" fill="#1f2633" text-anchor="end"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">grind</tspan></text>
+<text x="458" y="290" font-size="10" fill="#5b6475">Beta(2.5, 1)</text>
+<text x="322" y="316" font-size="10" fill="#1f2633" text-anchor="end"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">norm_num</tspan></text>
+<text x="458" y="316" font-size="10" fill="#5b6475">Beta(2, 1)</text>
+<text x="322" y="342" font-size="10" fill="#1f2633" text-anchor="end">rest of the list</text>
+<text x="458" y="342" font-size="10" fill="#5b6475">Beta(1.5, 1.5)</text>
+<text x="322" y="368" font-size="10" fill="#1f2633" text-anchor="end">not named</text>
+<text x="458" y="368" font-size="10" fill="#5b6475">Beta(1, 2)</text>
+<text x="234" y="392" font-size="10" fill="#5b6475">the counts come from the journal (<tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.2">battery_run</tspan> nodes), not from a file</text>
+<text x="540" y="262" font-size="10.5" fill="#1f2633"><tspan font-weight="700">up to 4</tspan> Lean checks at once</text>
+<text x="540" y="275.6" font-size="10.5" fill="#1f2633"><tspan font-weight="700">60 s</tspan> of CPU in all</text>
+<text x="540" y="289.3" font-size="10.5" fill="#1f2633">the <tspan font-weight="700">first success</tspan> aborts</text>
+<text x="540" y="302.9" font-size="10.5" fill="#1f2633">the checks still running</text>
+<text x="540" y="316.6" font-size="10.5" fill="#1f2633"><tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">hammer@16</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">@64</tspan>, <tspan font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="9.7">@256</tspan></text>
+<text x="540" y="330.3" font-size="10.5" fill="#1f2633">when the host has it</text>
+<text x="715" y="244.7" font-size="10.5" fill="#5b6475" text-anchor="middle" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" paint-order="stroke">success</text>
+<text x="262" y="452" font-size="10.5" fill="#5b6475" text-anchor="middle">no tactic closes it</text>
+<rect x="24" y="677" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" />
+<text x="52" y="688" font-size="10.5" fill="#5b6475">has run for real (Lean 4.27, a real model)</text>
+<rect x="268.8" y="677" width="22" height="14" rx="3" fill="#ffffff" stroke="#4a5567" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="296.8" y="688" font-size="10.5" fill="#5b6475">built, tested with simulations only</text>
+</svg>
