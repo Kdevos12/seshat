@@ -1,0 +1,188 @@
+{
+  "id": "lean.search",
+  "version": 1,
+  "title": "Search Lean declarations for an unknown name or a goal",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "the harness has a check with an unknown identifier or constant and looks for the declarations the name was meant to be",
+    "the harness has a hole's goal and looks for the lemmas that fit it"
+  ],
+  "whenNot": [
+    "checking that a name exists in the run's environment: that is a Lean call, which the harness makes on every hit",
+    "proving anything: a hit is a name, and only a Lean proof settles a claim",
+    "a call from the model: the model never calls it, the harness pushes verified hits into the check's answer"
+  ],
+  "exposure": "auto",
+  "input": {
+    "type": "object",
+    "required": [
+      "query",
+      "kind"
+    ],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "description": "A declaration name that Lean does not know (kind name), or the text of a goal (kind goal)"
+      },
+      "kind": {
+        "enum": [
+          "name",
+          "goal"
+        ]
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "description": "The most hits; 5 by default"
+      },
+      "private": {
+        "type": "boolean",
+        "description": "True: the run sends nothing to a third party, so the backends that would are not asked"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "hits",
+      "used",
+      "skipped"
+    ],
+    "properties": {
+      "hits": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "backend"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "A declaration name, as a backend gave it: unverified"
+            },
+            "backend": {
+              "enum": [
+                "remote",
+                "pattern",
+                "local"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "used": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "remote",
+            "pattern",
+            "local"
+          ]
+        },
+        "description": "The backends that were asked and answered"
+      },
+      "skipped": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "backend",
+            "reason"
+          ],
+          "properties": {
+            "backend": {
+              "enum": [
+                "remote",
+                "pattern",
+                "local"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": "The backends that were not asked (a private run) or that failed, with why"
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [],
+  "thirdParty": {
+    "sends": "the unknown name, or the text of a goal, to a search service",
+    "privateInput": {
+      "private": true
+    }
+  },
+  "timeoutMs": 30000,
+  "summary": [
+    "used"
+  ],
+  "examples": [
+    {
+      "title": "a name that Lean does not know",
+      "input": {
+        "query": "add_comm_nat",
+        "kind": "name"
+      },
+      "output": {
+        "hits": [
+          {
+            "name": "Nat.add_comm",
+            "backend": "local"
+          }
+        ],
+        "used": [
+          "local"
+        ],
+        "skipped": []
+      },
+      "note": "The names are the backends'; the harness checks each with Lean before it shows one."
+    },
+    {
+      "title": "a private run",
+      "input": {
+        "query": "a + b = b + a",
+        "kind": "goal",
+        "private": true
+      },
+      "output": {
+        "hits": [],
+        "used": [
+          "local"
+        ],
+        "skipped": [
+          {
+            "backend": "remote",
+            "reason": "private run: nothing leaves for a third party"
+          }
+        ]
+      }
+    }
+  ],
+  "implementations": [
+    {
+      "id": "search",
+      "version": "backends-1",
+      "kind": "inproc",
+      "factory": "lean-search",
+      "description": "The three backends the host profile sets up, asked together and merged: remote (remoteUrl, https, no redirect, a cap on the answer, a time limit), pattern (patternUrl, a Loogle-like service, or the local index) and local (index, a file of declarations, BM25). Not run against a real service or a Mathlib-sized index.",
+      "environment": {
+        "remoteUrl": "the address LEAN_SEARCH_URL gives; in the local profile https://leansearch.net/search when it is not set",
+        "remoteQuery": "text or list, as LEAN_SEARCH_QUERY gives; list in the local profile (leansearch.net reads only that form)",
+        "patternUrl": "the address LEAN_PATTERN_URL gives; in the local profile https://loogle.lean-lang.org/json when it is not set",
+        "index": "the file LEAN_SEARCH_INDEX names, or none"
+      }
+    }
+  ]
+}

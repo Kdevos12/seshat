@@ -170,9 +170,33 @@ went no further than any session of the prover before it (the prover's first ses
 is not counted). After `sessionRepeats` (3) of them the prover restarts afresh: M6 clears its notes (the journal keeps them) and the next session is told so
 in "Course change". The count starts again.
 
+## The repeat rule
+
+The mechanical repeat rule (plan change CA7, Task 35) is a detector that counts over the whole problem, not one session: how many times a pair
+(failure class, normalised first error, strategy label) was seen on its checks, whichever prover and session made them. The error is the typed detail that
+`classifyFailure` gives (`unknown identifier Nat.foo`, `unsolved goals at case succ`), cut and spaced by `normalizeDetail`, which is the
+normalisation the failure memory already uses; the label is the one the model declared, else the one computed from the file. The class is part of the key, so the same detail text under two classes is two failures. Only real errors and timeouts
+count: the class `holes` is a state of progress (a sketch that closes one hole per check is working, whatever its strategy label),
+`other` has no specific detail to compare, and a check that never reached Lean (`refused`, `lean_unavailable`) says nothing about
+the proof; none of those is counted.
+
+- The **third** occurrence adds a directive to the answer of that check (the hook `afterCheck` gives `CheckDecision.notice`, which the session
+  appends to the tool result): the failure, the strategy and the count are named, and the model is told to change approach and that one
+  more occurrence ends the session. A `drift` node of kind `repeated_failure`, action `noted`, records it.
+- The **fourth** occurrence (and any after it) ends the session (`stoppedBy: line:M6`), records a `drift` node of action `stopped_session` with
+  the reason in `detail` (`the failure ... with the strategy ... was seen 4 times on the problem`), and the next session is told in "Course
+  change". The run's report lists these reasons ("Sessions ended by the repeat rule").
+- A probe of the budget gate ([scheduler.md](scheduler.md#the-budget-gate)) whose session this rule ended is not finished: it runs one more session, the one that is told, before the gate judges it.
+- Other detectors act first when they have a finding on the same check, but the pair is counted all the same.
+
+The option `repeatRule` is off by default, so a run with `--lines M6` is what it was; it is on only where a configuration sets it. It is active
+only when M6 is on. `harness solve`'s set `v2` turns it on: it adds line M6 with the repeat rule alone (every other detector off, no model call), unless the person gives `--lines`; the set `v1` does not. The counts
+are checkpointed in the `watch` node of each session (`repeats`) and a resumed problem sums them again. A session that was killed before its checkpoint was written does not count after a resume (its
+failures are counted again only if its checks are made again).
+
 ## Options
 
-`harness run --lines M6 --line-option M6.repeats=5`. The six switches let one guard be ablated alone.
+`harness run --lines M6 --line-option M6.repeats=5`. The switches let one guard be ablated alone.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -182,6 +206,7 @@ in "Course change". The count starts again.
 | `rawErrors` | true | take Lean's output out of sections and notes |
 | `revisions` | true | reject unanchored revisions |
 | `detectors` | true | the drift detectors |
+| `repeatRule` | false | the repeat rule above: a directive at the third occurrence of a failure with one strategy on the problem, the end of the session at the fourth |
 | `repeats` | 3 | `strategy_loop`: checks in a row without progress, after the one that set the session's best |
 | `sessionRepeats` | 3 | `session_loop`: sessions in a row without progress, after the one that set the prover's best |
 | `lengthFactor` | 2 | `length_growth`: size factor |
@@ -208,6 +233,8 @@ A cut session's own `watch` node is not read: what it watched is counted again w
 is.
 
 ## The hooks it uses
+
+The repeat rule added one field to the line API: `CheckDecision.notice`, text the session appends to the answer of the check just made (ignored when `stop` is given).
 
 The line API got four additions for this ([lines.md](lines.md)): `beforeCheck`, which rejects a call
 before Lean runs; `reviewBriefing`, which lets a line drop or reword the sections the others made;

@@ -26,7 +26,9 @@ import { messageCost } from "./budget.ts";
 import { shellQuote } from "./result.ts";
 import type { PriceBook } from "./prices.ts";
 import { resolveModel, runBench, type RunConfig, type RunOptions, type RunResult } from "./run.ts";
-import { checkAllowance, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
+import { type IntakeConfig } from "./intake.ts";
+
+import { checkAllowance, INTAKE_ALLOWANCE_SHARE, studentConfig, STUDENT_TURN_SHARE, type StudentOptions } from "./student.ts";
 
 /**
  * `harness solve` (plan change PB6, documentation/quickstart.md): a problem of one's own, with the least friction. The statement is a Lean
@@ -289,6 +291,10 @@ export interface SolveOptions {
   turnUsd?: number;
   offpeak?: RunConfig["offpeak"];
   lines?: StudentOptions["lines"];
+  /** The defaults set (`student.ts`); absent: the default one, `v2`. */
+  defaults?: StudentOptions["defaults"];
+  /** The host profile's `checkTimeoutSec`, for the sets that bound the checks. */
+  hostCheckTimeoutSec?: number;
   base?: StudentOptions["base"];
   prices?: PriceBook;
   /** The host profile the run uses, which the resume command names. */
@@ -310,6 +316,23 @@ export interface SolveOptions {
   codeRev?: string;
   runId?: string;
   lib?: Pick<RunOptions, "libraryRegistry" | "memoryFrom">;
+  /** `--tool ID` (CA17): capabilities the provers get besides lean_check. Default: none. */
+  tools?: readonly string[];
+  /** The ones of `tools` that the defaults set added and the person did not name: dropped with a warning when they cannot be reached (`RunConfig.optionalTools`). */
+  optionalTools?: readonly string[];
+  /**
+   * The host's compute tool (`compute.sage`), given to the provers when the router files the statement as finite, about a graph or about
+   * numbers (`fileStatement`). Absent: nothing is added. The caller passes it only when the host offers the capability.
+   */
+  autoTool?: string;
+  /** The intake step (Task 36): the statement's hygiene, and the literature when the person agrees. Absent: none, as before. */
+  intake?: IntakeConfig;
+  /** Asks the person once whether the statement may go to third parties (the literature, and `lean.search` with `leanSearch`); the answer is journaled. Absent: no answer, which is no. */
+  askConsent?: () => Promise<boolean>;
+  /** `--private`: nothing goes outside the machine and the model provider; wins over everything. */
+  private?: boolean;
+  /** `--sketch FILE`, the file's text (CA14): the person's informal proof or hint, at most 20 000 characters. Journaled once under `user` as a hint of the problem's claim; it never sets a status. */
+  sketch?: string;
 }
 
 export interface SolveResult {
@@ -379,7 +402,7 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   const problem = writeProblem(dir, lean);
   let testLemmasResult: TestLemmas | undefined;
   let trivial: { by: string } | undefined;
-  if (mode === "prose" && o.checker !== undefined) {
+  if ((mode === "prose" || o.intake?.hygiene === true) && o.checker !== undefined) {
     try {
       testLemmasResult = await testLemmas(o.checker, header, problem.entry.statement, 10, o.signal !== undefined ? { signal: o.signal } : {});
       if (testLemmasResult.result === "failed") notes.push(`Lean's \`decide\` refutes this statement on case ${testLemmasResult.failedAt}: it probably does not say what you mean`);
@@ -412,14 +435,29 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
   const remaining = Math.round((o.maxUsd - (formalization?.usd ?? 0)) * 1e6) / 1e6;
   if (!(remaining > 0)) throw new SolveInputError(`formalizing the statement cost $${formalization?.usd.toFixed(4)}, all of the allowance $${o.maxUsd}: raise --max-usd`);
   const turnUsd = Math.min(remaining, o.turnUsd ?? Math.round(o.maxUsd * STUDENT_TURN_SHARE * 1e6) / 1e6);
+  // The person's agreement to send the statement outside is asked once, here, after the signature, and journaled by the run.
+  // The answer governs the literature and also `lean.search` (Task 36b), so `--lean-search` brings the question and the record of the answer too.
+  const wantsLeanSearch = o.base?.leanSearch === true;
+  let intake = o.intake ?? (wantsLeanSearch ? {} : undefined);
+  if (intake !== undefined && (intake.literature === true || wantsLeanSearch) && o.private !== true && intake.consent === undefined && o.askConsent !== undefined) {
+    intake = { ...intake, consent: { allowed: await o.askConsent(), via: "asked" } };
+  }
+  // The intake's judge call is proportionate to the allowance: the smaller of its default and 5% of it (`--intake-usd` wins).
+  if (intake !== undefined && intake.capUsd === undefined && intake.capShare === undefined) intake = { ...intake, capShare: INTAKE_ALLOWANCE_SHARE };
+  // The compute tool is decided by the run, per problem (`RunConfig.autoTool`); a tool the person named is run-wide and is not added twice.
+  const tools = [...new Set(o.tools ?? [])];
+  const optionalTools = [...new Set(o.optionalTools ?? [])].filter((id) => tools.includes(id));
+  const autoTool = o.autoTool !== undefined && !tools.includes(o.autoTool) ? o.autoTool : undefined;
   const config = studentConfig({
     selection: { ids: [problem.entry.id] },
     model: o.model,
     maxUsd: remaining,
     turnUsd,
     ...(o.lines !== undefined ? { lines: o.lines } : {}),
+    ...(o.defaults !== undefined ? { defaults: o.defaults } : {}),
+    ...(o.hostCheckTimeoutSec !== undefined ? { hostCheckTimeoutSec: o.hostCheckTimeoutSec } : {}),
     ...(o.offpeak !== undefined ? { offpeak: o.offpeak } : {}),
-    ...(o.base !== undefined ? { base: o.base } : {}),
+    base: { ...o.base, ...(tools.length > 0 ? { tools } : {}), ...(optionalTools.length > 0 ? { optionalTools } : {}), ...(autoTool !== undefined ? { autoTool } : {}), ...(intake !== undefined ? { intake } : {}), ...(o.private === true ? { private: true } : {}) },
   });
   const result = await runBench({
     config,
@@ -437,7 +475,10 @@ export async function solve(o: SolveOptions): Promise<SolveResult> {
     ...(o.runId !== undefined ? { runId: o.runId } : {}),
     ...(o.lib ?? {}),
     benchFile: problem.indexFile,
+    ...(testLemmasResult !== undefined ? { testLemmas: new Map([[problem.entry.id, testLemmasResult]]) } : {}),
     user: o.user,
+    ...(o.sketch !== undefined ? { sketch: o.sketch } : {}),
+    ...(prose !== undefined ? { prose } : {}),
     afterStart: (journal: Journal) => {
       journal.emit(
         "statement.signed",

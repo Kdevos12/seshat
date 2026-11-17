@@ -120,6 +120,15 @@ other half. The default is BM25 alone, because no judged queries exist yet; Task
 - **The tool `library_search`** (`{query, limit?}`), always offered unless `tool: false`: the same search, for words the
   prover chooses. It is not drawn.
 
+### `lean.search`, pushed by the harness
+
+The library's search is pulled: a briefing section and the tool `library_search`. The plan change CA22 adds a search the harness pushes
+(`RunConfig.leanSearch`, [lean.md](lean.md#search-pushed-by-the-harness)): after a check with an unknown identifier or a hole, it asks the
+capability `lean.search` and appends the hits that Lean confirms to the check's answer. It is a separate mechanism with its own backends
+and does not read the library; a local index for it can be written from the same export of the environment's declarations
+(`DeclarationExport`) as an `index` file of `{name, type, doc?}`. What it shows is Lean's `#check` text, never a gloss or a doc string a
+backend returned, and its hits are not library lemmas: nothing is promoted or recorded from them.
+
 ## Schemas
 
 The library also holds **schemas**, the shapes of decompositions that closed (line `M15`, [archive.md](archive.md), [schemas.md](schemas.md)): the node

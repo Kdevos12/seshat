@@ -1,5 +1,7 @@
 # Heuristics: the bank of heuristic cards
 
+![The heuristic card bank: cards, features, selection, measurement](images/heuristics.svg)
+
 A **heuristic** is a method of reasoning: it says where to look ("Can you solve a special case?"). It is
 not a tool and never a fact. Tools stay capabilities of the registry ([capabilities.md](capabilities.md));
 facts come from Lean. The bank of heuristic cards is the part of Seshat that holds these methods, gives one
@@ -102,14 +104,18 @@ coarse on purpose, so that a bucket gathers enough sessions to say something.
 ## The built-in cards
 
 `BUILTIN_CARDS` holds the six directives (`DIRECTIVE_CARDS`, all strategy cards with no condition, as
-before the bank) and 23 starter cards (`STARTER_CARDS`) from nine traditions: first principles thinking
+before the bank) and 27 starter cards (`STARTER_CARDS`) from ten traditions: first principles thinking
 (unfold the definitions; which hypothesis is used), VOTAT (one parameter at a time; one change between two
 failed checks), strong inference (the discriminating computation), experimental mathematics (guess the
 answer first), Pólya (restate the intent; a known result; working backwards; strengthen the induction
 hypothesis; the hypotheses a named lemma needs), Engel (invariants, the extremal object, counting two ways,
 the equality case), Zeitz (normalize by symmetry), Tao (dominant terms, the deferred witness, a toy model,
 the weakest version, where a counterexample would be, what one would look like) and Schoenfeld (name the
-obstacle before switching). Each is written in our own words; none quotes a book. A test checks that every
+obstacle before switching). Four cards come from the audit of the third real run (plan change PA8):
+`invariant.mod_small_prime` (reduce modulo a small number and read the residues), `represent.prime_by_prime`
+(one prime's exponent at a time), `represent.lowest_terms` (a fraction in lowest terms, so that coprimality
+speaks), and the strategy card `strategy.formalizable_route` (of the family `represent`: among several proofs,
+prefer the one whose key lemmas Mathlib has, checked by search or `exact?`, not the shortest on paper). Each is written in our own words; none quotes a book. A test checks that every
 built-in card is valid, that no two overlap, and that M6's framing check finds nothing in any of them (none
 asks to demonstrate the statement).
 
@@ -181,6 +187,10 @@ on the same problems at the same budget ([ablate.md](ablate.md#experiments)).
 Not built (Ruling 32): a card's `prepare` step (HB4, site `heuristic.prepare` of the gate), the replay of
 the battery after a new lemma (HB5b, site `heuristic.replay`), and the extra features `claim_kind`,
 `origin_informal`, `closed_fast` and `informal_sketch`.
+
+## Cards in solve
+
+`harness solve` has no fleet, so no card was ever drawn for it (plan change PA7). With `RunConfig.cards` (`{ max?: number }`, default 1, at most 5), set by the arm `solve-v2-cards` of the experiment `solve-defaults` and by no defaults set (`v1` and `v2` are unchanged), the harness picks, once per problem and before the first outer session, the cards of the bank that key on the statement: those whose `when` names statement features (`features` or `anyFeatures`) and holds on the statement's features (`statementFeatures`, no model) and its domains at no attempts yet, the one matching the most features first, then in the bank's order. A card with no such condition holds for every statement and says nothing of this one, so it is never picked here; a statement no card keys on gets none. Each card goes in the first prover's first briefing, and in no later one, as the fleet's sessions have it (`heuristicSection`, the same wording). The session's `attempt.started` records it as the fleet records a card shown (`heuristic`, `heuristicFamily`, `heuristicBucket`, and `heuristicRule: "solve"`; `heuristicCards` lists them all when `max` is above 1), so `harness heuristics stats` reads it, and the report adds a line: the cards shown, and the problems certified with and without a card. There is no control share and no draw: the control is the arm without `cards`. Whether a card helps is a model's behaviour, and nothing here has run against a real model.
 
 ## Trust
 

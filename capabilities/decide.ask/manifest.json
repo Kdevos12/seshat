@@ -19,6 +19,12 @@
   ],
   "exposure": "auto",
   "produces": [],
+  "thirdParty": {
+    "sends": "a proof state or a statement, to a hosted decision model",
+    "implementations": [
+      "jev"
+    ]
+  },
   "timeoutMs": 60000,
   "summary": [
     "backend",

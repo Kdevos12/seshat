@@ -6,6 +6,9 @@ import {
   CapabilityError,
   CatalogError,
   checkCapability,
+  DEFAULT_HEALTH_TIMEOUT_MS,
+  hostProfileHash,
+  parseHostProfile,
   loadCatalog,
   Registry,
   TOOL_TIMEOUT_MARGIN_MS,
@@ -269,6 +272,24 @@ describe("Registry.invoke", () => {
       { capability: "math.add", implementation: "js", version: "1", ok: true, detail: "fine" },
       { capability: "math.add", implementation: "backup", version: "2", ok: false, detail: "no such host" },
     ]);
+  });
+
+  it("waits for a health answer as long as the host says (healthTimeoutMs), and 15 seconds when it says nothing", async () => {
+    const slow: ImplementationFactory = () => ({ invoke: async () => ({ sum: 0 }), health: ({ signal }) => new Promise(() => void signal) });
+    const registry = new Registry({ catalog, host: { ...host(["js"]), healthTimeoutMs: 30 }, factories: { "js-add": slow } });
+    const keepAlive = setTimeout(() => undefined, 5000); // the abort timer of a signal does not keep the process alive
+    const [entry] = await registry.health().finally(() => clearTimeout(keepAlive));
+    assert.equal(entry?.ok, false);
+    assert.ok((entry?.durationMs ?? 0) < 5000);
+    assert.equal(DEFAULT_HEALTH_TIMEOUT_MS, 15_000);
+  });
+
+  it("keeps the registry's hash when only the diagnostics settings change, and changes it with checkTimeoutSec", () => {
+    const base = host(["js"]);
+    assert.equal(hostProfileHash({ ...base, healthTimeoutMs: 60_000, leanServerMemoryWarnMb: 4096 }), hostProfileHash(base));
+    assert.notEqual(hostProfileHash({ ...base, checkTimeoutSec: 60 }), hostProfileHash(base));
+    assert.deepEqual(parseHostProfile({ ...base, checkTimeoutSec: 60, healthTimeoutMs: 1000, leanServerMemoryWarnMb: 2048 }).checkTimeoutSec, 60);
+    assert.throws(() => parseHostProfile({ ...base, checkTimeoutSec: 0 }), CatalogError);
   });
 
   it("tells whether the host can create an implementation of a capability, without calling any", async () => {

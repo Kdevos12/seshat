@@ -171,6 +171,8 @@ describe("harness run", () => {
       [["--checkout", checkout, "--model", "a/b", "--all", "--thinking", "deep"], /^--thinking must be one of off, minimal, low/],
       [["--checkout", checkout, "--model", "a/b", "--all", "--cache-retention", "forever"], /^--cache-retention must be one of none, short, long/],
       [["somewhere", "--checkout", checkout, "--model", "a/b", "--all"], /^run takes no positional argument, got somewhere/],
+      [["--checkout", checkout, "--model", "a/b", "--all", "--lit"], /^--lit is for harness solve/],
+      [["--checkout", checkout, "--model", "a/b", "--all", "--intake-usd", "0.1"], /^--intake-usd goes with --intake/],
     ];
     const results = await Promise.all(options.map(([args]) => harness(["run", ...args])));
     options.forEach(([args, message], k) => {
@@ -179,6 +181,49 @@ describe("harness run", () => {
       assert.match(stderr.replace(/^warning: .*\n/, ""), message);
       assert.match(stderr, /\n\nusage:\n/);
     });
+  });
+
+  it("knows --lean-search: a resumed run keeps the option it began with, so the flag cannot be given with --resume", async () => {
+    const { code, stderr } = await harness(["run", "--resume", join(tempDir(), "absent"), "--checkout", checkout, "--lean-search"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /--lean-search cannot be given with it/);
+    // It is in the usage of run and of solve.
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness run [^]*\[--lean-search\][^]*harness solve [^]*\[--lean-search\]/);
+    assert.match(usage.stdout, /harness run [^]*\[--consult PROVIDER\/ID[^]*harness solve [^]*\[--consult PROVIDER\/ID/);
+  });
+
+  it("knows --role and --role-setting (CA15, CA23): in the usage of run and solve, and checked before anything runs", async () => {
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness run [^]*\[--role ROLE=PROVIDER\/ID\]\.\.\. \[--role-setting ROLE\.KEY=VALUE\]\.\.\.[^]*harness solve [^]*\[--role ROLE=PROVIDER\/ID\]/);
+    const base = ["run", "--checkout", checkout, "--all", "--model", "nowhere/none"];
+    const unknown = await harness([...base, "--role", "judge=a/b"]);
+    assert.equal(unknown.code, 2);
+    assert.match(unknown.stderr, /--role takes ROLE=PROVIDER\/ID with ROLE one of prover, planner, hole, verifier, consult, escalation/);
+    const badSetting = await harness([...base, "--role", "planner=a/b", "--role-setting", "planner.temperature=9"]);
+    assert.equal(badSetting.code, 2);
+    assert.match(badSetting.stderr, /roles\.planner\.settings\.temperature must be a number from 0 to 2/);
+    const escalation = await harness([...base, "--role", "planner=a/b", "--role-setting", "escalation.temperature=1"]);
+    assert.match(escalation.stderr, /escalation\.maxShare=X is the only setting of escalation/);
+    const alone = await harness([...base, "--role", "escalation=a/b"]);
+    assert.match(alone.stderr, /goes with roles\.planner/);
+    // A resumed run keeps the roles it began with.
+    const resumed = await harness(["run", "--resume", join(tempDir(), "absent"), "--checkout", checkout, "--role", "hole=a/b"]);
+    assert.match(resumed.stderr, /--role cannot be given with it/);
+  });
+
+  it("knows --sketch (CA14): in the usage of solve, refused by run, and a file that is too long stops solve before anything is spent", async () => {
+    const usage = await harness(["--help"]);
+    assert.match(usage.stdout, /harness solve [^]*\[--sketch FILE\]/);
+    const refused = await harness(["run", "--checkout", checkout, "--all", "--model", "nowhere/none", "--sketch", "x.txt"]);
+    assert.equal(refused.code, 2);
+    assert.match(refused.stderr, /--sketch is for harness solve/);
+    const dir = tempDir();
+    writeFileSync(join(dir, "long.txt"), "y".repeat(20001));
+    const long = await harness(["solve", "(n : ℕ) : n + 0 = n", "--sketch", join(dir, "long.txt"), "--yes", "--no-check", "--model", "nowhere/none", "--out", join(dir, "run")]);
+    assert.equal(long.code, 2);
+    assert.match(long.stderr, /the sketch is 20001 characters long; the limit is 20000/);
+    assert.equal(existsSync(join(dir, "run")), false, "nothing was written");
   });
 
   it("takes SESHAT_MODEL for a missing --model, but not for a resume, which keeps its run's model", async () => {

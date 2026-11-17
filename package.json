@@ -1,6 +1,7 @@
 {
   "name": "seshat",
   "private": true,
+  "license": "Apache-2.0",
   "description": "A harness for autonomous mathematical research with LLMs through APIs, Lean as the verifier, and classical tools first.",
   "type": "module",
   "packageManager": "pnpm@10.28.0",

@@ -64,6 +64,22 @@ export interface McpImplementationSpec extends ImplementationSpecBase {
 
 export type ImplementationSpec = InprocImplementationSpec | McpImplementationSpec;
 
+/**
+ * What a capability sends to a party other than the model provider (documentation/capabilities.md, "Third parties"). Absent from a
+ * manifest: the capability sends nothing outside the machine. A private run (`Registry.restrictThirdParties`) refuses a call that would.
+ */
+export interface ThirdPartySpec {
+  /** What leaves, in a few words: the query, a sequence of integers, a proof state. Shown in the consent question and the refusal. */
+  sends: string;
+  /** The implementations that send it; absent: every one does. The others stay usable in a private run. */
+  implementations?: string[];
+  /**
+   * Input fields that make the call stay on the machine, when the capability can answer locally (`lean.search`: `{"private": true}`).
+   * A private run adds them to every call, whatever the caller gave, instead of refusing it. Absent: a private run refuses the call.
+   */
+  privateInput?: Record<string, Json>;
+}
+
 export interface CapabilityManifest {
   /** `namespace.name`, e.g. `lean.check`. Stable: callers name capabilities, never tools. */
   id: string;
@@ -86,6 +102,8 @@ export interface CapabilityManifest {
   produces?: ClaimStatus[];
   /** What makes a result trustworthy, e.g. "finite model, checked in Lean by decide". */
   certificate?: string;
+  /** Optional. What the capability sends to a third party; see `ThirdPartySpec`. */
+  thirdParty?: ThirdPartySpec;
   /** Default time limit of one call, in milliseconds. */
   timeoutMs: number;
   /**
@@ -219,6 +237,16 @@ const MANIFEST_SCHEMA: JsonSchema = {
     certificate: { type: "string", minLength: 1 },
     timeoutMs: { type: "integer", minimum: 1 },
     timeoutField: { type: "string", minLength: 1 },
+    thirdParty: {
+      type: "object",
+      required: ["sends"],
+      properties: {
+        sends: { type: "string", minLength: 1 },
+        implementations: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+        privateInput: { type: "object" },
+      },
+      additionalProperties: false,
+    },
     summary: { type: "array", items: { type: "string" } },
     examples: {
       type: "array",
@@ -393,6 +421,19 @@ export function checkCapability(dirName: string, manifest: unknown, contract: un
     const numeric = field !== undefined && (field.type === "number" || field.type === "integer");
     if (!numeric || field.maximum === undefined || field.minimum === undefined || field.minimum <= 0) {
       problems.push(`${at} timeoutField ${m.timeoutField} must be a number field of the input, with a positive minimum and a maximum`);
+    }
+  }
+
+  if (m.thirdParty !== undefined) {
+    for (const id of m.thirdParty.implementations ?? []) {
+      if (!ids.has(id)) problems.push(`${at} thirdParty.implementations names ${id}, which is not an implementation`);
+    }
+    if (m.thirdParty.privateInput !== undefined && inputProblems.length === 0) {
+      for (const [key, value] of Object.entries(m.thirdParty.privateInput)) {
+        const field = m.input.properties?.[key];
+        if (field === undefined) problems.push(`${at} thirdParty.privateInput.${key} is not a field of the input`);
+        else problems.push(...validate(field, value, `thirdParty.privateInput.${key}`).map((p) => `${at} ${p}`));
+      }
     }
   }
 

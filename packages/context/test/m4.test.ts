@@ -280,6 +280,9 @@ describe("review round 1", () => {
     assert.deepEqual(seen, []);
     const sections = otherLines("Theorem: x\n\n# What Lean said about the file as it is\nok\n\n# Already tried\na\n\n# Foo\nbar\n\n# Hints from the team\nh");
     assert.deepEqual(sections, [{ title: "Foo", text: "bar" }]);
+    // v2's state card sits before the notes in the opening message, and the packet keeps it.
+    const withCard = otherLines("Theorem: x\nThis is session 2 of at most 3.\n\n# Where the problem stands\nGoal: statement s1, status open.\n- 1 x e\n\n# Your notes from the previous sessions\nn\n\n# What Lean said about the file as it is\nok");
+    assert.deepEqual(withCard, [{ title: "Where the problem stands", text: "Goal: statement s1, status open.\n- 1 x e" }]);
   });
 
   it("tells the model in the tail that a claim the prefix shows as proved was withdrawn", { timeout: 60000 }, async () => {

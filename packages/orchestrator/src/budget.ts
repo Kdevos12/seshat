@@ -9,6 +9,8 @@ import type { PriceBook } from "./prices.ts";
  */
 export class Ledger {
   readonly limitUsd: number | undefined;
+  /** An optional cap on input plus output tokens, for a child's ledger (`runChild`); absent on every other ledger. */
+  readonly limitTokens: number | undefined;
   readonly parent: Ledger | undefined;
   usd = 0;
   inputTokens = 0;
@@ -18,15 +20,23 @@ export class Ledger {
   private readonly observers: Array<(cost: TokenCost) => void> = [];
   private announced = false;
 
-  constructor(limitUsd?: number, parent?: Ledger) {
+  constructor(limitUsd?: number, parent?: Ledger, limitTokens?: number) {
     if (limitUsd !== undefined && !(limitUsd >= 0)) throw new Error(`budget must be a non-negative number, got ${limitUsd}`);
     this.limitUsd = limitUsd;
+    this.limitTokens = limitTokens;
     this.parent = parent;
     parent?.onExhausted(() => this.announce());
   }
 
-  child(limitUsd?: number): Ledger {
-    return new Ledger(limitUsd, this);
+  child(limitUsd?: number, limitTokens?: number): Ledger {
+    return new Ledger(limitUsd, this, limitTokens);
+  }
+
+  /** What this ledger and its ancestors still allow in dollars: the least of their remainders, or undefined when none has a limit. */
+  get remainingUsd(): number | undefined {
+    const own = this.limitUsd === undefined ? undefined : Math.max(0, this.limitUsd - this.usd);
+    const above = this.parent?.remainingUsd;
+    return own === undefined ? above : above === undefined ? own : Math.min(own, above);
   }
 
   /**
@@ -62,7 +72,7 @@ export class Ledger {
   }
 
   get exhausted(): boolean {
-    return (this.limitUsd !== undefined && this.usd >= this.limitUsd) || (this.parent?.exhausted ?? false);
+    return (this.limitUsd !== undefined && this.usd >= this.limitUsd) || (this.limitTokens !== undefined && this.inputTokens + this.outputTokens >= this.limitTokens) || (this.parent?.exhausted ?? false);
   }
 
   /** Whether a charge of `usd` would leave this ledger or an ancestor exhausted: true for one that already is. */
@@ -97,12 +107,19 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
   let usd: number;
   let savedUsd: number;
   let offPeak = false;
+  let outputUsd: number;
+  let cacheReadUsd: number;
   if (pricing !== undefined) {
     const priced = priceUsage(pricing, usage, prices?.now() ?? Date.now());
     usd = priced.usd;
     savedUsd = priced.savedUsd;
     offPeak = priced.offPeak;
+    const factor = offPeak ? (pricing.calendar?.offPeakMultiplier ?? 1) : 1;
+    outputUsd = (usage.output * pricing.output * factor) / 1e6;
+    cacheReadUsd = (usage.cacheRead * pricing.cacheHit * factor) / 1e6;
   } else {
+    outputUsd = (usage.output * model.cost.output) / 1e6;
+    cacheReadUsd = (usage.cacheRead * model.cost.cacheRead) / 1e6;
     usd = usage.cost.total > 0 ? usage.cost.total : calculateCost(model, structuredClone(usage)).total;
     // pi-ai's table: a cache read costs `cacheRead` per million where a miss costs `input`.
     // Net of the write premium, as the table's.
@@ -114,6 +131,8 @@ export function messageCost(model: Model<Api>, message: AssistantMessage, prices
     outputTokens: usage.output,
     ...(usage.cacheRead > 0 ? { cachedInputTokens: usage.cacheRead } : {}),
     ...(savedUsd !== 0 ? { savedUsd } : {}),
+    ...(outputUsd > 0 ? { outputUsd } : {}),
+    ...(cacheReadUsd > 0 ? { cacheReadUsd } : {}),
     ...(offPeak && usd > 0 ? { offPeakUsd: usd } : {}),
     // The table wins over a reported cost, so that a corrected price is the price; the difference is kept for the report.
     ...(pricing !== undefined && usage.cost.total > usd + 1e-12 ? { unchargedUsd: usage.cost.total - usd } : {}),

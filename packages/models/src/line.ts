@@ -17,6 +17,8 @@ import {
   relate,
   verdictString,
 } from "./fingerprint.ts";
+import { describeGraphFindings, type GraphHuntServices, huntGraphs } from "./graph-hunt.ts";
+import { recognizeGraphStatement } from "./graph-statement.ts";
 import { type IdentificationData, recordIdentification } from "./identify.ts";
 import { evaluateWithLean } from "./lean-eval.ts";
 import type { BatteryObject, IntegerObject, MagmaObject } from "./objects.ts";
@@ -59,6 +61,8 @@ export const M11_DEFAULTS = {
   leanFiles: 200,
   /** The most steps the law evaluator takes for a problem, and for each call of the tool: the bound of `magmaWork` (the assignments of variables, each costing the occurrences of variables in the law and 4), checked before it runs. */
   lawWork: 500_000_000,
+  /** Statements about simple graphs: batteries, a program of the model, a Lean recheck, a search beyond the lists (CA18 to CA20). Off by default; documentation/models.md, "Statements about graphs". */
+  graphs: false,
 } satisfies JsonObject;
 
 export type M11Options = { [K in keyof typeof M11_DEFAULTS]: (typeof M11_DEFAULTS)[K] extends boolean ? boolean : number };
@@ -94,6 +98,7 @@ export function readOptions(raw: Readonly<JsonObject>): M11Options {
     toolMaxNumber: integer("toolMaxNumber", 1, 200),
     leanFiles: integer("leanFiles", 0, 10_000),
     lawWork: integer("lawWork", 0, 10_000_000_000),
+    graphs: raw.graphs === undefined ? false : flag("graphs"),
   };
 }
 
@@ -238,12 +243,22 @@ export interface M11Services {
    * not answer, the table's answer stands and says so.
    */
   oeis?: OeisSource;
+  /** The search beyond the lists of graphs (CA20): a local search and families. Written in `@seshat/induction` (`graphSearch`), which this package cannot import; the orchestrator gives it. Without it, only the lists are tried. */
+  graphSearch?: GraphHuntServices["search"];
+  /** A stand-in for SageMath's graph generator, for a test. */
+  sage?: GraphHuntServices["sage"];
 }
 
 async function beforeProvers(problem: ProblemContext, services: M11Services): Promise<void> {
   const options = readOptions(problem.options);
   const recognized = recognizeStatement(problem.target.statement);
   if (!("statement" in recognized)) {
+    // The graphs are an option, off by default: with it off nothing here changes, and with it on a statement that is not about graphs is left alone as before, with nothing spent.
+    const graph = options.graphs ? recognizeGraphStatement(problem.target.statement) : undefined;
+    if (graph !== undefined && "statement" in graph) {
+      await huntGraphs(problem, graph.statement, { ...(services.graphSearch !== undefined ? { search: services.graphSearch } : {}), ...(services.sage !== undefined ? { sage: services.sage } : {}) });
+      return;
+    }
     problem.log(`M11: the statement is left alone: ${recognized.reason}`);
     return;
   }
@@ -570,7 +585,7 @@ export function createM11(services: M11Services = {}): Line {
     hooks: {
       beforeProvers: (problem) => beforeProvers(problem, services),
       briefing: async (session): Promise<Briefing | undefined> => {
-        const text = describeFindings(session.memory, session.claimId);
+        const text = describeFindings(session.memory, session.claimId) ?? describeGraphFindings(session.memory, session.claimId);
         return text === undefined ? undefined : { title: "Small models (line M11)", text };
       },
       // A proof of the negation that passed the fast check: the claim is false as stated, and the provers would only spend the budget.

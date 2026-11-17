@@ -89,6 +89,32 @@ Two measures run side by side.
 `deactivation: "presence"` uses the presence rule instead: harmful outweighs useful after `minObservations` in all. A deactivated lesson
 stays in the journal with the rule and the reason, and is never shown again; nothing reactivates it.
 
+## Consolidation
+
+The consolidation pass ([consolidation.md](consolidation.md)) reads the lessons of a run's chain and acts only where it finds something; a run
+with no consolidation has neither of the fields below.
+
+- **Duplicates merged.** Active (or waiting) lessons of the same type, scope and normalised text (lowercase, spaces collapsed, final punctuation
+  removed) are one: the oldest stays. It takes the union of the others' `support`, `claims` and `domains` (the latest 50 each) and the sum of
+  their `useful` and `harmful` counters. Each duplicate is deactivated (rule `merged`, `mergedInto` names the kept lesson) and stays in the
+  journal; its draws and effects stay under its own id and are not moved. `addLesson` is unchanged: it still merges a duplicate of the same `key`
+  by adding support and leaving the counters alone.
+- **Unsupported lessons flagged.** A lesson's support is the attempts it lists (`support`). An attempt backs it when the chain holds it and its
+  claim is not `retracted`. A lesson none of whose supporting attempts backs it (including one that lists none) gets `flagged` (the reason and the
+  counts) and `pending: true`: it is shown to no session until a person approves it, with `harness lessons approve RUN_DIR ID` on the run
+  that flagged it, like a staged lesson. `harness lessons pending` lists it with its flag. An approval is a `lesson_decision` node, which a
+  later run does not inherit, so a later run on the consolidation run sees the lesson waiting again until it is approved there.
+
+## Lessons in solve
+
+`harness solve` can switch M5 on with no new setting: the line list is the switch (`--lines M1,M5,...`, or the arm `solve-v2-lessons` of
+the experiment `solve-defaults`, [ablate.md](ablate.md), which is `solve-v2` plus `M5`; `v2` already has M1, and both defaults sets
+`v1` and `v2` stay as they are). The lessons then work as above: a lesson written when a problem ends reaches the outer prover's
+briefing of every later problem in the run (and of a run that inherits the memory of this one, [memory.md](memory.md)), drawn, with the draw
+on `attempt.started`, so that the arm measures the lessons' effect against `solve-v2` and not their presence. Without M5 nothing changes
+and no lesson is written. A lesson for the global scope still waits for a person ([Staged promotion](#staged-promotion)); the domain and
+claim lessons are active at once. Nothing has run on a real model: the tests are faux.
+
 ## Staged promotion
 
 A lesson for the global scope changes what every later problem sees, so by default it is recorded `pending` and shown to nobody until a

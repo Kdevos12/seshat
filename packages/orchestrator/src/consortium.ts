@@ -51,13 +51,13 @@ export function waitingProblems(journal: Journal, all?: readonly { id: string }[
  * Begins the next turn: closes one the process before left open, finds the limit (a flag of this
  * resumption, the team's steer, the turn before's, the run's), and writes `turn.started`.
  */
-export function beginTurn(journal: Journal, o: { consortium: ConsortiumConfig; flag?: TurnLimit; now?: () => number }): Turn {
+export function beginTurn(journal: Journal, o: { consortium: ConsortiumConfig; flag?: TurnLimit; now?: () => number; at?: string }): Turn {
   closeOpenTurn(journal);
   const events = readEvents(journal.log.path);
   const { limit, source } = nextLimit(events, o.consortium, o.flag);
   const number = journal.projection.turns().started + 1;
   const startSpend = costOf(journal.projection.totalSpend());
-  journal.emit("turn.started", { runId: journal.log.run, turn: number, limit, source, startSpend }, "orchestrator");
+  journal.emit("turn.started", { runId: journal.log.run, turn: number, limit, source, startSpend, ...(o.at !== undefined ? { at: o.at } : {}) }, "orchestrator");
   return new Turn({ number, limit, source, startSpend, ...(o.now !== undefined ? { now: o.now } : {}) });
 }
 
@@ -116,5 +116,6 @@ export function readConsortium(recorded: unknown): ConsortiumConfig | undefined 
       minAttempts: typeof impasse.minAttempts === "number" ? impasse.minAttempts : 8,
     },
     narrative: r.narrative === true,
+    ...(r.consolidation === true ? { consolidation: true } : {}),
   };
 }

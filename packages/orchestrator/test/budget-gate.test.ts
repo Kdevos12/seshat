@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { BenchIndex } from "@seshat/bench";
 import { join } from "node:path";
-import { BlobStore, type HarnessEvent } from "@seshat/core";
-import { buildReport, renderRunReport } from "../src/index.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { BlobStore, type HarnessEvent, Journal, statementIdV0 } from "@seshat/core";
+import type { FrontierEntry, FrontierKind } from "@seshat/memory";
+import { gateSettings } from "@seshat/scheduler";
+import { BudgetGate, buildReport, Ledger, renderRunReport } from "../src/index.ts";
 import { consortium } from "./turns-helpers.ts";
 import { assertSound, certifier } from "./resume-helpers.ts";
 import { createM12Line } from "@seshat/scheduler";
@@ -109,6 +113,110 @@ describe("the budget gate: before a session", () => {
     assert.equal(session?.by, "floor");
     assert.equal(session?.exploration, true);
     assert.equal(ofType(events, "attempt.started").length, 2);
+  });
+
+  describe("a probe session the repeat rule ended", () => {
+    const REPEAT = { framing: false, citations: false, rawErrors: false, revisions: false, detectors: false, repeatRule: true };
+    const config = { ...WIDE, lines: ["M6"], lineOptions: { M6: REPEAT }, gate: { floor: 0 } };
+    const stops = (events: readonly HarnessEvent[]) => ofType(events, "attempt.finished").map((a) => a.data.stoppedBy);
+
+    it("runs one more session, told to change approach, before the gate judges: it can solve the problem", async () => {
+      const { events, result } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("exact trivial_proof")],
+        config,
+      });
+      assert.deepEqual(stops(events), ["line:M6", "solved"]);
+      assert.equal(result.problems[0]?.outcome, "candidate");
+      assert.equal(gates(events)[0]?.action, "probe");
+    });
+
+    it("gets no third: a second stop by the repeat rule ends the probe, and the gate judges as before", async () => {
+      const { events, result } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("bad 4"), check("bad 5")],
+        config,
+      });
+      assert.deepEqual(stops(events), ["line:M6", "line:M6"]);
+      assert.equal(ofType(events, "attempt.started").length, 2);
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(result.problems[0]?.outcome, "unsolved");
+    });
+
+    it("keeps the probe's spending within its cap", async () => {
+      const { events } = await demoRun({
+        responses: [check("bad"), check("bad 1"), check("bad 2"), check("bad 3"), check("bad 4"), check("bad 5")],
+        pricePerMillion: 5,
+        config,
+      });
+      const usd = ofType(events, "attempt.finished").reduce((sum, a) => sum + (a.data.usd ?? 0), 0);
+      assert.ok(usd <= 0.1 + 0.02, `the probe spent ${usd}`);
+    });
+
+    it("is not given to a probe another cause stopped", async () => {
+      const { events } = await demoRun({ responses: [check("bad"), say("notes")], config });
+      assert.deepEqual(stops(events), ["model"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+  });
+
+  describe("a probe its cap cut (probeExtend)", () => {
+    // At this price the probe's first response already crosses its cap of $0.10, with a check that typed nothing: no Lean progress.
+    const PRICE = 60;
+    const config = { provers: 2, sessions: 3, seed: "extend", budget: { problemUsd: 1 }, gate: { floor: 0, probeExtend: true } };
+    const bad = (n: number) => Array.from({ length: n }, (_, k) => check(`bad ${k}`));
+    const spent = (events: readonly HarnessEvent[]) => ofType(events, "attempt.finished").reduce((sum, a) => sum + (a.data.usd ?? 0), 0);
+
+    it("runs one extension under twice the cap, journaled as a second probe row with its reason, and the problem is solved when it succeeds", async () => {
+      const { events, result } = await demoRun({ responses: [check("bad"), check("exact trivial_proof")], pricePerMillion: PRICE, config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:probe:probe"]);
+      assert.match(gates(events)[1]?.reason ?? "", /^the probe was cut by its cap after 1 Lean check: one extension of 0\.2000 dollars/);
+      assert.deepEqual(ofType(events, "attempt.finished").map((a) => a.data.outcome), ["budget_exhausted", "valid"]);
+      assert.deepEqual(ofType(events, "attempt.started").map((a) => [a.data.prover, a.data.iteration]), [["p1", 1], ["p1", 2]]);
+      assert.equal(result.problems[0]?.outcome, "candidate");
+    });
+
+    it("lets a second cut end at the gate as before, and spends at most three times the cap in all", async () => {
+      const { events, result } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 2, "one extension, not two");
+      assert.equal(result.problems[0]?.outcome, "unsolved");
+      // The cap of the probe (0.10) and its extension (0.20), and the response that crossed each.
+      assert.ok(spent(events) <= 0.3 + 0.2, `the probe spent ${spent(events)}`);
+    });
+
+    it("gives none to a probe whose session ended because the model stopped", async () => {
+      const { events } = await demoRun({ responses: [check("bad"), say("notes")], config });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+
+    it("gives none to a probe that made Lean progress: the gate widens it", async () => {
+      const { events } = await demoRun({ responses: [check("sorry"), say("notes"), ...bad(6)], pricePerMillion: PRICE, config: { ...config, gate: { ...config.gate, share: { wave: 1, session: 1 } } } });
+      assert.equal(gates(events).filter((g) => g.action === "probe").length, 1);
+    });
+
+    it("changes nothing without the setting", async () => {
+      const { events } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config: { ...config, gate: { floor: 0 } } });
+      assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+      assert.equal(ofType(events, "attempt.started").length, 1);
+    });
+
+    it("is granted once across an interruption, whether it was cut before the row or after it", async () => {
+      const whole = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      const at = whole.events.findIndex((e, i) => e.type === "budget.gated" && e.data.action === "probe" && i > 0 && whole.events.slice(0, i).some((x) => x.type === "budget.gated"));
+      for (const cut of [at, at + 1]) {
+        const used = whole.events.slice(0, cut).filter((e) => e.type === "attempt.charged").length;
+        const resumed = await demoResume({ dir: killedAt(whole.dir, cut), bench: whole.bench, pricePerMillion: PRICE, responses: bad(12).slice(used) });
+        assert.equal(gates(resumed.events).filter((g) => g.action === "probe").length, 2, `one probe and one extension, cut at ${cut}`);
+        assert.ok(ofType(resumed.events, "attempt.started").length <= 2, `cut at ${cut}`);
+        assert.equal(resumed.result.problems[0]?.outcome, "unsolved");
+        assertSound(resumed.events);
+      }
+    });
+
+    it("counts the extension apart in the report, not as another probe", async () => {
+      const { result } = await demoRun({ responses: bad(12), pricePerMillion: PRICE, config });
+      assert.match(renderRunReport(result.report), /1 problem\(s\) probed.*1 probe\(s\) cut by their cap ran one extension/);
+    });
   });
 
   it("is off without the option: no answer, no probe, the provers start together as before", async () => {
@@ -322,9 +430,11 @@ describe("the budget gate and a line's task", () => {
 
   it("works the task when the gate lets it through, and a line without a gate has no ask", { timeout: 30000 }, async () => {
     const seen: string[] = [];
+    // With no claim posterior the gate weighs the task against a draw of the flat prior, keyed by the task's id (new in every run): a draw under
+    // 0.05 (the price of one session) skips it, about one run in twenty. The floor of 1 lets every skip through, so that the gate always admits it.
     await demoRun({
       lines: { M12: createM12Line(), M14: worker(seen) },
-      config: { ...base, gate: { floor: 0, share: { task: 1 } } },
+      config: { ...base, gate: { floor: 1, share: { task: 1 } } },
       lean: new DemoLean(m12Answer),
       responses: [check("sorry"), say("notes"), say("notes"), say("notes")],
     });
@@ -374,5 +484,44 @@ describe("the budget gate: in a run with a team", () => {
     const { events, result } = await demoRun({ responses: [check("bad"), say("notes")], config: { ...WIDE, gate: { floor: 0 } } });
     assert.equal(gates(events)[1]?.turn, undefined);
     assert.equal(result.problems[0]?.outcome, "unsolved");
+  });
+});
+
+describe("the probe reads the frontier (LH3)", () => {
+  // `bad` is an unknown identifier (depth 2, no Lean progress of the old measure); the `aux_` lemma outside any blueprint is accepted by Lean.
+  const LEMMA = "theorem aux_a : True := trivial";
+  const run = (frontier: { show: boolean } | undefined) =>
+    demoRun({ responses: [check("bad", LEMMA), say("notes"), check("exact trivial_proof"), check("exact trivial_proof")], config: { ...WIDE, provers: 2, sessions: 2, gate: { minSessions: 1, floor: 0, share: { wave: 1, session: 1 } }, ...(frontier !== undefined ? { frontier } : {}) } });
+
+  it("widens on an accepted aux_ lemma outside a blueprint, and says why", async () => {
+    const { events } = await run({ show: true });
+    assert.deepEqual(summary(events).slice(0, 2), ["wave:probe:probe", "wave:widen:rule"]);
+    assert.match(gates(events)[1]?.reason ?? "", /the frontier grew: subclaim: aux_a/);
+    assert.equal(gates(events)[1]?.progress, true);
+  });
+
+  it("does not widen without the setting", async () => {
+    const { events } = await run(undefined);
+    assert.deepEqual(summary(events), ["wave:probe:probe", "wave:skip:progress"]);
+    const off = await run({ show: false });
+    assert.deepEqual(summary(off.events), ["wave:probe:probe", "wave:skip:progress"]);
+  });
+
+  it("does not count an evidence entry, and counts a baseline entry once the probe has begun", async () => {
+    const journal = Journal.open(mkdtempSync(join(tmpdir(), "mh-gate-front-")), "run_1");
+    try {
+      journal.emit("claim.created", { claimId: "clm_1", statementId: statementIdV0(": True"), statement: ": True", origin: "test", status: "open" }, "test");
+      journal.emit("problem.registered", { problemId: "P1", claimId: "clm_1", target: "T", source: { repo: "r", rev: "x", path: "p", line: 1 }, domain: [] }, "orchestrator");
+      const entry = (kind: FrontierKind, id: string, evidence: boolean): FrontierEntry => ({ kind, id, statement: id, seq: 1, provenance: { seqs: [1] }, evidence });
+      let entries: FrontierEntry[] = [entry("subclaim", "old", false)];
+      const gate = new BudgetGate({ settings: gateSettings({ floor: 0 }), journal, problemId: "P1", claimId: "clm_1", ledger: new Ledger(5).child(5), seed: "unit", rung: () => 0, attemptIds: () => [], frontierEntries: () => entries, log: () => {} });
+      gate.probe();
+      entries = [...entries, entry("evidence", "ev", true), entry("dead_end", "de", false)];
+      assert.equal(gate.progress(), undefined, "evidence and a dead end are not progress, and the entry before the probe is not new");
+      entries = [...entries, entry("reduction", "r1", false)];
+      assert.match(gate.progress() ?? "", /^the frontier grew: reduction: r1$/);
+    } finally {
+      journal.close();
+    }
   });
 });

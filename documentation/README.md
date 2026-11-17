@@ -7,6 +7,72 @@ solvers, computer algebra, decision procedures) are used wherever they can do th
 This folder describes the code as it is. A change to the code updates the page that describes it,
 in the same commit.
 
+## Start here
+
+- [quickstart.md](quickstart.md): a problem of your own with the least friction: `harness solve`, `harness doctor`, `RESULT.md`.
+- [status.md](status.md): beta v1: what has run for real, what has only run with simulations.
+- [parameters.md](parameters.md): every setting, flag and host profile key.
+- [ui.md](ui.md): the local interface, `harness ui`, and its settings menu drawn from the parameter catalogue.
+
+  ![The settings menu](images/ui-settings.png)
+
+## Concepts
+
+- [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved. Lean is the judge.
+- [journal.md](journal.md): the hash-chained journal, the only source of truth, and its projections.
+- [runs.md](runs.md): the words for runs (series, run, turn, problem, child, session, step), the two axes `horizon` and `human`, and which command is for which purpose.
+- [campaign.md](campaign.md): `harness campaign`, a run that continues alone: turns that do not wait, the digest, how it ends, and what has not run.
+- [frontier.md](frontier.md): the verified frontier, what a run has established about a problem, computed from the journal with no model call, and where it is shown.
+- [lines.md](lines.md): the plan's mechanisms as lines a run switches on, and how they are measured one by one.
+- [scheduler.md](scheduler.md): the escalation ladder and the budget gate, which put a price against a chance of success before each paid launch.
+
+## Compartments
+
+Each picture is drawn from the page next to it.
+
+- [architecture.md](architecture.md): the packages and how a run flows through them.
+
+  ![The architecture](images/architecture.svg)
+
+- [quickstart.md](quickstart.md): the solve loop, from a statement to `RESULT.md`.
+
+  ![The solve loop](images/solve-loop.svg)
+
+- [scheduler.md](scheduler.md#blueprints-plan-change-ca9): blueprints, a hard problem split into holes (line M12).
+
+  ![Blueprints](images/blueprints.svg)
+
+- [trust.md](trust.md): who may change a claim's status.
+
+  ![Trust](images/trust.svg)
+
+- [capabilities.md](capabilities.md): the capability registry and the tools behind it.
+
+  ![Tools](images/tools.svg)
+
+- [heuristics.md](heuristics.md): the heuristic card bank.
+
+  ![Heuristic cards](images/heuristics.svg)
+
+- [memory.md](memory.md): the journal, its projections and the lines that read them.
+
+  ![Memory](images/memory.svg)
+
+## Reference
+
+- The command line: `pnpm harness --help`, and [capabilities.md](capabilities.md#the-harness-command) for the `harness` command.
+- [parameters.md](parameters.md): the audit of every setting.
+- [schemas.md](schemas.md): the schemas of line M15 (the capabilities' schemas are in [capabilities.md](capabilities.md#schemas)).
+- [capabilities.md](capabilities.md): manifests, host profiles, contract tests, one section per capability.
+
+## Development
+
+- [development.md](development.md): conventions, tests, commits.
+- [CLAUDE.md](../CLAUDE.md): what every agent that works on Seshat reads first.
+- [plans/](../plans/seshat-plan-ledger.md): the plan, its rulings and the ledger of the build.
+
+The full list of pages is at the end of this page.
+
 ## Status
 
 Phase P0a builds the parts that need neither Lean nor a model, and the M0 loop, tested with a
@@ -25,15 +91,19 @@ simulated model and a simulated Lean.
 | Problem sketches and proof validator (fast check) | `@seshat/core` | Done, tested with a simulated Lean |
 | Kimina Lean Server client | `@seshat/lean-kimina` | Done, tested with a simulated server |
 | Bench built from formal-conjectures | `@seshat/bench` | Done: 575 problems, index committed |
+| The graded bench, the paired protocol and loop telemetry (Task 33, CA1 to CA3): `harness-bench graded`, `--grade`, the protocol section of `harness ablate`, the Loop section of the report | `@seshat/bench`, `@seshat/orchestrator` | Done, tested on fixture checkouts, a fake `lake` and scripted journals; no index committed, no real Lean admission, no paired run |
 | Capability registry, MCP boundary, `lean.check` and its contract | `@seshat/registry` | Done, tested with simulated servers |
 | `harness` command (capabilities, health, contract tests, models, runs, reports) | `@seshat/orchestrator` | Done |
 | M0 loop on pi: provers in sessions, notes, budgets, report | `@seshat/orchestrator` | Done, tested with a simulated model and Lean |
 | Computer algebra for the provers: SageMath (`compute.sage`), `harness run --tool` | `capabilities/compute.sage`, `@seshat/orchestrator` | Done; contract passed against a local SageMath, Docker image not tried |
 | Lean meta tool: statement ids, `isDefEq`, premises, profiles, instances (`lean.meta`); `LeanIdentity`; goals one tactic at a time (`lean.goals`, Pantograph) | `@seshat/lean-meta`, `lean/SeshatMeta` | TypeScript done, tested with a simulated Lean and a fake Pantograph; the Lean library never compiled |
 | Lean's language server for the provers: goals at a line, tactics tried at a line, Mathlib search (`lean.lsp`, lean-lsp-mcp 0.31.0), `harness run --tool lean.lsp` | `@seshat/lean-lsp`, `capabilities/lean.lsp`, `@seshat/orchestrator` | TypeScript done, tested with a stand-in server whose shapes were taken from the real release, and (opt-in, `LEAN_LSP_MCP_PYTHON`) against the real server with canned back-ends; not run against a real Lean |
+| `lean.search`, pushed by the harness (Task 40, CA22): a capability with three backends (a remote service, a local BM25 index, a pattern search), the harness's search on each unknown identifier and each hole's goal after a check, every hit checked with Lean before it is shown, `RunConfig.leanSearch` | `@seshat/lean-search`, `capabilities/lean.search`, `@seshat/orchestrator` | TypeScript done, tested with a simulated Lean and fake services; not run against a real Lean, service or Mathlib index |
 | Line M11: batteries of small models, fingerprints, certified refutations, identification of sequences; the OEIS, LMFDB and FindStat as capabilities (`oeis.search`, `lmfdb.query`, `findstat.identify`) | `@seshat/models`, `capabilities/` | Done, tested with a simulated Lean and a local stand-in for the sites; not run against a real Lean, SageMath, or the OEIS, FindStat and LMFDB |
+| Task 41: counterexamples on finite structures: statements about graphs in M11 (option `graphs`), the Lean templates `lean/SeshatLib/Finite`, a local search and families (CA18 to CA20) ([models.md](models.md#statements-about-graphs), [finite-lean.md](finite-lean.md)) | `@seshat/models`, `@seshat/induction`, `lean/SeshatLib/Finite` | Done, tested with a simulated Lean, the faux model and a stand-in for SageMath; the Lean templates never compiled, nauty through SageMath and a real model not run |
+| Task 36: intake: literature search (`lit.search`), the judge call, the `literature` node, statement hygiene, `harness solve --tool` ([literature.md](literature.md)) | `@seshat/lit`, `@seshat/orchestrator`, `capabilities/` | Done, tested with a fake literature server, the faux model and a simulated Lean; not run against any site, real model or real Lean |
 | Consortium mode: turns that end at a token, dollar or time limit or at a breakpoint (impasse, a problem settled, two informal validators in disagreement), the account of each turn built from the journal, the team's hints, signatures and steers, `harness hint`, `sign`, `steer` and `resume` | `@seshat/core`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean (a run in three turns reaches the outcome of one that is not interrupted, on a sampled matrix of cuts); the optional narrative of a turn needs a model and has run only with the faux one; the account is not sent to chat |
-| Line M12: given-clause loop with age/weight selection, weighted proof numbers, subsumption through Lean-checked instances, named holes of a sketch as claims worked by inner provers, the escalation ladder and its report, owners chosen by the fleet | `@seshat/scheduler`, `@seshat/fleet`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean (a run cut at every event of its journal resumes to the outcome and cost of one that is not cut); the link lemma, the instance closers, `lean.meta` and the rungs above 0 have not run against Lean or exist |
+| Line M12: given-clause loop with age/weight selection, weighted proof numbers, subsumption through Lean-checked instances, named holes of a sketch as claims worked by inner provers, blueprints of dependent holes (option), the escalation ladder and its report, owners chosen by the fleet | `@seshat/scheduler`, `@seshat/fleet`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean (a run cut at every event of its journal resumes to the outcome and cost of one that is not cut); the link lemma, the instance closers, `lean.meta` and the rungs above 0 have not run against Lean or exist |
 | Line M18: a curriculum of variants, rung 1 of the ladder: special cases and weakenings of a hard problem as claims with `special_case_of` edges and tasks, solved with a capped share of the budget, their proofs in later briefings; the `runTask` hook | `@seshat/scheduler`, `@seshat/lines`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean (a run cut at every event of its journal resumes to the claims and tasks of one that is not cut); no real model or Lean has run it, and nothing says it pays |
 | Line M15: an archive of alternative decompositions in diversity cells (fitness from the labels, replacement by strictly higher fitness), a Thompson pick of the cell a session extends, schemas extracted from closed sub-DAGs with anti-unification and instantiation through `lean.meta`, schema hints through the randomized inclusion and their measured effect, the report | `@seshat/scheduler`, `@seshat/library`, `@seshat/orchestrator` | Done, tested with a simulated model, Lean and `lean.meta` (a run cut at every event of its journal resumes with at most one snapshot and schema); no real model, Lean or `lean.meta` has run it, the statement sent to `lean.meta` was never elaborated, and nothing says it pays |
 | Line M3: promotion of proved auxiliary lemmas (non-trivial, general, deduplicated by statement id) as claims and `library_lemma` nodes, the BM25 index, `library_search`, a drawn briefing section, compiled again when the Mathlib revision changes, `lean/SeshatLib` files by `harness library export`, the report of the share of proofs that use it | `@seshat/library`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; the non-triviality test is a stand-in for Task 6's battery, the export of declarations is an interface with a fixture; not run against a real Lean or model |
@@ -45,7 +115,7 @@ simulated model and a simulated Lean.
 | Line M17: the run's Lean environment is the line's (`extended` by default): registry built for it, the extra packages' imports in every file, a probe of the server, the run refused unless the environment is resolved | `@seshat/lean-env`, `@seshat/lines`, `@seshat/orchestrator` | Done, tested with a simulated Lean; not run against a real Lean, Lake or server |
 | Certifier: kernel replay in a fresh process, the capability `lean.certify`, and its use in a run (`proved`, `refuted`) | `@seshat/lean-local`, `lean/SeshatCertify`, `capabilities/lean.certify`, `@seshat/orchestrator` | TypeScript done, tested with a fake `lake` and fake certifiers; the Lean program never compiled |
 | Typed decisions that order work (`decide`): the run's model by default, Jev by configuration, the forbidden list, the 32k refusal, `decision.made`, the interface for `prove.search`'s orderer, the fleet's cold start (`decide.ask`) | `@seshat/decide`, `capabilities/decide.ask`, `@seshat/core`, `@seshat/orchestrator` | Done, tested with a fake Jev server, the faux backend and a simulated model; never run against a real Jev, OpenRouter or TypeSafe; Task 6's orderer has no caller yet |
-| The bank of heuristic cards: the card format, 22 closed families, context features computed without a model, 29 built-in cards (the six directives and 23 starter cards from nine traditions), the overlap check, cards in packs, the fleet's draw with a control arm, the statistics in the report and `harness heuristics list\|stats` | `@seshat/heuristics`, `@seshat/fleet`, `@seshat/registry`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; no measure of whether a card helps a real model |
+| The bank of heuristic cards: the card format, 22 closed families, context features computed without a model, 33 built-in cards (the six directives and 27 starter cards from ten traditions), the overlap check, cards in packs, the fleet's draw with a control arm, the statistics in the report and `harness heuristics list\|stats` | `@seshat/heuristics`, `@seshat/fleet`, `@seshat/registry`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean; no measure of whether a card helps a real model |
 | Installable packs: `pack.json`, tools at level 2, skills and heuristic cards, `harness add\|packs\|remove`, the `pack.installed` journal, the content hash a run records, the three-skill rule | `@seshat/registry`, `@seshat/core`, `@seshat/orchestrator` | Done, tested with temporary directories, a local git repository and the test MCP server; no third-party pack, no contract case run on a host, and no tool-search tool or skill caller reads the index yet |
 | Task ledger: tasks and their transitions, typed routing of failures and drift, model-call sites, `harness run --resume` | `@seshat/core`, `@seshat/scheduler`, `@seshat/orchestrator` | Done, tested with a simulated model and Lean and with a process killed by SIGKILL; a run with M1, M2, M6, M11 or the fleet can be resumed, tested by cutting runs at every event of their journals; never run with a real model or Lean |
 | Integration (Task 14): every line in one run, `harness ablate` (the cumulative configurations and ten experiments: ladder, packet modes, renderings, queries, seeds, lessons, counterexample set, `lean.lsp`, Jev per site, M17), the measures of the amendments (spend per site, reliability and ECE, cache per rung and line, tool-definition tokens), cost-to-first-success curves (`harness chunks`), the entrenchment probe (`harness probe`, `run --probe-every`), the `packetMode` option, the bench's sequences and tags, `bench-ext` | `@seshat/orchestrator`, `@seshat/bench` | Done, tested with a simulated model and Lean and with scripted journals; nothing here ran against a real model, Lean, Jev or the equational-theories data |
@@ -59,7 +129,9 @@ blocks the Lean toolchain downloads and has no model credentials.
 
 ## Pages
 
+- [status.md](status.md): beta v1: what has run for real, what has only run with simulations, and the status text the README used to carry.
 - [architecture.md](architecture.md): packages, data flow, design rules.
+- [parameters.md](parameters.md): the audit of every setting: the run configuration's keys, the flags of every command, the host profile keys, and the findings (generated from `parameters.ts`).
 - [trust.md](trust.md): claim statuses, and what it takes for a claim to be proved.
 - [journal.md](journal.md): events, hash chain, projection, invariants.
 - [ledger.md](ledger.md): the task ledger: tasks and their transitions, acceptance criteria, what
@@ -85,6 +157,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [context.md](context.md): line M4: the compiled packet (frozen prefix, tail), premise selection, `expand` and `graph_query`
 - [lessons.md](lessons.md): line M5: lessons added from outcomes and never rewritten, the draw, counters and deactivation by effect,
   staged promotion to the global scope, `harness lessons`.
+- [consolidation.md](consolidation.md): the consolidation pass between runs (CA24): `harness consolidate`, state cards of the open problems, duplicate and unsupported
+  lessons, the page "what was tried and why it stopped" with its sentence rule, `--consolidation`, the turn-end section.
 - [m1-identity-memory.md](m1-identity-memory.md): the M1 line: one claim per statement, strategy
   labels, failure classes, the "already tried" section, the redundant-attempts metric.
 - [guards.md](guards.md): the M6 line: neutral framing, resolved citations, no raw error text,
@@ -95,6 +169,7 @@ blocks the Lean toolchain downloads and has no model credentials.
   Lean or prose statement, the signature of prose, the student defaults), `harness doctor` (what the machine
   lacks, the isolated host profile), `RESULT.md` (what a run leaves, whatever stopped it) and `harness view`
   (one static HTML page of a run), and the local page `harness ui` ([ui.md](ui.md)).
+- [informal.md](informal.md): the informal proof first (option `informalFirst`): a proof in natural language, read by a verifier until three passes in a row, a hint that Lean has not checked and that never changes a status.
 - [models-setup.md](models-setup.md): the providers for a first real run: DeepSeek's own API as the run's model (its key, its
   prices and off-peak calendar in the host profiles, `SESHAT_MODEL`), Jev at OpenRouter or at TypeSafe for `decide`, the
   variables, and what has not run.
@@ -123,10 +198,12 @@ blocks the Lean toolchain downloads and has no model credentials.
   `packs` and `remove`, level 2, the three-skill rule, the content hash a run records.
 - [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
   what it offers and refuses.
-- [bench.md](bench.md): the formal-conjectures bench and its index.
+- [bench.md](bench.md): the formal-conjectures bench and its index, and the graded bench (grades A, B, C; Task 33).
 - [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
   graphs and integers, evaluators, fingerprints, certified refutations, identification of
   sequences, the OEIS, LMFDB and FindStat as capabilities (line M11).
+- [finite-lean.md](finite-lean.md): the Lean templates for finite graph witnesses (`lean/SeshatLib/Finite`), the generator that renders a
+  witness into a refutation, and what to verify on a real Lean.
 - [induction.md](induction.md): the inductive engine and what a program may do: data tables, the classical
   conjecturing (recurrences, PSLQ, the Dalmatian heuristic), the sandbox for programs, and the lines M8,
   M13 and M16 as they are built.
@@ -137,8 +214,10 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [decide.md](decide.md): typed decisions that order work: the sites and the forbidden list, the backends
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.
+- [audit.md](audit.md): `harness audit RUN_DIR`: one dossier per problem that was not certified (spend by site, sessions and their tool calls, the
+  gate's answers, the last Lean errors, the last sketch, the informal proof), from the journal alone, optionally beside a person's reference solution.
 - [ablate.md](ablate.md): `harness ablate`: the cumulative configurations and the experiments, what each column of the table measures,
-  the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`.
+  the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`; the paired protocol (Task 33): Wilson intervals, the exact McNemar test, problems solved per dollar and the target line.
 - [prompts.md](prompts.md): the prover's system prompt as a file, the strict screen a rewritten prompt passes, and `harness optimize-prompts`:
   GEPA-style rewriting on a dev split, the held-out and temporal gate, and the proposals a person merges.
 - [development.md](development.md): conventions, tests, commits.

@@ -5,6 +5,7 @@ import { redundancy, type Redundancy } from "@seshat/memory";
 import { M15_HINT_KIND } from "@seshat/scheduler";
 import { type CacheStat, cacheReport } from "./cache-report.ts";
 import { type GateReport, gateReport } from "./gate-report.ts";
+import type { GraphReport } from "./graph-report.ts";
 import { buildReport, type RunReport, type SiteLine } from "./report.ts";
 
 /**
@@ -51,8 +52,16 @@ export interface RunMeasures {
   lessons?: { total: number; active: number; deactivated: number };
   /** The counterexample set's counter (PD5), when the run's memory was read for it. */
   cegis?: CegisCounter;
+  /** What lines M2 and M4 did (`graphReport`), when either ran. */
+  graph?: GraphReport;
   /** Each problem's outcome and dollars, for the split by difficulty and the paired comparison of two configurations. */
   perProblem: Array<{ problemId: string; outcome: string; usd: number }>;
+  /** Problems with a certified refutation, counted apart from the proofs (plan change CA2). */
+  refuted: number;
+  /** Statements found settled in the literature: claims with a `literature` memory node whose `settled` is true. Zero when no such node was written. */
+  settledInLiterature: number;
+  /** Wall-clock milliseconds from the journal's first event to its last (a resumed run includes the time it was down). */
+  wallMs: number;
 }
 
 export interface Share {
@@ -291,6 +300,24 @@ export interface MeasureOptions {
 }
 
 /** The measures of plan section 6 for a run, from its events. */
+/** Claims (or, without one, nodes) that a `literature` node, `{backend, url, title, quote, verdict, settled}`, says are settled in the literature. */
+export function settledInLiterature(events: readonly HarnessEvent[]): number {
+  const settled = new Set<string>();
+  for (const e of events) {
+    if (e.type !== "node.recorded" || e.data.kind !== "literature") continue;
+    if ((e.data.data as { settled?: unknown } | null)?.settled === true) settled.add(e.data.claimId ?? e.data.nodeId);
+  }
+  return settled.size;
+}
+
+function wallMs(events: readonly HarnessEvent[]): number {
+  const first = events[0];
+  const last = events.at(-1);
+  if (first === undefined || last === undefined) return 0;
+  const ms = Date.parse(last.ts) - Date.parse(first.ts);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
 export function measureRun(events: readonly HarnessEvent[], options: MeasureOptions = {}): RunMeasures {
   const report = options.report ?? buildReport(events);
   const ix = indexOf(events);
@@ -402,6 +429,10 @@ export function measureRun(events: readonly HarnessEvent[], options: MeasureOpti
       ? { lessons: { total: report.lessons.total, active: report.lessons.byState.active ?? 0, deactivated: report.lessons.byState.deactivated ?? 0 } }
       : {}),
     ...(options.cegis !== undefined ? { cegis: options.cegis } : {}),
+    ...(report.graph !== undefined ? { graph: report.graph } : {}),
     perProblem: report.problems.map((p) => ({ problemId: p.problemId, outcome: p.outcome, usd: p.usd })),
+    refuted: outcomes.refuted ?? 0,
+    settledInLiterature: settledInLiterature(events),
+    wallMs: wallMs(events),
   };
 }

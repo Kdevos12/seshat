@@ -2,10 +2,10 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisions.ts";
-import { type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
+import { CHILD_KINDS, type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents, USER_NAME } from "./log.ts";
-import { HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
+import { CONSOLIDATION_ACTOR, CONSOLIDATION_NODE_KINDS, HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
 import { EPOCH_FIELDS, provenanceProblems } from "./provenance.ts";
 import { type EdgeLink, isEdgeKind, LINK_KINDS, NODE_KIND, SITE } from "./records.ts";
 import { assertTransition, isEdgeStatus } from "./status.ts";
@@ -298,12 +298,18 @@ export class Journal {
         if (HUMAN_NODE_KINDS.includes(d.kind) && !actor.startsWith("human:")) {
           throw new Error(`node ${d.nodeId}: a ${d.kind} is the research team's, written by human:NAME, not by ${actor}`);
         }
+        if (CONSOLIDATION_NODE_KINDS.includes(d.kind) && actor !== CONSOLIDATION_ACTOR) {
+          throw new Error(`node ${d.nodeId}: a ${d.kind} is written by the consolidation pass alone (actor ${CONSOLIDATION_ACTOR}), not by ${actor}`);
+        }
         this.checkProvenance(`node ${d.nodeId}`, d.provenance);
         return;
       }
       case "node.updated": {
         const node = p.node(event.data.nodeId);
         if (!node) throw new Error(`unknown node ${event.data.nodeId}`);
+        if (CONSOLIDATION_NODE_KINDS.includes(node.kind) && actor !== CONSOLIDATION_ACTOR && actor !== "orchestrator") {
+          throw new Error(`node ${event.data.nodeId}: a ${node.kind} is changed by the consolidation pass or the orchestrator, not by ${actor}`);
+        }
         // A team's answer is edited by nobody, not even by the person who gave it: they write a new one (documentation/human.md).
         if (HUMAN_NODE_KINDS.includes(node.kind)) {
           throw new Error(`node ${event.data.nodeId}: a ${node.kind} is the research team's and is not edited, ${actor} cannot rewrite it: a person who changes their mind writes a new one`);
@@ -346,6 +352,11 @@ export class Journal {
         return;
       }
       case "turn.deferred":
+      case "campaign.started":
+      case "campaign.waiting":
+      case "campaign.mode_changed":
+      case "campaign.dossier":
+      case "campaign.stopped":
         this.onlyOrchestrator(event.type, actor);
         return;
       case "turn.ended": {
@@ -356,6 +367,31 @@ export class Journal {
         if (typeof event.data.reason !== "string" || event.data.reason === "") throw new Error(`turn ${event.data.turn}: a turn ends for a reason`);
         return;
       }
+      case "budget.round": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!Number.isInteger(d.round) || d.round < 0) throw new Error(`budget.round: bad round ${String(d.round)}`);
+        if (!(d.capUsd > 0) || !(d.runUsd > 0)) throw new Error(`budget.round ${d.round}: the cap and the run's budget must be positive`);
+        if (!Array.isArray(d.problems) || d.problems.length === 0) throw new Error(`budget.round ${d.round}: a round works at least one problem`);
+        return;
+      }
+      case "problem.parked": {
+        this.onlyOrchestrator(event.type, actor);
+        if (!p.problem(event.data.problemId)) throw new Error(`unknown problem ${event.data.problemId}`);
+        return;
+      }
+      case "child.started": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!(CHILD_KINDS as readonly string[]).includes(d.kind)) throw new Error(`child.started: unknown kind ${JSON.stringify(d.kind)}`);
+        if (typeof d.childId !== "string" || d.childId === "" || typeof d.resumeKey !== "string" || d.resumeKey === "") throw new Error("child.started needs a childId and a resumeKey");
+        if (d.problemId !== undefined && !p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
+        if (d.goal.claimId !== undefined && !p.claim(d.goal.claimId)) throw new Error(`child ${d.childId}: unknown claim ${d.goal.claimId}`);
+        return;
+      }
+      case "child.finished":
+        this.onlyOrchestrator(event.type, actor);
+        return;
       case "pack.installed":
       case "pack.removed": {
         this.onlyOrchestrator(event.type, actor);
@@ -363,6 +399,25 @@ export class Journal {
         if (typeof d.name !== "string" || !/^[a-z][a-z0-9-]*$/.test(d.name)) throw new Error(`${event.type}: bad pack name ${JSON.stringify(d.name)}`);
         if (typeof d.version !== "string" || d.version === "") throw new Error(`${event.type}: pack ${d.name} needs a version`);
         if (typeof d.hash !== "string" || !/^[0-9a-f]{64}$/.test(d.hash)) throw new Error(`${event.type}: pack ${d.name} needs the sha256 of its content`);
+        return;
+      }
+      case "intake.consented": {
+        const d = event.data;
+        if (typeof d.problemId !== "string" || d.problemId === "") throw new Error("intake.consented names the problem");
+        if (typeof d.allowed !== "boolean") throw new Error("intake.consented: allowed is true or false");
+        if (!["asked", "flag", "bench", "private", "default"].includes(d.via)) throw new Error(`intake.consented: via is asked, flag, bench, private or default, not ${String(d.via)}`);
+        if ((d.via === "asked" || d.via === "flag") && !actor.startsWith("human:")) throw new Error(`intake.consented: an answer of ${d.via} is a person's, written by human:NAME, not by ${actor}`);
+        if (d.via !== "asked" && d.via !== "flag") this.onlyOrchestrator(event.type, actor);
+        if (d.via === "private" && d.allowed) throw new Error("intake.consented: --private never allows");
+        return;
+      }
+      case "intake.finished": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (typeof d.problemId !== "string" || d.problemId === "") throw new Error("intake.finished names the problem");
+        if (d.state !== "done" && d.state !== "skipped") throw new Error(`intake.finished: state is done or skipped, not ${String(d.state)}`);
+        if (d.state === "skipped" && (typeof d.reason !== "string" || d.reason === "")) throw new Error("intake.finished: a skipped step says why");
+        if (!(d.usd >= 0) || !(d.capUsd >= 0)) throw new Error("intake.finished: usd and capUsd are non-negative numbers");
         return;
       }
       case "statement.signed": {

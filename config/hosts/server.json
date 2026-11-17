@@ -179,12 +179,39 @@
         }
       }
     },
+    "lit.search": {
+      "use": ["sources"],
+      "optional": true,
+      "settings": {
+        "sources": {
+          "backends": {
+            "openalex": { "baseUrl": "${env:OPENALEX_URL:-https://api.openalex.org}", "allowedHosts": ["api.openalex.org"] },
+            "arxiv": { "baseUrl": "${env:ARXIV_URL:-https://export.arxiv.org}", "allowedHosts": ["export.arxiv.org"] },
+            "semantic-scholar": { "baseUrl": "${env:SEMANTIC_SCHOLAR_URL:-https://api.semanticscholar.org}", "allowedHosts": ["api.semanticscholar.org"] },
+            "zbmath": { "baseUrl": "${env:ZBMATH_URL:-https://api.zbmath.org}", "allowedHosts": ["api.zbmath.org"] },
+            "bench-metadata": { "dir": "${env:BENCH_CHECKOUT:-}" }
+          }
+        }
+      }
+    },
     "findstat.identify": {
       "use": ["site"],
       "optional": true,
       "settings": {
         "site": {
           "baseUrl": "${env:FINDSTAT_URL:-https://www.findstat.org}"
+        }
+      }
+    },
+    "lean.search": {
+      "use": ["search"],
+      "optional": true,
+      "settings": {
+        "search": {
+          "allowedHosts": ["leansearch.net", "loogle.lean-lang.org"],
+          "remoteUrl": "${env:LEAN_SEARCH_URL:-}",
+          "patternUrl": "${env:LEAN_PATTERN_URL:-}",
+          "index": "${env:LEAN_SEARCH_INDEX:-}"
         }
       }
     }

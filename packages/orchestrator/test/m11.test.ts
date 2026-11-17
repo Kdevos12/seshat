@@ -297,6 +297,29 @@ describe("line M11 in a run", () => {
     assert.equal(result.problems[0]?.outcome, "candidate");
   });
 
+  it("in a private run the lookup is refused by the registry: nothing is sent, the refusal is journaled, and the run goes on without the lookup (Task 36b)", async () => {
+    const lean = new MixedLean((i) => (i.kind === "nat" ? i.value % 7 !== 2 : undefined));
+    const asked: string[] = [];
+    const site = (async (input: string | URL | Request) => (asked.push(String(input)), new Response(JSON.stringify({ count: 0, results: null })))) as typeof fetch;
+    const { result, events, faux } = await m11Run({
+      problem: "Magmas.never_two_mod_seven",
+      lean,
+      responses: [check("exact trivial_proof")],
+      registry: registryWithOeis(lean, site),
+      config: { private: true, lines: ["M11"], lineOptions: { M11: { refute: false, stopWhenRefuted: false } } },
+    });
+    assert.equal(asked.length, 0, "no request reached the OEIS");
+    // The line did call the capability (two searches), and the registry refused each before any implementation: two failed tool runs, from the line.
+    const runs = ofType(events, "tool_run.started").filter((t) => t.data.capability === "oeis.search");
+    assert.deepEqual(runs.map((t) => t.actor), ["line:M11", "line:M11"]);
+    const finished = ofType(events, "tool_run.finished").filter((t) => runs.some((r) => r.data.toolRunId === t.data.toolRunId));
+    assert.deepEqual(finished.map((t) => [t.data.outcome, (t.data.summary as { error?: string } | undefined)?.error]), [["error", "private"], ["error", "private"]]);
+    // No identification: the refusal is a lookup that gave nothing, not a retry, and the run ends as it would have.
+    assert.deepEqual(ofType(events, "node.recorded").filter((n) => n.data.kind === "identification"), []);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    assert.equal(result.problems[0]?.outcome, "candidate");
+  });
+
   it("goes on with the provers when Lean does not accept the negation, tells them so, compares the claims another line recorded, and tests a lemma on request", async () => {
     const prompts: string[] = [];
     const answers: string[] = [];

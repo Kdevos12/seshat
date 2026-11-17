@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1070 720" width="1070" height="720" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">Seshat architecture: how a run flows through the packages</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1069" height="719" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">Seshat architecture: how a run flows through the packages</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Every component writes its facts as events to the journal (the left lane). Lean decides what is proved.</text>
+<rect x="50" y="70" width="300" height="62" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="200.0" y="88.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Problems in</text>
+<text x="200.0" y="105.5" font-size="13" text-anchor="middle" fill="#1b2230">bench index (575, @seshat/bench)</text>
+<text x="200.0" y="122.5" font-size="13" text-anchor="middle" fill="#1b2230">or `harness solve`: one statement</text>
+<rect x="390" y="70" width="300" height="62" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="540.0" y="88.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Command line and local UI</text>
+<text x="540.0" y="105.5" font-size="13" text-anchor="middle" fill="#1b2230">`harness` CLI, `harness ui`</text>
+<text x="540.0" y="122.5" font-size="13" text-anchor="middle" fill="#1b2230">(@seshat/orchestrator, @seshat/ui)</text>
+<rect x="50" y="170" width="270" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="192.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Task ledger</text>
+<text x="185.0" y="209.5" font-size="13" text-anchor="middle" fill="#1b2230">@seshat/scheduler: one task per</text>
+<text x="185.0" y="226.5" font-size="13" text-anchor="middle" fill="#1b2230">prover; holds no claim status</text>
+<rect x="360" y="170" width="340" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="530.0" y="192.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Orchestrator</text>
+<text x="530.0" y="209.5" font-size="13" text-anchor="middle" fill="#1b2230">M0 loop, budgets and stops,</text>
+<text x="530.0" y="226.5" font-size="13" text-anchor="middle" fill="#1b2230">budget gate, resume from the journal</text>
+<rect x="740" y="170" width="300" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="890.0" y="192.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Lines (@seshat/lines)</text>
+<text x="890.0" y="209.5" font-size="13" text-anchor="middle" fill="#1b2230">run for real: M1 M2 M4 M6 M10 M12</text>
+<text x="890.0" y="226.5" font-size="13" text-anchor="middle" fill="#1b2230">the other lines: simulations only</text>
+<rect x="50" y="290" width="270" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="312.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Models through their APIs</text>
+<text x="185.0" y="329.5" font-size="13" text-anchor="middle" fill="#1b2230">pi-ai: the run's model; Jev only</text>
+<text x="185.0" y="346.5" font-size="13" text-anchor="middle" fill="#1b2230">for `decide` (ordering work)</text>
+<rect x="360" y="290" width="340" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="530.0" y="312.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Provers (pi sessions)</text>
+<text x="530.0" y="329.5" font-size="13" text-anchor="middle" fill="#1b2230">fresh sessions that pass on notes;</text>
+<text x="530.0" y="346.5" font-size="13" text-anchor="middle" fill="#1b2230">tools: lean_check, lean_edit, others</text>
+<rect x="740" y="290" width="300" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="890.0" y="312.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Capability registry</text>
+<text x="890.0" y="329.5" font-size="13" text-anchor="middle" fill="#1b2230">@seshat/registry: manifests, host</text>
+<text x="890.0" y="346.5" font-size="13" text-anchor="middle" fill="#1b2230">profiles, MCP boundary, contract tests</text>
+<rect x="360" y="385" width="340" height="200" rx="8" fill="none" stroke="#b6bdcb" stroke-width="1.5"/>
+<text x="370" y="403" font-size="13" font-weight="700" text-anchor="start" fill="#3a4256">Judge: Lean</text>
+<rect x="375" y="410" width="310" height="62" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="530.0" y="428.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Fast check (Lean REPL)</text>
+<text x="530.0" y="445.5" font-size="13" text-anchor="middle" fill="#1b2230">errors, axioms, statement unchanged</text>
+<text x="530.0" y="462.5" font-size="13" text-anchor="middle" fill="#1b2230">a pass makes a claim `computed`</text>
+<rect x="375" y="495" width="310" height="62" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="530.0" y="513.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Certifier: kernel replay</text>
+<text x="530.0" y="530.5" font-size="13" text-anchor="middle" fill="#1b2230">fresh process, `lean.certify`</text>
+<text x="530.0" y="547.5" font-size="13" text-anchor="middle" fill="#1b2230">makes a claim `proved` or `refuted`</text>
+<rect x="740" y="385" width="300" height="200" rx="8" fill="none" stroke="#b6bdcb" stroke-width="1.5"/>
+<text x="750" y="403" font-size="13" font-weight="700" text-anchor="start" fill="#3a4256">Tools behind the registry</text>
+<rect x="755" y="410" width="270" height="62" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="890.0" y="428.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Lean tools</text>
+<text x="890.0" y="445.5" font-size="13" text-anchor="middle" fill="#1b2230">lean_check (Kimina), lean.lsp,</text>
+<text x="890.0" y="462.5" font-size="13" text-anchor="middle" fill="#1b2230">lean.search, lean.meta, lean.goals</text>
+<rect x="755" y="485" width="270" height="85" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="890.0" y="506.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Other tools</text>
+<text x="890.0" y="523.5" font-size="13" text-anchor="middle" fill="#1b2230">classical battery, SageMath,</text>
+<text x="890.0" y="540.5" font-size="13" text-anchor="middle" fill="#1b2230">data sources (OEIS, literature);</text>
+<text x="890.0" y="557.5" font-size="13" text-anchor="middle" fill="#1b2230">ATP and SMT: simulations only</text>
+<rect x="50" y="410" width="270" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="432.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Event journal (@seshat/core)</text>
+<text x="185.0" y="449.5" font-size="13" text-anchor="middle" fill="#1b2230">JSONL, hash chain: the only source</text>
+<text x="185.0" y="466.5" font-size="13" text-anchor="middle" fill="#1b2230">of truth; a run resumes from it</text>
+<rect x="50" y="520" width="270" height="70" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="542.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Projections, rebuilt from it</text>
+<text x="185.0" y="559.5" font-size="13" text-anchor="middle" fill="#1b2230">SQLite, memory store, graph</text>
+<text x="185.0" y="576.5" font-size="13" text-anchor="middle" fill="#1b2230">(@seshat/memory, @seshat/graph)</text>
+<rect x="50" y="630" width="270" height="56" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="185.0" y="654.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">RESULT.md, report, view.html</text>
+<text x="185.0" y="671.0" font-size="13" text-anchor="middle" fill="#1b2230">read from the journal, no model</text>
+<polyline points="170,132 170,150 430,150 430,170" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="600,132 600,170" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="585" y="145" width="65.2" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="588" y="158" font-size="12" text-anchor="start" fill="#2c3345">commands</text>
+<polyline points="360,205 320,205" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="321" y="185" width="43.0" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="324" y="198" font-size="12" text-anchor="start" fill="#2c3345">tasks</text>
+<polyline points="700,205 740,205" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
+<polyline points="530,240 530,290" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="537" y="255" width="146.6" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="540" y="268" font-size="12" text-anchor="start" fill="#2c3345">one task per prover</text>
+<polyline points="360,325 320,325" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)" marker-start="url(#ae)"/>
+<polyline points="700,325 740,325" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="699" y="305" width="80.0" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="702" y="318" font-size="12" text-anchor="start" fill="#2c3345">tool calls</text>
+<polyline points="530,360 530,385" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="533" y="367" width="117.0" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="536" y="380" font-size="12" text-anchor="start" fill="#2c3345">candidate proof</text>
+<polyline points="530,472 530,495" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="740,441 685,441" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="687" y="419" width="80.0" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="690" y="432" font-size="12" text-anchor="start" fill="#2c3345">lean_check</text>
+<polyline points="890,360 890,385" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="50,205 28,205 28,445 50,445" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="185,480 185,520" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="189" y="493" width="117.0" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="192" y="506" font-size="12" text-anchor="start" fill="#2c3345">rebuilt from it</text>
+<polyline points="185,590 185,630" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="189" y="607" width="109.60000000000001" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="192" y="620" font-size="12" text-anchor="start" fill="#2c3345">read, no model</text>
+<rect x="20" y="692" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="48" y="704" font-size="12" text-anchor="start" fill="#1b2230">built, and run for real or needing neither Lean nor a model</text>
+<rect x="479.1" y="692" width="22" height="14" rx="3" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="507.1" y="704" font-size="12" text-anchor="start" fill="#1b2230">built, simulations only</text>
+</svg>

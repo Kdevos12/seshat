@@ -1,7 +1,9 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type BlobStore, hash32, type Journal, type RandomSource, seeded, type Submission } from "@seshat/core";
+import { type BlobStore, hash32, hashJson, type Journal, newId, type RandomSource, seeded, type Submission } from "@seshat/core";
 import type {
+  HolePreflightRequest,
+  HoleSessionRequest,
   AttemptAnnotation,
   Briefing,
   Budget,
@@ -32,11 +34,15 @@ import type { DecideConfig } from "@seshat/decide";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
-import { ladderDue, NO_PROGRESS, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
+import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
+import { runChild } from "./child.ts";
+import { holePreflight } from "./hole-preflight.ts";
+import { runHoleSession } from "./hole-session.ts";
 import { lineLlm } from "./llm.ts";
+import { type PlannerChoice, PlannerEscalation, type RoleBook, roleOfSite, THINKING_LEVELS } from "./roles.ts";
 import type { PriceBook } from "./prices.ts";
 import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
@@ -95,6 +101,15 @@ export interface RunLinesOptions {
   decide?: DecideConfig;
   /** The host's prices, for the lines' model calls. */
   prices?: PriceBook;
+  /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
+  checkTimeoutSec?: number;
+  /** The run's roles (`RunConfig.roles`): each site gets the `llm` of its role (`scheduler.planner` the planner's, the hole sessions the hole's). Absent: the run's model everywhere. */
+  roles?: RoleBook;
+  /**
+   * A campaign's plateau mode (plan change LH5, documentation/campaign.md, "Plateau modes"): the lines in `gated` work only for a turn whose mode turns them
+   * `on`, and `options` are added over a line's options while it is on. Absent: every enabled line works as it always did.
+   */
+  modeGate?: { gated: readonly string[]; on: readonly string[]; options: Readonly<Record<string, JsonObject>> };
 }
 
 export interface ProblemLinesOptions {
@@ -184,7 +199,7 @@ export interface SessionPlan {
 }
 
 /** The thinking levels a line may sample for a session (the run's providers' own scale). */
-export const SESSION_THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const SESSION_THINKING_LEVELS: readonly ThinkingLevel[] = THINKING_LEVELS;
 
 /** What is wrong with the settings a line sampled, or undefined: the keys that act on a session are checked here. */
 export function settingsProblem(settings: JsonObject): string | undefined {
@@ -212,10 +227,12 @@ export interface SessionHooks {
    * prefix and a tail. `prefix` is the one the session froze, once it has (absent before).
    */
   packet?: (request: number, messages: readonly AgentMessage[], prefix: string | undefined) => Promise<string | FrozenPacket | undefined>;
+  /** Before each check: a line may rewrite the aux region (`LineHooks.rewriteCheck`); the notes of the lines that did. */
+  rewriteCheck?: (proposal: Proposal) => Promise<{ aux: string; note: string } | undefined>;
   /** Before each check: the line that rejects the call, and why. */
   beforeCheck?: (proposal: Proposal) => Promise<{ line: LineId; reason: string } | undefined>;
   /** After each check: the line that stops the session, and why. */
-  afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason: string } | undefined>;
+  afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason?: string; cause?: string; notice?: string } | undefined>;
 }
 
 /** The lines of one problem: each line's context, and the hooks at each point of the problem. */
@@ -235,6 +252,8 @@ export class ProblemLines {
   private readonly fractions: number[];
   /** The Lean progress the ladder last saw, and the problem's spend then. Read from the memory the first time it is needed. */
   private mark: { progress: Progress; atUsd: number } | undefined;
+  /** The planner's escalation (`RunConfig.roles.escalation`): one state for the problem, whichever context the call is made from. */
+  private escalation: PlannerEscalation | undefined;
 
   constructor(run: RunLines, options: ProblemLinesOptions) {
     this.run = run;
@@ -253,6 +272,8 @@ export class ProblemLines {
 
   /** Whether a line works on this problem now: with the ladder on, a line of a rung waits for the problem to reach it. */
   private active(entry: EnabledLine): boolean {
+    const gate = this.run.o.modeGate;
+    if (gate !== undefined && gate.gated.includes(entry.line.id) && !gate.on.includes(entry.line.id)) return false;
     const wanted = entry.line.rung;
     if (this.rungs.length === 0 || wanted === undefined || wanted <= 0) return true;
     const index = this.rungs.findIndex((rung) => rung.lines.includes(entry.line.id));
@@ -292,7 +313,9 @@ export class ProblemLines {
       signal: own,
       ...(o.turn !== undefined ? { turn: o.turn } : {}),
       ...(o.prices !== undefined ? { prices: o.prices } : {}),
+      ...(o.roles !== undefined ? { roleFor: (site: string) => this.roleFor(site) } : {}),
     });
+    const hole = o.roles?.has("hole") === true ? o.roles.use("hole") : undefined;
     const context: ProblemContext = {
       line: id,
       runId: o.runId,
@@ -324,9 +347,58 @@ export class ProblemLines {
         }),
       budget: budgetOf(this.p.ledger, this.p.gate),
       tasks: taskApi(o.tasks, o.journal, { problemId: this.p.problemId, claimId: this.p.claimId, line: id }),
+      ...(id === "M12"
+        ? {
+            // A hole session is a child of the problem (`runChild`): its spend is carved from the problem's ledger and its start and end are
+            // journaled. Its result (a submission and a report) is the line's input and not in the journal, so a resume runs it again.
+            holeSession: async (request: HoleSessionRequest) => {
+              const ran = await runChild(
+                {
+                  kind: "hole",
+                  goal: { claimId: request.claimId },
+                  parent: { problemId: this.p.problemId },
+                  ledger: {},
+                  tools: ["lean_check", "lean_edit", "hole_verdict"],
+                  output: "model_call.finished",
+                  resumeKey: `hole:${this.p.problemId}:${request.key}`,
+                  resume: "run",
+                },
+                { journal: o.journal, ledger: this.p.ledger },
+                (child) =>
+                  runHoleSession(
+                    {
+                      journal: o.journal, blobs: o.blobs, models: o.models, model: hole?.model ?? o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: hole?.thinkingLevel ?? o.thinkingLevel,
+                      ...(hole !== undefined ? { role: hole } : {}),
+                      ledger: child.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
+                      ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
+                      workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
+                      ...(o.turn !== undefined ? { turn: o.turn } : {}),
+                      ...(o.prices !== undefined ? { prices: o.prices } : {}),
+                    },
+                    request,
+                  ),
+                { statusOf: (result) => (result.stop === "aborted" || result.stop === "turn" ? { status: "stopped", reason: result.stop } : { status: "done" }) },
+              );
+              if (ran.skipped) throw new Error(`hole session ${request.key} was skipped, which its spec does not allow`);
+              return ran.value;
+            },
+            // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12).
+            checkSketch: async (submission: Submission) => (await this.p.workbench.check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
+            holePreflight: (request: HolePreflightRequest) =>
+              holePreflight(
+                {
+                  registry: o.registry, memory: o.memory.withActor(actor), signal: own, actor, header: this.p.target.sketch.prefix,
+                  validate: (r) => o.benches.validate(r, { actor, signal: own, problem: { problemId: this.p.problemId, claimId: this.p.claimId, workbench: this.p.workbench } }),
+                  log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
+                  ...(o.seed !== undefined ? { seed: o.seed } : {}),
+                },
+                request,
+              ),
+          }
+        : {}),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
-      options: entry.options,
+      options: o.modeGate?.on.includes(id) === true && o.modeGate.options[id] !== undefined ? { ...entry.options, ...o.modeGate.options[id] } : entry.options,
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.human === true ? { human: true } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),
@@ -336,6 +408,26 @@ export class ProblemLines {
     };
     if (signal === undefined) this.contexts.set(id, context);
     return context;
+  }
+
+  /**
+   * The role of a call's site, when the run names that role: the planner's call (`scheduler.planner`) is the planner's, and goes to the escalation
+   * model when the planner has made two refinement rounds in a row without Lean progress and its escalated calls are within their share of the allowance.
+   */
+  private roleFor(site: string): PlannerChoice | undefined {
+    const roles = this.run.o.roles;
+    if (roles === undefined || roleOfSite(site) !== "planner" || !roles.has("planner")) return undefined;
+    this.escalation ??= new PlannerEscalation(roles, {
+      rounds: () => this.run.o.memory.nodes(SKETCH_KIND, { claimId: this.p.claimId }).filter((node) => {
+        const record = asRecord<SketchRecord>(node.data);
+        return record.problemId === this.p.problemId && record.planner === true;
+      }).length,
+      progress: () => progressOf(this.run.o.memory, this.p.problemId, this.p.claimId),
+      allowanceUsd: () => this.p.ledger.limitUsd,
+      spentOn: (model) =>
+        this.run.o.journal.projection.modelCallsOfProblem(this.p.problemId).filter((call) => call.site === site && call.model === model).reduce((sum, call) => sum + call.usd, 0),
+    });
+    return this.escalation.choose();
   }
 
   /** `deciding`: the session has not started, so a draw can still be recorded on its `attempt.started`. */
@@ -520,11 +612,12 @@ export class ProblemLines {
         if (!/^[a-z][a-z0-9_]{0,63}$/.test(spec.name)) throw new LineError(id, "tools", `bad tool name ${JSON.stringify(spec.name)}`);
         if (names.has(spec.name)) throw new LineError(id, "tools", `the tool name ${spec.name} is taken`);
         names.add(spec.name);
-        tools.push(agentTool(id, spec, this.p.signal));
+        tools.push(agentTool(id, spec, this.p.signal, spec.journaled === true ? { journal: this.run.o.journal, attemptId: info.attemptId } : undefined));
       }
     }
     const packetLine = this.with("contextPacket")[0];
     const guards = this.with("beforeCheck");
+    const rewriters = this.with("rewriteCheck");
     const checkers = this.with("afterCheck");
     let differed = false;
     const hooks: SessionHooks = {
@@ -548,6 +641,22 @@ export class ProblemLines {
               }),
           }
         : {}),
+      ...(rewriters.length > 0
+        ? {
+            rewriteCheck: async (proposal: Proposal) => {
+              let current = proposal;
+              const notes: string[] = [];
+              for (const { entry, hook } of rewriters) {
+                const rewritten = await call(entry.line.id, "rewriteCheck", () => hook(this.sessionContext(entry, info), current));
+                if (rewritten !== undefined && rewritten.aux !== current.aux) {
+                  current = { ...current, aux: rewritten.aux };
+                  notes.push(rewritten.note);
+                }
+              }
+              return notes.length === 0 ? undefined : { aux: current.aux, note: notes.join("\n") };
+            },
+          }
+        : {}),
       ...(guards.length > 0
         ? {
             beforeCheck: async (proposal: Proposal) => {
@@ -566,20 +675,26 @@ export class ProblemLines {
       ...(checkers.length > 0
         ? {
             afterCheck: async (check: SessionCheck) => {
+              const notices: string[] = [];
+              let notifier: LineId | undefined;
               for (const { entry, hook } of checkers) {
                 const id = entry.line.id;
                 const decision = await call(id, "afterCheck", () => hook(this.sessionContext(entry, info), check));
                 if (decision?.stop !== undefined) {
                   this.log(`${info.prover} session ${info.session}: line ${id} stops it: ${decision.stop}`);
-                  return { line: id, reason: decision.stop };
+                  return { line: id, reason: decision.stop, ...(decision.cause !== undefined ? { cause: decision.cause } : {}) };
+                }
+                if (decision?.notice !== undefined) {
+                  notices.push(decision.notice);
+                  notifier ??= id;
                 }
               }
-              return undefined;
+              return notifier === undefined ? undefined : { line: notifier, notice: notices.join("\n\n") };
             },
           }
         : {}),
     };
-    const inSession = hooks.packet !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
+    const inSession = hooks.packet !== undefined || hooks.rewriteCheck !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
     return { sections, tools, ...(inSession ? { hooks } : {}) };
   }
 
@@ -681,7 +796,7 @@ export class ProblemLines {
       }
       // The budget gate weighs the task's price against what is left before it is opened (`budget.line` where there are no numbers).
       if (this.p.gate !== undefined) {
-        const gated = await this.p.gate.task({ taskId: choice.taskId, sessions: row.budget.sessions ?? 1 });
+        const gated = await this.p.gate.task({ taskId: choice.taskId, sessions: row.budget.sessions ?? 1, ...(row.budget.turns !== undefined ? { turns: row.budget.turns } : {}) });
         if (gated.action === "skip") {
           tasks.cancel(choice.taskId, `the budget gate skipped it: ${gated.reason}`);
           tasks.promote(this.p.problemId);
@@ -863,7 +978,7 @@ function budgetOf(ledger: Ledger, gate?: BudgetGate): Budget {
 }
 
 /** A line's tool as a tool of a prover's session. An error goes back to the model as a tool error. */
-function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal): AgentTool<never, unknown> {
+function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal, record?: { journal: Journal; attemptId: string }): AgentTool<never, unknown> {
   return {
     name: spec.name,
     label: spec.name,
@@ -872,10 +987,18 @@ function agentTool(line: LineId, spec: LineTool, fallback: AbortSignal): AgentTo
     parameters: spec.parameters as never,
     executionMode: "sequential",
     execute: async (_id, params, signal) => {
+      // A journaled tool leaves a tool_run, as a capability's call does (the report counts them); the actor is the line.
+      const actor = `line:${line}`;
+      const toolRunId = newId("tr");
+      const started = performance.now();
+      if (record !== undefined) record.journal.emit("tool_run.started", { toolRunId, capability: spec.name, implementation: actor, version: "1", inputHash: hashJson(params as JsonObject), attemptId: record.attemptId }, actor);
+      const finish = (outcome: "ok" | "error") => record?.journal.emit("tool_run.finished", { toolRunId, outcome, durationMs: Math.round(performance.now() - started) }, actor);
       try {
         const text = await spec.run(params as JsonObject, signal ?? fallback);
+        finish("ok");
         return { content: [{ type: "text", text }], details: { line } };
       } catch (error) {
+        finish("error");
         return { content: [{ type: "text", text: `Error: ${messageOf(error)}` }], details: { line }, isError: true };
       }
     },

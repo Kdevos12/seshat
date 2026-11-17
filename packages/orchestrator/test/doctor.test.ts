@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadHostProfile } from "@seshat/registry";
 import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
+import { kiminaSettingsFor, leanMemoryCheck, leanServerMemoryFromPs } from "../src/lean-memory.ts";
 import { fauxModels, tempDir } from "./m0-helpers.ts";
 
 /** A machine described by what it has: commands on PATH, the answers of its servers. */
@@ -52,7 +53,10 @@ describe("harness doctor", () => {
   it("finds nothing missing on a complete machine and writes the isolation profile", async () => {
     const { report, dir } = await run(machine({ has: ALL }));
     assert.equal(report.ok, true);
-    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
+    assert.deepEqual(report.checks.map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+    assert.match(byId(report, "literature").detail, /openalex, arxiv, semantic-scholar, zbmath/);
+    const defaults = report.checks.find((c) => c.id === "defaults");
+    assert.match(defaults?.detail ?? "", /the intake gate.*lean\.search/s, "doctor lists what the default set turns on");
     assert.equal(report.isolation?.written, true);
     const profile = JSON.parse(readFileSync(join(dir, "hosts", "sandboxed.json"), "utf8"));
     const lake = profile.capabilities["lean.certify"].settings.lake;
@@ -60,6 +64,10 @@ describe("harness doctor", () => {
     assert.ok(lake.sandbox.includes("bwrap") && lake.sandbox.includes("--unshare-net"));
     assert.equal(lake.unsandboxed, undefined);
     assert.equal(profile.host, "sandboxed");
+    const base = JSON.parse(readFileSync(join(dir, "hosts", "local.json"), "utf8"));
+    const { cacheDir, ...litSources } = profile.capabilities["lit.search"].settings.sources;
+    assert.equal(cacheDir, join(dir, "hosts", "lit-cache"), "the literature answers are cached beside the profile");
+    assert.deepEqual({ ...profile.capabilities["lit.search"], settings: { sources: litSources } }, base.capabilities["lit.search"], "the profile keeps the literature search");
     loadHostProfile(join(dir, "hosts", "sandboxed.json"));
     assert.match(renderDoctor(report).join("\n"), /Everything a run needs is here/);
   });
@@ -179,6 +187,32 @@ describe("harness doctor", () => {
   });
 });
 
+describe("doctor --rewrite on the generated profile in use", () => {
+  it("adds a capability the profile lacks, keeps lean.certify byte for byte, adds nothing twice, and auto leaves the file alone", async () => {
+    const { dir } = await run(machine({ has: ALL }));
+    const path = join(dir, "hosts", "sandboxed.json");
+    const old = JSON.parse(readFileSync(path, "utf8"));
+    delete old.capabilities["lit.search"];
+    writeFileSync(path, `${JSON.stringify(old, null, 2)}\n`);
+    const certify = JSON.stringify(old.capabilities["lean.certify"]);
+    const { models } = fauxModels();
+    const again = (write?: "auto" | "rewrite") => doctor({ system: machine({ has: ALL }), models, profile: loadHostProfile(path), configDir: dir, leanProject: "/p", ...(write !== undefined ? { write } : {}) });
+    const before = readFileSync(path, "utf8");
+    await again();
+    assert.equal(readFileSync(path, "utf8"), before);
+    const first = await again("rewrite");
+    assert.match(byId(first, "isolation").detail, /lit\.search/);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    assert.ok(after.capabilities["lit.search"] !== undefined);
+    assert.equal(after.capabilities["lit.search"].settings.sources.cacheDir, join(dir, "hosts", "lit-cache"));
+    assert.equal(JSON.stringify(after.capabilities["lean.certify"]), certify);
+    const written = readFileSync(path, "utf8");
+    const second = await again("rewrite");
+    assert.match(byId(second, "isolation").detail, /no capability.*missing/);
+    assert.equal(readFileSync(path, "utf8"), written);
+  });
+});
+
 describe("doctor, review round 1", () => {
   it("tests the real recipe before it trusts it: the work directory is writable, the rest is not, there is no network", async () => {
     const calls: string[][] = [];
@@ -259,8 +293,8 @@ describe("student defaults", () => {
   it("builds a capped, gated, probe-first, consortium configuration", () => {
     const c = studentConfig({ selection: { kind: "all" }, model: "p/m", maxUsd: STUDENT_DEFAULT_MAX_USD });
     assert.deepEqual(c.budget, { problemUsd: 2, runUsd: 2 });
-    assert.deepEqual(c.gate, {});
-    assert.deepEqual(c.lines, [...STUDENT_LINES]);
+    assert.deepEqual(c.gate, { probeExtend: true }, "the default set v2 gives a probe its cap cut one extension");
+    assert.deepEqual(c.lines, [...STUDENT_LINES, "M6"], "the default set v2 adds M6 for its repeat rule");
     assert.equal(c.consortium?.limit.usd, 1);
     assert.equal(c.consortium?.narrative, false);
     assert.equal(studentConfig({ selection: { kind: "all" }, model: "p/m", maxUsd: 2, turnUsd: 0.25 }).consortium?.limit.usd, 0.25);
@@ -273,5 +307,51 @@ describe("student defaults", () => {
     assert.equal(checkAllowance(Number.NaN).length, 1);
     assert.equal(checkAllowance(1, 2).length, 1);
     assert.equal(checkAllowance(1, -1).length, 1);
+  });
+});
+
+describe("harness doctor: the memory of the Lean server (CA4)", () => {
+  const GB = 1024;
+  it("suggests Kimina settings that fit the machine's memory, more REPLs on a bigger one and never fewer than one", () => {
+    assert.deepEqual(kiminaSettingsFor(16 * GB), { MAX_REPLS: 2, MAX_REPL_USES: 50, MAX_REPL_MEM: "4G" });
+    assert.deepEqual(kiminaSettingsFor(64 * GB), { MAX_REPLS: 9, MAX_REPL_USES: 100, MAX_REPL_MEM: "4G" });
+    assert.equal(kiminaSettingsFor(2 * GB).MAX_REPLS, 1);
+    assert.equal(kiminaSettingsFor(4096 * GB).MAX_REPLS, 32);
+  });
+
+  it("prints the settings with the machine's memory, and warns when the server's memory passes the threshold", async () => {
+    const calm = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => 3 * GB });
+    const ok = byId(calm.report, "lean-memory");
+    assert.equal(ok.status, "ok");
+    assert.match(ok.detail, /MAX_REPLS=2, MAX_REPL_USES=50, MAX_REPL_MEM=4G/);
+    assert.equal(calm.report.ok, true);
+    const grown = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => 12 * GB });
+    const warn = byId(grown.report, "lean-memory");
+    assert.equal(warn.status, "warn");
+    assert.match(warn.detail, /takes 12 GB of memory, more than the 8\.0 GB/);
+    assert.equal(grown.report.ok, true, "a warning does not fail the machine");
+    assert.match(renderDoctor(grown.report).join("\n"), /Lean server memory/);
+  });
+
+  it("uses the host's threshold, and fails soft: no number, no warning; no memory, no advice", async () => {
+    assert.equal(leanMemoryCheck({ totalMb: 16 * GB, serverMb: 3 * GB, warnMb: 2 * GB }).status, "warn");
+    assert.equal(leanMemoryCheck({ totalMb: 16 * GB, serverMb: undefined, warnMb: 1 }).status, "ok");
+    const unreadable = await run({ ...machine({ has: ALL }), totalMemoryMb: () => 16 * GB, leanServerMemoryMb: async () => { throw new Error("no ps"); } });
+    assert.equal(byId(unreadable.report, "lean-memory").status, "ok");
+    const none = await run(machine({ has: ALL }));
+    assert.equal(none.report.checks.some((c) => c.id === "lean-memory"), false);
+  });
+
+  it("reads the server's memory from the process table: the server and its REPLs, nothing else", () => {
+    const ps = [
+      "  2048000 python -m server --port 8000 (kimina-lean-server)",
+      "  3145728 /home/u/.elan/bin/repl",
+      "   500000 node dist/cli.js",
+      "  1048576 lake env repl",
+      "",
+    ].join("\n");
+    assert.equal(leanServerMemoryFromPs(ps), 6096);
+    assert.equal(leanServerMemoryFromPs("   500000 node dist/cli.js\n"), undefined);
+    assert.equal(leanServerMemoryFromPs(""), undefined);
   });
 });

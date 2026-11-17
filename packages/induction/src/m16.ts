@@ -53,6 +53,9 @@ export function readM16Options(raw: Readonly<JsonObject>): Settings {
     resetEvery: o.integer("resetEvery", 0, 100),
     clusterSize: o.integer("clusterSize", 1, 20),
     recordPrograms: o.integer("recordPrograms", 0, 500),
+    // Not in `M16_OPTIONS`: only a campaign's `construct` mode sets them (documentation/campaign.md, "Plateau modes").
+    ...(typeof raw.novelty === "number" && raw.novelty > 0 ? { novelty: Math.min(1, raw.novelty) } : {}),
+    ...(raw.parentSplit === true ? { parentSplit: true } : {}),
     limits: { callMs: o.integer("callMs", 10, 60_000), totalMs: o.integer("totalMs", 1000, 300_000), memoryMb: o.integer("memoryMb", 32, 1024) },
     submit: o.flag("submit"),
   };

@@ -3,15 +3,20 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Models } from "@earendil-works/pi-ai";
 import { newId } from "@seshat/core";
-import { hostProfilePath, loadHostProfile, RegistryLeanChecker } from "@seshat/registry";
+import { type HostProfile, hostProfilePath, loadHostProfile, RegistryLeanChecker } from "@seshat/registry";
 import { type Check, DEFAULT_PROFILE_NAME, doctor, type DoctorReport, type DoctorSystem, realSystem, renderDoctor } from "./doctor.ts";
 import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
-import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveResult } from "./solve.ts";
-import { cheapestModel, STUDENT_DEFAULT_MAX_USD, STUDENT_LINES } from "./student.ts";
+import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
+import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
+import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
-import type { RunConfig, RunOptions } from "./run.ts";
+import { resumeBench, type RunConfig, type RunOptions } from "./run.ts";
+import type { CampaignConfig } from "./campaign-config.ts";
+import { runCampaign } from "./campaign.ts";
+import { campaignBase, campaignTurnUsd } from "./campaign-start.ts";
+import { describeSettings, readSettingsFile, type Settings } from "./settings-file.ts";
 
 /** The flags of `harness doctor` and `harness solve` that the commands read. */
 export interface DoctorFlags {
@@ -37,8 +42,45 @@ export interface SolveFlags extends DoctorFlags {
   lean?: boolean;
   prose?: boolean;
   noCheck?: boolean;
+  /** `--lean-search`: `RunConfig.leanSearch` on top of the defaults set (it is in none of them). */
+  leanSearch?: boolean;
+  /** `--consult MODEL` (beta, plan change NL3): `RunConfig.consult` on top of the defaults set (it is in none of them). */
+  consult?: NonNullable<RunConfig["consult"]>;
+  /** `--sketch FILE` (CA14): a person's informal proof or hint, read from the file (at most 20 000 characters); journaled once as a hint under the person's name. */
+  sketch?: string;
+  /** `--role ROLE=MODEL`, `--role-setting ROLE.KEY=VALUE` (CA15, CA23): `RunConfig.roles` on top of the defaults set (it is in none of them). */
+  roles?: NonNullable<RunConfig["roles"]>;
+  /** `--consolidation`: `RunConfig.consolidation` on top of the defaults set (it is in none of them). */
+  consolidation?: boolean;
   offpeak?: RunConfig["offpeak"];
+  /** `--horizon` and `--human` (plan change LH9, documentation/runs.md): `solve` is always `episode` and `consortium`; a word that contradicts it, or that is not built yet, is refused when the run starts. */
+  horizon?: NonNullable<RunConfig["horizon"]>;
+  human?: NonNullable<RunConfig["human"]>;
+  /** `harness campaign` (documentation/campaign.md): the run is a campaign under a supervisor, with this pacing. `offPeak` defaults on. */
+  campaign?: CampaignConfig & { offPeak?: boolean };
   lines?: string[];
+  /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
+  defaults?: string;
+  /** `--settings FILE`: `RunConfig` keys on top of the defaults set and under the flags (`settings-file.ts`). */
+  settings?: string;
+  /** `--tool ID`: capabilities the provers get besides lean_check (CA17). */
+  tools?: string[];
+  /** `--auto-tool`: add the host's compute tool when the statement is finite, about a graph or about numbers. */
+  autoTool?: boolean;
+  /** `--intake`: test the statement before any paid session, and search the literature if the person agrees (Task 36). */
+  intake?: boolean;
+  /** `--lit`: the person agrees to the statement going to third parties, in a call that cannot ask. Implies `intake`. */
+  lit?: boolean;
+  /** `--no-intake`, `--no-auto-tool`, `--no-lean-search`: turn one addition of the set off (they matter with `v2`, which turns them on). */
+  noIntake?: boolean;
+  noAutoTool?: boolean;
+  noLeanSearch?: boolean;
+  /** `--no-tool ID`: drop a tool the set gives (today `lean.lsp`, which `v2` gives the prover). */
+  noTools?: string[];
+  /** `--private`: nothing goes outside; wins over everything. */
+  private?: boolean;
+  /** `--intake-usd`: the cap of the judge call. */
+  intakeUsd?: number;
 }
 
 /** What the commands need from the process: streams, the machine, and the models. Tests give their own. */
@@ -95,6 +137,91 @@ export async function doctorCommand(flags: DoctorFlags, io: CommandIo): Promise<
   const report = await doctorReport(flags, io);
   for (const line of renderDoctor(report)) io.out(line);
   return report.ok ? 0 : 1;
+}
+
+const LIT_BACKEND_NAMES: Readonly<Record<string, string>> = { openalex: "OpenAlex", arxiv: "arXiv", "semantic-scholar": "Semantic Scholar", zbmath: "zbMATH" };
+
+/** A name taken from a host profile, shown in a prompt: control and bidirectional characters (an ANSI escape, a newline, a right-to-left override) are removed, and its length is bounded. */
+export function plainName(value: unknown): string {
+  return String(value).replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").slice(0, 80);
+}
+
+/**
+ * The question asked once before a run sends anything outside (Task 36b): what the run could send, and to which services, taken from the host
+ * profile (a backend with no address there is not reachable, so it is not named). `lean.search`'s services are the hosts the profile allows.
+ */
+export function consentQuestion(profile: HostProfile, o: { literature: boolean; leanSearch: boolean }): string {
+  const parts: string[] = [];
+  if (o.literature) {
+    const backends = Object.keys((profile.capabilities["lit.search"]?.settings?.sources?.backends ?? {}) as Record<string, unknown>).filter((b) => b !== "bench-metadata");
+    const names = (backends.length > 0 ? backends : Object.keys(LIT_BACKEND_NAMES)).map((b) => LIT_BACKEND_NAMES[b] ?? plainName(b));
+    parts.push(`the literature step would send the words of this statement to ${names.join(", ")}, and the hits to the model, to look for a paper that already settled it`);
+  }
+  if (o.leanSearch) {
+    const hosts = profile.capabilities["lean.search"]?.settings?.search?.allowedHosts;
+    const names = Array.isArray(hosts) && hosts.length > 0 ? hosts.map(plainName).join(", ") : "the search services the host profile sets";
+    parts.push(`lean.search would send the unknown names and the goals of your proof attempts to ${names} (without it, only a local index and pattern search are used)`);
+  }
+  return `This run could send content of your problem outside this machine and the model provider: ${parts.join("; and ")}. Allow that? [y/N] `;
+}
+
+/**
+ * What `--intake`, `--lit` and `--lean-search` give `solve` for the answer on third parties: the intake section (with `--lit`, the yes of a call
+ * that cannot ask), and the question, asked once, only where a person can answer. `--yes` or `--ask-stdin` without `--lit` gives neither a yes nor
+ * a question, which `solve` journals as a no and `lean.search` keeps to its local backends.
+ */
+export function consentOptions(flags: SolveFlags, io: Pick<CommandIo, "ask">, profile: HostProfile, canAsk: boolean = process.stdin.isTTY === true): Pick<SolveOptions, "intake" | "askConsent"> {
+  const wantsIntake = flags.intake === true || flags.lit === true;
+  const ask = flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || canAsk);
+  return {
+    ...(wantsIntake
+      ? {
+          intake: {
+            hygiene: true,
+            literature: true,
+            ...(flags.intakeUsd !== undefined ? { capUsd: flags.intakeUsd } : {}),
+            ...(flags.lit === true ? { consent: { allowed: true, via: "flag" as const } } : {}),
+          },
+        }
+      : {}),
+    ...((wantsIntake || flags.leanSearch === true) && ask
+      ? { askConsent: () => (io.ask ?? terminalAsk)(consentQuestion(profile, { literature: wantsIntake, leanSearch: flags.leanSearch === true })) }
+      : {}),
+  };
+}
+
+/** What the host lets the switches do: the compute tool and `lean.search` only if the host offers them, and one line for each that it does not. */
+export function resolveAdditions(flags: SolveFlags, defaults: string, switches: { autoTool: boolean; leanSearch: boolean; leanLsp?: boolean }, host: string, offers: (capability: string) => boolean): { autoTool: boolean; leanSearch: boolean; leanLsp: boolean; notes: string[] } {
+  const notes: string[] = [];
+  const autoTool = switches.autoTool && offers(COMPUTE_TOOL);
+  const leanSearch = switches.leanSearch && offers(SEARCH_CAPABILITY);
+  if (switches.autoTool && !autoTool) notes.push(`Note: ${flags.autoTool === true ? "--auto-tool" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${COMPUTE_TOOL}.`);
+  if (switches.leanSearch && !leanSearch) notes.push(`Note: ${flags.leanSearch === true ? "--lean-search" : `the ${defaults} defaults`} has nothing to add: host ${host} does not offer ${SEARCH_CAPABILITY}; the run goes on without it.`);
+  const leanLsp = switches.leanLsp === true && offers(LEAN_LSP_TOOL);
+  if (switches.leanLsp === true && !leanLsp) notes.push(`Note: the ${defaults} defaults has nothing to add: host ${host} does not offer ${LEAN_LSP_TOOL}; the run goes on without it.`);
+  return { autoTool, leanSearch, leanLsp, notes };
+}
+
+/** What `solve` does at its own level under a set and the flags: the set's switches (`SOLVE_SWITCHES`), the explicit flags on, the `--no-...` flags off. */
+export function effectiveSwitches(flags: SolveFlags, defaults: DefaultsName): { intake: boolean; autoTool: boolean; leanSearch: boolean; leanLsp: boolean } | { conflict: string } {
+  const droppable = [LEAN_LSP_TOOL];
+  const unknown = (flags.noTools ?? []).filter((id) => !droppable.includes(id));
+  if (unknown.length > 0) return { conflict: `--no-tool ${unknown.join(", ")}: only ${droppable.join(", ")} can be dropped this way` };
+  if ((flags.tools ?? []).some((id) => (flags.noTools ?? []).includes(id))) return { conflict: "--tool and --no-tool cannot name the same tool" };
+  const set = SOLVE_SWITCHES[defaults];
+  for (const [on, off, name] of [
+    [flags.intake === true || flags.lit === true, flags.noIntake === true, "--intake (or --lit)/--no-intake"],
+    [flags.autoTool === true, flags.noAutoTool === true, "--auto-tool/--no-auto-tool"],
+    [flags.leanSearch === true, flags.noLeanSearch === true, "--lean-search/--no-lean-search"],
+  ] as const) {
+    if (on && off) return { conflict: `${name} cannot both be given` };
+  }
+  return {
+    intake: flags.intake === true || flags.lit === true || (set.intake && flags.noIntake !== true),
+    autoTool: flags.autoTool === true || (set.autoTool && flags.noAutoTool !== true),
+    leanSearch: flags.leanSearch === true || (set.leanSearch && flags.noLeanSearch !== true),
+    leanLsp: (set.leanLsp && !(flags.noTools ?? []).includes(LEAN_LSP_TOOL)),
+  };
 }
 
 /** The checks a solve cannot start without: the others are said, and the run goes on. */
@@ -154,6 +281,26 @@ async function terminalAsk(question: string): Promise<boolean> {
   }
 }
 
+/**
+ * What a settings file adds to a solve, under the flags (`--settings`): `base` is what `solve` gives `RunConfig` on top of the defaults set (the file's
+ * keys, then what the flags set), `lines` and `offpeak` are the flags' or else the file's, and `overruled` names the keys a flag won.
+ */
+export function solveSettings(flags: SolveFlags, file: Settings | undefined): { base: Partial<RunConfig>; lines: string[] | undefined; offpeak: RunConfig["offpeak"]; overruled: string[]; fromFile: string[] } {
+  const { lines: fileLines, offpeak: fileOffpeak, ...rest } = file?.values ?? {};
+  // `leanSearch` is not here: the host may not offer it, so `solveCommand` adds it once that is known.
+  const fromFlags: Partial<RunConfig> = {
+    ...(flags.consolidation === true ? { consolidation: true } : {}),
+    ...(flags.consult !== undefined ? { consult: flags.consult } : {}),
+    ...(flags.roles !== undefined ? { roles: flags.roles } : {}),
+    ...(flags.horizon !== undefined ? { horizon: flags.horizon } : {}),
+    ...(flags.human !== undefined ? { human: flags.human } : {}),
+  };
+  const overruled = [...Object.keys({ ...fromFlags, ...(flags.leanSearch === true ? { leanSearch: true } : {}) }).filter((k) => k in rest), ...(flags.lines !== undefined && fileLines !== undefined ? ["lines"] : []), ...(flags.offpeak !== undefined && fileOffpeak !== undefined ? ["offpeak"] : [])];
+  const lines = flags.lines ?? fileLines;
+  const offpeak = flags.offpeak ?? fileOffpeak;
+  return { base: { ...rest, ...fromFlags }, lines, offpeak, overruled, fromFile: (file?.keys ?? []).filter((k) => !overruled.includes(k)) };
+}
+
 /** `harness solve STATEMENT`: prepares the problem and the student defaults, asks for the signature of prose, runs, and says where the result is. */
 export async function solveCommand(argument: string, flags: SolveFlags, io: CommandIo): Promise<number> {
   const configDir = io.configDir ?? `${REPO_ROOT}config`;
@@ -161,7 +308,26 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const host = studentHost(flags.host, configDir);
   const profile = loadHostProfile(hostProfilePath(configDir, host));
   const prices = new PriceBook(profile.models);
+  const defaults = flags.defaults ?? DEFAULT_DEFAULTS;
+  if (!(DEFAULTS_NAMES as readonly string[]).includes(defaults)) {
+    io.err(`--defaults must be one of ${DEFAULTS_NAMES.join(", ")}, got ${JSON.stringify(defaults)}`);
+    return 2;
+  }
+  // The settings file is read and checked before anything is spent: an unknown key or a value that fails is a setup error.
+  const file = flags.settings !== undefined ? readSettingsFile(flags.settings, "solve") : undefined;
+  const settings = solveSettings(flags, file);
+  const campaign = flags.campaign;
+  if (campaign !== undefined) {
+    if ((flags.horizon !== undefined && flags.horizon !== "campaign") || (flags.human !== undefined && flags.human !== "digest")) {
+      io.err("harness campaign never waits for a person: --horizon campaign and --human digest are what it has");
+      return 2;
+    }
+    settings.base = { ...campaignBase(campaign), ...settings.base };
+    if (campaign.offPeak !== false && settings.offpeak === undefined) settings.offpeak = {};
+  }
   const statement = readStatement(argument, flags);
+  // Read and checked before anything is spent: a file that is missing, empty or too long is a setup error.
+  const sketch = flags.sketch !== undefined ? readSketchFile(flags.sketch) : undefined;
   const maxUsd = flags.max ?? STUDENT_DEFAULT_MAX_USD;
   const user = personName(flags.as);
 
@@ -179,9 +345,21 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   } else {
     io.out(`Model: ${model} (named by you).`);
   }
-  const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
-  io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
-  io.out(`Host: ${host}. Lines: ${(flags.lines ?? [...STUDENT_LINES]).join(", ")}, with the budget gate and the probe first.`);
+  const turnUsd = campaign !== undefined ? campaignTurnUsd({ ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}), maxUsd, ...(campaign.usdPerDay !== undefined ? { usdPerDay: campaign.usdPerDay } : {}) }) : flags.turnUsd;
+  const turn = turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
+  if (campaign !== undefined) {
+    io.out(`Allowance: $${maxUsd} in all. The campaign works in turns of $${turn} that start by themselves, with no cap on sessions; it writes campaign/digest.md after each turn and ends when the allowance is spent${campaign.usdPerDay !== undefined ? `, paced at $${campaign.usdPerDay} a day` : ""}${campaign.until !== undefined ? `, at ${campaign.until} at the latest` : ""}, when the certifier settles the target, or when turns spend without the frontier growing.`);
+  } else {
+    io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
+  }
+  io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName, undefined, flags).length > 0 ? `: ${describeSet(defaults as DefaultsName, undefined, flags).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
+  if (file !== undefined) io.out(describeSettings(file, settings.fromFile, settings.overruled));
+  const switches = effectiveSwitches(flags, defaults as DefaultsName);
+  if ("conflict" in switches) {
+    io.err(switches.conflict);
+    return 2;
+  }
+  io.out(`Host: ${host}. Lines: ${(settings.lines ?? studentLines(defaults as DefaultsName)).join(", ")}, with the budget gate and the probe first.`);
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
   let report: DoctorReport | undefined;
@@ -211,10 +389,25 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const registry: RunOptions["registry"] = (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) });
   const checkerRegistry = openRegistry({ host });
   const mode = statement.mode ?? classifyStatement(statement.text);
+  if (flags.private === true) {
+    // A tool that would send the problem to a third party cannot be given to a private run: said now, before anything is spent.
+    checkerRegistry.restrictThirdParties({ private: true });
+    const refused = (flags.tools ?? []).flatMap((id) => (checkerRegistry.catalog.capabilities.has(id) ? [checkerRegistry.thirdPartyRefusal(id)] : [])).filter((r): r is string => r !== undefined);
+    if (refused.length > 0) {
+      for (const r of refused) io.err(`--private: ${r}. Drop --private or drop the tool. Nothing was spent.`);
+      await checkerRegistry.close();
+      return 2;
+    }
+  }
+  // The additions of the set that the host cannot give are said in one line and the run goes on without them.
+  const additions = resolveAdditions(flags, defaults as DefaultsName, switches, host, (capability) => checkerRegistry.offers(capability));
+  for (const note of additions.notes) io.out(note);
+  const { autoTool, leanSearch, leanLsp } = additions;
+  const tools = [...new Set([...(flags.tools ?? []), ...(leanLsp ? [LEAN_LSP_TOOL] : [])])];
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
   try {
-    result = await solve({
+    const runSolve = (): Promise<SolveResult> => solve({
       statement: statement.text,
       mode,
       dir,
@@ -226,9 +419,21 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       prices,
       header: DEFAULT_HEADER,
       checker: new RegistryLeanChecker(checkerRegistry, { actor: "orchestrator" }),
-      ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
-      ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
-      ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
+      ...(sketch !== undefined ? { sketch } : {}),
+      ...(turnUsd !== undefined ? { turnUsd } : {}),
+      ...(settings.offpeak !== undefined ? { offpeak: settings.offpeak } : {}),
+      ...(settings.lines !== undefined ? { lines: settings.lines } : {}),
+      ...(leanSearch || Object.keys(settings.base).length > 0
+        ? { base: { ...settings.base, ...(leanSearch ? { leanSearch: true } : {}) } }
+        : {}),
+      defaults: defaults as DefaultsName,
+      ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),
+      ...(tools.length > 0 ? { tools } : {}),
+      // `lean.lsp` the set added (not named with --tool) is dropped with a warning when it cannot be reached.
+      ...(leanLsp && !(flags.tools ?? []).includes(LEAN_LSP_TOOL) ? { optionalTools: [LEAN_LSP_TOOL] } : {}),
+      ...(autoTool ? { autoTool: COMPUTE_TOOL } : {}),
+      ...(flags.private === true ? { private: true } : {}),
+      ...consentOptions({ ...flags, intake: switches.intake, leanSearch }, io, profile),
       confirm: async (signature) => {
         if (flags.askStdin === true) {
           if (flags.askNonce === undefined || flags.askNonce === "") throw new SolveInputError("--ask-stdin needs the nonce its caller gives in the environment (SESHAT_ASK_NONCE)");
@@ -257,6 +462,39 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       log: (line) => io.err(line),
       ...(io.codeRev !== undefined ? { codeRev: io.codeRev } : {}),
     });
+    if (campaign === undefined) result = await runSolve();
+    else {
+      // The first turn is `solve` (the signature, then the run); the others are what `harness resume` does, after the supervisor has read the journal.
+      let solved: SolveResult | undefined;
+      const end = await runCampaign({
+        dir,
+        settings: campaign,
+        first: async () => {
+          solved = await runSolve();
+          return solved.result;
+        },
+        next: async ({ limit }) => {
+          const problem = (solved as SolveResult).problem;
+          return await resumeBench({
+            dir,
+            index: problem.index,
+            checkout: problem.checkout,
+            models: io.models,
+            registry,
+            ...(io.signal !== undefined ? { signal: io.signal } : {}),
+            log: (line) => io.err(line),
+            ...(io.codeRev !== undefined ? { codeRev: io.codeRev } : {}),
+            ...(limit !== undefined ? { turns: { limit } } : {}),
+          });
+        },
+        ...(io.signal !== undefined ? { signal: io.signal } : {}),
+        log: (line) => io.err(line),
+      });
+      if (end.reason === "not_started") return 1;
+      io.out(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}.`);
+      io.out(`Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}. The result: ${join(dir, "RESULT.md")}. The picture: harness view ${dir}`);
+      return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
+    }
   } catch (error) {
     if (error instanceof SolveInputError) {
       io.err(error.message);

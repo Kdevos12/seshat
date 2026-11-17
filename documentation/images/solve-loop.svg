@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1090 530" width="1090" height="530" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="t"><title id="t">harness solve: from a statement to RESULT.md</title><defs><marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a4256"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#3a4256"/></marker></defs>
+<rect x="0.5" y="0.5" width="1089" height="529" rx="6" fill="#ffffff" stroke="#d0d5df"/>
+<text x="20" y="30" font-size="18" font-weight="700" text-anchor="start" fill="#1b2230">harness solve: from a statement to RESULT.md</text>
+<text x="20" y="52" font-size="13" text-anchor="start" fill="#4a5163">Every step writes events to the journal; nothing here sets a claim's status except the Lean checks of steps 9 and 10.</text>
+<rect x="20" y="75" width="250" height="100" rx="6" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="145.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">1. Statement</text>
+<text x="145.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">Lean, prose or a file; Lean goes</text>
+<text x="145.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">through the strict screen; prose</text>
+<text x="145.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">is formalized, shown and signed</text>
+<text x="145.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">before any spend</text>
+<rect x="286" y="75" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="411.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">2. Intake, before any spend</text>
+<text x="411.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">literature search, one judge</text>
+<text x="411.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">call, a quote that must be in</text>
+<text x="411.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">the text; vacuity and</text>
+<text x="411.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">`plausible` tests</text>
+<rect x="552" y="75" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="677.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">3. First cases</text>
+<text x="677.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">computed by the harness, no</text>
+<text x="677.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">model: a table of first values</text>
+<text x="677.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">(SageMath) and OEIS matches,</text>
+<text x="677.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">marked as computed data</text>
+<rect x="818" y="75" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="943.0" y="95.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">4. Informal proof (option)</text>
+<text x="943.0" y="112.5" font-size="13" text-anchor="middle" fill="#1b2230">option informalFirst: a proof</text>
+<text x="943.0" y="129.5" font-size="13" text-anchor="middle" fill="#1b2230">in prose, read by a verifier</text>
+<text x="943.0" y="146.5" font-size="13" text-anchor="middle" fill="#1b2230">until 3 passes in a row; a</text>
+<text x="943.0" y="163.5" font-size="13" text-anchor="middle" fill="#1b2230">hint Lean has not checked</text>
+<rect x="20" y="215" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="145.0" y="235.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">5. Classical battery (M10)</text>
+<text x="145.0" y="252.5" font-size="13" text-anchor="middle" fill="#1b2230">decide, omega, norm_num, simp,</text>
+<text x="145.0" y="269.5" font-size="13" text-anchor="middle" fill="#1b2230">linarith, grind, aesop... before</text>
+<text x="145.0" y="286.5" font-size="13" text-anchor="middle" fill="#1b2230">any model; a win goes through</text>
+<text x="145.0" y="303.5" font-size="13" text-anchor="middle" fill="#1b2230">`validate`</text>
+<rect x="286" y="215" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="411.0" y="244.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">6. Probe</text>
+<text x="411.0" y="261.0" font-size="13" text-anchor="middle" fill="#1b2230">one session on a capped slice</text>
+<text x="411.0" y="278.0" font-size="13" text-anchor="middle" fill="#1b2230">of the allowance (a tenth):</text>
+<text x="411.0" y="295.0" font-size="13" text-anchor="middle" fill="#1b2230">does Lean make progress?</text>
+<rect x="552" y="215" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="677.0" y="235.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">7. Budget gate</text>
+<text x="677.0" y="252.5" font-size="13" text-anchor="middle" fill="#1b2230">launch if estimate &lt;= share x</text>
+<text x="677.0" y="269.5" font-size="13" text-anchor="middle" fill="#1b2230">remaining x pSuccess; widen on</text>
+<text x="677.0" y="286.5" font-size="13" text-anchor="middle" fill="#1b2230">Lean progress; else stop with</text>
+<text x="677.0" y="303.5" font-size="13" text-anchor="middle" fill="#1b2230">an account of why</text>
+<rect x="818" y="215" width="250" height="100" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="943.0" y="235.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">8. Prover sessions</text>
+<text x="943.0" y="252.5" font-size="13" text-anchor="middle" fill="#1b2230">fresh sessions with a briefing;</text>
+<text x="943.0" y="269.5" font-size="13" text-anchor="middle" fill="#1b2230">tools: lean_check, lean_edit,</text>
+<text x="943.0" y="286.5" font-size="13" text-anchor="middle" fill="#1b2230">lean.lsp, compute.sage; the</text>
+<text x="943.0" y="303.5" font-size="13" text-anchor="middle" fill="#1b2230">harness pushes lean.search hits</text>
+<rect x="552" y="364" width="250" height="96" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="677.0" y="382.5" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">9. Submit rule, fast check</text>
+<text x="677.0" y="399.5" font-size="13" text-anchor="middle" fill="#1b2230">only a `lean_check` of a file</text>
+<text x="677.0" y="416.5" font-size="13" text-anchor="middle" fill="#1b2230">with no hole that passes counts:</text>
+<text x="677.0" y="433.5" font-size="13" text-anchor="middle" fill="#1b2230">no error, standard axioms, same</text>
+<text x="677.0" y="450.5" font-size="13" text-anchor="middle" fill="#1b2230">statement. Then `computed`.</text>
+<rect x="286" y="370" width="250" height="84" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="411.0" y="391.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">10. Certifier</text>
+<text x="411.0" y="408.0" font-size="13" text-anchor="middle" fill="#1b2230">kernel replay, fresh process;</text>
+<text x="411.0" y="425.0" font-size="13" text-anchor="middle" fill="#1b2230">axioms and statement compared;</text>
+<text x="411.0" y="442.0" font-size="13" text-anchor="middle" fill="#1b2230">`proved` or `refuted`</text>
+<rect x="20" y="370" width="250" height="84" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="145.0" y="391.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">11. Report</text>
+<text x="145.0" y="408.0" font-size="13" text-anchor="middle" fill="#1b2230">RESULT.md from the journal, no</text>
+<text x="145.0" y="425.0" font-size="13" text-anchor="middle" fill="#1b2230">model, after every result and</text>
+<text x="145.0" y="442.0" font-size="13" text-anchor="middle" fill="#1b2230">every stop; `harness view`</text>
+<rect x="818" y="370" width="250" height="84" rx="6" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="943.0" y="391.0" font-size="13" font-weight="700" text-anchor="middle" fill="#1b2230">Option: blueprints (M12)</text>
+<text x="943.0" y="408.0" font-size="13" text-anchor="middle" fill="#1b2230">holes worked as claims in</text>
+<text x="943.0" y="425.0" font-size="13" text-anchor="middle" fill="#1b2230">separate sessions; see</text>
+<text x="943.0" y="442.0" font-size="13" text-anchor="middle" fill="#1b2230">blueprints.svg</text>
+<polyline points="270,125 286,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="536,125 552,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="802,125 818,125" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="270,265 286,265" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="536,265 552,265" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="802,265 818,265" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="943,175 943,195 145,195 145,215" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="880,315 880,342 677,342 677,370" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="1018,315 1018,370" fill="none" stroke="#3a4256" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ae)"/>
+<polyline points="552,412 536,412" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<polyline points="286,412 270,412" fill="none" stroke="#3a4256" stroke-width="1.8" marker-end="url(#ae)"/>
+<rect x="881" y="323" width="72.60000000000001" height="18" rx="3" fill="#ffffff" fill-opacity="0.9"/>
+<text x="884" y="336" font-size="12" text-anchor="start" fill="#2c3345">candidate</text>
+<rect x="20" y="494" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2"/>
+<text x="48" y="506" font-size="12" text-anchor="start" fill="#1b2230">built</text>
+<rect x="106.5" y="494" width="22" height="14" rx="3" fill="#fbf1e1" stroke="#a66300" stroke-width="2"/>
+<text x="134.5" y="506" font-size="12" text-anchor="start" fill="#1b2230">built, a part not yet run for real</text>
+<rect x="393.1" y="494" width="22" height="14" rx="3" fill="#e8eefa" stroke="#1f4fa3" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="421.1" y="506" font-size="12" text-anchor="start" fill="#1b2230">an option, off by default</text>
+</svg>

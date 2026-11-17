@@ -22,3 +22,4 @@ export * from "./explore.ts";
 export * from "./m13.ts";
 export * from "./evolve.ts";
 export * from "./m16.ts";
+export * from "./graph-search.ts";

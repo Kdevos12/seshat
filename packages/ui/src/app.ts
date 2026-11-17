@@ -5,6 +5,7 @@ import { doctorReport, type DoctorSystem, realSystem } from "@seshat/orchestrato
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { plan, RequestError } from "./commands.ts";
+import { parameterList } from "./parameters.ts";
 import { type ProcessManager } from "./jobs.ts";
 import { KeyFileError, type KeyStore, redact, validKey } from "./keys.ts";
 import { describeModels, describeProviders, serverModels, VariableFinder } from "./providers.ts";
@@ -138,6 +139,9 @@ export function createApp(o: AppOptions): Hono {
     if (models.getProvider(id) === undefined) throw new RequestError("no such provider", 404);
     return c.json({ provider: id, stored: false, removed: o.keys.remove(id) });
   });
+
+  // ---- The catalogue of settings, for the settings menu (documentation/ui.md, "Settings").
+  app.get("/api/parameters", (c) => c.json(parameterList()));
 
   // ---- The machine.
   app.get("/api/doctor", async (c) => {

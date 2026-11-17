@@ -70,6 +70,7 @@ export const DRIFT_ROUTES: Readonly<Record<DriftKind, Route>> = {
   statement_drift: reset("the file drifted from the target's statement, so what the task rests on is lost; go back to the parent"),
   restated_target: reset("an auxiliary lemma restates the target, so it decomposes nothing; go back to the parent and decompose it differently"),
   length_growth: retry("the file grows and no subgoal closes; a fresh session starts again from the file and the notes, told to simplify"),
+  repeated_failure: branch("the same failure with the same strategy came back four times on the problem; open an alternative task under other constraints, with another strategy"),
   unresolved_citation: retry("a reference resolved to nothing known; a fresh session cites only what it was given"),
   sorry_as_known: retry("a sorry was presented as a known result; a fresh session proves the step or drops the claim"),
   raw_error_text: retry("Lean's raw output was in a text; a fresh session works from the typed summary"),

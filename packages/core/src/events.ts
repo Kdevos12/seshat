@@ -66,6 +66,13 @@ export interface TokenCost {
    * table is authoritative (documentation/m0-loop.md, "Prices"), and the report shows how much it left out. Absent otherwise.
    */
   unchargedUsd?: number;
+  /**
+   * Of `usd`, the dollars of the output tokens, and of the cache reads (the cache-hit price), at the prices that charged the
+   * response (the loop telemetry of the report, documentation/report.md): what is left is the cache-miss input and cache writes.
+   * Absent in journals written before the fields, and when the response had no such tokens.
+   */
+  outputUsd?: number;
+  cacheReadUsd?: number;
 }
 
 /**
@@ -127,6 +134,12 @@ export interface EventDataMap {
     config: Json;
     codeRev?: string;
     /**
+     * The axes of the run (plan change LH9, documentation/runs.md): how long it is bound, and whether it stops for a person. Absent in a journal
+     * written before them, which was an `episode` with `consortium` when it has `turn.started` events and `none` otherwise.
+     */
+    horizon?: "episode" | "campaign";
+    human?: "none" | "consortium" | "digest";
+    /**
      * The earlier run this one starts on: its journal is replayed before this one, checked against
      * `lastHash` (documentation/memory.md, "Memory across runs"). Absent: a run from nothing.
      */
@@ -156,7 +169,8 @@ export interface EventDataMap {
     /**
      * Why the run stopped before its last problem: `aborted`, `budget_exhausted`, `lean_unavailable`,
      * `lean_environment` (the Lean server cannot import the environment's libraries), or
-     * `errors` (problems ended with a harness error in a row).
+     * `errors` (problems ended with a harness error in a row), or
+     * `provider_refused` (the model provider refused the request for good: a balance, a key).
      */
     stopped?: string;
   };
@@ -192,6 +206,77 @@ export interface EventDataMap {
     source: string;
     /** The run's spend when the turn began. */
     startSpend: TokenCost;
+    /** When the turn began, an ISO instant in UTC by the process's wall clock: a campaign's daily cap counts a turn's spend on this instant's day (documentation/campaign.md). Absent in older journals. */
+    at?: string;
+  };
+  /**
+   * A campaign supervisor took up the run (`harness campaign`, documentation/campaign.md): written by the orchestrator between turns, once each
+   * time a supervisor starts, a new one or one that resumes a run whose supervisor ended.
+   */
+  "campaign.started": {
+    runId: string;
+    /** 1 for the first supervisor of the run, then 2... */
+    supervision: number;
+    pid: number;
+    /** The pacing: dollars a UTC day may spend, the wall-clock end (an ISO instant), and whether turns wait for the off-peak window. */
+    usdPerDay?: number;
+    until?: string;
+    offPeak: boolean;
+    /** True when the supervisor took up a run an earlier one had begun. */
+    resumed: boolean;
+  };
+  /**
+   * The campaign waits before its next turn: the day's cap is spent (until the next UTC day), or the model provider's usage limit was reached
+   * (until the backoff ends). Written by the orchestrator before the wait begins.
+   */
+  "campaign.waiting": {
+    runId: string;
+    reason: "daily_cap" | "usage_limit";
+    /** ISO instants in UTC: when the wait began and when the next turn may start. */
+    from: string;
+    until: string;
+    detail: string;
+  };
+  /**
+   * A turn of a campaign ended at an impasse and the next one changes mode (plan change LH2: an impasse breakpoint is "change mode" in a
+   * campaign, not "stop and wait"). `cold_restart` for an impasse (the next turn's sessions start cold); a plateau adds the modes of plan change LH5.
+   */
+  "campaign.mode_changed": {
+    runId: string;
+    /** The turn that ended at the impasse, or the turn after which a plateau mode begins (plan change LH5). */
+    turn: number;
+    /** `cold_restart` (an impasse), or one of the plateau modes `specialise`, `test`, `construct`, `read`, `reformulate` (documentation/campaign.md, "Plateau modes"). */
+    mode: string;
+    reason: string;
+    problemId?: string;
+    /** For a plateau mode: the modes the rule passed over because they do not apply to the statement or the run, each with why. Absent: none. */
+    skipped?: Array<{ mode: string; why: string }>;
+    /** For a plateau mode: how many modes the rule has gone through since the frontier last grew, the skipped ones included; two full cycles of five end the campaign (LH6). */
+    step?: number;
+  };
+  /**
+   * The campaign's dead-end store changed (plan change LH4, documentation/campaign.md, "The dossier"), written by the orchestrator between turns: `added`, the
+   * items a reflection call proposed that code validated (a model only proposes; the dossier is never a model's rewrite), and `retired`, the keys of the
+   * items the least active half of the store past its bound dropped from view. A retired item stays in the journal. Absent fields: none.
+   */
+  "campaign.dossier": {
+    runId: string;
+    turn: number;
+    added?: Array<{ approach: string; why: string; evidence?: string }>;
+    retired?: Array<{ key: string; score: number }>;
+  };
+  /**
+   * The campaign is over. `settled`: the certifier's kernel replay settled the target (the only end that is not a stop). Every other reason is a
+   * stop, with the frontier at that point: `allowance` (the run's budget is spent), `until` (the wall-clock end), `spiral` (turns that spent without
+   * the frontier growing), `ended` (the run finished some other way), `aborted` (the supervisor was stopped).
+   */
+  "campaign.stopped": {
+    runId: string;
+    reason: "settled" | "allowance" | "until" | "spiral" | "ended" | "aborted";
+    detail: string;
+    turns: number;
+    usd: number;
+    frontier?: { score: number; entries: number };
   };
   /**
    * The run waits for the host's off-peak hours before it starts a turn or a session (`--offpeak`,
@@ -247,6 +332,8 @@ export interface EventDataMap {
     target: string;
     source: SourceRef;
     domain: string[];
+    /** The cap the problem's ledger was opened with, recorded only under `RunConfig.budgetShare` (plan change PA4). */
+    allowanceUsd?: number;
   };
   "problem.finished": {
     problemId: string;
@@ -354,6 +441,10 @@ export interface EventDataMap {
      * than the field, and for a session that did not start.
      */
     toolTokens?: number;
+    /** The Lean checks the session made (`lean_check` calls that reached Lean). Absent in journals older than the field. */
+    checks?: number;
+    /** The open holes (Lean's `sorry` goals) each of those checks left, in order; a check Lean could not answer adds none. Absent in older journals. */
+    holes?: number[];
     /** The strategy classified from what the attempt submitted. */
     strategy?: string;
     /** The strategy the model declared in its last `lean_check` that gave one; replaces the one given at the start. */
@@ -362,6 +453,18 @@ export interface EventDataMap {
     premises?: string[];
     /** A short typed summary of the failure, such as `unsolved goals at case succ`. */
     failureDetail?: string;
+    /**
+     * The class of the last check of a session that a round's slice cut (`RunConfig.budgetRounds`, which records it only then). It is not a
+     * failure: `failureClass` stays absent for a budget cut. Only the rotation's measure of Lean progress reads it (documentation/scheduler.md).
+     */
+    lastCheckClass?: string;
+    /**
+     * Cold restarts (`RunConfig.restarts`): why the session ended as a restart, `schedule` (its step limit) or `stuck` (the same failure class on the
+     * same goal in several checks, or M6's repeat rule) with the class. Absent: not a restart, or the setting is off.
+     */
+    restart?: { reason: "schedule" | "stuck"; class?: string };
+    /** The calls of a cold session to its tool `previous_attempt` (`RunConfig.restarts`); absent: none. Each answer is in the session's transcript. */
+    previousAttemptCalls?: number;
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };
@@ -461,6 +564,12 @@ export interface EventDataMap {
     responseHash?: string;
     error?: string;
     durationMs: number;
+    /** The role the call was made for (`RunConfig.roles`, documentation/models-setup.md, "Roles"). Absent: the run set no role for it. */
+    role?: string;
+    /** The sampling settings the call was sent with, and `ignored`, the ones its model's family ignores and that were not sent. Absent: the role's own settings are none. */
+    settings?: { [key: string]: Json };
+    /** Set when the planner's call went to the escalation model: the planner's own model, and the refinement rounds in a row without Lean progress that led there. */
+    escalation?: { from: string; rounds: number };
   };
   /**
    * A task of the ledger (documentation/ledger.md). Written by the orchestrator only: a line
@@ -614,6 +723,59 @@ export interface EventDataMap {
     reason: string;
   };
   /**
+   * A round of a run's budget in rounds began (`RunConfig.budgetRounds`, plan change CA8, documentation/scheduler.md, "The budget in rounds"):
+   * the problems it works, in the order they are given a slice, the most one of them may have spent in all (`capUsd`, `runUsd / (4K) * 2^round`),
+   * and where each stood at its start (`marks`, the measure its end is compared with: absent in round 0). `resumed` names the parked problems
+   * this round takes up again. A resumed run reads these events to continue the same rotation. Written by the orchestrator only.
+   */
+  "budget.round": {
+    round: number;
+    capUsd: number;
+    runUsd: number;
+    problems: string[];
+    marks?: { [problemId: string]: { proved: number; holes: number | null; depth: number } };
+    resumed?: string[];
+  };
+  /**
+   * A problem without Lean progress at the end of its round was parked: it waits until every other problem is solved or parked and budget
+   * remains. `usd` is what it had spent in all. Written by the orchestrator only; it changes no claim.
+   */
+  "problem.parked": {
+    problemId: string;
+    round: number;
+    usd: number;
+    capUsd: number;
+    reason: string;
+  };
+  /**
+   * A child began (documentation/runs.md, "Children"): a delegated piece of work of a run, started through `runChild`. `kind` is one of
+   * `CHILD_KINDS`; `goal` is a claim or an evidence need; `capUsd` and `capTokens` are the ledger carved for it from its parent's remainder;
+   * `tools` are the capability ids it may use; `output` is the node or event kind it writes; `resumeKey` is how a resume recognizes it as done.
+   * Written by the orchestrator only; it changes no claim.
+   */
+  "child.started": {
+    childId: string;
+    kind: string;
+    goal: { claimId?: string; need?: string };
+    problemId?: string;
+    parentChildId?: string;
+    capUsd?: number;
+    capTokens?: number;
+    tools: string[];
+    output: string;
+    resumeKey: string;
+  };
+  /** A child ended: `done` (its output is written), `failed`, or `stopped` (cut before its output: a resume runs it again). What it spent is its ledger's. */
+  "child.finished": {
+    childId: string;
+    resumeKey: string;
+    status: "done" | "failed" | "stopped";
+    usd: number;
+    inputTokens: number;
+    outputTokens: number;
+    reason?: string;
+  };
+  /**
    * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
    * name, version and content hash, what it adds and the programs and servers its tools would run. Written
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
@@ -672,6 +834,45 @@ export interface EventDataMap {
     trivial?: { by: string };
   };
   /**
+   * The statement may be sent to third parties for the intake step (literature search, `lit.search`), or may not: the answer, asked
+   * once before the step (documentation/literature.md, "Third parties"). Written by `human:NAME` when a person answered (`harness
+   * solve` asks once; `--lit` agrees in a call that cannot ask; absence is no), and by the orchestrator when no one is asked
+   * (`via: "bench"`: a bench problem is public; `via: "private"`: `--private` wins over everything). It changes no claim.
+   */
+  "intake.consented": {
+    problemId: string;
+    /** True: the statement may go to the backends. */
+    allowed: boolean;
+    via: "asked" | "flag" | "bench" | "private" | "default";
+  };
+  /**
+   * The intake step of a problem ended, before any paid session: it searched the literature and judged the hits, or was skipped
+   * with a reason. Written by the orchestrator only. The hits themselves are `literature` nodes (data `{backend, url, title, quote,
+   * verdict, settled}`); this event is the record of the step: the three queries, what was dropped and why (a quote that is not in the
+   * fetched text, an answer the judge did not give), and what the step cost. It changes no claim.
+   */
+  "intake.finished": {
+    problemId: string;
+    claimId: string;
+    state: "done" | "skipped";
+    /** Why the step did not run (`private`, `not agreed`, `budget`, `cap`, `no backend`, `failed: ...`). */
+    reason?: string;
+    /** The query forms sent: `{form, query}`. */
+    queries: Array<{ form: string; query: string }>;
+    /** Hits the backends returned, and hits that became `literature` nodes. */
+    hits: number;
+    kept: number;
+    /** Hits that were not kept, with the reason. */
+    dropped: Array<{ backend: string; url: string; title: string; why: string }>;
+    /** Kept hits that say `proves` or `refutes` with a screened quote. */
+    settled: number;
+    /** What the judge call cost, against the cap of the step. */
+    usd: number;
+    capUsd: number;
+    /** The judge's call, when one was made. */
+    modelCallId?: string;
+  };
+  /**
    * The memory enters a new epoch: the prover model family, the prompts' major version or the Mathlib
    * revision is not the one of the memory's previous run. The unverified artifacts of older epochs
    * are in probation from here on (documentation/memory.md, "Provenance and epochs"). Written by the
@@ -716,6 +917,11 @@ export const EVENT_TYPES: readonly EventType[] = [
   "turn.started",
   "turn.ended",
   "turn.deferred",
+  "campaign.started",
+  "campaign.waiting",
+  "campaign.mode_changed",
+  "campaign.dossier",
+  "campaign.stopped",
   "attempt.charged",
   "task.created",
   "task.assigned",
@@ -724,10 +930,16 @@ export const EVENT_TYPES: readonly EventType[] = [
   "ladder.escalated",
   "memory.epoch_opened",
   "statement.signed",
+  "intake.consented",
+  "intake.finished",
   "decision.made",
   "budget.gated",
   "pack.installed",
   "pack.removed",
+  "budget.round",
+  "problem.parked",
+  "child.started",
+  "child.finished",
 ];
 
 /** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */
@@ -738,3 +950,7 @@ export const GATE_DECIDERS = ["rule", "floor", "probe", "progress", "decide", "m
 export function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && (EVENT_TYPES as readonly string[]).includes(value);
 }
+
+/** The kinds of child a run starts (documentation/runs.md, "Children"). */
+export const CHILD_KINDS = ["probe", "prover", "hole", "informal", "planner", "program_search", "variant"] as const;
+export type ChildKind = (typeof CHILD_KINDS)[number];

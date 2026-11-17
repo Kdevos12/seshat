@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { readEvents } from "@seshat/core";
 import { type Annotations, suggestTags, validateAnnotations } from "./annotations.ts";
 import { buildIndex, DISCRETE, readIndex, sequencesOf, writeIndex } from "./bench.ts";
+import { buildGraded, lakeAdmitter, writeGraded } from "./graded.ts";
 import { convertRows, licenceNote, readCache, closedByStep } from "./ext.ts";
 import { scanCheckout } from "./formal-conjectures.ts";
 
@@ -12,6 +13,7 @@ const usage = `usage:
   harness-bench stats --checkout DIR
   harness-bench sequences --index FILE
   harness-bench tags (validate|suggest) --index FILE [--annotations FILE]
+  harness-bench graded --fc DIR --putnam DIR --seed S --out FILE [--lean-project DIR] [--size-b 100] [--size-c 70]
   harness-bench ext convert (--cache DIR | --rows FILE) [--out FILE]
   harness-bench ext steps RUN_DIR`;
 
@@ -27,12 +29,18 @@ const { positionals, values } = parseArgs({
     annotations: { type: "string" },
     cache: { type: "string" },
     rows: { type: "string" },
+    fc: { type: "string" },
+    putnam: { type: "string" },
+    seed: { type: "string" },
+    "lean-project": { type: "string" },
+    "size-b": { type: "string" },
+    "size-c": { type: "string" },
   },
 });
 
 const command = positionals[0];
 
-if (command === "sequences" || command === "tags" || command === "ext") {
+if (command === "sequences" || command === "tags" || command === "ext" || command === "graded") {
   process.exitCode = other();
   process.exit();
 }
@@ -58,6 +66,21 @@ function other(): number {
       for (const p of problems) console.error(p);
       console.log(problems.length === 0 ? "annotations are valid" : `${problems.length} problem(s)`);
       return problems.length === 0 ? 0 : 1;
+    }
+    if (command === "graded") {
+      if (!values.fc || !values.putnam || !values.seed || !values.out) throw new Error("graded needs --fc DIR, --putnam DIR, --seed S and --out FILE");
+      const bench = buildGraded({
+        fc: values.fc,
+        putnam: values.putnam,
+        seed: values.seed,
+        ...(values["size-b"] !== undefined ? { sizeB: Number(values["size-b"]) } : {}),
+        ...(values["size-c"] !== undefined ? { sizeC: Number(values["size-c"]) } : {}),
+        ...(values["lean-project"] !== undefined ? { admit: lakeAdmitter(values["lean-project"]) } : {}),
+      });
+      writeGraded(values.out, bench);
+      for (const [grade, g] of Object.entries(bench.grades)) console.log(`grade ${grade}: ${g.entries} problems of ${g.candidates} candidates, ${g.rejected.length} rejected by Lean (${g.source})`);
+      if (values["lean-project"] === undefined) console.error("no --lean-project: every entry is recorded as unchecked, and a run refuses them without --allow-unchecked");
+      return 0;
     }
     if (command === "ext") {
       if (positionals[1] === "convert") {

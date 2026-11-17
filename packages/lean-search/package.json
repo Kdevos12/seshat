@@ -1,0 +1,14 @@
+{
+  "name": "@seshat/lean-search",
+  "version": "0.0.0",
+  "private": true,
+  "description": "lean.search: premise search behind the registry (a remote service, a local index, a pattern search) and the harness's push of verified hits into a check's answer.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@seshat/core": "workspace:*",
+    "@seshat/registry": "workspace:*"
+  }
+}

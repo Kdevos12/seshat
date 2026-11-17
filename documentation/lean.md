@@ -79,6 +79,34 @@ The harness does not build a `KiminaChecker` itself: the registry does, through 
 `httpSlackMs`, `retries`; an empty `apiKey` sends no key) and the version pinned in
 `capabilities/lean.check/manifest.json` ([capabilities.md](capabilities.md#leancheck)).
 
+## Bounded checks
+
+Three optional settings of a host profile (`config/hosts/HOST.json`, top level) concern the Lean checks; a profile that gives none
+behaves as before:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `checkTimeoutSec` | 120 | The seconds a prover's Lean check may take, for a run that turns the bound on (`RunConfig.checkTimeoutSec`; `harness solve`'s defaults set `v2` does, `harness run` does not). It bounds the provers' checks only: the validator's policy (300 s) and the certifier keep their limits. A check that passes it answers "Lean did not finish within the time limit" and costs the session one turn, not 900 s. |
+| `healthTimeoutMs` | 15000 | How long `harness health` waits for one implementation; raise it for a cold laptop. |
+| `leanServerMemoryWarnMb` | 8192 | The resident memory of the Lean server past which `harness doctor` warns. |
+
+`healthTimeoutMs` and `leanServerMemoryWarnMb` are diagnostics: they are left out of the registry's hash, so changing them does not
+make a recorded run unresumable. `checkTimeoutSec` is in it.
+
+## Memory of the Lean server
+
+Kimina keeps REPLs with Mathlib loaded, and by default never recycles one (`MAX_REPL_USES` unset), so a long run grows the server until the
+machine swaps and checks time out. `harness doctor` ([quickstart.md](quickstart.md#harness-doctor)) prints the settings that fit the machine's
+memory (`kiminaSettingsFor` in `lean-memory.ts`): about 60% of the memory is the server's, one REPL per 4 GB of it (`MAX_REPLS`, at least 1 and
+at most 32), `MAX_REPL_MEM` the share of each, and `MAX_REPL_USES` 50 on a machine under 32 GB and 100 above. They are working figures, not
+measurements. It also warns when the server's resident memory passes the host's `leanServerMemoryWarnMb` (default 8 GB).
+
+The server's memory is read from the process table (`ps -eo rss=,args=`: the processes of a Kimina server and its `repl` processes, summed),
+and only when `LEAN_SERVER_API_URL` is empty or points at this machine. Any failure (no `ps`, a server elsewhere, no such process) gives no
+number, and no number gives no warning. The reader is a member of `DoctorSystem` (`leanServerMemoryMb`), so a test gives its own.
+`harness lean-server start`, which would start Kimina with these settings under a memory cap, is not built (Ruling 33): the advice comes first.
+The names of the settings are the plan's; whether the server reads them with a prefix of its own has not been checked against a real Kimina.
+
 ## Deployment for the bench
 
 The bench is pinned to formal-conjectures `bench-v1-lean4.27.0` ([bench.md](bench.md)), so the
@@ -146,6 +174,93 @@ profiles do): it certifies each problem's candidate, and the proofs and refutati
 neither a sandbox command nor `unsandboxed: true` (neither default profile has one), the
 certifier is unavailable: every candidate stays a candidate and its problem says why.
 
+## Search pushed by the harness
+
+Plan change CA22, Task 40; `@seshat/lean-search`, the capability `lean.search` ([capabilities.md](capabilities.md#leansearch)), the option
+`RunConfig.leanSearch` (`harness run --lean-search`, `harness solve --lean-search`; off in `harness run`; on in `harness solve`'s set `v2` when the host offers `lean.search`, through `SOLVE_SWITCHES`, and off in `v1`).
+Agents ignore lookup tools they must call, and hallucinated names are a third to a half of cheap models' errors: so the harness itself
+searches, and puts what it finds into the answer to the check.
+
+**When.** After a check that did not accept the file (the answer's `appendToCheck` hook of the session, `SessionOptions`; the same for
+`lean_check` and `lean_edit`), at most three queries, in this order: each `unknown identifier 'NAME'` or `unknown constant 'NAME'` of the
+report, with the missing name as the query (kind `name`); then each hole, with its goal as the query (kind `goal`; the last 500 characters,
+which hold the target). A query is made once a check. Each query asks `lean.search` for at most five hits. The three numbers are constants of
+`push.ts` (`MAX_QUERIES`, `MAX_HITS`) and `MAX_GOAL_QUERY_CHARS`.
+
+**Checked before it is shown.** A hit is a name that a backend says exists, perhaps in another Mathlib. For the candidates of one answer the
+harness makes one Lean call through the registry's `lean.check`, the same service the workbench uses: the imports of the checked file, then
+`#check NAME` for each name, with a limit of 30 s. A name that Lean answers with an error at its line is dropped. If the call fails, times out
+or throws, no hit is shown at all: an unverified name never reaches the model, and nothing of that call is remembered. A name that is
+verified, or found missing, is kept for the run by the imports it was checked under, so a name is checked once per run and environment.
+A name that is not the shape of a Lean name (one token, letters, digits, `_`, `'`, `.`, `!`, `?`, subscripts, `«»`) is dropped before it is
+ever put in a Lean file, so that a backend cannot send a command through the name.
+
+**What the model sees: Lean's text, not the backend's.** The section shows, for each hit, the name and signature that Lean printed for
+`#check`, on one line and cut at 300 characters. The text that a backend returned (a type, a doc string, a description) is third-party text.
+It ranks hits inside the local index and goes no further: the capability's answer holds names only, and the section is made from Lean's
+output alone. It never enters a system prompt, a lesson, a note or the memory, and the model is told the section is the harness's, checked
+with Lean. Global Constraint 16 (as amended): text from an external source never becomes part of a prompt or a lesson.
+
+**The section.** It is appended to the answer after Lean's own, titled "Declarations that exist in this environment", with the hits under
+the query that found them ("For unknown name `foo`:", "For hole 1:"), a name once. It is cut at a hit boundary at 1,200 characters
+(`MAX_SECTION_CHARS`, the title included), so an answer is at most `formatCheck`'s bound plus that. It is not in the check's one-line summary
+(`details.summary`), so [the masked form of an old check](m0-loop.md#masked-old-checks) does not keep it: the hits of a check that has aged out
+of the last four are gone with the rest of its text. The journal keeps the checks as before and no event is added: the search is a tool run
+of `lean.search` (actor `lean.search`) and the verification a tool run of `lean.check` (actor `lean.search`), neither attributed to the
+attempt, so the loop telemetry's check times stay the provers' own. A hit is not a claim and changes no status.
+
+**Once a run, once a session.** A query `(kind, query)` is sent to the backends once a run: its names are kept in the push object, as the
+verification is, so the same unknown name or goal is not sent again (to a third party, with up to 8 s of waiting) at every failing check. An
+answer is kept only when every backend that was to be asked answered: a failure, or a partial answer, is asked again at the next check
+(a backend a private run leaves out by design is no failure). Each session also keeps the names it was shown and the check whose answer showed
+them: a name is left out of a new section while that answer is in the history, and may come back once it has been masked (`maskedCount` of
+`mask.ts`, when `maskOldChecks` is on; without masking, a name is shown once a session). When nothing new remains no section is appended.
+A name is remembered as missing from the environment only when Lean's message at its line says `unknown identifier` or `unknown constant`: a file
+that failed for another reason (an import, the server) says nothing of the name, and nothing is cached.
+
+**The report.** The search's own Lean runs are kept out of the provers' check count and times: the verification is a tool run of
+`lean.check` by the actor `lean.search`, and `report.json` has `leanSearch` (`requests`, `requestMs`, `checks`, `checkMs`), printed as its own
+line in `report.md` ("Lean search (not in the checks above)").
+
+**The graph and context counts.** When line M2 or M4 ran, `report.json` has `graph` (`graph.context`: `packets`, `packetTokens`, `factsShown`, `expandCalls`, `graphQueryCalls`; `graph.graph`: `variants`, `edges`, `leanCheckedEdges`), built from the journal alone and printed as lines in `report.md`; the ablation's table has a section with one row per arm that has them (plan change KG1, [context.md](context.md)).
+
+**Backends** (the host profile's `lean.search` settings; each optional, any mix): `remote`, an HTTP service for natural-language and goal
+queries (`remoteUrl`, `LEAN_SEARCH_URL`); `local`, a file of declarations ranked by BM25 with no model (`index`, `LEAN_SEARCH_INDEX`: a JSON
+array or JSONL of `{name, type, doc?}`, for instance the export of the run's environment); `pattern`, a Loogle-like service (`patternUrl`,
+`LEAN_PATTERN_URL`), or a match of a goal's conclusion over the index when there is no address. The services are reached over https only, only at a host of the setting `allowedHosts` (the shipped profiles allow `leansearch.net` and
+`loogle.lean-lang.org`; none listed, none allowed), with no credentials in the address, no redirect, an answer read up to 256 KB and 8 s of
+waiting. An address from `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL` at another host makes that backend unavailable with its reason (in `skipped` and in
+`harness health`), and the others go on. A name is one token of dot-separated parts (guillemets only as a whole `«...»` part).
+With `--lean-search` and no usable backend the run says so once at its start. A backend that fails is skipped and the others
+answer; with none set up the capability answers no hit.
+
+**Against the real services (plan change PA3).** In the third real run no session had a Mathlib search: the owner's profile set no address, so
+`lean.search` answered empty. A free probe on the owner's machine (2026-11-12) recorded the two public services' answers. Loogle
+(`GET https://loogle.lean-lang.org/json?q=PATTERN`) answers `{count, header, heartbeats, hits: [{name, type, module, doc}], suggestions}` with
+up to 200 hits, which `parseHits` reads as it was; both backends now cut the hits to the limit asked. LeanSearch
+(`POST https://leansearch.net/search`) reads the query only as a list, `{"query": [TEXT], "num_results": N}`, and answers one list per query of
+`{result: {name: [parts], module_name, kind, signature, type, docstring, informal_name, informal_description}, distance}`: the setting
+`remoteQuery` (`text`, the default, or `list`; `LEAN_SEARCH_QUERY`) sends that form. `config/hosts/local.json` now sets both services when the
+variables are not set (`LEAN_SEARCH_URL` defaults to `https://leansearch.net/search` with `remoteQuery` `list`, `LEAN_PATTERN_URL` to
+`https://loogle.lean-lang.org/json`), so a profile built from it searches Mathlib without a setting; `--private`, or no yes to the question asked
+once, still keeps every query on the machine. The tests read the recorded answers (`packages/lean-search/test/fixtures/real/`, Loogle's cut to 25 of its 200 hits; `real-shapes.test.ts`). Not run: a
+run with these services; whether the Mathlib behind leansearch.net matches the run's Lean 4.27 Mathlib (a name it gives that the run's
+Mathlib lacks is dropped by the `#check` that confirms every hit).
+
+**Third parties (`--private` and consent).** `remote` and `pattern` send the missing name, or a hole's goal (the statement being worked on), to a
+service, so `lean.search` is marked `thirdParty` with the private form `{"private": true}` ([trust.md](trust.md#third-parties)). The registry adds
+that input to every call of a run that is private (`RunConfig.private`, `--private`) or that has no journaled yes: the call says `private`, the
+implementation does not ask them, and `pattern` falls back to the index when there is one. A caller cannot forget it, and a direct registry call
+without the field sends nothing either. The local index never leaves the machine. Without either, in `harness run` (bench problems are public) the
+services are on. In `harness solve`, `--lean-search` (and the defaults set `v2`, which turns it on when the host offers `lean.search`; `--no-lean-search` turns it off) brings the question asked once for the literature, worded with the hosts the profile allows;
+the answer is journaled as `intake.consented`, `--lit` is the non-interactive yes, `--yes` or `--ask-stdin` without `--lit` is no, and a resumed run
+reads the journaled answer. With a no, `lean.search` runs with its local backends only.
+
+**Not run.** Nothing here ran against a real Lean (the `#check` line and the lines Lean gives its messages are from its documentation as
+remembered; the verification reads the message at the line of each `#check`), a real search service (the request and the answer shape of
+`remote` and `pattern` are written from the services' documentation as remembered and may need an adapter, which is a replacement of the
+backend behind the same capability) or an index of Mathlib. The tests use a simulated Lean and fake services.
+
 ## To verify against Lean
 
 These depend on Lean's exact behaviour and are covered only by simulations so far. The contract
@@ -170,3 +285,6 @@ of `lean.check` checks each of them against a server
 9. For `lean.lsp`: what depends on the language server and on the search sites, listed in
    [lean-lsp.md](lean-lsp.md#to-verify-against-lean).
 10. The certifier, from building SeshatCertify on: [certifier.md](certifier.md#to-verify-against-lean).
+11. For `lean.search`: that `#check NAME` of a Mathlib name prints its signature as one info message at the line of the command and
+    that an unknown name is an error at that line; the real services' request and answer shapes; an index of Mathlib
+    ([above](#search-pushed-by-the-harness)).

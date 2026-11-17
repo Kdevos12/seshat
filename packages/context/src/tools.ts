@@ -140,6 +140,7 @@ function expandEdge(env: ToolEnv, name: string, edgeId: string): string {
 /** `expand(id, kind?)` for a name the packet or a tool answer gave. */
 export function expandTool(env: ToolEnv): LineTool {
   return {
+    journaled: true,
     name: "expand",
     description:
       "Shows one item of your context in full: a claim (C17) with its statement and a table of its neighbours in the graph, a premise or lemma (L4) with its whole statement and what to import or paste, a piece of advice (A2), or an edge (E5). " +
@@ -206,6 +207,7 @@ function patternSearch(env: ToolEnv, pattern: string, limit: number): string {
 /** `graph_query`: typed path queries, paths that connect several claims, and statement patterns, over the research graph. */
 export function graphQueryTool(env: ToolEnv): LineTool {
   return {
+    journaled: true,
     name: "graph_query",
     description:
       "Queries the research graph in code. Three forms. (1) A typed path query: `from` (ids from your context, default the goal), `kinds`, `edgeStatuses`, `claimStatuses`, `direction`, `depth`: the claims reached and the edges followed. " +

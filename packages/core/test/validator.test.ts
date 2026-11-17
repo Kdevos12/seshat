@@ -88,6 +88,13 @@ describe("scanRegion", () => {
 });
 
 describe("forbiddenTokensIn", () => {
+  it("refuses a partial definition, not a name that holds the word", () => {
+    assert.deepEqual(forbiddenTokensIn("partial def aux_f : Nat → Nat\n  | n => aux_f n"), ["partial"]);
+    assert.deepEqual(forbiddenTokensIn("exact Finset.sum_partial_le h"), []);
+    assert.deepEqual(forbiddenTokensIn("exact partial_sum_le h"), []);
+    assert.deepEqual(forbiddenTokensIn("exact (PartialOrder.le_refl a)"), []);
+  });
+
   it("lists the forbidden tokens of a text whose comments are blanked, in the order of the list, with whole-word matching", () => {
     assert.deepEqual(forbiddenTokensIn("n = n #eval IO.Process.exit 7 macro_rules"), ["#eval", "macro_rules", "IO"]);
     assert.deepEqual(forbiddenTokensIn("exact _root_.Lean.ofReduceBool"), ["Lean"]);
@@ -198,6 +205,20 @@ describe("structuralCheck", () => {
       "theorem aux_a (n : ℕ) : n + 0 = n := by simp\n\n@[simp]\nlemma aux_b : (2 : ℕ) = 2 := rfl\nopen Classical in\ndef aux_c : ℕ := 3",
       "  -- sorry, native_decide would be cheating\n  simp [aux_a, Nat.digits]\n  omega",
     );
+  });
+
+  it("takes an aux declaration whose binders and statement are on column-0 lines as one declaration, and still refuses what follows it", () => {
+    const split = "theorem aux_x\n(n : ℕ)\n: n = n := rfl";
+    ok(split, "  simp");
+    ok(`${split}\n\nlemma aux_y (m : ℕ) : m = m := rfl`, "  simp");
+    // A command after it is a command of its own, and is judged as one.
+    refused(`${split}\naxiom aux_z : False`, "  simp", /'axiom' is not allowed/);
+    refused(`${split}\naxiom aux_z : False`, "  simp", /only theorem, lemma, def and abbrev are allowed here, found 'axiom'/);
+    refused(`${split}\nopen Lean in\nrun_cmd pure ()`, "  simp", /not allowed/);
+    refused(`${split}\ninstance : Inhabited ℕ := ⟨0⟩`, "  simp", /only theorem, lemma, def and abbrev are allowed here, found 'instance'/);
+    // What hides inside the continuation lines is still scanned.
+    refused("theorem aux_x\n(n : ℕ)\n: n = n := by sorry", "  simp", /'sorry' is not allowed/);
+    refused("theorem bad\n(n : ℕ)\n: n = n := rfl", "  simp", /must start with 'aux_'/);
   });
 
   it("refuses shortcuts and meta-level code wherever they hide", () => {

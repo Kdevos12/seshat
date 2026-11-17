@@ -6,19 +6,26 @@ import { parseArgs } from "node:util";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { type BenchIndex, describeCheckout, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
+import { type BenchIndex, describeCheckout, gradedIndex, isGraded, readGraded, type ProblemEntry, readIndex, sample, sequenceProblems, sequencesOf, TAG_KINDS, taggedWith, type TagKind } from "@seshat/bench";
 import { BlobStore, type DecisionBackend, type Json, newId, readEvents } from "@seshat/core";
 import { checkDecideSettings, type DecideSettings } from "@seshat/decide";
 import { type GateSettings, gateSettings } from "@seshat/scheduler";
 import { MemoryStore } from "@seshat/memory";
 import { ablationLines, isAblationName, type JsonObject, LINE_ORDER } from "@seshat/lines";
-import { CapabilityError, CatalogError, messageOf, runContract, type Registry } from "@seshat/registry";
+import { CapabilityError, CatalogError, hostProfilePath, loadHostProfile, messageOf, runContract, type Registry } from "@seshat/registry";
+import { CLI_OPTIONS } from "./cli-options.ts";
+import { renderParametersList, renderParametersPage } from "./parameters.ts";
 import { renderHealth } from "./health.ts";
+import { checkConsult, type ConsultConfig } from "./consult.ts";
+import { checkRoles, ROLES, type RolesConfig } from "./roles.ts";
 import { openForAnswers } from "./team.ts";
 import { hostLeanEnv, hostName, leanEnvDirectory, openRegistry, REPO_ROOT } from "./implementations.ts";
 import { leanEnvCommand } from "./lean-env-command.ts";
+import { auditCommand } from "./audit.ts";
 import { heuristicsCommand } from "./heuristics-command.ts";
 import { lessonsCommand } from "./lessons-command.ts";
+import { consolidateCommand } from "./consolidate-command.ts";
+import { frontierCommand } from "./frontier-command.ts";
 import { addCommand, packsCommand, removeCommand } from "./packs-command.ts";
 import { libraryExportCommand } from "./library-command.ts";
 import { measureRun } from "./measures.ts";
@@ -27,38 +34,47 @@ import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } fr
 import { buildReport, renderRunReport } from "./report.ts";
 import { writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
-import { doctorCommand, solveCommand } from "./solve-command.ts";
-import { ablateCommand, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
+import { doctorCommand, type SolveFlags, solveCommand } from "./solve-command.ts";
+import { litProbeCommand } from "./lit-command.ts";
+import { refusalLine } from "./provider-errors.ts";
+import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type SplitBy } from "./ablate-command.ts";
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
+import { runCampaign } from "./campaign.ts";
+import { watchCampaign } from "./campaign-watch.ts";
+import { HORIZONS, HUMAN_MODES, type Horizon, type HumanMode } from "./run-shape.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
-import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
+import { describeSettings, mergeSettings, readSettingsFile } from "./settings-file.ts";
+import { CACHE_RETENTIONS, DEFAULT_CONFIG, resolveSteps, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
   harness capabilities [--host HOST]
   harness describe CAPABILITY
   harness health [CAPABILITY] [--host HOST]
+  harness lit probe [--host NAME] [--query "words"] [--limit N] [--out DIR] [--no-cache]   (what each literature site answers, and what the parser makes of it)
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--bench FILE] [--host HOST] [--provers N] [--sessions N] [--turns N] [--context-tokens N]
+              [--bench FILE [--grade A|B|C] [--allow-unchecked]] [--host HOST] [--provers N] [--sessions N] [--steps N] [--context-tokens N]
               [--notes-chars N] [--thinking LEVEL] [--cache-retention none|short|long] [--packet-mode prefix_tail|append_only|recompiled] [--budget-usd X] [--run-budget-usd X] [--concurrency N]
-              [--tool CAPABILITY]... [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
-              [--human] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
+              [--tool CAPABILITY]... [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--consolidation] [--lines ID,...]... [--ablation NAME] [--line-option ID.KEY=VALUE]...
+              [--horizon episode|campaign] [--human none|consortium|digest] [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative] [--turn-consolidation]
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
-              [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
+              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
-              [--configs M0,M1,... | --experiment NAME [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
+              [--configs M0,M1,... | --experiment NAME [--arms NAME,...] [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
+              [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
               [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness optimize-prompts --checkout DIR --model PROVIDER/ID --cutoff DATE (--sample N [--seed S] | --problem ID... | --all) [--split dev]
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
               --max-usd X [--reflect-budget-usd X] [--allow-unpriced] [--alpha X] [--min-gate-problems N] [--ledger FILE] [--reuse-gates] [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
+  harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: one dossier per problem not certified; an ablation directory gets a section per arm)
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
   harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
@@ -72,16 +88,24 @@ const usage = `usage:
   harness library gaps RUN_DIR
   harness library definitions|review|deprecate [NAME] [--registry DIR] [--as NAME] [--note TEXT | --reason TEXT]
   harness lessons pending|approve|reject RUN_DIR [ID] [--as NAME] [--note TEXT]
+  harness frontier RUN_DIR [--claim ID] [--json]   (what the run has established, from its journal: no model, no Lean; documentation/frontier.md)
+  harness consolidate RUN_DIR [--out DIR] [--model PROVIDER/ID --max-usd X] [--host HOST]
   harness heuristics list | stats RUN_DIR | mine RUN_DIR... [--out FILE] [--packs-dir DIR]
   harness add PATH|GIT_URL [--allow-programs] [--replace] [--level1] [--packs-dir DIR]
   harness packs [--packs-dir DIR]
   harness remove NAME [--packs-dir DIR]
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
-  harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin]
+  harness campaign STATEMENT|FILE [--max-usd X] [--usd-per-day X] [--until ISO_TIME] [--no-off-peak] [--spiral-turns N] [--turn-usd X] [the other flags of solve]
+  harness campaign --resume RUN_DIR | --watch RUN_DIR   (take up a campaign whose supervisor ended; the watchdog restarts it with a backoff)
+              (a run that continues alone: turns that do not wait, the digest campaign/digest.md after each; documentation/campaign.md)
+  harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
+              [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
+              [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open] [--runs DIR]
+  harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
 
 ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
 and written (default runs).
@@ -90,20 +114,26 @@ HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and do
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
+Intake (documentation/literature.md; off unless asked, except in solve with --defaults v2, which turns on the intake, --auto-tool and --lean-search; --no-intake, --no-auto-tool and --no-lean-search turn one off and only matter with v2): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
+the literature (lit.search) for each bench problem, with one judge call under --intake-usd (default 0.05); a settled hit or a vacuous statement is a breakpoint in a run
+with a person. For solve the literature needs your agreement: asked once and journaled, or --lit (which also turns --intake on) in a call that cannot ask; no answer
+is no. --private sends nothing to a third party (documentation/trust.md; a pack whose manifest does not declare thirdParty is not checked): the literature is off, lean.search keeps to its local backends, the OEIS, LMFDB and FindStat capabilities are refused, a run that asks a third-party decision model is refused, and solve --tool naming one of them stops before any spend (it wins over --lit and --intake). With --lean-search, solve asks the same one question as for the literature (--lit is the yes; --yes alone is no, and lean.search then stays local). solve --tool ID gives the provers that capability (as run
+does), and --auto-tool adds the host's compute tool (compute.sage) when the statement is finite, about a graph or about numbers.
 solve: a problem of your own with the defaults of a student (documentation/quickstart.md): STATEMENT is Lean (a theorem, a lemma, or binders then ':' and
 the proposition) or prose, or a file holding one. Prose is formalized by the cheapest model with a price, shown to you with test lemmas on its first
 cases, and signed (--yes signs without asking; the signature is journaled before any spend). The allowance --max-usd (default 2) is the run's
 whole budget, the formalization included; the budget gate, probe first and the classical lines M1 and M10 are on; a turn stops, with its
-account, at half the allowance (--turn-usd). RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
+account, at half the allowance (--turn-usd). --defaults picks the set of defaults: v2 (the default) adds the edit tool, the masking of old
+check results, bounded checks, the intake gate, the compute tool and lean.search (when the host offers them) to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
 model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
 config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
 report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
 rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
 RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
-(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. --split N builds
+(documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. solve-defaults runs on the host solve takes unless --host or HARNESS_HOST is given. --arms NAME,... (with --experiment) runs only those arms, in the experiment's order. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
-would no longer differ by their lines alone. chunks: the cost-to-first-success curves of the runs for K provers in parallel.
+would no longer differ by their lines alone. audit: reads a run's journal (no model, no Lean) and writes audit.md, one dossier per problem that was not certified: spend by site, sessions, gate answers, last Lean errors, last sketch, informal proof, hygiene, literature; --reference DIR shows DIR/<problemId>.md beside each (documentation/audit.md). chunks: the cost-to-first-success curves of the runs for K provers in parallel.
 optimize-prompts: GEPA-style rewriting of the prover's system prompt (documentation/prompts.md). It splits the problems into dev, a held-out
 split and a temporal holdout (problems newer than --cutoff), rewrites the prompt on dev with the model, keeps a Pareto set per problem, and
 measures the best candidates against the merged prompt on the two splits the search never saw, at the same budget. It changes no prompt: it
@@ -131,9 +161,21 @@ lean-env: the Lean environments of lean/env (documentation/lean-env.md): resolve
 environment agree and writes its lakefile and lock with the environment hash, build builds the project (needs
 Lean), show says where each one stands. harness lean-env --help has the details. The directory is --env-dir,
 SESHAT_LEAN_ENV_DIR or lean/env; every other command looks the host's environment up in SESHAT_LEAN_ENV_DIR or lean/env.
+--lean-search (run and solve; off by default, also in solve's defaults sets): after a check that did not accept the file, the harness searches Lean
+declarations for each unknown identifier and each hole's goal (capability lean.search: a remote service, a local index, a pattern search, as
+the host profile sets them up), checks every hit against the run's Lean, and adds the names and the signatures Lean printed to the check's answer
+(documentation/lean.md, "Search pushed by the harness"). The host must offer lean.search.
+--consult MODEL (run and solve; beta, off by default, in no defaults set and no arm; documentation/models-setup.md, "Consult"): gives the outer prover the tool consult(question), one question as text to another model, answered
+in the prover's context only (advice: only Lean decides), at most --consult-calls (default 2) times a session and --consult-tokens (default 1000) tokens an answer, charged to the problem's budget and journaled at the site consult.
+--role ROLE=MODEL and --role-setting ROLE.KEY=VALUE (run and solve, repeatable; documentation/models-setup.md, "Roles"): a model, and sampling settings, for a place the harness calls a model from. ROLE is prover (the
+outer sessions), planner (the refinement rounds), hole (the hole sessions), verifier or consult (a model for the consult tool), or escalation (the planner's next model after two rounds without Lean
+progress); KEY is temperature, topP or thinking (escalation: maxShare). A role not named has the run's model and settings. Example: --role planner=PROVIDER/ID --role-setting planner.temperature=0.2.
+--sketch FILE (solve; documentation/human.md, "A person's sketch"): your own informal proof or hint, in a text file of at most 20000 characters. It is journaled once as a hint under your name (--as), shown to the first
+briefing of the outer prover in a section "A sketch from NAME" and to the planner's prompt when the scheduler refines, as unchecked data; it never sets a status. It goes with one statement.
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
+--settings FILE (run and solve): a JSON object whose keys are RunConfig keys, for the settings that have no flag (triage, budgetShare, editTool, cards, ...); documentation/parameters.md, "Settings file", lists the keys it accepts. The order is the defaults set (solve), then the file, then the flags: a flag wins over the file. An unknown or internal key, or a value that fails the check, stops the command before anything is spent; what the file set is in the run's configuration, so a resume keeps it. solve refuses the keys its own flags take (model, budget, consortium, gate, intake, tools, autoTool, private).
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
@@ -153,6 +195,10 @@ from the journal in RUN_DIR. The run's configuration is the one it began with, s
 is given; the bench, the host's registry, the tools and the lines must be the ones it began with, and a run
 with a line that cannot be resumed (a line that keeps state in the process and cannot rebuild it) is refused when it
 starts as a consortium run and when it is resumed.
+Two axes of a run (documentation/runs.md): --horizon episode|campaign (a campaign has no session cap; harness campaign runs one under a
+supervisor, documentation/campaign.md) and --human none|consortium|digest (digest, which goes with campaign, never waits for a person). A bare --human is --human consortium, which is consortium mode below; without it a run has no person (none).
+solve is always episode and consortium (it accepts --horizon episode and --human consortium, and refuses the rest); campaign is always campaign and digest. --steps N is the
+limit of model responses in one session (--turns is its old name; give one, or the same number): it is not a consortium turn.
 Consortium mode (documentation/human.md): --human, or any turn limit (--turn-tokens, --turn-usd, --turn-minutes, counted
 over every prover and line), makes the run stop by itself at the limit or at a breakpoint (an impasse, a problem settled,
 two informal validators that disagree), write the account turns/N/report.md and wait for the team. hint, sign and steer
@@ -165,123 +211,27 @@ run's model says its prices are at the off-peak rate, and otherwise waits (a tur
 --offpeak-max-wait MINUTES bounds each wait, after which the work runs anyway. It needs the pricing calendar of the
 model in the host profile and is refused without one. A resumed run keeps the option it began with.`;
 
+/**
+ * `--human` began as a switch (consortium mode) and is now the axis `--human none|consortium|digest` (documentation/runs.md): a bare `--human`,
+ * one not followed by a word, still means `--human consortium`.
+ */
+function normalizeHumanFlag(args: readonly string[]): string[] {
+  return args.map((arg, i) => (arg === "--human" && (args[i + 1] === undefined || args[i + 1]?.startsWith("-") === true) ? "--human=consortium" : arg));
+}
+
 const { positionals, values } = parseArgs({
+  args: normalizeHumanFlag(process.argv.slice(2)),
   allowPositionals: true,
-  options: {
-    host: { type: "string" },
-    implementation: { type: "string" },
-    case: { type: "string", multiple: true },
-    out: { type: "string" },
-    "include-computed": { type: "boolean" },
-    config: { type: "string" },
-    adopt: { type: "string" },
-    approve: { type: "string" },
-    registry: { type: "string" },
-    "library-registry": { type: "string" },
-    runs: { type: "string" },
-    reason: { type: "string" },
-    bench: { type: "string" },
-    checkout: { type: "string" },
-    sample: { type: "string" },
-    seed: { type: "string" },
-    problem: { type: "string", multiple: true },
-    all: { type: "boolean" },
-    model: { type: "string" },
-    thinking: { type: "string" },
-    provers: { type: "string" },
-    sessions: { type: "string" },
-    turns: { type: "string" },
-    "context-tokens": { type: "string" },
-    "notes-chars": { type: "string" },
-    "cache-retention": { type: "string" },
-    "packet-mode": { type: "string" },
-    "budget-usd": { type: "string" },
-    "run-budget-usd": { type: "string" },
-    concurrency: { type: "string" },
-    sequence: { type: "string" },
-    tag: { type: "string" },
-    tool: { type: "string", multiple: true },
-    lines: { type: "string", multiple: true },
-    ablation: { type: "string" },
-    configs: { type: "string" },
-    experiment: { type: "string" },
-    models: { type: "string" },
-    split: { type: "string" },
-    "split-by": { type: "string" },
-    cutoff: { type: "string" },
-    dates: { type: "string" },
-    target: { type: "string" },
-    "reflector-model": { type: "string" },
-    iterations: { type: "string" },
-    minibatch: { type: "string" },
-    finalists: { type: "string" },
-    "reflect-budget-usd": { type: "string" },
-    alpha: { type: "string" },
-    "max-usd": { type: "string" },
-    yes: { type: "boolean" },
-    "ask-stdin": { type: "boolean" },
-    port: { type: "string" },
-    open: { type: "boolean" },
-    lean: { type: "boolean" },
-    prose: { type: "boolean" },
-    "no-check": { type: "boolean" },
-    "no-write": { type: "boolean" },
-    rewrite: { type: "boolean" },
-    "allow-unpriced": { type: "boolean" },
-    "min-gate-problems": { type: "string" },
-    ledger: { type: "string" },
-    "reuse-gates": { type: "boolean" },
-    pilot: { type: "string" },
-    "chunk-k": { type: "string" },
-    "probe-every": { type: "string" },
-    "probe-size": { type: "string" },
-    "probe-set": { type: "string" },
-    "line-option": { type: "string", multiple: true },
-    "draw-seed": { type: "string" },
-    "decide-backend": { type: "string" },
-    "decide-site": { type: "string", multiple: true },
-    "decide-votes": { type: "string" },
-    gate: { type: "boolean" },
-    "gate-floor": { type: "string" },
-    "gate-probe": { type: "string" },
-    "gate-margin": { type: "string" },
-    "gate-min-sessions": { type: "string" },
-    "gate-share": { type: "string", multiple: true },
-    "memory-from": { type: "string" },
-    resume: { type: "string" },
-    human: { type: "boolean" },
-    "turn-tokens": { type: "string" },
-    "turn-usd": { type: "string" },
-    "turn-minutes": { type: "string" },
-    "turn-narrative": { type: "boolean" },
-    offpeak: { type: "boolean" },
-    "offpeak-max-wait": { type: "string" },
-    "impasse-posterior": { type: "string" },
-    "impasse-attempts": { type: "string" },
-    claim: { type: "string" },
-    as: { type: "string" },
-    note: { type: "string" },
-    focus: { type: "string" },
-    drop: { type: "string" },
-    forbid: { type: "string" },
-    json: { type: "boolean" },
-    find: { type: "boolean" },
-    "env-dir": { type: "string" },
-    "allow-programs": { type: "boolean" },
-    level1: { type: "boolean" },
-    replace: { type: "boolean" },
-    "packs-dir": { type: "string" },
-    help: { type: "boolean", short: "h" },
-  },
+  options: CLI_OPTIONS,
 });
 const [command, target, third] = positionals;
 
 /** The commands that start work with a model of their choosing; a resume keeps the model its run began with. */
-const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
+const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "campaign", "doctor"]);
 // The model of these commands, when --model is not given: SESHAT_MODEL (documentation/models-setup.md). Not for a resume,
 // which refuses --model.
 const envModel = process.env.SESHAT_MODEL?.trim();
-if (values.model === undefined && envModel !== undefined && envModel !== "" && MODEL_COMMANDS.has(command ?? "") && values.resume === undefined) values.model = envModel;
+if (values.model === undefined && envModel !== undefined && envModel !== "" && MODEL_COMMANDS.has(command ?? "") && values.resume === undefined && values.watch === undefined) values.model = envModel;
 
 /** A mistake the user can fix, such as a missing file: the message is printed, and the exit code is 2. */
 class InputError extends Error {}
@@ -301,11 +251,18 @@ async function main(): Promise<number> {
     if (command === "report") return report();
     if (command === "view") return view();
     if (command === "solve") return await solve();
+    if (command === "campaign") return await campaignCommand();
     if (command === "doctor") return await doctor();
+    if (command === "lit") return await lit();
     if (command === "ui") return await ui();
+    if (command === "parameters") return parametersCommand();
     if (command === "ablate") return await ablate();
     if (command === "optimize-prompts") return await optimizePrompts();
     if (command === "chunks") return chunks();
+    if (command === "audit") {
+      auditCommand(requireTarget("audit", "a run or ablation directory"), { reference: values.reference, out: (l) => console.log(l) });
+      return 0;
+    }
     if (command === "probe") return await probe();
     if (command === "resume") return await resume(requireTarget("resume", "a run directory"));
     if (command === "hint") return hint();
@@ -313,6 +270,13 @@ async function main(): Promise<number> {
     if (command === "steer") return steer();
     if (command === "library") return await libraryCommand();
     if (command === "lessons") return lessons();
+    if (command === "frontier") return frontierCommand(requireTarget("frontier", "a run directory"), { claimId: values.claim, json: values.json, out: (l) => console.log(l) });
+    if (command === "consolidate") {
+      return await consolidateCommand(requireTarget("consolidate", "a run directory"), {
+        out: values.out, model: values.model, maxUsd: number("max-usd", values["max-usd"], undefined), host: values.host, models: builtinModels(),
+        codeRev: codeRevision(), signal: stoppable().signal, print: (l) => console.log(l), log: (l) => console.error(l),
+      });
+    }
     if (command === "heuristics") {
       if (target !== "list" && target !== "stats" && target !== "mine") throw new UsageError("heuristics takes a subcommand: list, stats RUN_DIR or mine RUN_DIR...");
       return heuristicsCommand(target, positionals.slice(2), { packsDir: values["packs-dir"], outFile: values.out, out: (l) => console.log(l) });
@@ -338,7 +302,7 @@ async function main(): Promise<number> {
   }
   let registry: Registry;
   try {
-    registry = openRegistry({ host: hostName(values.host) });
+    registry = openRegistry({ host: command === "ablate" ? ablateHost(values.experiment, values.host) : hostName(values.host) });
   } catch (error) {
     if (error instanceof CatalogError) {
       console.error(error.message);
@@ -409,11 +373,84 @@ function number(name: string, value: string | undefined, fallback: number | unde
   return parsed;
 }
 
+/** `--consult MODEL` with `--consult-calls` and `--consult-tokens` (plan change NL3): the setting, or undefined when the flag is absent. */
+function consultFlag(): ConsultConfig | undefined {
+  const calls = number("consult-calls", values["consult-calls"], undefined);
+  const tokens = number("consult-tokens", values["consult-tokens"], undefined);
+  if (values.consult === undefined) {
+    if (calls !== undefined || tokens !== undefined) throw new UsageError("--consult-calls and --consult-tokens go with --consult MODEL");
+    return undefined;
+  }
+  const config: ConsultConfig = { model: values.consult, ...(calls !== undefined ? { maxCalls: calls } : {}), ...(tokens !== undefined ? { maxOutputTokens: tokens } : {}) };
+  const problems = checkConsult(config);
+  if (problems.length > 0) throw new UsageError(problems.join("; "));
+  return config;
+}
+
+/**
+ * `--role ROLE=MODEL` and `--role-setting ROLE.KEY=VALUE` (plan changes CA15 and CA23): `RunConfig.roles`, or undefined when neither is given. A VALUE is
+ * read as JSON when it parses (a number), a string otherwise (a thinking level).
+ */
+function rolesFlags(): RolesConfig | undefined {
+  const named = values.role ?? [];
+  const settings = values["role-setting"] ?? [];
+  if (named.length === 0 && settings.length === 0) return undefined;
+  const roles: Record<string, { model?: string; settings?: Record<string, Json>; maxShare?: number }> = {};
+  const entry = (role: string): { model?: string; settings?: Record<string, Json>; maxShare?: number } => (roles[role] ??= {});
+  const known = new Set<string>([...ROLES, "escalation"]);
+  for (const text of named) {
+    const match = /^([a-z]+)=(\S+)$/.exec(text);
+    if (match === null || !known.has(match[1] as string)) throw new UsageError(`--role takes ROLE=PROVIDER/ID with ROLE one of ${[...known].join(", ")}, got ${JSON.stringify(text)}`);
+    entry(match[1] as string).model = match[2] as string;
+  }
+  for (const text of settings) {
+    const match = /^([a-z]+)\.([A-Za-z]+)=(.*)$/s.exec(text);
+    if (match === null || !known.has(match[1] as string)) throw new UsageError(`--role-setting takes ROLE.KEY=VALUE with ROLE one of ${[...known].join(", ")}, got ${JSON.stringify(text)}`);
+    const [, role = "", key = "", raw = ""] = match;
+    let value: Json;
+    try {
+      value = JSON.parse(raw) as Json;
+    } catch {
+      value = raw;
+    }
+    if (role === "escalation") {
+      if (key !== "maxShare" || typeof value !== "number") throw new UsageError(`--role-setting escalation.maxShare=X is the only setting of escalation, got ${JSON.stringify(text)}`);
+      entry(role).maxShare = value;
+    } else {
+      const own = entry(role);
+      own.settings = { ...own.settings, [key]: value };
+    }
+  }
+  const config = roles as unknown as RolesConfig;
+  const problems = checkRoles(config);
+  if (problems.length > 0) throw new UsageError(problems.join("; "));
+  return config;
+}
+
 function isCacheRetention(value: string): value is CacheRetention {
   return (CACHE_RETENTIONS as readonly string[]).includes(value);
 }
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * The bench a command reads: an index, or one grade of the graded bench (`--bench bench/graded-v1.json --grade B`, documentation/bench.md).
+ * A graded bench needs a grade, an index refuses one; entries no Lean admitted are refused without `--allow-unchecked`.
+ */
+function loadIndex(): BenchIndex {
+  const path = values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json");
+  const graded = isGraded(JSON.parse(readFileSync(path, "utf8")));
+  if (!graded) {
+    if (values.grade !== undefined || values["allow-unchecked"] === true) throw new UsageError("--grade and --allow-unchecked go with a graded bench (--bench FILE)");
+    return readIndex(path);
+  }
+  if (values.grade === undefined) throw new UsageError(`${path} is a graded bench: choose a grade with --grade A, B or C`);
+  try {
+    return gradedIndex(readGraded(path), values.grade, { allowUnchecked: values["allow-unchecked"] === true });
+  } catch (error) {
+    throw new UsageError(messageOf(error));
+  }
+}
 
 /** The problems a run works on, and how they were chosen. */
 function selectProblems(index: BenchIndex): { problems: ProblemEntry[]; selection: Json } {
@@ -497,18 +534,35 @@ function turnLimit(): TurnLimit | undefined {
   return Object.keys(limit).length > 0 ? limit : undefined;
 }
 
+/** `--human`: one of the words of the axis, or nothing. */
+function humanFlag(): HumanMode | undefined {
+  const given = values.human;
+  if (given === undefined) return undefined;
+  if (!(HUMAN_MODES as readonly string[]).includes(given)) throw new UsageError(`--human must be one of ${HUMAN_MODES.join(", ")}, got ${JSON.stringify(given)}`);
+  return given as HumanMode;
+}
+
+/** `--horizon`: one of the words of the axis, or nothing. A word that does not work yet is refused at the start of the run, naming its task. */
+function horizonFlag(): Horizon | undefined {
+  const given = values.horizon;
+  if (given === undefined) return undefined;
+  if (!(HORIZONS as readonly string[]).includes(given)) throw new UsageError(`--horizon must be one of ${HORIZONS.join(", ")}, got ${JSON.stringify(given)}`);
+  return given as Horizon;
+}
+
 /** Consortium mode: on with --human, and implied by a turn limit or --turn-narrative (documentation/human.md). */
 function consortiumFlags(): ConsortiumConfig | undefined {
   const limit = turnLimit();
   const narrative = values["turn-narrative"] === true;
+  const consolidation = values["turn-consolidation"] === true;
   const posterior = number("impasse-posterior", values["impasse-posterior"], undefined);
   const attempts = number("impasse-attempts", values["impasse-attempts"], undefined);
-  if (values.human !== true && limit === undefined && !narrative) {
+  if (humanFlag() !== "consortium" && humanFlag() !== "digest" && limit === undefined && !narrative && !consolidation) {
     if (posterior !== undefined || attempts !== undefined) throw new UsageError("--impasse-posterior and --impasse-attempts go with --human or a turn limit");
     return undefined;
   }
   if (values.ablation !== undefined) throw new UsageError(ablationRefusal({ consortium: { limit: {}, impasse: DEFAULT_IMPASSE, narrative: false } }) as string);
-  return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative };
+  return { limit: limit ?? {}, impasse: { posteriorBelow: posterior ?? DEFAULT_IMPASSE.posteriorBelow, minAttempts: attempts ?? DEFAULT_IMPASSE.minAttempts }, narrative, ...(consolidation ? { consolidation: true } : {}) };
 }
 
 /** `--offpeak` and `--offpeak-max-wait MINUTES` (documentation/human.md, "Off-peak"). */
@@ -669,6 +723,11 @@ function readInput<T>(read: () => T): T {
 }
 
 /** The configuration the flags describe, besides the lines, the consortium, the off-peak wait and the typed decisions. */
+/** `--steps N` (model responses per session), and `--turns N`, its old name: either, or both when equal; two different values are a `RunSetupError`. */
+function stepsFlag(): number {
+  return resolveSteps(number("steps", values.steps, undefined), number("turns", values.turns, undefined)) ?? DEFAULT_CONFIG.limits.turns;
+}
+
 function sharedConfig(selection: RunConfig["selection"], model: string, thinking: ThinkingLevel): RunConfig {
   const runUsd = number("run-budget-usd", values["run-budget-usd"], undefined);
   const cacheRetention = values["cache-retention"];
@@ -686,7 +745,7 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     provers: number("provers", values.provers, DEFAULT_CONFIG.provers),
     sessions: number("sessions", values.sessions, DEFAULT_CONFIG.sessions),
     limits: {
-      turns: number("turns", values.turns, DEFAULT_CONFIG.limits.turns),
+      turns: stepsFlag(),
       contextTokens: number("context-tokens", values["context-tokens"], DEFAULT_CONFIG.limits.contextTokens),
     },
     notesChars: number("notes-chars", values["notes-chars"], DEFAULT_CONFIG.notesChars),
@@ -695,8 +754,23 @@ function sharedConfig(selection: RunConfig["selection"], model: string, thinking
     budget: { problemUsd: number("budget-usd", values["budget-usd"], DEFAULT_CONFIG.budget.problemUsd), ...(runUsd !== undefined ? { runUsd } : {}) },
     concurrency: values.sequence !== undefined ? 1 : number("concurrency", values.concurrency, DEFAULT_CONFIG.concurrency),
     tools: [...new Set(values.tool ?? [])],
+    ...(values["lean-search"] === true ? { leanSearch: true } : {}),
+    ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
+    ...(rolesFlags() !== undefined ? { roles: rolesFlags() as RolesConfig } : {}),
+    ...(values.consolidation === true ? { consolidation: true } : {}),
     ...(values["draw-seed"] !== undefined ? { seed: values["draw-seed"] } : {}),
   };
+}
+
+/** `--intake`, `--intake-usd` and `--private` of `harness run`: a bench problem is public, so the literature is on with `--intake` (documentation/literature.md). */
+function runIntakeFlags(): Pick<RunConfig, "intake" | "private"> {
+  const capUsd = number("intake-usd", values["intake-usd"], undefined);
+  if (values.lit === true) throw new UsageError("--lit is for harness solve: a bench problem is public, so --intake is all a run needs");
+  if (values.intake !== true) {
+    if (capUsd !== undefined) throw new UsageError("--intake-usd goes with --intake");
+    return values.private === true ? { private: true } : {};
+  }
+  return { intake: { literature: true, hygiene: true, consent: { allowed: true, via: "bench" }, ...(capUsd !== undefined ? { capUsd } : {}) }, ...(values.private === true ? { private: true } : {}) };
 }
 
 async function run(): Promise<number> {
@@ -704,14 +778,17 @@ async function run(): Promise<number> {
   if (values.resume !== undefined) return await resume(values.resume);
   if (values.checkout === undefined) throw new UsageError("run needs --checkout: a checkout of the bench's repository");
   if (values.model === undefined) throw new UsageError("run needs --model PROVIDER/ID or SESHAT_MODEL (harness models lists them)");
+  if (values.sketch !== undefined) throw new UsageError("--sketch is for harness solve: a sketch goes with one statement of your own");
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const consortium = consortiumFlags();
+  horizonFlag();
+  stepsFlag();
   const offpeak = offpeakFlags();
   if (values["probe-every"] !== undefined && !(Number.isInteger(Number(values["probe-every"])) && Number(values["probe-every"]) >= 1)) throw new UsageError(`--probe-every must be a whole number of at least 1, got ${values["probe-every"]}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {
@@ -721,15 +798,29 @@ async function run(): Promise<number> {
   const options = lineOptions(values["line-option"] ?? []);
   const decide = decideFlags();
   const gate = gateFlags();
-  const config: RunConfig = {
+  const flagged: RunConfig = {
     ...sharedConfig(selection, values.model, thinking),
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
     ...(consortium !== undefined ? { consortium } : {}),
+    ...(horizonFlag() !== undefined ? { horizon: horizonFlag() as Horizon } : {}),
+    ...(humanFlag() !== undefined ? { human: humanFlag() as HumanMode } : {}),
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    ...runIntakeFlags(),
   };
+  // The settings file (documentation/quickstart.md): its keys go under the flags, which win.
+  let config = flagged;
+  if (values.settings !== undefined) {
+    const file = readSettingsFile(values.settings, "run");
+    const merged = mergeSettings(flagged, file, (flag) => (values as Record<string, unknown>)[flag] !== undefined);
+    config = merged.config;
+    console.error(describeSettings(file, merged.fromFile, merged.overruled));
+  }
+  // `"human": "consortium"` in the file, with no turn limit anywhere: consortium mode with its defaults, as a bare --human gives.
+  if ((config.human === "consortium" || config.human === "digest") && config.consortium === undefined) config = { ...config, consortium: { limit: {}, impasse: { ...DEFAULT_IMPASSE }, narrative: false } };
+  if (config.intake?.literature === true && process.env.BENCH_CHECKOUT === undefined) process.env.BENCH_CHECKOUT = resolve(checkout);
   const host = hostName(values.host);
   const runId = newId("run");
   const dir = resolve(values.out ?? join("runs", runId));
@@ -760,8 +851,7 @@ async function run(): Promise<number> {
 }
 
 /** What every run of a command needs besides its configuration, its problems and its directory. */
-function runTemplate(index: BenchIndex, checkout: string, controller: AbortController): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
-  const host = hostName(values.host);
+function runTemplate(index: BenchIndex, checkout: string, controller: AbortController, host: string = hostName(values.host)): Omit<RunOptions, "config" | "dir" | "problems" | "runId" | "memoryFrom" | "turns"> {
   const codeRev = codeRevision();
   return {
     index,
@@ -796,7 +886,7 @@ async function probe(): Promise<number> {
   if (!existsSync(values.checkout)) throw new InputError(`no directory ${values.checkout}`);
   const thinking = (values.thinking ?? DEFAULT_CONFIG.thinkingLevel) as ThinkingLevel;
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const source = readInput(() => linesOfRun(resolve(memoryDir)));
   const lines = values.lines !== undefined ? selectLines() : source.lines;
   const options = values["line-option"] !== undefined ? lineOptions(values["line-option"]) : source.lineOptions;
@@ -816,7 +906,7 @@ async function ablate(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const list = (text: string | undefined): string[] | undefined => (text === undefined ? undefined : text.split(",").map((x) => x.trim()).filter((x) => x !== ""));
   const split = number("split", values.split, undefined);
@@ -830,24 +920,37 @@ async function ablate(): Promise<number> {
     ...(offpeak !== undefined ? { offpeak } : {}),
     ...(decide !== undefined ? { decide } : {}),
     ...(gate !== undefined ? { gate } : {}),
+    // A bench problem is public, so the third parties of the arms that take them follow the bench rule: on, off with --private.
+    ...(values.private === true ? { private: true } : {}),
   };
   const dir = resolve(values.out ?? join("runs", newId("ablation")));
-  await ablateCommand({
-    template: runTemplate(index, checkout, stoppable()),
+  const host = ablateHost(values.experiment, values.host);
+  if (values.experiment === "solve-defaults") console.error(`ablate: the arms run on the host ${host}${values.host || process.env.HARNESS_HOST ? "" : " (the one solve takes)"}`);
+  const hostProfile = values.experiment === "solve-defaults" ? loadHostProfile(hostProfilePath(`${REPO_ROOT}config`, host)) : undefined;
+  const ablated = await ablateCommand({
+    ...(hostProfile !== undefined ? { host: { capabilities: hostProfile.capabilities, ...(hostProfile.checkTimeoutSec !== undefined ? { checkTimeoutSec: hostProfile.checkTimeoutSec } : {}) } } : {}),
+    template: runTemplate(index, checkout, stoppable(), host),
     config,
     problems,
     dir,
     ...(list(values.configs) !== undefined ? { configs: list(values.configs) as string[] } : {}),
     ...(values.experiment !== undefined ? { experiment: values.experiment } : {}),
+    ...(list(values.arms) !== undefined ? { arms: list(values.arms) as string[] } : {}),
     ...(values.lines !== undefined ? { lines: selectLines() } : {}),
     ...(list(values.models) !== undefined ? { models: list(values.models) as string[] } : {}),
     ...(split !== undefined ? { split } : {}),
     ...(values["split-by"] !== undefined ? { splitBy: splitByFlag(values["split-by"]) } : {}),
     ...(values.pilot !== undefined ? { pilot: pilotMeasures(values.pilot) } : {}),
+    ...(values.baseline !== undefined ? { baseline: values.baseline } : {}),
+    ...(values.target !== undefined ? { target: number("target", values.target, undefined) as number } : {}),
     log: (line) => console.error(line),
     print: (line) => process.stdout.write(`${line}\n`),
   });
   console.log(`Ablation directory: ${dir}`);
+  if (ablated.refusal !== undefined) {
+    console.error(`${refusalLine(ablated.refusal.reason)}: the comparison is not valid`);
+    return 1;
+  }
   return 0;
 }
 
@@ -869,7 +972,7 @@ async function optimizePrompts(): Promise<number> {
   if (!THINKING_LEVELS.includes(thinking)) throw new UsageError(`--thinking must be one of ${THINKING_LEVELS.join(", ")}`);
   const checkout = values.checkout;
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const { problems, selection } = selectProblems(index);
   const consortium = consortiumFlags();
   const offpeak = offpeakFlags();
@@ -971,9 +1074,9 @@ function finished(result: RunResult, dir: string): number {
 
 /** The flags that describe a new run; a resumed run keeps the configuration it began with. */
 const RUN_FLAGS = [
-  "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
-  "tool", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
-  "offpeak", "offpeak-max-wait",
+  "model", "thinking", "provers", "sessions", "turns", "steps", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
+  "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "role", "role-setting", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
+  "offpeak", "offpeak-max-wait", "settings",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
@@ -987,7 +1090,7 @@ async function resume(directory: string): Promise<number> {
   if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const dir = resolve(directory);
   if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
-  const index = readInput(() => readIndex(values.bench ?? join(REPO_ROOT, "bench", "fc-bench-v1-discrete.json")));
+  const index = readInput(loadIndex);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {
     console.error(`warning: the checkout is at ${source.rev}, the bench at ${index.source.rev}; each problem file is still checked against the index`);
@@ -996,7 +1099,7 @@ async function resume(directory: string): Promise<number> {
   const controller = stoppable();
   const codeRev = codeRevision();
   const limit = turnLimit();
-  if (values.human === true) throw new UsageError("--human is given when a run begins; a run resumed keeps the mode it began with");
+  if (values.human !== undefined || values.horizon !== undefined) throw new UsageError("--human and --horizon are given when a run begins; a run resumed keeps the mode it began with");
   const result = await resumeBench({
     dir,
     index,
@@ -1044,9 +1147,9 @@ async function listModels(provider: string | undefined): Promise<number> {
 }
 
 /** `harness solve STATEMENT`: documentation/quickstart.md. */
-async function solve(): Promise<number> {
-  if (target === undefined) throw new UsageError("solve needs a statement: Lean, prose, or a file that holds one");
-  if (third !== undefined) throw new UsageError(`solve takes one statement: put it in quotes (got a second argument, ${JSON.stringify(third)})`);
+async function solve(campaign?: NonNullable<SolveFlags["campaign"]>): Promise<number> {
+  if (target === undefined) throw new UsageError(`${campaign !== undefined ? "campaign" : "solve"} needs a statement: Lean, prose, or a file that holds one`);
+  if (third !== undefined) throw new UsageError(`${campaign !== undefined ? "campaign" : "solve"} takes one statement: put it in quotes (got a second argument, ${JSON.stringify(third)})`);
   if (values.lean === true && values.prose === true) throw new UsageError("--lean and --prose cannot both be given");
   const maxUsd = number("max-usd", values["max-usd"], undefined);
   const turnUsd = number("turn-usd", values["turn-usd"], undefined);
@@ -1072,11 +1175,127 @@ async function solve(): Promise<number> {
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      ...(values.sketch !== undefined ? { sketch: values.sketch } : {}),
+      ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
+      autoTool: values["auto-tool"] === true,
+      noIntake: values["no-intake"] === true,
+      noAutoTool: values["no-auto-tool"] === true,
+      noLeanSearch: values["no-lean-search"] === true,
+      ...(values["no-tool"] !== undefined ? { noTools: [...new Set(values["no-tool"])] } : {}),
+      intake: values.intake === true || values.lit === true,
+      lit: values.lit === true,
+      private: values.private === true,
+      ...(number("intake-usd", values["intake-usd"], undefined) !== undefined ? { intakeUsd: number("intake-usd", values["intake-usd"], undefined) as number } : {}),
+      leanSearch: values["lean-search"] === true,
+      ...(consultFlag() !== undefined ? { consult: consultFlag() as ConsultConfig } : {}),
+      ...(rolesFlags() !== undefined ? { roles: rolesFlags() as RolesConfig } : {}),
+      consolidation: values.consolidation === true,
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
+      ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),
+      ...(values.settings !== undefined ? { settings: values.settings } : {}),
+      ...(horizonFlag() !== undefined ? { horizon: horizonFlag() as Horizon } : {}),
+      ...(humanFlag() !== undefined ? { human: humanFlag() as HumanMode } : {}),
+      ...(campaign !== undefined ? { campaign } : {}),
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );
+}
+
+/** `harness campaign STATEMENT [--usd-per-day X] [--until ISO] [--no-off-peak]`: a run that continues alone (documentation/campaign.md). */
+async function campaignCommand(): Promise<number> {
+  if (values.watch !== undefined) return await campaignWatch(values.watch);
+  if (values.resume !== undefined) return await campaignResume(values.resume);
+  const usdPerDay = number("usd-per-day", values["usd-per-day"], undefined);
+  if (usdPerDay !== undefined && !(usdPerDay > 0)) throw new UsageError(`--usd-per-day must be positive, got ${usdPerDay}`);
+  const until = values.until;
+  if (until !== undefined && Number.isNaN(Date.parse(until))) throw new UsageError(`--until must be an ISO time such as 2026-12-01T00:00:00Z, got ${JSON.stringify(until)}`);
+  const spiralTurns = number("spiral-turns", values["spiral-turns"], undefined);
+  if (values["off-peak"] === true && values["no-off-peak"] === true) throw new UsageError("--off-peak and --no-off-peak cannot both be given");
+  return await solve({
+    ...(usdPerDay !== undefined ? { usdPerDay } : {}),
+    ...(until !== undefined ? { until } : {}),
+    ...(spiralTurns !== undefined ? { spiralTurns } : {}),
+    offPeak: values["no-off-peak"] !== true,
+  });
+}
+
+/** What a run begun by `solve` or `run` left in `resume.json`: where its problem and host are. */
+function savedResume(dir: string): { checkout: string; bench?: string; host?: string } {
+  const file = join(dir, "resume.json");
+  if (!existsSync(file)) throw new InputError(`${dir} has no resume.json: it was not begun by harness solve, run or campaign`);
+  const saved = JSON.parse(readFileSync(file, "utf8")) as { checkout?: unknown; bench?: unknown; host?: unknown };
+  if (typeof saved.checkout !== "string") throw new InputError(`${file} names no checkout`);
+  return { checkout: saved.checkout, ...(typeof saved.bench === "string" ? { bench: saved.bench } : {}), ...(typeof saved.host === "string" ? { host: saved.host } : {}) };
+}
+
+/** `harness campaign --resume RUN_DIR`: a supervisor that takes up a campaign whose supervisor ended, everything read from the journal. */
+async function campaignResume(directory: string): Promise<number> {
+  const given = [...RUN_FLAGS, "usd-per-day", "until", "spiral-turns"].filter((flag) => (values as Record<string, unknown>)[flag] !== undefined);
+  if (given.length > 0) throw new UsageError(`--resume continues the campaign as it began, from its journal: ${given.map((flag) => `--${flag}`).join(", ")} cannot be given with it`);
+  const dir = resolve(directory);
+  if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
+  const saved = savedResume(dir);
+  if (saved.bench !== undefined) values.bench = saved.bench;
+  const index = readInput(loadIndex);
+  const host = hostName(values.host ?? saved.host);
+  const controller = stoppable();
+  const codeRev = codeRevision();
+  const end = await runCampaign({
+    dir,
+    next: async ({ limit }) =>
+      await resumeBench({
+        dir,
+        index,
+        checkout: saved.checkout,
+        models: builtinModels(),
+        registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+        signal: controller.signal,
+        log: (line) => console.error(line),
+        ...(codeRev !== undefined ? { codeRev } : {}),
+        ...(limit !== undefined ? { turns: { limit } } : {}),
+      }),
+    signal: controller.signal,
+    log: (line) => console.error(line),
+  });
+  console.log(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}. Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}`);
+  return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
+}
+
+/** `harness campaign --watch RUN_DIR`: restarts `campaign --resume` with a backoff when its heartbeat is old (documentation/campaign.md, "The watchdog"). */
+async function campaignWatch(directory: string): Promise<number> {
+  const dir = resolve(directory);
+  if (!existsSync(join(dir, "journal.jsonl"))) throw new InputError(`${dir} holds no run to watch: it has no journal.jsonl`);
+  const controller = stoppable();
+  const passed = ["host", "bench", "grade"].flatMap((flag) => ((values as Record<string, unknown>)[flag] !== undefined ? [`--${flag}`, String((values as Record<string, unknown>)[flag])] : []));
+  const { spawn } = await import("node:child_process");
+  const result = await watchCampaign({
+    dir,
+    signal: controller.signal,
+    log: (line) => console.error(line),
+    run: () =>
+      new Promise<number>((done) => {
+        const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", process.argv[1] as string, "campaign", "--resume", dir, ...passed], { stdio: "inherit" });
+        controller.signal.addEventListener("abort", () => child.kill(), { once: true });
+        child.on("exit", (code) => done(code ?? 1));
+        child.on("error", () => done(1));
+      }),
+  });
+  console.log(`The watchdog ended after ${result.restarts} start(s) of the supervisor.`);
+  return 0;
+}
+
+/** `harness parameters [--markdown [--out FILE]]`: the catalogue of every parameter (documentation/parameters.md). */
+function parametersCommand(): number {
+  if (target !== undefined) throw new UsageError(`parameters takes no argument, got ${target}`);
+  if (values.markdown !== true) {
+    for (const line of renderParametersList()) console.log(line);
+    return 0;
+  }
+  const page = renderParametersPage();
+  if (values.out !== undefined) writeFileSync(values.out, page);
+  else process.stdout.write(page);
+  return 0;
 }
 
 /** `harness ui`: the local interface (documentation/ui.md); loaded only when asked for. */
@@ -1088,6 +1307,22 @@ async function ui(): Promise<number> {
 }
 
 /** `harness doctor`: documentation/quickstart.md. */
+async function lit(): Promise<number> {
+  if (target !== "probe") throw new UsageError("lit takes a subcommand: probe");
+  if (third !== undefined) throw new UsageError(`lit probe takes no argument, got ${third}`);
+  const limit = number("limit", values.limit, undefined);
+  return await litProbeCommand(
+    {
+      ...(values.host !== undefined ? { host: values.host } : {}),
+      ...(values.query !== undefined ? { query: values.query } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(values.out !== undefined ? { out: values.out } : {}),
+      noCache: values["no-cache"] === true,
+    },
+    { out: (line) => console.log(line), err: (line) => console.error(line), signal: stoppable().signal },
+  );
+}
+
 async function doctor(): Promise<number> {
   if (target !== undefined) throw new UsageError(`doctor takes no argument, got ${target}`);
   if (values["no-write"] === true && values.rewrite === true) throw new UsageError("--no-write and --rewrite cannot both be given");

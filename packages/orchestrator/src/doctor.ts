@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, totalmem } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import type { HostProfile } from "@seshat/registry";
+import { DEFAULT_LEAN_SERVER_MEMORY_WARN_MB } from "@seshat/registry";
+import { leanMemoryCheck, leanServerMemoryFromPs } from "./lean-memory.ts";
 import { PriceBook } from "./prices.ts";
-import { blendedPrice, cheapestModel } from "./student.ts";
+import { enabledBackends } from "./lit-enabled.ts";
+import { blendedPrice, cheapestModel, DEFAULT_DEFAULTS, describeSet } from "./student.ts";
 
 /**
  * `harness doctor` (plan change PB6, documentation/quickstart.md, "harness doctor"): what this machine has and lacks to solve a problem,
@@ -17,7 +20,7 @@ import { blendedPrice, cheapestModel } from "./student.ts";
 export type CheckStatus = "ok" | "warn" | "missing";
 
 export interface Check {
-  id: "lean" | "kimina" | "credentials" | "prices" | "network" | "isolation";
+  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults" | "literature";
   status: CheckStatus;
   title: string;
   /** What was found, in plain words. */
@@ -37,6 +40,13 @@ export interface DoctorSystem {
   http(url: string, timeoutMs?: number): Promise<{ status: number } | { error: string }>;
   /** The user and group of this process, for a container started as the same user. */
   ids(): { uid: number; gid: number } | undefined;
+  /** The machine's memory in all, in megabytes; absent or undefined: no memory advice. */
+  totalMemoryMb?(): number | undefined;
+  /**
+   * The resident memory of the Lean server, in megabytes; undefined when it cannot be read (the server is elsewhere, no such process,
+   * no `ps`): no number, no warning. Tests give their own, so that none needs a real server.
+   */
+  leanServerMemoryMb?(): Promise<number | undefined>;
 }
 
 export function realSystem(): DoctorSystem {
@@ -71,6 +81,18 @@ export function realSystem(): DoctorSystem {
       } catch (error) {
         const cause = (error as { cause?: { code?: string; message?: string } }).cause;
         return { error: cause?.code ?? cause?.message ?? (error instanceof Error ? error.message : String(error)) };
+      }
+    },
+    totalMemoryMb: () => Math.round(totalmem() / (1024 * 1024)),
+    async leanServerMemoryMb() {
+      // Only a server on this machine can be read, and only through the process table; any failure is no number.
+      try {
+        const given = process.env.LEAN_SERVER_API_URL;
+        if (given !== undefined && given !== "" && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(given)) return undefined;
+        const listed = await this.run("ps", ["-eo", "rss=,args="], 5000);
+        return listed.code === 0 ? leanServerMemoryFromPs(listed.stdout) : undefined;
+      } catch {
+        return undefined;
       }
     },
     ids() {
@@ -217,6 +239,14 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
     checks.push({ id: "kimina", status: "ok", title: "Kimina Lean server", detail: `${url} answers.` });
   }
 
+  // The memory the Lean server needs: the settings that fit this machine, and a warning when the server has grown past the host's threshold.
+  const totalMb = system.totalMemoryMb?.();
+  if (totalMb !== undefined) {
+    const serverMb = await system.leanServerMemoryMb?.().catch(() => undefined);
+    const memory = leanMemoryCheck({ totalMb, serverMb, warnMb: profile.leanServerMemoryWarnMb ?? DEFAULT_LEAN_SERVER_MEMORY_WARN_MB });
+    checks.push({ id: "lean-memory", title: "Lean server memory", ...memory });
+  }
+
   // 3. Model credentials, and 4. the price table.
   const prices = new PriceBook(profile.models);
   const available = await o.models.getAvailable().catch(() => []);
@@ -301,7 +331,25 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
   // 6. The certifier's isolation.
   const isolation = await isolationCheck(o, checks);
 
+  // 7. What `harness solve` does by default on this host, from the table the command reads (`student.ts`), not from a copy of it.
+  checks.push({ id: "defaults", status: "ok", title: `Defaults of solve (${DEFAULT_DEFAULTS})`, detail: describeSet(DEFAULT_DEFAULTS, (capability) => profile.capabilities[capability] !== undefined).join("; ") });
+
+  // 8. The literature search: what the host profile enables. No request is made here (`harness lit probe` makes them).
+  checks.push(literatureCheck(profile, system.env));
+
   return { host: profile.host, checks, ok: !checks.some((c) => c.status === "missing"), ...(isolation !== undefined ? { isolation } : {}), ...(chosen !== undefined ? { model: chosen } : {}) };
+}
+
+/** `lit.search` in the host profile: which backends it enables (a setting with an address, or a directory). Makes no request. */
+function literatureCheck(profile: HostProfile, env: DoctorSystem["env"]): Check {
+  const title = "Literature search";
+  const binding = profile.capabilities["lit.search"];
+  if (binding === undefined) {
+    return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} has no lit.search: the literature step of a run is skipped.`, fix: "Use a host profile that lists lit.search (config/hosts/local.json), or run `pnpm harness doctor` to write one that does." };
+  }
+  const enabled = enabledBackends(profile, env);
+  if (enabled.length === 0) return { id: "literature", status: "warn", title, detail: `The host profile ${profile.host} lists lit.search but enables no backend (no address, no directory).`, fix: "Give a backend an address in the profile (config/hosts/local.json)." };
+  return { id: "literature", status: "ok", title, detail: `lit.search has ${enabled.join(", ")} enabled. No request was made: \`pnpm harness lit probe\` asks each of them once and shows what it answers.` };
 }
 
 /** What the host profile in use says of the certifier's sandbox. */
@@ -344,6 +392,24 @@ export async function probeSandbox(system: DoctorSystem, sandbox: readonly strin
 /** A Docker image name that cannot be read as an option. */
 const IMAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/;
 
+/** The literature search keeps its answers in `lit-cache` beside the profile file (the binding is otherwise the base's). */
+function withLitCache(binding: NonNullable<HostProfile["capabilities"][string]>, configDir: string): NonNullable<HostProfile["capabilities"][string]> {
+  return { ...binding, settings: Object.fromEntries(Object.entries(binding.settings ?? {}).map(([impl, settings]) => [impl, { ...settings, cacheDir: join(configDir, "hosts", "lit-cache") }])) };
+}
+
+/** Writes the generated profile again with the capabilities of `local.json` it lacks (the others are kept as they are); the names added, none when the file is left alone. */
+function addMissingCapabilities(configDir: string, path: string): string[] {
+  const current = JSON.parse(readFileSync(path, "utf8")) as HostProfile & { description?: string };
+  const base = JSON.parse(readFileSync(join(configDir, "hosts", "local.json"), "utf8")) as HostProfile;
+  const added: Record<string, NonNullable<HostProfile["capabilities"][string]>> = {};
+  for (const [id, binding] of Object.entries(base.capabilities)) {
+    if (current.capabilities[id] === undefined) added[id] = id === "lit.search" ? withLitCache(binding, configDir) : binding;
+  }
+  const names = Object.keys(added);
+  if (names.length > 0) writeFileSync(path, `${JSON.stringify({ ...current, capabilities: { ...current.capabilities, ...added } }, null, 2)}\n`);
+  return names;
+}
+
 async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<DoctorReport["isolation"]> {
   const { system, profile } = o;
   const title = "Certifier isolation";
@@ -356,9 +422,11 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
   }
   if (current.sandbox.length > 0) {
     const flaw = await probeSandbox(system, current.sandbox);
+    // `--rewrite` on the generated profile itself: add what local.json gained since it was written, and keep everything it has.
+    const refreshed = flaw === undefined && (o.write ?? "auto") === "rewrite" && profile.host === name && existsSync(path) ? addMissingCapabilities(o.configDir, path) : undefined;
     checks.push(
       flaw === undefined
-        ? { id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`, and a test run of that sandbox here confirmed that a candidate's code can write only its work directory and cannot use the network. It can still read the files your user can read.` }
+        ? { id: "isolation", status: "ok", title, detail: `The host profile ${profile.host} runs the certifier behind \`${current.sandbox[0]}\`, and a test run of that sandbox here confirmed that a candidate's code can write only its work directory and cannot use the network. It can still read the files your user can read.${refreshed === undefined ? "" : refreshed.length > 0 ? ` --rewrite wrote ${path} again with the capabilities of local.json it lacked: ${refreshed.join(", ")}; the others are as they were.` : ` --rewrite found no capability of local.json missing from ${path}: it was not rewritten.`}` }
         : {
             id: "isolation",
             status: "warn",
@@ -367,7 +435,7 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
             fix: "Fix the sandbox command of lean.certify in that profile, or delete it and run `pnpm harness doctor` again for the default one.",
           },
     );
-    return undefined;
+    return refreshed === undefined ? undefined : { profile: name, path, written: refreshed.length > 0, tool: current.sandbox[0] === "docker" ? "docker" : "bubblewrap" };
   }
   if (current.unsandboxed) {
     checks.push({
@@ -433,12 +501,15 @@ async function isolationCheck(o: DoctorOptions, checks: Check[]): Promise<Doctor
     const inUse = join(o.configDir, "hosts", `${profile.host}.json`);
     const base = JSON.parse(readFileSync(existsSync(inUse) ? inUse : join(o.configDir, "hosts", "local.json"), "utf8")) as HostProfile & { description?: string };
     const { unsandboxed: _opted, ...lake } = (base.capabilities["lean.certify"]?.settings?.lake ?? {}) as Record<string, unknown>;
+    const litBase = base.capabilities["lit.search"];
+    const lit = litBase === undefined ? {} : { "lit.search": withLitCache(litBase, o.configDir) };
     const next = {
       ...base,
       host: name,
       description: `Generated by \`harness doctor\`: the host ${profile.host} with the certifier behind ${recipe.tool}, so that a proof can reach \`proved\`. Written once and never over an existing file; delete it to have it made again. ${base.description ?? ""}`.trim(),
       capabilities: {
         ...base.capabilities,
+        ...lit,
         "lean.certify": {
           ...base.capabilities["lean.certify"],
           use: ["lake"],

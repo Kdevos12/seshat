@@ -1,5 +1,7 @@
 # Memory
 
+![The journal as the only source of truth, its projections and the lines that read it](images/memory.svg)
+
 The memory is what a run knows besides its attempts: claims, the edges between them, and records
 of every other kind (lemmas, lessons, fingerprints...). It lives in the run's journal like every
 other fact ([journal.md](journal.md)); `@seshat/memory` gives it one interface, the `MemoryStore`,
@@ -461,6 +463,12 @@ holds: a problem's outcome never comes from the earlier run (it needs this run's
 the only real re-check is a stored proof (`storedProofs`) sent through `validate` and the certifier in
 the new run. Do not pass a run directory you did not produce, or whose storage others can write. The
 trust rules are in [trust.md](trust.md#memory-across-runs).
+
+**The consolidation pass.** `harness consolidate RUN_DIR` writes a new run on the chain whose nodes (state cards, pages, lessons merged or
+flagged) are learned records like any other, stamped and unverified, and a later run reads them through the chain ([consolidation.md](consolidation.md)).
+A page is an item of the draw and is judged by `itemEffect` as a lesson is. `stateCardData` takes `{acrossRuns: true}` for the pass, which counts the
+attempts of every run of the chain; a session's own card counts the current run's alone.
+The verified frontier (`frontier`, [frontier.md](frontier.md)) is a second projection beside the card: what Lean accepted about the problem, with no model call.
 
 **Limits.**
 

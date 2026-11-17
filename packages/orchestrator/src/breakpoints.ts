@@ -1,4 +1,4 @@
-import { type HarnessEvent, type Journal, type Projection, type ProblemRow } from "@seshat/core";
+import { type HarnessEvent, isWaitingHoleTask, type Journal, type Projection, type ProblemRow } from "@seshat/core";
 import { HINT_KIND, STEER_KIND } from "./team.ts";
 import type { ImpasseSettings, Turn } from "./turns.ts";
 
@@ -64,6 +64,11 @@ export function posteriorMean(p: Projection, problemId: string, afterSeq = -1): 
 /** What the journal shows of a problem at an impasse, or undefined: every task still open is blocked, or its posterior is low. */
 export function impasseOf(p: Projection, problem: ProblemRow, settings: ImpasseSettings, afterSeq = -1): string | undefined {
   const open = p.tasks({ problemId: problem.problem_id }).filter((task) => !["done", "failed", "cancelled"].includes(task.status));
+  // A hole worked out on stubs ends as a `failed` task, but it is waiting for the lemmas it uses: it counts as blocked here, not as a failure.
+  const waiting = p.tasks({ problemId: problem.problem_id }).filter((task) => isWaitingHoleTask(task) && task.claim_id !== null && p.claim(task.claim_id)?.status === "open");
+  if (waiting.length > 0 && open.every((task) => task.status === "blocked")) {
+    return `every open task of ${problem.target} is blocked or waiting for a lemma it uses (${[...new Set([...open.flatMap((task) => task.blocked_by ?? []), ...waiting.map((task) => task.claim_id as string)])].join(", ")})`;
+  }
   if (open.length > 0 && open.every((task) => task.status === "blocked")) {
     return `every open task of ${problem.target} is blocked (${[...new Set(open.flatMap((task) => task.blocked_by ?? []))].join(", ")})`;
   }

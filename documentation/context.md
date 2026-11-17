@@ -37,7 +37,7 @@ resolved without regard to case. M6 resolves them like any other citation.
 
 ## What is lost when M4 is on
 
-The packet replaces the opening message, so the opening message's own content is not shown: the prover's notes from earlier sessions (the M0 loop's mechanism; the sketch's state and the last feedback take their place, and M5's lessons are the advice that carries over), and any section of another line that M4 replaces by title. The briefing sections of the other lines are kept as the "Notes from other lines" section above.
+The packet replaces the opening message, so the opening message's own content is not shown: the prover's notes from earlier sessions (the M0 loop's mechanism; the sketch's state and the last feedback take their place, and M5's lessons are the advice that carries over), and any section of another line that M4 replaces by title. The briefing sections of the other lines are kept as the "Notes from other lines" section above, and so is the state card of `solve`'s defaults `v2` ("Where the problem stands", which the opening message holds before the notes): the packet keeps it among those notes. The masking of old check results has nothing to mask under M4, since a packet shows the last check only.
 
 ## Resume
 
@@ -70,6 +70,8 @@ is never drawn. An item the draw withheld is not in the packet. The packet's rec
 included and what each section kept.
 
 ## The tools
+
+Each call of `expand` and `graph_query` is journaled as a `tool_run` of that capability by the actor `line:M4`, with the attempt's id (`LineTool.journaled`), so that `report.json` counts it in `tools` and in `graph.context` (`graph` also holds M4's packets, their tokens and the facts shown, and, for line M2, its variants and `lean_checked` edges: only what the journal holds, so the depth widenings are not counted); `report.md` prints them, and the ablation's table has one row of them per arm.
 
 `expand(id)` shows one item in full. For a claim: its statement, status, and a table of neighbours. A hub (over 50 neighbours) answers
 the counts per relation kind first, and `kind` then lists one kind. `graph_query` has three modes: a `pattern` (a constant, a shape
