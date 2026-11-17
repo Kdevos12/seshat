@@ -1,0 +1,35 @@
+# The fast checks of every push and pull request: the type check, and the tests that keep the README and
+# the documentation in step with the code. The full suite (`pnpm check`, close to an hour on a slow disk)
+# runs on a developer's machine before a merge (CONTRIBUTING.md).
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Documentation and README tests
+        run: >
+          node --disable-warning=ExperimentalWarning --test
+          packages/orchestrator/test/docs-index.test.ts
+          packages/orchestrator/test/readme.test.ts
+          packages/figures/test/figures.test.ts
+      - name: Setup script syntax
+        run: bash -n scripts/setup.sh && bash -n scripts/kimina.sh

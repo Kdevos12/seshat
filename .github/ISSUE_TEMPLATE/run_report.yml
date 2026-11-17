@@ -1,0 +1,41 @@
+name: Run report
+description: Share what a real run did, solved or not. Failures help as much as successes.
+labels: [run-report]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: The statement (Lean or prose), or the bench problems and the command.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and cap
+      placeholder: "deepseek/deepseek-flash, --max-usd 1"
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - proved (certified by kernel replay)
+        - refuted
+        - computed only (no certifier or no sandbox)
+        - stopped (budget, gate or impasse)
+        - crashed or errored
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: RESULT.md
+      description: Paste RESULT.md, or its summary and cost lines. Remove anything private.
+      render: markdown
+  - type: textarea
+    id: notes
+    attributes:
+      label: What you noticed
+      description: "Anything surprising: a step that was slow, a tool that was never called, a cost that looks wrong."

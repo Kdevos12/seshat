@@ -1,0 +1,23 @@
+name: Idea or feature request
+description: A tool to add, a method to try, or a change to how Seshat works.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should Seshat do, and on what kind of problem would it help?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A paper, a tool, a run where it was missing. Seshat keeps a mechanism only when it beats the line before it at equal budget.
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Fits the rules
+      options:
+        - label: It keeps Lean as the judge (no new way for a claim to become proved).
+        - label: It uses models through their APIs only (no training or fine-tuning).

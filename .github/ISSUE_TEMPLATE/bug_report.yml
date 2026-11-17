@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Seshat does not work as its documentation says.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, and what happened instead.
+      placeholder: |
+        pnpm harness solve "..." --max-usd 1
+        Expected ..., got ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The error or the end of the output. For a run, the relevant part of RESULT.md. Remove any key.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: pnpm harness doctor
+      description: The output of `pnpm harness doctor` on the same machine.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: "Seshat commit (`git rev-parse --short HEAD`), Node (`node --version`), OS."
+      placeholder: "a1b2c3d, Node 22.19.0, Ubuntu 24.04"
+    validations:
+      required: true
