@@ -86,6 +86,7 @@ import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
+import { type RestartsConfig, resolveRestarts, restartsConfigProblems } from "./restarts.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
@@ -230,6 +231,13 @@ export interface RunConfig {
    * projection of the journal and changes no status. Absent: off, and a run that records and prompts as it always did.
    */
   frontier?: { show?: boolean; weights?: Partial<Record<FrontierKind, number>> };
+  /**
+   * Cold restarts (plan change LH3, documentation/runs.md, "Restarts"): a prover's sessions after its first start from the original file with only the
+   * frontier, the dead ends and the state card, with a step limit from the schedule (`geometric`: base, 2 x base, ...; `luby`: base x 1, 1, 2, 1, 1, 2, 4, ...;
+   * `base` 6; never above `limits.steps`), and a session ends early when `stuckChecks` (3) consecutive checks fail the same way on the same goal, or by
+   * M6's repeat rule. The restart and its reason are on `attempt.finished`. Absent: off, and a run that records and prompts as it always did.
+   */
+  restarts?: RestartsConfig;
   /**
    * The tool `consult` for the outer provers (plan change NL3, documentation/models-setup.md, "Consult", beta): one question, as text, to another configured
    * model, `maxCalls` times a session (default 2), charged to the problem's ledger and journaled at the site `consult`. Its answer is advice in the
@@ -515,6 +523,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
   if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   problems.push(...frontierConfigProblems(config.frontier));
+  problems.push(...restartsConfigProblems(config.restarts));
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -942,6 +951,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
       ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
       ...(config.frontier?.show === true ? { frontier: { show: true, ...(config.frontier.weights !== undefined ? { weights: { ...config.frontier.weights } } : {}) } } : {}),
+      ...(config.restarts !== undefined ? { restarts: { ...config.restarts } } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       ...(pinnedAll.dropped.length > 0 ? { toolsDropped: pinnedAll.dropped.map((d) => ({ ...d })) } : {}),
@@ -1790,6 +1800,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           notesChars: effectiveNotesChars(config),
           ...(config.stateCard === true ? { stateCard: true } : {}),
           ...(config.frontier?.show === true ? { frontier: { problemLedger: ledger, ...(config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {}) } } : {}),
+          ...(config.restarts !== undefined ? { restarts: resolveRestarts(config.restarts) } : {}),
           ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),

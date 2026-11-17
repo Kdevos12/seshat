@@ -189,6 +189,8 @@ The model's final message in a session becomes the prover's notes, cut at `notes
 characters, and is recorded as `lesson.recorded`. New notes replace the old ones; the system
 prompt asks the prover to rewrite them in full and keep what still helps.
 
+With `RunConfig.restarts` a prover does not carry its file and notes: each session after its first starts cold, from the original file and what the harness builds from the journal (the state card, the dead ends, the frontier), with a step limit from a schedule, and ends early when the same failure repeats; the notes of a session are still recorded and carried in the journal, and the session may read them on request ([runs.md](runs.md#restarts)).
+
 A prover stops when it finds the candidate, when it has used its sessions, when the budget runs
 out, when the problem is aborted, after two sessions in a row ended with an error (the model or
 Lean could not be reached), or when a line's `beforeSession` stops it (`line`). With the budget in rounds ([scheduler.md](scheduler.md#the-budget-in-rounds)) a prover whose slice of the budget is spent pauses with `slice`: its task stays running and the problem asks for its next slice.

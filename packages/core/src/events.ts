@@ -387,6 +387,11 @@ export interface EventDataMap {
      * failure: `failureClass` stays absent for a budget cut. Only the rotation's measure of Lean progress reads it (documentation/scheduler.md).
      */
     lastCheckClass?: string;
+    /**
+     * Cold restarts (`RunConfig.restarts`): why the session ended as a restart, `schedule` (its step limit) or `stuck` (the same failure class on the
+     * same goal in several checks, or M6's repeat rule) with the class. Absent: not a restart, or the setting is off.
+     */
+    restart?: { reason: "schedule" | "stuck"; class?: string };
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };

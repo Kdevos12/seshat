@@ -5,7 +5,7 @@ import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, t
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { RegistryLeanChecker } from "@seshat/registry";
-import { classifyFailure, type FailureClass, frontier as frontierOf, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
+import { classifyFailure, type FailureClass, frontier as frontierOf, frontierCardLines, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
 import { pageForSession } from "./consolidation-show.ts";
 import { chargedTotals, type Ledger } from "./budget.ts";
@@ -14,6 +14,7 @@ import type { OpenedSession, ProblemLines, SessionInfo } from "./line-runtime.ts
 import type { PriceBook } from "./prices.ts";
 import type { Workbench } from "./problem.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
+import { type ResolvedRestarts, sessionSteps, stuckSignature } from "./restarts.ts";
 import { fatalProviderError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
 import type { RoleBook } from "./roles.ts";
@@ -79,6 +80,12 @@ export interface ProverOptions {
    * line's "for the problem". Absent: off, and the prompts are what they always were.
    */
   frontier?: FrontierOptions & { problemLedger?: Ledger };
+  /**
+   * Cold restarts (`RunConfig.restarts`, plan change LH3, documentation/runs.md, "Restarts"): a session after the first starts from the original file with
+   * the frontier, the dead ends and the state card, not the previous session's file and notes, with the step limit the schedule gives it, and ends
+   * early when its checks keep failing the same way. Absent: off, and the sessions are what they always were.
+   */
+  restarts?: ResolvedRestarts;
   /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
   stateCardChars?: number;
   /**
@@ -238,7 +245,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       if (o.turn?.ended !== undefined) return done("turn");
     }
     const attemptId = newId("att");
-    let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions };
+    // A cold session (`restarts`, after the prover's first) starts from the original file: what the previous session left is only what `previous` holds.
+    const cold = o.restarts !== undefined && session > 1;
+    const fresh: Submission = { aux: "", proof: workbench.sketch.originalProof };
+    const shown = cold ? fresh : regions;
+    let info: SessionInfo = { prover: o.name, session, sessions: o.sessions, attemptId, model: o.modelName, regions: shown };
     let model = o.model;
     let thinkingLevel = o.thinkingLevel;
     let temperature: number | undefined;
@@ -310,7 +321,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     try {
       const opened: OpenedSession | undefined =
         o.lines === undefined ? undefined : await o.lines.openSession(info, ["lean_check", ...(o.editTool === true ? ["lean_edit"] : []), ...(o.consult !== undefined ? [CONSULT_TOOL] : []), ...tools.map((t) => toolName(t.capability))]);
-      const start = regions;
+      const start = shown;
       // The lines' briefing sections, then what the team said (hints, what it asks): after the lines' review, so that no line drops it.
       const team = teamBriefing(journal.projection, workbench.claimId);
       // A person's sketch (`harness solve --sketch`) is in the first briefing only: "A sketch from NAME", screened and as data.
@@ -320,7 +331,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...(o.cards !== undefined && session === 1 ? o.cards.sections : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
-      const card = cardStore === undefined || o.stateCard !== true ? undefined : stateCard(cardStore, workbench.claimId, { ...(o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars }), ...(frontierOptions !== undefined ? { frontier: frontierOptions } : {}) })?.text;
+      let card = cardStore === undefined || o.stateCard !== true ? undefined : stateCard(cardStore, workbench.claimId, { ...(o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars }), ...(frontierOptions !== undefined ? { frontier: frontierOptions } : {}) })?.text;
+      // L0 of a cold session (LH4): the frontier's top entries come even when the state card is off.
+      if (cold && card === undefined && cardStore !== undefined && frontierOptions !== undefined) {
+        const lines = frontierCardLines(frontierOf(cardStore, workbench.claimId, frontierOptions), 1500, frontierOptions);
+        if (lines.length > 0) card = lines.join("\n");
+      }
       const budgetLine = cardStore === undefined || frontierOptions === undefined ? undefined : budgetLineOf(o.ledger, o.frontier?.problemLedger ?? o.ledger, frontierOf(cardStore, workbench.claimId, frontierOptions));
       result = await (o.session ?? runSession)({
         tools: [
@@ -348,9 +364,10 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,
-          file: workbench.render(regions),
-          notes,
-          lastCheck,
+          file: workbench.render(shown),
+          notes: cold ? undefined : notes,
+          lastCheck: cold ? undefined : lastCheck,
+          ...(cold ? { cold: { overlay: false } } : {}),
           session,
           sessions: o.sessions,
           ...(card !== undefined ? { card } : {}),
@@ -360,7 +377,15 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         workbench,
         attemptId,
         actor,
-        limits: o.limits,
+        limits: o.restarts === undefined ? o.limits : { ...o.limits, turns: sessionSteps(o.restarts, session, o.limits.turns) },
+        ...(o.restarts !== undefined
+          ? {
+              stuck: {
+                checks: o.restarts.stuckChecks,
+                signature: (sub: Submission, rep: ValidationReport) => stuckSignature(rep, { statement: workbench.sketch.statement, aux: sub.aux }),
+              },
+            }
+          : {}),
         ledger: o.ledger,
         onCharge: (cost, retry) => journal.emit("attempt.charged", { attemptId, ...cost, ...(retry !== undefined ? { retry } : {}) }, actor),
         signal: o.signal,
@@ -448,6 +473,17 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       ...(lastCheck !== undefined ? { lastCheck: o.blobs.put(lastCheck) } : {}),
       ...(notes !== undefined ? { notes: o.blobs.put(notes) } : {}),
     });
+    // Why the session ended as a restart (`restarts` only): the schedule's step limit, or the same failure again (this prover's or M6's repeat rule).
+    const restart: { reason: "schedule" | "stuck"; class?: string } | undefined =
+      o.restarts === undefined
+        ? undefined
+        : result.stop === "stuck"
+          ? { reason: "stuck", ...(result.stuckClass !== undefined ? { class: result.stuckClass } : {}) }
+          : result.lineCause === "repeated_failure"
+            ? { reason: "stuck", ...(failure !== undefined ? { class: failure } : {}) }
+            : result.stop === "turns"
+              ? { reason: "schedule" }
+              : undefined;
     const finished = () => ({
       attemptId,
       outcome,
@@ -461,6 +497,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           })()
         : {}),
       stoppedBy: result.stop,
+      ...(restart !== undefined ? { restart } : {}),
       ...(result.error !== undefined ? { error: result.error.slice(0, 1000) } : {}),
       ...(result.declaredStrategy !== undefined ? { declaredStrategy: result.declaredStrategy } : {}),
       durationMs: o.lines === undefined ? Math.round(performance.now() - started) : durationMs,

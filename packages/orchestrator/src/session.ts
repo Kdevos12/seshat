@@ -19,10 +19,11 @@ import { isTurnEnded, type Turn } from "./turns.ts";
  * Why a session ended: `model` (the model stopped calling tools), `turns` or `context` (a limit of
  * the session), `budget` (the problem's budget), `solved` (this session found the candidate),
  * `aborted` (another prover found it, or the run was stopped), `error`, `turn` (the consortium turn
- * ended: the session stops after the response in flight, with no request for notes), or `line:<id>`
+ * ended: the session stops after the response in flight, with no request for notes), `stuck` (cold restarts, `SessionOptions.stuck`: the same
+ * failure on the same goal in several checks in a row), or `line:<id>`
  * (an enabled line's `afterCheck` stopped it).
  */
-export type SessionStop = "model" | "turns" | "context" | "budget" | "solved" | "aborted" | "error" | "turn" | `line:${string}`;
+export type SessionStop = "model" | "turns" | "context" | "budget" | "solved" | "aborted" | "error" | "turn" | "stuck" | `line:${string}`;
 
 export interface SessionLimits {
   /** Model responses in one session. */
@@ -142,6 +143,11 @@ export interface SessionOptions {
   checkTimeoutSec?: number;
   /** How a request whose response a transient error cut is sent again; absent: `REQUEST_RETRY` (documentation/m0-loop.md, "Transient errors"). */
   retry?: RetryPolicy;
+  /**
+   * Cold restarts (plan change LH3, `RunConfig.restarts`): after a check, `signature` says how it failed (a class and a key for the goal); `checks`
+   * consecutive checks with the same key end the session as `stuck`, after the notes. Absent: off.
+   */
+  stuck?: { checks: number; signature: (submission: Submission, report: ValidationReport) => { class: string; key: string } | undefined };
 }
 
 export interface SessionResult {
@@ -165,6 +171,8 @@ export interface SessionResult {
   toolTokens?: number;
   /** The open holes each Lean check left, in order (`attempt.finished.holes`). */
   holes?: number[];
+  /** The failure class of the checks that ended the session as `stuck`. */
+  stuckClass?: string;
   error?: string;
 }
 
@@ -194,7 +202,9 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
   let accepted = false;
   let failure: string | undefined;
   let unreachable = 0;
-  let limit: "turns" | "context" | "budget" | "turn" | undefined;
+  let limit: "turns" | "context" | "budget" | "turn" | "stuck" | undefined;
+  let stuckClass: string | undefined;
+  let streak: { key: string; n: number } | undefined;
   let wrappingUp = false;
   let last: AssistantMessage | undefined;
   let lineStop: `line:${string}` | undefined;
@@ -293,6 +303,17 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       unreachable = lost ? unreachable + 1 : 0;
       if (unreachable >= MAX_UNREACHABLE) failure = `Lean could not be reached ${unreachable} times in a row`;
       lineNotice = undefined;
+      if (o.stuck !== undefined && !result.accepted) {
+        const sig = o.stuck.signature(submission, report);
+        if (sig !== undefined) {
+          streak = streak?.key === sig.key ? { key: sig.key, n: streak.n + 1 } : { key: sig.key, n: 1 };
+          if (streak.n >= o.stuck.checks && limit === undefined) {
+            limit = "stuck";
+            stuckClass = sig.class;
+            lineNotice = `The harness ends this session: the same failure (${sig.class}) on the same goal in ${streak.n} checks in a row. The next session starts cold.`;
+          }
+        }
+      }
       if (o.lines?.afterCheck !== undefined) {
         // A line that fails here ends the session with an error, not the check.
         try {
@@ -556,7 +577,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
     if (!o.signal.aborted) await agent.prompt(o.prompt);
     const stop = stopOf();
     let notes = stop === "model" ? textOf(last) : undefined;
-    if (o.wrapUp && (stop === "turns" || stop === "context") && !o.signal.aborted) {
+    if (o.wrapUp && (stop === "turns" || stop === "context" || stop === "stuck") && !o.signal.aborted) {
       wrappingUp = true;
       await agent.prompt(WRAP_UP);
       if (last?.stopReason !== "error" && last?.stopReason !== "aborted") notes = textOf(last);
@@ -571,6 +592,7 @@ export async function runSession(o: SessionOptions): Promise<SessionResult> {
       report,
       submissions,
       ...(holes.length > 0 ? { holes } : {}),
+      ...(stop === "stuck" && stuckClass !== undefined ? { stuckClass } : {}),
       ...(declared !== undefined ? { declaredStrategy: declared } : {}),
       ...(retries > 0 ? { retries } : {}),
       messages: agent.state.messages,
