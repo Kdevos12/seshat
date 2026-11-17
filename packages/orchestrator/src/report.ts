@@ -12,6 +12,7 @@ import {
   SITE_PROVER_SESSION,
 } from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
+import { type CardsShown, cardsShown, renderCardsShown } from "./cards.ts";
 import { heuristicReport, type HeuristicStats, renderHeuristicReport } from "@seshat/heuristics";
 import { type LessonReport, lessonReport, renderLessonReport } from "@seshat/lessons";
 import { type ArchiveReport, archiveReport, renderArchiveReport } from "@seshat/scheduler";
@@ -158,6 +159,8 @@ export interface RunReport {
    * the control of the same buckets, and how often a tactic card's session went the card's way. Absent with the bank off.
    */
   heuristics?: HeuristicStats;
+  /** Cards shown in `solve` (`RunConfig.cards`) and how the problems with and without one ended. Absent when the option was off. */
+  cardsShown?: CardsShown;
   /**
    * The archive of decompositions and the schemas (line M15, documentation/archive.md): the cells filled, the diversity of mechanisms,
    * how the picks of a cell fared, and the schema hints with and without the draw. Absent when the run recorded none.
@@ -614,6 +617,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const library = libraryReport(events);
   const lessons = lessonReport(events);
   const heuristics = heuristicReport(events);
+  const solveCardCounts = cardsShown(events);
   const archive = archiveReport(events);
   const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
@@ -697,6 +701,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(library !== undefined ? { library } : {}),
     ...(lessons !== undefined ? { lessons } : {}),
     ...(heuristics !== undefined ? { heuristics } : {}),
+    ...(solveCardCounts !== undefined ? { cardsShown: solveCardCounts } : {}),
     ...(archive !== undefined ? { archive } : {}),
     ...(loop.attempts.length > 0 ? { loop } : {}),
     ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
@@ -874,6 +879,7 @@ export function renderRunReport(report: RunReport): string {
     ...(report.library !== undefined ? [renderLibraryReport(report.library)] : []),
     ...(report.lessons !== undefined ? [renderLessonReport(report.lessons)] : []),
     ...(report.heuristics !== undefined ? [renderHeuristicReport(report.heuristics)] : []),
+    ...(report.cardsShown !== undefined ? [renderCardsShown(report.cardsShown), ""] : []),
     ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
     ...(report.intake !== undefined ? [...renderIntake(report.intake), ""] : []),

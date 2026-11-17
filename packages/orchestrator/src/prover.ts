@@ -1,6 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
@@ -57,6 +57,11 @@ export interface ProverOptions {
   leanSearch?: LeanSearchPush;
   /** The first cases of the statement, computed by the harness (`RunConfig.firstCases`): a titled section of the first session's opening message only. */
   firstCases?: { title: string; text: string };
+  /**
+   * The heuristic cards of the problem (`RunConfig.cards`, plan change PA7): their sections go in the first session's opening message only, and the
+   * settings are recorded on that session's `attempt.started`, as the fleet records a card shown.
+   */
+  cards?: { sections: Array<{ title: string; text: string }>; settings: { [key: string]: Json } };
   /**
    * The next session's opening message carries the state card (plan change CA7, documentation/m0-loop.md, "The state card"), and the
    * prover records what the card needs (the typed detail of the failure, the lemmas Lean accepted). The caller limits `notesChars` to
@@ -264,6 +269,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       topP = use.topP;
       if (use.record !== undefined) info = { ...info, settings: { ...use.record, ...info.settings } };
     }
+    if (o.cards !== undefined && session === 1) info = { ...info, settings: { ...o.cards.settings, ...info.settings } };
     attempts += 1;
     progress.attempts = attempts;
     journal.emit(
@@ -299,7 +305,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const sketch = session === 1 ? sketchBriefing(journal.projection, workbench.claimId) : [];
       // An informal proof that the verifier accepted (`RunConfig.informalFirst`), in the first briefing only, marked as not checked by Lean.
       const informal = session === 1 ? informalBriefing(journal.projection, o.blobs, workbench.claimId) : [];
-      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
+      const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...(o.cards !== undefined && session === 1 ? o.cards.sections : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
       const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;

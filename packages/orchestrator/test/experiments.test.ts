@@ -104,7 +104,7 @@ describe("the solve-defaults experiment", () => {
   const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
 
   it("sets solve-v2 against solve-v1, the baseline", () => {
-    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"]]);
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"], ["solve-v2-cards", "solve-v2"]]);
   });
 
   it("makes the blueprints arm solve-v2 plus line M12 with blueprints, and nothing else", () => {

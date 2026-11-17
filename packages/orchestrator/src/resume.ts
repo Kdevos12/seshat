@@ -30,6 +30,7 @@ import type { Candidate, RecordedCertification, Workbench } from "./problem.ts";
 import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
 import type { RolesConfig } from "./roles.ts";
+import type { CardsConfig } from "./cards.ts";
 import type { InformalFirst } from "./informal.ts";
 import { RunSetupError } from "./setup-error.ts";
 
@@ -161,6 +162,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(typeof (r.autoTool as { capability?: unknown } | undefined)?.capability === "string" ? { autoTool: (r.autoTool as { capability: string }).capability } : {}),
     ...(r.firstCases === true ? { firstCases: true } : {}),
     ...(typeof r.informalFirst === "object" && r.informalFirst !== null && !Array.isArray(r.informalFirst) ? { informalFirst: r.informalFirst as InformalFirst } : {}),
+    ...(typeof r.cards === "object" && r.cards !== null && !Array.isArray(r.cards) ? { cards: r.cards as CardsConfig } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.consolidation === true ? { consolidation: true } : {}),

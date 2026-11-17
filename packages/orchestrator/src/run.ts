@@ -84,6 +84,7 @@ import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
+import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -135,6 +136,13 @@ export interface RunConfig {
    * checked by Lean; it never changes a claim's status. Absent: off, and a run that records and prompts as it always did.
    */
   informalFirst?: InformalFirst;
+  /**
+   * Heuristic cards in `solve` (plan change PA7, documentation/heuristics.md, "Cards in solve"): once per problem, before the first outer session, the
+   * harness picks at most `max` cards (default 1) of the bank whose conditions hold on the statement's model-free features, and the first briefing of
+   * the first prover carries them as the fleet's sessions do. The session's `attempt.started` records the card as the fleet records a card shown. No
+   * model call. Absent: off, and a run that records and prompts as it always did.
+   */
+  cards?: CardsConfig;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -449,6 +457,7 @@ export function checkConfig(config: RunConfig): string[] {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
   }
   if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
+  if (config.cards !== undefined) problems.push(...checkCards(config.cards));
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -860,6 +869,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(pinnedAuto !== undefined ? { autoTool: { ...pinnedAuto } } : {}),
       ...(config.firstCases === true ? { firstCases: true } : {}),
       ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
+      ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
@@ -1639,6 +1649,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       // The first cases of the statement, once per problem before the provers start (`RunConfig.firstCases`). They are computed when asked for (above, for the informal
       // proof, which comes before the lines; here otherwise), and once.
       const firstCases = idle ? undefined : await casesOnce();
+      // The heuristic cards (`RunConfig.cards`), once per problem, for the first prover's first session; no model call.
+      const shownCards = idle || config.cards === undefined ? undefined : solveCards(registry, entry.statement, domain, config.cards);
+      if (shownCards !== undefined) log(`${entry.fullName}: the first briefing carries the card ${shownCards.cards.map((c) => c.id).join(", ")}`);
       if (firstCases !== undefined) log(`${entry.fullName}: the first cases are computed (${firstCases.table.rows.length} rows${firstCases.hits.length > 0 ? `, ${firstCases.hits.length} OEIS match(es)` : ""})`);
       /**
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
@@ -1679,6 +1692,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
+          ...(shownCards !== undefined && task === proverTasks[0] ? { cards: shownCards } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,
