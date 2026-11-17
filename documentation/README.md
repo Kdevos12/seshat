@@ -146,6 +146,8 @@ blocks the Lean toolchain downloads and has no model credentials.
 - [decide.md](decide.md): typed decisions that order work: the sites and the forbidden list, the backends
   (the run's model, Jev, faux), the configuration, the fallback, the 32k refusal, what is journaled,
   resumption, calibration, and that proof states go to a third party when Jev is on.
+- [audit.md](audit.md): `harness audit RUN_DIR`: one dossier per problem that was not certified (spend by site, sessions and their tool calls, the
+  gate's answers, the last Lean errors, the last sketch, the informal proof), from the journal alone, optionally beside a person's reference solution.
 - [ablate.md](ablate.md): `harness ablate`: the cumulative configurations and the experiments, what each column of the table measures,
   the reliability of decisions, the cost-to-first-success curves, the entrenchment probe, the bench's sequences and `bench-ext`; the paired protocol (Task 33): Wilson intervals, the exact McNemar test, problems solved per dollar and the target line.
 - [prompts.md](prompts.md): the prover's system prompt as a file, the strict screen a rewritten prompt passes, and `harness optimize-prompts`:
