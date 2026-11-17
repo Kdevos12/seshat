@@ -101,6 +101,7 @@ describe("harness audit", () => {
     assert.match(text, /lemma aux_one/);
     assert.match(text, /planner rounds: 1; repairs: 1/);
     assert.match(text, /plausible no_counterexample/);
+    assert.match(text, /\*\*Formal-cost triage\*\*: short \(computed from the journal now\): no informal proof was accepted/);
     assert.doesNotMatch(text, /`easy`/);
     assert.equal(readFileSync(join(dir, "journal.jsonl"), "utf8"), before);
     assert.ok(lines.some((l) => l.includes("audit.md")));
