@@ -294,6 +294,10 @@ claim with a `derived_from` edge to the problem's claim, or the claim itself is 
 when the target score is reached (or the spec has no target). The verdict, the best score and the witness are a
 `search_result` node, written once; the provers' briefing says what the search found and that a score proves nothing.
 
+In a campaign's `construct` mode ([campaign.md](campaign.md#plateau-modes)) two options are added, which are not in `M16_OPTIONS` and are set only by the mode: `novelty` (0.15), a
+candidate whose text, white space apart, is closer than that normalized edit distance (`normalizedEditDistance`) to a program already scored is rejected before it
+runs, and `parentSplit`, with which the programs a prompt shows are drawn half from the best cluster and half, uniformly, from the others.
+
 The line is on rung 2 of the escalation ladder (`rung: 2`; with the ladder of line M12 on, it works a problem only
 after the ladder moves it up that far) and declares `resume: "rebuild"`. In `beforeProvers` (and `resumeProblem`) it proposes
 one ledger task of kind `search` for each claim that carries a `search_spec` (the problem's own, and the claim of each

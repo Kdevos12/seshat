@@ -7,6 +7,7 @@ import { type DigestContext, renderDigest, scoresByTurn, writeDigest } from "./c
 import { acquireLock, backoffMinutes, beat } from "./campaign-watch.ts";
 import { DEFAULT_DEAD_ENDS } from "./dossier.ts";
 import { retirementOf } from "./dossier-build.ts";
+import { decidePlateau, type PlateauContext, spiralOf } from "./plateau.ts";
 import { sleepFor } from "./offpeak.ts";
 import { usageLimitError } from "./provider-errors.ts";
 import { consortiumOf } from "./consortium.ts";
@@ -133,6 +134,11 @@ export function endOf(view: CampaignView, o: { now: number }): { reason: Campaig
   if (until !== undefined && o.now >= Date.parse(until)) return { reason: "until", detail: `the wall-clock end ${until} has come` };
   const spiral = view.settings.spiralTurns ?? DEFAULT_SPIRAL_TURNS;
   const scores = scoresByTurn(events, p, view.frontierOptions);
+  // LH6: two full cycles of the plateau modes spent without the frontier growing.
+  const cycles = spiralOf(events, scores);
+  if (cycles !== undefined) {
+    return { reason: "spiral", detail: `the ${cycles.turns} turns of two full cycles of the five modes spent $${cycles.usd.toFixed(4)} and the frontier did not grow: out of reach at this budget, here is what is established` };
+  }
   let count = 0;
   for (let i = scores.length - 1; i >= 0; i--) {
     const now = scores[i] as (typeof scores)[number];
@@ -143,6 +149,20 @@ export function endOf(view: CampaignView, o: { now: number }): { reason: Campaig
   }
   if (count >= spiral) return { reason: "spiral", detail: `${count} turns in a row spent money and the frontier did not grow: out of reach at this budget, here is what is established` };
   return undefined;
+}
+
+/** What decides whether a plateau mode applies, read from the run's recorded configuration and journal. */
+export function plateauContext(view: CampaignView): PlateauContext {
+  const started = view.events.find((e) => e.type === "run.started");
+  const config = (started?.type === "run.started" && typeof started.data.config === "object" && started.data.config !== null && !Array.isArray(started.data.config) ? started.data.config : {}) as Record<string, unknown>;
+  const row = view.p.problems()[0];
+  const intake = typeof config.intake === "object" && config.intake !== null && !Array.isArray(config.intake) ? (config.intake as Record<string, unknown>) : {};
+  return {
+    statement: row === undefined ? "" : (view.p.claim(row.claim_id)?.statement ?? row.target),
+    lines: Array.isArray(config.lines) ? config.lines.filter((l): l is string => typeof l === "string") : [],
+    private: config.private === true,
+    literature: intake.literature === true && view.events.some((e) => e.type === "intake.consented" && e.data.allowed === true),
+  };
 }
 
 /** The limit of the turn that begins: the team's steer, else the run's option, never the turn before's (a daily cap shrinks that one). */
@@ -360,11 +380,23 @@ export async function runCampaign(o: CampaignOptions): Promise<CampaignEnd> {
       // The turn is over: the impasse is a change of mode, the digest is rebuilt, and the end is decided from the journal.
       const last = turnRecords(view.events).findLast((t) => t.end !== undefined);
       const bp = last?.end?.breakpoint;
-      if (last?.end !== undefined && bp?.kind === "impasse" && !view.events.some((e) => e.type === "campaign.mode_changed" && e.data.turn === last.turn)) {
+      if (last?.end !== undefined && bp?.kind === "impasse" && !view.events.some((e) => e.type === "campaign.mode_changed" && e.data.turn === last.turn && e.data.mode === "cold_restart")) {
         const turn = last.turn;
         const reason = last.end.detail;
         const runId = view.runId;
         pending.add((journal) => journal.emit("campaign.mode_changed", { runId, turn, mode: "cold_restart", reason, ...(bp.problemId !== undefined ? { problemId: bp.problemId } : {}) }, "orchestrator"));
+      }
+      // A plateau changes the mode at the next turn, by rule (LH5); not when the guard is about to end the campaign (LH6).
+      if (last?.end !== undefined && !view.events.some((e) => e.type === "campaign.mode_changed" && e.data.turn === last.turn && e.data.mode !== "cold_restart")) {
+        const scores = scoresByTurn(view.events, view.p, view.frontierOptions);
+        const plateauUsd = view.settings.plateauUsd ?? (view.runUsd !== undefined ? view.runUsd / 10 : undefined);
+        const change = spiralOf(view.events, scores) !== undefined ? undefined : decidePlateau({ events: view.events, scores, plateauUsd, ctx: plateauContext(view) });
+        if (change !== undefined) {
+          const runId = view.runId;
+          const turn = last.turn;
+          pending.add((journal) => journal.emit("campaign.mode_changed", { runId, turn, mode: change.mode, reason: change.reason, ...(change.skipped.length > 0 ? { skipped: change.skipped } : {}), step: change.step }, "orchestrator"));
+          log(`campaign: the next turn works in mode ${change.mode}: ${change.reason}`);
+        }
       }
       // The dead-end store past its bound: the least active half of what is past it is retired, in the journal and out of view (LH4).
       {

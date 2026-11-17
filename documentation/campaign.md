@@ -38,8 +38,8 @@ The supervisor (`runCampaign`, `campaign.ts`) holds no state that the journal do
    journal `campaign.mode_changed`.
 4. Go to 1.
 
-The impasse breakpoint of a consortium run ("stop and wait") is, in a campaign, a change of mode: today the
-only mode is `cold_restart`, and the next turn simply starts cold (Task 60 adds the others). A person's
+The impasse breakpoint of a consortium run ("stop and wait") is, in a campaign, a change of mode: `cold_restart`, and the next turn simply starts
+cold. A plateau of the frontier changes the mode too ([Plateau modes](#plateau-modes)). A person's
 `hint`, `steer` and `sign` stay available at any time between turns, as in a consortium run; they change what
 the sessions are told and the order of the work, never a status.
 
@@ -89,6 +89,33 @@ With `campaign.reflect` (off by default) one capped model call a turn (site `cam
 the problem it is for) proposes new items as a JSON array. Code reads it under a strict format: an answer that is not a JSON array is dropped
 whole, an item without a text `approach` and `why`, or whose text the prose screen refuses, is dropped alone, at most three are kept. What is kept is
 journaled as a delta (`campaign.dossier`, `added`) and shown as "proposed by a model, not checked". The model proposes; code merges.
+
+## Plateau modes
+
+When the frontier's score has not grown over a window of spend (`campaign.plateauUsd`, default 10% of the allowance), the supervisor changes mode
+after the turn, by rule and with no model role (plan change LH5). A mode lasts a turn; its change is a `campaign.mode_changed` event with the mode,
+its reason (the dollars spent without growth, or "the mode added nothing in turn N"), the modes it passed over with why (`skipped`) and `step`, the
+modes gone through since the frontier last grew. The order is fixed:
+
+1. **specialise**: line M18's curriculum of variants works for the turn. It applies when M18 is enabled and the statement has something to
+   specialise (a binder or a `∀`).
+2. **test**: line M11's counter-model search works, and the classical battery runs on each `sorry` a session leaves ([classical.md](classical.md)),
+   on the target and the open `aux_` lemmas of the file. It always applies (the battery needs no line).
+3. **construct**: line M16's program search works for the turn, with two additions ([induction.md](induction.md#program-search-line-m16)). It applies when
+   M16 is enabled and the statement is an existence or a bound (`∃`, an inequality, "bound", "min", "max").
+4. **read**: the literature step again, with the terms the frontier added (its subclaim, case, reduction and variant statements) added to the question.
+   Only with the person's consent as at the start; the step records its skip as it always does, with the reason `private` under `--private`. It
+   applies when the run asked for the literature and the person agreed.
+5. **reformulate**: one generalization of the statement as a variant claim (M2's mechanism, `createVariant`): by rule, a numeral of 2 or more in the
+   statement is replaced by a new natural-number variable. The claim is a Lean statement in signature form, `open`, with a `proposed` edge; Lean
+   checks nothing of it here and nothing gives it a status. It applies when the statement has such a numeral. Today nothing works the variant
+   by itself: it is there for a line (M18), a person or a later turn to take up.
+
+A mode that does not apply is skipped, with its reason in the event. A mode that adds to the frontier keeps the run on it; a turn in it that adds
+nothing passes to the next mode that applies, and after the fifth the first comes again. Lines M18, M11 and M16 are dormant in a campaign outside
+their mode (`ProblemLines` gives their hooks only for the turn of their mode; the run's configuration still lists them, so a resumed run is the same
+run). The mode a turn works in is the last `campaign.mode_changed` of the journal. The signed statement is never touched by a mode: every goal a
+mode adds is a Lean statement or an evidence need, and only the certifier's kernel replay changes a claim's status.
 
 ## Pacing
 

@@ -12,8 +12,11 @@ import {
   leanTerm,
   M16_OPTIONS,
   makeScorer,
+  normalizedEditDistance,
   ProgramDatabase,
   readCounterexamples,
+  runSearch,
+  SEARCH_DEFAULTS,
   readM16Options,
   SEARCH_PROGRAM_KIND,
   SEARCH_RESULT_KIND,
@@ -312,5 +315,51 @@ describe("the line M16", () => {
     assert.throws(() => readM16Options({ ...M16_OPTIONS, rounds: -1 }), /option M16\.rounds/);
     const line = createM16();
     assert.deepEqual([line.id, line.rung, line.resume, typeof line.hooks.resumeProblem], ["M16", 2, "rebuild", "function"]);
+  });
+});
+
+describe("novelty and balanced parents (plan change LH5)", () => {
+  it("measures the edit distance of two program texts, white space apart", () => {
+    assert.equal(normalizedEditDistance("(n) => n + 1", "(n)  =>   n + 1"), 0);
+    assert.equal(normalizedEditDistance("abcd", "abce"), 0.25);
+    assert.equal(normalizedEditDistance("", ""), 0);
+    assert.equal(normalizedEditDistance("aaaa", "bbbb"), 1);
+  });
+
+  it("rejects a candidate too close to one already scored before it runs, and scores a different one", async () => {
+    const scored: string[] = [];
+    const scorer = async (code: string) => {
+      scored.push(code);
+      return { ok: true as const, signature: [code.length], score: code.length };
+    };
+    const candidates = ["(n) => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].slice(0, n)", "(n) => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].slice(0, n) ", "(n) => [0, 1, 2, 3, 4, 5, 6, 7, 8, 8].slice(0, n)", "(n) => Array.from({length: n}, (_, i) => 9 - i)"];
+    const run = async (novelty: number | undefined) => {
+      scored.length = 0;
+      const llm = scriptedLlm(candidates.slice(1).map((program) => ({ program })));
+      await runSearch(llm, { ...(({ target: _t, ...rest }) => rest)(spec), seeds: [candidates[0] as string] }, { ...SEARCH_DEFAULTS, islands: 1, rounds: 3, samples: 1, ...(novelty !== undefined ? { novelty } : {}) }, scorer, seeded(1));
+      return [...scored];
+    };
+    assert.equal((await run(undefined)).length, 4, "off: every candidate is scored");
+    const kept = await run(0.1);
+    assert.equal(kept.length, 2, "the seed and the one candidate far enough from it");
+    assert.equal(kept[1], candidates[3]);
+  });
+
+  it("draws parents half from the best cluster and half from the rest", () => {
+    const db = new ProgramDatabase(1, { temperature: 0.5, lengthBias: 0, clusterSize: 2, parentSplit: true });
+    for (const [score, code] of [[9, "best"], [1, "low-a"], [2, "low-b"], [3, "low-c"]] as const) db.add({ code, signature: [score], score, round: 0, island: 0 });
+    const r = seeded(5);
+    let fromBest = 0;
+    let fromRest = 0;
+    for (let i = 0; i < 100; i++) {
+      const drawn = db.sample(2, r);
+      assert.equal(drawn?.programs.length, 2);
+      for (const p of drawn?.programs ?? []) (p.code === "best" ? fromBest++ : fromRest++);
+    }
+    assert.equal(fromBest, 100, "one parent of each two is the best's");
+    assert.equal(fromRest, 100, "the other is from the rest");
+    const greedy = new ProgramDatabase(1, { temperature: 0.01, lengthBias: 0, clusterSize: 2 });
+    for (const [score, code] of [[9, "best"], [1, "low"]] as const) greedy.add({ code, signature: [score], score, round: 0, island: 0 });
+    assert.ok(greedy.sample(1, seeded(1))?.programs[0]?.code === "best", "without the option the draw is the softmax");
   });
 });

@@ -131,7 +131,7 @@ describe("pacing", () => {
     let now = Date.parse("2026-11-01T10:00:00Z");
     const slept: number[] = [];
     const run = await simulatedCampaign({
-      config: campaignConfig({ turnUsd: 0.03, allowance: 0.3, over: { campaign: { usdPerDay: 0.05, spiralTurns: 1000 } } }),
+      config: campaignConfig({ turnUsd: 0.03, allowance: 0.3, over: { campaign: { usdPerDay: 0.05, spiralTurns: 1000, plateauUsd: 1e9 } } }),
       responses: () => failing(),
       wallClock: () => now,
       extra: { clock: () => now, sleep: async (ms) => { slept.push(ms); now += ms; } },
