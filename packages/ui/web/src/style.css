@@ -89,3 +89,9 @@ details > summary { cursor: pointer; padding: 6px 0; min-height: 36px; }
 .__________cytoscape_container { position: relative; }
 #graph { position: relative; }
 body { overflow-wrap: anywhere; } main > *, .card { min-width: 0; } code { word-break: break-all; }
+.settings h2 { margin-top: 1.2em; }
+.group { border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 4px 12px 8px; min-width: 0; }
+.group legend { font-weight: 700; padding: 0 6px; }
+.setting label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.setting .short { min-height: 70px; }
+.badge.beta, .badge.experimental { border-color: var(--warn); color: var(--warn); font-weight: 600; }

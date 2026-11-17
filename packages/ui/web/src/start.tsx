@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { get, type Job, message, type ModelInfo, post, type Provider } from "./api.ts";
+import { SettingsPanel } from "./parameters.tsx";
 import { Notice, Section } from "./ui.tsx";
 
 interface RunItem {
@@ -20,6 +21,7 @@ export function Start() {
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [runs, setRuns] = useState<RunItem[]>([]);
+  const [settings, setSettings] = useState<{ values: Record<string, unknown> | undefined; error: string | undefined }>({ values: undefined, error: undefined });
 
   useEffect(() => {
     get<{ providers: Provider[] }>("/api/providers").then((r) => setProviders(r.providers), (e) => setError(message(e)));
@@ -35,14 +37,14 @@ export function Start() {
 
   const usable = (providers ?? []).filter((p) => p.configured);
   const ceiling = Number(maxUsd);
-  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && !busy;
+  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && !busy && settings.error === undefined;
 
   const start = async (event: Event) => {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      const body = { kind: "solve", statement, mode, maxUsd: ceiling, ...(model !== "" ? { model } : {}) };
+      const body = { kind: "solve", statement, mode, maxUsd: ceiling, ...(model !== "" ? { model } : {}), ...(settings.values !== undefined ? { settings: settings.values } : {}) };
       const { job } = await post<{ job: Job }>("/api/jobs", body);
       location.hash = `#/run/${encodeURIComponent(job.runId ?? "")}/job/${encodeURIComponent(job.id)}`;
     } catch (e) {
@@ -109,6 +111,8 @@ export function Start() {
             ) : null}
           </div>
         </div>
+        <SettingsPanel command="solve" onChange={(values, problem) => setSettings({ values, error: problem })} />
+        {settings.error !== undefined ? <Notice kind="error">{settings.error}</Notice> : null}
         {error !== undefined ? <Notice kind="error">{error}</Notice> : null}
         <div class="actions">
           <button type="submit" disabled={!ready || (provider !== "" && model === "")}>
