@@ -1,8 +1,10 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
-import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission } from "@seshat/core";
+import type { HostTactics } from "@seshat/classical";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
+import { RegistryLeanChecker } from "@seshat/registry";
 import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
 import { pageForSession } from "./consolidation-show.ts";
@@ -18,6 +20,7 @@ import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { informalBriefing } from "./informal.ts";
 import { sketchBriefing } from "./sketch.ts";
+import { closeSorries, recordSorryBattery, SORRY_BATTERY_ACTOR, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
 import { isTurnEnded, type Turn } from "./turns.ts";
@@ -55,6 +58,8 @@ export interface ProverOptions {
   maskOldChecks?: boolean;
   /** The run's push of verified `lean.search` hits into the check answers (`SessionOptions.appendToCheck`); absent: none. */
   leanSearch?: LeanSearchPush;
+  /** The classical battery on the `sorry` a check leaves (`RunConfig.sorryBattery`, Ruling 40): the settings and the tactics the host's Lean has beyond the core ones. Absent: off. */
+  sorryBattery?: { config: SorryBatteryConfig; host: HostTactics };
   /** The first cases of the statement, computed by the harness (`RunConfig.firstCases`): a titled section of the first session's opening message only. */
   firstCases?: { title: string; text: string };
   /**
@@ -363,6 +368,23 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
         ...(o.editTool === true ? { editTool: true } : {}),
         ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
+        ...(o.sorryBattery !== undefined
+          ? {
+              sorryBattery: (sub: Submission, rep: ValidationReport, sig?: AbortSignal) =>
+                closeSorries(
+                  {
+                    checker: new RegistryLeanChecker(workbench.registry, { attemptId, actor: SORRY_BATTERY_ACTOR }),
+                    render: (x) => workbench.render(x),
+                    host: o.sorryBattery!.host,
+                    config: o.sorryBattery!.config,
+                    record: recordSorryBattery(journal, workbench.claimId, attemptId, SORRY_BATTERY_ACTOR),
+                  },
+                  sub,
+                  rep,
+                  sig,
+                ),
+            }
+          : {}),
         ...(o.leanSearch !== undefined ? { appendToCheck: (o.leanSearch as LeanSearchPush).forSession() } : {}),
       });
     } catch (error) {

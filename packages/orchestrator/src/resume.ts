@@ -1,3 +1,4 @@
+import type { SorryBatteryConfig } from "./sorry-battery.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DecideSettings } from "@seshat/decide";
@@ -163,6 +164,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.firstCases === true ? { firstCases: true } : {}),
     ...(typeof r.informalFirst === "object" && r.informalFirst !== null && !Array.isArray(r.informalFirst) ? { informalFirst: r.informalFirst as InformalFirst } : {}),
     ...(typeof r.cards === "object" && r.cards !== null && !Array.isArray(r.cards) ? { cards: r.cards as CardsConfig } : {}),
+    ...(typeof r.sorryBattery === "object" && r.sorryBattery !== null && !Array.isArray(r.sorryBattery) ? { sorryBattery: r.sorryBattery as SorryBatteryConfig } : {}),
     ...(r.triage === true ? { triage: true } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),

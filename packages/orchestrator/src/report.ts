@@ -12,6 +12,7 @@ import {
   SITE_PROVER_SESSION,
 } from "@seshat/core";
 import { leanEnvOfConfig, type LeanEnvRecord } from "@seshat/lean-env";
+import { renderSorryBatteryTally, type SorryBatteryTally, sorryBatteryTally } from "./sorry-battery.ts";
 import { type CardsShown, cardsShown, renderCardsShown } from "./cards.ts";
 import { heuristicReport, type HeuristicStats, renderHeuristicReport } from "@seshat/heuristics";
 import { type LessonReport, lessonReport, renderLessonReport } from "@seshat/lessons";
@@ -161,6 +162,8 @@ export interface RunReport {
   heuristics?: HeuristicStats;
   /** Cards shown in `solve` (`RunConfig.cards`) and how the problems with and without one ended. Absent when the option was off. */
   cardsShown?: CardsShown;
+  /** The `sorry` the classical battery tried and closed in the prover sessions (`RunConfig.sorryBattery`, Ruling 40). Absent when the option was off. */
+  sorryBattery?: SorryBatteryTally;
   /**
    * The archive of decompositions and the schemas (line M15, documentation/archive.md): the cells filled, the diversity of mechanisms,
    * how the picks of a cell fared, and the schema hints with and without the draw. Absent when the run recorded none.
@@ -618,6 +621,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
   const lessons = lessonReport(events);
   const heuristics = heuristicReport(events);
   const solveCardCounts = cardsShown(events);
+  const sorryTally = sorryBatteryTally(events);
   const archive = archiveReport(events);
   const cache = cacheReport(events);
   const leanEnv = leanEnvOfConfig(started.config);
@@ -702,6 +706,7 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     ...(lessons !== undefined ? { lessons } : {}),
     ...(heuristics !== undefined ? { heuristics } : {}),
     ...(solveCardCounts !== undefined ? { cardsShown: solveCardCounts } : {}),
+    ...(sorryTally !== undefined ? { sorryBattery: sorryTally } : {}),
     ...(archive !== undefined ? { archive } : {}),
     ...(loop.attempts.length > 0 ? { loop } : {}),
     ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
@@ -880,6 +885,7 @@ export function renderRunReport(report: RunReport): string {
     ...(report.lessons !== undefined ? [renderLessonReport(report.lessons)] : []),
     ...(report.heuristics !== undefined ? [renderHeuristicReport(report.heuristics)] : []),
     ...(report.cardsShown !== undefined ? [renderCardsShown(report.cardsShown), ""] : []),
+    ...(report.sorryBattery !== undefined ? [renderSorryBatteryTally(report.sorryBattery), ""] : []),
     ...(report.archive !== undefined ? [renderArchiveReport(report.archive)] : []),
     ...(report.memory !== undefined ? memoryParagraph(report.memory) : []),
     ...(report.intake !== undefined ? [...renderIntake(report.intake), ""] : []),

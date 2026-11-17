@@ -9,6 +9,7 @@ export * from "./doctor.ts";
 export * from "./feedback.ts";
 export * from "./audit.ts";
 export * from "./cards.ts";
+export * from "./sorry-battery.ts";
 export * from "./triage.ts";
 export * from "./parameters.ts";
 export * from "./settings-file.ts";
