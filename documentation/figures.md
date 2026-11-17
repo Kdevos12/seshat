@@ -35,6 +35,12 @@ and a real model, or against the real program or service); **dashed**, built and
 **dotted grey**, planned. [status.md](status.md) is the source of these marks, and a figure changes when it does.
 Dashed amber arrows are writes to the journal.
 
+Every figure carries Seshat's logo in its top right corner. The logo's source is `assets/logo/seshat.svg` (a trace of
+the owner's drawing, `seshat-original.jpg` beside it); `packages/figures/src/logo.ts` reads it, so a new logo changes
+every figure at the next `pnpm figures`. A title or subtitle that would run into it is reported as a problem, like a text
+that overflows its box. The other uses of the logo (README, interface, social preview) are listed in
+[`assets/logo/README.md`](../assets/logo/README.md).
+
 ## Adding or changing a figure
 
 1. Write `packages/figures/src/figures/NAME.ts`, exporting one function that returns a `Figure`, and add it to

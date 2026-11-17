@@ -1,3 +1,5 @@
+<img src="../assets/logo/seshat.svg" alt="Seshat's logo" width="110" align="right">
+
 # Seshat documentation
 
 Seshat is a harness for autonomous mathematical research with LLMs. Models are used only
@@ -9,6 +11,7 @@ in the same commit.
 
 ## Start here
 
+- [install.md](install.md): from a fresh machine to a first certified proof, in three levels (try it, a real run, optional tools), and `scripts/setup.sh`, which does it in one command.
 - [quickstart.md](quickstart.md): a problem of your own with the least friction: `harness solve`, `harness doctor`, `RESULT.md`.
 - [status.md](status.md): beta v1: what has run for real, what has only run with simulations.
 - [parameters.md](parameters.md): every setting, flag and host profile key.
