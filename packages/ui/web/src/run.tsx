@@ -105,6 +105,7 @@ export function RunView(props: { id: string; jobId?: string | undefined }) {
             <Graph claims={run.claims} edges={run.edges} />
             {run.claimsOmitted > 0 ? <p class="muted small">{run.claimsOmitted} more claim(s) are in the journal and not drawn.</p> : null}
           </Section>
+          <FrontierPanel run={run} />
           <EvidencePanel run={run} />
         </>
       )}
@@ -599,6 +600,48 @@ function TeamPanel(props: { run: Run }) {
                 </li>
               ))}
             </ul>
+          ) : null}
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+function FrontierPanel(props: { run: Run }) {
+  const { run } = props;
+  if (run.frontier.length === 0) return null;
+  return (
+    <Section title="Established so far" note="What the journal says Lean accepted, computed from it with no model. Evidence is not proof; nothing here changes a statement's status.">
+      {run.frontier.map((item) => (
+        <div key={item.problemId}>
+          <h3>
+            {item.problemId} <span class="muted small">{item.frontier.entries.length} entries, score {item.frontier.score}</span>
+          </h3>
+          <ul class="plain">
+            {item.frontier.entries
+              .filter((e) => !e.evidence)
+              .map((e) => (
+                <li key={e.id}>
+                  <span class="chip">{e.kind}</span> {e.statement}
+                  {e.status !== undefined ? ` [${e.status}]` : ""}
+                  {e.detail !== undefined ? `: ${e.detail}` : ""}
+                </li>
+              ))}
+          </ul>
+          {item.frontier.entries.some((e) => e.evidence) ? (
+            <>
+              <p class="small">Evidence, not proof:</p>
+              <ul class="plain">
+                {item.frontier.entries
+                  .filter((e) => e.evidence)
+                  .map((e) => (
+                    <li key={e.id}>
+                      <span class="chip">evidence</span> {e.statement}
+                      {e.detail !== undefined ? `: ${e.detail}` : ""}
+                    </li>
+                  ))}
+              </ul>
+            </>
           ) : null}
         </div>
       ))}

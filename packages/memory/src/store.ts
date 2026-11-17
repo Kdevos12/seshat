@@ -301,6 +301,17 @@ export class MemoryStore {
   }
 
   /**
+   * A store that only reads, over a projection built from events (a report, a result, an interface's view: documentation/frontier.md). Every
+   * write refuses.
+   */
+  static readOnly(projection: Journal["projection"], blobs?: BlobStore): MemoryStore {
+    const refuse = (): never => {
+      throw new Error("this memory store is read-only: it was opened over a projection, not a journal");
+    };
+    return new MemoryStore({ journal: { projection, emit: refuse } as unknown as Journal, blobs: blobs ?? ({ get: () => undefined, getJson: () => undefined, put: refuse, putJson: refuse } as unknown as BlobStore) });
+  }
+
+  /**
    * The same store, writing as another actor (`line:M1`...). A view reads the reference files of the
    * root store but cannot set one (`setReference`), nor make a view that writes as `orchestrator` or `human:*`.
    */

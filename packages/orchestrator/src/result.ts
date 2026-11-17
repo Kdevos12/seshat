@@ -17,6 +17,7 @@ import {
 import { type RecordLine, recordLine } from "./account.ts";
 import { informalLines, type InformalLine, renderInformal } from "./informal-view.ts";
 import { buildReport, type RunReport, type SiteLine } from "./report.ts";
+import { frontierOptionsOfEvents, frontiersOf, type ProblemFrontier, renderFrontiers } from "./frontier-view.ts";
 
 /**
  * RESULT.md (plan change PB8, documentation/quickstart.md, "RESULT.md"): what a run found, whatever stopped it, built from the
@@ -108,6 +109,8 @@ export interface Result {
   intake?: IntakeLine[];
   /** The informal proof first of each problem that has one (plan changes PA13, AL3): shown only when accepted and no Lean proof was certified. */
   informal?: InformalLine[];
+  /** The verified frontier of each problem that has entries, when the run's configuration shows it (`RunConfig.frontier`, documentation/frontier.md). */
+  frontier?: ProblemFrontier[];
   /** The signature of a prose statement (`harness solve`), when the run has one. */
   signature?: EventDataMap["statement.signed"] & { by: string; seq: number };
   spend: { usd: number; inputTokens: number; outputTokens: number; budgetUsd?: number; sites: SiteLine[]; rungs?: Record<string, number>; formalizationUsd?: number };
@@ -364,6 +367,7 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
       : undefined;
 
     const informal = informalLines(events, blob);
+    const frontiers = frontiersOf(p, frontierOptionsOfEvents(events));
     const seconds = Math.max(0, (Date.parse(last.ts) - Date.parse((events[0] as HarnessEvent).ts)) / 1000);
     return {
       version: 1,
@@ -386,6 +390,7 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
       ...(signature !== undefined ? { signature } : {}),
       ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
       ...(informal.length > 0 ? { informal } : {}),
+      ...(frontiers.length > 0 ? { frontier: frontiers } : {}),
       spend: {
         usd: report.usd,
         inputTokens: report.inputTokens,
@@ -527,6 +532,8 @@ export function renderResult(r: Result): string {
   }
   // The informal proof first (AL3): an accepted one that no certified Lean proof replaces, with its label.
   if (r.informal !== undefined) lines.push(...renderInformal(r.informal));
+  // What the frontier holds (`RunConfig.frontier`): after the claims, before the certified proofs; evidence apart.
+  if (r.frontier !== undefined) lines.push("", ...renderFrontiers(r.frontier));
   // Certified.
   lines.push("", "## Lean proofs certified so far", "");
   if (r.certified.length === 0) lines.push("None yet. A claim is `proved` or `refuted` only when the kernel replay certified a proof; nothing below counts as one.");

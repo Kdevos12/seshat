@@ -59,6 +59,8 @@ export interface SessionContext {
   sections?: ReadonlyArray<{ title: string; text: string }>;
   /** The state card (plan change CA7): where the problem stands, written by code from the journal. Shown as data; absent: no such section. */
   card?: string;
+  /** One line of data at the end of the message: the budget left and the verified frontier (`RunConfig.frontier`, plan change LH8). Absent: no such line. */
+  budgetLine?: string;
 }
 
 /** The first message of a session: the theorem, the notes, the file, the last check, and the lines' sections. */
@@ -79,7 +81,7 @@ ${c.file}
 \`\`\`
 
 # What Lean said about the file as it is
-${lastCheck}${sections}`;
+${lastCheck}${sections}${c.budgetLine === undefined ? "" : `\n\n${c.budgetLine}`}`;
 }
 
 /** Sent when a session reaches a limit, so that the prover writes its notes. */

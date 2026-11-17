@@ -5,7 +5,7 @@ import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, t
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { RegistryLeanChecker } from "@seshat/registry";
-import { classifyFailure, type FailureClass, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
+import { classifyFailure, type FailureClass, frontier as frontierOf, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
 import { pageForSession } from "./consolidation-show.ts";
 import { chargedTotals, type Ledger } from "./budget.ts";
@@ -73,6 +73,12 @@ export interface ProverOptions {
    * `CARD_NOTES_CHARS`. Absent: off, and the prompts and the journal are what they always were.
    */
   stateCard?: boolean;
+  /**
+   * The verified frontier (`RunConfig.frontier.show`, plan changes LH1 and LH8, documentation/frontier.md): the card ends with its top entries, and each
+   * session's opening message ends with one line of data on the budget left and the frontier. `problemLedger` is the problem's ledger, for the
+   * line's "for the problem". Absent: off, and the prompts are what they always were.
+   */
+  frontier?: FrontierOptions & { problemLedger?: Ledger };
   /** The card's size bound in characters (`StateCardOptions.maxChars`); absent: the default. */
   stateCardChars?: number;
   /**
@@ -200,7 +206,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
   const tools = o.tools ?? [];
   const strategies = o.lines?.strategies ?? [];
   const system = systemPrompt(o.notesChars, tools.map((t) => toolName(t.capability)), o.systemTemplate, o.editTool === true);
-  const cardStore = o.stateCard === true ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
+  const cardStore = o.stateCard === true || o.frontier !== undefined ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined;
+  const frontierOptions: FrontierOptions | undefined = o.frontier === undefined ? undefined : o.frontier.weights !== undefined ? { weights: o.frontier.weights } : {};
   const pageStore = o.consolidation === undefined ? undefined : new MemoryStore({ journal, blobs: o.blobs, actor: "orchestrator" });
   const resumed = o.resume;
   let regions: Submission = resumed?.carry?.regions ?? { aux: "", proof: workbench.sketch.originalProof };
@@ -313,7 +320,8 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       const sections = [...(opened?.sections ?? []), ...(o.firstCases !== undefined && session === 1 ? [o.firstCases] : []), ...(o.cards !== undefined && session === 1 ? o.cards.sections : []), ...sketch, ...informal, ...(pageSection !== undefined ? [pageSection] : []), ...team];
       const veto = teamVeto(journal.projection, workbench.claimId);
       // The card is made now, from the journal as the session finds it: after the lines' `beforeSession` and the previous session's records.
-      const card = cardStore === undefined ? undefined : stateCard(cardStore, workbench.claimId, o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars })?.text;
+      const card = cardStore === undefined || o.stateCard !== true ? undefined : stateCard(cardStore, workbench.claimId, { ...(o.stateCardChars === undefined ? {} : { maxChars: o.stateCardChars }), ...(frontierOptions !== undefined ? { frontier: frontierOptions } : {}) })?.text;
+      const budgetLine = cardStore === undefined || frontierOptions === undefined ? undefined : budgetLineOf(o.ledger, o.frontier?.problemLedger ?? o.ledger, frontierOf(cardStore, workbench.claimId, frontierOptions));
       result = await (o.session ?? runSession)({
         tools: [
           ...tools.map((t) => {
@@ -347,6 +355,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
           sessions: o.sessions,
           ...(card !== undefined ? { card } : {}),
           ...(sections.length > 0 ? { sections } : {}),
+          ...(budgetLine !== undefined ? { budgetLine } : {}),
         }),
         workbench,
         attemptId,
@@ -573,4 +582,20 @@ function outcomeOf(result: SessionResult): AttemptOutcome {
 
 function clipNotes(text: string, chars: number): string {
   return text.length <= chars ? text : `${text.slice(0, chars)}\n[notes cut at ${chars} characters]`;
+}
+
+const dollars = (usd: number | undefined): string => (usd === undefined ? "no limit" : `$${usd.toFixed(2)}`);
+
+/**
+ * The line that ends a session's opening message when the frontier is shown (plan change LH8): data only, what the session's and the problem's
+ * ledgers still allow, and the frontier's size, score and last entry. An agent that does not see its budget does not use it.
+ */
+export function budgetLineOf(session: Ledger, problem: Ledger, f: ReturnType<typeof frontierOf>): string {
+  const last = f.entries.at(-1);
+  const short = (text: string): string => (text.length > 100 ? `${text.slice(0, 99)}...` : text);
+  const established =
+    last === undefined
+      ? "established so far: nothing yet"
+      : `established so far: ${f.entries.length} entries (score ${f.score}), last: ${last.evidence ? "evidence, not proof: " : ""}${short(last.statement)}`;
+  return `Budget: ${dollars(session.remainingUsd)} left for this session, ${dollars(problem.remainingUsd)} for the problem; ${established}.`;
 }

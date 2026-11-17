@@ -32,6 +32,7 @@ import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
 import type { RolesConfig } from "./roles.ts";
 import type { CardsConfig } from "./cards.ts";
+import { frontierConfigProblems } from "./frontier-view.ts";
 import type { InformalFirst } from "./informal.ts";
 import { RunSetupError } from "./setup-error.ts";
 
@@ -173,6 +174,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.consolidation === true ? { consolidation: true } : {}),
     ...(r.budgetRounds === true ? { budgetRounds: true } : {}),
     ...(typeof r.budgetShare === "number" ? { budgetShare: r.budgetShare } : {}),
+    ...(r.frontier !== null && typeof r.frontier === "object" && !Array.isArray(r.frontier) && frontierConfigProblems(r.frontier).length === 0 ? { frontier: r.frontier as RunConfig["frontier"] & object } : {}),
     ...(intakeOf(r.intake) !== undefined ? { intake: intakeOf(r.intake) as IntakeConfig } : {}),
     ...(typeof r.checkTimeoutSec === "number" ? { checkTimeoutSec: r.checkTimeoutSec } : {}),
     ...(typeof r.prompts === "object" && r.prompts !== null && typeof (r.prompts as Record<string, unknown>).proverSystem === "string"

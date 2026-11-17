@@ -29,7 +29,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { CARD_NOTES_CHARS, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, type FrontierKind, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
 import { maskedCount } from "./mask.ts";
 import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -85,6 +85,7 @@ import { recordSketch, sketchProblem } from "./sketch.ts";
 import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
+import { frontierConfigProblems } from "./frontier-view.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
@@ -222,6 +223,13 @@ export interface RunConfig {
    * Absent, or a run without a run budget: today's behaviour exactly. A number above 0.
    */
   budgetShare?: number;
+  /**
+   * The verified frontier (plan change LH1, LH8, documentation/frontier.md): with `show`, the state card (when on) ends with its top entries, the turn's
+   * account, `RESULT.md`, `report.md` and the interface's run view carry a section "Established so far", and each outer prover session's opening user
+   * message ends with one line of data about the budget left and the frontier. `weights` overrides the score's weights by kind. The frontier is a
+   * projection of the journal and changes no status. Absent: off, and a run that records and prompts as it always did.
+   */
+  frontier?: { show?: boolean; weights?: Partial<Record<FrontierKind, number>> };
   /**
    * The tool `consult` for the outer provers (plan change NL3, documentation/models-setup.md, "Consult", beta): one question, as text, to another configured
    * model, `maxCalls` times a session (default 2), charged to the problem's ledger and journaled at the site `consult`. Its answer is advice in the
@@ -506,6 +514,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (new Set(config.tools).size !== config.tools.length) problems.push(`tools lists a capability twice: ${config.tools.join(", ")}`);
   if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
   if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
+  problems.push(...frontierConfigProblems(config.frontier));
   if (!(config.budget.problemUsd > 0)) problems.push(`budget.problemUsd must be positive, got ${config.budget.problemUsd}`);
   if (config.budget.runUsd !== undefined && !(config.budget.runUsd > 0)) {
     problems.push(`budget.runUsd must be positive, got ${config.budget.runUsd}`);
@@ -932,6 +941,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
       ...(config.budgetShare !== undefined ? { budgetShare: config.budgetShare } : {}),
+      ...(config.frontier?.show === true ? { frontier: { show: true, ...(config.frontier.weights !== undefined ? { weights: { ...config.frontier.weights } } : {}) } } : {}),
       ...(proverTemplate !== undefined ? { prompts: { proverSystem: proverTemplate } } : {}),
       tools: toolsRecord,
       ...(pinnedAll.dropped.length > 0 ? { toolsDropped: pinnedAll.dropped.map((d) => ({ ...d })) } : {}),
@@ -1779,6 +1789,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           limits: config.limits,
           notesChars: effectiveNotesChars(config),
           ...(config.stateCard === true ? { stateCard: true } : {}),
+          ...(config.frontier?.show === true ? { frontier: { problemLedger: ledger, ...(config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {}) } } : {}),
           ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),

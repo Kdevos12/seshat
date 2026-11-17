@@ -21,6 +21,7 @@ what `buildResult`, `buildAccount` and the projection already say ([quickstart.m
 | `state`, `stop`, `journal` | how the run ended (finished, paused for the team, or cut), why, and the journal's length, last hash and whether its hash chain verifies |
 | `status` | the plain-language status of each problem: `proved` or `refuted` only when a valid kernel replay of that claim is in the journal, `candidate` for a proof that passed the fast check only, `leads` when programs found evidence, and so on. Evidence is never worded as proof |
 | `claims`, `edges` | the research graph: each claim with the status the journal holds, its parent and whether it is a problem's claim; each edge with its kind and its status (`lean_checked`, `human_signed`, `proposed`) |
+| `frontier` | the verified frontier of each problem that has entries, when the run's configuration shows it (`RunConfig.frontier`, [frontier.md](frontier.md)); empty otherwise; evidence entries are marked and apart |
 | `leads`, `evidence` | counter-examples and indicative evidence, listed apart; none of it changes a claim's status |
 | `turns` | each turn of a consortium run: its limit, why it ended, what it spent, and its account (what the team is asked, what the team has answered) |
 | `spend` | dollars and tokens, the budget, what is left, spend per site and per rung of the ladder |
@@ -159,7 +160,7 @@ wrote, so a stale build fails `pnpm check`. The digest covers the sources, the p
 |---|---|
 | **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine |
 | **Signature** | for a statement in words: your words beside the Lean statement a model made of them, what the first cases said, a warning when cheap automation proves it, and two buttons. For a statement in words the card says the formalization was a model call already charged to the allowance; it reads a malformed shape defensively, and a screen that cannot be drawn shows one plain line |
-| **Run** | the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; leads, evidence and failures |
+| **Run** | the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; "Established so far" when the run shows its frontier; leads, evidence and failures |
 | **Checklist** | `harness doctor` as a list: what is ready, what is missing, what to do. It writes nothing |
 | **Providers** | the library's providers, whether each has credentials, a place to save or remove a key |
 
