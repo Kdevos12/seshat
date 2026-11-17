@@ -112,7 +112,17 @@ describe("plateau modes in a campaign", () => {
     assert.equal(ofType(run.events, "statement.signed").length <= 1, true);
     const stopped = ofType(run.events, "campaign.stopped");
     assert.equal(stopped.at(-1)?.data.reason, "spiral");
-    assert.match(readFileSync(join(run.dir, "campaign", "digest.md"), "utf8"), /stopped \(spiral\)/);
+    const digest = readFileSync(join(run.dir, "campaign", "digest.md"), "utf8");
+    assert.match(digest, /stopped \(spiral\)/);
+    assert.match(digest, /Out of reach at this budget; here is what is established/);
+    assert.match(digest, /## Frontier/);
+    assert.match(readFileSync(join(run.dir, "RESULT.md"), "utf8"), /Out of reach at this budget; here is what is established/);
+    // The signed statement and the claim are the run's own: no mode rewrote them.
+    const claims = ofType(run.events, "claim.created");
+    assert.equal(claims.filter((c) => c.data.origin === "campaign.reformulate" && c.data.status !== "open").length, 0);
+    const target = claims[0]?.data;
+    assert.ok(claims.filter((c) => c.data.origin === "campaign.reformulate").every((c) => c.data.statement !== target?.statement && c.data.claimId !== target?.claimId));
+    assert.equal(ofType(run.events, "statement.signed").length, 0, "no mode signs or re-signs a statement");
   });
 
   it("does not stop when the frontier grows in the second cycle", () => {

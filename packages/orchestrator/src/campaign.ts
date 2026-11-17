@@ -8,6 +8,7 @@ import { acquireLock, backoffMinutes, beat } from "./campaign-watch.ts";
 import { DEFAULT_DEAD_ENDS } from "./dossier.ts";
 import { retirementOf } from "./dossier-build.ts";
 import { decidePlateau, type PlateauContext, spiralOf } from "./plateau.ts";
+import { writeResult } from "./result.ts";
 import { sleepFor } from "./offpeak.ts";
 import { usageLimitError } from "./provider-errors.ts";
 import { consortiumOf } from "./consortium.ts";
@@ -256,6 +257,14 @@ export async function runCampaign(o: CampaignOptions): Promise<CampaignEnd> {
     pending.add((journal) => journal.emit("campaign.stopped", { runId: view.runId, reason: end.reason, detail: end.detail, turns, usd, frontier: f }, "orchestrator"));
     pending.flush(view);
     digest = writeDigest(o.dir, renderDigest(view.events, view.p, context(view, end.reason)));
+    // A spiral's honest report goes into RESULT.md too, now that the journal holds `campaign.stopped`.
+    if (end.reason === "spiral" && view.journal !== undefined) {
+      try {
+        writeResult(o.dir);
+      } catch (error) {
+        log(`RESULT.md could not be written: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     log(`campaign ${end.reason === "settled" ? "settled" : `stopped (${end.reason})`}: ${end.detail}`);
     return { reason: end.reason, detail: end.detail, turns, usd, ...(digest !== undefined ? { digest } : {}) };
   }

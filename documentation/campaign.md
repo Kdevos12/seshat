@@ -117,6 +117,20 @@ their mode (`ProblemLines` gives their hooks only for the turn of their mode; th
 run). The mode a turn works in is the last `campaign.mode_changed` of the journal. The signed statement is never touched by a mode: every goal a
 mode adds is a Lean statement or an evidence need, and only the certifier's kernel replay changes a claim's status.
 
+## Guards
+
+- **No "done" without Lean.** A campaign ends `settled` only through the certifier ([The trust rule](#the-trust-rule)); every other end is `stopped`, with the frontier.
+- **The spiral detector.** Spend without frontier growth across two full cycles of the five plateau modes (ten turns in a row that worked in a mode and spent money, none of
+  which grew the frontier) ends the campaign `stopped` with the reason `spiral`. Turns, not modes passed over, are counted, so a statement for which few modes apply is
+  not stopped early: its modes come round more often within the same ten turns. The older rule (`spiralTurns`, 8) stays: that many turns in a row without growth, in a
+  mode or not. A mode that grows the frontier starts the count again. The guard reads the journal alone, so a resumed supervisor finds it where it was.
+  The second rule of plan change LH6, the same plan revision three times, has nothing to read: there is no plan without the research agent (Tasks 46 to 48). It does not apply.
+- **The honest report.** A spiral writes "Out of reach at this budget; here is what is established" in the digest (above the frontier) and in `RESULT.md`
+  (under the headline, with the turns and dollars spent), and the frontier follows in both. Nothing in the frontier is a proof of the target.
+- **No goal drifts into prose.** Every goal a mode adds is a Lean statement (a variant claim in signature form) or an evidence need (a counter-model search, a battery
+  on a `sorry`, a literature query that is data); no mode adds prose as a goal. The signed statement is locked as it is in any run: no mode signs, re-signs or edits it,
+  and no mode gives a claim a status (the test `plateau.test.ts` checks both over a campaign that goes through the modes and ends in a spiral).
+
 ## Pacing
 
 - **`--usd-per-day X`** (`campaign.usdPerDay`): the day's spend is counted from the journal by UTC day. Each
@@ -188,7 +202,7 @@ The supervisor reads the end from the journal before each turn.
 | `settled` | a claim of the run is `proved` or `refuted` (only the certifier's kernel replay makes it so) and the run has closed | settled |
 | `allowance` | the run's budget is spent | stopped |
 | `until` | the wall-clock end `--until` has come | stopped |
-| `spiral` | `spiralTurns` (8) turns in a row spent money and the frontier's score did not grow | stopped |
+| `spiral` | `spiralTurns` (8) turns in a row spent money and the frontier's score did not grow, or two full cycles of the plateau modes did ([Guards](#guards)) | stopped |
 | `ended` | the run finished some other way (an error, Lean unavailable, a provider refusal) | stopped |
 | `aborted` | the supervisor was stopped | stopped |
 
@@ -216,3 +230,6 @@ that the digest stays under its bound, and that it all runs in under 30 seconds.
 
 The real marathon of plan change LH7.2 (about $10) has not run: the owner has no budget for it. No real campaign has run: not against a real model, a real Lean or for days. The tests use the faux
 provider, a simulated Lean and injected clocks.
+
+The dossier's reflection call, the `read` mode's second literature step and the `reformulate` mode's variant have not run against a real model, a real
+literature search or a real Lean; the plateau rule, the guards and the novelty rejection are tested on scripted journals and candidates.

@@ -111,6 +111,8 @@ export interface Result {
   informal?: InformalLine[];
   /** The verified frontier of each problem that has entries, when the run's configuration shows it (`RunConfig.frontier`, documentation/frontier.md). */
   frontier?: ProblemFrontier[];
+  /** A campaign that ended in a spiral (plan change LH6): the guard's own words, for the honest report "out of reach at this budget". */
+  spiral?: { detail: string; turns: number; usd: number };
   /** The signature of a prose statement (`harness solve`), when the run has one. */
   signature?: EventDataMap["statement.signed"] & { by: string; seq: number };
   spend: { usd: number; inputTokens: number; outputTokens: number; budgetUsd?: number; sites: SiteLine[]; rungs?: Record<string, number>; formalizationUsd?: number };
@@ -391,6 +393,10 @@ export function buildResult(events: readonly HarnessEvent[], options: ResultOpti
       ...(intakeLines(events).length > 0 ? { intake: intakeLines(events) } : {}),
       ...(informal.length > 0 ? { informal } : {}),
       ...(frontiers.length > 0 ? { frontier: frontiers } : {}),
+      ...(() => {
+        const stopped = events.findLast((e) => e.type === "campaign.stopped");
+        return stopped?.type === "campaign.stopped" && stopped.data.reason === "spiral" ? { spiral: { detail: stopped.data.detail, turns: stopped.data.turns, usd: stopped.data.usd } } : {};
+      })(),
       spend: {
         usd: report.usd,
         inputTokens: report.inputTokens,
@@ -496,6 +502,9 @@ export function renderResult(r: Result): string {
     lines.push(`> **Warning: the journal's hash chain ${r.journal.chain}.** Nothing below can be trusted until the journal is restored.`, "");
   }
   lines.push(...headline(r).flatMap((l) => [l, ""]));
+  if (r.spiral !== undefined) {
+    lines.push(`**Out of reach at this budget; here is what is established.** The campaign stopped after ${r.spiral.turns} turn(s) and $${r.spiral.usd.toFixed(4)}: ${r.spiral.detail}. The frontier below is what Lean accepted along the way; nothing in it is a proof of the target.`, "");
+  }
   // Where it stands.
   const when = r.state === "finished" ? "The run finished" : r.state === "paused" ? "The run is paused and waits for you" : "The journal has no end";
   lines.push(

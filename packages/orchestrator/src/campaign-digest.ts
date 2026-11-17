@@ -82,6 +82,9 @@ export function renderDigest(events: readonly HarnessEvent[], p: Projection, ctx
     "",
   );
 
+  if (ctx.state === "spiral") {
+    lines.push("Out of reach at this budget; here is what is established. The plateau modes were gone through twice and the frontier did not grow; what follows is the frontier, and nothing in it is a proof of the target.", "");
+  }
   // The frontier: what is established so far, never a claim's status.
   lines.push("## Frontier", "");
   const all: FrontierEntry[] = [];
