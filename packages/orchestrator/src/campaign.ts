@@ -7,7 +7,7 @@ import { type DigestContext, renderDigest, scoresByTurn, writeDigest } from "./c
 import { acquireLock, backoffMinutes, beat } from "./campaign-watch.ts";
 import { DEFAULT_DEAD_ENDS } from "./dossier.ts";
 import { retirementOf } from "./dossier-build.ts";
-import { decidePlateau, type PlateauContext, spiralOf } from "./plateau.ts";
+import { decidePlateau, modeOfTurn, type PlateauContext, spiralOf } from "./plateau.ts";
 import { writeResult } from "./result.ts";
 import { sleepFor } from "./offpeak.ts";
 import { usageLimitError } from "./provider-errors.ts";
@@ -144,6 +144,8 @@ export function endOf(view: CampaignView, o: { now: number }): { reason: Campaig
   for (let i = scores.length - 1; i >= 0; i--) {
     const now = scores[i] as (typeof scores)[number];
     if (!(now.usd > 0)) continue;
+    // A turn in a plateau mode belongs to the LH6 guard above: this one keeps its meaning for a campaign without modes.
+    if (modeOfTurn(events, now.turn) !== undefined) break;
     const before = scores.slice(0, i).at(-1)?.score ?? 0;
     if (now.score > before) break;
     count += 1;

@@ -252,6 +252,7 @@ export function renderDossier(input: DossierInput): string {
     used += tokens(text) + 1;
   }
   if (l3.length > 0) lines.push("Unverified notes (learned, not checked by Lean):", ...l3);
+  if (l3.length < input.unverified.length) lines.push(`- and ${input.unverified.length - l3.length} unverified note(s) not shown`);
   return lines.join("\n");
 }
 

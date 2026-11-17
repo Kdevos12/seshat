@@ -203,7 +203,7 @@ Turns for a research team, and the off-peak option.
 - spiralTurns (integer, 8): turns in a row that spent and did not grow the frontier
 - dossierTokens (integer, 750): the dossier's bound in tokens, the state card's bound
 - deadEnds (integer, 12): dead-end items in view before the least active half of the rest is retired
-- reflect (boolean, false): one capped reflection call a turn proposes dead-end items (site `campaign.reflect`)
+- reflect (boolean, false): one reflection call a turn, $0.25 in all for the run, proposes dead-end items (site `campaign.reflect`)
 - plateauUsd (number, 10% of the allowance): spend without frontier growth that changes the plateau mode
 
 `offpeak`:
