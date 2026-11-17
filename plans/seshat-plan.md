@@ -1512,6 +1512,32 @@ family when one is configured); AL3 right after NL2 (an accepted informal proof 
 Lean", the claim staying `open`); AL4 with the next change to intake (the readings of a statement); AL5 at
 any time (an interaction card from the journal). AL6 is not approved.
 
+### Tasks 52 to 61: the beta v1 release, the battery on a session's sorry, and long runs alone
+
+Task 52 (the parameter catalogue, the settings file and the settings menu), Task 53 (the beta v1 README,
+the documentation's home page, illustrations, license) and Task 54 (Ruling 40: the classical battery on
+each `sorry` a session leaves, arm `solve-v2-cpu`) are recorded in the ledger. The plan change
+`plans/plan-change-long-horizon.md` (LH1 to LH9, approved on 2026-11-17, Ruling 41) adds, in this order:
+
+- Task 55 (LH9, first part): the run vocabulary. `RunConfig.horizon` (`episode` | `campaign`) and
+  `RunConfig.human` (`none` | `consortium` | `digest`), the existing flags mapped onto them and recorded
+  in `run.started`; a session's `turns` limit named `steps`, the old name kept as an alias. Behaviour
+  unchanged.
+- Task 56 (LH9, second part): one contract for children (`ChildSpec`, `runChild`): the probe, the
+  prover task, the hole session, the informal loop, the planner round, M16's search and M18's variant
+  started, charged and resumed through one path. A refactor guarded by the existing tests, plus one test
+  per kind.
+- Task 57 (LH1, LH8): the verified frontier (`frontier()` in `@seshat/memory`, `harness frontier
+  RUN_DIR`), shown in the state card, the turn's account, RESULT.md and the interface; the budget and the
+  frontier in each session's opening message.
+- Task 58 (LH3, LH7.1): sessions bounded by money with cold restarts on a schedule and the
+  `previous_attempt` overlay; the simulated marathon in the test suite.
+- Task 59 (LH2): `harness campaign`: turns that never wait, the digest, the watchdog, the lock and the
+  heartbeat, pacing by day and by wall clock, the impasse read as a change of mode. Then the real
+  marathon (LH7.2, $10, the owner's approval when the build is ready).
+- Task 60 (LH4, LH5, LH6): the campaign dossier and the dead-end store, the plateau modes by rule, the
+  campaign's guards; with the research agent (Tasks 46 to 48) if it is built by then.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
