@@ -1,0 +1,13 @@
+Seshat
+Copyright 2026 Kyllian de Vos
+
+This product is Seshat, a harness for autonomous mathematical research with
+language models, designed and engineered by Kyllian de Vos
+(https://github.com/Kdevos12), built with Claude Code as coding agents.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE). Under section 4(d)
+of that license, any redistribution of Seshat or of a work derived from it must
+keep this NOTICE file, or its attribution notices, with it.
+
+If you use Seshat in research or in a publication, please cite it as
+CITATION.cff describes (on GitHub: "Cite this repository").

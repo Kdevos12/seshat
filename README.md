@@ -381,4 +381,4 @@ If you use Seshat in your work, please cite it (see `CITATION.cff`).
 
 ## License
 
-The license is being chosen for the beta v1 release.
+Seshat is licensed under the [Apache License 2.0](LICENSE), copyright 2026 Kyllian de Vos. A redistribution, modified or not, must keep the [NOTICE](NOTICE) file with its attribution. If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff)).
