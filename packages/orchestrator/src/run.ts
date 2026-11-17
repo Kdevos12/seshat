@@ -1818,6 +1818,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.stateCard === true ? { stateCard: true } : {}),
           ...(config.frontier?.show === true ? { frontier: { problemLedger: ledger, ...(config.frontier.weights !== undefined ? { weights: config.frontier.weights } : {}) } } : {}),
           ...(config.restarts !== undefined ? { restarts: resolveRestarts(config.restarts) } : {}),
+          ...(config.horizon === "campaign" ? { usageLimit: true } : {}),
           ...(config.consolidation === true ? { consolidation: { seed: config.seed ?? runId, problemId: entry.id } } : {}),
           ...(config.cacheRetention !== undefined ? { cacheRetention: config.cacheRetention } : {}),
           ...(config.packetMode !== undefined ? { packetMode: config.packetMode } : {}),

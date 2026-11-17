@@ -48,3 +48,4 @@ export * from "./view.ts";
 export * from "./campaign.ts";
 export * from "./campaign-config.ts";
 export * from "./campaign-digest.ts";
+export * from "./campaign-watch.ts";

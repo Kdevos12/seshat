@@ -16,7 +16,7 @@ import type { Workbench } from "./problem.ts";
 import { previousAttemptTool } from "./previous-attempt.ts";
 import { sessionPrompt, systemPrompt } from "./prompt.ts";
 import { type ResolvedRestarts, sessionSteps, stuckSignature } from "./restarts.ts";
-import { fatalProviderError } from "./provider-errors.ts";
+import { fatalProviderError, usageLimitError } from "./provider-errors.ts";
 import type { RetryPolicy } from "./retry.ts";
 import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
@@ -131,6 +131,8 @@ export interface ProverOptions {
    * is a child of the problem's with the probe's cap; running into that cap pauses it too.
    */
   probe?: { sessions: number };
+  /** A campaign (documentation/campaign.md): a session that ends on a usage limit of the provider ends the turn instead of counting as a failure. */
+  usageLimit?: boolean;
   /**
    * True when the budget that ran out is only the slice a round of the run's budget gave the problem (`RunConfig.budgetRounds`): the prover then
    * pauses with `slice`, its task stays running, and the problem asks for its next slice. Absent: a budget that runs out ends the prover.
@@ -585,6 +587,11 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       case "aborted":
         return done("aborted");
       case "error":
+        // A campaign waits a usage limit out: the turn ends, the supervisor backs off, and the failure counts for nothing against the prover.
+        if (o.usageLimit === true && o.turn !== undefined && result.error !== undefined && usageLimitError(result.error)) {
+          o.turn.strike({ reason: "usage_limit", detail: `the model provider's usage limit was reached: ${result.error.slice(0, 200)}` });
+          return done("turn");
+        }
         failed += 1;
         {
           const refusal = result.error === undefined ? undefined : fatalProviderError(result.error);

@@ -41,6 +41,8 @@ import { ablateCommand, ablateHost, chunksCommand, readIdList, SPLIT_BY, type Sp
 import { DEFAULT_PROBE_SIZE, frozenProbeSet, linesOfRun, probeDirOf, probeDue, type ProbeResult, renderProbe, runIndexOf, runProbe } from "./probe.ts";
 import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.ts";
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
+import { runCampaign } from "./campaign.ts";
+import { watchCampaign } from "./campaign-watch.ts";
 import { HORIZONS, HUMAN_MODES, type Horizon, type HumanMode } from "./run-shape.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
@@ -95,6 +97,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness campaign STATEMENT|FILE [--max-usd X] [--usd-per-day X] [--until ISO_TIME] [--no-off-peak] [--spiral-turns N] [--turn-usd X] [the other flags of solve]
+  harness campaign --resume RUN_DIR | --watch RUN_DIR   (take up a campaign whose supervisor ended; the watchdog restarts it with a backoff)
               (a run that continues alone: turns that do not wait, the digest campaign/digest.md after each; documentation/campaign.md)
   harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
               [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
@@ -224,11 +227,11 @@ const { positionals, values } = parseArgs({
 const [command, target, third] = positionals;
 
 /** The commands that start work with a model of their choosing; a resume keeps the model its run began with. */
-const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "doctor"]);
+const MODEL_COMMANDS = new Set(["run", "probe", "ablate", "optimize-prompts", "solve", "campaign", "doctor"]);
 // The model of these commands, when --model is not given: SESHAT_MODEL (documentation/models-setup.md). Not for a resume,
 // which refuses --model.
 const envModel = process.env.SESHAT_MODEL?.trim();
-if (values.model === undefined && envModel !== undefined && envModel !== "" && MODEL_COMMANDS.has(command ?? "") && values.resume === undefined) values.model = envModel;
+if (values.model === undefined && envModel !== undefined && envModel !== "" && MODEL_COMMANDS.has(command ?? "") && values.resume === undefined && values.watch === undefined) values.model = envModel;
 
 /** A mistake the user can fix, such as a missing file: the message is printed, and the exit code is 2. */
 class InputError extends Error {}
@@ -1201,6 +1204,8 @@ async function solve(campaign?: NonNullable<SolveFlags["campaign"]>): Promise<nu
 
 /** `harness campaign STATEMENT [--usd-per-day X] [--until ISO] [--no-off-peak]`: a run that continues alone (documentation/campaign.md). */
 async function campaignCommand(): Promise<number> {
+  if (values.watch !== undefined) return await campaignWatch(values.watch);
+  if (values.resume !== undefined) return await campaignResume(values.resume);
   const usdPerDay = number("usd-per-day", values["usd-per-day"], undefined);
   if (usdPerDay !== undefined && !(usdPerDay > 0)) throw new UsageError(`--usd-per-day must be positive, got ${usdPerDay}`);
   const until = values.until;
@@ -1213,6 +1218,71 @@ async function campaignCommand(): Promise<number> {
     ...(spiralTurns !== undefined ? { spiralTurns } : {}),
     offPeak: values["no-off-peak"] !== true,
   });
+}
+
+/** What a run begun by `solve` or `run` left in `resume.json`: where its problem and host are. */
+function savedResume(dir: string): { checkout: string; bench?: string; host?: string } {
+  const file = join(dir, "resume.json");
+  if (!existsSync(file)) throw new InputError(`${dir} has no resume.json: it was not begun by harness solve, run or campaign`);
+  const saved = JSON.parse(readFileSync(file, "utf8")) as { checkout?: unknown; bench?: unknown; host?: unknown };
+  if (typeof saved.checkout !== "string") throw new InputError(`${file} names no checkout`);
+  return { checkout: saved.checkout, ...(typeof saved.bench === "string" ? { bench: saved.bench } : {}), ...(typeof saved.host === "string" ? { host: saved.host } : {}) };
+}
+
+/** `harness campaign --resume RUN_DIR`: a supervisor that takes up a campaign whose supervisor ended, everything read from the journal. */
+async function campaignResume(directory: string): Promise<number> {
+  const given = [...RUN_FLAGS, "usd-per-day", "until", "spiral-turns"].filter((flag) => (values as Record<string, unknown>)[flag] !== undefined);
+  if (given.length > 0) throw new UsageError(`--resume continues the campaign as it began, from its journal: ${given.map((flag) => `--${flag}`).join(", ")} cannot be given with it`);
+  const dir = resolve(directory);
+  if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
+  const saved = savedResume(dir);
+  if (saved.bench !== undefined) values.bench = saved.bench;
+  const index = readInput(loadIndex);
+  const host = hostName(values.host ?? saved.host);
+  const controller = stoppable();
+  const codeRev = codeRevision();
+  const end = await runCampaign({
+    dir,
+    next: async ({ limit }) =>
+      await resumeBench({
+        dir,
+        index,
+        checkout: saved.checkout,
+        models: builtinModels(),
+        registry: (journal, blobs, options) => openRegistry({ host, journal, blobs, ...(options?.leanEnv !== undefined ? { leanEnv: options.leanEnv } : {}) }),
+        signal: controller.signal,
+        log: (line) => console.error(line),
+        ...(codeRev !== undefined ? { codeRev } : {}),
+        ...(limit !== undefined ? { turns: { limit } } : {}),
+      }),
+    signal: controller.signal,
+    log: (line) => console.error(line),
+  });
+  console.log(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}. Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}`);
+  return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
+}
+
+/** `harness campaign --watch RUN_DIR`: restarts `campaign --resume` with a backoff when its heartbeat is old (documentation/campaign.md, "The watchdog"). */
+async function campaignWatch(directory: string): Promise<number> {
+  const dir = resolve(directory);
+  if (!existsSync(join(dir, "journal.jsonl"))) throw new InputError(`${dir} holds no run to watch: it has no journal.jsonl`);
+  const controller = stoppable();
+  const passed = ["host", "bench", "grade"].flatMap((flag) => ((values as Record<string, unknown>)[flag] !== undefined ? [`--${flag}`, String((values as Record<string, unknown>)[flag])] : []));
+  const { spawn } = await import("node:child_process");
+  const result = await watchCampaign({
+    dir,
+    signal: controller.signal,
+    log: (line) => console.error(line),
+    run: () =>
+      new Promise<number>((done) => {
+        const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", process.argv[1] as string, "campaign", "--resume", dir, ...passed], { stdio: "inherit" });
+        controller.signal.addEventListener("abort", () => child.kill(), { once: true });
+        child.on("exit", (code) => done(code ?? 1));
+        child.on("error", () => done(1));
+      }),
+  });
+  console.log(`The watchdog ended after ${result.restarts} start(s) of the supervisor.`);
+  return 0;
 }
 
 /** `harness parameters [--markdown [--out FILE]]`: the catalogue of every parameter (documentation/parameters.md). */

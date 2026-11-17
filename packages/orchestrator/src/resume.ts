@@ -32,6 +32,7 @@ import type { ProverResume } from "./prover.ts";
 import type { ProblemResult, RunConfig } from "./run.ts";
 import type { RolesConfig } from "./roles.ts";
 import type { CardsConfig } from "./cards.ts";
+import { usageLimitError } from "./provider-errors.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
 import { readCampaignConfig } from "./campaign-config.ts";
 import { type RestartsConfig, restartsConfigProblems } from "./restarts.ts";
@@ -482,6 +483,8 @@ export function proverResumeOf(journal: Journal, blobs: BlobStore, taskId: strin
   let failed = 0;
   for (const attempt of [...attempts].reverse()) {
     if (attempt.stopped_by === "interrupted") continue;
+    // A usage limit of the provider that a campaign waited out says nothing about the prover's health either.
+    if (attempt.outcome === "error" && usageLimitError(attempt.error ?? "")) continue;
     if (attempt.outcome !== "error") break;
     failed += 1;
   }
