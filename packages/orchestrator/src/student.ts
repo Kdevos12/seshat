@@ -148,23 +148,84 @@ export interface Choice {
   name: string;
   /** Dollars per million tokens, input plus output. */
   price: number;
-  /** Other models that could have been chosen, cheapest first, with their prices. */
+  /** Which rule chose it: "recommended by the host profile" or "cheapest capable model". */
+  rule: string;
+  /** Other models that could have been chosen, in the order of the rule, with their prices. */
   others: Array<{ name: string; price: number }>;
+  /** Providers with credentials that were left out because their credentials are ambient (the machine's, not a key set for Seshat). */
+  skippedAmbient?: string[];
+}
+
+/** The context window a chosen model must have at least: a prover's session carries the file, the goals and the tool results. */
+export const MIN_CONTEXT_WINDOW = 64_000;
+
+/**
+ * Providers whose credentials come from the machine (an AWS profile or role, Google application default credentials, an Azure or Cloudflare
+ * account) and not from an API key set for Seshat. A container that happens to have such credentials must not have a model picked from
+ * them; naming one (`--model`, `SESHAT_MODEL`) is always accepted. pi-ai's `findEnvKeys` says which providers have no API-key variable,
+ * but it knows nothing of a provider a test or a host adds, so the list is named here.
+ */
+export const AMBIENT_CREDENTIAL_PROVIDERS: readonly string[] = ["amazon-bedrock", "google-vertex", "azure", "cloudflare-workers-ai", "cloudflare-ai-gateway"];
+
+/** Ids of models that are not chat models for a prover: speech, transcription, embedding, moderation and the like. */
+const NOT_A_CHAT_MODEL = /voxtral|whisper|tts|transcri|embed|moderation|guard|realtime|audio|speech/i;
+
+/**
+ * Whether a model can serve a prover. pi-ai's `Model` has no tool-calling flag, so the check uses what it does have: text input, a context
+ * window of at least `MIN_CONTEXT_WINDOW` tokens (the small models that cannot hold a session also lack tools), and an id that is not
+ * a speech, embedding or moderation model's. Never applied to a model the person named.
+ */
+export function isCapable(model: Pick<Model<Api>, "id" | "input" | "contextWindow">): boolean {
+  return model.input.includes("text") && model.contextWindow >= MIN_CONTEXT_WINDOW && !NOT_A_CHAT_MODEL.test(model.id);
+}
+
+/** Whether `provider/id` matches a pattern of a host profile's `recommended` list: `provider/id` or `provider/*`. */
+export function matchesRecommended(name: string, pattern: string): boolean {
+  return pattern.endsWith("/*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
+}
+
+export interface ChooseOptions {
+  /** The host profile's `recommended` list, in order: a capable available model that matches wins over a cheaper one. */
+  recommended?: readonly string[];
+  /** Providers with ambient credentials that may be chosen anyway (the one `SESHAT_MODEL` or `--model` names). */
+  allowAmbient?: readonly string[];
 }
 
 /**
- * The cheapest priced model of the providers that have credentials (input price plus output price, from the host's table where it
- * has one and from pi-ai otherwise). A model with no price is left out: no dollar cap could see it, and naming one is the user's
- * `--model`. Undefined when no provider has credentials, or none of their models has a price.
+ * The model of a `solve` or `doctor` that was not named. Candidates: the models of the providers that have credentials, that have a
+ * price (no dollar cap could see an unpriced one), that pass `isCapable`, and whose provider is not an ambient-credential one. The
+ * first model that the host profile's `recommended` list matches wins, in the list's order and then by price; with none, the cheapest
+ * (input price plus output price, from the host's table where it has one and from pi-ai otherwise). Undefined when nothing qualifies;
+ * `chooseModel` also says whether ambient providers were left out.
  */
-export async function cheapestModel(models: Models, prices?: PriceBook): Promise<Choice | undefined> {
+export async function cheapestModel(models: Models, prices?: PriceBook, options: ChooseOptions = {}): Promise<Choice | undefined> {
+  return (await chooseModel(models, prices, options)).choice;
+}
+
+export async function chooseModel(models: Models, prices?: PriceBook, options: ChooseOptions = {}): Promise<{ choice?: Choice; skippedAmbient: string[] }> {
   const available = await models.getAvailable().catch(() => [] as readonly Model<Api>[]);
-  const priced = available
-    .filter((m) => isPriced(m, prices))
+  const allow = new Set(options.allowAmbient ?? []);
+  const skipped = new Set<string>();
+  const candidates = available
+    .filter((m) => isPriced(m, prices) && isCapable(m))
+    .filter((m) => {
+      if (!AMBIENT_CREDENTIAL_PROVIDERS.includes(m.provider) || allow.has(m.provider)) return true;
+      skipped.add(m.provider);
+      return false;
+    })
     .map((m) => ({ name: `${m.provider}/${m.id}`, price: blendedPrice(m, prices) }))
     .sort((a, b) => a.price - b.price || (a.name < b.name ? -1 : 1));
-  const [first, ...others] = priced;
-  return first === undefined ? undefined : { ...first, others: others.slice(0, 5) };
+  const skippedAmbient = [...skipped].sort();
+  const recommended = options.recommended ?? [];
+  const rank = (name: string): number => {
+    const i = recommended.findIndex((p) => matchesRecommended(name, p));
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+  const ordered = recommended.length === 0 ? candidates : [...candidates].sort((a, b) => (rank(a.name) === rank(b.name) ? 0 : rank(a.name) < rank(b.name) ? -1 : 1));
+  const [first, ...others] = ordered;
+  if (first === undefined) return { skippedAmbient };
+  const rule = rank(first.name) < Number.POSITIVE_INFINITY ? "recommended by the host profile" : "cheapest capable model";
+  return { choice: { ...first, rule, others: others.slice(0, 5), ...(skippedAmbient.length > 0 ? { skippedAmbient } : {}) }, skippedAmbient };
 }
 
 export interface StudentOptions {

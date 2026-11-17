@@ -37,10 +37,20 @@ temperature arm for these models ([fleet.md](fleet.md#sampled-settings)).
 reads them as cache reads, and a charge prices them at the table's cache-hit price, with the saving
 recorded (`savedUsd`). Nothing is to be set.
 
-**The model a command uses.** `harness solve` and `doctor` without `--model` take the cheapest priced
-model among the providers that have credentials. With `SESHAT_MODEL` set, that model is used instead
-(it counts as named). Set it when other providers' keys are in the environment: a key for OpenRouter,
-in particular, makes all of OpenRouter's chat models candidates.
+**The model a command uses.** With `--model` or `SESHAT_MODEL` the model is the one named, and it is never
+filtered. Without either, `harness solve` and `doctor` choose among the available models that pass a filter:
+a price (no dollar cap could see an unpriced one), text input, a context window of at least 64k tokens, and an
+id that is not a speech, transcription, embedding or moderation model's. pi-ai's `Model` has no
+tool-calling flag, so "can call tools" is this proxy (the small models that fail the window also lack tools).
+Providers whose credentials are ambient, that is the machine's and not an API key set for Seshat
+(`amazon-bedrock`, `google-vertex`, `azure`, `cloudflare-*`), are skipped: a container that happens to have
+AWS credentials once chose a 3B speech model that way. Then a rule picks: the host profile's `recommended`
+list (`provider/id` or `provider/*` patterns, DeepSeek first in the shipped profiles) wins, in the list's
+order, over price; with no match, the cheapest capable model. `solve`'s start output and `doctor` say which
+rule chose ("recommended by the host profile" or "cheapest capable model"). When nothing qualifies, `solve`
+refuses and names `--model PROVIDER/ID` and `SESHAT_MODEL`, and says which ambient providers were skipped.
+Set `SESHAT_MODEL` when other providers' keys are in the environment: a key for OpenRouter, in particular,
+makes all of OpenRouter's chat models candidates.
 
 ## Jev for `decide`
 

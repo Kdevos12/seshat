@@ -111,7 +111,7 @@ ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a t
 and written (default runs).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
---model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the cheapest priced model.
+--model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the host profile's recommended model, else the cheapest capable priced one (ambient-credential providers skipped).
 --ask-stdin (for a program such as harness ui): the signature is one line, SESHAT_SIGNATURE NONCE JSON, with NONCE from SESHAT_ASK_NONCE, and the
 answer one line on standard input, "yes STATEMENT_ID" or anything else for no.
 Intake (documentation/literature.md; off unless asked, except in solve with --defaults v2, which turns on the intake, --auto-tool and --lean-search; --no-intake, --no-auto-tool and --no-lean-search turn one off and only matter with v2): --intake tests the statement before any paid session (vacuity, plausible, the first cases) and, for run, searches
