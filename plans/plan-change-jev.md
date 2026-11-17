@@ -7,7 +7,7 @@
 Written 2026-10-20 by the thread "Option Jev", for the implementation thread. It amends [seshat-plan.md](seshat-plan.md) and builds on the approved
 [plan-change-thinking-modes.md](plan-change-thinking-modes.md) (PC1, PC4, PC6, PC9). The decision note
 behind it, with the source checks, is `research/jev-decisions.md` (French, in the project's shared files, outside the repository). Read
-against main at 9e76c43.
+against main at bae55b3.
 
 Status: **approved by the user on 2026-10-20 at 07:36 UTC** ("Agreement given."). Reconcile task
 numbers and statuses with main as it is now.

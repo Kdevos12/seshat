@@ -8,10 +8,10 @@ Written 2026-10-15 by the parallel thread on the user's research document, for t
 thread. It amends [seshat-plan.md](seshat-plan.md); where it
 contradicts a ruling in [seshat-plan-rulings.md](seshat-plan-rulings.md), it says so. The decision
 note behind it, one verdict per decision of the document with sources and numbers, is
-`research/revue-thinking-modes.md` (French, in the project's shared files, outside the repository). Read against main at 9e76c43.
+`research/revue-thinking-modes.md` (French, in the project's shared files, outside the repository). Read against main at bae55b3.
 
 Status: **approved by the user on 2026-10-15 at 12:21 UTC** ("I approve, send it back to the implementer").
-Written against main at 9e76c43; reconcile task numbers and statuses with main as it is now. Each change names the task it modifies, the
+Written against main at bae55b3; reconcile task numbers and statuses with main as it is now. Each change names the task it modifies, the
 decision of the document behind it, and the adaptation where the original depends on another
 architecture or on training. Global Constraints 1 to 15 apply unchanged; in particular nothing
 here trains a model, and every new tool is a capability.

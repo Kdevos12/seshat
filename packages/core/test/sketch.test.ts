@@ -115,7 +115,7 @@ describe("lean-source", () => {
   });
 
   it("masks a source without a comment glued to a token as it always did", () => {
-    // The scanner of c79681e, which opened a comment wherever `--` or `/-` stood.
+    // The scanner of 2d71cad, which opened a comment wherever `--` or `/-` stood.
     const before = (source: string): string => {
       const out = source.split("");
       const blank = (at: number, count: number) => {

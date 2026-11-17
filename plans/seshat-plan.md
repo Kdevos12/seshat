@@ -1265,7 +1265,7 @@ Seshat does not score zero, and the numbers that say where a run's dollars and m
   line says whether the target is met (ratio at least `--target`, default 1.5, with no fewer problems
   solved). Certified refutations are counted apart, and so are statements found settled in the
   literature (an optional flag on the `literature` evidence node of Task 36; zero until then). The
-  baseline arm of this plan change is `solve`'s defaults at `ae3b2a0`: Task 34 keeps them reachable
+  baseline arm of this plan change is `solve`'s defaults at `e700762`: Task 34 keeps them reachable
   as the defaults set `v1`.
 - CA3. A "Loop" section in the report, from the journal alone, with every number CA3 lists. Where
   the journal lacks a number, an event gains an optional field (additive, named in the ledger).
@@ -1288,7 +1288,7 @@ Main team. Section 3 of the plan change, items CA4, CA5 and CA6, is this task's 
 - CA6. Check results older than the last four are replaced by their one-line summary, in batches
   of four so that the cached prefix changes rarely; a test holds the prefix byte-identical between
   two batches.
-- The defaults sets of `solve`: `v1` is exactly the defaults of `ae3b2a0` and stays reachable
+- The defaults sets of `solve`: `v1` is exactly the defaults of `e700762` and stays reachable
   (`harness solve --defaults v1`); `v2` is `v1` plus the edit tool, the masking and the bounded
   checks, and is the default. `harness run`'s own defaults do not change: each new behaviour is an
   option there (`editTool`, `maskOldChecks`), so a recorded run replays as before.
@@ -1477,7 +1477,7 @@ the causes "format" and "budget" are gone.
 
 Amended 2026-11-13 (the audit's correction, a saving within the owner's approval): the six candidates the
 certifier wrongly refused for `X._unsafe_rec` are certified again first, for free, with the corrected
-certifier (`03b25e2`); the paid replay then takes only 1967 A5, 1983 A4, 1999 A2, 2003 B3, 2004 B1 and 2025
+certifier (`9b9402a`); the paid replay then takes only 1967 A5, 1983 A4, 1999 A2, 2003 B3, 2004 B1 and 2025
 B5, at most $3.00, and adds 1994 A1, 1997 B5 or 2000 A2 only if its re-certification fails. Before PA11
 builds on M12 (Task 51), PA16: read the five pre-flight verdicts that judged every blueprint of the third
 run unhealthy, and fix the health rule or the blueprint prompt.

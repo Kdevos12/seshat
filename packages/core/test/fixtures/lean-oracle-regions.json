@@ -1,10 +1,10 @@
 {
-  "about": "Regions on which a real Lean 4.27.0 (Init only, no Mathlib) ran the payload `#eval 7777` as a command, recorded by the Task 7 re-review of 2026-10-27 (differential fuzz: 560000 random regions placed after a tactic block and in a term-mode theorem; the payload ran when a message was exactly `7777\\n`). `missed` are the regions that the screen of c79681e or ec4817a accepted; `sample` is a seeded sample of the others, which both screens refused. structuralCheck must refuse every region of both lists, as the proof region.",
+  "about": "Regions on which a real Lean 4.27.0 (Init only, no Mathlib) ran the payload `#eval 7777` as a command, recorded by the Task 7 re-review of 2026-10-27 (differential fuzz: 560000 random regions placed after a tactic block and in a term-mode theorem; the payload ran when a message was exactly `7777\\n`). `missed` are the regions that the screen of 2d71cad or 43381d9 accepted; `sample` is a seeded sample of the others, which both screens refused. structuralCheck must refuse every region of both lists, as the proof region.",
   "lean": "4.27.0",
   "imports": "none (Init only)",
   "payload": "#eval 7777",
   "recorded": "2026-10-27",
-  "recordedBy": "the Task 7 re-review of fix round 3 (c79681e..ec4817a)",
+  "recordedBy": "the Task 7 re-review of fix round 3 (2d71cad..43381d9)",
   "batches": {"inputs": 560000, "payloadRan": 59624, "distinctRegionsThatRan": 52156},
   "counts": {"missed": 666, "sample": 3000},
   "missed": [

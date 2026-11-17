@@ -14,7 +14,7 @@ memory, for the implementation thread. It amends
 [seshat-plan.md](seshat-plan.md) and builds on [plan-change-thinking-modes.md](plan-change-thinking-modes.md)
 (PC1 to PC13). The decision note behind it, with sources and numbers, is
 `research/evolution-memoire-continue.md` (French, in the project's shared files, outside the
-repository). Read against main at 9e76c43; reconcile task numbers and statuses with main as it is
+repository). Read against main at bae55b3; reconcile task numbers and statuses with main as it is
 now.
 
 Status: **approved by the user on 2026-10-21 at 12:17 UTC** ("Send everything": all of PE1 to PE9

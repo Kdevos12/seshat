@@ -76,7 +76,7 @@ and M12's inner prover is one model call with no tool.
   `harness ablate`; solved counts with Wilson intervals, an exact McNemar test on the pairs, dollars
   per solved problem, wall-clock time. The target of this plan change, in the owner's words "problem solving against
   cost" (2026-11-10): **at least 1.5 times the problems solved per dollar spent of `main` at
-  `ae3b2a0` (`solve` defaults) on grade B, with the same cap per problem, no fewer problems solved on
+  `e700762` (`solve` defaults) on grade B, with the same cap per problem, no fewer problems solved on
   grades A and B.** Both parts are reported: problems solved at equal cap, and dollars spent. Two new kinds of result are counted apart:
   refutations of statements about finite structures, and statements found settled in the literature.
   Power: with 60 paired problems a gain from 30% to 45% is detectable when the gains are nested

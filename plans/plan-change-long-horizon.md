@@ -10,7 +10,7 @@ named LH1 to LH9. This change is additive and builds on `plans/plan-change-resea
 direction approved on 2026-11-12, Tasks 46 to 48 not started); it does not need the research agent to be
 built first.
 
-Read against branch `claude/project-thread-h60gyw` at `4283ccf` (Ruling 40).
+Read against branch `claude/project-thread-h60gyw` at `975d02e` (Ruling 40).
 
 ## 1. Why
 

@@ -222,7 +222,7 @@ describe("the defaults sets of solve", () => {
   it("v1 is the configuration solve had before the sets, and v2 is v1 plus the three options", () => {
     const { defaults, ...v1 } = studentConfig({ ...base, defaults: "v1" });
     assert.equal(defaults, "v1");
-    // What `solve` built at ae3b2a0, written out: nothing of the sets is in it.
+    // What `solve` built at e700762, written out: nothing of the sets is in it.
     assert.deepEqual(v1, {
       ...DEFAULT_CONFIG,
       selection: { ids: ["p"] },

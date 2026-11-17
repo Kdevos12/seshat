@@ -5,7 +5,7 @@ thread ("Brainstorm et revue critique"). It amends [seshat-plan.md](seshat-plan.
 approved [plan-change-memory-evolution.md](plan-change-memory-evolution.md) (PE5, Task 24) and
 [plan-change-thinking-modes.md](plan-change-thinking-modes.md) (PC6). The decision matrix behind it,
 with the sources and what was dropped, is `/mnt/project-files/research/matrice-polya-couts.md`
-(French). Read against main at 68b098c.
+(French). Read against main at f3594fc.
 
 Status: **approved by the user on 2026-10-28** ("intègre les points qui nous bénéficient au plan",
 message cmsg_01Jryd7vSFN5UXiBr35Aon5E824vXtvZL8Ep8nUmX9eZbR, relayed by the coordinator). Reconcile

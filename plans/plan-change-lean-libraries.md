@@ -7,7 +7,7 @@
 Written 2026-10-20 by the thread on Lean 4 libraries and delegation, for the implementation
 thread. It amends [seshat-plan.md](seshat-plan.md). The decision
 note behind it, with sources and the checks made, is
-`research/bibliotheques-lean.md` (French, in the project's shared files, outside the repository). Read against main at 9e76c43;
+`research/bibliotheques-lean.md` (French, in the project's shared files, outside the repository). Read against main at bae55b3;
 reconcile task numbers with main as it is now.
 
 Status: **approved by the user on 2026-10-20 at 07:37 UTC** ("Agreement given"); relayed to the implementation thread at 10:03 UTC.
