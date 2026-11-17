@@ -38,6 +38,7 @@ import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progr
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
+import { runChild } from "./child.ts";
 import { holePreflight } from "./hole-preflight.ts";
 import { runHoleSession } from "./hole-session.ts";
 import { lineLlm } from "./llm.ts";
@@ -341,19 +342,39 @@ export class ProblemLines {
       tasks: taskApi(o.tasks, o.journal, { problemId: this.p.problemId, claimId: this.p.claimId, line: id }),
       ...(id === "M12"
         ? {
-            holeSession: (request: HoleSessionRequest) =>
-              runHoleSession(
+            // A hole session is a child of the problem (`runChild`): its spend is carved from the problem's ledger and its start and end are
+            // journaled. Its result (a submission and a report) is the line's input and not in the journal, so a resume runs it again.
+            holeSession: async (request: HoleSessionRequest) => {
+              const ran = await runChild(
                 {
-                  journal: o.journal, blobs: o.blobs, models: o.models, model: hole?.model ?? o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: hole?.thinkingLevel ?? o.thinkingLevel,
-                  ...(hole !== undefined ? { role: hole } : {}),
-                  ledger: this.p.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
-                  ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
-                  workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
-                  ...(o.turn !== undefined ? { turn: o.turn } : {}),
-                  ...(o.prices !== undefined ? { prices: o.prices } : {}),
+                  kind: "hole",
+                  goal: { claimId: request.claimId },
+                  parent: { problemId: this.p.problemId },
+                  ledger: {},
+                  tools: ["lean_check", "lean_edit", "hole_verdict"],
+                  output: "model_call.finished",
+                  resumeKey: `hole:${this.p.problemId}:${request.key}`,
+                  resume: "run",
                 },
-                request,
-              ),
+                { journal: o.journal, ledger: this.p.ledger },
+                (child) =>
+                  runHoleSession(
+                    {
+                      journal: o.journal, blobs: o.blobs, models: o.models, model: hole?.model ?? o.model, resolveModel: (name) => this.run.resolveModel(name), thinkingLevel: hole?.thinkingLevel ?? o.thinkingLevel,
+                      ...(hole !== undefined ? { role: hole } : {}),
+                      ledger: child.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
+                      ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
+                      workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
+                      ...(o.turn !== undefined ? { turn: o.turn } : {}),
+                      ...(o.prices !== undefined ? { prices: o.prices } : {}),
+                    },
+                    request,
+                  ),
+                { statusOf: (result) => (result.stop === "aborted" || result.stop === "turn" ? { status: "stopped", reason: result.stop } : { status: "done" }) },
+              );
+              if (ran.skipped) throw new Error(`hole session ${request.key} was skipped, which its spec does not allow`);
+              return ran.value;
+            },
             // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12).
             checkSketch: async (submission: Submission) => (await this.p.workbench.check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
             holePreflight: (request: HolePreflightRequest) =>

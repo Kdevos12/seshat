@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type HarnessEvent, Journal, readEvents, statementIdV0 } from "@seshat/core";
 import { type ChildSpec, Ledger, runChild } from "../src/index.ts";
-import { check, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { createM12Line } from "@seshat/scheduler";
+import { check, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { blueprintAnswer, HARD_AUX } from "./blueprint-helpers.ts";
 
 /**
  * One contract for a run's children (plan change LH9, Task 56): the common path `runChild` and each kind that was moved onto it, with the
@@ -130,5 +132,28 @@ describe("the informal loop through the common path", () => {
     const again = await demoResume({ dir: mid, bench: whole.bench, responses: script() as never });
     assert.equal(informalChildren(again.events).length, 2);
     assert.deepEqual(ofType(again.events, "child.finished").map((e) => e.data.status), ["done"], "only the second start ended");
+  });
+});
+
+describe("the hole session through the common path", () => {
+  const holeChildren = (events: readonly HarnessEvent[]) => ofType(events, "child.started").filter((e) => e.data.kind === "hole");
+  const script = () => [check("exact main_ok aux_x", HARD_AUX.replace(/aux_\w+/, "aux_x")), say("One lemma is left."), check("exact hole_ok"), say("Going on.")];
+  const config = { lines: ["M12"], provers: 1, sessions: 2, lineOptions: { M12: { blueprints: true, ageRatio: 1, weightRatio: 0, holeSessions: 1, rounds: 1 } } };
+
+  it("is started and charged as a child of its problem, and a resumed run records it again only when it was cut", { timeout: 60000 }, async () => {
+    const whole = await demoRun({ lines: { M12: createM12Line() }, config, lean: new DemoLean(blueprintAnswer), responses: script() as never });
+    const [started] = holeChildren(whole.events);
+    assert.ok(started !== undefined);
+    assert.deepEqual([started.data.output, started.data.tools, started.data.resumeKey.startsWith("hole:")], ["model_call.finished", ["lean_check", "lean_edit", "hole_verdict"], true]);
+    const finished = ofType(whole.events, "child.finished").find((e) => e.data.childId === started.data.childId);
+    assert.equal(finished?.data.status, "done");
+    const calls = ofType(whole.events, "model_call.finished").filter((m) => m.data.site === "scheduler.hole");
+    assert.ok(calls.length >= 1);
+    assert.ok(Math.abs((finished?.data.usd ?? 0) - calls.reduce((sum, m) => sum + m.data.usd, 0)) < 1e-9, "the child's spend is the session's calls");
+    // Cut just after the session ended: the resumed run starts no second hole session (the line has its node).
+    const after = killedAt(whole.dir, whole.events.findIndex((e) => e.type === "child.finished" && e.data.childId === started.data.childId) + 1);
+    const kept = await demoResume({ dir: after, bench: whole.bench, responses: [check("exact bad"), say("Going on.")] as never, lines: { M12: createM12Line() }, lean: new DemoLean(blueprintAnswer) });
+    assert.equal(holeChildren(kept.events).length, 1);
+    assert.equal(ofType(kept.events, "model_call.finished").filter((m) => m.data.site === "scheduler.hole").length, calls.length, "no hole call is made again");
   });
 });
