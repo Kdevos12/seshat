@@ -145,7 +145,17 @@ A campaign ends `settled` only when the certifier's kernel replay settles the ta
 `stopped`, with the frontier. A person's answers change what agents are told and the order of work, never a
 status. The frontier is evidence of progress, never a status, and the spiral guard reads it only to stop.
 
+## The simulated marathon
+
+`packages/orchestrator/test/marathon.test.ts` (plan change LH7.1) runs a campaign over 30 simulated days: an injected
+clock and sleep, the faux provider, and a simulated Lean that accepts an `aux_` lemma now and then, so the frontier
+grows. The watch restarts the supervisor after crashes (the journal cut inside a turn, sometimes with a torn last line,
+the projection deleted), reboots (hours of downtime) and usage limits. It checks that no finished session is lost or
+doubled and the hash chain verifies, that every turn that began ended and every crash was resumed, that the daily cap held
+every day, that the frontier's score never fell, that the first request of a session does not grow with the run's age,
+that the digest stays under its bound, and that it all runs in under 30 seconds.
+
 ## What has not run
 
-No real campaign has run: not against a real model, a real Lean or for days. The tests use the faux
+The real marathon of plan change LH7.2 (about $10) has not run: the owner has no budget for it. No real campaign has run: not against a real model, a real Lean or for days. The tests use the faux
 provider, a simulated Lean and injected clocks.
