@@ -105,6 +105,11 @@ export interface RunLinesOptions {
   checkTimeoutSec?: number;
   /** The run's roles (`RunConfig.roles`): each site gets the `llm` of its role (`scheduler.planner` the planner's, the hole sessions the hole's). Absent: the run's model everywhere. */
   roles?: RoleBook;
+  /**
+   * A campaign's plateau mode (plan change LH5, documentation/campaign.md, "Plateau modes"): the lines in `gated` work only for a turn whose mode turns them
+   * `on`, and `options` are added over a line's options while it is on. Absent: every enabled line works as it always did.
+   */
+  modeGate?: { gated: readonly string[]; on: readonly string[]; options: Readonly<Record<string, JsonObject>> };
 }
 
 export interface ProblemLinesOptions {
@@ -267,6 +272,8 @@ export class ProblemLines {
 
   /** Whether a line works on this problem now: with the ladder on, a line of a rung waits for the problem to reach it. */
   private active(entry: EnabledLine): boolean {
+    const gate = this.run.o.modeGate;
+    if (gate !== undefined && gate.gated.includes(entry.line.id) && !gate.on.includes(entry.line.id)) return false;
     const wanted = entry.line.rung;
     if (this.rungs.length === 0 || wanted === undefined || wanted <= 0) return true;
     const index = this.rungs.findIndex((rung) => rung.lines.includes(entry.line.id));
@@ -391,7 +398,7 @@ export class ProblemLines {
         : {}),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
-      options: entry.options,
+      options: o.modeGate?.on.includes(id) === true && o.modeGate.options[id] !== undefined ? { ...entry.options, ...o.modeGate.options[id] } : entry.options,
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.human === true ? { human: true } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),

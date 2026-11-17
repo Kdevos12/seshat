@@ -53,7 +53,36 @@ export interface SearchOptions {
   resetEvery: number;
   /** The most programs a cluster keeps. Default 4. */
   clusterSize: number;
+  /**
+   * Novelty (plan change LH5, after ShinkaEvolve): a candidate whose text is closer than this normalized edit distance (0 to 1) to a program already scored is
+   * rejected before it runs. Absent or 0: off.
+   */
+  novelty?: number;
+  /** Parents balanced (plan change LH5): half of the programs a prompt shows come from the best cluster, half from the other clusters. Absent: the softmax draw. */
+  parentSplit?: boolean;
   limits: Partial<ProgramLimits>;
+}
+
+/** The text of a program with its white space collapsed, so that layout is no novelty. */
+const squashed = (code: string): string => code.replace(/\s+/g, " ").trim();
+
+/**
+ * The edit distance (insertions, deletions, substitutions) between two program texts over the longer one's length, from 0 (the same text, white space apart)
+ * to 1. Texts are cut at 2000 characters, which bounds the cost.
+ */
+export function normalizedEditDistance(a: string, b: string): number {
+  const x = squashed(a).slice(0, 2000);
+  const y = squashed(b).slice(0, 2000);
+  if (x === y) return 0;
+  const longest = Math.max(x.length, y.length);
+  if (longest === 0) return 0;
+  let previous = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= y.length; j++) row.push(Math.min((previous[j] as number) + 1, (row[j - 1] as number) + 1, (previous[j - 1] as number) + (x[i - 1] === y[j - 1] ? 0 : 1)));
+    previous = row;
+  }
+  return (previous[y.length] as number) / longest;
 }
 
 export const SEARCH_DEFAULTS: SearchOptions = { islands: 3, rounds: 8, samples: 2, shown: 2, temperature: 0.5, lengthBias: 1, resetEvery: 4, clusterSize: 4, limits: {} };
@@ -78,9 +107,9 @@ export interface Cluster {
 /** The database of programs: islands of clusters, each cluster the programs that score the same on every input. */
 export class ProgramDatabase {
   readonly islands: Cluster[][];
-  readonly #options: Pick<SearchOptions, "temperature" | "lengthBias" | "clusterSize">;
+  readonly #options: Pick<SearchOptions, "temperature" | "lengthBias" | "clusterSize" | "parentSplit">;
 
-  constructor(islands: number, options: Pick<SearchOptions, "temperature" | "lengthBias" | "clusterSize">) {
+  constructor(islands: number, options: Pick<SearchOptions, "temperature" | "lengthBias" | "clusterSize" | "parentSplit">) {
     if (!Number.isInteger(islands) || islands < 1) throw new RangeError("a database has at least one island");
     this.islands = Array.from({ length: islands }, () => []);
     this.#options = options;
@@ -139,8 +168,11 @@ export class ProgramDatabase {
     const spread = hi - lo || 1;
     const weights = scores.map((s) => Math.exp((s - hi) / spread / this.#options.temperature));
     const picked: Scored[] = [];
+    // With `parentSplit` the parents alternate: the first from the best cluster, the next from the others (uniformly), and so on.
+    const best = clusters.reduce((top, c) => (c.score > top.score ? c : top), clusters[0] as Cluster);
+    const rest = clusters.filter((c) => c !== best);
     for (let k = 0; k < count; k++) {
-      const cluster = this.#choose(clusters, weights, random);
+      const cluster = this.#options.parentSplit === true ? (k % 2 === 0 || rest.length === 0 ? best : (rest[Math.floor(random() * rest.length)] as Cluster)) : this.#choose(clusters, weights, random);
       const lengths = cluster.programs.map((p) => p.code.length);
       const longest = Math.max(...lengths) || 1;
       const p = this.#choose(cluster.programs, lengths.map((l) => Math.exp(-(this.#options.lengthBias * l) / longest)), random);
@@ -260,10 +292,17 @@ export async function runSearch(
   const db = new ProgramDatabase(options.islands, options);
   let evaluated = 0;
   let globalBest = -Infinity;
+  const scoredCodes: string[] = [];
   const reached = (): boolean => spec.target !== undefined && (db.best()?.score ?? -Infinity) >= spec.target;
   const consider = async (code: string, round: number, island: number): Promise<void> => {
     // PD5: a sampled program meets the known counterexamples before it is scored; one that fails is dropped, not scored.
     if (round > 0 && hooks.screen !== undefined && (await hooks.screen(code))) return;
+    // LH5: a candidate too close to a program already scored is rejected before it runs.
+    if (round > 0 && options.novelty !== undefined && options.novelty > 0 && scoredCodes.some((seen) => normalizedEditDistance(seen, code) < (options.novelty as number))) {
+      hooks.events?.program?.({ round, island, code, evaluation: { ok: false, why: "too close to a program already scored" }, isBest: false });
+      return;
+    }
+    scoredCodes.push(code);
     const evaluation = await scorer(code, hooks.signal);
     evaluated++;
     const isBest = evaluation.ok && evaluation.score > globalBest;

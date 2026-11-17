@@ -239,7 +239,7 @@ export interface EventDataMap {
   };
   /**
    * A turn of a campaign ended at an impasse and the next one changes mode (plan change LH2: an impasse breakpoint is "change mode" in a
-   * campaign, not "stop and wait"). Today the only mode is `cold_restart`: the next turn's sessions start cold; Task 60 adds the others.
+   * campaign, not "stop and wait"). `cold_restart` for an impasse (the next turn's sessions start cold); a plateau adds the modes of plan change LH5.
    */
   "campaign.mode_changed": {
     runId: string;

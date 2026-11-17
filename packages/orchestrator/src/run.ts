@@ -71,6 +71,8 @@ import { type ConsortiumConfig, checkConsortium, isTurnEnded, type Turn, type Tu
 import { OffPeakGate } from "./offpeak.ts";
 import { PriceBook } from "./prices.ts";
 import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolidate.ts";
+import { createVariant } from "@seshat/graph";
+import { CONSTRUCT_OPTIONS, currentMode, frontierTerms, GATED_LINES, MODE_LINES, REFORMULATE_ORIGIN, reformulations } from "./plateau.ts";
 import { REFLECT_USD, reflectOnce, SITE_CAMPAIGN_REFLECT } from "./dossier-build.ts";
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
@@ -673,6 +675,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const config: RunConfig = { ...o.config, limits: normalizeLimits(o.config.limits) };
   // A campaign's sessions are not capped (documentation/campaign.md): money, time and the claim bound it.
   const sessionCap = config.horizon === "campaign" ? UNBOUNDED_SESSIONS : config.sessions;
+  // A campaign's plateau mode (LH5), as the supervisor's last `campaign.mode_changed` left it: the turn works in it.
+  const plateauMode = config.horizon === "campaign" ? currentMode(resume?.events ?? []) : undefined;
   // The person of a run is the one it began with: a resumed run names none of its own, and a recorded answer of a person's stays theirs.
   const person = o.user ?? resume?.events.find((e) => e.type === "run.started")?.user;
   problems.push(...checkIntake(config.intake, { user: person }));
@@ -1138,6 +1142,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ...(config.consortium !== undefined ? { human: true } : {}),
+      ...(config.horizon === "campaign"
+        ? { modeGate: { gated: GATED_LINES, on: plateauMode !== undefined && MODE_LINES[plateauMode] !== undefined ? [MODE_LINES[plateauMode] as string] : [], options: plateauMode === "construct" ? { M16: { ...CONSTRUCT_OPTIONS } } : {} } }
+        : {}),
       ranking,
       decide: resolveDecideSettings(config.decide),
       prices,
@@ -1531,7 +1538,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
       // The intake step (Task 36): the literature and the statement's hygiene, before any paid session. A problem whose step was written by
       // the process before is not tested again.
-      if (config.intake !== undefined && memory !== undefined && !adopted && !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id)) {
+      // The `read` mode (LH5): the literature step again, once for each change into it, with the terms the frontier added; hygiene is not repeated. Only with the
+      // person's consent as at the start, and the step records its skip with the reason `private` as it always does.
+      const readSeq = (resume?.events ?? []).findLast((e) => e.type === "campaign.mode_changed" && e.data.mode === "read")?.seq;
+      const readAgain =
+        plateauMode === "read" &&
+        config.intake?.literature === true &&
+        readSeq !== undefined &&
+        !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id && e.seq > readSeq);
+      const readTerms = readAgain ? frontierTerms(frontierOf(new MemoryStore({ journal, blobs, actor: "orchestrator" }), claimId).entries) : [];
+      if (config.intake !== undefined && memory !== undefined && !adopted && (readAgain || !(resume?.events ?? []).some((e) => e.type === "intake.finished" && e.data.problemId === entry.id))) {
         try {
           const intakeModel = await resolveModel(o.models, config.model);
           const perMillion = (() => {
@@ -1539,7 +1555,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             return host !== undefined ? { inputPerM: host.cacheMiss, outputPerM: host.output } : { inputPerM: intakeModel.cost.input, outputPerM: intakeModel.cost.output };
           })();
           const step = await intakeStep({
-            config: config.intake,
+            config: readAgain ? { ...config.intake, hygiene: false } : config.intake,
             private: config.private === true,
             leanSearch: config.leanSearch === true,
             consentRecorded: true,
@@ -1568,7 +1584,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             problemId: entry.id,
             claimId,
             statement: entry.statement,
-            ...(o.prose !== undefined ? { prose: o.prose } : {}),
+            ...(o.prose !== undefined || readTerms.length > 0 ? { prose: `${o.prose ?? ""}${readTerms.length > 0 ? `\nTerms the work has added: ${readTerms.join("; ")}` : ""}`.trim() } : {}),
             name: entry.fullName,
             ...(docstringOf(problem.sketch) !== undefined ? { doc: docstringOf(problem.sketch) as string } : {}),
             header: problem.sketch.prefix,
@@ -1586,6 +1602,26 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         } catch (error) {
           if (turn?.ended !== undefined && isTurnEnded(error)) return undefined;
           if (!controller.signal.aborted) log(`${entry.fullName}: the intake step failed and was left out: ${messageOf(error)}`);
+        }
+      }
+
+      // The `reformulate` mode (LH5): one generalization of the statement by rule, as a variant claim: a statement only, `open`, never a status.
+      if (plateauMode === "reformulate" && !controller.signal.aborted) {
+        try {
+          const store = new MemoryStore({ journal, blobs, actor: "orchestrator" });
+          const asked = (resume?.events ?? []).filter((e) => e.type === "campaign.mode_changed" && e.data.mode === "reformulate").length;
+          const made = store.claims({ kind: "formal" }).filter((c) => c.origin === REFORMULATE_ORIGIN && c.parentId === claimId).length;
+          if (made < asked) {
+            for (const statement of reformulations(store.claim(claimId)?.statement ?? entry.statement)) {
+              const variant = await createVariant(store, { from: claimId, relation: "generalization", statement, origin: REFORMULATE_ORIGIN, note: "a generalization proposed by the campaign's reformulate mode" });
+              if (variant.created) {
+                log(`${entry.fullName}: the reformulate mode adds the variant claim ${variant.claimId}: ${statement}`);
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          log(`${entry.fullName}: the reformulate mode added no variant: ${messageOf(error)}`);
         }
       }
 
@@ -1829,7 +1865,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
-          ...(config.sorryBattery !== undefined ? { sorryBattery: { config: config.sorryBattery, host: { have: new Set(m10Packages(config)) } } } : {}),
+          // The `test` mode puts the battery on each `sorry` on for its turn, whatever the run's own setting (LH5).
+          ...(config.sorryBattery !== undefined || plateauMode === "test" ? { sorryBattery: { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(shownCards !== undefined && task === proverTasks[0] ? { cards: shownCards } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
