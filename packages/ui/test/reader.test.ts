@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { listRuns, JournalTail, plainStatus, readRun, RunReadError, runDirectory } from "../src/index.ts";
 import { scriptedJournal } from "../../orchestrator/test/scripted-journal.ts";
-import { tempDir } from "../../orchestrator/test/m0-helpers.ts";
+import { check, demoRun, say, tempDir } from "../../orchestrator/test/m0-helpers.ts";
 
 describe("the journal reader", () => {
   it("gives the projection of a recorded journal as JSON: statuses, graph, turns, spend and proof", () => {
@@ -86,5 +86,19 @@ describe("the journal reader", () => {
     assert.deepEqual(next.map((e) => [e.seq, e.type]), [[1, "turn.started"]]);
     assert.equal(JSON.stringify(next).includes("secret"), false, "an announcement never carries the event's data");
     assert.deepEqual(tail.poll(), []);
+  });
+});
+
+describe("the journal reader and the verified frontier", () => {
+  it("gives the frontier of each problem when the run shows it, and an empty list when it does not", async () => {
+    const lemma = "theorem aux_a : True := trivial";
+    const on = await demoRun({ config: { sessions: 1, frontier: { show: true } }, responses: [check("bad", lemma, "induction"), say("notes")] });
+    const view = readRun(on.dir);
+    assert.equal(view.frontier.length, 1);
+    assert.equal(view.frontier[0]?.frontier.entries[0]?.id, "aux_a");
+    assert.equal(view.frontier[0]?.frontier.entries[0]?.evidence, false);
+    assert.match(view.resultMd, /## Established so far/);
+    const off = await demoRun({ config: { sessions: 1 }, responses: [check("bad", lemma, "induction"), say("notes")] });
+    assert.deepEqual(readRun(off.dir).frontier, []);
   });
 });

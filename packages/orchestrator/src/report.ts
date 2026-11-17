@@ -25,6 +25,7 @@ import { type LoopTelemetry, loopTelemetry, renderLoop } from "./loop-telemetry.
 import { type GateReport, gateReport, renderGateReport } from "./gate-report.ts";
 import { type GraphReport, graphReport, renderGraphReport } from "./graph-report.ts";
 import { type IntakeLine, intakeLines, renderIntake } from "./intake.ts";
+import { frontiersOfEvents, type ProblemFrontier, renderFrontiers } from "./frontier-view.ts";
 import { informalLines, type InformalLine, renderInformal } from "./informal-view.ts";
 
 export interface ProblemLine {
@@ -183,6 +184,8 @@ export interface RunReport {
    * The text of an accepted proof is there, cut at 4000 characters, only when no Lean proof of the problem was certified. Absent when the run had none.
    */
   informal?: InformalLine[];
+  /** The verified frontier of each problem that has entries, when the run shows it (`RunConfig.frontier`, documentation/frontier.md): added by `writeReport`. */
+  frontier?: ProblemFrontier[];
   /** The intake step of each problem that had one (Task 36, documentation/literature.md); absent for a run without it. */
   intake?: IntakeLine[];
 }
@@ -925,6 +928,7 @@ export function renderRunReport(report: RunReport): string {
       : []),
     ...(report.loop !== undefined ? ["", ...renderLoop(report.loop)] : []),
     ...(report.informal !== undefined ? renderInformal(report.informal) : []),
+    ...(report.frontier !== undefined ? ["", ...renderFrontiers(report.frontier)] : []),
   ];
   return `${lines.join("\n")}\n`;
 }
@@ -965,6 +969,8 @@ export function writeReport(dir: string): RunReport {
     }
   });
   if (informal.length > 0) report.informal = informal;
+  const frontier = frontiersOfEvents(events);
+  if (frontier.length > 0) report.frontier = frontier;
   writeFileSync(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   writeFileSync(join(dir, "report.md"), renderRunReport(report));
   return report;

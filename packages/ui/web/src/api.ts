@@ -205,6 +205,22 @@ export interface Turn {
   account: { summary: { asked: string[] }; team: { since: Array<{ kind: string; by: string; text: string }> } } | null;
 }
 
+export interface FrontierEntry {
+  kind: string;
+  id: string;
+  statement: string;
+  detail?: string;
+  status?: string;
+  usd?: number;
+  evidence: boolean;
+}
+
+export interface ProblemFrontier {
+  problemId: string;
+  claimId: string;
+  frontier: { score: number; entries: FrontierEntry[] };
+}
+
 export interface Run {
   id: string;
   runId: string;
@@ -222,6 +238,7 @@ export interface Run {
   leads: RecordLine[];
   evidence: RecordLine[];
   turns: Turn[];
+  frontier: ProblemFrontier[];
   spend: { usd: number; inputTokens: number; outputTokens: number; budgetUsd?: number; sites: SiteLine[]; rungs?: Record<string, number>; leftUsd: number | null };
   proof: { certified: ProofFile[]; candidates: ProofFile[]; partial: Array<{ claimId: string; statement: string; holes: number; proof: string }> };
   failed: Array<{ claimId: string; strategy: string; attempts: number; lastFailure?: string }>;

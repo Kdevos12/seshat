@@ -20,6 +20,8 @@ import {
 } from "@seshat/core";
 import { referencesIn } from "@seshat/guards";
 import { HYGIENE_KIND, LITERATURE_KIND, shown } from "@seshat/lit";
+import { frontierOptionsOf, frontiersOf, type ProblemFrontier } from "./frontier-view.ts";
+import { frontierMarkdown } from "@seshat/memory";
 import { claimAndParts, hintOf, HINT_KIND, STEER_KIND, steerOf } from "./team.ts";
 import { JUDGMENT_KIND } from "./breakpoints.ts";
 import { type Ledger, messageCost } from "./budget.ts";
@@ -153,6 +155,8 @@ export interface Account {
   narrativeRefused?: string;
   /** The model-free part of the consolidation pass, as markdown, when the consortium option asked for it (`ConsortiumConfig.consolidation`). */
   consolidation?: string;
+  /** The verified frontier of each problem that has entries, when the run shows it (`RunConfig.frontier`, documentation/frontier.md). */
+  frontier?: ProblemFrontier[];
 }
 
 /** A turn that has not been written yet: the account is built for what is about to be said of it. */
@@ -456,6 +460,7 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
   const narrativeRaw = narrativeHash !== undefined ? options.blob?.(narrativeHash) : undefined;
   const narrativeText = narrativeRaw !== undefined ? plainNarrative(narrativeRaw) : undefined;
   const last = events.at(-1);
+  const frontier = frontiersOf(p, frontierOptionsOf(config));
   return {
     version: 1,
     runId: started.data.runId,
@@ -488,6 +493,7 @@ export function buildAccount(allEvents: readonly HarnessEvent[], turn: number, o
     ...(inherited !== undefined ? { inherited } : {}),
     ...(narrativeText !== undefined && narrativeHash !== undefined ? { narrative: { text: narrativeText, hash: narrativeHash, modelWritten: true as const } } : {}),
     ...(record.end?.narrative?.rejected !== undefined ? { narrativeRefused: record.end.narrative.rejected } : {}),
+    ...(frontier.length > 0 ? { frontier } : {}),
   };
 }
 
@@ -586,6 +592,8 @@ export function renderAccount(a: Account): string {
     if (x.claims.length === 0) lines.push("- None.");
     for (const c of x.claims) lines.push(`- \`${c.id}\` **${c.status}**: ${c.statement}. Checked by ${c.checkedBy}.`);
     for (const s of x.signed) lines.push(`- ${s.by.startsWith("human:") ? `Signed by ${s.by}` : `Marked human_signed by ${s.by}, which is not a person (the journal refuses that now)`}: edge \`${s.edgeId}\` (${s.kind}) from \`${s.from}\` to ${s.to.map((t) => `\`${t}\``).join(", ")}. A signature does not propagate and changes no claim's status.`);
+    const established = a.frontier?.find((f) => f.problemId === x.problemId);
+    if (established !== undefined) lines.push("", "### Established so far", "", ...frontierMarkdown(established.frontier, { heading: null }).trimEnd().split("\n"));
     lines.push("", "### Decomposition", "");
     if (x.tree.length <= 1) lines.push("- The claim has not been decomposed.");
     else for (const n of x.tree) lines.push(`${"  ".repeat(n.depth)}- \`${n.id}\` ${n.status}${n.leaf ? " (leaf)" : ""}: ${n.statement}`);

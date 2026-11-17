@@ -95,6 +95,8 @@ export interface RunView {
   leads: RecordLine[];
   evidence: RecordLine[];
   turns: TurnView[];
+  /** The verified frontier of each problem that has entries (`RunConfig.frontier`, documentation/frontier.md); empty when the run does not show it. */
+  frontier: NonNullable<Result["frontier"]>;
   spend: Result["spend"] & { leftUsd: number | null };
   proof: { certified: ProofFile[]; candidates: ProofFile[]; partial: PartialSketch[] };
   failed: Result["failed"];
@@ -217,6 +219,7 @@ export function readRun(dir: string): RunView {
       leads: result.counterexamples,
       evidence: result.evidence,
       turns,
+      frontier: result.frontier ?? [],
       spend: { ...result.spend, leftUsd },
       proof: { certified: result.certified, candidates: result.candidates, partial: result.partial },
       failed: result.failed,

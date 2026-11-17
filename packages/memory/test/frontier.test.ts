@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal, newId } from "@seshat/core";
-import { frontier, frontierCardLines, frontierGrowth, frontierMarkdown, MemoryStore, recordAcceptedLemmas } from "../src/index.ts";
+import { frontier, frontierCardLines, frontierGrowth, frontierMarkdown, MemoryStore, recordAcceptedLemmas, stateCard } from "../src/index.ts";
 
 function open(): { memory: MemoryStore; journal: Journal } {
   const dir = mkdtempSync(join(tmpdir(), "mh-frontier-"));
@@ -120,5 +120,31 @@ describe("the verified frontier", () => {
       assert.ok((points[i] as { usd: number }).usd >= (points[i - 1] as { usd: number }).usd);
     }
     assert.equal((points.at(-1) as { score: number }).score, last);
+  });
+});
+
+describe("the frontier in the state card", () => {
+  it("ends the card with the top entries within a third of the bound, and leaves the card as it was without the option", async () => {
+    const { memory, journal, target, events } = await scripted();
+    for (const e of events) await e();
+    const plain = stateCard(memory, target)?.text as string;
+    assert.ok(!plain.includes("Established so far"));
+    const withFrontier = stateCard(memory, target, { frontier: {} })?.text as string;
+    assert.ok(withFrontier.length <= 3000);
+    const tail = withFrontier.slice(withFrontier.indexOf("Established so far"));
+    assert.ok(tail.length <= 1000, `${tail.length}`);
+    assert.match(tail, /^Established so far \(\d+ entries, score 13\.5; an evidence entry is evidence, not proof\):\n- reduction:/);
+    assert.ok(withFrontier.startsWith(plain.split("\n")[0] as string));
+    const small = stateCard(memory, target, { maxChars: 600, frontier: {} })?.text as string;
+    assert.ok(small.length <= 600, `${small.length}`);
+    void journal;
+  });
+
+  it("reads over a projection alone, and refuses to write", async () => {
+    const { memory, journal, target, events } = await scripted();
+    for (const e of events) await e();
+    const readOnly = MemoryStore.readOnly(journal.projection);
+    assert.equal(JSON.stringify(frontier(readOnly, target)), JSON.stringify(frontier(memory, target)));
+    assert.throws(() => readOnly.recordNode({ kind: "x", data: null }), /read-only/);
   });
 });

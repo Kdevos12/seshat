@@ -373,13 +373,13 @@ export function frontierCardLines(f: Frontier, maxChars: number, options: Fronti
 }
 
 /** The section "Established so far" of a report: the entries Lean accepted, then the evidence apart, labelled. Empty for an empty frontier. */
-export function frontierMarkdown(f: Frontier, options: { heading?: string } = {}): string {
+export function frontierMarkdown(f: Frontier, options: { heading?: string | null } = {}): string {
   if (f.entries.length === 0) return "";
-  const heading = options.heading ?? "## Established so far";
+  const heading = options.heading === undefined ? "## Established so far" : options.heading;
   const established = f.entries.filter((e) => !e.evidence);
   const evidence = f.entries.filter((e) => e.evidence);
   const cost = (e: FrontierEntry): string => (e.usd !== undefined ? ` ($${e.usd.toFixed(2)})` : "");
-  const out = [heading, "", `${f.entries.length} entries, score ${f.score}. Nothing here changes a claim's status.`, ""];
+  const out = [...(heading === null ? [] : [heading, ""]), `${f.entries.length} entries, score ${f.score}. Nothing here changes a claim's status.`, ""];
   for (const e of established) out.push(`- ${e.kind}: ${e.statement}${e.status !== undefined ? ` [${e.status}]` : ""}${e.detail !== undefined ? ` - ${e.detail}` : ""}${cost(e)}`);
   if (evidence.length > 0) {
     out.push("", "Evidence, not proof:", "");

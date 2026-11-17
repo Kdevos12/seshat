@@ -397,6 +397,18 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     status: "stable",
     ui: "advanced",
   },
+  frontier: {
+    group: "session",
+    type: "{ show?: boolean, weights?: Record<kind, number> }",
+    default: "absent (off)",
+    summary: "The verified frontier, a projection of the journal with no model call: with `show`, the state card, the turn's account, RESULT.md, report.md and the interface carry what Lean accepted so far (evidence apart, as evidence), and each outer session's opening message ends with one line on the budget left and the frontier.",
+    cli: [],
+    sets: "neither (settings file)",
+    docs: "frontier.md#Where it is shown",
+    tested: "frontier-show.test.ts",
+    status: "experimental",
+    ui: "advanced",
+  },
   consult: {
     group: "model",
     type: "{ model: provider/id, maxCalls?: integer, maxOutputTokens?: integer }",
@@ -795,7 +807,7 @@ export function flagsOfKey(key: keyof RunConfig): string[] {
 
 /** The findings the audit makes that no table shows: read from the code by a person, one line each. Each is a fact of the commit the page was generated at. */
 export const MANUAL_FINDINGS: readonly string[] = [
-  "No flag of `harness run` or `harness solve` sets `editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds`, `budgetShare`, `firstCases`, `triage`, `informalFirst` or `cards`: `--settings FILE` sets them (the section \"Settings file\"), and the defaults set `v2` turns the first seven on.",
+  "No flag of `harness run` or `harness solve` sets `editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds`, `budgetShare`, `firstCases`, `triage`, `informalFirst`, `cards` or `frontier`: `--settings FILE` sets them (the section \"Settings file\"), and the defaults set `v2` turns the first seven on.",
   "`informalFirst` and `cards` are also set by the arms `solve-v2-informal` and `solve-v2-cards` of `harness ablate --experiment solve-defaults`; `ablate` does not read `--settings`, and no defaults set has them.",
   "One parser serves every command (`CLI_OPTIONS`): a flag a command does not read is accepted and ignored there (`harness report --provers 4` runs). Only `resume` refuses the flags that describe a run.",
   "Two flags mean different things by command: `--target` (ablate: a ratio; optimize-prompts: a prompt name) and `--split` (ablate: a number of problems; optimize-prompts: a split name).",

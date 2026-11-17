@@ -32,14 +32,14 @@ cost, score) at each event where the frontier grew, for the plateau rule.
 
 ## Where it is shown
 
-Only with `RunConfig.frontier.show` (off by default; `solve`'s sets `v1` and `v2` do not set it):
+Only with `RunConfig.frontier.show` (a settings-file key, `--settings FILE`; off by default, and `solve`'s sets `v1` and `v2` do not set it, so their requests are byte-identical to what they were):
 
-- the state card ends with the top entries, within a third of the card's bound;
+- the state card (when `stateCard` is on) ends with the top entries, within a third of the card's bound (3000 characters by default);
 - the consortium turn's account, `RESULT.md` and `report.md` carry a section "Established so far", with the `evidence` entries apart and
   labelled "evidence, not proof";
 - the interface's run view shows the same list;
 - each outer prover session's opening user message ends with one line of data: the budget left for the session and the problem, and the
-  frontier's size, score and last entry (LH8). The system prompt does not change.
+  frontier's size, score and last entry (LH8). The system prompt does not change. The dollars are the ledgers': what the session's ledger (the probe's or slice's cap, or the problem's) and the problem's ledger still allow, each the least of its own and its ancestors' remainders.
 
 `harness frontier RUN_DIR [--claim ID] [--json]` prints the frontier of each problem of a run that no process works on, with no model and
 no Lean.

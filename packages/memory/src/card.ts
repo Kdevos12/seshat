@@ -1,4 +1,5 @@
 import type { ValidationReport } from "@seshat/core";
+import { frontier, frontierCardLines, type FrontierOptions } from "./frontier.ts";
 import { normalizeDetail } from "./obstruction.ts";
 import type { MemoryStore } from "./store.ts";
 
@@ -36,6 +37,11 @@ export interface StateCardOptions {
   maxChars?: number;
   /** Count the attempts of every run of the memory chain, not this run's alone (the consolidation pass looks backward). */
   acrossRuns?: boolean;
+  /**
+   * The verified frontier's top entries end the card (`RunConfig.frontier.show`, documentation/frontier.md), in at most a third of the bound;
+   * the rest of the card gets the remainder, so the bound holds. Absent: the card is what it always was.
+   */
+  frontier?: FrontierOptions;
 }
 
 const HOLES_SHOWN = 8;
@@ -181,5 +187,11 @@ export function renderStateCard(data: StateCardData, options: StateCardOptions =
 /** The card of a claim: its data and its bounded text. Undefined for a claim the memory does not have. A pure function of the store. */
 export function stateCard(store: MemoryStore, claimId: string, options: StateCardOptions = {}): StateCard | undefined {
   const data = stateCardData(store, claimId, options.acrossRuns === true ? { acrossRuns: true } : {});
-  return data === undefined ? undefined : { ...data, text: renderStateCard(data, options) };
+  if (data === undefined) return undefined;
+  if (options.frontier === undefined) return { ...data, text: renderStateCard(data, options) };
+  const maxChars = Math.max(200, Math.floor(options.maxChars ?? STATE_CARD_CHARS));
+  const lines = frontierCardLines(frontier(store, claimId, options.frontier), Math.floor(maxChars / 3), options.frontier);
+  if (lines.length === 0) return { ...data, text: renderStateCard(data, options) };
+  const tail = lines.join("\n");
+  return { ...data, text: `${renderStateCard(data, { ...options, maxChars: maxChars - tail.length - 1 })}\n${tail}` };
 }
