@@ -18,6 +18,7 @@ import {
   widenRule,
 } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
+import { SHORT_PROBES, type TriageResult } from "./triage.ts";
 
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
 export const PROGRESS_DEPTH = 5;
@@ -49,6 +50,8 @@ export interface BudgetGateOptions {
   leanProgress?: () => Progress;
   /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
   informalAccepted?: () => boolean;
+  /** The problem's formal-cost triage, when the run has one and it is journaled (PA14): read from the journal, so a resumed run reads the same. */
+  triage?: () => TriageResult | undefined;
   /** The weight of an attempt of an older epoch (`MemoryStore.weightOf`); absent: 1. */
   epochWeight?: (epoch: number) => number;
   /** Where the rule has no numbers; absent, or a site `off`: the rule alone. */
@@ -350,9 +353,35 @@ export class BudgetGate {
     return undefined;
   }
 
+  /** The most a problem the triage called `short` may spend on its provers in all (a few probes), or undefined: no cap (PA14). */
+  shortCap(): number | undefined {
+    return this.o.triage?.()?.class === "short" ? SHORT_PROBES * probeCapUsd(this.budgetUsd(), this.o.settings) : undefined;
+  }
+
   /** After the probe: whether the problem widens to `provers` provers (PB2). Only Lean progress widens, except for the floor's fraction. */
   async widen(provers: number): Promise<GateOutcome> {
     let why = this.progress();
+    // The formal-cost triage `skip` (PA14): a probe with no Lean progress is the whole of the problem; no informal credit, no floor.
+    const triage = this.o.triage?.();
+    if (triage?.class === "skip" && why === undefined) {
+      const state = this.state();
+      return this.write(
+        {
+          site: "wave",
+          action: "skip",
+          by: "progress",
+          estimateUsd: Math.max(1, provers) * this.sessionUsd(),
+          remainingUsd: state.remainingUsd,
+          budgetUsd: state.budgetUsd,
+          share: this.o.settings.share.wave,
+          rung: this.o.rung(),
+          exploration: false,
+          progress: false,
+          reason: `the probe made no Lean progress and the formal-cost triage says skip (${triage.reasons.join("; ")}): the problem does not widen`,
+        },
+        { prover: "p1" },
+      );
+    }
     // An accepted informal proof counts as progress once (PA5): a later probe or judgement does not count it again.
     if (why === undefined && this.o.informalAccepted?.() === true && !this.rows().some((g) => g.site === "wave" && g.reason.includes(INFORMAL_PROGRESS))) why = INFORMAL_PROGRESS;
     const estimate = Math.max(1, provers) * this.sessionUsd();

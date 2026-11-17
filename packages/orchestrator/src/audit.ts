@@ -5,6 +5,7 @@ import { shown } from "@seshat/lit";
 import { informalProofOfNodes } from "@seshat/memory";
 import { type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type SessionRecord, type SketchRecord } from "@seshat/scheduler";
 import { gateReport } from "./gate-report.ts";
+import { triageOfNodes, triageProblem, TRIAGE_KIND, type TriageResult } from "./triage.ts";
 import { RunSetupError } from "./setup-error.ts";
 
 /**
@@ -58,6 +59,8 @@ export interface AuditDossier {
     refineStop?: string;
   };
   informal?: { accepted: boolean; verdicts: string[]; models: { planner: string; verifier: string }; stop: string };
+  /** The formal-cost triage (PA14): the journaled one when the run made it, else computed from the journal now (no model call). `computed` says which. */
+  triage: TriageResult & { computed: boolean };
   hygiene: Array<{ check: string; result: string; detail?: string }>;
   literature: Array<{ title: string; url: string; verdict: string }>;
   /** A person's reference solution, when `--reference` supplied one. */
@@ -203,6 +206,13 @@ export function audit(src: AuditSources): Audit {
   const hygiene = new Map<string, AuditDossier["hygiene"]>();
   const literature = new Map<string, AuditDossier["literature"]>();
   const informalNodes = new Map<string, Array<{ nodeId: string; data: unknown }>>();
+  const triageNodes = new Map<string, Array<{ data: unknown }>>();
+  const allowance = new Map<string, number>();
+  let searched = false;
+  for (const e of events) {
+    if (e.type === "problem.registered" && e.data.allowanceUsd !== undefined) allowance.set(e.data.problemId, e.data.allowanceUsd);
+    else if (e.type === "tool_run.started" && e.data.capability === "lean.search") searched = true;
+  }
   for (const e of events) {
     if (e.type === "validation.finished" && e.data.verdict === "invalid" && e.data.reasons.length > 0) {
       const problemId = problemOfClaim(e.data.claimId);
@@ -218,6 +228,7 @@ export function audit(src: AuditSources): Audit {
       else if (e.data.kind === "m12_refine_stop") refineStops.set(pid, e.data.data as unknown as RefineStopRecord);
       else if (e.data.kind === "hygiene" && d !== undefined) hygiene.set(pid, [...(hygiene.get(pid) ?? []), { check: String(d.check ?? ""), result: String(d.result ?? ""), ...(typeof d.detail === "string" ? { detail: d.detail } : {}) }]);
       else if (e.data.kind === "literature" && d !== undefined && d.verdict !== "unrelated") literature.set(pid, [...(literature.get(pid) ?? []), { title: String(d.title ?? ""), url: String(d.url ?? ""), verdict: String(d.verdict ?? "") }]);
+      else if (e.data.kind === TRIAGE_KIND) triageNodes.set(pid, [...(triageNodes.get(pid) ?? []), { data: e.data.data }]);
       else if (e.data.kind === "informal_proof") informalNodes.set(pid, [...(informalNodes.get(pid) ?? []), { nodeId: e.data.nodeId, data: e.data.data }]);
     }
   }
@@ -258,6 +269,19 @@ export function audit(src: AuditSources): Audit {
     }
     const informal = informalProofOfNodes(informalNodes.get(problemId) ?? [], () => undefined);
     const reference = src.reference?.(problemId);
+    const journaled = triageOfNodes(triageNodes.get(problemId) ?? []);
+    const plausible = (hygiene.get(problemId) ?? []).filter((h) => h.check === "plausible").at(-1)?.result;
+    const triage: AuditDossier["triage"] = journaled !== undefined
+      ? { ...journaled, computed: false }
+      : {
+          ...triageProblem({
+            informal: informalProofOfNodes(informalNodes.get(problemId) ?? [], (hash) => blob(hash)),
+            searched,
+            plausible,
+            budgetUsd: allowance.get(problemId),
+          }),
+          computed: true,
+        };
     dossiers.push({
       problemId,
       outcome: outcomes.get(problemId) ?? "not finished",
@@ -268,6 +292,7 @@ export function audit(src: AuditSources): Audit {
       leanErrors: (leanErrors.get(problemId) ?? []).slice(-3).map((t) => t.slice(0, LEAN_ERROR_CHARS)),
       ...(sketch !== undefined ? { sketch } : {}),
       ...(informal !== undefined ? { informal: { accepted: informal.accepted, verdicts: informal.verdicts, models: informal.models, stop: informal.stop } } : {}),
+      triage,
       hygiene: hygiene.get(problemId) ?? [],
       literature: literature.get(problemId) ?? [],
       ...(reference !== undefined ? { reference } : {}),
@@ -340,6 +365,7 @@ export function renderAudit(a: Audit, title: string, level = 1): string[] {
         : `**Informal proof**: ${d.informal.accepted ? "accepted" : "not accepted"}; verdicts: ${d.informal.verdicts.join(", ") || "none"}; models: planner ${d.informal.models.planner}, verifier ${d.informal.models.verifier}; stopped: ${d.informal.stop}.`,
       "",
     );
+    out.push(`**Formal-cost triage**: ${d.triage.class} (${d.triage.computed ? "computed from the journal now" : "journaled by the run"}): ${d.triage.reasons.map((r) => shown(r, 200)).join("; ")}.`, "");
     out.push(`**Hygiene**: ${d.hygiene.length === 0 ? "none recorded" : d.hygiene.map((x) => `${x.check} ${x.result}${x.detail !== undefined ? ` (${shown(x.detail, 160)})` : ""}`).join("; ")}.`, "");
     out.push(`**Literature kept**: ${d.literature.length === 0 ? "none" : ""}`);
     for (const l of d.literature) out.push(`- ${shown(l.verdict, 20)}: "${shown(l.title, 160)}" (${shown(l.url, 200)})`);

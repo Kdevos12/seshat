@@ -85,6 +85,7 @@ import { checkTools, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
+import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
 import { ClaimBenches, type PendingResult } from "./validate.ts";
@@ -143,6 +144,13 @@ export interface RunConfig {
    * model call. Absent: off, and a run that records and prompts as it always did.
    */
   cards?: CardsConfig;
+  /**
+   * The formal-cost triage (plan change PA14, documentation/scheduler.md, "The budget gate"): after the informal loop and before the first outer session, the
+   * harness classes the problem `invest`, `short` or `skip` from what the journal holds (the informal proof, its facts, `plausible`, the first cases, the
+   * statement's size) with no model call, journals it as a `formal_triage` node, and the budget gate reads it: `skip` gives the problem its probe alone,
+   * `short` caps the work after the probe at a few probes, `invest` changes nothing. Without the gate it is only journaled. Absent or false: off.
+   */
+  triage?: boolean;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -870,6 +878,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.firstCases === true ? { firstCases: true } : {}),
       ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
       ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
+      ...(config.triage === true ? { triage: true } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
@@ -1315,6 +1324,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 rung: () => live.lines?.rung ?? 0,
                 ...(turn !== undefined ? { turn: () => turn.number } : {}),
                 attemptIds: () => live.workbench?.attemptIds ?? [],
+                ...(config.triage === true ? { triage: () => triageOfNodes(journal.projection.nodes(TRIAGE_KIND, claimId)) } : {}),
                 ...(memory !== undefined ? { informalAccepted: () => informalProofOfNodes(memory.nodes(INFORMAL_PROOF_KIND, { claimId }), () => undefined)?.accepted === true } : {}),
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
                 decide: problemDecide({
@@ -1584,6 +1594,20 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         }
       }
 
+      // The formal-cost triage (`RunConfig.triage`, PA14): once per problem, from the journal; a problem that has the node (a resumed one) keeps it.
+      if (config.triage === true && !adopted && journal.projection.nodes(TRIAGE_KIND, claimId).length === 0) {
+        const cases = config.firstCases === true ? casesDone?.value : undefined;
+        const result = triageProblem({
+          ...triageInputOfProjection(journal.projection, claimId, (hash) => blobs.get(hash)),
+          searched: registry.offers(LEAN_SEARCH),
+          ...(cases !== undefined ? { firstCases: { rows: cases.table.rows.length, differs: cases.table.rows.some((r) => new Set(r.values.filter((v) => v !== null)).size > 1) } } : {}),
+          statementChars: entry.statement.length,
+          budgetUsd: capUsd,
+        });
+        recordTriage(journal, { claimId, problemId: entry.id, result });
+        log(`${entry.fullName}: the formal-cost triage says ${result.class} (${result.reasons.join("; ")})`);
+      }
+
       // With lines: the problem's lines, their `beforeProvers`, and `afterProblem` before the end.
       let lines: ProblemLines | undefined;
       let lineFailure: string | undefined;
@@ -1657,7 +1681,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
        * Starts one prover. `begin` starts its task (a prover the probe paused has its task running already); `resumed` is what a
        * prover that was started before carries; `probe` makes it a probe: `sessions` sessions under a ledger of its own, then it pauses.
        */
-      const startProver = (task: ProverTask, how: { begin: boolean; resumed: ProverResume | undefined; probe?: { sessions: number; ledger: Ledger } }): Promise<ProverResult> => {
+      const startProver = (task: ProverTask, how: { begin: boolean; resumed: ProverResume | undefined; probe?: { sessions: number; ledger: Ledger }; cap?: Ledger }): Promise<ProverResult> => {
         let ended = false;
         const end = (done: Parameters<typeof endProverTask>[2]) => {
           if (ended) return;
@@ -1697,7 +1721,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(proverTemplate !== undefined ? { systemTemplate: proverTemplate } : {}),
           prices,
           ...(offpeak !== undefined ? { waitOffPeak: () => offpeak.wait({ scope: "session", problemId: entry.id, prover: task.name }, controller.signal) } : {}),
-          ledger: how.probe?.ledger ?? sliceLedger ?? ledger,
+          ledger: how.probe?.ledger ?? how.cap ?? sliceLedger ?? ledger,
           ...(sliceLedger !== undefined ? { slice: () => sliceLedger !== undefined && sliceLedger.exhausted && !ledger.exhausted } : {}),
           ...(how.probe !== undefined ? { probe: { sessions: how.probe.sessions } } : {}),
           ...(gate !== undefined ? { gate } : {}),
@@ -1813,11 +1837,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           tasks.promote(entry.id);
           return [];
         }
-        // Widened: the first prover goes on from where its probe left it, the others start.
+        // Widened: the first prover goes on from where its probe left it, the others start. A problem the triage called `short` works under a cap of a few probes in all.
         const probed = proverResumeOf(journal, blobs, first.taskId);
+        let cap: Ledger | undefined;
+        if (gate.shortCap() !== undefined) {
+          const total = gate.shortCap() as number;
+          cap = (sliceLedger ?? ledger).child(Math.max(0, total - working.reduce((sum, t) => sum + spentBy(t.taskId), 0)));
+        }
         return Promise.all([
-          settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed })),
-          ...rest.map((task) => settleRun(startProver(task, launch(task)))),
+          settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed, ...(cap !== undefined ? { cap } : {}) })),
+          ...rest.map((task) => settleRun(startProver(task, { ...launch(task), ...(cap !== undefined ? { cap } : {}) }))),
         ]);
       };
       // Without the rotation a problem is worked until its allowance is spent. With it (CA8) the provers work one slice at a time: when the

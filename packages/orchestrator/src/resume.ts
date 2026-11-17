@@ -163,6 +163,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.firstCases === true ? { firstCases: true } : {}),
     ...(typeof r.informalFirst === "object" && r.informalFirst !== null && !Array.isArray(r.informalFirst) ? { informalFirst: r.informalFirst as InformalFirst } : {}),
     ...(typeof r.cards === "object" && r.cards !== null && !Array.isArray(r.cards) ? { cards: r.cards as CardsConfig } : {}),
+    ...(r.triage === true ? { triage: true } : {}),
     ...(r.private === true ? { private: true } : {}),
     ...(r.stateCard === true ? { stateCard: true } : {}),
     ...(r.consolidation === true ? { consolidation: true } : {}),

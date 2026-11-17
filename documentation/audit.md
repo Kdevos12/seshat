@@ -26,6 +26,7 @@ exploring), and the problems the budget gate stopped after their probe (no Lean 
   problem that kept it from being split, the holes dropped, the planner's refinement rounds, the repairs, the hole verdicts of the inner sessions and
   why the refinement stopped.
 - **Informal proof**: the `informal_proof` node: accepted or not, its verifier verdicts and its models.
+- **Formal-cost triage**: `invest`, `short` or `skip` with its reasons ([scheduler.md](scheduler.md#the-budget-gate)); the run's own `formal_triage` node when it has one, else computed from the journal now, with no model call, so an old run can be triaged.
 - **Hygiene** (`plausible`, vacuity, test lemmas) and the **literature hits kept**. Text from third parties is shown clipped and escaped, as data.
 
 A number the journal does not hold is said to be "not recorded", never guessed. Lean's errors and a sketch are shown in fenced blocks that third-party
