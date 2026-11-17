@@ -74,6 +74,8 @@ Event types:
 | `intake.finished` | `problemId`, `claimId`, `state` (`done`, `skipped`), `reason?`, `queries` (`{form, query}`), `hits`, `kept`, `dropped` (`{backend, url, title, why}`), `settled`, `usd`, `capUsd`, `modelCallId?`: the intake step of a problem, before any paid session; the hits are `literature` nodes. Orchestrator only; it changes no claim |
 | `budget.round` | `round`, `capUsd`, `runUsd`, `problems` (in the order the slices are given), `marks?` (where each problem stood at the round's start), `resumed?` (the parked problems it takes up again) |
 | `problem.parked` | `problemId`, `round`, `usd`, `capUsd`, `reason` |
+| `child.started` | `childId`, `kind` (`CHILD_KINDS`: `probe`, `prover`, `hole`, `informal`, `planner`, `program_search`, `variant`), `goal` (`claimId?`, `need?`), `problemId?`, `parentChildId?`, `capUsd?`, `capTokens?`, `tools`, `output`, `resumeKey`: a delegated piece of work began through `runChild` ([runs.md](runs.md#children)). Orchestrator only; it changes no claim |
+| `child.finished` | `childId`, `resumeKey`, `status` (`done`, `failed`, `stopped`), `usd`, `inputTokens`, `outputTokens`, `reason?`: a `done` child is skipped by a resume; a `stopped` or `failed` one is run again. Orchestrator only |
 | `pack.installed` | `name`, `version`, `hash`, `trust` (`evidence`, `computed`), `capabilities`, `skills`, `heuristics` (the ids of its heuristic cards, optional), `programs`, `source` |
 | `pack.removed` | `name`, `version`, `hash` |
 

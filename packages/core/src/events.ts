@@ -670,6 +670,34 @@ export interface EventDataMap {
     reason: string;
   };
   /**
+   * A child began (documentation/runs.md, "Children"): a delegated piece of work of a run, started through `runChild`. `kind` is one of
+   * `CHILD_KINDS`; `goal` is a claim or an evidence need; `capUsd` and `capTokens` are the ledger carved for it from its parent's remainder;
+   * `tools` are the capability ids it may use; `output` is the node or event kind it writes; `resumeKey` is how a resume recognizes it as done.
+   * Written by the orchestrator only; it changes no claim.
+   */
+  "child.started": {
+    childId: string;
+    kind: string;
+    goal: { claimId?: string; need?: string };
+    problemId?: string;
+    parentChildId?: string;
+    capUsd?: number;
+    capTokens?: number;
+    tools: string[];
+    output: string;
+    resumeKey: string;
+  };
+  /** A child ended: `done` (its output is written), `failed`, or `stopped` (cut before its output: a resume runs it again). What it spent is its ledger's. */
+  "child.finished": {
+    childId: string;
+    resumeKey: string;
+    status: "done" | "failed" | "stopped";
+    usd: number;
+    inputTokens: number;
+    outputTokens: number;
+    reason?: string;
+  };
+  /**
    * A pack was installed into the registry's pack directory (`harness add`, documentation/packs.md): its
    * name, version and content hash, what it adds and the programs and servers its tools would run. Written
    * by the orchestrator only. A pack's tools are level 2 and a pack can never write a claim's status, so
@@ -827,6 +855,8 @@ export const EVENT_TYPES: readonly EventType[] = [
   "pack.removed",
   "budget.round",
   "problem.parked",
+  "child.started",
+  "child.finished",
 ];
 
 /** The launches the budget gate answers for, what it can answer, and who can answer (`budget.gated`). */
@@ -837,3 +867,7 @@ export const GATE_DECIDERS = ["rule", "floor", "probe", "progress", "decide", "m
 export function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && (EVENT_TYPES as readonly string[]).includes(value);
 }
+
+/** The kinds of child a run starts (documentation/runs.md, "Children"). */
+export const CHILD_KINDS = ["probe", "prover", "hole", "informal", "planner", "program_search", "variant"] as const;
+export type ChildKind = (typeof CHILD_KINDS)[number];

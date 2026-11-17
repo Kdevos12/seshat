@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { chainOfJournal, type MemoryChain } from "./chain.ts";
 import { DECISION_BACKENDS, DECISION_SITES, decisionSiteProblem } from "./decisions.ts";
-import { type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
+import { CHILD_KINDS, type EventBody, type EventDataMap, type EventType, GATE_ACTIONS, GATE_DECIDERS, GATE_SITES, type HarnessEvent } from "./events.ts";
 import { statementIdV0 } from "./ids.ts";
 import { EventLog, readEvents, USER_NAME } from "./log.ts";
 import { CONSOLIDATION_ACTOR, CONSOLIDATION_NODE_KINDS, HUMAN_NODE_KINDS, Projection, StaleProjectionError } from "./projection.ts";
@@ -375,6 +375,18 @@ export class Journal {
         if (!p.problem(event.data.problemId)) throw new Error(`unknown problem ${event.data.problemId}`);
         return;
       }
+      case "child.started": {
+        this.onlyOrchestrator(event.type, actor);
+        const d = event.data;
+        if (!(CHILD_KINDS as readonly string[]).includes(d.kind)) throw new Error(`child.started: unknown kind ${JSON.stringify(d.kind)}`);
+        if (typeof d.childId !== "string" || d.childId === "" || typeof d.resumeKey !== "string" || d.resumeKey === "") throw new Error("child.started needs a childId and a resumeKey");
+        if (d.problemId !== undefined && !p.problem(d.problemId)) throw new Error(`unknown problem ${d.problemId}`);
+        if (d.goal.claimId !== undefined && !p.claim(d.goal.claimId)) throw new Error(`child ${d.childId}: unknown claim ${d.goal.claimId}`);
+        return;
+      }
+      case "child.finished":
+        this.onlyOrchestrator(event.type, actor);
+        return;
       case "pack.installed":
       case "pack.removed": {
         this.onlyOrchestrator(event.type, actor);

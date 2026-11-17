@@ -2,6 +2,7 @@ export * from "./account.ts";
 export * from "./breakpoints.ts";
 export * from "./budget-gate.ts";
 export * from "./budget.ts";
+export * from "./child.ts";
 export * from "./consortium.ts";
 export * from "./consult.ts";
 export * from "./roles.ts";
