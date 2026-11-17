@@ -33,3 +33,19 @@ export function fatalProviderError(message: string): string | undefined {
 export function refusalLine(reason: string): string {
   return `the model provider refused the request (${reason}): the run stopped; nothing more was spent`;
 }
+
+/** The phrases (in lower case) of a limit that passes with time: a usage window, a rate limit, an overload. */
+export const USAGE_LIMIT_PHRASES: readonly string[] = ["usage limit", "rate limit", "rate_limit", "too many requests", "limit reached", "limit exceeded", "quota exceeded", "overloaded", "resets at", "try again later"];
+
+/**
+ * Whether the error text of a model request shows a usage limit: the provider will answer again later (a window resets), so a campaign waits it out
+ * with a backoff instead of failing the session or the run. A refusal that a retry cannot cure (`fatalProviderError`) is never one.
+ */
+export function usageLimitError(message: string): boolean {
+  if (fatalProviderError(message) !== undefined) return false;
+  const text = message.trim();
+  const status = /^(?:\w+ )?(?:status |http )?(\d{3})\b/i.exec(text)?.[1] ?? /\b(?:status|http|code)[ :=]+(\d{3})\b/i.exec(text)?.[1];
+  if (status === "429") return true;
+  const lower = text.toLowerCase();
+  return USAGE_LIMIT_PHRASES.some((phrase) => lower.includes(phrase));
+}

@@ -30,9 +30,9 @@ from its journal.
 
 ## The loop
 
-The supervisor (`runCampaign`, `campaign.ts`) holds no state that the journal does not. Its loop:
+The supervisor (`runCampaign`, `campaign.ts`) holds no state that the journal does not (the lock and the heartbeat are for the watchdog). Its loop:
 
-1. Read the journal and decide whether the campaign is over ([How it ends](#how-it-ends)).
+1. Read the journal and decide whether the campaign is over ([How it ends](#how-it-ends)), whether the day's cap or a usage limit makes it wait ([Pacing](#pacing)), and the limit of the turn.
 2. Work a turn, by the same path `harness resume` uses (`resumeBench`); the first turn is `solve`'s run.
 3. After the turn, rebuild `campaign/digest.md` from the journal, and, when the turn ended at an impasse,
    journal `campaign.mode_changed`.
@@ -62,7 +62,65 @@ most 7000 characters, so it does not grow with the campaign's age.
 
 ## Pacing
 
-The settings of the `campaign` key (`usdPerDay`, `until`, `spiralTurns`) are recorded in `run.started`. The spiral guard is described under [How it ends](#how-it-ends).
+- **`--usd-per-day X`** (`campaign.usdPerDay`): the day's spend is counted from the journal by UTC day. Each
+  turn's spend (`turn.ended.spent.turn`) is put on the day the turn began (`turn.started.at`, by the
+  process's wall clock). Before each turn the supervisor gives it a dollar limit of what is left of the day, so a
+  turn ends when the day's spend reaches the cap (one response in flight may pass it, by its cost); when nothing is
+  left it journals `campaign.waiting` (`daily_cap`) and waits for the next UTC day. The cap pauses the campaign;
+  it does not end it.
+- **`--until ISO_TIME`** (`campaign.until`): the campaign stops at that instant (`until`). The turns before it get
+  a minutes limit that does not pass it, and a wait for the next day that would pass it ends at it.
+- **`--off-peak`** (the default; `--no-off-peak` turns it off): the existing `offpeak` setting
+  ([human.md](human.md#off-peak)): each turn and each session starts only at the model's off-peak rate, and waits
+  for the window otherwise (`turn.deferred`). The host profile needs the model's pricing calendar.
+- **`--spiral-turns N`** (`campaign.spiralTurns`, 8): see [How it ends](#how-it-ends).
+
+The supervisor takes the wall clock and the sleep as options, so a test advances a simulated clock; the same
+clock goes to the turns' `wallClock`.
+
+## The watchdog
+
+- **The lock.** `harness campaign` writes `campaign/lock` (its process id and its start). A second supervisor on
+  the same run refuses to start while the lock's process is alive, and takes over a lock whose process is gone. The
+  lock is released when the supervisor ends.
+- **The heartbeat.** `campaign/heartbeat` (the process id, the time, the turns ended) is rewritten each minute and at
+  each turn, whichever comes first.
+- **Resuming.** A process that dies (a crash, a reboot, a provider's usage limit) is replaced by
+  `harness campaign --resume RUN_DIR`, which reads the checkout, the bench and the host from `resume.json` and
+  everything else, the pacing included, from the journal. The turn the dead process left open is closed as
+  `interrupted` by the next one, as `harness resume` does.
+- **The watch.** `harness campaign --watch RUN_DIR` is a small loop that runs `--resume` as a child process and
+  restarts it when it dies, or when its heartbeat is older than 15 minutes, after a backoff of 1, 2, 4, ... up to 60
+  minutes that starts again whenever a restart ended a turn. It returns when the journal's last word is
+  `campaign.stopped`, or when the supervisor was stopped by a person (exit 0 or 130).
+- **A usage limit.** A session whose model request ends on a usage limit (a 429, "usage limit", "rate limit",
+  "overloaded") ends the turn as `usage_limit` instead of failing, and does not count against the prover. The
+  supervisor journals `campaign.waiting` (`usage_limit`) and waits 1, 2, 4, ... up to 60 minutes (one more
+  doubling for each such turn in a row) before the next turn. A refusal that a retry cannot cure (a balance, a key)
+  is not one: it stops the run as before.
+
+An example, not installed: a systemd user unit (`~/.config/systemd/user/seshat-campaign.service`),
+
+```ini
+[Unit]
+Description=Seshat campaign
+
+[Service]
+WorkingDirectory=%h/seshat
+ExecStart=/usr/bin/env pnpm harness campaign --watch %h/seshat/runs/MY_RUN --host local
+Restart=on-failure
+RestartSec=300
+
+[Install]
+WantedBy=default.target
+```
+
+started with `systemctl --user enable --now seshat-campaign`, or a cron line that starts the watch at boot and
+does nothing when a live supervisor holds the lock:
+
+```cron
+@reboot cd $HOME/seshat && pnpm harness campaign --watch runs/MY_RUN --host local >> runs/MY_RUN/campaign/watch.log 2>&1
+```
 
 ## How it ends
 
