@@ -430,9 +430,11 @@ describe("the budget gate and a line's task", () => {
 
   it("works the task when the gate lets it through, and a line without a gate has no ask", { timeout: 30000 }, async () => {
     const seen: string[] = [];
+    // With no claim posterior the gate weighs the task against a draw of the flat prior, keyed by the task's id (new in every run): a draw under
+    // 0.05 (the price of one session) skips it, about one run in twenty. The floor of 1 lets every skip through, so that the gate always admits it.
     await demoRun({
       lines: { M12: createM12Line(), M14: worker(seen) },
-      config: { ...base, gate: { floor: 0, share: { task: 1 } } },
+      config: { ...base, gate: { floor: 1, share: { task: 1 } } },
       lean: new DemoLean(m12Answer),
       responses: [check("sorry"), say("notes"), say("notes"), say("notes")],
     });
