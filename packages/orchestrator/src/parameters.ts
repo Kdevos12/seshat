@@ -668,6 +668,7 @@ export const CLI_FLAGS: readonly CliFlag[] = [
   flag("consult-tokens", ["run", "solve"], rc("consult.maxOutputTokens"), "Tokens per answer (default 1000); goes with --consult."),
   flag("consolidation", ["run", "solve"], rc("consolidation"), "Show the sessions the consolidation page of the memory chain."),
   flag("defaults", ["solve"], rc("defaults"), "v1 or v2 (the default): the set of defaults."),
+  flag("settings", ["run", "solve"], cmd("a settings file of RunConfig keys"), "A JSON file whose keys are RunConfig keys (documentation/parameters.md, \"Settings file\"): after the defaults set, before the flags, which win."),
   flag("no-write", ["doctor"], cmd("do not write the sandboxed profile"), "Only check."),
   flag("rewrite", ["doctor"], cmd("overwrite the sandboxed profile"), "Write config/hosts/sandboxed.json over an existing file."),
   flag("allow-unpriced", ["optimize-prompts"], cmd("admit models with no price"), "Let the optimization use a model no dollar cap can see."),
@@ -755,8 +756,8 @@ export function flagsOfKey(key: keyof RunConfig): string[] {
 
 /** The findings the audit makes that no table shows: read from the code by a person, one line each. Each is a fact of the commit the page was generated at. */
 export const MANUAL_FINDINGS: readonly string[] = [
-  "No flag of `harness run` or `harness solve` sets `editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds`, `budgetShare` or `firstCases`: only the defaults set `v2` turns them on, so `harness run` cannot use them (documentation/quickstart.md says they are options of the run configuration, but `run` has no configuration file).",
-  "`informalFirst` and `cards` can be set only by the arms `solve-v2-informal` and `solve-v2-cards` of `harness ablate --experiment solve-defaults`, or by code: neither `run` nor `solve` has a flag, and no defaults set has them.",
+  "No flag of `harness run` or `harness solve` sets `editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds`, `budgetShare`, `firstCases`, `triage`, `informalFirst` or `cards`: `--settings FILE` sets them (the section \"Settings file\"), and the defaults set `v2` turns the first seven on.",
+  "`informalFirst` and `cards` are also set by the arms `solve-v2-informal` and `solve-v2-cards` of `harness ablate --experiment solve-defaults`; `ablate` does not read `--settings`, and no defaults set has them.",
   "One parser serves every command (`CLI_OPTIONS`): a flag a command does not read is accepted and ignored there (`harness report --provers 4` runs). Only `resume` refuses the flags that describe a run.",
   "Two flags mean different things by command: `--target` (ablate: a ratio; optimize-prompts: a prompt name) and `--split` (ablate: a number of problems; optimize-prompts: a split name).",
   "Two names for the seed: `--seed` seeds `--sample` (recorded in `selection`), `--draw-seed` seeds the memory draws (`RunConfig.seed`); the key and the flag do not match.",
@@ -779,7 +780,7 @@ export function computedFindings(): string[] {
     const p = RUN_PARAMETERS[k];
     if (p.docs === "") out.push(`\`${k}\` has no documentation.`);
     if (p.tested === "") out.push(`\`${k}\` has no test.`);
-    if (p.cli.length === 0 && p.status !== "internal") out.push(`\`${k}\` (${p.status}) has no CLI flag.`);
+    if (p.cli.length === 0 && p.status !== "internal") out.push(`\`${k}\` (${p.status}) has no CLI flag: settings file only (\`--settings\`).`);
   }
   return out;
 }
@@ -818,6 +819,17 @@ export function renderParametersPage(): string {
       lines.push(`\`${k}\`:`, "", ...(RUN_PARAMETERS[k].fields ?? []).map((f) => `- ${f}`), "");
     }
   }
+  const accepted = settingsFileKeys();
+  lines.push(
+    "## Settings file",
+    "",
+    "`harness run` and `harness solve` take `--settings FILE`: a JSON object whose keys are `RunConfig` keys (documentation/quickstart.md, \"A settings file\"). The order is the defaults set, then the file, then the flags, which win. A key the harness sets itself (`status` internal) or a hidden one (`ui` hidden) is refused naming the key, and so is a value that fails the type below or `checkConfig`. In `solve`, the keys its own flags take are refused naming the flag: " + Object.entries(SOLVE_OWN_FLAGS).map(([k, f]) => `\`${k}\` (\`${f}\`)`).join(", ") + ".",
+    "",
+    `The file accepts these ${accepted.length} keys, the ones a settings menu of the interface shows: ${accepted.map((k) => `\`${k}\``).join(", ")}.`,
+    "",
+    `Refused: ${keys.filter((k) => !settingsFileAccepts(k)).map((k) => `\`${k}\``).join(", ")}.`,
+    "",
+  );
   lines.push("## Command line flags", "", "One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options.ts`). One parser serves every command, so the *commands* column says where a flag is read.", "", row(["flag", "commands", "sets", "help"]), row(["---", "---", "---", "---"]));
   for (const f of CLI_FLAGS) lines.push(row([`\`--${f.flag}\``, f.commands.join(", "), `${f.maps.kind === "RunConfig" ? "RunConfig." : f.maps.kind === "host" ? "host: " : ""}${f.maps.to}`, f.help]));
   lines.push("", "## Host profile keys", "", "The keys of `config/hosts/*.json` (`packages/registry/src/host.ts`). `*` stands for a model or a capability id.", "", row(["key", "type", "what it does", "in a shipped profile"]), row(["---", "---", "---", "---"]));
@@ -834,3 +846,29 @@ export function renderParametersPage(): string {
 export function renderParametersList(): string[] {
   return (Object.keys(RUN_PARAMETERS) as Array<keyof RunConfig>).map((k) => `${RUN_PARAMETERS[k].group.padEnd(14)} ${k.padEnd(16)} ${RUN_PARAMETERS[k].default}`);
 }
+
+/** Whether a settings file (`harness run|solve --settings FILE`) may set a key: a key of the catalogue that a person sees (`ui` is not `hidden`) and the harness does not set itself (`status` is not `internal`). */
+export function settingsFileAccepts(key: string): key is keyof RunConfig {
+  if (!Object.hasOwn(RUN_PARAMETERS, key)) return false;
+  const p = RUN_PARAMETERS[key as keyof RunConfig];
+  return p.ui !== "hidden" && p.status !== "internal";
+}
+
+/** The keys a settings file accepts, in the catalogue's order. */
+export function settingsFileKeys(): Array<keyof RunConfig> {
+  return (Object.keys(RUN_PARAMETERS) as Array<keyof RunConfig>).filter(settingsFileAccepts);
+}
+
+/**
+ * The keys that `harness solve` decides from its own flags, and the flag that takes the place of each: a settings file cannot set them for a
+ * solve (it would be ignored or would skip a consent), so the file is refused naming the flag. A settings menu of the interface leaves them out of a solve.
+ */
+export const SOLVE_OWN_FLAGS: Readonly<Partial<Record<keyof RunConfig, string>>> = {
+  model: "--model",
+  budget: "--max-usd",
+  consortium: "--turn-usd",
+  gate: "--defaults",
+  intake: "--intake",
+  tools: "--tool",
+  autoTool: "--auto-tool",
+};

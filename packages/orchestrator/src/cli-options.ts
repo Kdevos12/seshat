@@ -86,6 +86,7 @@ export const CLI_OPTIONS = {
   "consult-tokens": { type: "string" },
   consolidation: { type: "boolean" },
   defaults: { type: "string" },
+  settings: { type: "string" },
   "no-write": { type: "boolean" },
   rewrite: { type: "boolean" },
   "allow-unpriced": { type: "boolean" },

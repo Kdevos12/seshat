@@ -13,6 +13,7 @@ import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_
 import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
 import type { RunConfig, RunOptions } from "./run.ts";
+import { describeSettings, readSettingsFile, type Settings } from "./settings-file.ts";
 
 /** The flags of `harness doctor` and `harness solve` that the commands read. */
 export interface DoctorFlags {
@@ -52,6 +53,8 @@ export interface SolveFlags extends DoctorFlags {
   lines?: string[];
   /** The defaults set, `v1` or `v2` (`student.ts`); absent: `v2`. */
   defaults?: string;
+  /** `--settings FILE`: `RunConfig` keys on top of the defaults set and under the flags (`settings-file.ts`). */
+  settings?: string;
   /** `--tool ID`: capabilities the provers get besides lean_check (CA17). */
   tools?: string[];
   /** `--auto-tool`: add the host's compute tool when the statement is finite, about a graph or about numbers. */
@@ -270,6 +273,24 @@ async function terminalAsk(question: string): Promise<boolean> {
   }
 }
 
+/**
+ * What a settings file adds to a solve, under the flags (`--settings`): `base` is what `solve` gives `RunConfig` on top of the defaults set (the file's
+ * keys, then what the flags set), `lines` and `offpeak` are the flags' or else the file's, and `overruled` names the keys a flag won.
+ */
+export function solveSettings(flags: SolveFlags, file: Settings | undefined): { base: Partial<RunConfig>; lines: string[] | undefined; offpeak: RunConfig["offpeak"]; overruled: string[]; fromFile: string[] } {
+  const { lines: fileLines, offpeak: fileOffpeak, ...rest } = file?.values ?? {};
+  // `leanSearch` is not here: the host may not offer it, so `solveCommand` adds it once that is known.
+  const fromFlags: Partial<RunConfig> = {
+    ...(flags.consolidation === true ? { consolidation: true } : {}),
+    ...(flags.consult !== undefined ? { consult: flags.consult } : {}),
+    ...(flags.roles !== undefined ? { roles: flags.roles } : {}),
+  };
+  const overruled = [...Object.keys({ ...fromFlags, ...(flags.leanSearch === true ? { leanSearch: true } : {}) }).filter((k) => k in rest), ...(flags.lines !== undefined && fileLines !== undefined ? ["lines"] : []), ...(flags.offpeak !== undefined && fileOffpeak !== undefined ? ["offpeak"] : [])];
+  const lines = flags.lines ?? fileLines;
+  const offpeak = flags.offpeak ?? fileOffpeak;
+  return { base: { ...rest, ...fromFlags }, lines, offpeak, overruled, fromFile: (file?.keys ?? []).filter((k) => !overruled.includes(k)) };
+}
+
 /** `harness solve STATEMENT`: prepares the problem and the student defaults, asks for the signature of prose, runs, and says where the result is. */
 export async function solveCommand(argument: string, flags: SolveFlags, io: CommandIo): Promise<number> {
   const configDir = io.configDir ?? `${REPO_ROOT}config`;
@@ -282,6 +303,9 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
     io.err(`--defaults must be one of ${DEFAULTS_NAMES.join(", ")}, got ${JSON.stringify(defaults)}`);
     return 2;
   }
+  // The settings file is read and checked before anything is spent: an unknown key or a value that fails is a setup error.
+  const file = flags.settings !== undefined ? readSettingsFile(flags.settings, "solve") : undefined;
+  const settings = solveSettings(flags, file);
   const statement = readStatement(argument, flags);
   // Read and checked before anything is spent: a file that is missing, empty or too long is a setup error.
   const sketch = flags.sketch !== undefined ? readSketchFile(flags.sketch) : undefined;
@@ -305,12 +329,13 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const turn = flags.turnUsd ?? Math.round(maxUsd * 0.5 * 1e6) / 1e6;
   io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
   io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName, undefined, flags).length > 0 ? `: ${describeSet(defaults as DefaultsName, undefined, flags).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
+  if (file !== undefined) io.out(describeSettings(file, settings.fromFile, settings.overruled));
   const switches = effectiveSwitches(flags, defaults as DefaultsName);
   if ("conflict" in switches) {
     io.err(switches.conflict);
     return 2;
   }
-  io.out(`Host: ${host}. Lines: ${(flags.lines ?? studentLines(defaults as DefaultsName)).join(", ")}, with the budget gate and the probe first.`);
+  io.out(`Host: ${host}. Lines: ${(settings.lines ?? studentLines(defaults as DefaultsName)).join(", ")}, with the budget gate and the probe first.`);
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
   let report: DoctorReport | undefined;
@@ -372,10 +397,10 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
       checker: new RegistryLeanChecker(checkerRegistry, { actor: "orchestrator" }),
       ...(sketch !== undefined ? { sketch } : {}),
       ...(flags.turnUsd !== undefined ? { turnUsd: flags.turnUsd } : {}),
-      ...(flags.offpeak !== undefined ? { offpeak: flags.offpeak } : {}),
-      ...(flags.lines !== undefined ? { lines: flags.lines } : {}),
-      ...(leanSearch || flags.consolidation === true || flags.consult !== undefined || flags.roles !== undefined
-        ? { base: { ...(leanSearch ? { leanSearch: true } : {}), ...(flags.consolidation === true ? { consolidation: true } : {}), ...(flags.consult !== undefined ? { consult: flags.consult } : {}), ...(flags.roles !== undefined ? { roles: flags.roles } : {}) } }
+      ...(settings.offpeak !== undefined ? { offpeak: settings.offpeak } : {}),
+      ...(settings.lines !== undefined ? { lines: settings.lines } : {}),
+      ...(leanSearch || Object.keys(settings.base).length > 0
+        ? { base: { ...settings.base, ...(leanSearch ? { leanSearch: true } : {}) } }
         : {}),
       defaults: defaults as DefaultsName,
       ...(profile.checkTimeoutSec !== undefined ? { hostCheckTimeoutSec: profile.checkTimeoutSec } : {}),

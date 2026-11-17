@@ -105,6 +105,20 @@ limits and the validator's policy are unchanged, and Lean still decides everythi
 option there (`editTool`, `maskOldChecks`, `checkTimeoutSec`, `stateCard`, `budgetRounds` in the run configuration), so a recorded run replays as before. A later change of
 `solve`'s defaults adds its option to `v2`.
 
+### A settings file
+
+Some options have no flag: `editTool`, `triage`, `budgetShare` and the others that [parameters.md](parameters.md) lists as "settings file only". `--settings FILE` (on `harness run` and `harness solve`) reads them from a JSON object whose keys are `RunConfig` keys:
+
+```json
+{ "triage": true, "budgetShare": 3, "editTool": true }
+```
+
+```sh
+pnpm harness solve "(n : ℕ) : n + 0 = n" --settings my-settings.json
+```
+
+The order is the defaults set (`solve`), then the file, then the flags: a flag wins over the file, and a line at the start says which keys came from the file. An unknown key, a key the harness sets itself (`defaults`, `selection`, `prompts`, `optionalTools`) or a hidden one (`packetMode`), and a value that fails the check every run makes (`checkConfig`) stop the command before anything is spent, naming the key. `solve` also refuses the keys its own flags take (`model`, `budget`, `consortium`, `gate`, `intake`, `tools`, `autoTool`), naming the flag. What the file sets is part of the run's configuration: `run.started` records it and a resume restores it (a resume refuses `--settings`). The sets `v1` and `v2` are not changed by it, and a command given no file behaves as before.
+
 In a plain `v2` solve the one question about third parties is therefore asked, once, after the signature, wherever a person can answer, because the
 intake's literature and `lean.search` both want the answer (`--lit` is the yes; `--yes` or `--ask-stdin` without `--lit` is no; `--private` wins over
 both; a resumed run reads the journaled answer). With a no the hygiene tests still run (they send nothing outside), the literature is skipped and
