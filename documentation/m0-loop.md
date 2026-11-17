@@ -574,7 +574,7 @@ Options of `harness run`:
 | `--host HOST` | `HARNESS_HOST`, then `local` | The host profile ([capabilities.md](capabilities.md#host-profiles)). |
 | `--provers N` | 4 | Provers per problem. |
 | `--sessions N` | 8 | Sessions per prover. |
-| `--turns N` | 40 | Model responses per session. |
+| `--steps N` | 40 | Model responses per session (a step is one model response; not a consortium turn). `--turns N` is its old name: it does the same, and both given with different numbers are refused. |
 | `--context-tokens N` | 120000 | Prompt size that ends a session. |
 | `--notes-chars N` | 4000 | Length limit of the notes. |
 | `--cache-retention R` | the provider's | `none`, `short` or `long`: the prompt cache retention asked of the provider with every request ([budgets](#budgets)). |
