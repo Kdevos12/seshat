@@ -42,6 +42,7 @@ import { gitDates, optimizePromptsCommand, readDates } from "./optimize-command.
 import { hintCommand, signCommand, steerCommand } from "./team-command.ts";
 import { ablationRefusal, type ConsortiumConfig, DEFAULT_IMPASSE, type TurnLimit } from "./turns.ts";
 import { PACKET_MODES, type PacketMode } from "./session.ts";
+import { describeSettings, mergeSettings, readSettingsFile } from "./settings-file.ts";
 import { CACHE_RETENTIONS, DEFAULT_CONFIG, resumeBench, runBench, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "./run.ts";
 
 const usage = `usage:
@@ -60,7 +61,7 @@ const usage = `usage:
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
-              [--draw-seed S] [--memory-from RUN_DIR] [--out DIR]
+              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--arms NAME,...] [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
@@ -91,7 +92,7 @@ const usage = `usage:
   harness report RUN_DIR [--json]
   harness view RUN_DIR [--out FILE]
   harness solve STATEMENT|FILE [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
@@ -166,6 +167,7 @@ briefing of the outer prover in a section "A sketch from NAME" and to the planne
 --packet-mode chooses how a line's context packet becomes requests (documentation/lines.md, "Packet modes"): prefix_tail
 (the default: a frozen prefix and a tail compiled for each request), append_only (the packet once, then the session's own history,
 never rewritten) or recompiled (the measurement arm of the frozen prefix).
+--settings FILE (run and solve): a JSON object whose keys are RunConfig keys, for the settings that have no flag (triage, budgetShare, editTool, cards, ...); documentation/parameters.md, "Settings file", lists the keys it accepts. The order is the defaults set (solve), then the file, then the flags: a flag wins over the file. An unknown or internal key, or a value that fails the check, stops the command before anything is spent; what the file set is in the run's configuration, so a resume keeps it. solve refuses the keys its own flags take (model, budget, consortium, gate, intake, tools, autoTool).
 run: the bench defaults to bench/fc-bench-v1-discrete.json, the run directory to runs/RUN_ID; --tool gives the
 provers a direct capability besides lean_check, such as compute.sage. --lines enables mechanisms of the plan
 (documentation/lines.md), --ablation NAME the cumulative config that ends with line NAME (M0: none);
@@ -750,7 +752,7 @@ async function run(): Promise<number> {
   const options = lineOptions(values["line-option"] ?? []);
   const decide = decideFlags();
   const gate = gateFlags();
-  const config: RunConfig = {
+  const flagged: RunConfig = {
     ...sharedConfig(selection, values.model, thinking),
     ...(lines.length > 0 ? { lines } : {}),
     ...(Object.keys(options).length > 0 ? { lineOptions: options } : {}),
@@ -760,6 +762,14 @@ async function run(): Promise<number> {
     ...(gate !== undefined ? { gate } : {}),
     ...runIntakeFlags(),
   };
+  // The settings file (documentation/quickstart.md): its keys go under the flags, which win.
+  let config = flagged;
+  if (values.settings !== undefined) {
+    const file = readSettingsFile(values.settings, "run");
+    const merged = mergeSettings(flagged, file, (flag) => (values as Record<string, unknown>)[flag] !== undefined);
+    config = merged.config;
+    console.error(describeSettings(file, merged.fromFile, merged.overruled));
+  }
   if (config.intake?.literature === true && process.env.BENCH_CHECKOUT === undefined) process.env.BENCH_CHECKOUT = resolve(checkout);
   const host = hostName(values.host);
   const runId = newId("run");
@@ -1016,7 +1026,7 @@ function finished(result: RunResult, dir: string): number {
 const RUN_FLAGS = [
   "model", "thinking", "provers", "sessions", "turns", "context-tokens", "notes-chars", "cache-retention", "packet-mode", "budget-usd", "run-budget-usd", "concurrency",
   "tool", "lean-search", "consult", "consult-calls", "consult-tokens", "role", "role-setting", "consolidation", "lines", "ablation", "line-option", "draw-seed", "decide-backend", "decide-site", "decide-votes", "gate", "gate-floor", "gate-probe", "gate-margin", "gate-min-sessions", "gate-share", "memory-from", "sample", "seed", "problem", "all", "sequence", "tag", "out",
-  "offpeak", "offpeak-max-wait",
+  "offpeak", "offpeak-max-wait", "settings",
 ] as const;
 
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
@@ -1133,6 +1143,7 @@ async function solve(): Promise<number> {
       ...(offpeakFlags() !== undefined ? { offpeak: offpeakFlags() as NonNullable<RunConfig["offpeak"]> } : {}),
       ...(lines !== undefined ? { lines } : {}),
       ...(values.defaults !== undefined ? { defaults: values.defaults } : {}),
+      ...(values.settings !== undefined ? { settings: values.settings } : {}),
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels(), signal: controller.signal, ...(codeRev !== undefined ? { codeRev } : {}) },
   );
