@@ -392,6 +392,8 @@ export interface EventDataMap {
      * same goal in several checks, or M6's repeat rule) with the class. Absent: not a restart, or the setting is off.
      */
     restart?: { reason: "schedule" | "stuck"; class?: string };
+    /** The calls of a cold session to its tool `previous_attempt` (`RunConfig.restarts`); absent: none. Each answer is in the session's transcript. */
+    previousAttemptCalls?: number;
     /** What the prover carries to its next session. */
     carry?: AttemptCarry;
   };
