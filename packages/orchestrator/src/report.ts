@@ -52,6 +52,9 @@ export interface RunReport {
   host: string;
   config: unknown;
   codeRev?: string;
+  /** The axes of the run (plan change LH9, documentation/runs.md), as `run.started` recorded them; absent for a journal written before them. */
+  horizon?: string;
+  human?: string;
   /** The lines the run enabled, in `LINE_ORDER`; absent for an M0 run. */
   lines?: string[];
   /** The Lean environment the run was pinned to (documentation/lean-env.md); absent for a run on a host that names none. */
@@ -633,6 +636,8 @@ export function buildReport(events: readonly HarnessEvent[]): RunReport {
     host: started.host,
     config: started.config,
     ...(started.codeRev !== undefined ? { codeRev: started.codeRev } : {}),
+    ...(started.horizon !== undefined ? { horizon: started.horizon } : {}),
+    ...(started.human !== undefined ? { human: started.human } : {}),
     ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
     ...(leanEnv !== undefined ? { leanEnv } : {}),
     ...(packs.length > 0 ? { packs } : {}),
@@ -792,6 +797,7 @@ export function renderRunReport(report: RunReport): string {
     `# Run ${report.runId}`,
     "",
     `Bench ${report.benchId}, host ${report.host}${report.codeRev !== undefined ? `, code ${report.codeRev}` : ""}. ` +
+      `${report.horizon !== undefined || report.human !== undefined ? `Horizon ${report.horizon ?? "episode"}, human ${report.human ?? "none"}. ` : ""}` +
       `Model ${c?.model ?? "?"}; per problem, ${c?.provers ?? "?"} prover(s) of at most ${c?.sessions ?? "?"} session(s) and ${money(c?.budget?.problemUsd ?? 0)}; ` +
       `tools: lean_check${given.length > 0 ? `, ${given.map((t) => `${t.capability} (${t.implementation} ${t.version})`).join(", ")}` : " only"}.` +
       `${report.lines !== undefined ? ` Lines: ${report.lines.join(", ")}.` : ""}` +

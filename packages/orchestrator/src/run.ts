@@ -74,6 +74,7 @@ import { chainProblems, modelFreePart, renderModelFreeSection } from "./consolid
 import { narrativeCall, NARRATIVE_USD, turnNarrative, writeAccount } from "./account.ts";
 import { keepResultCurrent, writeResult } from "./result.ts";
 import { refusalLine } from "./provider-errors.ts";
+import { describeShape, type Horizon, type HumanMode, runShape, shapeProblems } from "./run-shape.ts";
 import { ABORT_BUDGET, ABORT_SOLVED, ABORT_STOPPED, type PacketMode, PACKET_MODES, type SessionLimits } from "./session.ts";
 import { RunSetupError } from "./setup-error.ts";
 import { docstringOf, LIT_SEARCH } from "@seshat/lit";
@@ -240,6 +241,16 @@ export interface RunConfig {
    * and an account for the research team. Absent: an ordinary run, which records what it always did.
    */
   consortium?: ConsortiumConfig;
+  /**
+   * The run's horizon (plan change LH9, documentation/runs.md): `episode`, a bounded number of sessions. `campaign` is reserved for Task 59 and
+   * refused at the start. Absent: `episode`, recorded as such in `run.started`.
+   */
+  horizon?: Horizon;
+  /**
+   * Whether the run stops for a person (LH9): `none`, `consortium` (turns that wait; it needs `consortium`) or `digest` (Task 59, refused at the
+   * start). Absent: `consortium` when the run has consortium turns, `none` otherwise (`runShape`).
+   */
+  human?: HumanMode;
   /**
    * The off-peak option (`harness run --offpeak`, documentation/human.md, "Off-peak"): a turn or a session starts only
    * when the host's pricing calendar for the run's model says off-peak, and otherwise waits for the next window
@@ -449,6 +460,7 @@ export const CACHE_RETENTIONS: readonly CacheRetention[] = ["none", "short", "lo
 /** The problems of a configuration, or an empty list when it is sound. */
 export function checkConfig(config: RunConfig): string[] {
   const problems: string[] = [];
+  problems.push(...shapeProblems(config));
   const whole = (name: string, value: number, min: number) => {
     if (!Number.isInteger(value) || value < min) problems.push(`${name} must be an integer of at least ${min}, got ${value}`);
   };
@@ -911,6 +923,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
       // Only in a consortium run, for the same reason.
       ...(config.consortium !== undefined ? { consortium: config.consortium as unknown as Json } : {}),
+      ...(config.horizon !== undefined ? { horizon: config.horizon } : {}),
+      ...(config.human !== undefined ? { human: config.human } : {}),
       ...(config.seed !== undefined ? { seed: config.seed } : {}),
       ...(config.offpeak !== undefined ? { offpeak: config.offpeak as Json } : {}),
       // Only when given, so that a run without it records what it always did.
@@ -932,6 +946,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         problems: o.problems.length,
         host: registry.host.host,
         config: recorded,
+        // The axes of the run (documentation/runs.md), derived from what the run has: always recorded, so a report reads them without guessing.
+        ...runShape(config),
         ...(o.codeRev !== undefined ? { codeRev: o.codeRev } : {}),
         ...(chain !== undefined ? { memoryFrom: { ...chain.from, relative: relative(resolve(o.dir), chain.from.path) } } : {}),
       },
@@ -944,6 +960,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     );
     o.afterStart?.(journal);
     log(`run ${runId}: ${o.problems.length} problem(s) of ${o.index.benchId} with ${config.model} on host ${registry.host.host}, in ${o.dir}`);
+    log(`shape: ${describeShape(runShape(config))}`);
     if (config.roles !== undefined && describeRoles(config.roles) !== "") log(`roles: ${describeRoles(config.roles)}`);
     for (const note of pinned.notes) log(note);
     log(certifierNote);
