@@ -42,10 +42,10 @@ pnpm test
   machine's model credentials and host profiles are not seen.
 - A change updates the documentation page that describes it, in the same commit.
 - The diagram in the README, "The research flow", shows the steps a statement goes through and the
-  tools a prover can call, each marked built, written and waiting for something real (orange), or planned. A
-  change to that flow, such as a new capability, a new step, or a planned part that gets built,
-  updates the diagram in the same commit. A test fails when a capability's tool is missing from the
-  diagram or a node has none of the three marks
+  tools a prover can call, each marked run for real (green), built (blue), written and waiting for something real
+  (orange), or planned. A change to that flow, such as a new capability, a new step, a planned part that gets built
+  or a part that runs for real for the first time, updates the diagram in the same commit. A test fails when a
+  capability's tool is missing from the diagram or a node has none of the four marks
   (`packages/orchestrator/test/readme.test.ts`).
 
 ## Tests that use real data

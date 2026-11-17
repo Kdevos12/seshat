@@ -13,7 +13,7 @@ function diagram(): string {
   return block[1]!;
 }
 
-const MARKS = ["built", "wait", "planned"];
+const MARKS = ["real", "built", "wait", "planned"];
 
 describe("the README's diagram of the research flow", () => {
   it("names the tool of every capability", () => {
@@ -34,7 +34,7 @@ describe("the README's diagram of the research flow", () => {
     assert.deepEqual(
       nodes.filter(([, , mark]) => mark === undefined || !MARKS.includes(mark)).map(([, id]) => id),
       [],
-      "each node of README.md's diagram ends with :::built, :::wait or :::planned",
+      "each node of README.md's diagram ends with :::real, :::built, :::wait or :::planned",
     );
   });
 });
