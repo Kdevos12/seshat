@@ -14,6 +14,7 @@
 [![Status: beta v1](https://img.shields.io/badge/status-beta%20v1-orange.svg)](documentation/status.md)
 [![Lean 4.27.0](https://img.shields.io/badge/Lean-4.27.0-2e7d32.svg)](documentation/lean-env.md)
 [![Node 22.19+](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](documentation/install.md)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24354662.svg)](https://doi.org/10.5281/zenodo.24354662)
 [![Cite](https://img.shields.io/badge/cite-CITATION.cff-8a2be2.svg)](CITATION.cff)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/4DbcnXyUve)
 
@@ -135,7 +136,7 @@ For questions and discussion, join the [Discord server](https://discord.gg/4Dbcn
 
 ## Citing Seshat
 
-If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub):
+If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub). Every release is archived on Zenodo: [10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) always points to the latest version, and [10.5281/zenodo.24354663](https://doi.org/10.5281/zenodo.24354663) to 1.0.0-beta.1 itself.
 
 ```bibtex
 @software{devos2026seshat,
@@ -143,6 +144,7 @@ If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or
   title   = {Seshat: a harness for autonomous mathematical research with language models},
   year    = {2026},
   version = {1.0.0-beta.1},
+  doi     = {10.5281/zenodo.24354662},
   url     = {https://github.com/Kdevos12/seshat},
   license = {Apache-2.0}
 }

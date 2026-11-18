@@ -7,6 +7,14 @@ authors:
   - family-names: "de Vos"
     given-names: "Kyllian"
 repository-code: "https://github.com/Kdevos12/seshat"
+doi: "10.5281/zenodo.24354662"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.24354662"
+    description: "All versions (Zenodo concept DOI)"
+  - type: doi
+    value: "10.5281/zenodo.24354663"
+    description: "Version 1.0.0-beta.1"
 version: "1.0.0-beta.1"
 date-released: "2026-11-18"
 license: Apache-2.0
