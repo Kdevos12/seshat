@@ -293,7 +293,7 @@ describe("the model chosen when none is named (plan change UX1)", () => {
   const deepseek = modelOf("deepseek", "deepseek-flash", 1.5);
   const cheaper = modelOf("acme", "mid", 0.1);
 
-  it("leaves out a speech model and a nano model, and a recommended model wins over a cheaper one", async () => {
+  it("leaves out a speech model and a nano model, and a model the person's host profile recommends wins over a cheaper one", async () => {
     const models = stub([speech, nano, cheaper, deepseek]);
     const plain = await chooseModel(models);
     assert.equal(plain.choice?.name, "acme/mid");
@@ -326,10 +326,14 @@ describe("the model chosen when none is named (plan change UX1)", () => {
     assert.ok(out.some((l) => /^Model: amazon-bedrock\/some\.chat-model \(named by you\)/.test(l)));
   });
 
-  it("says which rule chose the model in the solve's start output", async () => {
+  it("says which rule chose the model in the solve's start output, and the shipped profiles prefer no provider", async () => {
     const out: string[] = [];
     await solveCommand("(n : ℕ) : n + 0 = n", { out: join(tempDir("mh-ux1-"), "run"), noCheck: true, max: 1, host: "local", yes: true }, { out: (l) => out.push(l), err: () => {}, models: stub([cheaper, deepseek]), system: BARE_MACHINE }).catch(() => 0);
-    assert.ok(out.some((l) => /^Model: deepseek\/deepseek-flash \(recommended by the host profile/.test(l)), out.join("\n"));
+    assert.ok(out.some((l) => /^Model: acme\/mid \(cheapest capable model/.test(l)), out.join("\n"));
+    for (const name of ["local", "server"]) {
+      const profile = JSON.parse(readFileSync(new URL(`../../../config/hosts/${name}.json`, import.meta.url), "utf8")) as { recommended?: unknown };
+      assert.equal(profile.recommended, undefined, `${name}.json: the person chooses their models; a shipped profile recommends none`);
+    }
   });
 });
 

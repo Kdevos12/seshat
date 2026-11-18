@@ -44,9 +44,10 @@ id that is not a speech, transcription, embedding or moderation model's. pi-ai's
 tool-calling flag, so "can call tools" is this proxy (the small models that fail the window also lack tools).
 Providers whose credentials are ambient, that is the machine's and not an API key set for Seshat
 (`amazon-bedrock`, `google-vertex`, `azure`, `cloudflare-*`), are skipped: a container that happens to have
-AWS credentials once chose a 3B speech model that way. Then a rule picks: the host profile's `recommended`
-list (`provider/id` or `provider/*` patterns, DeepSeek first in the shipped profiles) wins, in the list's
-order, over price; with no match, the cheapest capable model. `solve`'s start output and `doctor` say which
+AWS credentials once chose a 3B speech model that way. Then a rule picks: if the person's host profile has
+a `recommended` list (`provider/id` or `provider/*` patterns; the shipped profiles have none, since the
+person chooses their models), its first match wins, in the list's order, over price; otherwise the cheapest
+capable model among the providers whose keys the person set. `solve`'s start output and `doctor` say which
 rule chose ("recommended by the host profile" or "cheapest capable model"). When nothing qualifies, `solve`
 refuses and names `--model PROVIDER/ID` and `SESHAT_MODEL`, and says which ambient providers were skipped.
 Set `SESHAT_MODEL` when other providers' keys are in the environment: a key for OpenRouter, in particular,

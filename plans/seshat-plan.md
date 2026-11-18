@@ -1547,7 +1547,7 @@ proposed. Task 62 builds:
 - UX1: `cheapestModel` keeps only models that take text, call tools and have a context of at least 64k
   tokens, skips providers whose credentials are ambient (Bedrock, Vertex, Azure, Cloudflare) unless the
   model or `SESHAT_MODEL` names that provider, and prefers the host profile's `recommended` list
-  (DeepSeek first) over raw price; `doctor` and `solve` say which rule chose the model, and `solve`
+  (empty in the shipped profiles: the person chooses their models) over raw price; `doctor` and `solve` say which rule chose the model, and `solve`
   refuses with a message naming `--model` when nothing qualifies.
 - UX2: `GET /api/parameters?command=solve&defaults=v2` returns the defaults `solve` really applies,
   derived from `setConfig` and `studentLines`; the settings panel shows them with an "on in v2" mark,

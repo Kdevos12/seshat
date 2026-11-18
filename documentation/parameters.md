@@ -22,7 +22,7 @@ The model of the run and how it is asked.
 
 | key | type | default | solve v2 | what it changes | flags | sets | docs | test | status | ui |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `model` | string (provider/id) | required (--model, else SESHAT_MODEL; solve: the host profile's recommended model, else the cheapest capable priced one) | - | The model the provers, and every role without a model of its own, are called on. | `--model` | - (solve picks it, then passes it) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | basic |
+| `model` | string (provider/id) | required (--model, else SESHAT_MODEL; solve: the host profile's recommended model if the person set one, else the cheapest capable priced one) | - | The model the provers, and every role without a model of its own, are called on. | `--model` | - (solve picks it, then passes it) | models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23) | `roles.test.ts` | stable | basic |
 | `thinkingLevel` | off \| minimal \| low \| medium \| high \| xhigh \| max | medium | - | The reasoning effort asked of the model for every session (a family that ignores a setting is told so by the host profile). | `--thinking` | - | m0-loop.md#Commands | `reasoning.test.ts` | stable | basic |
 | `cacheRetention` | none \| short \| long | absent (the provider's own default) | - | The prompt cache retention asked of the provider with every request of a session. | `--cache-retention` | - | m0-loop.md#Prices | `packet.test.ts` | stable | advanced |
 | `consult` | { model: provider/id, maxCalls?: integer, maxOutputTokens?: integer } | absent (off; in no defaults set and no arm) | - | The tool `consult(question)` for the outer provers: one question to another model, its answer is advice in the prover's context and never a status (beta, Ruling 39). | `--consult` `--consult-calls` `--consult-tokens` | neither (solve passes the flags through) | models-setup.md#Consult: advice from another model (beta) | `consult.test.ts` | beta | advanced |
@@ -264,7 +264,7 @@ One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options
 | `--all` | run, ablate, optimize-prompts | RunConfig.selection | Every problem of the bench. |
 | `--sequence` | run, ablate | RunConfig.selection | A sequence of the bench, worked in order with --concurrency 1. |
 | `--tag` | run, ablate | RunConfig.selection | The problems tagged analogy or induction. |
-| `--model` | run, ablate, optimize-prompts, probe, solve, campaign, doctor, consolidate | RunConfig.model | PROVIDER/ID; default SESHAT_MODEL (not for a resume); without either, solve and doctor take the host profile's recommended model, else the cheapest capable priced one (ambient-credential providers skipped). |
+| `--model` | run, ablate, optimize-prompts, probe, solve, campaign, doctor, consolidate | RunConfig.model | PROVIDER/ID; default SESHAT_MODEL (not for a resume); without either, solve and doctor take the host profile's recommended model if the person set one, else the cheapest capable priced one (ambient-credential providers skipped). |
 | `--thinking` | run, ablate, optimize-prompts, probe | RunConfig.thinkingLevel | off, minimal, low, medium (default), high, xhigh or max. |
 | `--provers` | run, ablate, optimize-prompts, probe | RunConfig.provers | Provers per problem (default 4). |
 | `--sessions` | run, ablate, optimize-prompts, probe | RunConfig.sessions | Sessions per prover (default 8). |
@@ -392,7 +392,7 @@ The keys of `config/hosts/*.json` (`packages/registry/src/host.ts`). `*` stands 
 | `models` | Record<provider/id, ModelEntry> | What the host says of the models a run uses; a model with no entry is charged at pi-ai's numbers and ignores no setting. | yes |
 | `models.*.pricing` | object | Dollars per million tokens: cacheHit, cacheMiss, output, and an optional calendar. | yes |
 | `models.*.ignores` | Record<setting, string[]> | The sampling settings a model's family ignores (not sent, recorded as ignored). | yes |
-| `recommended` | string[] (provider/id or provider/*) | The models a command not told one prefers, in order; one that is available, priced and capable wins over a cheaper one (documentation/models-setup.md); absent: the cheapest capable model. | yes |
+| `recommended` | string[] (provider/id or provider/*) | The person's own preference: the models a command not told one prefers, in order; one that is available, priced and capable wins over a cheaper one (documentation/models-setup.md); absent: the cheapest capable model. The shipped profiles set none: the person chooses their models. | no |
 | `checkTimeoutSec` | number >= 1 | The seconds a prover's Lean check may take under `RunConfig.checkTimeoutSec`; absent: DEFAULT_CHECK_TIMEOUT_SEC (120). | no |
 | `healthTimeoutMs` | integer >= 1 | How long `harness health` waits for an implementation; absent: DEFAULT_HEALTH_TIMEOUT_MS (15000). | no |
 | `leanServerMemoryWarnMb` | number >= 1 | `harness doctor` warns when the Lean server's resident memory passes it; absent: 8192. | no |
