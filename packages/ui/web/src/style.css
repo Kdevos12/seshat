@@ -114,3 +114,10 @@ details.settings-all > summary { font-weight: 700; font-size: 1.05rem; padding: 
 .setting.changed { border-left: 3px solid var(--accent); padding-left: 8px; }
 .subfields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; }
 details.expert { margin-top: 4px; }
+
+/* What the ceiling buys (UX10). */
+.estimate {
+  border-left: 3px solid var(--accent, #3b6fd8);
+  padding-left: 0.6rem;
+  margin-top: 0.4rem;
+}

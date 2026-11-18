@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Models } from "@earendil-works/pi-ai";
 import { newId } from "@seshat/core";
@@ -10,6 +10,7 @@ import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
 import { watchProgress } from "./progress.ts";
+import { type CeilingEstimate, estimateFor, estimateLine, type Measured, measuredSessions } from "./estimate.ts";
 import { chooseModel, MIN_CONTEXT_WINDOW, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
@@ -107,6 +108,26 @@ export function studentHost(explicit: string | undefined, configDir: string = `$
   const env = process.env.HARNESS_HOST;
   if (env !== undefined && env !== "") return env;
   return existsSync(hostProfilePath(configDir, DEFAULT_PROFILE_NAME)) ? DEFAULT_PROFILE_NAME : "local";
+}
+
+/**
+ * What a ceiling buys with the model a `solve` would use (UX10): the one named, or the one `solve` would choose on the same host
+ * profile. The start form of `harness ui` asks for it before anything is spent. `model` is undefined when none can be chosen.
+ */
+export async function ceilingEstimate(o: { models: Models; maxUsd: number; model?: string; host?: string; configDir?: string; measured: Measured }): Promise<{ model?: string; rule?: string; estimate?: CeilingEstimate; line?: string }> {
+  const configDir = o.configDir ?? `${REPO_ROOT}config`;
+  const profile = loadHostProfile(hostProfilePath(configDir, studentHost(o.host, configDir)));
+  const prices = new PriceBook(profile.models);
+  let model = o.model;
+  let rule: string | undefined;
+  if (model === undefined) {
+    const { choice } = await chooseModel(o.models, prices, profile.recommended !== undefined ? { recommended: profile.recommended } : {});
+    if (choice === undefined) return {};
+    model = choice.name;
+    rule = choice.rule;
+  }
+  const estimate = estimateFor({ maxUsd: o.maxUsd, model, getModel: (p, id) => o.models.getModel(p as never, id as never), prices, measured: o.measured });
+  return { model, ...(rule !== undefined ? { rule } : {}), ...(estimate !== undefined ? { estimate, line: estimateLine(estimate) } : {}) };
 }
 
 function leanProjectOf(host: string, configDir: string, system: DoctorSystem): string | undefined {
@@ -366,6 +387,9 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   } else {
     io.out(`Allowance: $${maxUsd} in all. The run stops by itself at that, and stops earlier, for you to look, once a turn has spent $${turn}.`);
   }
+  // What the allowance buys (UX10), from the sessions of the runs beside this one; a model the library does not know gets no line.
+  const estimate = typeof io.models.getModel !== "function" ? undefined : estimateFor({ maxUsd, model, getModel: (p, id) => io.models.getModel(p as never, id as never), prices, measured: measuredSessions(dirname(resolve(flags.out ?? join("runs", "run")))) });
+  if (estimate !== undefined) io.out(estimateLine(estimate));
   io.out(`Defaults: ${defaults}${defaults === DEFAULT_DEFAULTS ? "" : ` (the default is ${DEFAULT_DEFAULTS})`}${describeSet(defaults as DefaultsName, undefined, flags).length > 0 ? `: ${describeSet(defaults as DefaultsName, undefined, flags).join("; ")}` : ""}. Turn an addition off alone with --no-intake, --no-auto-tool, --no-lean-search or --no-tool lean.lsp.`);
   if (file !== undefined) io.out(describeSettings(file, settings.fromFile, settings.overruled));
   const switches = effectiveSwitches(flags, defaults as DefaultsName);

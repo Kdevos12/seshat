@@ -13,6 +13,7 @@ export * from "./cards.ts";
 export * from "./sorry-battery.ts";
 export * from "./triage.ts";
 export * from "./parameters.ts";
+export * from "./estimate.ts";
 export * from "./settings-file.ts";
 export * from "./gate-report.ts";
 export * from "./graph-report.ts";

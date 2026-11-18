@@ -54,8 +54,14 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       const page = await (await browser.newContext({ viewport: { width: 1000, height: 900 } })).newPage();
       const problems: string[] = [];
       page.on("pageerror", (e: Error) => problems.push(e.message));
+      // A stored key: the form says what the ceiling buys with the model solve would choose (UX10).
+      assert.equal((await s.call("PUT", "/api/providers/deepseek/key", { key: "test-key-not-real-0001" })).status, 200);
       await page.goto(s.server.url);
       await page.waitForSelector("fieldset.group", { state: "attached" });
+      await page.waitForSelector("#estimate", { timeout: 6000 });
+      assert.match(await page.textContent("#estimate"), /^Estimate: \$2 buys about .* of deepseek\/.*The model chosen for you: deepseek\//);
+      await page.fill("#ceiling", "4");
+      await page.waitForSelector("#estimate:has-text('$4 buys')", { timeout: 6000 });
       assert.deepEqual(await page.locator("fieldset.group").evaluateAll((l: any[]) => l.map((e) => e.getAttribute("data-group"))), groups, "one section per group, in the catalogue's order");
       for (const p of forSolve) assert.equal(await page.locator(`#setting-${p.key}`).count(), 1, `${p.key} has a field`);
       assert.equal(await page.locator("#setting-budget").count(), 0, "a setting that solve takes from its own field is not offered");

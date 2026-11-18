@@ -176,6 +176,21 @@ not spent stays yours.
 Before it spends, `solve` runs the checks of `doctor` that a run cannot go without (Kimina, credentials,
 prices, the network) and stops with the words of `doctor` when one is missing; `--no-check` skips them.
 
+### What the ceiling buys
+
+Before it spends, `solve` says what the allowance buys of the model it will use (plan change UX10, `packages/orchestrator/src/estimate.ts`):
+
+```
+Estimate: $2 buys about 71 sessions of PROVIDER/ID, or about 17 problems like the earlier ones (the median of 54 sessions of 9 runs on this machine, at $0.0280 each at this model's price). A hard problem can take more.
+```
+
+The sessions are measured, never assumed: the tokens of every session that ended (`attempt.finished`: input, cached input and output)
+in the newest 20 runs beside this one (the directory that holds `--out`, `runs/` by default), each priced at the model's price (the host
+profile's table where it has the model, pi-ai's otherwise), and the median taken; "problems" divides by the median sessions per problem
+of those runs. With fewer than 5 sessions measured, the line says only how many input or output tokens the allowance buys, and that a
+first run teaches it more. It is an estimate: the run is still stopped by the allowance, not by it. `harness ui` shows the same line under
+the ceiling, for the model chosen or the one `solve` would choose (`GET /api/estimate`).
+
 ### Progress while it works
 
 While a run works, `solve`, `run`, `resume` and `campaign` print one line on standard error each time a session ends, a Lean check is

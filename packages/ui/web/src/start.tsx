@@ -30,6 +30,7 @@ export function Start() {
   const [busy, setBusy] = useState(false);
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [settings, setSettings] = useState<{ values: Record<string, unknown> | undefined; error: string | undefined }>({ values: undefined, error: undefined });
+  const [estimate, setEstimate] = useState<{ model?: string; rule?: string; line?: string } | undefined>();
 
   useEffect(() => {
     get<{ providers: Provider[] }>("/api/providers").then((r) => setProviders(r.providers), (e) => setError(message(e)));
@@ -45,6 +46,16 @@ export function Start() {
 
   const usable = (providers ?? []).filter((p) => p.configured);
   const ceiling = Number(maxUsd);
+
+  // What the ceiling buys with the model the run would use (UX10), asked once the typing stops.
+  useEffect(() => {
+    setEstimate(undefined);
+    if (!Number.isFinite(ceiling) || ceiling <= 0 || (provider !== "" && model === "")) return;
+    const timer = setTimeout(() => {
+      get<{ model?: string; rule?: string; line?: string }>(`/api/estimate?maxUsd=${encodeURIComponent(String(ceiling))}${model !== "" ? `&model=${encodeURIComponent(model)}` : ""}`).then(setEstimate, () => setEstimate(undefined));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [ceiling, provider, model]);
   const turn = turnUsd.trim() === "" ? undefined : Number(turnUsd);
   const turnOk = turn === undefined || (Number.isFinite(turn) && turn > 0 && turn <= ceiling);
   const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && turnOk && !busy && settings.error === undefined;
@@ -105,6 +116,12 @@ export function Start() {
             <label for="ceiling">Spend ceiling (US dollars)</label>
             <input id="ceiling" type="number" inputMode="decimal" min="0.01" step="any" value={maxUsd} onInput={(e) => setMaxUsd((e.target as HTMLInputElement).value)} />
             <p class="muted small">Everything counts against it, the formalization included. The run stops by itself at the ceiling, and earlier, for you to look (below).</p>
+            {estimate?.line !== undefined ? (
+              <p class="small estimate" id="estimate">
+                {estimate.line}
+                {provider === "" && estimate.model !== undefined ? ` The model chosen for you: ${estimate.model}.` : ""}
+              </p>
+            ) : null}
             <label for="turn">Stop for me to look after (US dollars, optional)</label>
             <input id="turn" type="number" inputMode="decimal" min="0.01" step="any" value={turnUsd} placeholder={Number.isFinite(ceiling) && ceiling > 0 ? `${Math.round(ceiling * 50) / 100} (half the ceiling)` : "half the ceiling"} onInput={(e) => setTurnUsd((e.target as HTMLInputElement).value)} />
             {!turnOk ? <p class="small error-text">At most the ceiling, and above zero.</p> : null}

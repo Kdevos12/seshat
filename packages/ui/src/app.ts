@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
-import { DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, realSystem } from "@seshat/orchestrator";
+import { ceilingEstimate, DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, type Measured, measuredSessions, realSystem } from "@seshat/orchestrator";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { plan, RequestError } from "./commands.ts";
@@ -163,6 +163,18 @@ export function createApp(o: AppOptions): Hono {
     }
     const report = await doctorReport({ noWrite: true, ...(model !== undefined ? { model } : {}) }, { models, system: { ...base, env }, ...(o.configDir !== undefined ? { configDir: o.configDir } : {}) });
     return c.json(report);
+  });
+
+  // ---- What the ceiling buys (UX10): measured from the runs of this server, read again at most once a minute.
+  let measured: { at: number; value: Measured } | undefined;
+  app.get("/api/estimate", async (c) => {
+    const maxUsd = Number(c.req.query("maxUsd"));
+    if (!Number.isFinite(maxUsd) || maxUsd <= 0 || maxUsd > 1e6) throw new RequestError("maxUsd must be a number of dollars above zero");
+    const model = c.req.query("model");
+    if (model !== undefined && model !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,200}$/.test(model)) throw new RequestError("the model is not in a form the interface accepts");
+    if (measured === undefined || Date.now() - measured.at > 60_000) measured = { at: Date.now(), value: measuredSessions(o.runsDir) };
+    const answer = await ceilingEstimate({ models, maxUsd, ...(model !== undefined && model !== "" ? { model } : {}), ...(o.configDir !== undefined ? { configDir: o.configDir } : {}), measured: measured.value });
+    return c.json(answer);
   });
 
   // ---- Runs.

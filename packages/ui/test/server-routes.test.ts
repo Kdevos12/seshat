@@ -115,3 +115,27 @@ describe("the doctor through the API", () => {
     assert.equal((await s.call("GET", "/api/doctor?model=--yes%20x")).status, 400);
   });
 });
+
+describe("what the ceiling buys through the API (UX10)", () => {
+  it("prices the model solve would use, from the sessions of the runs already there, and refuses a bad ceiling", async () => {
+    const s = await server();
+    assert.deepEqual((await s.call("GET", "/api/estimate?maxUsd=2")).json(), {}, "no credentials: no model, no estimate");
+    // A model named, from the library's own list (no model id is written in the repository).
+    const name = ((await s.call("GET", "/api/providers/deepseek/models")).json().models as Array<{ name: string }>)[0]?.name ?? "";
+    const named = (await s.call("GET", `/api/estimate?maxUsd=2&model=${encodeURIComponent(name)}`)).json();
+    assert.equal(named.model, name);
+    assert.ok(named.line.startsWith("Estimate: $2 buys about "), named.line);
+    assert.match(named.line, / input tokens or .* output tokens of .*\. No session has been measured/);
+    // A key stored: solve's own choice is priced. Runs already there: their sessions are measured.
+    assert.equal((await s.call("PUT", "/api/providers/deepseek/key", { key: "test-key-not-real-0001" })).status, 200);
+    const scripted = scriptedJournal();
+    scripted.journal.close();
+    cpSync(scripted.dir, join(s.runsDir, "recorded"), { recursive: true });
+    const chosen = (await s.call("GET", "/api/estimate?maxUsd=2")).json();
+    assert.match(chosen.model, /^deepseek\//);
+    assert.equal(chosen.rule, "cheapest capable model");
+    assert.ok(typeof chosen.line === "string" && chosen.line.startsWith("Estimate: $2 buys about "), "the line of solve's own choice");
+    for (const bad of ["0", "-1", "x", ""]) assert.equal((await s.call("GET", `/api/estimate?maxUsd=${bad}`)).status, 400, `maxUsd=${bad}`);
+    assert.equal((await s.call("GET", "/api/estimate?maxUsd=2&model=--yes%20x")).status, 400);
+  });
+});
