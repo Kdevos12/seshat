@@ -47,7 +47,7 @@ cp .env.example .env          # the env file, below
 There is no build step: TypeScript runs directly through Node. Without Lean or a model you can already use:
 
 ```sh
-pnpm harness --help           # the full command line
+pnpm harness --help           # the everyday commands; harness help all for every one
 pnpm harness ui               # the local interface, on 127.0.0.1 only (ui.md)
 pnpm harness heuristics list  # the heuristic card bank (heuristics.md)
 pnpm harness models           # the model providers, and which have a key

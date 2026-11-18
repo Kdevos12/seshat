@@ -50,7 +50,7 @@ describe("harness run in consortium mode", () => {
   });
 
   it("lists the commands in its usage", async () => {
-    const { stdout } = await harness(["--help"]);
+    const { stdout } = await harness(["help", "all"]);
     for (const text of ["harness hint RUN_DIR --claim ID", "harness sign RUN_DIR EDGE_ID", "harness steer RUN_DIR", "harness resume RUN_DIR", "--turn-tokens N", "--human", "Consortium mode"]) {
       assert.ok(stdout.includes(text), text);
     }

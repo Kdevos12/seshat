@@ -33,6 +33,7 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { commandHelp, shortHelp } from "./help.ts";
 import { watchProgress } from "./progress.ts";
 import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
@@ -67,7 +68,7 @@ const usage = `usage:
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
-              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR]
+              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR] [--quiet]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--arms NAME,...] [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
@@ -79,7 +80,7 @@ const usage = `usage:
   harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: one dossier per problem not certified; an ablation directory gets a section per arm)
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST]
-  harness resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST] (the same as run --resume; without --checkout, the run's resume.json gives the checkout, bench and host)
+  harness resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST] [--quiet] (the same as run --resume; without --checkout, the run's resume.json gives the checkout, bench and host)
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
   harness hint RUN_DIR --claim ID "text" [--as NAME]
   harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
@@ -102,11 +103,12 @@ const usage = `usage:
   harness campaign --resume RUN_DIR | --watch RUN_DIR   (take up a campaign whose supervisor ended; the watchdog restarts it with a backoff)
               (a run that continues alone: turns that do not wait, the digest campaign/digest.md after each; documentation/campaign.md)
   harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE] [--quiet]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
   harness ui [--port N] [--open | --no-open] [--runs DIR]
+  harness help [COMMAND | all]   (the everyday commands; one command's usage and flags; this whole text)
   harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
 
 ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
@@ -242,8 +244,13 @@ class InputError extends Error {}
 class UsageError extends InputError {}
 
 async function main(): Promise<number> {
+  // Help (UX8): a short page of the everyday commands; one command's usage and flags; everything with `harness help all`.
+  if (command === "help") {
+    console.log(target === "all" ? usage : target !== undefined ? (commandHelp(target, usage) ?? shortHelp()) : shortHelp());
+    return 0;
+  }
   if (values.help || command === undefined) {
-    console.log(usage);
+    console.log(command !== undefined ? (commandHelp(command, usage) ?? shortHelp()) : shortHelp());
     return command === undefined && !values.help ? 2 : 0;
   }
   try {
@@ -294,7 +301,7 @@ async function main(): Promise<number> {
     }
   } catch (error) {
     if (error instanceof UsageError) {
-      console.error(`${error.message}\n\n${usage}`);
+      console.error(`${error.message}\n\n${(command !== undefined ? commandHelp(command, usage) : undefined) ?? usage}`);
       return 2;
     }
     // Anything else is a bug: Node prints it with its stack, and the exit code is 1.

@@ -53,3 +53,4 @@ export * from "./dossier.ts";
 export * from "./dossier-build.ts";
 export * from "./plateau.ts";
 export * from "./progress.ts";
+export * from "./help.ts";

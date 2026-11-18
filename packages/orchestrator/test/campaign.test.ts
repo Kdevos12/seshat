@@ -256,7 +256,7 @@ describe("the command line", () => {
   };
 
   it("documents harness campaign, and refuses what it cannot do", async () => {
-    assert.match((await harness(["--help"])).out, /harness campaign STATEMENT\|FILE \[--max-usd X\] \[--usd-per-day X\] \[--until ISO_TIME\]/);
+    assert.match((await harness(["help", "all"])).out, /harness campaign STATEMENT\|FILE \[--max-usd X\] \[--usd-per-day X\] \[--until ISO_TIME\]/);
     assert.match((await harness(["campaign"])).err, /campaign needs a statement/);
     assert.match((await harness(["campaign", "(n : ℕ) : n + 0 = n", "--until", "tomorrow"])).err, /--until must be an ISO time/);
     assert.match((await harness(["campaign", "(n : ℕ) : n + 0 = n", "--usd-per-day", "0"])).err, /--usd-per-day must be positive/);

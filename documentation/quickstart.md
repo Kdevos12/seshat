@@ -28,6 +28,15 @@ pnpm harness solve my-problem.lean
 for your signature. When the run ends it prints where `RESULT.md` is. `harness view RUN_DIR` makes the
 picture.
 
+### Help
+
+`pnpm harness` and `pnpm harness --help` print one short page: the everyday commands (`doctor`, `solve`, `ui`, `resume`, `report`,
+`view`, `campaign`) and a first run. `pnpm harness COMMAND --help` (or `harness help COMMAND`) prints that command's usage and its flags;
+for `solve` and `campaign` the flags are grouped as basic, what may leave this machine, and advanced. `pnpm harness help all` prints every
+command and flag. The flags and their help come from the catalogue of [parameters.md](parameters.md) (`CLI_FLAGS`), the usage lines from the
+usage text (`packages/orchestrator/src/help.ts`), so the help cannot drift from what the parser reads. A command-line mistake prints the
+message and that command's help.
+
 ## harness solve
 
 To let a problem run for days instead of one sitting, `harness campaign STATEMENT --max-usd X` takes the same input and continues alone ([campaign.md](campaign.md)).

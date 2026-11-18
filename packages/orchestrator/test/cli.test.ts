@@ -188,13 +188,13 @@ describe("harness run", () => {
     assert.equal(code, 2);
     assert.match(stderr, /--lean-search cannot be given with it/);
     // It is in the usage of run and of solve.
-    const usage = await harness(["--help"]);
+    const usage = await harness(["help", "all"]);
     assert.match(usage.stdout, /harness run [^]*\[--lean-search\][^]*harness solve [^]*\[--lean-search\]/);
     assert.match(usage.stdout, /harness run [^]*\[--consult PROVIDER\/ID[^]*harness solve [^]*\[--consult PROVIDER\/ID/);
   });
 
   it("knows --role and --role-setting (CA15, CA23): in the usage of run and solve, and checked before anything runs", async () => {
-    const usage = await harness(["--help"]);
+    const usage = await harness(["help", "all"]);
     assert.match(usage.stdout, /harness run [^]*\[--role ROLE=PROVIDER\/ID\]\.\.\. \[--role-setting ROLE\.KEY=VALUE\]\.\.\.[^]*harness solve [^]*\[--role ROLE=PROVIDER\/ID\]/);
     const base = ["run", "--checkout", checkout, "--all", "--model", "nowhere/none"];
     const unknown = await harness([...base, "--role", "judge=a/b"]);
@@ -213,7 +213,7 @@ describe("harness run", () => {
   });
 
   it("knows --sketch (CA14): in the usage of solve, refused by run, and a file that is too long stops solve before anything is spent", async () => {
-    const usage = await harness(["--help"]);
+    const usage = await harness(["help", "all"]);
     assert.match(usage.stdout, /harness solve [^]*\[--sketch FILE\]/);
     const refused = await harness(["run", "--checkout", checkout, "--all", "--model", "nowhere/none", "--sketch", "x.txt"]);
     assert.equal(refused.code, 2);
@@ -361,7 +361,7 @@ describe("harness run --resume", () => {
   });
 
   it("is in the usage text", async () => {
-    const { code, stdout } = await harness(["--help"]);
+    const { code, stdout } = await harness(["help", "all"]);
     assert.equal(code, 0);
     assert.match(stdout, /^ {2}harness run --resume RUN_DIR \[--checkout DIR\] \[--bench FILE\] \[--host HOST\]$/m);
     assert.match(stdout, /^run --resume: continues a run whose process ended without finishing it/m);
