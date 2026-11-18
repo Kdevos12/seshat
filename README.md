@@ -15,6 +15,7 @@
 [![Lean 4.27.0](https://img.shields.io/badge/Lean-4.27.0-2e7d32.svg)](documentation/lean-env.md)
 [![Node 22.19+](https://img.shields.io/badge/node-%E2%89%A522.19-339933.svg)](documentation/install.md)
 [![Cite](https://img.shields.io/badge/cite-CITATION.cff-8a2be2.svg)](CITATION.cff)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/4DbcnXyUve)
 
 </p>
 
@@ -129,6 +130,8 @@ Beta, version 1.0.0-beta.1. The core loop runs for real: `harness solve` with a 
 ## Contributing
 
 Bug reports, run reports (solved or not), new tools and heuristic cards are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md). Seshat is built by following one plan, in [plans/](plans/seshat-plan.md); agents that work on it read [CLAUDE.md](CLAUDE.md) first.
+
+For questions and discussion, join the [Discord server](https://discord.gg/4DbcnXyUve).
 
 ## Citing Seshat
 
