@@ -105,11 +105,11 @@ const usage = `usage:
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
-  harness ui [--port N] [--open] [--runs DIR]
+  harness ui [--port N] [--open | --no-open] [--runs DIR]
   harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
 
 ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
-and written (default runs).
+and written (default runs). At a terminal on a machine with a display it opens the page in your browser (--no-open keeps it closed).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the host profile's recommended model if you set one, else the cheapest capable priced one (ambient-credential providers skipped).
@@ -1053,7 +1053,7 @@ function stoppable(): AbortController {
       return;
     }
     interruptedAt = Date.now();
-    console.error("stopping: the problems in progress end as aborted (Ctrl-C again quits at once)");
+    console.error("stopping: the problems in progress end as aborted and RESULT.md is written; harness resume continues the run later (Ctrl-C again quits at once)");
     controller.abort();
   });
   return controller;
@@ -1319,8 +1319,10 @@ function parametersCommand(): number {
 async function ui(): Promise<number> {
   if (target !== undefined) throw new UsageError(`ui takes no argument, got ${target}`);
   const port = number("port", values.port, undefined);
-  const { uiCommand } = await import("@seshat/ui");
-  return await uiCommand({ port, open: values.open === true, runsDir: values.runs, out: (line) => console.log(line) });
+  const { opensByDefault, uiCommand } = await import("@seshat/ui");
+  if (values.open === true && values["no-open"] === true) throw new UsageError("--open and --no-open cannot be given together");
+  const open = values.open === true || (values["no-open"] !== true && opensByDefault({ env: process.env, platform: process.platform, tty: process.stdout.isTTY === true }));
+  return await uiCommand({ port, open, runsDir: values.runs, out: (line) => console.log(line) });
 }
 
 /** `harness doctor`: documentation/quickstart.md. */

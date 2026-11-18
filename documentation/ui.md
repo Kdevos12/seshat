@@ -42,8 +42,11 @@ an event's data.
 system picks a free port. It prints one address with the token in its fragment (`http://127.0.0.1:PORT/#token=...`). A
 fragment is never sent to a server, written in a referrer or kept in the history: the page reads it, keeps it in the tab's
 `sessionStorage`, replaces the address with `#/` and sends it as `Authorization: Bearer` on every request. There is no cookie,
-so two instances on two ports (or a restart on the same port) cannot read or overwrite each other's session. `--open` hands the
-address to `xdg-open` or `open`, so the token is visible to `ps` for that moment, to the same user only.
+so two instances on two ports (or a restart on the same port) cannot read or overwrite each other's session. Opening the page hands the
+address to `xdg-open`, `open` or `start`, so the token is visible to `ps` for that moment, to the same user only. The command opens it
+by default when its standard output is a terminal on a machine with a display (macOS, Windows, or `DISPLAY` or `WAYLAND_DISPLAY` set:
+`opensByDefault` in `packages/ui/src/command.ts`); `--open` forces it, `--no-open` keeps the page closed and only prints the address. A test or
+a script, whose output is not a terminal, never opens a browser.
 
 ### Security
 

@@ -250,6 +250,10 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
   // 3. Model credentials, and 4. the price table.
   const prices = new PriceBook(profile.models);
   const available = await o.models.getAvailable().catch(() => []);
+  // A stand-in for the library in a test may list no providers.
+  const providerIds = typeof o.models.getProviders === "function" ? o.models.getProviders().map((p) => p.id) : [];
+  const misses = nearMissKeys(system.env, providerIds, new Set(available.map((m) => m.provider)));
+  const missText = misses.length === 0 ? "" : ` ${misses.map((m) => `${m.found} is set, but ${m.provider} reads ${m.expected}: rename it`).join("; ")} (the value is not shown).`;
   let chosen: DoctorReport["model"];
   let chosenModel: (typeof available)[number] | undefined;
   if (available.length === 0) {
@@ -258,11 +262,11 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
       status: "missing",
       title: "Model credentials",
       detail: "No model provider has credentials, so no model can be asked anything.",
-      fix: "Set the API key of one provider in your environment (`pnpm harness models` lists the providers and shows which have credentials; pi-ai's README names the variable each one reads). A key is enough: nothing else is configured.",
+      fix: `Set the API key of one provider in your environment or in .env (\`pnpm harness models\` lists the providers and shows which have credentials; pi-ai's README names the variable each one reads), or save it on the Providers page of \`pnpm harness ui\`. A key is enough: nothing else is configured.${missText}`,
     });
   } else {
     const providers = [...new Set(available.map((m) => m.provider))].sort();
-    checks.push({ id: "credentials", status: "ok", title: "Model credentials", detail: `${providers.length} provider(s) have credentials: ${providers.join(", ")}.` });
+    checks.push({ id: "credentials", status: "ok", title: "Model credentials", detail: `${providers.length} provider(s) have credentials: ${providers.join(", ")}.${missText}` });
     if (o.model !== undefined) {
       chosenModel = available.find((m) => `${m.provider}/${m.id}` === o.model);
       if (chosenModel === undefined) {
@@ -550,4 +554,43 @@ export function renderDoctor(report: DoctorReport): string[] {
   if (report.checks.some((c) => c.id === "isolation" && c.status === "warn")) lines.push("Without isolation for the certifier, a run can only reach `computed`; it will say so.");
   if (report.model !== undefined) lines.push(`A solve would use ${report.model.name} (${report.model.chosen === "named" ? "named by you" : report.model.rule ?? "the cheapest capable model"}).`);
   return lines;
+}
+
+/** The usual name of a provider's key variable: `deepseek` reads `DEEPSEEK_API_KEY`. */
+function usualKeyVariable(providerId: string): string {
+  return `${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
+}
+
+function editDistance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length] ?? 0;
+}
+
+/**
+ * Variables set in the environment whose name is close to the usual key variable of a provider that has no credentials (UX13): a
+ * `.env` with `DEEPSEEK_API` where `DEEPSEEK_API_KEY` is read. Names only: no value is read beyond being non-empty, and none is shown.
+ * A name that holds an address or a setting (`_BASE`, `_URL`, `_HOST`, `_ORG`, `_PROJECT`, `_VERSION`, `_MODEL`) is not a key.
+ */
+export function nearMissKeys(env: Readonly<Record<string, string | undefined>>, providerIds: readonly string[], configured: ReadonlySet<string>): Array<{ provider: string; found: string; expected: string }> {
+  const names = Object.keys(env).filter((n) => (env[n] ?? "") !== "" && /KEY|API|TOKEN|SECRET/.test(n) && !/BASE|URL|HOST|ORG|PROJECT|VERSION|MODEL/.test(n));
+  const out: Array<{ provider: string; found: string; expected: string }> = [];
+  for (const provider of providerIds) {
+    if (configured.has(provider)) continue;
+    const expected = usualKeyVariable(provider);
+    if (env[expected] !== undefined && env[expected] !== "") continue;
+    const stem = expected.slice(0, -"_API_KEY".length);
+    for (const found of names) {
+      if (found === expected || !found.startsWith(stem)) continue;
+      // The stem must end where the provider's name ends: OPENAI_... is not a near miss of OPENAI_CODEX_API_KEY's provider.
+      const rest = found.slice(stem.length);
+      if (rest !== "" && !/^[_]?(API|KEY|TOKEN|SECRET)/.test(rest)) continue;
+      if (editDistance(found, expected) <= 4) out.push({ provider, found, expected });
+    }
+  }
+  return out;
 }
