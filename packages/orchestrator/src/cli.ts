@@ -33,7 +33,7 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { writeResult } from "./result.ts";
+import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, type SolveFlags, solveCommand } from "./solve-command.ts";
 import { litProbeCommand } from "./lit-command.ts";
@@ -77,8 +77,8 @@ const usage = `usage:
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: one dossier per problem not certified; an ablation directory gets a section per arm)
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
-  harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
-  harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
+  harness run --resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST]
+  harness resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST] (the same as run --resume; without --checkout, the run's resume.json gives the checkout, bench and host)
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
   harness hint RUN_DIR --claim ID "text" [--as NAME]
   harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
@@ -1066,7 +1066,7 @@ function finished(result: RunResult, dir: string): number {
   if (result.turn !== undefined) {
     console.log(`Turn ${result.turn.number} ended: ${result.turn.reason} (${result.turn.detail}). The account: ${join(dir, result.turn.account)}`);
     if (result.turn.paused) {
-      console.log(`The run waits for the team. Answer with harness hint, sign and steer, then: harness resume ${dir} --checkout DIR`);
+      console.log(`The run waits for the team. Answer with harness hint, sign and steer, then: ${resumeCommand(dir, "paused")}`);
     }
   }
   if (result.stopped === undefined || result.stopped === "budget_exhausted") return 0;
@@ -1080,17 +1080,33 @@ const RUN_FLAGS = [
   "offpeak", "offpeak-max-wait", "settings",
 ] as const;
 
+/** `resume.json` for `harness resume`: when --checkout is given, a damaged file is the same as none; otherwise its error stops the command. */
+function readSaved(dir: string): ReturnType<typeof savedResume> | undefined {
+  try {
+    return savedResume(dir);
+  } catch (error) {
+    if (values.checkout !== undefined) return undefined;
+    throw error;
+  }
+}
+
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
 async function resume(directory: string): Promise<number> {
   const given = RUN_FLAGS.filter((flag) => values[flag] !== undefined);
   if (given.length > 0) {
     throw new UsageError(`--resume continues the run as it began, from its journal: ${given.map((flag) => `--${flag}`).join(", ")} cannot be given with it`);
   }
-  if (values.checkout === undefined) throw new UsageError("--resume needs --checkout: a checkout of the bench's repository");
-  const checkout = values.checkout;
-  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const dir = resolve(directory);
+  // A run begun by solve, run or campaign names its checkout, bench and host in resume.json: each flag given wins over its entry (UX7).
+  const saved = existsSync(join(dir, "resume.json")) && (values.checkout === undefined || values.bench === undefined || values.host === undefined) ? readSaved(dir) : undefined;
+  if (values.checkout === undefined && saved === undefined) {
+    throw new UsageError("--resume needs --checkout: a checkout of the bench's repository (a run begun by harness solve, run or campaign has it in its resume.json; this one has none)");
+  }
+  const checkout = values.checkout ?? (saved as { checkout: string }).checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
+  if (values.bench === undefined && saved?.bench !== undefined) values.bench = saved.bench;
+  if (values.host === undefined && saved?.host !== undefined) values.host = saved.host;
   const index = readInput(loadIndex);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {

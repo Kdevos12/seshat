@@ -78,7 +78,8 @@ The index has the shape and the hash check of the bench's, so the run, its memor
 know the difference. The exact command that resumes the run is in `RESULT.md` and printed when a turn stops:
 `harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json --host HOST`, with the host the run began with
 (the isolated profile is not the default of `harness resume`) and every value quoted for a shell. A `resume.json` whose values cannot be
-quoted (a newline, a backtick) gives the placeholder command instead.
+quoted (a newline, a backtick) gives the placeholder command instead. Since `harness resume` reads those values from the run's
+`resume.json` when the flags are left out, `pnpm harness resume RUN_DIR` alone is enough.
 
 **The student defaults.** Every one is the value of an existing option of `harness run`:
 

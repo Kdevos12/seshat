@@ -230,7 +230,7 @@ last line a crash cut (resume first).
 | `harness steer RUN_DIR --forbid STRATEGY [--claim ID]` | A `steer` node | A check whose proof follows the strategy (the label the model declared, or the one `classifyStrategy` reads from the text) is not run and the session is told why. For one claim and its parts, or for all |
 | `harness steer RUN_DIR --turn-tokens N` / `--turn-usd X` / `--turn-minutes N` | A `steer` node | The next turn's limit, unless the resumption gives a flag |
 | `harness lessons pending\|approve\|reject RUN_DIR [ID]` | A `lesson_decision` node, the journal accepts it from `human:NAME` only | With line M5, a lesson for the global scope waits for the team; an approved one is offered to every problem from the next session, a rejected one is never shown ([lessons.md](lessons.md#staged-promotion)). No claim moves |
-| `harness resume RUN_DIR --checkout DIR [--turn-... ] [--turn-narrative]` | `run.resumed`, `turn.started` | The next turn. The same as `harness run --resume`. A flag of the limit wins over a steer and over the turn before's |
+| `harness resume RUN_DIR [--checkout DIR] [--turn-... ] [--turn-narrative]` | `run.resumed`, `turn.started` | The next turn. The same as `harness run --resume`. A flag of the limit wins over a steer and over the turn before's |
 
 A focus or a drop names a claim that exists: the claim of a problem the run has begun. A problem that has
 not begun has no claim yet.

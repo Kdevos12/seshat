@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -320,12 +320,16 @@ describe("harness run --resume", () => {
     const cut = killedAt(whole.dir, (event) => event.type === "attempt.finished");
     const journal = readFileSync(join(cut, "journal.jsonl"));
     const given = ["--checkout", whole.bench.checkout, "--bench", index];
+    // A copy of the cut run without its resume.json: only then is --checkout required.
+    const bare = join(tempDir(), "bare");
+    cpSync(cut, bare, { recursive: true });
+    rmSync(join(bare, "resume.json"), { force: true });
 
     const options: Array<[string[], RegExp, boolean]> = [
       // [arguments, what stderr says, whether the usage follows]
       [["--resume", whole.dir, ...given], /^the run is complete: every problem has an outcome and the run finished, so there is nothing to resume in /m, false],
       [["--resume", cut, ...given, "--model", "a/b", "--sessions", "2"], /^--resume continues the run as it began, from its journal: --model, --sessions cannot be given with it$/m, true],
-      [["--resume", cut, "--bench", index], /^--resume needs --checkout: a checkout of the bench's repository$/m, true],
+      [["--resume", bare, "--bench", index], /^--resume needs --checkout: a checkout of the bench's repository \(a run begun by harness solve, run or campaign has it in its resume\.json; this one has none\)$/m, true],
       [["--resume", join(cut, "nowhere"), ...given], /^no directory .*nowhere$/m, false],
       [["--resume", cut, "--checkout", join(cut, "missing"), "--bench", index], /^no directory .*missing$/m, false],
       // The model of the run is the faux provider's, which the command line does not have.
@@ -339,12 +343,27 @@ describe("harness run --resume", () => {
       assert.equal(stdout, "");
     }
     assert.deepEqual(readFileSync(join(cut, "journal.jsonl")), journal, "the journal of the run that was cut is as it was");
+
+    // UX7: the run's resume.json gives the checkout, bench and host; it reaches the same point as the run given every flag.
+    assert.ok(existsSync(join(cut, "resume.json")), "a run begun by harness run leaves resume.json");
+    const saved = readFileSync(join(cut, "resume.json"), "utf8");
+    writeFileSync(join(cut, "resume.json"), JSON.stringify({ checkout: whole.bench.checkout, bench: index, host: "local" }));
+    for (const args of [["resume", cut], ["run", "--resume", cut]]) {
+      const { code, stderr } = await harness(args);
+      assert.equal(code, 2, `${args.join(" ")}: ${stderr}`);
+      assert.match(stderr, /^unknown provider faux$/m, args.join(" "));
+    }
+    writeFileSync(join(cut, "resume.json"), JSON.stringify({ checkout: join(cut, "gone"), bench: index }));
+    assert.match((await harness(["resume", cut])).stderr, /^no directory .*gone$/m, "the saved checkout is checked like a given one");
+    assert.match((await harness(["resume", cut, "--checkout", whole.bench.checkout])).stderr, /^unknown provider faux$/m, "a flag wins over resume.json");
+    writeFileSync(join(cut, "resume.json"), saved);
+    assert.deepEqual(readFileSync(join(cut, "journal.jsonl")), journal, "nothing was written to the journal");
   });
 
   it("is in the usage text", async () => {
     const { code, stdout } = await harness(["--help"]);
     assert.equal(code, 0);
-    assert.match(stdout, /^ {2}harness run --resume RUN_DIR --checkout DIR \[--bench FILE\] \[--host HOST\]$/m);
+    assert.match(stdout, /^ {2}harness run --resume RUN_DIR \[--checkout DIR\] \[--bench FILE\] \[--host HOST\]$/m);
     assert.match(stdout, /^run --resume: continues a run whose process ended without finishing it/m);
   });
 });
