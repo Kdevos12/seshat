@@ -1,6 +1,6 @@
 # Plan change: user control, UI and UX of the interface (UX1 to UX16)
 
-Status: UX1 and UX2 (the two P0 items) APPROVED by the owner 2026-11-17 23:34 UTC ("Go avec ce qui est critique"), relayed to the build thread; UX3 to UX16 PROPOSED, not approved. Proposed 2026-11-17 by the thread "Auditer l'interface : contrôle, UI et UX" (read-only on the repository and the plan). The findings behind it, with screenshots, are in French in `research/audit-interface.md` and `research/audit-interface/`.
+Status: UX1 and UX2 (the two P0 items) APPROVED by the owner 2026-11-17 23:34 UTC ("Go avec ce qui est critique"), relayed to the build thread; UX3 to UX15 APPROVED by the owner 2026-11-18 09:02 UTC ("on va poursuivre sur les autres problèmes de l'interface"), built as Task 63 (pull request #7); UX16 proposed, its own task (it needs a real Lean). Proposed 2026-11-17 by the thread "Auditer l'interface : contrôle, UI et UX" (read-only on the repository and the plan). The findings behind it, with screenshots, are in French in `research/audit-interface.md` and `research/audit-interface/`.
 
 ## Evidence in one paragraph
 

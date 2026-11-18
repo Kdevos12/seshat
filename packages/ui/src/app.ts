@@ -182,8 +182,12 @@ export function createApp(o: AppOptions): Hono {
     const model = c.req.query("model");
     if (model !== undefined && model !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,200}$/.test(model)) throw new RequestError("the model is not in a form the interface accepts");
     if (measured === undefined || Date.now() - measured.at > 60_000) measured = { at: Date.now(), value: measuredSessions(o.runsDir) };
-    const answer = await ceilingEstimate({ models, maxUsd, ...(model !== undefined && model !== "" ? { model } : {}), ...(o.configDir !== undefined ? { configDir: o.configDir } : {}), measured: measured.value });
-    return c.json(answer);
+    try {
+      return c.json(await ceilingEstimate({ models, maxUsd, ...(model !== undefined && model !== "" ? { model } : {}), ...(o.configDir !== undefined ? { configDir: o.configDir } : {}), measured: measured.value }));
+    } catch {
+      // A host profile that cannot be read gives no estimate; the Checklist says what is wrong with it.
+      return c.json({});
+    }
   });
 
   // ---- Runs.

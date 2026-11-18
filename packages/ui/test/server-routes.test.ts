@@ -137,6 +137,11 @@ describe("what the ceiling buys through the API (UX10)", () => {
     assert.ok(typeof chosen.line === "string" && chosen.line.startsWith("Estimate: $2 buys about "), "the line of solve's own choice");
     for (const bad of ["0", "-1", "x", ""]) assert.equal((await s.call("GET", `/api/estimate?maxUsd=${bad}`)).status, 400, `maxUsd=${bad}`);
     assert.equal((await s.call("GET", "/api/estimate?maxUsd=2&model=--yes%20x")).status, 400);
+    // A host profile that cannot be read gives no estimate, not an error.
+    writeFileSync(join(s.dir, "config-dir", "hosts", "local.json"), "{ not json");
+    const broken = await s.call("GET", "/api/estimate?maxUsd=2");
+    assert.equal(broken.status, 200);
+    assert.deepEqual(broken.json(), {});
   });
 });
 
