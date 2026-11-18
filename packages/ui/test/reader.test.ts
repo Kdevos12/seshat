@@ -114,4 +114,17 @@ describe("the list of runs (UX4)", () => {
     assert.equal(summary.state, "paused");
     assert.equal(summary.usd, 0.07);
   });
+
+  it("reads a campaign's digest, cut when it is too long, and null for a run that is not a campaign (UX15)", () => {
+    const scripted = scriptedJournal();
+    scripted.journal.close();
+    assert.equal(readRun(scripted.dir).campaign, null);
+    mkdirSync(join(scripted.dir, "campaign"), { recursive: true });
+    writeFileSync(join(scripted.dir, "campaign", "digest.md"), "# Digest\n\nTurn 1.\n");
+    assert.deepEqual(readRun(scripted.dir).campaign, { digest: "# Digest\n\nTurn 1.\n", cut: false });
+    writeFileSync(join(scripted.dir, "campaign", "digest.md"), "x".repeat(250_000));
+    const long = readRun(scripted.dir).campaign;
+    assert.equal(long?.cut, true);
+    assert.equal(long?.digest.length, 200_000);
+  });
 });

@@ -150,6 +150,13 @@ mode adds is a Lean statement or an evidence need, and only the certifier's kern
 The supervisor takes the wall clock and the sleep as options, so a test advances a simulated clock; the same
 clock goes to the turns' `wallClock`.
 
+## From the local interface
+
+`harness ui` starts a campaign from its start form ("Let it run for days": the allowance, the dollars a day, the end), shows
+the digest on the run page, stops it as Ctrl-C does, and continues a stopped one with `campaign --resume`, detached if the person
+asks ([ui.md](ui.md#running-commands), UX15). A campaign started from the page lives as long as the page's server; one continued
+detached does not. Neither runs the watchdog: `harness campaign --watch RUN_DIR` in a terminal does.
+
 ## The watchdog
 
 - **The lock.** `harness campaign` writes `campaign/lock` (its process id and its start). A second supervisor on

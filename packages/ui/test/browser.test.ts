@@ -67,6 +67,11 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       assert.equal(await page.locator("#setting-budget").count(), 0, "a setting that solve takes from its own field is not offered");
       assert.equal(await page.locator("input[name=outside]").count(), 3, "what may leave the machine: three choices (UX6)");
       assert.equal(await page.locator("input[name=outside]").first().isChecked(), true, "the model's provider only, by default");
+      // UX15: "Let it run for days" opens the pace and the end of a campaign.
+      assert.equal(await page.locator("#usd-per-day").count(), 0);
+      await page.check("#days");
+      assert.equal((await page.locator("#usd-per-day").count()) + (await page.locator("#until").count()), 2);
+      await page.uncheck("#days");
       const advanced = forSolve.filter((p) => p.ui === "advanced");
       assert.equal(await page.locator("details > .setting, details .setting").count() >= advanced.length, true);
       assert.ok((await page.locator(".badge.experimental").count()) >= 1 && (await page.locator(".badge.beta").count()) >= 1, "beta and experimental badges");
@@ -107,6 +112,9 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
     const scripted = scriptedJournal();
     scripted.journal.close();
     cpSync(scripted.dir, join(s.runsDir, "recorded"), { recursive: true });
+    // UX15: a campaign's digest is shown on its run page, with "Continue the campaign".
+    mkdirSync(join(s.runsDir, "recorded", "campaign"), { recursive: true });
+    writeFileSync(join(s.runsDir, "recorded", "campaign", "digest.md"), "# Campaign digest\n\nTurn 3 ended: the frontier grew by one lemma.\n");
     hostileRun(s.runsDir);
 
     const browser = await pw.chromium.launch();
@@ -136,6 +144,8 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
           // UX4 and UX5: statements in place of claim ids, and the header with the phase.
           assert.match(await page.locator(".chip.phase").textContent(), /Paused: it waits for you/);
           assert.match(body, /Proof: Part A: the base case holds/);
+          assert.match(body, /The campaign's digest[^]*Turn 3 ended: the frontier grew by one lemma\./);
+          assert.equal(await page.locator("button:has-text('Continue the campaign')").count(), 1);
           assert.doesNotMatch(await page.locator("#hint-claim").textContent(), /clm_/, "the claim choices are words, not ids");
           await page.screenshot({ path: join(shots, `run-${name}-${scheme}.png`), fullPage: true });
           const overflow = await page.evaluate("document.documentElement.scrollWidth - window.innerWidth");

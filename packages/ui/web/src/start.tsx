@@ -22,6 +22,9 @@ export function Start() {
   const [turnUsd, setTurnUsd] = useState("");
   const [outside, setOutside] = useState<"model" | "lit" | "private">("model");
   const [defaults, setDefaults] = useState<"v2" | "v1">("v2");
+  const [days, setDays] = useState(false);
+  const [usdPerDay, setUsdPerDay] = useState("");
+  const [until, setUntil] = useState("");
   const [providers, setProviders] = useState<Provider[] | undefined>();
   const [provider, setProvider] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -58,7 +61,14 @@ export function Start() {
   }, [ceiling, provider, model]);
   const turn = turnUsd.trim() === "" ? undefined : Number(turnUsd);
   const turnOk = turn === undefined || (Number.isFinite(turn) && turn > 0 && turn <= ceiling);
-  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && turnOk && !busy && settings.error === undefined;
+  // A campaign (UX15): the dollars a day at most the allowance, the end a time to come (the input gives local time, sent as UTC).
+  const perDay = usdPerDay.trim() === "" ? undefined : Number(usdPerDay);
+  const perDayOk = perDay === undefined || (Number.isFinite(perDay) && perDay > 0 && perDay <= ceiling);
+  const untilDate = until === "" ? undefined : new Date(until);
+  const untilIso = untilDate === undefined || Number.isNaN(untilDate.getTime()) ? undefined : untilDate.toISOString();
+  const untilOk = untilDate === undefined || (untilIso !== undefined && Date.parse(untilIso) > Date.now());
+  const campaignOk = !days || (perDayOk && untilOk);
+  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && turnOk && campaignOk && !busy && settings.error === undefined;
 
   const start = async (event: Event) => {
     event.preventDefault();
@@ -75,6 +85,7 @@ export function Start() {
         ...(defaults !== "v2" ? { defaults } : {}),
         ...(model !== "" ? { model } : {}),
         ...(settings.values !== undefined ? { settings: settings.values } : {}),
+        ...(days ? { campaign: { ...(perDay !== undefined ? { usdPerDay: perDay } : {}), ...(untilIso !== undefined ? { until: untilIso } : {}) } } : {}),
       };
       const { job } = await post<{ job: Job }>("/api/jobs", body);
       location.hash = `#/run/${encodeURIComponent(job.runId ?? "")}/job/${encodeURIComponent(job.id)}`;
@@ -151,6 +162,33 @@ export function Start() {
             ) : null}
           </div>
         </div>
+        <fieldset class="choices">
+          <legend>How long</legend>
+          <div class="radio stacked">
+            <label>
+              <input type="checkbox" id="days" checked={days} onChange={(e) => setDays((e.target as HTMLInputElement).checked)} /> Let it run for days (a campaign)
+            </label>
+          </div>
+          {days ? (
+            <>
+              <p class="muted small">
+                The run goes on alone in turns that do not wait for you, writes a digest after each, and ends when the allowance is spent, at the end you set, when the target is settled, or when turns spend without progress. It goes on while this page's server runs; a stopped campaign is continued from its run page, and can be left running after you close the page.
+              </p>
+              <div class="row">
+                <div>
+                  <label for="usd-per-day">At most this much a day (US dollars, optional)</label>
+                  <input id="usd-per-day" type="number" inputMode="decimal" min="0.01" step="any" value={usdPerDay} onInput={(e) => setUsdPerDay((e.target as HTMLInputElement).value)} />
+                  {!perDayOk ? <p class="small error-text">At most the ceiling, and above zero.</p> : null}
+                </div>
+                <div>
+                  <label for="until">Stop by (optional)</label>
+                  <input id="until" type="datetime-local" value={until} onInput={(e) => setUntil((e.target as HTMLInputElement).value)} />
+                  {!untilOk ? <p class="small error-text">A time to come.</p> : null}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </fieldset>
         <fieldset class="choices">
           <legend>What may leave this machine</legend>
           <p class="muted small">The model's provider always receives the work. Nothing else does unless you say so here.</p>

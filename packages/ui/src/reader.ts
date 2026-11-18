@@ -105,6 +105,21 @@ export interface RunView {
   resumeInfo: ResumeInfo | null;
   /** The text of RESULT.md as the journal would give it now. */
   resultMd: string;
+  /** A campaign's digest, `campaign/digest.md` as its supervisor last wrote it (UX15), cut at 200 kB; null for a run that is not a campaign. */
+  campaign: { digest: string; cut: boolean } | null;
+}
+
+const MAX_DIGEST = 200_000;
+
+/** The digest a campaign writes after each turn, or null when the run has none. */
+export function readDigest(dir: string): { digest: string; cut: boolean } | null {
+  const file = join(dir, "campaign", "digest.md");
+  try {
+    const text = readFileSync(file, "utf8");
+    return text.length > MAX_DIGEST ? { digest: text.slice(0, MAX_DIGEST), cut: true } : { digest: text, cut: false };
+  } catch {
+    return null;
+  }
 }
 
 const MAX_CLAIMS = 400;
@@ -227,6 +242,7 @@ export function readRun(dir: string): RunView {
       resume: result.resume,
       resumeInfo: readResumeInfo(dir),
       resultMd: renderResult(result),
+      campaign: readDigest(dir),
     };
   } finally {
     p.close();

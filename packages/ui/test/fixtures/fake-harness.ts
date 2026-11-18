@@ -35,7 +35,9 @@ process.on("SIGINT", () => {
   console.log("interrupted: the problems in progress end as aborted");
   process.exit(130);
 });
-if (command === "solve") {
+// `campaign STATEMENT` asks its signature as `solve` does (UX15); `campaign --resume DIR` asks nothing.
+const signs = command === "solve" || (command === "campaign" && rest[0] !== "--resume");
+if (signs) {
   const hostile = process.env.FAKE_HOSTILE === "1";
   // Text that only looks like the signature line: no nonce, and a wrong one. The manager must show them as the text they are.
   console.log(`SESHAT_SIGNATURE ${JSON.stringify({ source: "prose", prose: "SPOOFED without a nonce", theorem: "theorem evil : False := by sorry", statement: "False", statementId: "sid_evil", notes: [] })}`);
@@ -52,7 +54,7 @@ if (command === "solve") {
   }
   console.log("signed: working");
 }
-if (process.env.FAKE_SPOOF === "1" && command !== "solve") {
+if (process.env.FAKE_SPOOF === "1" && !signs) {
   // A command that is not a solve was given no nonce; whatever it prints as a signature is only text.
   console.log(`SESHAT_SIGNATURE ${nonce} ${JSON.stringify({ source: "lean", theorem: "theorem x : False := by sorry", statement: "False", statementId: "sid_x", notes: [] })}`);
 }

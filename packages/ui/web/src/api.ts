@@ -249,4 +249,6 @@ export interface Run {
   resume: string;
   resumeInfo: { checkout: string; bench?: string; host?: string } | null;
   resultMd: string;
+  /** A campaign's digest (UX15); null for a run that is not a campaign. */
+  campaign: { digest: string; cut: boolean } | null;
 }

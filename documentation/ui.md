@@ -68,7 +68,7 @@ it says about itself; it never logs a request body, and a line that came from an
 
 ### Running commands
 
-`POST /api/jobs` takes `{kind, ...fields}` for `solve`, `run`, `resume`, `hint`, `steer` or `sign`.
+`POST /api/jobs` takes `{kind, ...fields}` for `solve`, `run`, `resume`, `campaign`, `hint`, `steer` or `sign`.
 `packages/ui/src/commands.ts` checks each field against a fixed list (length, pattern, range) and builds the
 arguments of the command in the `--flag=value` form, as an argument list: no shell reads it, and no value can be taken
 for a flag. The text of a hint comes after `--`. Every field is checked first; only then is a statement written to a file
@@ -76,6 +76,14 @@ under `runs/_inputs` with mode 0600 (and removed again if the command cannot sta
 statement that looks like a path or a flag is read as the text it is. A refused request writes nothing. Statement files of
 commands that started stay under `runs/_inputs`, with the run's other files. A `run` needs `runBudgetUsd`: the interface does
 not start a run that would spend by the harness's default.
+
+**Campaigns (UX15).** The start form's "Let it run for days" sends `campaign: { usdPerDay?, until? }` with a `solve`; the
+command is then `harness campaign FILE` with `--usd-per-day` and `--until` ([campaign.md](campaign.md)), signed on the page as a
+solve is. The dollars a day are at most the allowance, the end is an ISO time to come (the page's local time, sent as UTC), and
+no other key is accepted. The campaign goes on while the server runs; stopping it is Ctrl-C, as for a solve. Its run page shows
+`campaign/digest.md` (cut at 200 kB) and, instead of "Continue the run", "Continue the campaign": `{kind: "campaign", runId}`
+starts `harness campaign --resume DIR`, which reads everything from the journal and may be started detached, so that it
+outlives the page. A command already working on the run refuses it, and the campaign's own lock refuses a second supervisor.
 
 `packages/ui/src/jobs.ts` is the process manager. It starts `node packages/orchestrator/src/cli.ts ...` with the
 process's environment plus the stored keys it needs (below), keeps the last 2000 lines each command prints (every stored key

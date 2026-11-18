@@ -127,7 +127,7 @@ export function phaseOf(run: Run | undefined, job: Job | undefined): string {
   if (job?.state === "awaiting_signature") return "Waiting for your signature";
   if (job !== undefined && job.state === "running") {
     if (run === undefined) return "Preparing the statement";
-    return job.kind === "solve" || job.kind === "run" || job.kind === "resume" ? "Researching" : "Recording your answer";
+    return job.kind === "solve" || job.kind === "run" || job.kind === "resume" || job.kind === "campaign" ? "Researching" : "Recording your answer";
   }
   if (run === undefined) return job?.state === "failed" ? "Could not start" : job?.state === "stopped" ? "Stopped before it began" : "Not started";
   if (run.state === "finished") return "Finished";
@@ -441,6 +441,13 @@ function ResultPanel(props: { run: Run }) {
           ))}
         </details>
       ) : null}
+      {props.run.campaign !== null ? (
+        <details open>
+          <summary>The campaign's digest</summary>
+          <p class="muted small">What the campaign wrote after its last turn (campaign/digest.md){props.run.campaign.cut ? ", cut at 200 kB" : ""}.</p>
+          <Code text={props.run.campaign.digest} label="campaign/digest.md" />
+        </details>
+      ) : null}
       <details>
         <summary>RESULT.md</summary>
         <CopyButton text={props.run.resultMd} label="Copy RESULT.md" />
@@ -525,10 +532,17 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
             </label>
           </div>
           <div class="actions">
-            <button type="button" disabled={run.resumeInfo === null} onClick={() => send({ kind: "resume", detached, ...limit }, "Resuming.")}>
-              Continue the run
-            </button>
+            {run.campaign !== null ? (
+              <button type="button" onClick={() => send({ kind: "campaign", detached }, "The campaign goes on.")}>
+                Continue the campaign
+              </button>
+            ) : (
+              <button type="button" disabled={run.resumeInfo === null} onClick={() => send({ kind: "resume", detached, ...limit }, "Resuming.")}>
+                Continue the run
+              </button>
+            )}
           </div>
+          {run.campaign !== null ? <p class="muted small">A campaign goes on as it began, with its own allowance, pace and end; the limit above does not apply to it.</p> : null}
           {run.resumeInfo === null ? <p class="muted small">This run has no resume.json, so it can be resumed only with the command in RESULT.md.</p> : null}
         </>
       ) : null}
