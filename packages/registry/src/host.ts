@@ -46,6 +46,12 @@ export interface HostProfile {
    */
   models?: Record<string, ModelEntry>;
   /**
+   * The models a command that is not told one prefers (plan change UX1), as `provider/id` or `provider/*` patterns, in order of
+   * preference. When one of their models is available, priced and capable, it is chosen before a cheaper model. Absent: the cheapest
+   * capable model. Open-source models are added here later.
+   */
+  recommended?: string[];
+  /**
    * The time, in seconds, that a prover's Lean check may take (plan change CA4, documentation/lean.md, "Bounded checks"). It
    * bounds the checks of the provers of a run that turns the bound on (`RunConfig.checkTimeoutSec`, which `harness solve`'s
    * defaults set `v2` does) and nothing else: the validator's own policy and the certifier keep their limits. Absent: `DEFAULT_CHECK_TIMEOUT_SEC`.
@@ -73,6 +79,7 @@ const PROFILE_SCHEMA: JsonSchema = {
     description: { type: "string" },
     leanEnv: { type: "string", minLength: 1 },
     models: MODELS_SCHEMA,
+    recommended: { type: "array", items: { type: "string", pattern: "^[^/\\s]+/[^\\s]+$" } },
     checkTimeoutSec: { type: "number", minimum: 1 },
     healthTimeoutMs: { type: "integer", minimum: 1 },
     leanServerMemoryWarnMb: { type: "number", minimum: 1 },

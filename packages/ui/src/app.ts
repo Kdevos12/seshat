@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
-import { doctorReport, type DoctorSystem, realSystem } from "@seshat/orchestrator";
+import { DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, realSystem } from "@seshat/orchestrator";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { plan, RequestError } from "./commands.ts";
@@ -141,7 +141,11 @@ export function createApp(o: AppOptions): Hono {
   });
 
   // ---- The catalogue of settings, for the settings menu (documentation/ui.md, "Settings").
-  app.get("/api/parameters", (c) => c.json(parameterList()));
+  app.get("/api/parameters", (c) => {
+    const defaults = c.req.query("defaults");
+    if (defaults !== undefined && !(DEFAULTS_NAMES as readonly string[]).includes(defaults)) return c.json({ error: `defaults must be ${DEFAULTS_NAMES.join(" or ")}` }, 400);
+    return c.json(parameterList({ ...(c.req.query("command") !== undefined ? { command: c.req.query("command") as string } : {}), ...(defaults !== undefined ? { defaults: defaults as DefaultsName } : {}) }));
+  });
 
   // ---- The machine.
   app.get("/api/doctor", async (c) => {

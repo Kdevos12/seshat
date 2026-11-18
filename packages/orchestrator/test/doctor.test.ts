@@ -3,9 +3,11 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadHostProfile } from "@seshat/registry";
-import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
+import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, chooseModel, solveCommand, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
 import { kiminaSettingsFor, leanMemoryCheck, leanServerMemoryFromPs } from "../src/lean-memory.ts";
 import { fauxModels, tempDir } from "./m0-helpers.ts";
+import { BARE_MACHINE } from "../../ui/test/helpers.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 /** A machine described by what it has: commands on PATH, the answers of its servers. */
 function machine(o: { has?: string[]; fails?: string[]; probe?: { code: number; stdout: string; stderr: string }; calls?: string[][]; http?: (url: string) => { status: number } | { error: string }; env?: Record<string, string> } = {}): DoctorSystem {
@@ -276,6 +278,62 @@ describe("doctor, review round 1", () => {
     const odd = await run(machine({ has: ["lake", "docker"], env: { SESHAT_LEAN_IMAGE: "--privileged" } }));
     assert.match(byId(odd.report, "isolation").detail, /not an image name/);
     assert.equal(existsSync(join(odd.dir, "hosts", "sandboxed.json")), false);
+  });
+});
+
+/** A model of a provider, with the price per million tokens (output five times it) and the traits the choice looks at. */
+function modelOf(provider: string, id: string, price: number, over: Partial<Pick<Model<Api>, "input" | "contextWindow">> = {}): Model<Api> {
+  return { provider, id, name: id, api: "openai-completions", baseUrl: "http://x", input: ["text"], reasoning: false, contextWindow: 128_000, maxTokens: 8000, cost: { input: price, output: price * 5, cacheRead: 0, cacheWrite: 0 }, ...over } as Model<Api>;
+}
+const stub = (list: Model<Api>[]) => ({ getAvailable: async () => list }) as unknown as Parameters<typeof cheapestModel>[0];
+
+describe("the model chosen when none is named (plan change UX1)", () => {
+  const speech = modelOf("amazon-bedrock", "mistral.voxtral-mini-3b-2507", 0.01, { input: ["text"] });
+  const nano = modelOf("acme", "nano", 0.02, { contextWindow: 8000 });
+  const deepseek = modelOf("deepseek", "deepseek-flash", 1.5);
+  const cheaper = modelOf("acme", "mid", 0.1);
+
+  it("leaves out a speech model and a nano model, and a model the person's host profile recommends wins over a cheaper one", async () => {
+    const models = stub([speech, nano, cheaper, deepseek]);
+    const plain = await chooseModel(models);
+    assert.equal(plain.choice?.name, "acme/mid");
+    assert.equal(plain.choice?.rule, "cheapest capable model");
+    assert.deepEqual(plain.skippedAmbient, [], "the speech model is out for being one, before its provider is looked at");
+    const rec = await cheapestModel(models, undefined, { recommended: ["deepseek/*"] });
+    assert.equal(rec?.name, "deepseek/deepseek-flash");
+    assert.equal(rec?.rule, "recommended by the host profile");
+    const order = await cheapestModel(stub([deepseek, modelOf("deepseek", "deepseek-v4-pro", 5), cheaper]), undefined, { recommended: ["deepseek/deepseek-v4-pro", "deepseek/*"] });
+    assert.equal(order?.name, "deepseek/deepseek-v4-pro", "the list's order comes before the price");
+  });
+
+  it("never picks an ambient-credential provider unless it is allowed, and solve then refuses naming --model", async () => {
+    const bedrock = modelOf("amazon-bedrock", "some.chat-model", 0.5);
+    assert.equal(await cheapestModel(stub([bedrock])), undefined);
+    assert.equal((await cheapestModel(stub([bedrock]), undefined, { allowAmbient: ["amazon-bedrock"] }))?.name, "amazon-bedrock/some.chat-model");
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await solveCommand("(n : ℕ) : n + 0 = n", { out: join(tempDir("mh-ux1-"), "run"), noCheck: true, max: 1, host: "local", yes: true }, { out: (l) => out.push(l), err: (l) => err.push(l), models: stub([speech, bedrock]), system: BARE_MACHINE });
+    assert.equal(code, 2);
+    assert.match(err.join("\n"), /No model can be chosen[^]*ambient[^]*amazon-bedrock[^]*--model PROVIDER\/ID[^]*SESHAT_MODEL/);
+  });
+
+  it("accepts a named Bedrock model", async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    // The stub has no `getModel`: the run that follows the start output fails there, which ends the test.
+    await solveCommand("(n : ℕ) : n + 0 = n", { out: join(tempDir("mh-ux1-"), "run"), noCheck: true, max: 1, host: "local", yes: true, model: "amazon-bedrock/some.chat-model" }, { out: (l) => out.push(l), err: (l) => err.push(l), models: stub([modelOf("amazon-bedrock", "some.chat-model", 0.5)]), system: BARE_MACHINE }).catch(() => 0);
+    assert.equal(err.some((l) => /No model can be chosen/.test(l)), false);
+    assert.ok(out.some((l) => /^Model: amazon-bedrock\/some\.chat-model \(named by you\)/.test(l)));
+  });
+
+  it("says which rule chose the model in the solve's start output, and the shipped profiles prefer no provider", async () => {
+    const out: string[] = [];
+    await solveCommand("(n : ℕ) : n + 0 = n", { out: join(tempDir("mh-ux1-"), "run"), noCheck: true, max: 1, host: "local", yes: true }, { out: (l) => out.push(l), err: () => {}, models: stub([cheaper, deepseek]), system: BARE_MACHINE }).catch(() => 0);
+    assert.ok(out.some((l) => /^Model: acme\/mid \(cheapest capable model/.test(l)), out.join("\n"));
+    for (const name of ["local", "server"]) {
+      const profile = JSON.parse(readFileSync(new URL(`../../../config/hosts/${name}.json`, import.meta.url), "utf8")) as { recommended?: unknown };
+      assert.equal(profile.recommended, undefined, `${name}.json: the person chooses their models; a shipped profile recommends none`);
+    }
   });
 });
 

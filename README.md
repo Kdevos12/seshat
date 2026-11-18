@@ -33,7 +33,7 @@ A statement in words is formalized and shown to you to sign before anything is s
 
 - **Trust comes from Lean, not from a model.** A claim is `proved` or `refuted` only after the certifier compiles the candidate in a sandbox and replays it through Lean's kernel. A model's answer, a tool's output, an informal proof or a heuristic is recorded as evidence and never changes a status ([trust](documentation/trust.md)).
 - **Classical tools first.** Decision procedures, a tactic battery, computer algebra, SMT solvers and first-order provers run before a model is asked, and whatever they find still goes through Lean ([classical tools](documentation/classical.md)).
-- **Cheap by design.** Open-weight models through their APIs (DeepSeek by default, any provider of [pi-ai](https://github.com/earendil-works/pi) works), prompt caching, a probe and a budget gate that weigh the price of each launch against its chance of success, and a hard dollar cap per problem ([budget gate](documentation/scheduler.md#the-budget-gate)).
+- **Cheap by design.** Models through their APIs, the ones you choose (any provider of [pi-ai](https://github.com/earendil-works/pi) works), prompt caching, a probe and a budget gate that weigh the price of each launch against its chance of success, and a hard dollar cap per problem ([budget gate](documentation/scheduler.md#the-budget-gate)).
 - **No context rot.** Provers work in short fresh sessions that pass on compact notes; the research state lives in the journal and the claim graph, not in a growing chat ([fresh sessions](documentation/m0-loop.md)).
 - **Reproducible and auditable.** The journal is the only source of truth: tables, reports and the interface are rebuilt from it, and a run whose process died resumes from it ([journal](documentation/journal.md)).
 - **Modular.** Every external tool is a capability behind a registry, with a manifest, a contract test and host profiles, so any tool can be swapped without touching the rest ([capabilities](documentation/capabilities.md)).
@@ -71,7 +71,7 @@ Seshat runs on Linux and macOS (Windows through WSL2) with Node 22.19 or later.
 ```sh
 git clone https://github.com/Kdevos12/seshat.git && cd seshat
 scripts/setup.sh              # Node packages, Lean 4.27.0, the Lean environment, the Kimina Lean server
-$EDITOR .env                  # your model key: DEEPSEEK_API_KEY=...
+$EDITOR .env                  # your model provider's key, e.g. DEEPSEEK_API_KEY=...
 scripts/kimina.sh             # the Lean server, in a terminal of its own
 pnpm harness doctor           # what this machine still lacks, and how to fix it
 pnpm harness solve "(n : ℕ) : n + 0 = n" --max-usd 0.10

@@ -9,7 +9,7 @@ import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./im
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
-import { cheapestModel, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
+import { chooseModel, MIN_CONTEXT_WINDOW, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
 import { resumeBench, type RunConfig, type RunOptions } from "./run.ts";
@@ -334,14 +334,14 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   // The model: the one named, or the cheapest priced model of the providers with credentials.
   let model = flags.model;
   if (model === undefined) {
-    const choice = await cheapestModel(io.models, prices);
+    const { choice, skippedAmbient } = await chooseModel(io.models, prices, profile.recommended !== undefined ? { recommended: profile.recommended } : {});
     if (choice === undefined) {
-      io.err("No model can be chosen: no provider with credentials has a model with a price, so no dollar cap could see its cost.");
-      io.err("Run `harness doctor` to see what is missing, or name a model with --model PROVIDER/ID.");
+      io.err(`No model can be chosen: no provider with credentials has a priced model that takes text, has a context window of at least ${MIN_CONTEXT_WINDOW / 1000}k tokens and is not a speech or embedding model.${skippedAmbient.length > 0 ? ` The providers whose credentials are ambient (${skippedAmbient.join(", ")}) were skipped: the environment's credentials are not a choice of model.` : ""}`);
+      io.err("Name the model with --model PROVIDER/ID or SESHAT_MODEL (`harness models PROVIDER` lists them), or run `harness doctor` to see what is missing.");
       return 2;
     }
     model = choice.name;
-    io.out(`Model: ${choice.name} (the cheapest priced model you can use, $${choice.price.toFixed(2)} per million tokens input plus output${choice.others.length > 0 ? `; next: ${choice.others.slice(0, 2).map((o) => o.name).join(", ")}` : ""}). Name another with --model.`);
+    io.out(`Model: ${choice.name} (${choice.rule}, $${choice.price.toFixed(2)} per million tokens input plus output${choice.others.length > 0 ? `; next: ${choice.others.slice(0, 2).map((o) => o.name).join(", ")}` : ""}${skippedAmbient.length > 0 ? `; skipped for ambient credentials: ${skippedAmbient.join(", ")}` : ""}). Name another with --model.`);
   } else {
     io.out(`Model: ${model} (named by you).`);
   }

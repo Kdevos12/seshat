@@ -1538,6 +1538,21 @@ each `sorry` a session leaves, arm `solve-v2-cpu`) are recorded in the ledger. T
 - Task 60 (LH4, LH5, LH6): the campaign dossier and the dead-end store, the plateau modes by rule, the
   campaign's guards; with the research agent (Tasks 46 to 48) if it is built by then.
 
+### Task 62: the two P0 items of the interface audit (UX1, UX2)
+
+The plan change `plans/plan-change-interface.md` (UX1 to UX16, written by the thread "Auditer
+l'interface : contrôle, UI et UX") is approved for its two P0 items only (Ruling 42); UX3 to UX16 stay
+proposed. Task 62 builds:
+
+- UX1: `cheapestModel` keeps only models that take text, call tools and have a context of at least 64k
+  tokens, skips providers whose credentials are ambient (Bedrock, Vertex, Azure, Cloudflare) unless the
+  model or `SESHAT_MODEL` names that provider, and prefers the host profile's `recommended` list
+  (empty in the shipped profiles: the person chooses their models) over raw price; `doctor` and `solve` say which rule chose the model, and `solve`
+  refuses with a message naming `--model` when nothing qualifies.
+- UX2: `GET /api/parameters?command=solve&defaults=v2` returns the defaults `solve` really applies,
+  derived from `setConfig` and `studentLines`; the settings panel shows them with an "on in v2" mark,
+  and `documentation/parameters.md` gains a column "solve v2".
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a

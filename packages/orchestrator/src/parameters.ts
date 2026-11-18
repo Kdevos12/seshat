@@ -1,4 +1,5 @@
 import type { RunConfig } from "./run.ts";
+import { solveDefaultsOf } from "./student.ts";
 
 /**
  * The catalogue of every parameter a person can set (documentation/parameters.md, generated from this file): the keys of `RunConfig`, the flags
@@ -71,7 +72,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
   model: {
     group: "model",
     type: "string (provider/id)",
-    default: "required (--model, else SESHAT_MODEL; solve: the cheapest priced model)",
+    default: "required (--model, else SESHAT_MODEL; solve: the host profile's recommended model if the person set one, else the cheapest capable priced one)",
     summary: "The model the provers, and every role without a model of its own, are called on.",
     cli: ["model"],
     sets: "- (solve picks it, then passes it)",
@@ -694,7 +695,7 @@ export const CLI_FLAGS: readonly CliFlag[] = [
   flag("all", ["run", "ablate", "optimize-prompts"], rc("selection"), "Every problem of the bench."),
   flag("sequence", ["run", "ablate"], rc("selection"), "A sequence of the bench, worked in order with --concurrency 1."),
   flag("tag", ["run", "ablate"], rc("selection"), "The problems tagged analogy or induction."),
-  flag("model", ["run", "ablate", "optimize-prompts", "probe", "solve", "campaign", "doctor", "consolidate"], rc("model"), "PROVIDER/ID; default SESHAT_MODEL (not for a resume); without either, solve and doctor take the cheapest priced model."),
+  flag("model", ["run", "ablate", "optimize-prompts", "probe", "solve", "campaign", "doctor", "consolidate"], rc("model"), "PROVIDER/ID; default SESHAT_MODEL (not for a resume); without either, solve and doctor take the host profile's recommended model if the person set one, else the cheapest capable priced one (ambient-credential providers skipped)."),
   flag("thinking", RUN_LIKE, rc("thinkingLevel"), "off, minimal, low, medium (default), high, xhigh or max."),
   flag("provers", RUN_LIKE, rc("provers"), "Provers per problem (default 4)."),
   flag("sessions", RUN_LIKE, rc("sessions"), "Sessions per prover (default 8)."),
@@ -829,6 +830,7 @@ export const HOST_PROFILE_KEYS: readonly HostProfileKey[] = [
   { key: "models", type: "Record<provider/id, ModelEntry>", summary: "What the host says of the models a run uses; a model with no entry is charged at pi-ai's numbers and ignores no setting.", shipped: true },
   { key: "models.*.pricing", type: "object", summary: "Dollars per million tokens: cacheHit, cacheMiss, output, and an optional calendar.", shipped: true },
   { key: "models.*.ignores", type: "Record<setting, string[]>", summary: "The sampling settings a model's family ignores (not sent, recorded as ignored).", shipped: true },
+  { key: "recommended", type: "string[] (provider/id or provider/*)", summary: "The person's own preference: the models a command not told one prefers, in order; one that is available, priced and capable wins over a cheaper one (documentation/models-setup.md); absent: the cheapest capable model. The shipped profiles set none: the person chooses their models.", shipped: false },
   { key: "checkTimeoutSec", type: "number >= 1", summary: "The seconds a prover's Lean check may take under `RunConfig.checkTimeoutSec`; absent: DEFAULT_CHECK_TIMEOUT_SEC (120).", shipped: false },
   { key: "healthTimeoutMs", type: "integer >= 1", summary: "How long `harness health` waits for an implementation; absent: DEFAULT_HEALTH_TIMEOUT_MS (15000).", shipped: false },
   { key: "leanServerMemoryWarnMb", type: "number >= 1", summary: "`harness doctor` warns when the Lean server's resident memory passes it; absent: 8192.", shipped: false },
@@ -883,6 +885,7 @@ const code = (text: string): string => (text === "" ? "none" : `\`${text}\``);
 export function renderParametersPage(): string {
   const lines: string[] = [];
   const keys = Object.keys(RUN_PARAMETERS) as Array<keyof RunConfig>;
+  const solveV2 = solveDefaultsOf("v2");
   lines.push(
     "# Parameters",
     "",
@@ -890,7 +893,7 @@ export function renderParametersPage(): string {
     "",
     `The audit of every setting: the ${keys.length} keys of \`RunConfig\` (\`packages/orchestrator/src/run.ts\`), the ${CLI_FLAGS.length} flags of \`harness\`, and the keys of the host profiles. The catalogue is typed over \`RunConfig\`, so a key added there without an entry does not compile; a test holds the flags to the parser's table and the host keys to the shipped profiles. It is the source a settings menu of the graphical interface ([ui.md](ui.md)) reads. Nothing in it changes what a run does.`,
     "",
-    "Columns: **default** is what `harness run` has when nothing sets it; **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).",
+    "Columns: **default** is what `harness run` has when nothing sets it; **solve v2** is the value `harness solve` runs with under its default set, `-` when it is the one `harness run` has (derived from the code that builds the solve configuration); **sets** is what the defaults sets `v1` and `v2` of `harness solve` do ([quickstart.md](quickstart.md#defaults-sets)); **status** is `stable`, `beta`, `experimental` or `internal` (set by the harness); **ui** is whether a settings menu shows it (`basic`, `advanced`, `hidden`).",
     "",
     "## Run configuration",
     "",
@@ -898,10 +901,10 @@ export function renderParametersPage(): string {
   for (const group of PARAMETER_GROUPS) {
     const here = keys.filter((k) => RUN_PARAMETERS[k].group === group);
     if (here.length === 0) continue;
-    lines.push(`### ${group}`, "", GROUP_SUMMARY[group], "", row(["key", "type", "default", "what it changes", "flags", "sets", "docs", "test", "status", "ui"]), row(["---", "---", "---", "---", "---", "---", "---", "---", "---", "---"]));
+    lines.push(`### ${group}`, "", GROUP_SUMMARY[group], "", row(["key", "type", "default", "solve v2", "what it changes", "flags", "sets", "docs", "test", "status", "ui"]), row(["---", "---", "---", "---", "---", "---", "---", "---", "---", "---", "---"]));
     for (const k of here) {
       const p = RUN_PARAMETERS[k];
-      lines.push(row([`\`${k}\``, p.type, p.default, p.summary, p.cli.length === 0 ? "none" : p.cli.map((f) => `\`--${f}\``).join(" "), p.sets, p.docs === "" ? "none" : p.docs, p.tested === "" ? "none" : `\`${p.tested}\``, p.status, p.ui]));
+      lines.push(row([`\`${k}\``, p.type, p.default, solveV2[k] ?? "-", p.summary, p.cli.length === 0 ? "none" : p.cli.map((f) => `\`--${f}\``).join(" "), p.sets, p.docs === "" ? "none" : p.docs, p.tested === "" ? "none" : `\`${p.tested}\``, p.status, p.ui]));
     }
     lines.push("");
     const withFields = here.filter((k) => RUN_PARAMETERS[k].fields !== undefined);

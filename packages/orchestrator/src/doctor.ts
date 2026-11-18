@@ -165,7 +165,7 @@ export interface DoctorReport {
   /** The isolation profile: where it is, whether this call wrote it, and what it uses. */
   isolation?: { profile: string; path: string; written: boolean; tool: Recipe["tool"] };
   /** The model a `solve` would use, and why. */
-  model?: { name: string; price: number; chosen: "named" | "cheapest" };
+  model?: { name: string; price: number; chosen: "named" | "cheapest"; rule?: string };
 }
 
 export const DEFAULT_PROFILE_NAME = "sandboxed";
@@ -277,9 +277,9 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
         chosen = { name: o.model, price: blendedPrice(chosenModel, prices), chosen: "named" };
       }
     } else {
-      const cheapest = await cheapestModel(o.models, prices);
+      const cheapest = await cheapestModel(o.models, prices, profile.recommended !== undefined ? { recommended: profile.recommended } : {});
       chosenModel = cheapest === undefined ? undefined : available.find((m) => `${m.provider}/${m.id}` === cheapest.name);
-      if (cheapest !== undefined) chosen = { name: cheapest.name, price: cheapest.price, chosen: "cheapest" };
+      if (cheapest !== undefined) chosen = { name: cheapest.name, price: cheapest.price, chosen: "cheapest", rule: cheapest.rule };
     }
     if (chosen !== undefined && chosenModel !== undefined) {
       if (chosen.price > 0) {
@@ -288,7 +288,7 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
           id: "prices",
           status: "ok",
           title: "Price table",
-          detail: `${chosen.name} (${chosen.chosen === "named" ? "the model you named" : "the cheapest priced model you can use"}) costs $${chosen.price.toFixed(2)} per million tokens, input plus output, from ${fromHost ? `the host profile ${profile.host}` : "pi-ai's table"}. A dollar cap can see its cost.`,
+          detail: `${chosen.name} (${chosen.chosen === "named" ? "the model you named" : chosen.rule ?? "the cheapest capable model"}) costs $${chosen.price.toFixed(2)} per million tokens, input plus output, from ${fromHost ? `the host profile ${profile.host}` : "pi-ai's table"}. A dollar cap can see its cost.`,
         });
       } else {
         checks.push({
@@ -548,6 +548,6 @@ export function renderDoctor(report: DoctorReport): string[] {
   if (missing.length > 0) lines.push(`${missing.length} thing(s) a run needs are missing: ${missing.map((c) => c.title).join(", ")}. Fix them in this order and run \`pnpm harness doctor\` again.`);
   else lines.push("Everything a run needs is here.");
   if (report.checks.some((c) => c.id === "isolation" && c.status === "warn")) lines.push("Without isolation for the certifier, a run can only reach `computed`; it will say so.");
-  if (report.model !== undefined) lines.push(`A solve would use ${report.model.name} (${report.model.chosen === "named" ? "named by you" : "the cheapest priced model you can use"}).`);
+  if (report.model !== undefined) lines.push(`A solve would use ${report.model.name} (${report.model.chosen === "named" ? "named by you" : report.model.rule ?? "the cheapest capable model"}).`);
   return lines;
 }
