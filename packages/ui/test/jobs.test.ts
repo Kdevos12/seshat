@@ -272,11 +272,32 @@ describe("the end of a command", () => {
   });
 });
 
+describe("what a solve may send outside, and its defaults (UX6)", () => {
+  it("maps the person's choice to --lit or --private, the defaults set to --defaults, and adds nothing by default", async () => {
+    const s = await server();
+    const commandOf = async (extra: Record<string, unknown>) => {
+      const id = (await s.call("POST", "/api/jobs", { kind: "solve", statement: "Every number equals itself.", maxUsd: 1, ...extra })).json().job.id as string;
+      await until(async () => (await job(s, id)).state === "awaiting_signature", "the signature");
+      const command = (await job(s, id)).command as string[];
+      await s.call("POST", `/api/jobs/${id}/answer`, { yes: false });
+      await until(async () => !["running", "awaiting_signature"].includes((await job(s, id)).state), "the end");
+      return command;
+    };
+    const plain = await commandOf({});
+    assert.equal(plain.some((a) => a === "--lit" || a === "--private" || a.startsWith("--defaults")), false, "the model's provider only: no flag");
+    assert.ok((await commandOf({ outside: "lit", defaults: "v1" })).includes("--lit"));
+    const strict = await commandOf({ outside: "private", turnUsd: 0.25 });
+    assert.ok(strict.includes("--private") && !strict.includes("--lit"));
+    assert.ok(strict.includes("--turn-usd=0.25"), "the first turn's limit");
+    assert.ok((await commandOf({ defaults: "v1" })).includes("--defaults=v1"));
+  });
+});
+
 describe("a request that fails leaves nothing behind", () => {
   it("writes no statement file when the model, host or mode is refused or the ceiling is missing", async () => {
     const s = await server();
     const before = () => (existsSync(join(s.runsDir, "_inputs")) ? readdirSync(join(s.runsDir, "_inputs")).length : 0);
-    for (const body of [{ model: "a b" }, { host: "../x" }, { mode: "latex" }, { maxUsd: 0 }, { maxUsd: undefined }]) {
+    for (const body of [{ model: "a b" }, { host: "../x" }, { mode: "latex" }, { maxUsd: 0 }, { maxUsd: undefined }, { outside: "everything" }, { defaults: "v9" }]) {
       const r = await s.call("POST", "/api/jobs", { kind: "solve", statement: "some words", mode: "prose", maxUsd: 1, ...body });
       assert.equal(r.status, 400, JSON.stringify(body));
     }

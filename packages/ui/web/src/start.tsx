@@ -19,6 +19,9 @@ export function Start() {
   const [statement, setStatement] = useState("");
   const [mode, setMode] = useState<"auto" | "lean" | "prose">("auto");
   const [maxUsd, setMaxUsd] = useState("2");
+  const [turnUsd, setTurnUsd] = useState("");
+  const [outside, setOutside] = useState<"model" | "lit" | "private">("model");
+  const [defaults, setDefaults] = useState<"v2" | "v1">("v2");
   const [providers, setProviders] = useState<Provider[] | undefined>();
   const [provider, setProvider] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -42,14 +45,26 @@ export function Start() {
 
   const usable = (providers ?? []).filter((p) => p.configured);
   const ceiling = Number(maxUsd);
-  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && !busy && settings.error === undefined;
+  const turn = turnUsd.trim() === "" ? undefined : Number(turnUsd);
+  const turnOk = turn === undefined || (Number.isFinite(turn) && turn > 0 && turn <= ceiling);
+  const ready = statement.trim() !== "" && Number.isFinite(ceiling) && ceiling > 0 && turnOk && !busy && settings.error === undefined;
 
   const start = async (event: Event) => {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      const body = { kind: "solve", statement, mode, maxUsd: ceiling, ...(model !== "" ? { model } : {}), ...(settings.values !== undefined ? { settings: settings.values } : {}) };
+      const body = {
+        kind: "solve",
+        statement,
+        mode,
+        maxUsd: ceiling,
+        ...(turn !== undefined ? { turnUsd: turn } : {}),
+        ...(outside !== "model" ? { outside } : {}),
+        ...(defaults !== "v2" ? { defaults } : {}),
+        ...(model !== "" ? { model } : {}),
+        ...(settings.values !== undefined ? { settings: settings.values } : {}),
+      };
       const { job } = await post<{ job: Job }>("/api/jobs", body);
       location.hash = `#/run/${encodeURIComponent(job.runId ?? "")}/job/${encodeURIComponent(job.id)}`;
     } catch (e) {
@@ -89,7 +104,10 @@ export function Start() {
           <div>
             <label for="ceiling">Spend ceiling (US dollars)</label>
             <input id="ceiling" type="number" inputMode="decimal" min="0.01" step="any" value={maxUsd} onInput={(e) => setMaxUsd((e.target as HTMLInputElement).value)} />
-            <p class="muted small">Everything counts against it, the formalization included. The run stops by itself at the ceiling, and earlier, for you to look, once it has spent half.</p>
+            <p class="muted small">Everything counts against it, the formalization included. The run stops by itself at the ceiling, and earlier, for you to look (below).</p>
+            <label for="turn">Stop for me to look after (US dollars, optional)</label>
+            <input id="turn" type="number" inputMode="decimal" min="0.01" step="any" value={turnUsd} placeholder={Number.isFinite(ceiling) && ceiling > 0 ? `${Math.round(ceiling * 50) / 100} (half the ceiling)` : "half the ceiling"} onInput={(e) => setTurnUsd((e.target as HTMLInputElement).value)} />
+            {!turnOk ? <p class="small error-text">At most the ceiling, and above zero.</p> : null}
           </div>
           <div>
             <label for="provider">Model provider</label>
@@ -116,7 +134,30 @@ export function Start() {
             ) : null}
           </div>
         </div>
-        <SettingsPanel command="solve" onChange={(values, problem) => setSettings({ values, error: problem })} />
+        <fieldset class="choices">
+          <legend>What may leave this machine</legend>
+          <p class="muted small">The model's provider always receives the work. Nothing else does unless you say so here.</p>
+          <div class="radio stacked" role="radiogroup" aria-label="Outside services">
+            {(
+              [
+                ["model", "Only the model's provider (default)", "The literature search and remote Lean search stay off."],
+                ["lit", "Also the literature and Lean search services", "The statement's words go to the paper search services and the Lean search service your host lists (the Checklist names them), to look for a result that already settles it. Your yes is journaled."],
+                ["private", "Strictly private", "Nothing goes to any third party: no literature, local Lean search only, no outside data or decision services (--private)."],
+              ] as const
+            ).map(([value, label, help]) => (
+              <label key={value}>
+                <input type="radio" name="outside" checked={outside === value} onChange={() => setOutside(value)} /> {label}
+                <span class="muted small block">{help}</span>
+              </label>
+            ))}
+          </div>
+          <label for="defaults">Defaults</label>
+          <select id="defaults" value={defaults} onChange={(e) => setDefaults((e.target as HTMLSelectElement).value as "v2" | "v1")}>
+            <option value="v2">v2 (recommended): the newer defaults of solve</option>
+            <option value="v1">v1: solve as it was before the defaults sets</option>
+          </select>
+        </fieldset>
+        <SettingsPanel command="solve" defaults={defaults} onChange={(values, problem) => setSettings({ values, error: problem })} />
         {settings.error !== undefined ? <Notice kind="error">{settings.error}</Notice> : null}
         {error !== undefined ? <Notice kind="error">{error}</Notice> : null}
         <div class="actions">

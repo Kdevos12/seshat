@@ -105,14 +105,14 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
 }
 
 /** `command` is the command the form starts: `solve` leaves out the settings its own fields and flags take. */
-export function SettingsPanel(props: { command: "solve" | "run"; onChange: (settings: Record<string, unknown> | undefined, error: string | undefined) => void }) {
+export function SettingsPanel(props: { command: "solve" | "run"; defaults?: "v1" | "v2"; onChange: (settings: Record<string, unknown> | undefined, error: string | undefined) => void }) {
   const [list, setList] = useState<ParameterList | undefined>();
   const [failed, setFailed] = useState<string | undefined>();
   const [raw, setRaw] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    get<ParameterList>(props.command === "solve" ? "/api/parameters?command=solve" : "/api/parameters").then(setList, (e) => setFailed(message(e)));
-  }, [props.command]);
+    get<ParameterList>(props.command === "solve" ? `/api/parameters?command=solve&defaults=${props.defaults ?? "v2"}` : "/api/parameters").then(setList, (e) => setFailed(message(e)));
+  }, [props.command, props.defaults]);
 
   const shown = (list?.parameters ?? []).filter((p) => props.command === "run" || p.solveFlag === undefined);
   const { onChange } = props;

@@ -59,6 +59,8 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       assert.deepEqual(await page.locator("fieldset.group").evaluateAll((l: any[]) => l.map((e) => e.getAttribute("data-group"))), groups, "one section per group, in the catalogue's order");
       for (const p of forSolve) assert.equal(await page.locator(`#setting-${p.key}`).count(), 1, `${p.key} has a field`);
       assert.equal(await page.locator("#setting-budget").count(), 0, "a setting that solve takes from its own field is not offered");
+      assert.equal(await page.locator("input[name=outside]").count(), 3, "what may leave the machine: three choices (UX6)");
+      assert.equal(await page.locator("input[name=outside]").first().isChecked(), true, "the model's provider only, by default");
       const advanced = forSolve.filter((p) => p.ui === "advanced");
       assert.equal(await page.locator("details > .setting, details .setting").count() >= advanced.length, true);
       assert.ok((await page.locator(".badge.experimental").count()) >= 1 && (await page.locator(".badge.beta").count()) >= 1, "beta and experimental badges");

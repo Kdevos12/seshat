@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { classifyStatement, parseSettings, RunSetupError } from "@seshat/orchestrator";
+import { classifyStatement, DEFAULTS_NAMES, parseSettings, RunSetupError } from "@seshat/orchestrator";
 import { newId } from "@seshat/core";
 import type { KeyScope } from "./jobs.ts";
 import { readResumeInfo, readRun, runDirectory } from "./reader.ts";
@@ -74,6 +74,9 @@ function num(body: Body, key: string, o: { min?: number; max?: number; integer?:
   if (n > (o.max ?? 1e9)) throw new RequestError(`${o.what ?? key} is too large`);
   return n;
 }
+
+/** What a `solve` may send outside besides the model call: `model` (nothing else), `lit` (`--lit`), `private` (`--private`). */
+export const OUTSIDE = ["model", "lit", "private"] as const;
 
 const NAME = /^[\p{L}\p{N}_. -]{1,60}$/u;
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,200}$/;
@@ -167,6 +170,12 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
       const inputs = join(ctx.runsDir, "_inputs");
       const file = join(inputs, `${runId}.${mode === "lean" ? "lean" : "txt"}`);
       const model = str(body, "model", { pattern: MODEL, what: "the model" });
+      // Outside services (UX6): the model's provider only (the default: nothing is asked over --ask-stdin, so no answer is no), also the
+      // literature and Lean search services (--lit, the person's yes, journaled as consent given by flag), or strictly private (--private).
+      const outside = str(body, "outside", { max: 8 });
+      if (outside !== undefined && !OUTSIDE.includes(outside as (typeof OUTSIDE)[number])) throw new RequestError(`outside services are one of ${OUTSIDE.join(", ")}`);
+      const defaults = str(body, "defaults", { max: 4 });
+      if (defaults !== undefined && !(DEFAULTS_NAMES as readonly string[]).includes(defaults)) throw new RequestError(`the defaults set is one of ${DEFAULTS_NAMES.join(", ")}`);
       const chosen = settingsFile(body, "solve", inputs, runId);
       const argv = [
         "solve",
@@ -177,6 +186,8 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         ...flag("turn-usd", num(body, "turnUsd", { max: 1000, what: "the dollar limit of the first turn" })),
         ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
         ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
+        ...flag("defaults", defaults),
+        ...(outside === "lit" ? ["--lit"] : outside === "private" ? ["--private"] : []),
         ...chosen.flags,
         "--ask-stdin",
       ];

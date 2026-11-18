@@ -173,6 +173,17 @@ export function consentQuestion(profile: HostProfile, o: { literature: boolean; 
  * that cannot ask), and the question, asked once, only where a person can answer. `--yes` or `--ask-stdin` without `--lit` gives neither a yes nor
  * a question, which `solve` journals as a no and `lean.search` keeps to its local backends.
  */
+/**
+ * What the run may send outside besides the model call, in one line of the banner (UX6): strictly nothing with `--private`, the literature
+ * and Lean search services with `--lit`, otherwise a question asked once where a person can answer, and nothing where none can.
+ */
+export function outsideLine(flags: Pick<SolveFlags, "private" | "lit" | "yes" | "askStdin">, canAsk: boolean): string {
+  if (flags.private === true) return "Outside services: none besides the model's provider (--private).";
+  if (flags.lit === true) return "Outside services: the model's provider, and the literature and Lean search services of the host (--lit).";
+  if (flags.yes !== true && flags.askStdin !== true && canAsk) return "Outside services: the model's provider; the literature and remote Lean search only if you say yes when asked (--lit says yes now, --private no to everything).";
+  return "Outside services: the model's provider only; the literature and remote Lean search stay off (--lit turns them on, --private keeps everything here).";
+}
+
 export function consentOptions(flags: SolveFlags, io: Pick<CommandIo, "ask">, profile: HostProfile, canAsk: boolean = process.stdin.isTTY === true): Pick<SolveOptions, "intake" | "askConsent"> {
   const wantsIntake = flags.intake === true || flags.lit === true;
   const ask = flags.lit !== true && flags.yes !== true && flags.askStdin !== true && (io.ask !== undefined || canAsk);
@@ -363,6 +374,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
     return 2;
   }
   io.out(`Host: ${host}. Lines: ${(settings.lines ?? studentLines(defaults as DefaultsName)).join(", ")}, with the budget gate and the probe first.`);
+  io.out(outsideLine(flags, io.ask !== undefined || process.stdin.isTTY === true));
 
   // The machine: what a run cannot start without is said now, in words, and nothing is spent.
   let report: DoctorReport | undefined;

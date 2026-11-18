@@ -102,3 +102,9 @@ body { overflow-wrap: anywhere; } main > *, .card { min-width: 0; } code { word-
 .runitem .chip { margin-left: 8px; }
 .chip.level-proved, .chip.level-refuted { border-color: var(--good); }
 .chip.level-candidate, .chip.level-leads { border-color: var(--warn); }
+fieldset.choices { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 12px 0; }
+fieldset.choices legend { font-weight: 700; padding: 0 4px; }
+.radio.stacked { display: grid; gap: 8px; }
+.radio.stacked label { display: block; font-weight: 400; }
+.block { display: block; margin-left: 26px; }
+.error-text { color: var(--bad); }
