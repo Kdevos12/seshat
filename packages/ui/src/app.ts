@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
-import { ceilingEstimate, DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, type Measured, measuredSessions, realSystem } from "@seshat/orchestrator";
+import { ceilingEstimate, hostRecommended, DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, type Measured, measuredSessions, realSystem } from "@seshat/orchestrator";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { plan, RequestError } from "./commands.ts";
@@ -117,7 +117,16 @@ export function createApp(o: AppOptions): Hono {
   });
 
   // ---- Providers and keys.
-  app.get("/api/providers", async (c) => c.json({ providers: await describeProviders(models, finder, o.keys) }));
+  // `recommended` is the host profile's list (UX11): the shipped profiles have none, and the page then recommends nothing.
+  app.get("/api/providers", async (c) => {
+    let recommended: string[] = [];
+    try {
+      recommended = hostRecommended(o.configDir !== undefined ? { configDir: o.configDir } : {});
+    } catch {
+      // A profile that cannot be read recommends nothing; the doctor says what is wrong with it.
+    }
+    return c.json({ providers: await describeProviders(models, finder, o.keys), recommended });
+  });
 
   app.get("/api/providers/:id/models", (c) => {
     const list = describeModels(models, c.req.param("id"));

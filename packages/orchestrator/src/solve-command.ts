@@ -110,6 +110,12 @@ export function studentHost(explicit: string | undefined, configDir: string = `$
   return existsSync(hostProfilePath(configDir, DEFAULT_PROFILE_NAME)) ? DEFAULT_PROFILE_NAME : "local";
 }
 
+/** The host profile's `recommended` list that a `solve` would read (UX1, UX11): empty in the shipped profiles, which prefer no provider. */
+export function hostRecommended(o: { host?: string; configDir?: string } = {}): string[] {
+  const configDir = o.configDir ?? `${REPO_ROOT}config`;
+  return [...(loadHostProfile(hostProfilePath(configDir, studentHost(o.host, configDir))).recommended ?? [])];
+}
+
 /**
  * What a ceiling buys with the model a `solve` would use (UX10): the one named, or the one `solve` would choose on the same host
  * profile. The start form of `harness ui` asks for it before anything is spent. `model` is undefined when none can be chosen.

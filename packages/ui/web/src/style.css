@@ -121,3 +121,11 @@ details.expert { margin-top: 4px; }
   padding-left: 0.6rem;
   margin-top: 0.4rem;
 }
+
+/* The doctor's words drawn as styles, and the providers in parts (UX11). */
+.command code { overflow-wrap: anywhere; }
+.command code { margin-right: 0.3rem; }
+.command button { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
+a.button { display: inline-block; margin-top: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 6px; background: var(--accent); color: var(--accent-fg); text-decoration: none; }
+.providers h2 { font-size: 1rem; margin: 0.6rem 0 0.2rem; }
+details.providers > summary { cursor: pointer; margin: 0.6rem 0 0.2rem; font-weight: 600; }

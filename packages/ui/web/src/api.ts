@@ -96,6 +96,8 @@ export interface Provider {
   configured: boolean;
   source: string | null;
   stored: boolean;
+  /** The cheapest priced model that can serve a prover, in dollars per million tokens, input plus output (UX11). */
+  cheapest: { id: string; price: number } | null;
 }
 
 export interface ModelInfo {

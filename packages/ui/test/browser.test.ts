@@ -153,6 +153,10 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
 
           await page.goto(`${s.server.origin}/#/doctor`);
           await page.waitForSelector(".check");
+          // UX11: the doctor's marks are styles, not characters; a command has a copy button; a missing key links to the Providers page.
+          assert.doesNotMatch(await page.locator(".card").textContent(), /\*\*|`/, "no literal ** or backtick on the Checklist");
+          assert.ok((await page.locator(".check .command button:has-text('Copy')").count()) >= 1, "a command can be copied");
+          assert.equal(await page.locator("a.button[href='#/settings']").count(), 1, "a missing key links to the Providers page");
           await page.screenshot({ path: join(shots, `doctor-${name}-${scheme}.png`), fullPage: true });
           await page.goto(`${s.server.origin}/#/settings`);
           await page.waitForSelector("text=Model providers");
@@ -189,14 +193,20 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       await page.click("button:has-text('Stop')");
       await page.waitForSelector("text=Stopped by you");
 
+      // UX11: a host profile that recommends a provider puts it first; the shipped ones recommend none (the doctor test checks them).
+      const profilePath = join(s.dir, "config-dir", "hosts", "local.json");
+      writeFileSync(profilePath, JSON.stringify({ ...JSON.parse(readFileSync(profilePath, "utf8")), recommended: ["deepseek/*"] }));
       // A key is saved from the page and is never shown again.
       await page.goto(`${s.server.origin}/#/settings`);
       await page.waitForSelector(".card li");
+      assert.match(await page.locator("[data-part=recommended]").textContent(), /Recommended for cost[^]*deepseek[^]*From \$[\d.]+ per million tokens/);
+      assert.equal(await page.locator("details[data-part=others]").evaluate((e: any) => e.open), false, "the other providers are folded");
       const KEY = "sk-browser-0123456789-never-shown";
       await page.locator("button:has-text('Add key')").first().click();
       await page.fill("input[type=password]", KEY);
       await page.click("button:has-text('Save')");
       await page.waitForSelector("button:has-text('Remove key')");
+      assert.match(await page.locator("[data-part=ready]").textContent(), /With credentials[^]*deepseek/, "a provider with a key comes first");
       assert.equal((await page.content()).includes(KEY), false);
       assert.equal(await page.locator("input[type=password]").count(), 0);
       await context.close();

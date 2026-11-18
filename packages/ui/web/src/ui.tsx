@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
+import { pieces } from "./inline.ts";
 
 /** Small pieces shared by the screens. Everything here puts text on the page as text. */
 
@@ -79,4 +80,30 @@ export function Chip(props: { status: string }) {
 
 export function Code(props: { text: string; label?: string }) {
   return <pre class="code" aria-label={props.label}>{props.text}</pre>;
+}
+
+/** A line of the doctor's words with its marks drawn as styles (UX11): bold, code, links; a command gets a copy button. */
+export function Inline(props: { text: string }) {
+  return (
+    <>
+      {pieces(props.text).map((p, i) => {
+        const body =
+          p.kind === "code" ? (
+            <code>{p.text}</code>
+          ) : p.kind === "link" ? (
+            <a href={p.text} target="_blank" rel="noopener noreferrer">
+              {p.text}
+            </a>
+          ) : (
+            p.text
+          );
+        return (
+          <span key={i} class={p.command === true ? "command" : undefined}>
+            {p.bold ? <strong>{body}</strong> : body}
+            {p.command === true ? <CopyButton text={p.text} label="Copy" /> : null}
+          </span>
+        );
+      })}
+    </>
+  );
 }

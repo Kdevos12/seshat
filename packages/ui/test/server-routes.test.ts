@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, cpSync, readdirSync } from "node:fs";
+import { appendFileSync, cpSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { scriptedJournal } from "../../orchestrator/test/scripted-journal.ts";
@@ -137,5 +137,18 @@ describe("what the ceiling buys through the API (UX10)", () => {
     assert.ok(typeof chosen.line === "string" && chosen.line.startsWith("Estimate: $2 buys about "), "the line of solve's own choice");
     for (const bad of ["0", "-1", "x", ""]) assert.equal((await s.call("GET", `/api/estimate?maxUsd=${bad}`)).status, 400, `maxUsd=${bad}`);
     assert.equal((await s.call("GET", "/api/estimate?maxUsd=2&model=--yes%20x")).status, 400);
+  });
+});
+
+describe("the providers through the API (UX11)", () => {
+  it("gives each provider's cheapest priced model, and the host profile's recommended list, empty when it has none", async () => {
+    const s = await server();
+    const first = (await s.call("GET", "/api/providers")).json() as { providers: Array<{ id: string; cheapest: { id: string; price: number } | null }>; recommended: string[] };
+    assert.deepEqual(first.recommended, [], "the shipped profile recommends no provider");
+    const deepseek = first.providers.find((p) => p.id === "deepseek");
+    assert.ok(deepseek?.cheapest !== null && (deepseek?.cheapest?.price ?? 0) > 0, "a priced model");
+    const path = join(s.dir, "config-dir", "hosts", "local.json");
+    writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), recommended: ["deepseek/*"] }));
+    assert.deepEqual((await s.call("GET", "/api/providers")).json().recommended, ["deepseek/*"]);
   });
 });
