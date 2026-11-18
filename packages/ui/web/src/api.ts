@@ -228,6 +228,8 @@ export interface Run {
   stop: { reason: string; detail: string } | null;
   journal: { events: number; head: string; chain: string };
   model: string | null;
+  /** How long the run has worked, from its journal. */
+  seconds: number;
   status: PlainStatus[];
   certifier: { name: string | null; unavailable?: string };
   signature: { statement: string; prose?: string; by: string } | null;
@@ -243,6 +245,6 @@ export interface Run {
   proof: { certified: ProofFile[]; candidates: ProofFile[]; partial: Array<{ claimId: string; statement: string; holes: number; proof: string }> };
   failed: Array<{ claimId: string; strategy: string; attempts: number; lastFailure?: string }>;
   resume: string;
-  resumeInfo: { checkout: string } | null;
+  resumeInfo: { checkout: string; bench?: string; host?: string } | null;
   resultMd: string;
 }

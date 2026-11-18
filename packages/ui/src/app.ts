@@ -9,8 +9,11 @@ import { parameterList } from "./parameters.ts";
 import { type ProcessManager } from "./jobs.ts";
 import { KeyFileError, type KeyStore, redact, validKey } from "./keys.ts";
 import { describeModels, describeProviders, serverModels, VariableFinder } from "./providers.ts";
-import { JournalTail, listRuns, readRun, RunReadError, runDirectory } from "./reader.ts";
+import { JournalTail, listRuns, readRun, RunReadError, type RunListing, runDirectory, type RunSummary, summarize } from "./reader.ts";
 import { guard, securityHeaders } from "./security.ts";
+
+/** How many of the newest runs the list of runs summarizes; the others are listed by name. */
+const SUMMARIZED = 30;
 
 /**
  * The routes of the local server (documentation/ui.md). Every route sits behind the guards of `security.ts`. A route that reads a run
@@ -163,7 +166,24 @@ export function createApp(o: AppOptions): Hono {
   });
 
   // ---- Runs.
-  app.get("/api/runs", (c) => c.json({ runs: listRuns(o.runsDir).map((r) => ({ ...r, active: o.manager.activeOn(r.id)?.id ?? null })) }));
+  // The list says what each run is about (UX4): the newest SUMMARIZED runs are read, each once per journal size and time.
+  const summaries = new Map<string, { key: string; summary: RunSummary | null }>();
+  const summaryOf = (r: RunListing): RunSummary | null => {
+    const key = `${r.modified}:${r.bytes}`;
+    const known = summaries.get(r.id);
+    if (known !== undefined && known.key === key) return known.summary;
+    let summary: RunSummary | null = null;
+    try {
+      summary = summarize(readRun(dirOf(r.id)));
+    } catch {
+      // A run that cannot be read is listed by its name alone.
+    }
+    summaries.set(r.id, { key, summary });
+    return summary;
+  };
+  app.get("/api/runs", (c) =>
+    c.json({ runs: listRuns(o.runsDir).map((r, i) => ({ ...r, active: o.manager.activeOn(r.id)?.id ?? null, summary: i < SUMMARIZED ? summaryOf(r) : null })) }),
+  );
 
   app.get("/api/runs/:id", (c) => {
     const id = c.req.param("id");

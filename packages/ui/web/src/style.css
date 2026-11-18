@@ -96,3 +96,9 @@ body { overflow-wrap: anywhere; } main > *, .card { min-width: 0; } code { word-
 .setting label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .setting .short { min-height: 70px; }
 .badge.beta, .badge.experimental { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.runhead { margin: -4px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip.phase { background: var(--card); border-color: var(--accent); color: var(--fg); font-weight: 600; }
+.runitem { padding: 6px 0; overflow-wrap: anywhere; }
+.runitem .chip { margin-left: 8px; }
+.chip.level-proved, .chip.level-refuted { border-color: var(--good); }
+.chip.level-candidate, .chip.level-leads { border-color: var(--warn); }

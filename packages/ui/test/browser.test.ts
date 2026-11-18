@@ -118,6 +118,10 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
           assert.match(body, /Refuted/);
           assert.match(body, /Where it stands/);
           assert.match(body, /Research graph/);
+          // UX4 and UX5: statements in place of claim ids, and the header with the phase.
+          assert.match(await page.locator(".chip.phase").textContent(), /Paused: it waits for you/);
+          assert.match(body, /Proof: Part A: the base case holds/);
+          assert.doesNotMatch(await page.locator("#hint-claim").textContent(), /clm_/, "the claim choices are words, not ids");
           await page.screenshot({ path: join(shots, `run-${name}-${scheme}.png`), fullPage: true });
           const overflow = await page.evaluate("document.documentElement.scrollWidth - window.innerWidth");
           assert.ok(overflow <= 0, `${name}/${scheme}: the page scrolls sideways by ${overflow}px`);
@@ -159,8 +163,13 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       assert.match(text, /already charged to your allowance/);
       assert.equal(await page.evaluate("window.__pwned"), undefined);
       assert.equal(await page.locator('img[src="x"]').count(), 0);
+      assert.match(await page.locator(".chip.phase").textContent(), /Waiting for your signature/, "the header says the phase");
       await page.click("button:has-text('Yes, sign it and start')");
+      // The command's raw output is folded by default (UX5); it is still on the page.
+      await page.waitForSelector("text=signed: working", { state: "attached" });
+      await page.click("summary:has-text('What the command says')");
       await page.waitForSelector("text=signed: working");
+      assert.doesNotMatch(await page.textContent("body"), /The run has not started yet/);
       await page.screenshot({ path: join(shots, "working-phone.png"), fullPage: true });
       await page.click("button:has-text('Stop')");
       await page.waitForSelector("text=Stopped by you");

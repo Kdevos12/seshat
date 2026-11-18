@@ -241,6 +241,26 @@ export interface RunListing {
   bytes: number;
 }
 
+/** What the list of runs says of one run (UX4): its words, where it stands and what it cost, from `readRun`; null when it cannot be read. */
+export interface RunSummary {
+  /** The person's words, else the signed statement, else the first problem's statement, else its target. */
+  title: string;
+  /** The level of the first problem (`proved`, `candidate`, ...). */
+  level: Level | null;
+  problems: number;
+  state: RunView["state"];
+  usd: number;
+  model: string | null;
+}
+
+/** The summary of a run view. Nothing in it is new: it is what the run screen shows, cut short. */
+export function summarize(view: RunView): RunSummary {
+  const first = view.status[0];
+  const claim = first !== undefined ? view.claims.find((c) => c.id === first.claimId)?.statement : undefined;
+  const words = view.signature?.prose ?? view.signature?.statement ?? (claim !== undefined && claim.trim() !== "" ? claim : undefined) ?? first?.target ?? view.runId;
+  return { title: words.replace(/\s+/g, " ").trim().slice(0, 140), level: first?.level ?? null, problems: view.status.length, state: view.state, usd: view.spend.usd, model: view.model };
+}
+
 /** The run directories under `runsDir` (those that have a journal), the most recently written first. */
 export function listRuns(runsDir: string): RunListing[] {
   if (!existsSync(runsDir)) return [];

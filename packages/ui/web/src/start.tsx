@@ -1,13 +1,18 @@
 import { useEffect, useState } from "preact/hooks";
 import { get, type Job, message, type ModelInfo, post, type Provider } from "./api.ts";
 import { SettingsPanel } from "./parameters.tsx";
-import { Notice, Section } from "./ui.tsx";
+import { money, Notice, Section, when } from "./ui.tsx";
 
 interface RunItem {
   id: string;
   modified: number;
   active: string | null;
+  /** What the run is about, where it stands and what it cost (UX4); null when it could not be read or is not among the newest. */
+  summary: { title: string; level: string | null; problems: number; state: "finished" | "paused" | "cut"; usd: number; model: string | null } | null;
 }
+
+const LEVEL_WORDS: Record<string, string> = { proved: "Proved", refuted: "Refuted", candidate: "Candidate", leads: "Leads only", working: "Working", ended: "Ended", nothing: "Nothing yet" };
+const STATE_WORDS = { finished: "finished", paused: "paused, waits for you", cut: "stopped" } as const;
 
 /** The start screen: a statement in prose or Lean, a spend ceiling, and the runs already there. */
 export function Start() {
@@ -70,7 +75,7 @@ export function Start() {
         <div class="radio" role="radiogroup" aria-label="How to read it">
           {(
             [
-              ["auto", "Work it out"],
+              ["auto", "Detect automatically"],
               ["prose", "It is in words"],
               ["lean", "It is Lean"],
             ] as const
@@ -126,9 +131,14 @@ export function Start() {
         ) : (
           <ul class="plain">
             {runs.map((r) => (
-              <li key={r.id}>
-                <a href={`#/run/${encodeURIComponent(r.id)}`}>{r.id}</a> <span class="muted small">{new Date(r.modified).toLocaleString()}</span>
+              <li key={r.id} class="runitem">
+                <a href={`#/run/${encodeURIComponent(r.id)}`}>{r.summary !== null ? r.summary.title : r.id}</a>
+                {r.summary !== null && r.summary.level !== null ? <span class={`chip level-${r.summary.level}`}>{LEVEL_WORDS[r.summary.level] ?? r.summary.level}</span> : null}
                 {r.active !== null ? <span class="chip"> working</span> : null}
+                <div class="muted small">
+                  {r.summary !== null ? `${r.summary.problems > 1 ? `${r.summary.problems} problems, ` : ""}${money(r.summary.usd)} spent, ${STATE_WORDS[r.summary.state]}${r.summary.model !== null ? `, ${r.summary.model}` : ""} · ` : ""}
+                  {when(r.modified)} · <code>{r.id}</code>
+                </div>
               </li>
             ))}
           </ul>

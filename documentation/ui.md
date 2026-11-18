@@ -164,11 +164,16 @@ text colour so that it follows the theme), and the tab's icon is its 64-pixel re
 
 | Screen | What it does |
 |---|---|
-| **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine |
+| **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine: each by its words (the person's, else the signed statement, else the first problem's statement), where its first problem stands, what it spent, its state and model (`summary` of `GET /api/runs`, `summarize` in `reader.ts`, for the 30 newest runs, read again only when a journal changes) |
 | **Signature** | for a statement in words: your words beside the Lean statement a model made of them, what the first cases said, a warning when cheap automation proves it, and two buttons. For a statement in words the card says the formalization was a model call already charged to the allowance; it reads a malformed shape defensively, and a screen that cannot be drawn shows one plain line |
-| **Run** | the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; "Established so far" when the run shows its frontier; leads, evidence and failures |
+| **Run** | a header with the phase (preparing the statement, waiting for your signature, researching, paused, stopped, finished: `phaseOf` in `run.tsx`, from the job and the journal), the model, the host and how long the run has worked; the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; "Established so far" when the run shows its frontier; leads, evidence and failures |
 | **Checklist** | `harness doctor` as a list: what is ready, what is missing, what to do. It writes nothing |
 | **Providers** | the library's providers, whether each has credentials, a place to save or remove a key |
+
+**Words, not ids.** A claim is shown by the first words of its statement everywhere a person reads or picks one: the status lines, the
+proofs, the candidates and sketches, the hint, steer and signature choices, the leads and evidence, what failed, and the boxes of the graph.
+The id stays beside it, small, for a command or a search in the journal. The command's raw output is folded under "What the command says"
+(with its line count); the stop buttons say that the run can be continued, as `harness resume` and "Continue the run" do.
 
 **Evidence is never shown as proof.** A problem is worded as proved or refuted only when a valid kernel replay of its claim is in the
 journal; a proof that passed the fast check is "a candidate, not certified"; counter-examples and a tool's findings are "leads" and

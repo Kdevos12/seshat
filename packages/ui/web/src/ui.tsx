@@ -21,6 +21,24 @@ export function Notice(props: { kind?: "error" | "warn" | "info"; children: Comp
   );
 }
 
+/** A statement cut to its first words, on one line: what a person reads in place of a claim id (UX4). */
+export function words(text: string, max = 60): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** A length of time in words: 45 s, 12 min, 3 h 05. */
+export function duration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  const h = Math.floor(seconds / 3600);
+  return `${h} h ${String(Math.round((seconds % 3600) / 60)).padStart(2, "0")}`;
+}
+
+/** A date and time in the reader's own locale and clock. */
+export const when = (ms: number): string => new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
 export const money = (usd: number): string => (usd < 0.01 && usd > 0 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`);
 
 /** Copies text; falls back to a selection when the clipboard is not available (a page that is not a secure context). */
