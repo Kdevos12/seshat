@@ -108,3 +108,9 @@ fieldset.choices legend { font-weight: 700; padding: 0 4px; }
 .radio.stacked label { display: block; font-weight: 400; }
 .block { display: block; margin-left: 26px; }
 .error-text { color: var(--bad); }
+details.settings-all { margin: 12px 0; }
+details.settings-all > summary { font-weight: 700; font-size: 1.05rem; padding: 8px 0; min-height: 44px; }
+.setting-name { font-weight: 600; }
+.setting.changed { border-left: 3px solid var(--accent); padding-left: 8px; }
+.subfields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; }
+details.expert { margin-top: 4px; }

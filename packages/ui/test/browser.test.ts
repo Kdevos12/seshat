@@ -55,7 +55,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       const problems: string[] = [];
       page.on("pageerror", (e: Error) => problems.push(e.message));
       await page.goto(s.server.url);
-      await page.waitForSelector("fieldset.group");
+      await page.waitForSelector("fieldset.group", { state: "attached" });
       assert.deepEqual(await page.locator("fieldset.group").evaluateAll((l: any[]) => l.map((e) => e.getAttribute("data-group"))), groups, "one section per group, in the catalogue's order");
       for (const p of forSolve) assert.equal(await page.locator(`#setting-${p.key}`).count(), 1, `${p.key} has a field`);
       assert.equal(await page.locator("#setting-budget").count(), 0, "a setting that solve takes from its own field is not offered");
@@ -68,10 +68,17 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       assert.equal(forSolve.find((p) => p.key === "budgetShare")?.solveDefault, "2");
       assert.equal(await page.getAttribute("#setting-budgetShare", "placeholder"), "2", "the value solve applies is the placeholder");
       assert.match(await page.locator("label[for=setting-budgetShare] .solve-default").textContent(), /v2/, "and it is marked");
-      // Open every "Advanced" and fill one number and one switch; the rest stay empty.
+      // UX9: the whole panel is folded under one disclosure, the keys read as words, a flat JSON setting gets typed fields.
+      assert.equal(await page.locator("details.settings-all").evaluate((e: any) => e.open), false, "the settings start folded");
+      assert.match(await page.locator("details.settings-all > summary").textContent(), /^Advanced settings$/);
+      assert.match(await page.locator("label[for=setting-budgetShare] .setting-name").textContent(), /^Budget share$/);
+      // Open the panel and every "More", fill one number, one switch and one sub-field; the rest stay empty.
+      await page.click("details.settings-all > summary");
       for (const d of await page.locator("fieldset.group details").all()) await d.evaluate((e: any) => (e.open = true));
       await page.fill("#setting-budgetShare", "3");
       await page.selectOption("#setting-triage", "true");
+      await page.fill("#setting-sorryBattery-maxSorries", "4");
+      assert.match(await page.locator("details.settings-all > summary").textContent(), /\(3 changed\)/, "the summary counts the changed settings");
       await page.screenshot({ path: join(shots, "settings-panel.png"), fullPage: false });
       await page.fill("#statement", "Every number equals itself.");
       await page.click("button:has-text('Prepare the statement')");
@@ -79,7 +86,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       const jobs = (await s.call("GET", "/api/jobs")).json().jobs as Array<{ command: string[] }>;
       const file = jobs[0]?.command.find((a) => a.startsWith("--settings="))?.slice("--settings=".length);
       assert.ok(file, "the start request carried the settings");
-      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { budgetShare: 3, triage: true }, "only the filled-in fields");
+      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { budgetShare: 3, triage: true, sorryBattery: { maxSorries: 4 } }, "only the filled-in fields, the sub-field as JSON");
       assert.deepEqual(problems, []);
     } finally {
       await browser.close();

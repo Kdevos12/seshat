@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { get, message } from "./api.ts";
+import { flatFields, labelOf, subJson, subValues } from "./fields.ts";
 import { Notice } from "./ui.tsx";
 
 /**
@@ -69,10 +70,13 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
   const shownDefault = p.solveDefault ?? p.default;
   const mark = p.solveDefault === undefined ? "" : p.solveDefault === "true" ? `on in ${p.solveSet}` : `${p.solveSet} default`;
   const on = (e: Event) => set((e.target as HTMLInputElement).value);
+  const flat = p.kind === "json" ? flatFields(p.type) : undefined;
+  const sub = flat !== undefined ? subValues(value) : undefined;
+  const json = <textarea id={id} class="short" value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />;
   return (
-    <div class="setting">
+    <div class={`setting${value.trim() !== "" ? " changed" : ""}`}>
       <label for={id}>
-        <code>{p.key}</code>
+        <span class="setting-name">{labelOf(p.key)}</span> <code class="muted small">{p.key}</code>
         {p.status === "beta" || p.status === "experimental" ? <span class={`chip badge ${p.status}`}> {p.status}</span> : null}
         {mark !== "" ? <span class="chip badge solve-default"> {mark}</span> : null}
       </label>
@@ -92,13 +96,46 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
             ))
           )}
         </select>
+      ) : flat !== undefined && sub !== undefined ? (
+        <>
+          <div class="subfields">
+            {flat.map((f) => {
+              const sid = `${id}-${f.name}`;
+              const put = (v: string) => set(subJson(flat, { ...sub, [f.name]: v }));
+              return (
+                <div key={f.name}>
+                  <label for={sid} class="small">
+                    {labelOf(f.name)}
+                    {f.optional ? "" : " (needed when the setting is used)"}
+                  </label>
+                  {f.kind === "boolean" || f.kind === "choice" ? (
+                    <select id={sid} value={sub[f.name] ?? ""} onChange={(e) => put((e.target as HTMLSelectElement).value)}>
+                      <option value="">Default</option>
+                      {(f.kind === "boolean" ? ["true", "false"] : (f.choices ?? [])).map((c) => (
+                        <option key={c} value={c}>
+                          {c === "true" ? "On" : c === "false" ? "Off" : c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input id={sid} type={f.kind === "text" ? "text" : "number"} step={f.kind === "integer" ? "1" : "any"} value={sub[f.name] ?? ""} placeholder={f.type} spellcheck={false} onInput={(e) => put((e.target as HTMLInputElement).value)} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <details class="expert">
+            <summary class="small">Edit as JSON</summary>
+            {json}
+          </details>
+        </>
       ) : p.kind === "json" ? (
-        <textarea id={id} class="short" value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />
+        json
       ) : (
         <input id={id} type={p.kind === "integer" || p.kind === "number" ? "number" : "text"} step={p.kind === "integer" ? "1" : "any"} value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />
       )}
       <p class="muted small" id={`${id}-help`}>
-        {p.summary} {p.kind === "json" ? `JSON: ${p.type}.` : p.kind === "list" ? "Separate the items with commas." : ""}
+        {p.summary} {p.kind === "json" && flat === undefined ? `JSON: ${p.type}.` : p.kind === "list" ? "Separate the items with commas." : ""}
       </p>
     </div>
   );
@@ -124,30 +161,42 @@ export function SettingsPanel(props: { command: "solve" | "run"; defaults?: "v1"
 
   if (failed !== undefined) return <Notice kind="warn">The settings could not be loaded: {failed}</Notice>;
   if (list === undefined) return <p class="muted">Loading the settings...</p>;
+  const changed = Object.values(raw).filter((v) => v.trim() !== "").length;
   return (
     <section class="settings" aria-label="Settings">
-      <h2>Settings</h2>
-      <p class="muted">Every setting of a run, from the harness's own list. A field left empty is not sent: the run uses its default, shown in the field.</p>
-      {list.groups.map((g) => {
-        const here = shown.filter((p) => p.group === g.id);
-        const basic = here.filter((p) => p.ui === "basic");
-        const advanced = here.filter((p) => p.ui === "advanced");
-        if (here.length === 0) return null;
-        const field = (p: ParameterView) => <Field key={p.key} p={p} value={raw[p.key] ?? ""} set={(value) => setRaw((r) => ({ ...r, [p.key]: value }))} />;
-        return (
-          <fieldset key={g.id} class="group" data-group={g.id}>
-            <legend>{g.id}</legend>
-            <p class="muted small">{g.summary}</p>
-            {basic.map(field)}
-            {advanced.length > 0 ? (
-              <details>
-                <summary>Advanced ({advanced.length})</summary>
-                {advanced.map(field)}
-              </details>
-            ) : null}
-          </fieldset>
-        );
-      })}
+      <details class="settings-all">
+        <summary>
+          Advanced settings{changed > 0 ? ` (${changed} changed)` : ""}
+        </summary>
+        <p class="muted">Every setting of a run, from the harness's own list. You can start without touching any. A field left empty is not sent: the run uses its default, shown in the field.</p>
+        {changed > 0 ? (
+          <div class="actions">
+            <button type="button" class="ghost" onClick={() => setRaw({})}>
+              Reset to the defaults
+            </button>
+          </div>
+        ) : null}
+        {list.groups.map((g) => {
+          const here = shown.filter((p) => p.group === g.id);
+          const basic = here.filter((p) => p.ui === "basic");
+          const advanced = here.filter((p) => p.ui === "advanced");
+          if (here.length === 0) return null;
+          const field = (p: ParameterView) => <Field key={p.key} p={p} value={raw[p.key] ?? ""} set={(value) => setRaw((r) => ({ ...r, [p.key]: value }))} />;
+          return (
+            <fieldset key={g.id} class="group" data-group={g.id}>
+              <legend>{labelOf(g.id)}</legend>
+              <p class="muted small">{g.summary}</p>
+              {basic.map(field)}
+              {advanced.length > 0 ? (
+                <details>
+                  <summary>More ({advanced.length})</summary>
+                  {advanced.map(field)}
+                </details>
+              ) : null}
+            </fieldset>
+          );
+        })}
+      </details>
     </section>
   );
 }
