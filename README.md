@@ -147,6 +147,8 @@ If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or
 
 Seshat is designed and engineered by Kyllian de Vos ([@Kdevos12](https://github.com/Kdevos12)), built with Claude Code as coding agents.
 
+Seshat builds on the work of many others. [REFERENCES.md](REFERENCES.md) lists the papers, books and tools it draws on, and says what it takes from each and where that lives in the code.
+
 ## License
 
 [Apache License 2.0](LICENSE), copyright 2026 Kyllian de Vos. A redistribution, modified or not, keeps the [NOTICE](NOTICE) file with its attribution.
