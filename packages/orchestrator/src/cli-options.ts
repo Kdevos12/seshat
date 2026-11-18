@@ -75,6 +75,8 @@ export const CLI_OPTIONS = {
   "no-lean-search": { type: "boolean" },
   port: { type: "string" },
   open: { type: "boolean" },
+  quiet: { type: "boolean" },
+  "no-open": { type: "boolean" },
   lean: { type: "boolean" },
   prose: { type: "boolean" },
   "no-check": { type: "boolean" },

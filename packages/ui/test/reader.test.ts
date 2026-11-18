@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { listRuns, JournalTail, plainStatus, readRun, RunReadError, runDirectory } from "../src/index.ts";
+import { listRuns, JournalTail, plainStatus, readRun, RunReadError, runDirectory, summarize } from "../src/index.ts";
 import { scriptedJournal } from "../../orchestrator/test/scripted-journal.ts";
 import { check, demoRun, say, tempDir } from "../../orchestrator/test/m0-helpers.ts";
 
@@ -100,5 +100,31 @@ describe("the journal reader and the verified frontier", () => {
     assert.match(view.resultMd, /## Established so far/);
     const off = await demoRun({ config: { sessions: 1 }, responses: [check("bad", lemma, "induction"), say("notes")] });
     assert.deepEqual(readRun(off.dir).frontier, []);
+  });
+});
+
+describe("the list of runs (UX4)", () => {
+  it("says what a run is about, where it stands and what it cost, from the run view alone", () => {
+    const s = scriptedJournal();
+    s.journal.close();
+    const summary = summarize(readRun(s.dir));
+    assert.equal(summary.title, "Every even number above two is a sum of two primes", "the first problem's statement, not its id");
+    assert.equal(summary.level, "leads");
+    assert.equal(summary.problems, 3);
+    assert.equal(summary.state, "paused");
+    assert.equal(summary.usd, 0.07);
+  });
+
+  it("reads a campaign's digest, cut when it is too long, and null for a run that is not a campaign (UX15)", () => {
+    const scripted = scriptedJournal();
+    scripted.journal.close();
+    assert.equal(readRun(scripted.dir).campaign, null);
+    mkdirSync(join(scripted.dir, "campaign"), { recursive: true });
+    writeFileSync(join(scripted.dir, "campaign", "digest.md"), "# Digest\n\nTurn 1.\n");
+    assert.deepEqual(readRun(scripted.dir).campaign, { digest: "# Digest\n\nTurn 1.\n", cut: false });
+    writeFileSync(join(scripted.dir, "campaign", "digest.md"), "x".repeat(250_000));
+    const long = readRun(scripted.dir).campaign;
+    assert.equal(long?.cut, true);
+    assert.equal(long?.digest.length, 200_000);
   });
 });

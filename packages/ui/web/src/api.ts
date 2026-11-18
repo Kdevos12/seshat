@@ -96,6 +96,8 @@ export interface Provider {
   configured: boolean;
   source: string | null;
   stored: boolean;
+  /** The cheapest priced model that can serve a prover, in dollars per million tokens, input plus output (UX11). */
+  cheapest: { id: string; price: number } | null;
 }
 
 export interface ModelInfo {
@@ -228,6 +230,8 @@ export interface Run {
   stop: { reason: string; detail: string } | null;
   journal: { events: number; head: string; chain: string };
   model: string | null;
+  /** How long the run has worked, from its journal. */
+  seconds: number;
   status: PlainStatus[];
   certifier: { name: string | null; unavailable?: string };
   signature: { statement: string; prose?: string; by: string } | null;
@@ -243,6 +247,8 @@ export interface Run {
   proof: { certified: ProofFile[]; candidates: ProofFile[]; partial: Array<{ claimId: string; statement: string; holes: number; proof: string }> };
   failed: Array<{ claimId: string; strategy: string; attempts: number; lastFailure?: string }>;
   resume: string;
-  resumeInfo: { checkout: string } | null;
+  resumeInfo: { checkout: string; bench?: string; host?: string } | null;
   resultMd: string;
+  /** A campaign's digest (UX15); null for a run that is not a campaign. */
+  campaign: { digest: string; cut: boolean } | null;
 }

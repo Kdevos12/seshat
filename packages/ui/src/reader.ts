@@ -105,6 +105,21 @@ export interface RunView {
   resumeInfo: ResumeInfo | null;
   /** The text of RESULT.md as the journal would give it now. */
   resultMd: string;
+  /** A campaign's digest, `campaign/digest.md` as its supervisor last wrote it (UX15), cut at 200 kB; null for a run that is not a campaign. */
+  campaign: { digest: string; cut: boolean } | null;
+}
+
+const MAX_DIGEST = 200_000;
+
+/** The digest a campaign writes after each turn, or null when the run has none. */
+export function readDigest(dir: string): { digest: string; cut: boolean } | null {
+  const file = join(dir, "campaign", "digest.md");
+  try {
+    const text = readFileSync(file, "utf8");
+    return text.length > MAX_DIGEST ? { digest: text.slice(0, MAX_DIGEST), cut: true } : { digest: text, cut: false };
+  } catch {
+    return null;
+  }
 }
 
 const MAX_CLAIMS = 400;
@@ -227,6 +242,7 @@ export function readRun(dir: string): RunView {
       resume: result.resume,
       resumeInfo: readResumeInfo(dir),
       resultMd: renderResult(result),
+      campaign: readDigest(dir),
     };
   } finally {
     p.close();
@@ -239,6 +255,26 @@ export interface RunListing {
   /** Milliseconds since the epoch of the journal's last write. */
   modified: number;
   bytes: number;
+}
+
+/** What the list of runs says of one run (UX4): its words, where it stands and what it cost, from `readRun`; null when it cannot be read. */
+export interface RunSummary {
+  /** The person's words, else the signed statement, else the first problem's statement, else its target. */
+  title: string;
+  /** The level of the first problem (`proved`, `candidate`, ...). */
+  level: Level | null;
+  problems: number;
+  state: RunView["state"];
+  usd: number;
+  model: string | null;
+}
+
+/** The summary of a run view. Nothing in it is new: it is what the run screen shows, cut short. */
+export function summarize(view: RunView): RunSummary {
+  const first = view.status[0];
+  const claim = first !== undefined ? view.claims.find((c) => c.id === first.claimId)?.statement : undefined;
+  const words = view.signature?.prose ?? view.signature?.statement ?? (claim !== undefined && claim.trim() !== "" ? claim : undefined) ?? first?.target ?? view.runId;
+  return { title: words.replace(/\s+/g, " ").trim().slice(0, 140), level: first?.level ?? null, problems: view.status.length, state: view.state, usd: view.spend.usd, model: view.model };
 }
 
 /** The run directories under `runsDir` (those that have a journal), the most recently written first. */

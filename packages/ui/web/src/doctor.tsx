@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { type Check, get, message } from "./api.ts";
-import { Notice } from "./ui.tsx";
+import { Inline, Notice } from "./ui.tsx";
 
 const WORDS = { ok: "Ready", warn: "Warning", missing: "Missing" } as const;
 
@@ -38,9 +38,24 @@ export function Doctor() {
           <div class="check" key={c.id}>
             <span class={`mark ${c.status}`}>{WORDS[c.status]}</span>
             <div>
-              <strong>{c.title}</strong>
-              <div>{c.detail}</div>
-              {c.fix !== undefined ? <div class="muted">What to do: {c.fix}</div> : null}
+              <strong>
+                <Inline text={c.title} />
+              </strong>
+              <div>
+                <Inline text={c.detail} />
+              </div>
+              {c.fix !== undefined ? (
+                <div class="muted">
+                  What to do: <Inline text={c.fix} />
+                </div>
+              ) : null}
+              {c.id === "credentials" && c.status !== "ok" ? (
+                <div>
+                  <a class="button" href="#/settings">
+                    Add a key on the Providers page
+                  </a>
+                </div>
+              ) : null}
             </div>
           </div>
         ))}

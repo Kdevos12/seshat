@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { plan, RequestError } from "../src/index.ts";
@@ -272,11 +273,78 @@ describe("the end of a command", () => {
   });
 });
 
+describe("what a solve may send outside, and its defaults (UX6)", () => {
+  it("maps the person's choice to --lit or --private, the defaults set to --defaults, and adds nothing by default", async () => {
+    const s = await server();
+    const commandOf = async (extra: Record<string, unknown>) => {
+      const id = (await s.call("POST", "/api/jobs", { kind: "solve", statement: "Every number equals itself.", maxUsd: 1, ...extra })).json().job.id as string;
+      await until(async () => (await job(s, id)).state === "awaiting_signature", "the signature");
+      const command = (await job(s, id)).command as string[];
+      await s.call("POST", `/api/jobs/${id}/answer`, { yes: false });
+      await until(async () => !["running", "awaiting_signature"].includes((await job(s, id)).state), "the end");
+      return command;
+    };
+    const plain = await commandOf({});
+    assert.equal(plain.some((a) => a === "--lit" || a === "--private" || a.startsWith("--defaults")), false, "the model's provider only: no flag");
+    assert.ok((await commandOf({ outside: "lit", defaults: "v1" })).includes("--lit"));
+    const strict = await commandOf({ outside: "private", turnUsd: 0.25 });
+    assert.ok(strict.includes("--private") && !strict.includes("--lit"));
+    assert.ok(strict.includes("--turn-usd=0.25"), "the first turn's limit");
+    assert.ok((await commandOf({ defaults: "v1" })).includes("--defaults=v1"));
+  });
+});
+
+describe("a campaign from the interface (UX15)", () => {
+  it("starts harness campaign with its pace and end, signed as a solve, stops it, and continues it detached from its run", async () => {
+    const s = await server();
+    const end = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const started1 = await s.call("POST", "/api/jobs", { kind: "solve", statement: "Every number equals itself.", maxUsd: 5, campaign: { usdPerDay: 1, until: end } });
+    assert.equal(started1.status, 201, started1.text);
+    const id = started1.json().job.id as string;
+    const runId = started1.json().job.runId as string;
+    await until(async () => (await job(s, id)).state === "awaiting_signature", "the signature");
+    const command = (await job(s, id)).command as string[];
+    assert.equal(command[0], "campaign");
+    assert.ok(command.includes("--max-usd=5") && command.includes("--usd-per-day=1") && command.includes(`--until=${end}`) && command.includes("--ask-stdin"));
+    await s.call("POST", `/api/jobs/${id}/answer`, { yes: true });
+    await until(async () => (await job(s, id)).lines.some((l: any) => l.text === "signed: working"), "the campaign to go on");
+    await s.call("POST", `/api/jobs/${id}/stop`);
+    await until(async () => (await job(s, id)).state === "stopped", "the stop");
+
+    // The run page's "Continue the campaign": `campaign --resume DIR`, which may outlive the page.
+    const dir = join(s.runsDir, runId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "journal.jsonl"), "");
+    const resumed = await s.call("POST", "/api/jobs", { kind: "campaign", runId });
+    assert.equal(resumed.status, 201, resumed.text);
+    const rid = resumed.json().job.id as string;
+    assert.deepEqual((await job(s, rid)).command, ["campaign", "--resume", dir]);
+    assert.equal((await s.call("POST", "/api/jobs", { kind: "campaign", runId })).status, 409, "one command on a run at a time");
+    await s.call("POST", `/api/jobs/${rid}/stop`);
+    await until(async () => (await job(s, rid)).state === "stopped", "the stop");
+    assert.equal((await s.call("POST", "/api/jobs", { kind: "campaign", runId: "no-such-run" })).status, 404);
+  });
+
+  it("refuses a pace above the allowance, an end that is past or not an ISO time, and anything else in the campaign", () => {
+    const ctx = { runsDir: join(tmpdir(), "seshat-no-runs") };
+    const base = { statement: "x", maxUsd: 2 };
+    const refused = (campaign: unknown, why: RegExp) => assert.throws(() => plan("solve", { ...base, campaign }, ctx), (e: unknown) => e instanceof RequestError && why.test(e.message));
+    refused({ usdPerDay: 3 }, /at most the allowance/);
+    refused({ until: "2001-01-01T00:00:00Z" }, /a time to come/);
+    refused({ until: "next tuesday" }, /ISO time/);
+    refused({ reflect: true }, /usdPerDay and until/);
+    refused([1], /an object/);
+    const plain = plan("solve", { ...base, campaign: {} }, ctx);
+    assert.equal(plain.argv[0], "campaign", "an empty campaign is a campaign with no pace and no end");
+    assert.equal(plan("solve", { ...base, campaign: false }, ctx).argv[0], "solve");
+  });
+});
+
 describe("a request that fails leaves nothing behind", () => {
   it("writes no statement file when the model, host or mode is refused or the ceiling is missing", async () => {
     const s = await server();
     const before = () => (existsSync(join(s.runsDir, "_inputs")) ? readdirSync(join(s.runsDir, "_inputs")).length : 0);
-    for (const body of [{ model: "a b" }, { host: "../x" }, { mode: "latex" }, { maxUsd: 0 }, { maxUsd: undefined }]) {
+    for (const body of [{ model: "a b" }, { host: "../x" }, { mode: "latex" }, { maxUsd: 0 }, { maxUsd: undefined }, { outside: "everything" }, { defaults: "v9" }]) {
       const r = await s.call("POST", "/api/jobs", { kind: "solve", statement: "some words", mode: "prose", maxUsd: 1, ...body });
       assert.equal(r.status, 400, JSON.stringify(body));
     }

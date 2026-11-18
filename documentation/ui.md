@@ -42,8 +42,11 @@ an event's data.
 system picks a free port. It prints one address with the token in its fragment (`http://127.0.0.1:PORT/#token=...`). A
 fragment is never sent to a server, written in a referrer or kept in the history: the page reads it, keeps it in the tab's
 `sessionStorage`, replaces the address with `#/` and sends it as `Authorization: Bearer` on every request. There is no cookie,
-so two instances on two ports (or a restart on the same port) cannot read or overwrite each other's session. `--open` hands the
-address to `xdg-open` or `open`, so the token is visible to `ps` for that moment, to the same user only.
+so two instances on two ports (or a restart on the same port) cannot read or overwrite each other's session. Opening the page hands the
+address to `xdg-open`, `open` or `start`, so the token is visible to `ps` for that moment, to the same user only. The command opens it
+by default when its standard output is a terminal on a machine with a display (macOS, Windows, or `DISPLAY` or `WAYLAND_DISPLAY` set:
+`opensByDefault` in `packages/ui/src/command.ts`); `--open` forces it, `--no-open` keeps the page closed and only prints the address. A test or
+a script, whose output is not a terminal, never opens a browser.
 
 ### Security
 
@@ -65,7 +68,7 @@ it says about itself; it never logs a request body, and a line that came from an
 
 ### Running commands
 
-`POST /api/jobs` takes `{kind, ...fields}` for `solve`, `run`, `resume`, `hint`, `steer` or `sign`.
+`POST /api/jobs` takes `{kind, ...fields}` for `solve`, `run`, `resume`, `campaign`, `hint`, `steer` or `sign`.
 `packages/ui/src/commands.ts` checks each field against a fixed list (length, pattern, range) and builds the
 arguments of the command in the `--flag=value` form, as an argument list: no shell reads it, and no value can be taken
 for a flag. The text of a hint comes after `--`. Every field is checked first; only then is a statement written to a file
@@ -73,6 +76,14 @@ under `runs/_inputs` with mode 0600 (and removed again if the command cannot sta
 statement that looks like a path or a flag is read as the text it is. A refused request writes nothing. Statement files of
 commands that started stay under `runs/_inputs`, with the run's other files. A `run` needs `runBudgetUsd`: the interface does
 not start a run that would spend by the harness's default.
+
+**Campaigns (UX15).** The start form's "Let it run for days" sends `campaign: { usdPerDay?, until? }` with a `solve`; the
+command is then `harness campaign FILE` with `--usd-per-day` and `--until` ([campaign.md](campaign.md)), signed on the page as a
+solve is. The dollars a day are at most the allowance, the end is an ISO time to come (the page's local time, sent as UTC), and
+no other key is accepted. The campaign goes on while the server runs; stopping it is Ctrl-C, as for a solve. Its run page shows
+`campaign/digest.md` (cut at 200 kB) and, instead of "Continue the run", "Continue the campaign": `{kind: "campaign", runId}`
+starts `harness campaign --resume DIR`, which reads everything from the journal and may be started detached, so that it
+outlives the page. A command already working on the run refuses it, and the campaign's own lock refuses a second supervisor.
 
 `packages/ui/src/jobs.ts` is the process manager. It starts `node packages/orchestrator/src/cli.ts ...` with the
 process's environment plus the stored keys it needs (below), keeps the last 2000 lines each command prints (every stored key
@@ -110,6 +121,7 @@ always, before any spend.
 |---|---|---|
 | `GET /api/runs`, `/api/runs/ID`, `/api/runs/ID/result`, `/api/runs/ID/events` | the journal and blobs of a run, through the reader | nothing |
 | `GET /api/doctor` | the machine, as `harness doctor --no-write` does | nothing (the isolation profile is written by the command only) |
+| `GET /api/estimate` | what a ceiling buys (UX10): `maxUsd`, and `model` or the model `solve` would choose on the server's host profile; the answer is `{ model, rule, line }`, `{}` when no model can be chosen. The sessions measured are those of the server's runs directory, read again at most once a minute ([quickstart.md](quickstart.md#what-the-ceiling-buys)) | nothing |
 | `GET /api/parameters` | the catalogue of settings (`parameters.ts` of the orchestrator): the entries a person sees; with `?command=solve` (and `&defaults=v1` or `v2`, default `v2`) each entry also carries `solveDefault` and `solveSet`, the value `solve` really applies | `command`, `defaults` |
 | `GET /api/providers`, `/api/providers/ID/models` | the library's providers | nothing |
 | `PUT` and `DELETE /api/providers/ID/key` | | the key file |
@@ -121,6 +133,12 @@ No provider is named in this package. `GET /api/providers` lists what the pi-ai 
 (`packages/ui/src/providers.ts`): its id, name, how many chat models it lists, and whether credentials are found.
 `GET /api/providers/ID/models` lists the models of one, with the library's price per million input and output tokens, in the
 `PROVIDER/ID` form that `--model` takes.
+
+**The Providers page (UX11).** It opens with the providers that have credentials ("With credentials"), then, only when the host
+profile has a `recommended` list, the providers it names ("Recommended for cost"); the shipped profiles have none, so Seshat itself
+prefers no provider. The others are folded under "Other providers (n)", opened by the search box. Each provider says the price of
+its cheapest priced model that can serve a prover (`cheapest` in `GET /api/providers`, input plus output per million tokens, by
+`isCapable`, the rule `solve` chooses with); `GET /api/providers` also answers the host profile's `recommended` list.
 
 **Which variable carries a key.** The library reports every environment variable it looks at while it checks a provider's
 credentials. The interface asks it, and takes the first name ending in `API_KEY` (then `TOKEN`) with which the library
@@ -161,11 +179,16 @@ text colour so that it follows the theme), and the tab's icon is its 64-pixel re
 
 | Screen | What it does |
 |---|---|
-| **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine |
+| **Problems** (start) | the statement in words or in Lean, the spend ceiling, the model (the cheapest priced one, or a provider and a model from the library's list), the runs on this machine: each by its words (the person's, else the signed statement, else the first problem's statement), where its first problem stands, what it spent, its state and model (`summary` of `GET /api/runs`, `summarize` in `reader.ts`, for the 30 newest runs, read again only when a journal changes) |
 | **Signature** | for a statement in words: your words beside the Lean statement a model made of them, what the first cases said, a warning when cheap automation proves it, and two buttons. For a statement in words the card says the formalization was a model call already charged to the allowance; it reads a malformed shape defensively, and a screen that cannot be drawn shows one plain line |
-| **Run** | the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; "Established so far" when the run shows its frontier; leads, evidence and failures |
-| **Checklist** | `harness doctor` as a list: what is ready, what is missing, what to do. It writes nothing |
+| **Run** | a header with the phase (preparing the statement, waiting for your signature, researching, paused, stopped, finished: `phaseOf` in `run.tsx`, from the job and the journal), the model, the host and how long the run has worked; the plain-language status of each problem; the spend gauge, by site and rung, with a stop button; the result (each certified Lean file with a copy button, `RESULT.md`); candidates and partial sketches apart under a warning; turns and the questions put to the team; continue, hint, steer and sign an edge; the read-only research graph; "Established so far" when the run shows its frontier; leads, evidence and failures |
+| **Checklist** | `harness doctor` as a list: what is ready, what is missing, what to do. It writes nothing. The doctor's marks are drawn as styles (`**bold**`, `` `code` ``, bare links: `web/src/inline.ts`, never HTML), a command in code has a copy button, and a missing key links to the Providers page (UX11) |
 | **Providers** | the library's providers, whether each has credentials, a place to save or remove a key |
+
+**Words, not ids.** A claim is shown by the first words of its statement everywhere a person reads or picks one: the status lines, the
+proofs, the candidates and sketches, the hint, steer and signature choices, the leads and evidence, what failed, and the boxes of the graph.
+The id stays beside it, small, for a command or a search in the journal. The command's raw output is folded under "What the command says"
+(with its line count); the stop buttons say that the run can be continued, as `harness resume` and "Continue the run" do.
 
 **Evidence is never shown as proof.** A problem is worded as proved or refuted only when a valid kernel replay of its claim is in the
 journal; a proof that passed the fast check is "a candidate, not certified"; counter-examples and a tool's findings are "leads" and
@@ -183,7 +206,18 @@ light or dark scheme. The browser test takes screenshots of every screen at phon
 
 ## Settings
 
-The start form has a "Settings" panel that covers every parameter of a run and keeps covering them as settings are added, because nothing in it is written by hand. `GET /api/parameters` (`packages/ui/src/parameters.ts`) gives the catalogue of [parameters.md](parameters.md) (`packages/orchestrator/src/parameters.ts`): the entries a person sees (`ui` is not `hidden`, `status` is not `internal`: the keys a settings file accepts), each with its group, the way it is entered (`kind`: a switch, a number, a list, a choice, text or JSON), type, default, summary and status. The page draws one section per group; the `basic` entries are shown and the `advanced` ones sit behind an "Advanced" disclosure; a `beta` or `experimental` status is a badge; each field's default is its placeholder and its summary is its help text. A key added to `RunConfig` and to the catalogue (`tsc` fails without the entry) appears in the menu with no interface code. A `solve` leaves out the settings its own fields and flags take (`budget`, `model`, and the other keys of `SOLVE_OWN_FLAGS`). The panel of a `solve` asks `GET /api/parameters?command=solve`: each entry whose value `solve` runs with differs from `harness run`'s default (`budgetRounds`, `editTool`, `firstCases`, `budgetShare`, `lines`, ... under `v2`) shows that value as its placeholder, with a mark ("on in v2", or "v2 default" for a value that is not a switch). The values are derived from `setConfig` and `studentLines` (`solveDefaultsOf` in `student.ts`), the code `solve` itself calls, so they cannot drift from it; the "solve v2" column of [parameters.md](parameters.md) is generated from the same function.
+The start form has a "Settings" panel that covers every parameter of a run and keeps covering them as settings are added, because nothing in it is written by hand. `GET /api/parameters` (`packages/ui/src/parameters.ts`) gives the catalogue of [parameters.md](parameters.md) (`packages/orchestrator/src/parameters.ts`): the entries a person sees (`ui` is not `hidden`, `status` is not `internal`: the keys a settings file accepts), each with its group, the way it is entered (`kind`: a switch, a number, a list, a choice, text or JSON), type, default, summary and status. The whole panel is folded under one "Advanced settings" disclosure (UX9), whose summary counts the fields changed ("Advanced settings (3 changed)"), beside a "Reset to the defaults" button: a person can start without opening it. Inside, the page draws one section per group; the `basic` entries are shown and the `advanced` ones sit behind a "More (n)" disclosure; each field is named in words (`budgetShare` is "Budget share", `timeoutSec` "Timeout (seconds)") with its key beside it, small; a `beta` or `experimental` status is a badge; each field's default is its placeholder and its summary is its help text. A JSON setting whose type is a flat object (`sorryBattery`: `{ maxSorries?: integer >= 1, timeoutSec?: number >= 1 }`) gets one typed field per member, the JSON box kept under "Edit as JSON"; a nested or generic type (`Record<...>`, `{ limit: { ... } }`) or a member without its type keeps the JSON box alone. The parsing is `web/src/fields.ts`, tested in `packages/ui/test/fields.test.ts` against every JSON setting of the catalogue. A key added to `RunConfig` and to the catalogue (`tsc` fails without the entry) appears in the menu with no interface code. A `solve` leaves out the settings its own fields and flags take (`budget`, `model`, and the other keys of `SOLVE_OWN_FLAGS`). The panel of a `solve` asks `GET /api/parameters?command=solve`: each entry whose value `solve` runs with differs from `harness run`'s default (`budgetRounds`, `editTool`, `firstCases`, `budgetShare`, `lines`, ... under `v2`) shows that value as its placeholder, with a mark ("on in v2", or "v2 default" for a value that is not a switch). The values are derived from `setConfig` and `studentLines` (`solveDefaultsOf` in `student.ts`), the code `solve` itself calls, so they cannot drift from it; the "solve v2" column of [parameters.md](parameters.md) is generated from the same function.
+
+**What the ceiling buys (UX10).** Under the spend ceiling, the form shows the line `solve` prints before it spends: about how many
+sessions, and problems like the earlier ones, the ceiling buys of the chosen model (or of the one `solve` would choose, named), from the
+sessions measured in the runs of this server; with too few measured, the tokens it buys. It is asked 400 ms after the typing stops.
+
+**What may leave this machine (UX6).** Above the settings, the form asks what may be sent besides the model call: only the model's provider
+(the default, no flag: `solve --ask-stdin` asks no question, and no answer is no), also the literature and Lean search services (`--lit`: the
+person's yes, journaled as consent given by flag), or strictly private (`--private`). It also offers the defaults set (`--defaults v1|v2`; the
+settings panel then shows that set's values) and the dollars after which the run stops for the person to look (`--turn-usd`, half the ceiling
+by default). `plan` (`commands.ts`) checks each against a fixed list (`OUTSIDE`, `DEFAULTS_NAMES`). The banner of `harness solve` says the
+same in one line (`outsideLine`).
 
 A field left empty is not sent. On start, the request carries `settings`, the filled-in values; `plan` (`commands.ts`) checks them with `parseSettings`, the reader that `harness run|solve --settings FILE` uses ([quickstart.md](quickstart.md#a-settings-file)), and a refusal (an unknown key, a wrong type, a value `checkConfig` rejects) is shown in the form and starts nothing and writes nothing. Otherwise the values are written to `runs/_inputs/RUN_ID.settings.json` (mode 0600, beside the statement, removed again if the command cannot start) and the command gets `--settings=FILE`; the values are never on the command line. No setting chosen: no file and no flag. The tests are `packages/ui/test/settings.test.ts` (the API, the start request, the refusals) and the settings test of `browser.test.ts` (the panel in Chromium, skipped without Playwright).
 

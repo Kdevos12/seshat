@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { loadHostProfile } from "@seshat/registry";
-import { doctor, type DoctorSystem, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, chooseModel, solveCommand, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
+import { doctor, type DoctorSystem, nearMissKeys, renderDoctor, REPO_ROOT, STUDENT_DEFAULT_MAX_USD, cheapestModel, chooseModel, solveCommand, checkAllowance, studentConfig, STUDENT_LINES } from "../src/index.ts";
 import { kiminaSettingsFor, leanMemoryCheck, leanServerMemoryFromPs } from "../src/lean-memory.ts";
 import { fauxModels, tempDir } from "./m0-helpers.ts";
 import { BARE_MACHINE } from "../../ui/test/helpers.ts";
@@ -411,5 +411,20 @@ describe("harness doctor: the memory of the Lean server (CA4)", () => {
     assert.equal(leanServerMemoryFromPs(ps), 6096);
     assert.equal(leanServerMemoryFromPs("   500000 node dist/cli.js\n"), undefined);
     assert.equal(leanServerMemoryFromPs(""), undefined);
+  });
+});
+
+describe("near-miss key variables (UX13)", () => {
+  it("names a variable close to the key a provider without credentials reads, and never its value", () => {
+    const env = { DEEPSEEK_API: "sk-secret-value", OPENAI_API_BASE: "https://x", OPENROUTER_API_KEY: "", PATH: "/bin", MISTRAL_KEY: "k" };
+    const misses = nearMissKeys(env, ["deepseek", "openai", "openrouter", "mistral", "anthropic"], new Set(["anthropic"]));
+    assert.deepEqual(misses, [
+      { provider: "deepseek", found: "DEEPSEEK_API", expected: "DEEPSEEK_API_KEY" },
+      { provider: "mistral", found: "MISTRAL_KEY", expected: "MISTRAL_API_KEY" },
+    ]);
+    assert.doesNotMatch(JSON.stringify(misses), /sk-secret-value/);
+    assert.deepEqual(nearMissKeys({ DEEPSEEK_API: "x" }, ["deepseek"], new Set(["deepseek"])), [], "a provider with credentials needs no hint");
+    assert.deepEqual(nearMissKeys({ DEEPSEEK_API: "x", DEEPSEEK_API_KEY: "y" }, ["deepseek"], new Set()), [], "the right variable is set");
+    assert.deepEqual(nearMissKeys({ OPENAI_CODEX_TOKEN: "x" }, ["openai"], new Set()), [], "another provider's variable is not a near miss");
   });
 });

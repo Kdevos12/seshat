@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
-import { DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, realSystem } from "@seshat/orchestrator";
+import { ceilingEstimate, hostRecommended, DEFAULTS_NAMES, type DefaultsName, doctorReport, type DoctorSystem, type Measured, measuredSessions, realSystem } from "@seshat/orchestrator";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { plan, RequestError } from "./commands.ts";
@@ -9,8 +9,11 @@ import { parameterList } from "./parameters.ts";
 import { type ProcessManager } from "./jobs.ts";
 import { KeyFileError, type KeyStore, redact, validKey } from "./keys.ts";
 import { describeModels, describeProviders, serverModels, VariableFinder } from "./providers.ts";
-import { JournalTail, listRuns, readRun, RunReadError, runDirectory } from "./reader.ts";
+import { JournalTail, listRuns, readRun, RunReadError, type RunListing, runDirectory, type RunSummary, summarize } from "./reader.ts";
 import { guard, securityHeaders } from "./security.ts";
+
+/** How many of the newest runs the list of runs summarizes; the others are listed by name. */
+const SUMMARIZED = 30;
 
 /**
  * The routes of the local server (documentation/ui.md). Every route sits behind the guards of `security.ts`. A route that reads a run
@@ -114,7 +117,16 @@ export function createApp(o: AppOptions): Hono {
   });
 
   // ---- Providers and keys.
-  app.get("/api/providers", async (c) => c.json({ providers: await describeProviders(models, finder, o.keys) }));
+  // `recommended` is the host profile's list (UX11): the shipped profiles have none, and the page then recommends nothing.
+  app.get("/api/providers", async (c) => {
+    let recommended: string[] = [];
+    try {
+      recommended = hostRecommended(o.configDir !== undefined ? { configDir: o.configDir } : {});
+    } catch {
+      // A profile that cannot be read recommends nothing; the doctor says what is wrong with it.
+    }
+    return c.json({ providers: await describeProviders(models, finder, o.keys), recommended });
+  });
 
   app.get("/api/providers/:id/models", (c) => {
     const list = describeModels(models, c.req.param("id"));
@@ -162,8 +174,41 @@ export function createApp(o: AppOptions): Hono {
     return c.json(report);
   });
 
+  // ---- What the ceiling buys (UX10): measured from the runs of this server, read again at most once a minute.
+  let measured: { at: number; value: Measured } | undefined;
+  app.get("/api/estimate", async (c) => {
+    const maxUsd = Number(c.req.query("maxUsd"));
+    if (!Number.isFinite(maxUsd) || maxUsd <= 0 || maxUsd > 1e6) throw new RequestError("maxUsd must be a number of dollars above zero");
+    const model = c.req.query("model");
+    if (model !== undefined && model !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,200}$/.test(model)) throw new RequestError("the model is not in a form the interface accepts");
+    if (measured === undefined || Date.now() - measured.at > 60_000) measured = { at: Date.now(), value: measuredSessions(o.runsDir) };
+    try {
+      return c.json(await ceilingEstimate({ models, maxUsd, ...(model !== undefined && model !== "" ? { model } : {}), ...(o.configDir !== undefined ? { configDir: o.configDir } : {}), measured: measured.value }));
+    } catch {
+      // A host profile that cannot be read gives no estimate; the Checklist says what is wrong with it.
+      return c.json({});
+    }
+  });
+
   // ---- Runs.
-  app.get("/api/runs", (c) => c.json({ runs: listRuns(o.runsDir).map((r) => ({ ...r, active: o.manager.activeOn(r.id)?.id ?? null })) }));
+  // The list says what each run is about (UX4): the newest SUMMARIZED runs are read, each once per journal size and time.
+  const summaries = new Map<string, { key: string; summary: RunSummary | null }>();
+  const summaryOf = (r: RunListing): RunSummary | null => {
+    const key = `${r.modified}:${r.bytes}`;
+    const known = summaries.get(r.id);
+    if (known !== undefined && known.key === key) return known.summary;
+    let summary: RunSummary | null = null;
+    try {
+      summary = summarize(readRun(dirOf(r.id)));
+    } catch {
+      // A run that cannot be read is listed by its name alone.
+    }
+    summaries.set(r.id, { key, summary });
+    return summary;
+  };
+  app.get("/api/runs", (c) =>
+    c.json({ runs: listRuns(o.runsDir).map((r, i) => ({ ...r, active: o.manager.activeOn(r.id)?.id ?? null, summary: i < SUMMARIZED ? summaryOf(r) : null })) }),
+  );
 
   app.get("/api/runs/:id", (c) => {
     const id = c.req.param("id");

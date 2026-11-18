@@ -1,7 +1,7 @@
 import cytoscape from "cytoscape";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ClaimView, EdgeView } from "./api.ts";
-import { Chip } from "./ui.tsx";
+import { Chip, words } from "./ui.tsx";
 
 const STATUSES = ["open", "computed", "proved", "refuted", "proved_informal", "retracted"] as const;
 
@@ -34,7 +34,7 @@ export function Graph(props: { claims: ClaimView[]; edges: EdgeView[] }) {
     const el = box.current;
     if (el === null || props.claims.length === 0) return;
     const ids = new Set(props.claims.map((c) => c.id));
-    const elements: cytoscape.ElementDefinition[] = props.claims.map((c) => ({ data: { id: c.id, label: `${c.id.slice(0, 14)}\n${c.status}`, status: c.status, target: c.target ? 1 : 0 } }));
+    const elements: cytoscape.ElementDefinition[] = props.claims.map((c) => ({ data: { id: c.id, label: `${words(c.statement, 30)}\n${c.status}`, status: c.status, target: c.target ? 1 : 0 } }));
     const seen = new Set<string>();
     const link = (from: string, to: string, kind: string, status: string) => {
       if (!ids.has(from) || !ids.has(to) || from === to) return;
@@ -57,7 +57,7 @@ export function Graph(props: { claims: ClaimView[]; edges: EdgeView[] }) {
       minZoom: 0.2,
       maxZoom: 2.5,
       style: [
-        { selector: "node", style: { shape: "round-rectangle", width: 118, height: 40, label: "data(label)", "text-wrap": "wrap", "text-valign": "center", "text-halign": "center", "font-size": 10, color: text, "background-color": css("--open"), "border-width": 1, "border-color": line } },
+        { selector: "node", style: { shape: "round-rectangle", width: 170, height: 46, label: "data(label)", "text-wrap": "wrap", "text-valign": "center", "text-halign": "center", "font-size": 10, color: text, "background-color": css("--open"), "border-width": 1, "border-color": line } },
         ...STATUSES.map((s) => ({ selector: `node[status = "${s}"]`, style: { "background-color": css(`--${s}`) } })),
         { selector: "node[target = 1]", style: { "border-width": 3, "border-color": css("--accent") } },
         { selector: "edge", style: { width: 1.5, "line-color": line, "target-arrow-color": line, "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.8 } },

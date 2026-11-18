@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, follow, get, type Job, message, post, type ProofFile, type Run, type Signature } from "./api.ts";
 import { Graph } from "./graph.tsx";
-import { Chip, Code, CopyButton, money, Notice, Section } from "./ui.tsx";
+import { Chip, Code, CopyButton, duration, money, Notice, Section, words } from "./ui.tsx";
 
 const ACTIVE = new Set(["running", "awaiting_signature"]);
 
@@ -89,11 +89,20 @@ export function RunView(props: { id: string; jobId?: string | undefined }) {
   return (
     <>
       <h1>{run?.signature?.statement !== undefined ? "Your problem" : "Run"} <code class="muted small">{props.id}</code></h1>
+      <RunHeader run={run} job={job} />
       {error !== undefined ? <Notice kind="error">{error}</Notice> : null}
       {job?.state === "awaiting_signature" && job.signature !== undefined ? <SignatureCard job={job} signature={job.signature} onAnswered={loadJob} /> : null}
       {job !== undefined ? <JobPanel job={job} onChange={() => { void loadJob(); void loadRun(); }} /> : null}
       {run === undefined ? (
-        missing && job === undefined ? <Notice kind="warn">There is no run called <code>{props.id}</code> in the runs directory.</Notice> : missing ? <p class="muted">The run has not started yet.</p> : <p class="muted">Loading...</p>
+        missing && job === undefined ? (
+          <Notice kind="warn">There is no run called <code>{props.id}</code> in the runs directory.</Notice>
+        ) : missing && job !== undefined && ACTIVE.has(job.state) ? (
+          <p class="muted">The statement is being prepared: read, and for words turned into Lean by a model. The research starts once you sign it.</p>
+        ) : missing ? (
+          <p class="muted">The run did not start.</p>
+        ) : (
+          <p class="muted">Loading...</p>
+        )
       ) : (
         <>
           <StatusPanel run={run} />
@@ -110,6 +119,33 @@ export function RunView(props: { id: string; jobId?: string | undefined }) {
         </>
       )}
     </>
+  );
+}
+
+/** Where the run is, in one line (UX5): the phase, the model, the host and how long it has worked, from the job and the journal. */
+export function phaseOf(run: Run | undefined, job: Job | undefined): string {
+  if (job?.state === "awaiting_signature") return "Waiting for your signature";
+  if (job !== undefined && job.state === "running") {
+    if (run === undefined) return "Preparing the statement";
+    return job.kind === "solve" || job.kind === "run" || job.kind === "resume" || job.kind === "campaign" ? "Researching" : "Recording your answer";
+  }
+  if (run === undefined) return job?.state === "failed" ? "Could not start" : job?.state === "stopped" ? "Stopped before it began" : "Not started";
+  if (run.state === "finished") return "Finished";
+  if (run.state === "paused") return "Paused: it waits for you";
+  return "Stopped: it can be continued";
+}
+
+function RunHeader(props: { run: Run | undefined; job: Job | undefined }) {
+  const { run, job } = props;
+  const facts = [
+    run?.model !== null && run?.model !== undefined ? `Model ${run.model}` : undefined,
+    run?.resumeInfo?.host !== undefined ? `host ${run.resumeInfo.host}` : undefined,
+    run !== undefined && run.seconds >= 1 ? `${duration(run.seconds)} of work` : undefined,
+  ].filter((f): f is string => f !== undefined);
+  return (
+    <p class="runhead">
+      <span class="chip phase">{phaseOf(run, job)}</span> {facts.length > 0 ? <span class="muted small">{facts.join(" · ")}</span> : null}
+    </p>
   );
 }
 
@@ -218,13 +254,13 @@ function JobPanel(props: { job: Job; onChange: () => void }) {
       {active ? (
         <div class="actions">
           <button type="button" class="danger" onClick={stop}>
-            Stop
+            Stop (you can continue later)
           </button>
         </div>
       ) : null}
       {job.lines.length > 0 ? (
-        <details open={active}>
-          <summary>What the command says</summary>
+        <details>
+          <summary>What the command says ({job.lines.length} line{job.lines.length === 1 ? "" : "s"})</summary>
           <div class="console" ref={box} role="log">
             {job.lines.map((l) => (
               <div key={l.n} class={l.stream}>
@@ -240,6 +276,12 @@ function JobPanel(props: { job: Job; onChange: () => void }) {
 
 const LEVEL_LABEL = { proved: "Proved", refuted: "Refuted", candidate: "Candidate", leads: "Leads only", working: "Working", ended: "Ended", nothing: "Nothing yet" } as const;
 
+/** The words of a claim's statement, from the run's claims; the id when the claim is not drawn. */
+function claimWords(run: Run, claimId: string, max = 60): string {
+  const c = run.claims.find((x) => x.id === claimId);
+  return c !== undefined && c.statement.trim() !== "" ? words(c.statement, max) : claimId;
+}
+
 function StatusPanel(props: { run: Run }) {
   const { run } = props;
   return (
@@ -248,7 +290,7 @@ function StatusPanel(props: { run: Run }) {
         {run.status.map((s) => (
           <div class={`line ${s.level}`} key={s.claimId}>
             <span class="label">{LEVEL_LABEL[s.level]}</span>
-            <code>{s.target}</code>
+            <span>{claimWords(run, s.claimId, 90)}</span> <code class="muted small">{s.target}</code>
             <div>{s.text}</div>
           </div>
         ))}
@@ -293,9 +335,9 @@ function SpendPanel(props: { run: Run; job: Job | undefined; onStopped: () => vo
       {props.job !== undefined ? (
         <div class="actions">
           <button type="button" class="danger" onClick={stop}>
-            Stop now
+            Stop now (you can continue later)
           </button>
-          <span class="muted small">Like Ctrl-C: the work in progress ends and RESULT.md is written. What you have not spent stays yours.</span>
+          <span class="muted small">Like Ctrl-C: the work in progress ends, RESULT.md is written, and "Continue the run" takes it up again. What you have not spent stays yours.</span>
         </div>
       ) : null}
       {spend.sites.length > 0 ? (
@@ -343,8 +385,11 @@ function Proof(props: { p: ProofFile }) {
   return (
     <article class="card">
       <h3>
-        {p.negation ? "Refutation" : "Proof"} of <code>{p.claimId}</code> <span class={`chip ${p.negation ? "s-refuted" : "s-proved"}`}>certified by the Lean kernel</span>
+        {p.negation ? "Refutation" : "Proof"}: {words(p.statement, 80)} <span class={`chip ${p.negation ? "s-refuted" : "s-proved"}`}>certified by the Lean kernel</span>
       </h3>
+      <p class="small muted">
+        Claim <code>{p.claimId}</code>
+      </p>
       <p class="small">
         Statement: <code>{p.statement}</code>
       </p>
@@ -375,7 +420,7 @@ function ResultPanel(props: { run: Run }) {
           {proof.candidates.map((p) => (
             <div key={p.validationId}>
               <p>
-                <code>{p.claimId}</code> <Chip status="computed" />
+                {words(p.statement, 80)} <Chip status="computed" /> <code class="muted small">{p.claimId}</code>
               </p>
               {p.file !== undefined ? <Code text={p.file} /> : null}
             </div>
@@ -389,11 +434,18 @@ function ResultPanel(props: { run: Run }) {
           {proof.partial.map((s) => (
             <div key={s.claimId}>
               <p>
-                <code>{s.claimId}</code>: {s.holes} open hole(s)
+                {words(s.statement, 80)}: {s.holes} open hole(s) <code class="muted small">{s.claimId}</code>
               </p>
               <Code text={s.proof} />
             </div>
           ))}
+        </details>
+      ) : null}
+      {props.run.campaign !== null ? (
+        <details open>
+          <summary>The campaign's digest</summary>
+          <p class="muted small">What the campaign wrote after its last turn (campaign/digest.md){props.run.campaign.cut ? ", cut at 200 kB" : ""}.</p>
+          <Code text={props.run.campaign.digest} label="campaign/digest.md" />
         </details>
       ) : null}
       <details>
@@ -480,10 +532,17 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
             </label>
           </div>
           <div class="actions">
-            <button type="button" disabled={run.resumeInfo === null} onClick={() => send({ kind: "resume", detached, ...limit }, "Resuming.")}>
-              Continue the run
-            </button>
+            {run.campaign !== null ? (
+              <button type="button" onClick={() => send({ kind: "campaign", detached }, "The campaign goes on.")}>
+                Continue the campaign
+              </button>
+            ) : (
+              <button type="button" disabled={run.resumeInfo === null} onClick={() => send({ kind: "resume", detached, ...limit }, "Resuming.")}>
+                Continue the run
+              </button>
+            )}
           </div>
+          {run.campaign !== null ? <p class="muted small">A campaign goes on as it began, with its own allowance, pace and end; the limit above does not apply to it.</p> : null}
           {run.resumeInfo === null ? <p class="muted small">This run has no resume.json, so it can be resumed only with the command in RESULT.md.</p> : null}
         </>
       ) : null}
@@ -496,7 +555,7 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
         <option value="">Choose a claim</option>
         {claims.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.id} ({c.status}): {c.statement.slice(0, 60)}
+            {words(c.statement, 70)} ({c.status})
           </option>
         ))}
       </select>
@@ -517,7 +576,7 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
                 <option value="">No change</option>
                 {claims.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.id}
+                    {words(c.statement, 60)} ({c.status})
                   </option>
                 ))}
               </select>
@@ -528,7 +587,7 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
                 <option value="">No change</option>
                 {claims.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.id}
+                    {words(c.statement, 60)} ({c.status})
                   </option>
                 ))}
               </select>
@@ -552,7 +611,7 @@ function ContinuePanel(props: { run: Run; active: boolean; onStarted: (job: Job)
             <option value="">Choose an edge</option>
             {unsigned.map((e) => (
               <option key={e.id} value={e.id}>
-                {e.kind}: {e.from} to {e.to.join(", ")} ({e.status})
+                {e.kind}: {claimWords(run, e.from, 40)} to {e.to.map((t) => claimWords(run, t, 40)).join(", ")} ({e.status})
               </option>
             ))}
           </select>
@@ -660,7 +719,7 @@ function EvidencePanel(props: { run: Run }) {
           <ul class="plain">
             {run.leads.map((l) => (
               <li key={l.id}>
-                <span class="chip">lead</span> <code>{l.id}</code> {l.kind}: {l.text}
+                <span class="chip">lead</span> {l.kind}{l.claimId !== undefined ? ` about "${claimWords(run, l.claimId, 50)}"` : ""}: {l.text}
               </li>
             ))}
           </ul>
@@ -672,7 +731,7 @@ function EvidencePanel(props: { run: Run }) {
           <ul class="plain">
             {run.evidence.map((l) => (
               <li key={l.id}>
-                <span class="chip">evidence</span> <code>{l.id}</code> {l.kind}: {l.text}
+                <span class="chip">evidence</span> {l.kind}{l.claimId !== undefined ? ` about "${claimWords(run, l.claimId, 50)}"` : ""}: {l.text}
               </li>
             ))}
           </ul>
@@ -684,7 +743,7 @@ function EvidencePanel(props: { run: Run }) {
           <ul class="plain">
             {run.failed.map((f) => (
               <li key={`${f.claimId}-${f.strategy}`}>
-                <code>{f.claimId}</code> by {f.strategy}: {f.attempts} attempt(s){f.lastFailure !== undefined ? `. ${f.lastFailure}` : ""}
+                {claimWords(run, f.claimId, 60)} by {f.strategy}: {f.attempts} attempt(s){f.lastFailure !== undefined ? `. ${f.lastFailure}` : ""}
               </li>
             ))}
           </ul>

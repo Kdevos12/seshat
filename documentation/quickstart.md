@@ -28,6 +28,15 @@ pnpm harness solve my-problem.lean
 for your signature. When the run ends it prints where `RESULT.md` is. `harness view RUN_DIR` makes the
 picture.
 
+### Help
+
+`pnpm harness` and `pnpm harness --help` print one short page: the everyday commands (`doctor`, `solve`, `ui`, `resume`, `report`,
+`view`, `campaign`) and a first run. `pnpm harness COMMAND --help` (or `harness help COMMAND`) prints that command's usage and its flags;
+for `solve` and `campaign` the flags are grouped as basic, what may leave this machine, and advanced. `pnpm harness help all` prints every
+command and flag. The flags and their help come from the catalogue of [parameters.md](parameters.md) (`CLI_FLAGS`), the usage lines from the
+usage text (`packages/orchestrator/src/help.ts`), so the help cannot drift from what the parser reads. A command-line mistake prints the
+message and that command's help.
+
 ## harness solve
 
 To let a problem run for days instead of one sitting, `harness campaign STATEMENT --max-usd X` takes the same input and continues alone ([campaign.md](campaign.md)).
@@ -78,7 +87,8 @@ The index has the shape and the hash check of the bench's, so the run, its memor
 know the difference. The exact command that resumes the run is in `RESULT.md` and printed when a turn stops:
 `harness resume RUN_DIR --checkout RUN_DIR/problem --bench RUN_DIR/problem/index.json --host HOST`, with the host the run began with
 (the isolated profile is not the default of `harness resume`) and every value quoted for a shell. A `resume.json` whose values cannot be
-quoted (a newline, a backtick) gives the placeholder command instead.
+quoted (a newline, a backtick) gives the placeholder command instead. Since `harness resume` reads those values from the run's
+`resume.json` when the flags are left out, `pnpm harness resume RUN_DIR` alone is enough.
 
 **The student defaults.** Every one is the value of an existing option of `harness run`:
 
@@ -166,6 +176,34 @@ not spent stays yours.
 Before it spends, `solve` runs the checks of `doctor` that a run cannot go without (Kimina, credentials,
 prices, the network) and stops with the words of `doctor` when one is missing; `--no-check` skips them.
 
+### What the ceiling buys
+
+Before it spends, `solve` says what the allowance buys of the model it will use (plan change UX10, `packages/orchestrator/src/estimate.ts`):
+
+```
+Estimate: $2 buys about 71 sessions of PROVIDER/ID, or about 17 problems like the earlier ones (the median of 54 sessions of 9 runs on this machine, at $0.0280 each at this model's price). A hard problem can take more.
+```
+
+The sessions are measured, never assumed: the tokens of every session that ended (`attempt.finished`: input, cached input and output)
+in the newest 20 runs beside this one (the directory that holds `--out`, `runs/` by default), each priced at the model's price (the host
+profile's table where it has the model, pi-ai's otherwise), and the median taken; "problems" divides by the median sessions per problem
+of those runs. With fewer than 5 sessions measured, the line says only how many input or output tokens the allowance buys, and that a
+first run teaches it more. It is an estimate: the run is still stopped by the allowance, not by it. `harness ui` shows the same line under
+the ceiling, for the model chosen or the one `solve` would choose (`GET /api/estimate`).
+
+### Progress while it works
+
+While a run works, `solve`, `run`, `resume` and `campaign` print one line on standard error each time a session ends, a Lean check is
+counted or a problem moves, read from the journal every five seconds (`watchProgress`, `packages/orchestrator/src/progress.ts`):
+
+```
+[4:12] $0.3100 of $2.00 · 6 sessions · 23 Lean checks · 1 candidate of 1 problem, not certified yet
+```
+
+The time is the run's own, from its first event to its last; the dollars are what `RESULT.md` would say at that moment (`buildResult`),
+the allowance included. Nothing is printed before the first session ends, so a signature asked on the terminal is not interrupted.
+The lines read the journal file and write nothing. `--quiet` turns them off. `harness ui` shows the same lines in "What the command says".
+
 ## harness doctor
 
 `harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]` checks the machine, in the order
@@ -176,7 +214,7 @@ run needs is missing.
 |---|---|---|
 | Lean | there is no `lake` on the PATH, or no Lean project for the certifier (`LEAN_PROJECT_DIR`, or a built environment) | to install Lean with elan; to run `pnpm harness lean-env build` or set `LEAN_PROJECT_DIR` |
 | Kimina Lean server | nothing answers at `LEAN_SERVER_API_URL` (default `http://localhost:8000`), it refuses the machine (401, 403), or it answers something else | to start one ([lean.md](lean.md)); to set `LEAN_SERVER_API_KEY` |
-| Model credentials | no provider has credentials | to set one provider's key (`pnpm harness models` lists the providers) |
+| Model credentials | no provider has credentials | to set one provider's key (`pnpm harness models` lists the providers), or to save it on the Providers page of `harness ui`; a variable set under a name close to the one a provider without credentials reads (`DEEPSEEK_API` for `DEEPSEEK_API_KEY`, within four edits) is named with the right name, never with its value (`nearMissKeys`) |
 | Price table | the chosen model (`--model`, or the cheapest) has no price in the host profile or in pi-ai | to give it a `models` entry in the host profile ([m0-loop.md](m0-loop.md#prices)), or to choose a priced model |
 | Lean server memory | (a warning, never a failure) the Lean server on this machine takes more than the host profile's `leanServerMemoryWarnMb` (default 8 GB) | the Kimina settings that fit this machine's memory (`MAX_REPLS`, `MAX_REPL_USES`, `MAX_REPL_MEM`), and to restart the server with them when it has grown ([lean.md](lean.md#memory-of-the-lean-server)) |
 | Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
@@ -285,4 +323,4 @@ the command that resumes the run. A journal whose hash chain does not verify get
 
 ## The local interface
 
-`harness ui [--port N] [--open]` starts a page on your own machine (`127.0.0.1` only) that does what this page does without the command line: you write the statement, set the spend ceiling, sign the Lean statement beside your words, watch the cost by site with a stop button, read the result and copy the certified proof, and continue, hint or steer. Open the address it prints; it carries a token for the session. Keys for model providers can be saved on its Providers page, in a file only you can read. It starts the same commands and changes no claim's status: [ui.md](ui.md).
+`harness ui [--port N] [--open | --no-open]` starts a page on your own machine (`127.0.0.1` only) that does what this page does without the command line: you write the statement, set the spend ceiling, sign the Lean statement beside your words, watch the cost by site with a stop button, read the result and copy the certified proof, and continue, hint or steer. It opens the page in your browser when you start it at a terminal with a display; otherwise open the address it prints, which carries a token for the session. Keys for model providers can be saved on its Providers page, in a file only you can read. It starts the same commands and changes no claim's status: [ui.md](ui.md).

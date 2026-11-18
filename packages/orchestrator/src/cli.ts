@@ -33,7 +33,9 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
-import { writeResult } from "./result.ts";
+import { commandHelp, shortHelp } from "./help.ts";
+import { watchProgress } from "./progress.ts";
+import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, type SolveFlags, solveCommand } from "./solve-command.ts";
 import { litProbeCommand } from "./lit-command.ts";
@@ -66,7 +68,7 @@ const usage = `usage:
               [--impasse-posterior X] [--impasse-attempts N] [--offpeak [--offpeak-max-wait MINUTES]]
               [--decide-backend llm|jev] [--decide-site SITE=llm|jev|off]... [--decide-votes N]
               [--gate [--gate-floor X] [--gate-probe X] [--gate-margin X] [--gate-min-sessions N] [--gate-share SITE=X]...]
-              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR]
+              [--draw-seed S] [--memory-from RUN_DIR] [--settings FILE] [--out DIR] [--quiet]
   harness ablate --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
               [--configs M0,M1,... | --experiment NAME [--arms NAME,...] [--lines ID,...] [--models A,B]] [--split N [--split-by none|file|stem]] [--pilot RUN_DIR]
               [--baseline ARM] [--target RATIO] [--private (with --experiment solve-defaults: no third parties)]
@@ -77,8 +79,8 @@ const usage = `usage:
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
   harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: one dossier per problem not certified; an ablation directory gets a section per arm)
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
-  harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]
-  harness resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST] (the same as run --resume)
+  harness run --resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST]
+  harness resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST] [--quiet] (the same as run --resume; without --checkout, the run's resume.json gives the checkout, bench and host)
                 [--turn-tokens N] [--turn-usd X] [--turn-minutes N] [--turn-narrative]
   harness hint RUN_DIR --claim ID "text" [--as NAME]
   harness sign RUN_DIR EDGE_ID [--note TEXT] [--as NAME]
@@ -101,15 +103,16 @@ const usage = `usage:
   harness campaign --resume RUN_DIR | --watch RUN_DIR   (take up a campaign whose supervisor ended; the watchdog restarts it with a backoff)
               (a run that continues alone: turns that do not wait, the digest campaign/digest.md after each; documentation/campaign.md)
   harness solve STATEMENT|FILE [--horizon episode] [--human consortium] [--max-usd X] [--model PROVIDER/ID] [--out DIR] [--as NAME] [--yes] [--lean | --prose] [--host HOST]
-              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE]
+              [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE] [--quiet]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
   harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
-  harness ui [--port N] [--open] [--runs DIR]
+  harness ui [--port N] [--open | --no-open] [--runs DIR]
+  harness help [COMMAND | all]   (the everyday commands; one command's usage and flags; this whole text)
   harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
 
 ui: starts the local interface on 127.0.0.1 only (documentation/ui.md), with a token in the address it prints; --runs DIR is where runs are listed
-and written (default runs).
+and written (default runs). At a terminal on a machine with a display it opens the page in your browser (--no-open keeps it closed).
 
 HOST defaults to HARNESS_HOST, then local (config/hosts/HOST.json); solve and doctor use the isolated profile doctor wrote (sandboxed) when it exists.
 --model defaults to SESHAT_MODEL when it is set (not for a resume, which keeps its run's model); without either, solve and doctor take the host profile's recommended model if you set one, else the cheapest capable priced one (ambient-credential providers skipped).
@@ -241,8 +244,13 @@ class InputError extends Error {}
 class UsageError extends InputError {}
 
 async function main(): Promise<number> {
+  // Help (UX8): a short page of the everyday commands; one command's usage and flags; everything with `harness help all`.
+  if (command === "help") {
+    console.log(target === "all" ? usage : target !== undefined ? (commandHelp(target, usage) ?? shortHelp()) : shortHelp());
+    return 0;
+  }
   if (values.help || command === undefined) {
-    console.log(usage);
+    console.log(command !== undefined ? (commandHelp(command, usage) ?? shortHelp()) : shortHelp());
     return command === undefined && !values.help ? 2 : 0;
   }
   try {
@@ -293,7 +301,7 @@ async function main(): Promise<number> {
     }
   } catch (error) {
     if (error instanceof UsageError) {
-      console.error(`${error.message}\n\n${usage}`);
+      console.error(`${error.message}\n\n${(command !== undefined ? commandHelp(command, usage) : undefined) ?? usage}`);
       return 2;
     }
     // Anything else is a bug: Node prints it with its stack, and the exit code is 1.
@@ -827,6 +835,7 @@ async function run(): Promise<number> {
   const dir = resolve(values.out ?? join("runs", runId));
   const controller = stoppable();
   const codeRev = codeRevision();
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const result = await runBench({
     config,
     index,
@@ -842,7 +851,7 @@ async function run(): Promise<number> {
     ...(codeRev !== undefined ? { codeRev } : {}),
     ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
     ...(values["library-registry"] !== undefined ? { libraryRegistry: resolve(values["library-registry"]) } : registryExists() ? { libraryRegistry: resolve(DEFAULT_LIBRARY_REGISTRY) } : {}),
-  });
+  }).finally(() => progress?.stop());
   const code = finished(result, dir);
   const every = values["probe-every"] === undefined ? 0 : Number(values["probe-every"]);
   if (code === 0 && result.stopped === undefined && probeDue(runIndexOf(values["memory-from"] !== undefined ? resolve(values["memory-from"]) : undefined), every)) {
@@ -1053,7 +1062,7 @@ function stoppable(): AbortController {
       return;
     }
     interruptedAt = Date.now();
-    console.error("stopping: the problems in progress end as aborted (Ctrl-C again quits at once)");
+    console.error("stopping: the problems in progress end as aborted and RESULT.md is written; harness resume continues the run later (Ctrl-C again quits at once)");
     controller.abort();
   });
   return controller;
@@ -1066,7 +1075,7 @@ function finished(result: RunResult, dir: string): number {
   if (result.turn !== undefined) {
     console.log(`Turn ${result.turn.number} ended: ${result.turn.reason} (${result.turn.detail}). The account: ${join(dir, result.turn.account)}`);
     if (result.turn.paused) {
-      console.log(`The run waits for the team. Answer with harness hint, sign and steer, then: harness resume ${dir} --checkout DIR`);
+      console.log(`The run waits for the team. Answer with harness hint, sign and steer, then: ${resumeCommand(dir, "paused")}`);
     }
   }
   if (result.stopped === undefined || result.stopped === "budget_exhausted") return 0;
@@ -1080,17 +1089,33 @@ const RUN_FLAGS = [
   "offpeak", "offpeak-max-wait", "settings",
 ] as const;
 
+/** `resume.json` for `harness resume`: when --checkout is given, a damaged file is the same as none; otherwise its error stops the command. */
+function readSaved(dir: string): ReturnType<typeof savedResume> | undefined {
+  try {
+    return savedResume(dir);
+  } catch (error) {
+    if (values.checkout !== undefined) return undefined;
+    throw error;
+  }
+}
+
 /** `harness run --resume DIR`: continues a run whose process ended without finishing it. */
 async function resume(directory: string): Promise<number> {
   const given = RUN_FLAGS.filter((flag) => values[flag] !== undefined);
   if (given.length > 0) {
     throw new UsageError(`--resume continues the run as it began, from its journal: ${given.map((flag) => `--${flag}`).join(", ")} cannot be given with it`);
   }
-  if (values.checkout === undefined) throw new UsageError("--resume needs --checkout: a checkout of the bench's repository");
-  const checkout = values.checkout;
-  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   const dir = resolve(directory);
+  // A run begun by solve, run or campaign names its checkout, bench and host in resume.json: each flag given wins over its entry (UX7).
+  const saved = existsSync(join(dir, "resume.json")) && (values.checkout === undefined || values.bench === undefined || values.host === undefined) ? readSaved(dir) : undefined;
+  if (values.checkout === undefined && saved === undefined) {
+    throw new UsageError("--resume needs --checkout: a checkout of the bench's repository (a run begun by harness solve, run or campaign has it in its resume.json; this one has none)");
+  }
+  const checkout = values.checkout ?? (saved as { checkout: string }).checkout;
+  if (!existsSync(checkout)) throw new InputError(`no directory ${checkout}`);
   if (!existsSync(dir)) throw new InputError(`no directory ${dir}`);
+  if (values.bench === undefined && saved?.bench !== undefined) values.bench = saved.bench;
+  if (values.host === undefined && saved?.host !== undefined) values.host = saved.host;
   const index = readInput(loadIndex);
   const source = describeCheckout(checkout);
   if (source.rev !== index.source.rev) {
@@ -1101,6 +1126,7 @@ async function resume(directory: string): Promise<number> {
   const codeRev = codeRevision();
   const limit = turnLimit();
   if (values.human !== undefined || values.horizon !== undefined) throw new UsageError("--human and --horizon are given when a run begins; a run resumed keeps the mode it began with");
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const result = await resumeBench({
     dir,
     index,
@@ -1113,7 +1139,7 @@ async function resume(directory: string): Promise<number> {
     ...(limit !== undefined || values["turn-narrative"] === true
       ? { turns: { ...(limit !== undefined ? { limit } : {}), ...(values["turn-narrative"] === true ? { narrative: true } : {}) } }
       : {}),
-  });
+  }).finally(() => progress?.stop());
   return finished(result, dir);
 }
 
@@ -1176,6 +1202,7 @@ async function solve(campaign?: NonNullable<SolveFlags["campaign"]>): Promise<nu
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      quiet: values.quiet === true,
       ...(values.sketch !== undefined ? { sketch: values.sketch } : {}),
       ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
       autoTool: values["auto-tool"] === true,
@@ -1242,6 +1269,7 @@ async function campaignResume(directory: string): Promise<number> {
   const host = hostName(values.host ?? saved.host);
   const controller = stoppable();
   const codeRev = codeRevision();
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const end = await runCampaign({
     dir,
     next: async ({ limit }) =>
@@ -1258,7 +1286,7 @@ async function campaignResume(directory: string): Promise<number> {
       }),
     signal: controller.signal,
     log: (line) => console.error(line),
-  });
+  }).finally(() => progress?.stop());
   console.log(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}. Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}`);
   return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
 }
@@ -1303,8 +1331,10 @@ function parametersCommand(): number {
 async function ui(): Promise<number> {
   if (target !== undefined) throw new UsageError(`ui takes no argument, got ${target}`);
   const port = number("port", values.port, undefined);
-  const { uiCommand } = await import("@seshat/ui");
-  return await uiCommand({ port, open: values.open === true, runsDir: values.runs, out: (line) => console.log(line) });
+  const { opensByDefault, uiCommand } = await import("@seshat/ui");
+  if (values.open === true && values["no-open"] === true) throw new UsageError("--open and --no-open cannot be given together");
+  const open = values.open === true || (values["no-open"] !== true && opensByDefault({ env: process.env, platform: process.platform, tty: process.stdout.isTTY === true }));
+  return await uiCommand({ port, open, runsDir: values.runs, out: (line) => console.log(line) });
 }
 
 /** `harness doctor`: documentation/quickstart.md. */

@@ -96,3 +96,36 @@ body { overflow-wrap: anywhere; } main > *, .card { min-width: 0; } code { word-
 .setting label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .setting .short { min-height: 70px; }
 .badge.beta, .badge.experimental { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.runhead { margin: -4px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip.phase { background: var(--card); border-color: var(--accent); color: var(--fg); font-weight: 600; }
+.runitem { padding: 6px 0; overflow-wrap: anywhere; }
+.runitem .chip { margin-left: 8px; }
+.chip.level-proved, .chip.level-refuted { border-color: var(--good); }
+.chip.level-candidate, .chip.level-leads { border-color: var(--warn); }
+fieldset.choices { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px 12px; margin: 12px 0; }
+fieldset.choices legend { font-weight: 700; padding: 0 4px; }
+.radio.stacked { display: grid; gap: 8px; }
+.radio.stacked label { display: block; font-weight: 400; }
+.block { display: block; margin-left: 26px; }
+.error-text { color: var(--bad); }
+details.settings-all { margin: 12px 0; }
+details.settings-all > summary { font-weight: 700; font-size: 1.05rem; padding: 8px 0; min-height: 44px; }
+.setting-name { font-weight: 600; }
+.setting.changed { border-left: 3px solid var(--accent); padding-left: 8px; }
+.subfields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; }
+details.expert { margin-top: 4px; }
+
+/* What the ceiling buys (UX10). */
+.estimate {
+  border-left: 3px solid var(--accent, #3b6fd8);
+  padding-left: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+/* The doctor's words drawn as styles, and the providers in parts (UX11). */
+.command code { overflow-wrap: anywhere; }
+.command code { margin-right: 0.3rem; }
+.command button { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
+a.button { display: inline-block; margin-top: 0.4rem; padding: 0.35rem 0.8rem; border-radius: 6px; background: var(--accent); color: var(--accent-fg); text-decoration: none; }
+.providers h2 { font-size: 1rem; margin: 0.6rem 0 0.2rem; }
+details.providers > summary { cursor: pointer; margin: 0.6rem 0 0.2rem; font-weight: 600; }

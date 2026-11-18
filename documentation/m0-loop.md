@@ -599,15 +599,17 @@ Options of `harness run`:
 | `--memory-from RUN_DIR` | none | Starts the run on the memory of an earlier run ([memory.md](memory.md#memory-across-runs)): its journal is read first, pinned by its last hash in `run.started`, and never written. Its verified facts carry only under the same Lean environment (the same environment hash; [memory.md](memory.md#memory-across-runs)). A resume reads the chain from its own journal. Not with `--resume`. |
 | `--out DIR` | `runs/RUN_ID` | The run directory. |
 
-`harness run --resume RUN_DIR --checkout DIR [--bench FILE] [--host HOST]` continues a run whose
-process ended without finishing it ([ledger.md](ledger.md#resume)). The run keeps the configuration
+`harness run --resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST]` continues a run whose
+process ended without finishing it ([ledger.md](ledger.md#resume)). A run begun by `harness solve`, `run` or `campaign` wrote
+the checkout, the bench file and the host it began with to `RUN_DIR/resume.json`; a flag left out is taken from there, a flag given
+wins over its entry, and `--checkout` is required only for a run that has no such file. The run keeps the configuration
 it began with, which is read from its journal, so no option that describes a run is given with it
 (`--model`, `--sessions`, `--lines`...); the bench, the host's capability registry, the tools, the
 certifier and the lines have to be the ones it began with. A run with a line that does not say how it
 is resumed, or refuses, cannot be resumed, and a run that is complete has nothing to resume: both
 are refused before anything is written, with the reason. M1, M2, M6 and the fleet can be resumed.
 
-`harness resume RUN_DIR --checkout DIR` is the same command. For a consortium run it begins the next turn,
+`harness resume RUN_DIR` is the same command. For a consortium run it begins the next turn,
 and takes `--turn-tokens`, `--turn-usd`, `--turn-minutes` and `--turn-narrative` (a limit given here wins over
 the team's steer and over the turn before's); `--human` is given when a run begins and cannot be given
 here. `harness hint`, `harness sign` and `harness steer` record the team's answers between two turns

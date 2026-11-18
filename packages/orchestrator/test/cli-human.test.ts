@@ -50,7 +50,7 @@ describe("harness run in consortium mode", () => {
   });
 
   it("lists the commands in its usage", async () => {
-    const { stdout } = await harness(["--help"]);
+    const { stdout } = await harness(["help", "all"]);
     for (const text of ["harness hint RUN_DIR --claim ID", "harness sign RUN_DIR EDGE_ID", "harness steer RUN_DIR", "harness resume RUN_DIR", "--turn-tokens N", "--human", "Consortium mode"]) {
       assert.ok(stdout.includes(text), text);
     }
@@ -66,7 +66,7 @@ describe("harness hint, sign and steer", () => {
     const hint = await harness(["hint", run.dir, "--claim", claimId, "Try induction on n."], env);
     assert.equal(hint.code, 0, hint.stderr);
     assert.match(hint.stdout, /^dana: hint nod_\w+ recorded on claim clm_\w+\./);
-    assert.match(hint.stdout, /Resume with: harness resume .* --checkout DIR/);
+    assert.match(hint.stdout, /Resume with: pnpm harness resume .* --checkout /);
 
     const steer = await harness(["steer", run.dir, "--forbid", "automation", "--turn-tokens", "500", "--as", "eve"], env);
     assert.equal(steer.code, 0, steer.stderr);

@@ -76,3 +76,16 @@ describe("harness ui", () => {
     assert.equal(await ended, 0, "it stops cleanly");
   });
 });
+
+describe("harness ui opens the page", () => {
+  it("by default only for a person at a terminal on a machine with a display", async () => {
+    const { opensByDefault } = await import("../src/index.ts");
+    assert.equal(opensByDefault({ env: { DISPLAY: ":0" }, platform: "linux", tty: true }), true);
+    assert.equal(opensByDefault({ env: { WAYLAND_DISPLAY: "wayland-0" }, platform: "linux", tty: true }), true);
+    assert.equal(opensByDefault({ env: {}, platform: "linux", tty: true }), false, "a server over SSH has no display");
+    assert.equal(opensByDefault({ env: {}, platform: "darwin", tty: true }), true);
+    assert.equal(opensByDefault({ env: {}, platform: "win32", tty: true }), true);
+    assert.equal(opensByDefault({ env: { DISPLAY: ":0" }, platform: "linux", tty: false }), false, "a test or a script never opens a browser");
+    assert.equal(opensByDefault({ env: {}, platform: "darwin", tty: false }), false);
+  });
+});

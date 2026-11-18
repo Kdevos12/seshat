@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { resumeCommand } from "./result.ts";
 import { openForAnswers, personName, recordHint, recordSteer, signEdge, type SteerAction } from "./team.ts";
 import type { TurnLimit } from "./turns.ts";
 import { RunSetupError } from "./setup-error.ts";
@@ -16,7 +17,7 @@ export interface AnswerOptions {
   out: (line: string) => void;
 }
 
-const WHAT_NEXT = (dir: string): string => `Resume with: harness resume ${dir} --checkout DIR (several people may answer before one resumes).`;
+const WHAT_NEXT = (dir: string): string => `Resume with: ${resumeCommand(dir, "paused")} (several people may answer before one resumes).`;
 
 /** `harness hint DIR --claim ID "text"`: a hint node, provenance human, shown in the claim's next briefings as a hint and never as a fact. */
 export function hintCommand(dir: string, o: AnswerOptions & { claimId: string; text: string }): number {

@@ -10,7 +10,7 @@ import { litFactory } from "@seshat/lit";
 import { startFakeLit } from "../../lit/test/fake-lit.ts";
 import { hostAt } from "../../lit/test/helpers.ts";
 import { BARE_MACHINE } from "../../ui/test/helpers.ts";
-import { consentOptions, consentQuestion, plainName, REPO_ROOT, runBench, solve, solveCommand, type RunOptions, type SolveOptions } from "../src/index.ts";
+import { consentOptions, consentQuestion, outsideLine, plainName, REPO_ROOT, runBench, solve, solveCommand, type RunOptions, type SolveOptions } from "../src/index.ts";
 import { check, config, DemoLean, demoBench, demoResume, fauxModels, killedAt, ofType, tempDir } from "./m0-helpers.ts";
 
 /** The third-party policy of Task 36b, at the level of the registry, of a run, of `solve` and of `harness solve`. Nothing here reaches a network. */
@@ -287,5 +287,15 @@ describe("a resumed solve", () => {
       assert.deepEqual(answers.map((e) => [e.data.allowed, e.data.via, e.actor, e.user]), [[yes, "asked", "human:alice", "alice"]]);
       assert.equal(again.requests.length > 0, yes, yes ? "a yes keeps the service on" : "a no keeps lean.search local");
     }
+  });
+});
+
+describe("the banner says what may leave the machine (UX6)", () => {
+  it("names the case: private, a yes by flag, a question, or nothing where none can be asked", () => {
+    assert.match(outsideLine({ private: true, lit: true }, true), /none besides the model's provider \(--private\)/, "--private wins over --lit");
+    assert.match(outsideLine({ lit: true }, false), /literature and Lean search services of the host \(--lit\)/);
+    assert.match(outsideLine({}, true), /only if you say yes when asked/);
+    assert.match(outsideLine({ askStdin: true }, true), /stay off/, "the interface cannot be asked: no answer is no");
+    assert.match(outsideLine({ yes: true }, true), /stay off/);
   });
 });

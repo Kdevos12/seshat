@@ -134,7 +134,7 @@ their colours and borders). Solid border: has run for real; dashed: tested with 
 
 ## Reference
 
-- The command line: `pnpm harness --help`, and [capabilities.md](capabilities.md#the-harness-command) for the `harness` command.
+- The command line: `pnpm harness --help` (the everyday commands), `pnpm harness COMMAND --help` (one command), `pnpm harness help all` (everything), and [capabilities.md](capabilities.md#the-harness-command) for the `harness` command.
 - [parameters.md](parameters.md): the audit of every setting.
 - [schemas.md](schemas.md): the schemas of line M15 (the capabilities' schemas are in [capabilities.md](capabilities.md#schemas)).
 - [capabilities.md](capabilities.md): manifests, host profiles, contract tests, one section per capability.

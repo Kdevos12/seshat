@@ -1,12 +1,12 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { classifyStatement, parseSettings, RunSetupError } from "@seshat/orchestrator";
+import { classifyStatement, DEFAULTS_NAMES, parseSettings, RunSetupError } from "@seshat/orchestrator";
 import { newId } from "@seshat/core";
 import type { KeyScope } from "./jobs.ts";
 import { readResumeInfo, readRun, runDirectory } from "./reader.ts";
 
 /**
- * What the interface may ask the process manager to start: `harness solve|run|resume|hint|steer|sign`, each with a fixed list of
+ * What the interface may ask the process manager to start: `harness solve|campaign|run|resume|hint|steer|sign`, each with a fixed list of
  * fields. A field is checked here and handed to the command as one argument of an argument list, in the `--flag=value` form, so that
  * no value is read by a shell and none can be taken for a flag. Nothing here decides anything about research.
  */
@@ -21,8 +21,8 @@ export class RequestError extends Error {
   }
 }
 
-export type JobKind = "solve" | "run" | "resume" | "hint" | "steer" | "sign";
-export const JOB_KINDS: readonly JobKind[] = ["solve", "run", "resume", "hint", "steer", "sign"];
+export type JobKind = "solve" | "run" | "resume" | "campaign" | "hint" | "steer" | "sign";
+export const JOB_KINDS: readonly JobKind[] = ["solve", "run", "resume", "campaign", "hint", "steer", "sign"];
 
 /** A command ready to start. */
 export interface Planned {
@@ -74,6 +74,9 @@ function num(body: Body, key: string, o: { min?: number; max?: number; integer?:
   if (n > (o.max ?? 1e9)) throw new RequestError(`${o.what ?? key} is too large`);
   return n;
 }
+
+/** What a `solve` may send outside besides the model call: `model` (nothing else), `lit` (`--lit`), `private` (`--private`). */
+export const OUTSIDE = ["model", "lit", "private"] as const;
 
 const NAME = /^[\p{L}\p{N}_. -]{1,60}$/u;
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,200}$/;
@@ -144,6 +147,20 @@ function settingsFile(body: Body, kind: "run" | "solve", inputs: string, runId: 
   };
 }
 
+/** The flags of a campaign started from the form (UX15): `campaign: { usdPerDay?, until? }`, or undefined for a plain solve. */
+function campaignFlags(body: Body, maxUsd: number): string[] | undefined {
+  const given = body.campaign;
+  if (given === undefined || given === null || given === false) return undefined;
+  if (typeof given !== "object" || Array.isArray(given)) throw new RequestError("the campaign is an object: { usdPerDay?, until? }");
+  const c = given as Body;
+  for (const key of Object.keys(c)) if (key !== "usdPerDay" && key !== "until") throw new RequestError(`the campaign takes usdPerDay and until, not ${JSON.stringify(key).slice(0, 40)}`);
+  const usdPerDay = num(c, "usdPerDay", { max: 1000, what: "the dollars a day" });
+  if (usdPerDay !== undefined && usdPerDay > maxUsd) throw new RequestError("the dollars a day are at most the allowance");
+  const until = str(c, "until", { max: 40, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/, what: "the end (an ISO time such as 2026-12-01T00:00:00Z)" });
+  if (until !== undefined && !(Date.parse(until) > Date.now())) throw new RequestError("the end is a time to come");
+  return [...flag("usd-per-day", usdPerDay), ...flag("until", until)];
+}
+
 /** A fresh run id: sortable by time, unique. */
 export function freshRunId(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
@@ -167,9 +184,17 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
       const inputs = join(ctx.runsDir, "_inputs");
       const file = join(inputs, `${runId}.${mode === "lean" ? "lean" : "txt"}`);
       const model = str(body, "model", { pattern: MODEL, what: "the model" });
+      // Outside services (UX6): the model's provider only (the default: nothing is asked over --ask-stdin, so no answer is no), also the
+      // literature and Lean search services (--lit, the person's yes, journaled as consent given by flag), or strictly private (--private).
+      const outside = str(body, "outside", { max: 8 });
+      if (outside !== undefined && !OUTSIDE.includes(outside as (typeof OUTSIDE)[number])) throw new RequestError(`outside services are one of ${OUTSIDE.join(", ")}`);
+      const defaults = str(body, "defaults", { max: 4 });
+      if (defaults !== undefined && !(DEFAULTS_NAMES as readonly string[]).includes(defaults)) throw new RequestError(`the defaults set is one of ${DEFAULTS_NAMES.join(", ")}`);
       const chosen = settingsFile(body, "solve", inputs, runId);
+      // "Let it run for days" (UX15): the same start, as `harness campaign`, with its pace and its end. Its signature is asked as a solve's.
+      const days = campaignFlags(body, maxUsd);
       const argv = [
-        "solve",
+        days === undefined ? "solve" : "campaign",
         file,
         `--out=${dir}`,
         `--max-usd=${maxUsd}`,
@@ -177,6 +202,9 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         ...flag("turn-usd", num(body, "turnUsd", { max: 1000, what: "the dollar limit of the first turn" })),
         ...flag("host", str(body, "host", { pattern: HOST, what: "the host" })),
         ...flag("as", str(body, "as", { pattern: NAME, what: "your name" })),
+        ...flag("defaults", defaults),
+        ...(outside === "lit" ? ["--lit"] : outside === "private" ? ["--private"] : []),
+        ...(days ?? []),
         ...chosen.flags,
         "--ask-stdin",
       ];
@@ -258,6 +286,12 @@ export function plan(kind: string, body: Body, ctx: PlanContext): Planned {
         // The run's own model, as its journal says; a run whose model cannot be read gets every stored key.
         keys: scopeOf(runModel(dir)),
       };
+    }
+    case "campaign": {
+      // Takes up a campaign whose supervisor ended (UX15): everything is read from its journal, so nothing else is asked. It may be
+      // started detached, so that it outlives this page; a command already working on the run refuses it.
+      const { dir, runId } = existingRun(ctx, body);
+      return { kind: "campaign", argv: ["campaign", "--resume", dir], dir, runId, mayDetach: true, keys: scopeOf(runModel(dir)) };
     }
     case "hint": {
       const { dir, runId } = existingRun(ctx, body);

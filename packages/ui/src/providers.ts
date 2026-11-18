@@ -1,5 +1,6 @@
 import type { AuthContext, Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { isCapable } from "@seshat/orchestrator";
 import type { KeyStore } from "./keys.ts";
 
 /**
@@ -20,6 +21,8 @@ export interface ProviderInfo {
   source: string | null;
   /** A key for this provider is in the key file. */
   stored: boolean;
+  /** The cheapest priced model that can serve a prover (UX11), with its dollars per million tokens, input plus output; null when none. */
+  cheapest: { id: string; price: number } | null;
 }
 
 export interface ModelInfo {
@@ -114,7 +117,13 @@ export async function describeProviders(models: Models, finder: VariableFinder, 
   for (const p of models.getProviders()) {
     const auth = await models.checkAuth(p.id).catch(() => undefined);
     const isStored = stored.includes(p.id);
+    let cheapest: ProviderInfo["cheapest"] = null;
+    for (const m of models.getModels(p.id)) {
+      const price = m.cost.input + m.cost.output;
+      if (price > 0 && isCapable(m) && (cheapest === null || price < cheapest.price)) cheapest = { id: m.id, price };
+    }
     out.push({
+      cheapest,
       id: p.id,
       name: p.name,
       models: models.getModels(p.id).length,
