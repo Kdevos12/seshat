@@ -9,6 +9,7 @@ import { hostLeanEnv, hostName, leanEnvPin, openRegistry, REPO_ROOT } from "./im
 import { PriceBook } from "./prices.ts";
 import { renderRunReport } from "./report.ts";
 import { classifyStatement, DEFAULT_HEADER, solve, SolveInputError, type Signature, type SolveOptions, type SolveResult } from "./solve.ts";
+import { watchProgress } from "./progress.ts";
 import { chooseModel, MIN_CONTEXT_WINDOW, COMPUTE_TOOL, LEAN_LSP_TOOL, DEFAULT_DEFAULTS, DEFAULTS_NAMES, type DefaultsName, describeSet, SEARCH_CAPABILITY, SOLVE_SWITCHES, STUDENT_DEFAULT_MAX_USD, studentLines } from "./student.ts";
 import { readSketchFile } from "./sketch.ts";
 import { personName } from "./team.ts";
@@ -27,6 +28,8 @@ export interface DoctorFlags {
 }
 
 export interface SolveFlags extends DoctorFlags {
+  /** `--quiet`: no progress line while the run works (UX3). */
+  quiet?: boolean;
   max?: number;
   turnUsd?: number;
   out?: string;
@@ -406,6 +409,8 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
   const tools = [...new Set([...(flags.tools ?? []), ...(leanLsp ? [LEAN_LSP_TOOL] : [])])];
   const dir = resolve(flags.out ?? join("runs", newId("run")));
   let result: SolveResult;
+  // One line on standard error each time the run moves (UX3); --quiet keeps it silent.
+  const progress = flags.quiet === true ? undefined : watchProgress(dir, io.err);
   try {
     const runSolve = (): Promise<SolveResult> => solve({
       statement: statement.text,
@@ -502,6 +507,7 @@ export async function solveCommand(argument: string, flags: SolveFlags, io: Comm
     }
     throw error;
   } finally {
+    progress?.stop();
     await checkerRegistry.close();
   }
   if (result.state === "declined" || result.result === undefined) return 1;

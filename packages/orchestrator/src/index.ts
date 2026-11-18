@@ -52,3 +52,4 @@ export * from "./campaign-watch.ts";
 export * from "./dossier.ts";
 export * from "./dossier-build.ts";
 export * from "./plateau.ts";
+export * from "./progress.ts";

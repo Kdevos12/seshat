@@ -33,6 +33,7 @@ import { measureRun } from "./measures.ts";
 import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryExists } from "./library-registry.ts";
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
+import { watchProgress } from "./progress.ts";
 import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
 import { doctorCommand, type SolveFlags, solveCommand } from "./solve-command.ts";
@@ -827,6 +828,7 @@ async function run(): Promise<number> {
   const dir = resolve(values.out ?? join("runs", runId));
   const controller = stoppable();
   const codeRev = codeRevision();
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const result = await runBench({
     config,
     index,
@@ -842,7 +844,7 @@ async function run(): Promise<number> {
     ...(codeRev !== undefined ? { codeRev } : {}),
     ...(values["memory-from"] !== undefined ? { memoryFrom: resolve(values["memory-from"]) } : {}),
     ...(values["library-registry"] !== undefined ? { libraryRegistry: resolve(values["library-registry"]) } : registryExists() ? { libraryRegistry: resolve(DEFAULT_LIBRARY_REGISTRY) } : {}),
-  });
+  }).finally(() => progress?.stop());
   const code = finished(result, dir);
   const every = values["probe-every"] === undefined ? 0 : Number(values["probe-every"]);
   if (code === 0 && result.stopped === undefined && probeDue(runIndexOf(values["memory-from"] !== undefined ? resolve(values["memory-from"]) : undefined), every)) {
@@ -1117,6 +1119,7 @@ async function resume(directory: string): Promise<number> {
   const codeRev = codeRevision();
   const limit = turnLimit();
   if (values.human !== undefined || values.horizon !== undefined) throw new UsageError("--human and --horizon are given when a run begins; a run resumed keeps the mode it began with");
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const result = await resumeBench({
     dir,
     index,
@@ -1129,7 +1132,7 @@ async function resume(directory: string): Promise<number> {
     ...(limit !== undefined || values["turn-narrative"] === true
       ? { turns: { ...(limit !== undefined ? { limit } : {}), ...(values["turn-narrative"] === true ? { narrative: true } : {}) } }
       : {}),
-  });
+  }).finally(() => progress?.stop());
   return finished(result, dir);
 }
 
@@ -1192,6 +1195,7 @@ async function solve(campaign?: NonNullable<SolveFlags["campaign"]>): Promise<nu
       lean: values.lean === true,
       prose: values.prose === true,
       noCheck: values["no-check"] === true,
+      quiet: values.quiet === true,
       ...(values.sketch !== undefined ? { sketch: values.sketch } : {}),
       ...(values.tool !== undefined ? { tools: [...new Set(values.tool)] } : {}),
       autoTool: values["auto-tool"] === true,
@@ -1258,6 +1262,7 @@ async function campaignResume(directory: string): Promise<number> {
   const host = hostName(values.host ?? saved.host);
   const controller = stoppable();
   const codeRev = codeRevision();
+  const progress = values.quiet === true ? undefined : watchProgress(dir, (line) => console.error(line));
   const end = await runCampaign({
     dir,
     next: async ({ limit }) =>
@@ -1274,7 +1279,7 @@ async function campaignResume(directory: string): Promise<number> {
       }),
     signal: controller.signal,
     log: (line) => console.error(line),
-  });
+  }).finally(() => progress?.stop());
   console.log(`The campaign ${end.reason === "settled" ? "settled the target" : `stopped (${end.reason})`}: ${end.detail}. Turns: ${end.turns}; spent $${end.usd.toFixed(4)}. The digest: ${join(dir, "campaign", "digest.md")}`);
   return end.reason === "aborted" ? 130 : end.reason === "ended" ? 1 : 0;
 }

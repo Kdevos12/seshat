@@ -167,6 +167,19 @@ not spent stays yours.
 Before it spends, `solve` runs the checks of `doctor` that a run cannot go without (Kimina, credentials,
 prices, the network) and stops with the words of `doctor` when one is missing; `--no-check` skips them.
 
+### Progress while it works
+
+While a run works, `solve`, `run`, `resume` and `campaign` print one line on standard error each time a session ends, a Lean check is
+counted or a problem moves, read from the journal every five seconds (`watchProgress`, `packages/orchestrator/src/progress.ts`):
+
+```
+[4:12] $0.3100 of $2.00 · 6 sessions · 23 Lean checks · 1 candidate of 1 problem, not certified yet
+```
+
+The time is the run's own, from its first event to its last; the dollars are what `RESULT.md` would say at that moment (`buildResult`),
+the allowance included. Nothing is printed before the first session ends, so a signature asked on the terminal is not interrupted.
+The lines read the journal file and write nothing. `--quiet` turns them off. `harness ui` shows the same lines in "What the command says".
+
 ## harness doctor
 
 `harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]` checks the machine, in the order
