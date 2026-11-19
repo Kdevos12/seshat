@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { HarnessEvent } from "@seshat/core";
-import { AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END } from "@seshat/core";
+import { AUX_BEGIN, AUX_END, PROOF_BEGIN, PROOF_END, type Submission, type ValidationReport } from "@seshat/core";
 import { createM12Line, cutFailures } from "@seshat/scheduler";
-import type { FakeLeanAnswer } from "../../core/test/fake-lean.ts";
+import { extractGoalMessages, type FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 import { check, DemoLean, demoRun, ofType, proofOf, say } from "./m0-helpers.ts";
-import { blueprintAnswer } from "./blueprint-helpers.ts";
+import { liftAnswer } from "./lift-helpers.ts";
 
 const nodes = (events: readonly HarnessEvent[], kind: string) =>
   ofType(events, "node.recorded").filter((e) => e.data.kind === kind).map((e) => {
@@ -16,7 +16,7 @@ const statusOf = (events: readonly HarnessEvent[], claimId: unknown) => ofType(e
 
 /**
  * The simulated Lean of these tests: a line with `bad` in the AUX or PROOF region is an error at the `bad` (a statement's too, when `bad` is
- * before its `:=`); a file with none is what the blueprint tests' Lean says.
+ * before its `:=`); a file with none is what the lift tests' Lean says (`liftAnswer`: it prints what `extract_goal` prints).
  */
 function repairAnswer(code: string): FakeLeanAnswer {
   if (proofOf(code) === undefined) return {};
@@ -27,7 +27,7 @@ function repairAnswer(code: string): FakeLeanAnswer {
     const column = line.indexOf("bad");
     if (k > begin && column >= 0 && !line.includes("AUX") && !line.includes("PROOF")) messages.push({ severity: "error", pos: { line: k + 1, column }, text: "unsolved goals" });
   });
-  return messages.length > 0 ? { messages } : blueprintAnswer(code);
+  return messages.length > 0 ? { messages } : liftAnswer(code);
 }
 
 const OPTIONS = { blueprints: true, repair: true, holeSessions: 1, rounds: 1, ageRatio: 1, weightRatio: 0 };
@@ -77,6 +77,19 @@ describe("the repair pass (CA13)", () => {
     assert.equal(ofType(events, "claim.created").filter((e) => e.actor === "line:M12" && (e.data.gloss ?? "").startsWith("aux_h,")).length, 1);
   });
 
+  it("a failing have that mentions a name the proof bound, or sits in a cases branch, is lifted too, with its context", { timeout: 60000 }, async () => {
+    const { events, faux } = await run([check("intro k\nhave h : k + 0 = k := by\n  bad_tactic\nexact main_ok h", ""), say("Done."), say("I cannot do this.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [bound] = nodes(events, "m12_sketch");
+    assert.equal(bound?.healthy, true, String(bound?.problem ?? bound?.errors));
+    assert.deepEqual(bound?.names, ["aux_h"]);
+    assert.equal(ofType(events, "claim.created").filter((e) => e.actor === "line:M12" && String(e.data.statement ?? "").includes("(n : ℕ) (k : ℕ) : k + 0 = k")).length, 1);
+    const nested = await run([check("induction n with\n| zero => exact main_ok\n| succ m ih =>\n  have h : m + 0 = m := by\n    bad_tactic\n  exact main_ok", ""), say("Done."), say("I cannot do this.")]);
+    const [branch] = nodes(nested.events, "m12_sketch");
+    assert.equal(branch?.healthy, true, String(branch?.problem ?? branch?.errors));
+    assert.deepEqual(branch?.names, ["aux_h"]);
+  });
+
   it("an error in a statement gives no repair", { timeout: 60000 }, async () => {
     const { events } = await run([check("exact main_ok aux_s", "lemma aux_s (n : ℕ) : bad n = n := by\n  trivial"), say("Done.")]);
     assert.equal(nodes(events, "m12_sketch").length, 0);
@@ -104,36 +117,58 @@ describe("the repair pass (CA13)", () => {
 describe("cutFailures", () => {
   const file = (aux: string, proof: string) => [`import X`, AUX_BEGIN, aux, AUX_END, "theorem target (n : ℕ) : n + 0 = n := by", PROOF_BEGIN, proof, PROOF_END].join("\n");
   const at = (checked: string, needle: string) => ({ severity: "error" as const, pos: { line: checked.split("\n").findIndex((l) => l.includes(needle)) + 1, column: 2 }, text: "e" });
-  const target = "(n : ℕ) : n + 0 = n";
+  /** A check that prints what extract_goal prints, for the file of these tests. */
+  const lift = {
+    check: async (sub: Submission): Promise<ValidationReport> => {
+      const code = file(sub.aux, sub.proof);
+      return { verdict: "invalid", method: "repl", reasons: [], axioms: [], messages: extractGoalMessages(code), sorries: [], checked: code, submissionHash: "h", editsOutsideRegions: false, holes: true, leanStatus: "sorry" };
+    },
+  };
+  const reasonOf = async (checked: string, needle: string): Promise<string> => String(((await cutFailures({ checked, messages: [at(checked, needle)] }, lift)) as { reason: string }).reason);
 
-  it("cuts a lemma's proof and keeps its statement", () => {
+  it("cuts a lemma's proof and keeps its statement, with no Lean check", async () => {
     const checked = file("lemma aux_a (n : ℕ) : n = n := by\n  bad", "exact main_ok aux_a");
-    const cut = cutFailures({ checked, messages: [at(checked, "bad")], target });
+    const cut = await cutFailures({ checked, messages: [at(checked, "bad")] }, { check: async () => assert.fail("no check without a have") });
     assert.ok(!("reason" in cut));
     assert.equal(cut.aux, "lemma aux_a (n : ℕ) : n = n := by\n  sorry");
     assert.equal(cut.proof, "exact main_ok aux_a");
   });
 
-  it("lifts a have with a term proof, over several lines, and keeps the rest", () => {
+  it("lifts a have with a term proof, over several lines, and keeps the rest", async () => {
     const checked = file("", "have h : n = n :=\n  bad\nexact main_ok h");
-    const cut = cutFailures({ checked, messages: [at(checked, "bad")], target });
+    const cut = await cutFailures({ checked, messages: [at(checked, "bad")] }, lift);
     assert.ok(!("reason" in cut));
     assert.equal(cut.aux, "lemma aux_h (n : ℕ) : n = n := by\n  sorry");
-    assert.equal(cut.proof, "have h : n = n := aux_h n\nexact main_ok h");
+    assert.equal(cut.proof, "have h : n = n := by apply aux_h <;> assumption\nexact main_ok h");
+    assert.deepEqual(cut.cuts, ["h: lifted into the hole aux_h"]);
+    assert.ok(cut.report !== undefined, "the lift's check of the lifted file is returned");
   });
 
-  it("refuses a have whose statement mentions what the proof bound before, an error outside a have, and a nested have", () => {
+  it("lifts a have whose statement mentions what the proof bound before, and a nested have", async () => {
     let checked = file("", "intro k\nhave h : k = k := by\n  bad\nexact main_ok h");
-    assert.match(String((cutFailures({ checked, messages: [at(checked, "bad")], target }) as { reason: string }).reason), /mentions k/);
-    checked = file("", "have h : n = n := by\n  rfl\nexact bad");
-    assert.match(String((cutFailures({ checked, messages: [at(checked, "bad")], target }) as { reason: string }).reason), /outside a top-level have/);
+    let cut = await cutFailures({ checked, messages: [at(checked, "bad")] }, lift);
+    assert.ok(!("reason" in cut));
+    assert.equal(cut.aux, "lemma aux_h (n : ℕ) (k : ℕ) : k = k := by\n  sorry");
     checked = file("", "induction n with\n| zero => rfl\n| succ k ih =>\n  have h : k = k := by\n    bad\n  exact main_ok h");
-    assert.match(String((cutFailures({ checked, messages: [at(checked, "bad")], target }) as { reason: string }).reason), /outside a top-level have/);
+    cut = await cutFailures({ checked, messages: [at(checked, "bad")] }, lift);
+    assert.ok(!("reason" in cut));
+    assert.equal(cut.aux, "lemma aux_h (n : ℕ) (k : ℕ) (ih : ℕ) : k = k := by\n  sorry");
+    assert.match(cut.proof, /\| succ k ih =>\n {2}have h : k = k := by apply aux_h <;> assumption\n {2}exact main_ok h/);
   });
 
-  it("refuses an error in the fixed part and a declaration that is not an aux_ lemma", () => {
+  it("refuses an error in a statement, an error outside a have, and a lift Lean cannot make", async () => {
+    let checked = file("", "have h : bad = n := by\n  rfl\nexact main_ok h");
+    assert.match(await reasonOf(checked, "bad"), /the error is in the statement of the have h/);
+    checked = file("", "have h : n = n := by\n  rfl\nexact bad");
+    assert.match(await reasonOf(checked, "bad"), /outside a have/);
+    checked = file("", "have h : n = n := by\n  bad\nexact main_ok h");
+    const refused = await cutFailures({ checked, messages: [at(checked, "bad")] }, { check: async (sub) => ({ ...(await lift.check(sub)), messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "unknown tactic" }] }) });
+    assert.match(String((refused as { reason: string }).reason), /cannot be lifted: Lean refused the file with extract_goal/);
+  });
+
+  it("refuses an error in the fixed part and a declaration that is not an aux_ lemma", async () => {
     const checked = file("lemma helper (n : ℕ) : n = n := by\n  bad", "exact main_ok");
-    assert.match(String((cutFailures({ checked, messages: [at(checked, "bad")], target }) as { reason: string }).reason), /not an aux_ lemma/);
-    assert.match(String((cutFailures({ checked, messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "e" }], target }) as { reason: string }).reason), /fixed part/);
+    assert.match(await reasonOf(checked, "bad"), /not an aux_ lemma/);
+    assert.match(String(((await cutFailures({ checked, messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "e" }] }, lift)) as { reason: string }).reason), /fixed part/);
   });
 });

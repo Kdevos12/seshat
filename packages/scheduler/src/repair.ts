@@ -1,5 +1,5 @@
-import { AUX_BEGIN, AUX_END, maskCommentsAndStrings, PROOF_BEGIN, PROOF_END, prepareSketch, readDeclarationHead, splitCommands, type LeanMessage } from "@seshat/core";
-import { parseSignature } from "@seshat/graph";
+import { AUX_BEGIN, AUX_END, maskCommentsAndStrings, PROOF_BEGIN, PROOF_END, prepareSketch, readDeclarationHead, splitCommands, type LeanMessage, type ValidationReport } from "@seshat/core";
+import { assignmentOffset, haveSteps, type HaveStep, liftHaves, type LiftDeps, replaceBodies, sorrySteps } from "./lift.ts";
 
 /** What the repair pass reads of a failed check (plan change CA13). */
 export interface RepairInput {
@@ -7,14 +7,13 @@ export interface RepairInput {
   checked: string;
   /** Lean's messages: the errors place the cuts. */
   messages: ReadonlyArray<Pick<LeanMessage, "severity" | "pos" | "text">>;
-  /** The target theorem's statement in signature form: its binders become the binders of a lifted lemma. */
-  target: string;
 }
 
-/** The cut file: the two regions with each failing block cut to `sorry`, and one line for each cut (for the log). */
-export type Repair = { aux: string; proof: string; cuts: string[] } | { reason: string };
-
-const KEYWORDS = new Set(["fun", "forall", "exists", "if", "then", "else", "let", "in", "by", "at", "with", "from", "match", "do", "have", "show", "Type", "Prop", "Sort"]);
+/**
+ * The cut file: the two regions with each failing block cut to `sorry` (a failing `have`, lifted into a hole by `liftHaves`), and one line for each cut (for
+ * the log). `report` is the Lean check of this file when the lift made one, so that the caller need not check it again.
+ */
+export type Repair = { aux: string; proof: string; cuts: string[]; report?: ValidationReport } | { reason: string };
 
 /** The offset of a (1-based line, 0-based column in code points) position in `text`. */
 function offsetOf(text: string, line: number, column: number): number {
@@ -24,42 +23,20 @@ function offsetOf(text: string, line: number, column: number): number {
   return offset + Array.from(lines[line - 1] ?? "").slice(0, column).join("").length;
 }
 
-const indentOf = (line: string): number => /^[ \t]*/.exec(line)?.[0].length ?? 0;
-const words = (text: string): string[] => [...maskCommentsAndStrings(text).matchAll(/[\p{L}_][\p{L}\p{N}_']*/gu)].map((m) => m[0]);
-
-/** The text up to the first `:=` outside brackets: its offset, or undefined. `from` is where to start looking. */
-function assignment(masked: string, from = 0): number | undefined {
-  let depth = 0;
-  for (let i = from; i < masked.length; i++) {
-    const c = masked[i] as string;
-    if ("([{⟨⦃⟦".includes(c)) depth++;
-    else if (")]}⟩⦄⟧".includes(c)) depth--;
-    else if (depth === 0 && c === ":" && masked[i + 1] === "=") return i;
-  }
-  return undefined;
-}
-
-/** The names bound by the theorem's binders (`(n m : ℕ) {x : α} [inst : C]`), for the check that a lifted statement uses nothing else. */
-function binderWords(binders: string): Set<string> {
-  const names = new Set<string>();
-  for (const group of binders.matchAll(/[([{⟨⦃]([^:)\]}⟩⦄]*):/gu)) for (const w of words(group[1] as string)) names.add(w);
-  return names;
-}
-
 /**
- * The repair pass's cut (plan change CA13, APOLLO's sorrifier): each failing block of a file Lean checked with errors becomes `sorry`, with no model
- * and no Lean. It is all or nothing: one error that cannot be cut gives `{ reason }` and no repair. Handled (documentation/scheduler.md, "The repair pass"):
+ * The repair pass's cut (plan change CA13, APOLLO's sorrifier; DP2): each failing block of a file Lean checked with errors becomes `sorry`. It is all or
+ * nothing: one error that cannot be cut gives `{ reason }` and no repair. Handled (documentation/scheduler.md, "The repair pass"):
  *
- * - an `aux_` lemma or theorem of the AUX region whose proof holds an error: its whole proof becomes `:= by sorry`, its statement unchanged;
- * - in the PROOF region, a top-level `have name : T := ...` (by a block or a term, over one or several lines) that holds an error: it is lifted
- *   into a new `aux_name` hole of the theorem's binders and `T`, and the `have` becomes `have name : T := aux_name <binders>`. Only when `T` mentions
- *   nothing the proof bound before it (no earlier name but the theorem's binders and the names a dotted path qualifies).
+ * - an `aux_` lemma or theorem of the AUX region whose proof holds an error: its whole proof becomes `:= by sorry`, its statement unchanged (no Lean);
+ * - in the PROOF region, a named `have name : T := ...` at any depth (a bullet, a `cases` branch, a statement that mentions an `intro`'d variable) whose
+ *   proof holds an error: its proof is cut to `sorry` and `liftHaves` (`lift.ts`) lifts it into an `aux_name` hole, with Lean's `extract_goal` stating the
+ *   hole in its context: one Lean check, through `lift.check`, and one more for the lifted file, which is returned as `report`.
  *
  * Not handled, so no repair: an error in a statement (of a lemma or of a `have`), in the fixed part of the file, in a declaration that is not an `aux_`
- * lemma or theorem, in the main proof outside a top-level `have`, a `have` with no type (`have : T`, `have h (x : A) : T`), a `have` that is not at the
- * main proof's own indentation, or one whose statement mentions what an earlier step bound.
+ * lemma or theorem, in the main proof outside a named `have` with a type (`have : T`, `have h := t`, `have h (x : A) : T` are not steps), or a lift
+ * that `liftHaves` refuses.
  */
-export function cutFailures(input: RepairInput): Repair {
+export async function cutFailures(input: RepairInput, lift: LiftDeps): Promise<Repair> {
   const lines = input.checked.split("\n");
   const at = (marker: string): number => lines.findIndex((l) => l.trim() === marker.trim());
   const [auxBegin, auxEnd, proofBegin, proofEnd] = [at(AUX_BEGIN), at(AUX_END), at(PROOF_BEGIN), at(PROOF_END)];
@@ -94,7 +71,7 @@ export function cutFailures(input: RepairInput): Repair {
     try {
       const sketch = prepareSketch(command.text, head.name);
       // The proof starts at the first `:=`; an error before it is in the statement.
-      const assign = assignment(maskCommentsAndStrings(command.text), head.nameEnd);
+      const assign = assignmentOffset(maskCommentsAndStrings(command.text), head.nameEnd);
       if (assign === undefined || offset - command.start < assign) return { reason: `the error is in the statement of ${head.name}` };
       cutCommands.set(k, `${sketch.header}\n  sorry`);
       if (!cuts.some((c) => c.startsWith(`${head.name}:`))) cuts.push(`${head.name}: the proof cut to sorry`);
@@ -108,72 +85,30 @@ export function cutFailures(input: RepairInput): Repair {
     aux = `${aux.slice(0, command.start)}${text}${/\s*$/.exec(original)?.[0] ?? ""}${aux.slice(command.end)}`;
   }
 
-  // The PROOF region: top-level `have`s that hold an error are lifted.
+  // The PROOF region: the named `have`s that hold an error are cut to `sorry` and lifted into holes.
   let proof = proofText;
+  let report: ValidationReport | undefined;
   if (failingProof.length > 0) {
-    const proofLines = proofText.split("\n");
-    const starts: number[] = [];
-    let offset = 0;
-    for (const line of proofLines) {
-      starts.push(offset);
-      offset += line.length + 1;
+    const steps = haveSteps(proofText);
+    const failing = new Set<HaveStep>();
+    for (const offset of failingProof) {
+      // The innermost step that holds the error: the latest `have` that starts before it and ends after it.
+      const step = steps.filter((x) => x.start <= offset && offset < x.bodyTo).at(-1);
+      if (step === undefined) return { reason: "an error in the main proof outside a have with a name and a type" };
+      if (offset < step.bodyFrom) return { reason: `the error is in the statement of the have ${step.name}` };
+      failing.add(step);
     }
-    const body = proofLines.filter((l) => l.trim() !== "" && !l.trim().startsWith("--"));
-    if (body.length === 0) return { reason: "the main proof is empty" };
-    const base = Math.min(...body.map(indentOf));
-    // The steps of the main proof: a line at the base indentation and the lines under it.
-    const steps: Array<{ from: number; to: number }> = [];
-    for (const [k, line] of proofLines.entries()) {
-      if (line.trim() !== "" && !line.trim().startsWith("--") && indentOf(line) === base) steps.push({ from: k, to: k });
-      else if (steps.length > 0) (steps.at(-1) as { to: number }).to = k;
-    }
-    const signature = (() => {
-      try {
-        return parseSignature(input.target);
-      } catch {
-        return undefined;
-      }
-    })();
-    if (signature === undefined) return { reason: "the target is not in signature form" };
-    const bound = binderWords(signature.binders);
-    const usedNames = new Set(words(auxText));
-    const lifted = new Map<number, { have: string; name: string; type: string; text: string }>();
-    for (const offsetInProof of failingProof) {
-      const lineIndex = starts.findLastIndex((s) => s <= offsetInProof);
-      const stepIndex = steps.findIndex((s) => s.from <= lineIndex && lineIndex <= s.to);
-      const step = steps[stepIndex];
-      if (step === undefined) return { reason: "an error in the main proof outside any have" };
-      if (lifted.has(stepIndex)) continue;
-      const text = proofLines.slice(step.from, step.to + 1).join("\n").replace(/\s+$/, "");
-      const masked = maskCommentsAndStrings(text);
-      const head = /^\s*have\s+([\p{L}_][\p{L}\p{N}_'.]*)\s*:(?!=)/u.exec(masked);
-      if (head === null) return { reason: "an error in the main proof outside a top-level have with a name and a type" };
-      const assign = assignment(masked, head[0].length);
-      if (assign === undefined) return { reason: `the have ${head[1]} has no := at its top level` };
-      const stepOffset = starts[step.from] as number;
-      if (offsetInProof - stepOffset < assign) return { reason: `the error is in the statement of the have ${head[1]}` };
-      const type = text.slice(head[0].length, assign).replace(/\s+/g, " ").trim();
-      if (type === "") return { reason: `the have ${head[1]} has no statement` };
-      const before = new Set(words(proofLines.slice(0, step.from).join("\n")));
-      const foreign = words(type).find((w) => !KEYWORDS.has(w) && !bound.has(w) && before.has(w));
-      if (foreign !== undefined) return { reason: `the statement of the have ${head[1]} mentions ${foreign}, which the main proof bound before it` };
-      lifted.set(stepIndex, { have: head[1] as string, name: "", type, text });
-    }
-    const added: string[] = [];
-    const replaced = proofLines.slice();
-    for (const [stepIndex, item] of [...lifted.entries()].sort((a, b) => b[0] - a[0])) {
-      const step = steps[stepIndex] as { from: number; to: number };
-      let name = `aux_${item.have.replace(/\./g, "_")}`;
-      for (let n = 2; usedNames.has(name); n++) name = `aux_${item.have.replace(/\./g, "_")}_${n}`;
-      usedNames.add(name);
-      const call = [name, ...signature.args].join(" ");
-      replaced.splice(step.from, step.to - step.from + 1, `${" ".repeat(base)}have ${item.have} : ${item.type} := ${call}`);
-      added.unshift(`lemma ${name} ${signature.binders === "" ? "" : `${signature.binders} `}: ${item.type} := by\n  sorry`);
-      cuts.push(`${item.have}: lifted into the hole ${name}`);
-    }
-    proof = replaced.join("\n");
-    aux = [aux.replace(/\s+$/, ""), ...added].filter((t) => t !== "").join("\n\n");
+    // A step inside another that fails is cut with it.
+    const cutSteps = [...failing].filter((x) => ![...failing].some((y) => y !== x && y.start <= x.start && x.bodyTo <= y.bodyTo));
+    const cutProof = replaceBodies(proofText, cutSteps.map((step) => ({ step, body: "by sorry" })));
+    const lifted = await liftHaves(lift, { aux, proof: cutProof });
+    if ("reason" in lifted) return { reason: `the failing have cannot be lifted: ${lifted.reason}` };
+    const names = sorrySteps(cutProof).map((step) => step.name);
+    for (const [k, name] of lifted.lifted.entries()) cuts.push(`${names[k] ?? "a step"}: lifted into the hole ${name}`);
+    aux = lifted.aux;
+    proof = lifted.proof;
+    report = lifted.report;
   }
   if (cuts.length === 0) return { reason: "nothing to cut" };
-  return { aux: aux.replace(/\s+$/, ""), proof: proof.replace(/\s+$/, ""), cuts };
+  return { aux: aux.replace(/\s+$/, ""), proof: proof.replace(/\s+$/, ""), cuts, ...(report !== undefined ? { report } : {}) };
 }

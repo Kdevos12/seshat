@@ -738,7 +738,7 @@ export function createM12Line(): Line {
     if (target === undefined || accepted(target.status) || problem.signal.aborted || problem.budget.exhausted) return;
     const made = sketchRecords(problem).filter(({ record }) => record.repairOf !== undefined);
     if (made.some(({ record }) => record.repairOf === attempt.attemptId) || made.length >= s.maxRepairs) return;
-    const cut = cutFailures({ checked: report.checked, messages: report.messages, target: target.statement });
+    const cut = await cutFailures({ checked: report.checked, messages: report.messages }, { check: problem.checkSketch });
     if ("reason" in cut) {
       problem.log(`repair of ${attempt.attemptId}: none (${cut.reason})`);
       return;
@@ -749,7 +749,7 @@ export function createM12Line(): Line {
       problem.log(`repair of ${attempt.attemptId}: none (the cut file is no blueprint: ${reading.problem ?? "no named hole"})`);
       return;
     }
-    const checked = await problem.checkSketch(regions);
+    const checked = cut.report ?? (await problem.checkSketch(regions));
     const record = sketchRecordOf(problem, s, `${attempt.attemptId}:repair`, regions, reading, checked, { repairOf: attempt.attemptId });
     problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
     problem.log(`repair of ${attempt.attemptId}: ${cut.cuts.join("; ")}; ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${(record.errors ?? [])[0] ?? "Lean's check"})`}`);
