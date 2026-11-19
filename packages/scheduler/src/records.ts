@@ -1,4 +1,4 @@
-import type { Json } from "@seshat/core";
+import type { HoleTooHardReason, Json } from "@seshat/core";
 
 /**
  * The memory nodes line M12 writes (documentation/scheduler.md, "What M12 records"). Each is a fact of what
@@ -89,6 +89,8 @@ export interface SessionRecord {
   workHash?: string;
   /** The session's verdict (`hole_verdict` nodes carry the same). */
   verdict?: "proved" | "statement_wrong" | "too_hard";
+  /** `too_hard`: why the session ended without a proof (`HoleTooHardReason`). */
+  reason?: HoleTooHardReason;
   /** `statement_wrong`: Lean accepted the proof of the negation through `validate`; and the prover's argument. The `hole_verdict` node is made again from these if a cut lost it. */
   negationValidated?: boolean;
   argument?: string;

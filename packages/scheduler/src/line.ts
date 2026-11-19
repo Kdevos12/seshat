@@ -1,4 +1,4 @@
-import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleTooHardReason, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
 import {
   Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
@@ -52,6 +52,8 @@ export const M12_OPTIONS = {
   refine: false,
   /** The most refinement rounds for one problem (refine only). */
   maxRefinements: 8,
+  /** A hole whose last session was cut by its turns gets one more session than `holeSessions`, before a refinement round splits it (plan change LP5). The orchestrator turns it on under `RunConfig.longProof`. */
+  holeContinuation: false,
   /** The repair pass (CA13, blueprints only): an outer session that ends on a file with Lean errors has its failing blocks cut to `sorry`, with no model call, and the result is a blueprint if Lean and M12 read it as one. */
   repair: false,
   /** The most repairs for one problem (repair only). */
@@ -75,6 +77,7 @@ interface Settings {
   holeSessions: number;
   refine: boolean;
   maxRefinements: number;
+  holeContinuation: boolean;
   repair: boolean;
   maxRepairs: number;
   seed: string | number | null;
@@ -102,6 +105,7 @@ function settings(options: Readonly<JsonObject>): Settings {
     holeSessions: num("holeSessions", 1),
     refine: flag("refine"),
     maxRefinements: num("maxRefinements", 0),
+    holeContinuation: flag("holeContinuation"),
     repair: flag("repair"),
     maxRepairs: num("maxRepairs", 0),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
@@ -204,16 +208,23 @@ function holeInfo(problem: ProblemContext, claimId: string, latestFirst = false)
   return undefined;
 }
 
+/** Why a hole session ended `too_hard`: the model said so, or the session was cut by its turns (or its context), or by the money, or the model ended it with no proof (`HOLE_TOO_HARD_REASONS`). */
+function tooHardReason(result: Pick<HoleSessionResult, "stop" | "verdict">): HoleTooHardReason {
+  if (result.verdict?.verdict === "too_hard") return "model_said";
+  if (result.stop === "turns" || result.stop === "context") return "turns";
+  return result.stop === "budget" ? "budget" : "model_said";
+}
+
 /** The session of a hole whose work was done (no error, every `sorry` in a stub), the latest. */
 const workOf = (problem: ProblemContext, claimId: string): SessionRecord | undefined => sessionRecords(problem).filter((r) => r.claimId === claimId && r.workDone === true).at(-1);
 
 /** The verdicts of a hole of this problem, read from the memory's `hole_verdict` nodes. */
-function verdictsOf(problem: ProblemContext, claimId: string): Array<{ verdict: HoleVerdict; negationValidated: boolean; argument?: string; sessionId?: string }> {
+function verdictsOf(problem: ProblemContext, claimId: string): Array<{ verdict: HoleVerdict; negationValidated: boolean; argument?: string; sessionId?: string; reason?: HoleTooHardReason }> {
   return problem.memory
     .nodes(HOLE_VERDICT_KIND, { claimId })
-    .map((node) => node.data as { problemId?: string; verdict: HoleVerdict; negationValidated?: boolean; argument?: string; sessionId?: string })
+    .map((node) => node.data as { problemId?: string; verdict: HoleVerdict; negationValidated?: boolean; argument?: string; sessionId?: string; reason?: HoleTooHardReason })
     .filter((data) => data.problemId === problem.problemId)
-    .map((data) => ({ verdict: data.verdict, negationValidated: data.negationValidated === true, ...(data.argument !== undefined ? { argument: data.argument } : {}), ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}) }));
+    .map((data) => ({ verdict: data.verdict, negationValidated: data.negationValidated === true, ...(data.argument !== undefined ? { argument: data.argument } : {}), ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}), ...(data.reason !== undefined ? { reason: data.reason } : {}) }));
 }
 
 /** Lean accepted a proof of the hole's negation: the one thing that makes a hole false for the scheduler. */
@@ -685,12 +696,12 @@ export function createM12Line(): Line {
   const WAITING = HOLE_WAITING_REASON;
 
   /** Writes a session's verdict node, once: a session that has its node is left alone. */
-  function recordVerdict(problem: ProblemContext, task: TaskInfo, claimId: string, sessionId: string, verdict: HoleVerdict, extra: { negationValidated?: boolean; argument?: string } = {}): void {
+  function recordVerdict(problem: ProblemContext, task: TaskInfo, claimId: string, sessionId: string, verdict: HoleVerdict, extra: { negationValidated?: boolean; argument?: string; reason?: HoleTooHardReason } = {}): void {
     if (verdictsOf(problem, claimId).some((v) => v.sessionId === sessionId)) return;
     problem.memory.recordNode({
       kind: HOLE_VERDICT_KIND,
       claimId,
-      data: { problemId: problem.problemId, taskId: task.taskId, claimId, sessionId, verdict, ...(extra.negationValidated === true ? { negationValidated: true } : {}), ...(extra.argument !== undefined ? { argument: clip(extra.argument, 400) } : {}) },
+      data: { problemId: problem.problemId, taskId: task.taskId, claimId, sessionId, verdict, ...(extra.negationValidated === true ? { negationValidated: true } : {}), ...(extra.argument !== undefined ? { argument: clip(extra.argument, 400) } : {}), ...(extra.reason !== undefined ? { reason: extra.reason } : {}) },
     });
   }
 
@@ -708,7 +719,7 @@ export function createM12Line(): Line {
       if (record.problemId !== problem.problemId || record.verdict === undefined) continue;
       const sessionId = `${record.taskId}:${record.session}`;
       const task = { taskId: record.taskId } as TaskInfo;
-      recordVerdict(problem, task, record.claimId, sessionId, record.verdict as HoleVerdict, { ...(record.negationValidated === true ? { negationValidated: true } : {}), ...(record.argument !== undefined ? { argument: record.argument } : {}) });
+      recordVerdict(problem, task, record.claimId, sessionId, record.verdict as HoleVerdict, { ...(record.negationValidated === true ? { negationValidated: true } : {}), ...(record.argument !== undefined ? { argument: record.argument } : {}), ...(record.reason !== undefined ? { reason: record.reason } : {}) });
       if (record.verdict === HOLE_FALSE_VERDICT && record.negationValidated !== true && !problem.memory.nodes(SUSPECT_FALSE_KIND, { claimId: record.claimId }).some((n) => (n.data as { sessionId?: string }).sessionId === sessionId)) {
         recordSuspect(problem, record.claimId, "session", sessionId, record.argument ?? "the prover says the lemma is false");
       }
@@ -792,7 +803,7 @@ export function createM12Line(): Line {
   /** A hole's work with tools (CA10, CA11): pre-flight, then sessions on the small file, each ending with a verdict. */
   async function innerHole(problem: ProblemContext, work: Work, s: Settings, task: TaskInfo, owner: string, info: HoleInfo): Promise<TaskEnd> {
     const claimId = info.claimId;
-    const limit = task.budget.sessions ?? s.holeSessions;
+    const sessions = task.budget.sessions ?? s.holeSessions;
     const turns = task.budget.turns ?? s.holeTurns;
     for (;;) {
       const status = problem.memory.claim(claimId)?.status;
@@ -804,6 +815,8 @@ export function createM12Line(): Line {
       if (workOf(problem, claimId) !== undefined) return { ended: "failed", reason: WAITING };
       if (falseOf(problem, claimId)) return { ended: "failed", reason: `the hole ${info.name} is false: Lean accepted a proof of its negation` };
       const mine = sessionRecords(problem).filter((r) => r.taskId === task.taskId);
+      // A hole whose last session was cut by its turns gets one session more, under the same caps (plan change LP5): its work was going on when the limit came.
+      const limit = sessions + (s.holeContinuation && mine.at(-1)?.reason === "turns" ? 1 : 0);
       if (mine.length >= limit) return { ended: "failed", reason: `${owner} used its ${limit} hole session${limit === 1 ? "" : "s"} without a proof` };
       if (problem.signal.aborted) return { ended: "failed", reason: "the problem ended" };
       if (problem.budget.exhausted) return { ended: "failed", reason: "the problem's budget ran out" };
@@ -877,6 +890,7 @@ export function createM12Line(): Line {
       const record: SessionRecord = {
         problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: verdict === "proved" && workRecord.workDone !== true, usd: result.usd,
         reasons: reasons.slice(0, 3).map((r) => clip(r, 160)), stop: result.stop, turns: result.turns, verdict, ...workRecord,
+        ...(verdict === "too_hard" ? { reason: tooHardReason(result) } : {}),
         ...(negationValidated ? { negationValidated: true } : {}), ...(result.verdict?.argument !== undefined ? { argument: clip(result.verdict.argument, 400) } : {}),
       };
       problem.memory.recordNode({ kind: SESSION_KIND, claimId, data: { ...record } });

@@ -103,6 +103,8 @@ export interface RunLinesOptions {
   prices?: PriceBook;
   /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
+  /** `RunConfig.longProof` is set: M12 continues a hole that its turns cut (plan change LP5, option `holeContinuation`). */
+  longProof?: boolean;
   /** The run's roles (`RunConfig.roles`): each site gets the `llm` of its role (`scheduler.planner` the planner's, the hole sessions the hole's). Absent: the run's model everywhere. */
   roles?: RoleBook;
   /**
@@ -398,7 +400,11 @@ export class ProblemLines {
         : {}),
       log: (text) => o.log(`${this.p.problemId} [${id}] ${text}`),
       signal: own,
-      options: o.modeGate?.on.includes(id) === true && o.modeGate.options[id] !== undefined ? { ...entry.options, ...o.modeGate.options[id] } : entry.options,
+      options: {
+        ...entry.options,
+        ...(id === "M12" && o.longProof === true ? { holeContinuation: true } : {}),
+        ...(o.modeGate?.on.includes(id) === true ? o.modeGate.options[id] : {}),
+      },
       ...(o.seed !== undefined ? { seed: o.seed } : {}),
       ...(o.human === true ? { human: true } : {}),
       ...(o.ranking !== undefined ? { ranking: o.ranking } : {}),

@@ -57,7 +57,7 @@ dossiers. Nothing is guessed: a number the journal does not hold is "not recorde
   comment (`--`, and `/- -/` blocks, nested; strings are not parsed). **Characters** count the same text.
 - **`aux_`**: the `theorem` and `lemma` declarations of that text whose name starts with `aux_`.
 - **Holes**: from the problem's last `m12_sketch` record: its holes, those dropped, whether it was healthy; and the verdicts (`proved`, `statement_wrong`,
-  `too_hard`), one per hole claim, the last winning, from `hole_verdict` nodes and `m12_session` records.
+  `too_hard`, shown as `too_hard (turns)` when the node says why), one per hole claim, the last winning, from `hole_verdict` nodes and `m12_session` records.
 - **`lean_check`**: the sum of the problems' sessions' counts (`attempt.finished.checks`, or the calls in the transcript); when no session recorded one, the
   `lean.check` tool runs made inside its attempts, said so; else "not recorded".
 - **Check time vs size**: the `lean.check` tool runs of the problem's attempts whose input blob (the code sent, characters) and `durationMs` are both in the

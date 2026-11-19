@@ -1149,6 +1149,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       thinkingLevel: config.thinkingLevel,
       log,
       seed: config.seed ?? runId,
+      ...(config.longProof !== undefined ? { longProof: true } : {}),
       ...(config.consortium !== undefined ? { human: true } : {}),
       // Without a plateau window (no `plateauUsd` and no run allowance) no mode is ever entered, so the lines are not gated: they run as before the modes.
       ...(config.horizon === "campaign" && (config.campaign?.plateauUsd !== undefined || config.budget.runUsd !== undefined)

@@ -1,4 +1,4 @@
-import { HOLE_FALSE_VERDICT, HOLE_VERDICT_KIND, type HarnessEvent } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_TOO_HARD_REASONS, HOLE_VERDICT_KIND, type HarnessEvent, type HoleTooHardReason } from "@seshat/core";
 
 export { HOLE_FALSE_VERDICT, HOLE_VERDICT_KIND };
 
@@ -53,7 +53,7 @@ export interface LoopTelemetry {
    * Sub-lemmas a mechanism proposed, over those with a verdict (absent when none was recorded): `wrong` counts the `statement_wrong` verdicts whose negation Lean accepted
    * (`negationValidated`); `suspected` the ones that only a prover or a tool says are false, which are not counted as false.
    */
-  holes?: { verdicts: number; wrong: number; share: number; suspected?: number };
+  holes?: { verdicts: number; wrong: number; share: number; suspected?: number; tooHard?: Partial<Record<HoleTooHardReason, number>> };
 }
 
 function quantile(values: readonly number[], q: number): number | undefined {
@@ -74,6 +74,7 @@ export function loopTelemetry(events: readonly HarnessEvent[]): LoopTelemetry {
   let verdicts = 0;
   let wrong = 0;
   let suspected = 0;
+  const tooHard: Partial<Record<HoleTooHardReason, number>> = {};
   events.forEach((e, seq) => {
     switch (e.type) {
       case "task.created":
@@ -108,12 +109,15 @@ export function loopTelemetry(events: readonly HarnessEvent[]): LoopTelemetry {
         break;
       case "node.recorded":
         if (e.type === "node.recorded" && e.data.kind === HOLE_VERDICT_KIND) {
-          const node = e.data.data as { verdict?: unknown; negationValidated?: unknown } | null;
+          const node = e.data.data as { verdict?: unknown; negationValidated?: unknown; reason?: unknown } | null;
           if (typeof node?.verdict === "string") {
             verdicts += 1;
             if (node.verdict === HOLE_FALSE_VERDICT) {
               if (node.negationValidated === true) wrong += 1;
               else suspected += 1;
+            } else if (node.verdict === "too_hard" && (HOLE_TOO_HARD_REASONS as readonly unknown[]).includes(node.reason)) {
+              const reason = node.reason as HoleTooHardReason;
+              tooHard[reason] = (tooHard[reason] ?? 0) + 1;
             }
           }
         }
@@ -196,7 +200,7 @@ export function loopTelemetry(events: readonly HarnessEvent[]): LoopTelemetry {
       ...(endContext !== undefined ? { medianEndContextTokens: endContext } : {}),
       stoppedBy,
     },
-    ...(verdicts > 0 ? { holes: { verdicts, wrong, share: wrong / verdicts, ...(suspected > 0 ? { suspected } : {}) } } : {}),
+    ...(verdicts > 0 ? { holes: { verdicts, wrong, share: wrong / verdicts, ...(suspected > 0 ? { suspected } : {}), ...(Object.keys(tooHard).length > 0 ? { tooHard } : {}) } } : {}),
   };
 }
 
@@ -230,7 +234,7 @@ export function renderLoop(loop: LoopTelemetry): string[] {
     );
   } else out.push("Dollars by cache hit, miss and output: not recorded (the journal's charges do not carry the split).");
   out.push(`Stop reasons: ${Object.entries(t.stoppedBy).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, n]) => `${k} ${n}`).join(", ") || "not recorded"}.`);
-  out.push(loop.holes === undefined ? "Proposed sub-lemmas that turned out false: not recorded." : `Proposed sub-lemmas that turned out false (a Lean-checked negation): ${loop.holes.wrong} of ${loop.holes.verdicts} (${pct(loop.holes.share)}).${loop.holes.suspected !== undefined ? ` Suspected false, unverified: ${loop.holes.suspected}.` : ""}`, "");
+  out.push(loop.holes === undefined ? "Proposed sub-lemmas that turned out false: not recorded." : `Proposed sub-lemmas that turned out false (a Lean-checked negation): ${loop.holes.wrong} of ${loop.holes.verdicts} (${pct(loop.holes.share)}).${loop.holes.suspected !== undefined ? ` Suspected false, unverified: ${loop.holes.suspected}.` : ""}${loop.holes.tooHard !== undefined ? ` Verdicts too_hard by reason: ${HOLE_TOO_HARD_REASONS.filter((r) => loop.holes?.tooHard?.[r] !== undefined).map((r) => `${r} ${loop.holes?.tooHard?.[r]}`).join(", ")}.` : ""}`, "");
   out.push("| Attempt | Checks | Median / 95th s | Output tokens per check | Hit / miss / output $ | End context | Stopped by |", "|---|---|---|---|---|---|---|");
   for (const a of loop.attempts) {
     out.push(

@@ -5,6 +5,7 @@ import { BLUEPRINT_FORMAT, createM12Line, PLANNER_VERSION } from "@seshat/schedu
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { check, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
 import { BP_AUX, BP_PROOF, blueprintAnswer, HARD_AUX } from "./blueprint-helpers.ts";
+import { loopTelemetry, renderLoop } from "../src/loop-telemetry.ts";
 import { assertSound, consumed, sessionPromptOf } from "./resume-helpers.ts";
 
 /** The nodes of a kind as they stand at the end of the run: what was recorded, with the merge patches applied after. */
@@ -126,6 +127,32 @@ describe("refinement rounds (CA12, PA11)", () => {
     assert.match(prompt, /- aux_third \[\w+\]: computed, verdict proved, depth 0/);
     assert.doesNotMatch(prompt, /This blueprint was not accepted/);
     assert.equal(planned(events).length, 1);
+  });
+
+  it("records why a hole ended too hard; under longProof a hole cut by its turns continues once before the round splits it", { timeout: 60000 }, async () => {
+    // Each session is cut at its second response (holeTurns 2); aux_third is closed by the battery.
+    const cut = (tag: string) => [check(`exact ${tag}_1`), check(`exact ${tag}_2`)];
+    const responses = (continued: boolean) => [
+      check(HARD_PROOF, HARD_BLUEPRINT),
+      say("Two lemmas are left."),
+      ...cut("first"),
+      ...(continued ? cut("second") : []),
+      answer(SPLIT_AUX, SPLIT_PROOF),
+      check("exact hole_ok"),
+      check("exact hole_ok"),
+    ];
+    const hole = { holeTurns: 2 };
+    const plain = await run(responses(false), hole);
+    assert.equal(plain.faux.getPendingResponseCount(), 0);
+    assert.deepEqual(nodes(plain.events, "hole_verdict").map((v) => [v.verdict, v.reason]), [["too_hard", "turns"], ["proved", undefined], ["proved", undefined], ["proved", undefined]]);
+    assert.equal(nodes(plain.events, "m12_session").filter((n) => n.verdict === "too_hard").length, 1, "without longProof the hole has its one session and is split");
+    const long = await run(responses(true), hole, { triage: true, longProof: {} });
+    assert.equal(long.faux.getPendingResponseCount(), 0);
+    const tooHard = nodes(long.events, "m12_session").filter((n) => n.verdict === "too_hard");
+    assert.deepEqual(tooHard.map((n) => [n.session, n.turns, n.reason]), [[1, 2, "turns"], [2, 2, "turns"]], "one continuation, then no more");
+    assert.deepEqual(nodes(long.events, "hole_verdict").map((v) => [v.verdict, v.reason]), [["too_hard", "turns"], ["too_hard", "turns"], ["proved", undefined], ["proved", undefined], ["proved", undefined]]);
+    assert.equal(nodes(long.events, "m12_sketch").length, 2, "then a refinement round splits it");
+    assert.match(renderLoop(loopTelemetry(long.events)).join("\n"), /Verdicts too_hard by reason: turns 2\./);
   });
 
   it("does nothing without the option refine: a hole that ended too hard is the end of it", { timeout: 60000 }, async () => {

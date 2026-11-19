@@ -216,10 +216,10 @@ export function audit(src: AuditSources): Audit {
   const refineStops = new Map<string, RefineStopRecord>();
   // Verdicts of the holes of each problem, by hole claim: the last one wins (a hole may have several sessions).
   const holeVerdicts = new Map<string, Map<string, string>>();
-  const noteVerdict = (pid: string, key: string, verdict: unknown) => {
+  const noteVerdict = (pid: string, key: string, verdict: unknown, reason?: unknown) => {
     if (typeof verdict !== "string") return;
     const by = holeVerdicts.get(pid) ?? new Map<string, string>();
-    by.set(key, verdict);
+    by.set(key, verdict === "too_hard" && typeof reason === "string" ? `${verdict} (${reason})` : verdict);
     holeVerdicts.set(pid, by);
   };
   // The validations of each problem's own claim, in journal order, with their file's blob.
@@ -260,9 +260,9 @@ export function audit(src: AuditSources): Audit {
       else if (e.data.kind === SESSION_KIND) {
         sessionRecords.set(pid, [...(sessionRecords.get(pid) ?? []), e.data.data as unknown as SessionRecord]);
         const r = e.data.data as unknown as SessionRecord;
-        noteVerdict(pid, r.claimId ?? r.taskId, r.verdict);
+        noteVerdict(pid, r.claimId ?? r.taskId, r.verdict, r.reason);
       }
-      else if (e.data.kind === HOLE_VERDICT_KIND) noteVerdict(pid, e.data.claimId ?? e.data.nodeId, d?.verdict);
+      else if (e.data.kind === HOLE_VERDICT_KIND) noteVerdict(pid, e.data.claimId ?? e.data.nodeId, d?.verdict, d?.reason);
       else if (e.data.kind === "m12_refine_stop") refineStops.set(pid, e.data.data as unknown as RefineStopRecord);
       else if (e.data.kind === "hygiene" && d !== undefined) hygiene.set(pid, [...(hygiene.get(pid) ?? []), { check: String(d.check ?? ""), result: String(d.result ?? ""), ...(typeof d.detail === "string" ? { detail: d.detail } : {}) }]);
       else if (e.data.kind === "literature" && d !== undefined && d.verdict !== "unrelated") literature.set(pid, [...(literature.get(pid) ?? []), { title: String(d.title ?? ""), url: String(d.url ?? ""), verdict: String(d.verdict ?? "") }]);
