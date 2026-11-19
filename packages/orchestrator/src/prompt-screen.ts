@@ -1,5 +1,5 @@
 import { forbiddenTokensIn, maskCommentsAndStrings } from "@seshat/core";
-import { PROVER_SYSTEM_FILE, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_FILE } from "./prompt.ts";
+import { LEAN_DRAFT_SYSTEM, LEAN_DRAFT_SYSTEM_FILE, LEAN_DRAFT_VERSION_FILE, PROVER_SYSTEM_FILE, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_FILE } from "./prompt.ts";
 
 /**
  * A prompt the harness may optimize (documentation/prompts.md). Every target is a text file under a `prompts` directory of a package,
@@ -30,6 +30,20 @@ export const PROMPT_TARGETS: readonly PromptTarget[] = [
     anchors: ["lean_check", "-- HARNESS:AUX:BEGIN", "-- HARNESS:AUX:END", "-- HARNESS:PROOF:BEGIN", "-- HARNESS:PROOF:END", "Lean decides", "Never allowed", "sorry"],
   },
 ];
+
+/**
+ * The draft prompt (plan change CL1) screens like the prover's: a prompt file with its version record, no placeholder, and the phrases a rewrite must keep.
+ * It is not in `PROMPT_TARGETS`: `harness optimize-prompts` measures a candidate through `RunConfig.prompts.proverSystem`, which does not reach the draft,
+ * so listing it there would measure the wrong prompt. A test screens it, and a person who merges a change to it bumps its version record.
+ */
+export const LEAN_DRAFT_TARGET: PromptTarget = {
+  id: "lean-draft.system",
+  file: LEAN_DRAFT_SYSTEM_FILE,
+  versionFile: LEAN_DRAFT_VERSION_FILE,
+  current: LEAN_DRAFT_SYSTEM,
+  placeholders: [],
+  anchors: ["Lean decides", "Never allowed", "```lean", "have h_k"],
+};
 
 export function promptTarget(id: string, targets: readonly PromptTarget[] = PROMPT_TARGETS): PromptTarget {
   const target = targets.find((t) => t.id === id);
