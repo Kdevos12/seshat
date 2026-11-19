@@ -1562,15 +1562,22 @@ change is an option (`RunConfig.longProof`), off by default; `v1` and `v2` stay 
 - Task 64 (LP1): `harness audit` gains a length table (Lean lines, `aux_` lemmas, holes and verdicts, checks, check
   durations against file size, stop reasons; reference lengths from `--reference DIR`). Then a free pass on the
   owner's machine over runs 3 to 5; the table "success against reference length" goes in the ledger.
-- Task 65 (LP2, LP3): a draft blueprint derived from the accepted informal proof by one planner call, checked by
-  Lean before the first outer session; proved links frozen in a locked prefix that Lean still checks whole and the
-  certifier replays whole, shown to the prover by statement only.
-- Task 66 (LP4, LP5): a `long` triage class; under `longProof` the probe's progress is the frontier's growth and the
-  gate stops after K slices that close no hole; `too_hard` verdicts record their reason, a hole cut by its turns
-  gets one continuation, and the `-- refines:` depth limit is 4.
+- Task 65 (LP2 as amended by DP1 to DP3, LP3 as amended by DP5; Ruling 44): the planner drafts the target's proof
+  as `have h_k : T_k := by sorry` steps, each under its informal step as a comment, checked once by Lean; the sorry
+  battery closes what it can in place; each remaining `sorry` is lifted by Mathlib's `extract_goal` into an `aux_`
+  hole (one function, `liftHaves` in `@seshat/scheduler`, which also replaces the repair pass's text lifter, DP2);
+  `longProof.drafts` drafts are ranked by the holes left, for free. No `-- uses:` in this path. Proved links are
+  frozen in a locked prefix that Lean still checks whole and the certifier replays whole, shown to the prover by
+  statement only, and recorded in the existing `accepted_lemmas` node, which M3 reads under `longProof` (DP5).
+- Task 66 (LP4, LP5, DP4): a `long` triage class; under `longProof` the probe's progress is the frontier's growth and
+  the gate stops after K sessions that close no hole; `too_hard` verdicts record their reason and a hole cut by its
+  turns gets one continuation (LP5's depth change waits for LP6 and may be replaced by DP7); a hole session gets
+  what an outer session has when the run has it (sorry battery, pushed `lean.search`, M3's library searched by the
+  hole's statement) and the informal step it formalizes, quoted as unchecked data (DP4).
 - Task 67 (LP6): the paid diagnostic, at most $3.00 in all, after a check of the provider balance: arm
   `solve-v2-long` on 3 problems of medium reference length, flash everywhere against a stronger planner and
-  verifier.
+  verifier; the arm sets `longProof.drafts` 3, the hole role's lowest thinking level and one informal pass (DP6).
+  DP7 (local recursion on a `too_hard` hole) is built only if LP6 shows `too_hard` holes as the main stop.
 
 ## Later (not scheduled)
 
