@@ -7,7 +7,9 @@ import { type HostProfile, leanCheckImplementation, loadCatalog, Registry } from
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULTS_SETS, readRecordedRun, REPO_ROOT, type RunOptions, studentConfig } from "../src/index.ts";
-import { check, DemoLean, demoRun, ofType } from "./m0-helpers.ts";
+import { createM12Line } from "@seshat/scheduler";
+import { blueprintAnswer } from "./blueprint-helpers.ts";
+import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
 
 /** What Lean knows by name; `#check NAME` of any other is an error. */
 const SIGNATURES: Record<string, string> = {
@@ -21,7 +23,11 @@ class SearchLean implements LeanChecker {
   readonly version = "0";
   readonly checks: string[] = [];
   failure: "server_error" | undefined;
-  private readonly inner = new DemoLean();
+  private readonly inner: DemoLean;
+
+  constructor(answer?: ConstructorParameters<typeof DemoLean>[0]) {
+    this.inner = new DemoLean(answer);
+  }
 
   async check(snippets: readonly LeanSnippet[], options: LeanCheckOptions = {}): Promise<LeanCheckResult[]> {
     if (!snippets.every((s) => s.id === "lean-search")) return this.inner.check(snippets, options);
@@ -101,6 +107,33 @@ describe("lean.search pushed by the harness (CA22)", () => {
     assert.match(seen[0]?.[0] ?? "", /For hole 1:\n- Nat\.add_zero/);
     assert.deepEqual(fake.requests.map((r) => JSON.parse(r).query), ["n : ℕ\n⊢ n + 0 = n"]);
     assert.ok(MAX_QUERIES === 3);
+  });
+
+  it("carries the pushed hits and the classical battery into a hole session's check answers, and into none when the options are off (plan change DP4)", async () => {
+    const hole = "lemma aux_x (n : ℕ) : n + 2 = 2 + n := by\n  sorry";
+    const answers: string[][] = [[], []];
+    const fake = service([{ name: "Nat.add_zero" }]);
+    for (const [k, on] of [false, true].entries()) {
+      await demoRun({
+        lines: { M12: createM12Line() },
+        lean: new SearchLean(blueprintAnswer),
+        registry: searchRegistry(fake.fetch),
+        config: { lines: ["M12"], provers: 1, sessions: 2, ...(on ? { leanSearch: true, sorryBattery: {} } : {}), lineOptions: { M12: { blueprints: true, holeSessions: 1, rounds: 1, ageRatio: 1, weightRatio: 0 } } },
+        responses: [
+          check("exact main_ok aux_x", hole),
+          say("One lemma is left."),
+          // The hole session: a file with its `sorry` in the proof, then what the check answered.
+          check("sorry"),
+          (context: TranscriptContext) => (answers[k]?.push(...textOf(context)), say("I cannot do this.")),
+          say("Going on."),
+        ],
+      });
+    }
+    const [off, on] = answers;
+    assert.doesNotMatch(off?.[0] ?? "", /classical battery|For hole 1/);
+    assert.match(on?.[0] ?? "", /The harness tried the classical battery on 1 `sorry` and closed none\./);
+    assert.match(on?.[0] ?? "", /For hole 1:\n- Nat\.add_zero/);
+    assert.ok((off?.[0] ?? "").length > 0 && (on?.[0] ?? "").startsWith(off?.[0] ?? ""), "the hole session's own check answer comes first and is the same");
   });
 
   it("shows no hit when Lean cannot check the names: the answer is the one without the option", async () => {

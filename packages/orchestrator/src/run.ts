@@ -1132,6 +1132,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
     if (libraryDefinitions.length > 0) log(`the run starts with ${seedDefinitions(memory, libraryDefinitions).length} definition(s) of the library registry`);
   }
+  // The classical battery on the `sorry` a session's check leaves: the run's setting, which the `test` mode of a campaign turns on for its turn whatever the setting is (LH5). The provers' sessions and the hole sessions use it.
+  const sorryBattery = config.sorryBattery !== undefined || plateauMode === "test" ? { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } : undefined;
   if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
@@ -1150,6 +1152,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ...(config.longProof !== undefined ? { longProof: true } : {}),
+      ...(leanSearch !== undefined ? { leanSearch } : {}),
+      ...(sorryBattery !== undefined ? { sorryBattery } : {}),
       ...(config.consortium !== undefined ? { human: true } : {}),
       // Without a plateau window (no `plateauUsd` and no run allowance) no mode is ever entered, so the lines are not gated: they run as before the modes.
       ...(config.horizon === "campaign" && (config.campaign?.plateauUsd !== undefined || config.budget.runUsd !== undefined)
@@ -1885,8 +1889,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
-          // The `test` mode puts the battery on each `sorry` on for its turn, whatever the run's own setting (LH5).
-          ...(config.sorryBattery !== undefined || plateauMode === "test" ? { sorryBattery: { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } } : {}),
+          ...(sorryBattery !== undefined ? { sorryBattery } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(shownCards !== undefined && task === proverTasks[0] ? { cards: shownCards } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),

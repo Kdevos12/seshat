@@ -1,9 +1,9 @@
-import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleTooHardReason, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
+import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleTooHardReason, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, splitCommands, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
 import {
   Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
 import { LeanMeta } from "@seshat/lean-meta";
-import { INFORMAL_PROOF_KIND, informalProofOfNodes, informalSection, sketchOfNodes } from "@seshat/memory";
+import { INFORMAL_PROOF_KIND, informalProofOfNodes, informalSection, quotedSketch, sketchOfNodes } from "@seshat/memory";
 import {
   type Briefing, completeJson, type FinishedAttempt, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
@@ -204,6 +204,29 @@ function holeInfo(problem: ProblemContext, claimId: string, latestFirst = false)
       return id === undefined || dep === undefined ? [] : [{ name, statement: dep.statement, claimId: id }];
     });
     return { name: record.names[k] ?? "aux_lemma", claimId, deps };
+  }
+  return undefined;
+}
+
+/** The most characters of a hole's informal step that its prompt shows. */
+const STEP_CHARS = 600;
+
+/**
+ * The informal step a hole formalizes, when the blueprint says it: the comment directly above the hole's lemma in the aux region of the latest blueprint that has
+ * it (a `-- step k:` line, or any note the sketch's author left there), without the `-- uses:` and `-- refines:` directives. It is the sketch's own text, unchecked.
+ */
+function stepOf(problem: ProblemContext, claimId: string): string | undefined {
+  for (const { record } of sketchRecords(problem).reverse()) {
+    const name = record.blueprint === true && record.registered ? record.names[record.holes.indexOf(claimId)] : undefined;
+    const stored = name === undefined ? undefined : problem.memory.blobs.get(record.submission);
+    if (name === undefined || stored === undefined) continue;
+    const commands = splitCommands((JSON.parse(stored) as { aux: string }).aux);
+    const at = commands.findIndex((c) => c.kind === "code" && new RegExp(`^(?:theorem|lemma)\\s+${name}\\b`).test(c.text.trimStart()));
+    const above = commands[at - 1];
+    // A blank line between the comment and the lemma makes it a note on something else, as it does for `-- uses:`.
+    if (above === undefined || above.kind !== "comment" || ((/\s*$/.exec(above.text)?.[0] ?? "").split("\n").length - 1) > 1) return undefined;
+    const lines = above.text.split("\n").filter((l) => !/^--\s*(?:uses|refines):/.test(l.trim())).map((l) => l.replace(/^\s*--\s?/, "").trim()).filter((l) => l !== "");
+    return lines.length === 0 ? undefined : clip(lines.join(" "), STEP_CHARS);
   }
   return undefined;
 }
@@ -781,7 +804,7 @@ export function createM12Line(): Line {
     return { checked: check.checked, reason: check.reason };
   }
 
-  function holePrompt(problem: ProblemContext, work: Work, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[]): string {
+  function holePrompt(problem: ProblemContext, work: Work, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[], step?: string): string {
     const own = problem.memory.claim(info.claimId)?.header ?? work.header;
     // The blueprint's context (definitions and proved lemmas the hole names) is the end of the claim's header: shown whole, apart from the problem's own header, which may be cut.
     const context = own.length > work.header.length && own.startsWith(work.header) ? own.slice(work.header.length).trim() : "";
@@ -795,6 +818,7 @@ export function createM12Line(): Line {
         ? `These lemmas are given, with the proof \`sorry\`; use them by name, only inside the proof of ${info.name} itself (a helper lemma you add must not use them), and keep them exactly as they are in the aux region of every check:\n${stubs}`
         : "No lemma is given: prove it from the header.",
       `The lemma to prove:\nlemma ${info.name} ${claimStatement.trim()} := by\n  <your proof>`,
+      step !== undefined ? `The step of the informal plan that this lemma formalizes. It is a note from the plan's author, unchecked: it may be wrong or incomplete; use it as a hint, and Lean decides.\n${quotedSketch(step)}` : "",
       `Start with lean_check(aux, proof)${info.deps.length > 0 ? ", whose aux begins with the given lemmas" : ""}; then change it with lean_edit. The work is done when Lean reports no error${info.deps.length > 0 ? " and the only sorry are in the given lemmas" : " and no sorry is left"}.`,
       failures.length > 0 ? `Earlier sessions on this lemma did not succeed:\n${boundHistory(failures).join("\n")}` : "",
     ].filter((line) => line !== "").join("\n\n");
@@ -805,6 +829,7 @@ export function createM12Line(): Line {
     const claimId = info.claimId;
     const sessions = task.budget.sessions ?? s.holeSessions;
     const turns = task.budget.turns ?? s.holeTurns;
+    const step = stepOf(problem, claimId);
     for (;;) {
       const status = problem.memory.claim(claimId)?.status;
       if (accepted(status)) {
@@ -828,11 +853,11 @@ export function createM12Line(): Line {
       const session = mine.length + 1;
       const sessionId = `${task.taskId}:${session}`;
       const failures = mine.map((r) => clip(`- session ${r.session}: ${r.reasons.join("; ") || "no proof"}`, 300));
-      const prompt = holePrompt(problem, work, info, claim?.statement ?? "", session, limit, turns, failures);
+      const prompt = holePrompt(problem, work, info, claim?.statement ?? "", session, limit, turns, failures, step);
       let result: HoleSessionResult;
       try {
         result = await (problem.holeSession as NonNullable<ProblemContext["holeSession"]>)({
-          claimId, prompt, turns, key: sessionId,
+          claimId, prompt, turns, key: sessionId, name: info.name,
           done: (submission, report) => readWork(submission, report, info.deps).done,
         });
       } catch (error) {

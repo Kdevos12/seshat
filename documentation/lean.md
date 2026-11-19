@@ -177,7 +177,7 @@ certifier is unavailable: every candidate stays a candidate and its problem says
 ## Search pushed by the harness
 
 Plan change CA22, Task 40; `@seshat/lean-search`, the capability `lean.search` ([capabilities.md](capabilities.md#leansearch)), the option
-`RunConfig.leanSearch` (`harness run --lean-search`, `harness solve --lean-search`; off in `harness run`; on in `harness solve`'s set `v2` when the host offers `lean.search`, through `SOLVE_SWITCHES`, and off in `v1`).
+`RunConfig.leanSearch` (a hole session of M12 has the push too, [scheduler.md](scheduler.md#hole-sessions-plan-change-ca10); `harness run --lean-search`, `harness solve --lean-search`; off in `harness run`; on in `harness solve`'s set `v2` when the host offers `lean.search`, through `SOLVE_SWITCHES`, and off in `v1`).
 Agents ignore lookup tools they must call, and hallucinated names are a third to a half of cheap models' errors: so the harness itself
 searches, and puts what it finds into the answer to the check.
 

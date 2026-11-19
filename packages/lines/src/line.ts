@@ -359,6 +359,8 @@ export interface HoleSessionRequest {
    * dependency stub). A check the claim's own workbench accepts (a file without `sorry` that Lean accepts) ends it too.
    */
   done: (submission: Submission, report: ValidationReport) => boolean;
+  /** The lemma's name in the file (`aux_bound`), for what the lines look up. */
+  name?: string;
   /** Names the session in the journal's model calls (`<task>:<session>`). */
   key: string;
 }

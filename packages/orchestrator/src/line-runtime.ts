@@ -30,7 +30,9 @@ import type {
   TaskQuery,
   TranscriptEntry,
 } from "@seshat/lines";
+import type { HostTactics } from "@seshat/classical";
 import type { DecideConfig } from "@seshat/decide";
+import type { LeanSearchPush } from "@seshat/lean-search";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
 import { messageOf, type Registry } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
@@ -48,6 +50,7 @@ import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { steering } from "./team.ts";
 import type { Turn } from "./turns.ts";
+import type { SorryBatteryConfig } from "./sorry-battery.ts";
 import type { ClaimBenches } from "./validate.ts";
 
 /** A hook of a line threw: a failure of the harness, which names the line and the hook. */
@@ -103,6 +106,9 @@ export interface RunLinesOptions {
   prices?: PriceBook;
   /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
+  /** The run's push of verified `lean.search` hits and its classical battery on `sorry` (`RunConfig.leanSearch`, `RunConfig.sorryBattery`): what a prover's checks carry, and the hole sessions' too (plan change DP4). Absent: off. */
+  leanSearch?: LeanSearchPush;
+  sorryBattery?: { config: SorryBatteryConfig; host: HostTactics };
   /** `RunConfig.longProof` is set: M12 continues a hole that its turns cut (plan change LP5, option `holeContinuation`). */
   longProof?: boolean;
   /** The run's roles (`RunConfig.roles`): each site gets the `llm` of its role (`scheduler.planner` the planner's, the hole sessions the hole's). Absent: the run's model everywhere. */
@@ -236,6 +242,9 @@ export interface SessionHooks {
   /** After each check: the line that stops the session, and why. */
   afterCheck?: (check: SessionCheck) => Promise<{ line: LineId; reason?: string; cause?: string; notice?: string } | undefined>;
 }
+
+/** The line whose briefing section and tool a hole session takes (plan change DP4): the library's. */
+const HOLE_LIBRARY_LINE: LineId = "M3";
 
 /** The lines of one problem: each line's context, and the hooks at each point of the problem. */
 export class ProblemLines {
@@ -373,6 +382,9 @@ export class ProblemLines {
                       ...(hole !== undefined ? { role: hole } : {}),
                       ledger: child.ledger, problemId: this.p.problemId, signal: own, actor, contextTokens: 120_000,
                       ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
+                      ...(o.leanSearch !== undefined ? { leanSearch: o.leanSearch } : {}),
+                      ...(o.sorryBattery !== undefined ? { sorryBattery: o.sorryBattery } : {}),
+                      library: (focus) => this.openHole(focus, request.key),
                       workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
                       ...(o.turn !== undefined ? { turn: o.turn } : {}),
                       ...(o.prices !== undefined ? { prices: o.prices } : {}),
@@ -437,11 +449,14 @@ export class ProblemLines {
   }
 
   /** `deciding`: the session has not started, so a draw can still be recorded on its `attempt.started`. */
-  private sessionContext(entry: EnabledLine, info: SessionInfo, deciding = false): SessionContext {
+  private sessionContext(entry: EnabledLine, info: SessionInfo, deciding = false, focus?: Pick<Target, "theorem" | "statement">): SessionContext {
     const drawn = (): { included: string[]; withheld: string[] } =>
       deciding ? (this.draws.get(info.attemptId) ?? { included: [], withheld: [] }) : { included: info.included ?? [], withheld: info.withheld ?? [] };
+    const context = this.context(entry);
     return {
-      ...this.context(entry),
+      ...context,
+      // A hole session's lines read the hole as the target: what they look up is the hole's statement (plan change DP4).
+      ...(focus !== undefined ? { target: { ...context.target, ...focus } } : {}),
       prover: info.prover,
       session: info.session,
       sessions: info.sessions,
@@ -702,6 +717,33 @@ export class ProblemLines {
     };
     const inSession = hooks.packet !== undefined || hooks.rewriteCheck !== undefined || hooks.beforeCheck !== undefined || hooks.afterCheck !== undefined;
     return { sections, tools, ...(inSession ? { hooks } : {}) };
+  }
+
+  /**
+   * What the library line gives a hole session (plan change DP4): M3's "Library" section and its `library_search` tool, both searched by the hole's statement and
+   * name (`focus`, read as the target). The section is drawn like a prover's (unverified advice, from the run's seeded source, one stream for each session `key`);
+   * the draw is not recorded, since a hole session is no attempt. Nothing when M3 is not enabled.
+   */
+  async openHole(focus: Pick<Target, "theorem" | "statement">, key: string): Promise<OpenedSession> {
+    const opened: OpenedSession = { sections: [], tools: [] };
+    const entry = this.run.o.lines.find((e) => e.line.id === HOLE_LIBRARY_LINE && this.active(e));
+    if (entry === undefined) return opened;
+    const id = entry.line.id;
+    // The draw's stream is named by the hole and the number of its session, which a resumed or repeated run has again, and not by the task's id; the draw's record is under `key`.
+    const info: SessionInfo = { prover: `hole:${focus.theorem}`, session: Number(key.slice(key.lastIndexOf(":") + 1)) || 1, sessions: 1, attemptId: key, model: this.run.o.model, regions: { aux: "", proof: "" } };
+    try {
+      const before = entry.line.hooks.beforeSession;
+      if (before !== undefined) await call(id, "beforeSession", () => before(this.sessionContext(entry, info, true, focus)));
+      const drawn = this.draws.get(key);
+      const shown: SessionInfo = { ...info, included: drawn?.included ?? [], withheld: drawn?.withheld ?? [] };
+      const briefing = entry.line.hooks.briefing === undefined ? undefined : await call(id, "briefing", () => (entry.line.hooks.briefing as NonNullable<LineHooks["briefing"]>)(this.sessionContext(entry, shown, false, focus)));
+      if (briefing !== undefined) opened.sections.push(briefing);
+      const specs = entry.line.hooks.tools === undefined ? [] : await call(id, "tools", () => (entry.line.hooks.tools as NonNullable<LineHooks["tools"]>)(this.sessionContext(entry, shown, false, focus)));
+      opened.tools.push(...specs.map((spec) => agentTool(id, spec, this.p.signal)));
+    } finally {
+      this.draws.delete(key);
+    }
+    return opened;
   }
 
   /** The lines' annotations of an attempt, merged in order: a later line's fields win. */
