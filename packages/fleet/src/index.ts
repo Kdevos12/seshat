@@ -16,5 +16,6 @@ export * from "./heuristics.ts";
 export * from "./posterior.ts";
 export * from "./random.ts";
 export * from "./settings.ts";
+export * from "./stall.ts";
 export * from "./width.ts";
 export * from "./owners.ts";

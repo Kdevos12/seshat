@@ -419,7 +419,7 @@ The keys of `config/hosts/*.json` (`packages/registry/src/host.ts`). `*` stands 
 
 - `v1`: no `RunConfig` field beyond `defaults`, `gate: {}`, the lines M1 and M10, the consortium turn limit and the budget.
 - `v2`: `v1` plus `editTool`, `maskOldChecks`, `checkTimeoutSec` (the host's, 120 by default), `stateCard`, `budgetRounds`, `budgetShare: 2`, `firstCases`, `gate.probeExtend`, line M6 with its repeat rule alone, and the solve-level switches: the intake, `autoTool`, `leanSearch` and `lean.lsp` in `tools` (the last three when the host offers them).
-- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`), `solve-v2-cpu` (adds `sorryBattery`), `solve-v2-long` (adds `informalFirst` with one pass, line M12 with blueprints, `longProof` with 3 drafts, `frontier.show`, `triage`, `sorryBattery`, and the hole role's thinking at `off`).
+- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`), `solve-v2-cpu` (adds `sorryBattery`), `solve-v2-long` (adds `informalFirst` with one pass, line M12 with blueprints, `longProof` with 3 drafts, `frontier.show`, `triage`, `sorryBattery`, and the hole role's thinking at `off`), `solve-v2-fleet-modes` (adds the fleet line with two modes, the thinking levels `off`, `low` and `medium`, `bucketPrior` and `switchOnStall`).
 
 ## Findings
 

@@ -104,7 +104,7 @@ describe("the solve-defaults experiment", () => {
   const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
 
   it("sets solve-v2 against solve-v1, the baseline", () => {
-    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"], ["solve-v2-cards", "solve-v2"], ["solve-v2-lessons", "solve-v2"], ["solve-v2-informal-triage", "solve-v2-informal"], ["solve-v2-cpu", "solve-v2"], ["solve-v2-long", "solve-v2"]]);
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"], ["solve-v2-cards", "solve-v2"], ["solve-v2-lessons", "solve-v2"], ["solve-v2-informal-triage", "solve-v2-informal"], ["solve-v2-cpu", "solve-v2"], ["solve-v2-long", "solve-v2"], ["solve-v2-fleet-modes", "solve-v2"]]);
   });
 
   it("makes the blueprints arm solve-v2 plus line M12 with blueprints, and nothing else", () => {
@@ -124,6 +124,16 @@ describe("the solve-defaults experiment", () => {
     assert.deepEqual({ informalFirst, longProof, frontier, triage, sorryBattery, roles }, { informalFirst: { passes: 1 }, longProof: { drafts: 3 }, frontier: { show: true }, triage: true, sorryBattery: {}, roles: { hole: { settings: { thinking: "off" } } } });
     assert.equal(arm("solve-v2-long").versus, "solve-v2");
     assert.deepEqual(checkConfig(armConfig(base, arm("solve-v2-long"))), [], "the arm is a configuration a run accepts");
+  });
+
+  it("makes the fleet-modes arm solve-v2 plus the fleet line with its modes, levels, bucket prior and switch, and nothing else", () => {
+    const { lines: v2Lines, lineOptions: v2Options, ...v2 } = armConfig(base, arm("solve-v2"));
+    const { lines, lineOptions, ...modes } = armConfig(base, arm("solve-v2-fleet-modes"));
+    assert.deepEqual(modes, v2);
+    assert.deepEqual(lines, [...(v2Lines ?? []), "fleet"]);
+    assert.deepEqual(lineOptions, { ...v2Options, fleet: { modes: ["standard", "nl_first"], thinking: ["off", "low", "medium"], bucketPrior: true, switchOnStall: true } });
+    assert.equal(arm("solve-v2-fleet-modes").versus, "solve-v2");
+    assert.deepEqual(checkConfig(armConfig(base, arm("solve-v2-fleet-modes"))), [], "the arm is a configuration a run accepts");
   });
 
   it("makes the refine arm the blueprints arm plus refine and repair, and nothing else", () => {

@@ -198,6 +198,17 @@ records it under `heuristicBucket` (the cards' name for it, kept for the journal
 so that later sessions find the bucket's history. Off, the draws and the settings recorded are those of every
 earlier version, byte for byte.
 
+### Switching after a stall
+
+With the option `switchOnStall` (default off) a prover that stalled restarts in another mode and at another thinking
+level. When the prover's last finished attempt on the claim was stopped by M6's repeat rule (its `lineCause` is
+`repeated_failure`; the attempt record keeps only `stoppedBy: "line:M6"`, so the fleet reads the rule's `drift` finding
+with the action `stopped_session` and the attempt id, `repeatStopped` in `stall.ts`), or the claim stagnates
+(`stagnating` of the single-agent posteriors by strategy, with the fleet's `widenBelow` and `minAttempts`), the next
+draw of `mode` and of `thinking` leaves out the value that attempt had, while another value is left
+(`excludedAfterStall`, applied by `sampleSettings`). The allocation records what was left out as `excluded:
+{ mode?, thinking? }`. There is no switch inside a session, and no model is asked which mode to use.
+
 ## Heuristic cards
 
 With the option `heuristics` (`true` for every card, or a list of card ids), each session gets at most one
@@ -342,6 +353,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `successRate`, `attempts` | the single-agent rate of the claim and the attempts it is made of |
 | `draws` | the draw of each candidate strategy, rounded (absent for an exploration draw) |
 | `settings`, `settingDraws` | the settings sampled, and the draw of each value of the learned ones |
+| `excluded` | `switchOnStall`: the `mode` and `thinking` values the draw left out because the prover's last attempt, which had them, stalled |
 | `dag`, `dagNote` | the `step_dag` node an informal-first session works from, or why a session drawn for that mode ran as a standard one |
 
 ## Options
@@ -376,6 +388,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `familyPriorWeight` | 2 | the weight of a family's mean in the prior of each of its cards, from 0 to 8 |
 | `cardMinObservations` | 8 | a card is no longer drawn in a bucket once it has this many observations with it and in the control, and P(effect < 0) is above 0.9 (M5's rule) |
 | `bucketPrior` | false | learn the sampled settings from the session's bucket too: a value starts from its mean there and is not drawn once the bucket shows it hurts ([The bucket prior](#the-bucket-prior)) |
+| `switchOnStall` | false | after a Lean stall (M6's repeat rule stopped the prover's last attempt, or the claim stagnates) the next draw leaves out the mode and thinking level that attempt had ([Switching after a stall](#switching-after-a-stall)) |
 | `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
 | `dagSteps` | 8 | the most steps in an informal-first session's DAG |
 | `coldStart` | false | add capped pseudo-counts from a `fleet.cold_start` decision ([decide.md](decide.md)) to the strategies' posteriors |

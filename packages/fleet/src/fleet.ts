@@ -1,3 +1,11 @@
+/**
+ * The fleet line (plan §11, documentation/fleet.md): the hooks that decide, for each session of each prover, the
+ * strategy, the model, the sampled settings and the heuristic card, and that keep the width of a subgoal.
+ *
+ * Called by the orchestrator through the line's hooks (`beforeSession`, `afterAttempt`, `resumeProblem`...). The
+ * draws are `choose.ts`, `settings.ts` and `heuristics.ts`'s; the bucket and the stall are `bucket.ts`'s and
+ * `stall.ts`'s. It records each decision as an `allocation` node and never changes a claim's status: Lean does.
+ */
 import { coldStartPriors, DEFAULT_COLD_START_WEIGHT, fadedWeight, MAX_COLD_START_WEIGHT, withPrior } from "@seshat/decide";
 import { type Attempt, attemptDepth, STRATEGIES } from "@seshat/memory";
 import { isInterrupted, LINE_TITLES } from "@seshat/lines";
@@ -11,9 +19,10 @@ import {
 } from "./dag.ts";
 import { attemptWeights, DEFAULT_GAMMA } from "./discount.ts";
 import { type EscalationOptions, shouldEscalate } from "./escalation.ts";
-import { type AttemptWeight, modelPosteriors, posteriorOf, strategyPosteriors } from "./posterior.ts";
+import { type AttemptWeight, modelPosteriors, posteriorOf, stagnating, strategyPosteriors } from "./posterior.ts";
 import { hash32, type RandomSource, seeded } from "./random.ts";
 import { sampleSettings, samplesSettings, type SettingsConfig, settingsConfigOf } from "./settings.ts";
+import { excludedAfterStall, repeatStopped } from "./stall.ts";
 import { Gate, widthFor, type WidthOptions } from "./width.ts";
 import { bucketOf, historyOf, statementFeatures } from "@seshat/heuristics";
 import {
@@ -81,6 +90,8 @@ export const FLEET_OPTIONS = {
   cardMinObservations: DEFAULT_CARD_MIN_OBSERVATIONS,
   /** Learn the sampled settings (thinking, directive, mode, a list of temperatures) from the session's bucket too (documentation/fleet.md, "The bucket prior"): a value starts from its mean in the bucket and is not drawn once the bucket shows it hurts. Off: the claim's own attempts only. */
   bucketPrior: false,
+  /** Restart in another mode after a Lean stall (documentation/fleet.md, "Switching after a stall"): when the prover's last attempt was stopped by M6's repeat rule, or the claim stagnates, the next draw of `mode` and of `thinking` leaves out the value that attempt had, while another is left. */
+  switchOnStall: false,
   /** Seed the strategy choice with a prior from `decide` (site fleet.cold_start): a Choice over the families, as pseudo-counts of weight `coldStartWeight`. Off: the flat prior. */
   coldStart: false,
   /** The total weight of that prior in pseudo-attempts (0 to 4): the journal's own attempts outweigh it after a few. */
@@ -105,6 +116,7 @@ interface FleetConfig {
   coldStart: boolean;
   coldStartWeight: number;
   bucketPrior: boolean;
+  switchOnStall: boolean;
   heuristics?: HeuristicsConfig;
 }
 
@@ -157,6 +169,7 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
     coldStart: bool("coldStart"),
     coldStartWeight,
     bucketPrior: bool("bucketPrior"),
+    switchOnStall: bool("switchOnStall"),
     ...(heuristics !== undefined ? { heuristics } : {}),
   };
 }
@@ -516,10 +529,20 @@ export function createFleet(env: FleetEnv = {}): Line {
         // The settings sampled for the session (temperature, thinking level, directive, mode), from their own stream.
         let settings: JsonObject | undefined;
         let settingDraws: AllocationData["settingDraws"];
+        let excluded: AllocationData["excluded"];
         let dag: string | undefined;
         let dagNote: string | undefined;
         if (samplesSettings(config.settings)) {
           const sessionModel = model ?? session.model;
+          // After a Lean stall the draw leaves out the mode and the thinking level the stalled attempt had (option switchOnStall).
+          const stalled = config.switchOnStall
+            ? excludedAfterStall(
+                attempts,
+                session.prover,
+                repeatStopped(session.memory.nodes("drift", { claimId: session.claimId })),
+                stagnating(strategyPosteriors(attempts, config.partial, weights), { below: config.width.widenBelow, minAttempts: config.width.minAttempts }),
+              )
+            : undefined;
           const sampled = sampleSettings(
             randomFor(`${key}:settings`),
             config.settings,
@@ -535,8 +558,10 @@ export function createFleet(env: FleetEnv = {}): Line {
                   weigh: weigh(bucketed.history),
                 }
               : undefined,
+            stalled,
           );
           settings = sampled.settings;
+          excluded = sampled.excluded;
           if (Object.keys(sampled.draws).length > 0) settingDraws = sampled.draws;
           if (settings.mode === "nl_first") {
             const made = await stepDagFor(session, run, config, model);
@@ -625,6 +650,7 @@ export function createFleet(env: FleetEnv = {}): Line {
             ...(draws !== undefined ? { draws } : {}),
             ...(settings !== undefined ? { settings } : {}),
             ...(settingDraws !== undefined ? { settingDraws } : {}),
+            ...(excluded !== undefined ? { excluded } : {}),
             ...(dag !== undefined ? { dag } : {}),
             ...(dagNote !== undefined ? { dagNote } : {}),
           } satisfies AllocationData,

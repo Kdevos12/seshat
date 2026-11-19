@@ -1,3 +1,10 @@
+/**
+ * The fleet's sampled settings (documentation/fleet.md, "Sampled settings"): the options that describe them, and
+ * `sampleSettings`, the one draw of a session's temperature, thinking level, directive and mode.
+ *
+ * Called by `fleet.ts` once per session. The bucket arithmetic is `bucket.ts`'s, the values a stall leaves out are
+ * `stall.ts`'s. It never records anything: the caller puts the settings and their draws in the allocation.
+ */
 import { DIRECTIVE_TEXTS } from "@seshat/heuristics";
 import type { JsonObject } from "@seshat/lines";
 import type { Attempt, DeactivationRule } from "@seshat/memory";
@@ -6,6 +13,7 @@ import { deactivatedValues, settingKeyOf, valueMeans, withPrior } from "./bucket
 import { thompson } from "./choose.ts";
 import { type AttemptWeight, group } from "./posterior.ts";
 import type { RandomSource } from "./random.ts";
+import type { Excluded } from "./stall.ts";
 
 /**
  * The directives a session can be given at random (plan change PC6, after Nexus): one sentence that
@@ -105,6 +113,8 @@ export interface SampledSettings {
   settings: JsonObject;
   /** The draw of each value of each learned setting, rounded: `{ thinking: { low: 0.41, high: 0.77 } }`. */
   draws: { [setting: string]: { [value: string]: number } };
+  /** The values `exclude` left out of a draw (only those that were candidates and left another value): what the allocation records. */
+  excluded?: Excluded;
 }
 
 const round = (x: number): number => Math.round(x * 10000) / 10000;
@@ -122,6 +132,9 @@ const round = (x: number): number => Math.round(x * 10000) / 10000;
  * sessions against the sessions given the other values of the setting) is not drawn while another value is left.
  * Without it, nothing here changes.
  *
+ * `exclude` (option `switchOnStall`) leaves out the value of `mode` and of `thinking` that a stalled attempt had, while
+ * another value is left; the values it did leave out are returned as `excluded`.
+ *
  * `ignored` says whether the session's model family ignores a setting at a thinking level (`undefined`: the run's
  * own). A temperature it ignores is not sampled and spends no arm: the settings say so under `ignored`.
  */
@@ -133,9 +146,11 @@ export function sampleSettings(
   weigh?: AttemptWeight,
   ignored?: (setting: string, thinking: string | undefined) => boolean,
   bucket?: SettingsBucket,
+  exclude?: Excluded,
 ): SampledSettings {
   const settings: JsonObject = {};
   const draws: SampledSettings["draws"] = {};
+  const excluded: Excluded = {};
   const learn = (name: string, values: readonly (string | number)[]): string | number | undefined => {
     const posteriors = group(attempts, (attempt) => settingKeyOf(attempt, name), partial, weigh);
     let candidates = values;
@@ -145,6 +160,11 @@ export function sampleSettings(
       means = valueMeans(bucket.history, key, partial, bucket.weigh);
       const off = deactivatedValues(values.map(String), bucket.history, key, bucket.rule, bucket.weigh);
       candidates = values.filter((value) => !off.includes(String(value)));
+    }
+    const out = name === "mode" || name === "thinking" ? exclude?.[name] : undefined;
+    if (out !== undefined && candidates.some((value) => String(value) === out) && candidates.some((value) => String(value) !== out)) {
+      candidates = candidates.filter((value) => String(value) !== out);
+      excluded[name as keyof Excluded] = out;
     }
     const picked = thompson(
       random,
@@ -195,5 +215,5 @@ export function sampleSettings(
     const value = learn("mode", config.modes);
     if (value !== undefined) settings.mode = value;
   }
-  return { settings, draws };
+  return { settings, draws, ...(Object.keys(excluded).length > 0 ? { excluded } : {}) };
 }
