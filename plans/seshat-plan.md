@@ -1553,6 +1553,25 @@ proposed. Task 62 builds:
   derived from `setConfig` and `studentLines`; the settings panel shows them with an "on in v2" mark,
   and `documentation/parameters.md` gains a column "solve v2".
 
+### Tasks 64 to 67: a path for long proofs (LP1 to LP6)
+
+The plan change `plans/plan-change-long-proofs.md` (LP1 to LP6, approved in full on 2026-11-19, Ruling 43). Every
+change is an option (`RunConfig.longProof`), off by default; `v1` and `v2` stay byte-identical, and the arm
+`solve-v2-long` of `solve-defaults` measures it. In this order:
+
+- Task 64 (LP1): `harness audit` gains a length table (Lean lines, `aux_` lemmas, holes and verdicts, checks, check
+  durations against file size, stop reasons; reference lengths from `--reference DIR`). Then a free pass on the
+  owner's machine over runs 3 to 5; the table "success against reference length" goes in the ledger.
+- Task 65 (LP2, LP3): a draft blueprint derived from the accepted informal proof by one planner call, checked by
+  Lean before the first outer session; proved links frozen in a locked prefix that Lean still checks whole and the
+  certifier replays whole, shown to the prover by statement only.
+- Task 66 (LP4, LP5): a `long` triage class; under `longProof` the probe's progress is the frontier's growth and the
+  gate stops after K slices that close no hole; `too_hard` verdicts record their reason, a hole cut by its turns
+  gets one continuation, and the `-- refines:` depth limit is 4.
+- Task 67 (LP6): the paid diagnostic, at most $3.00 in all, after a check of the provider balance: arm
+  `solve-v2-long` on 3 problems of medium reference length, flash everywhere against a stronger planner and
+  verifier.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
