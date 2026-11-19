@@ -13,9 +13,10 @@ import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, contextFor, depende
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import { cutFailures } from "./repair.ts";
-import { PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
+import { haveSteps, liftHaves, type Lift } from "./lift.ts";
+import { draftPrompt, PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
-  asRecord, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
+  asRecord, isRefinement, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
 } from "./records.ts";
 import { backwardSubsume, forwardSubsume, isLinkLemma, type SubsumeOptions } from "./subsume.ts";
 
@@ -58,6 +59,10 @@ export const M12_OPTIONS = {
   repair: false,
   /** The most repairs for one problem (repair only). */
   maxRepairs: 2,
+  /** The first blueprint comes from the accepted informal proof (LP2, DP1, blueprints only): before the first outer session a planner call writes the target's proof as `have` steps, and the harness lifts them into holes. `RunConfig.longProof` sets it. */
+  fromInformal: false,
+  /** The drafts asked for (DP3, `fromInformal` only): the one with the fewest holes after the lift is registered; the others are recorded and never registered. */
+  drafts: 1,
   /** Seeds the scheduler's draws. Null: the run's seed. */
   seed: null,
 } satisfies JsonObject;
@@ -80,6 +85,8 @@ interface Settings {
   holeContinuation: boolean;
   repair: boolean;
   maxRepairs: number;
+  fromInformal: boolean;
+  drafts: number;
   seed: string | number | null;
 }
 
@@ -108,6 +115,8 @@ function settings(options: Readonly<JsonObject>): Settings {
     holeContinuation: flag("holeContinuation"),
     repair: flag("repair"),
     maxRepairs: num("maxRepairs", 0),
+    fromInformal: flag("fromInformal"),
+    drafts: num("drafts", 1),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -175,12 +184,16 @@ function sessionRecords(problem: ProblemContext): SessionRecord[] {
     .filter((record) => record.problemId === problem.problemId);
 }
 
-function sketchRecords(problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> {
+/** Every sketch record of the problem, a draft that was not kept included (`SketchRecord.discarded`). */
+function allSketchRecords(problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> {
   return problem.memory
     .nodes(SKETCH_KIND, { claimId: problem.claimId })
     .map((node) => ({ nodeId: node.nodeId, record: asRecord<SketchRecord>(node.data) }))
     .filter(({ record }) => record.problemId === problem.problemId);
 }
+
+/** The sketches the scheduler works from: a draft that was not kept is left out, so that it is never registered, revised or counted. */
+const sketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> => allSketchRecords(problem).filter(({ record }) => record.discarded !== true);
 
 /** The tasks the scheduler made for the problem, in the order they were made. */
 const ownTasks = (problem: ProblemContext): TaskInfo[] => problem.tasks.list({ kinds: ["prove"] }).filter((task) => task.proposedBy === ACTOR);
@@ -556,7 +569,7 @@ export function createM12Line(): Line {
     if (!s.blueprints || !s.refine || !s.subgoals || problem.checkSketch === undefined) return false;
     if (problem.signal.aborted || problem.budget.exhausted) return false;
     if (problem.memory.nodes(REFINE_STOP_KIND, { claimId: problem.claimId }).some((n) => asRecord<RefineStopRecord>(n.data).problemId === problem.problemId)) return false;
-    const rounds = sketchRecords(problem).filter(({ record }) => record.planner === true).length;
+    const rounds = sketchRecords(problem).filter(({ record }) => isRefinement(record)).length;
     if (rounds >= s.maxRefinements) return false;
     const target = problem.memory.claim(problem.claimId);
     if (target === undefined || accepted(target.status)) return false;
@@ -575,50 +588,138 @@ export function createM12Line(): Line {
       ...(sketch !== undefined ? { sketch } : {}),
       ...(informal !== undefined ? { informal } : {}),
     });
-    // The gate prices the round as a task of one call: a share of what an inner session has cost on this problem (its first guess before any).
-    if (problem.budget.ask !== undefined) {
-      const answer = await problem.budget.ask({ site: "task", estimateUsd: priceBook(sessionRecords(problem)).sessionUsd * PLANNER_CALL_SHARE });
-      if (answer.action === "skip") {
-        work.refineSkipped.add(base.nodeId);
-        problem.log(`refinement round ${round}: skipped by the budget gate (${answer.reason})`);
-        return false;
-      }
+    const answer = await askPlanner(problem, prompt, ["aux", "proof"]);
+    if ("skip" in answer) {
+      work.refineSkipped.add(base.nodeId);
+      problem.log(`refinement round ${round}: skipped by the budget gate (${answer.skip})`);
+      return false;
     }
-    let written: { aux: string; proof: string } | undefined;
-    let flaw: string | undefined;
-    try {
-      const answer = await completeJson<{ aux?: unknown; proof?: unknown }>(problem.llm, {
-        prompt, site: SITE_PLANNER, reuse: true,
-        schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: ["aux", "proof"] },
-      });
-      if (typeof answer.value.proof === "string" && typeof answer.value.aux === "string") written = { aux: answer.value.aux, proof: answer.value.proof };
-      else flaw = "the planner's answer has no AUX and PROOF regions";
-    } catch (error) {
-      if (isInterrupted(error)) throw error;
-      if (problem.signal.aborted || problem.budget.exhausted) return false;
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof JsonAnswerError) flaw = `the planner's answer was not a blueprint: ${clip(message, 160)}`;
-      else if (/the model call failed/.test(message)) {
-        const stop: RefineStopRecord = { problemId: problem.problemId, round, reason: clip(message, 200) };
-        problem.memory.recordNode({ kind: REFINE_STOP_KIND, claimId: problem.claimId, data: { ...stop } });
-        problem.log(`refinement round ${round}: the planner's model call failed (${stop.reason}); no more rounds for this problem`);
-        return false;
-      } else throw error;
+    if ("stopped" in answer) return false;
+    if ("failed" in answer) {
+      const stop: RefineStopRecord = { problemId: problem.problemId, round, reason: clip(answer.failed, 200) };
+      problem.memory.recordNode({ kind: REFINE_STOP_KIND, claimId: problem.claimId, data: { ...stop } });
+      problem.log(`refinement round ${round}: the planner's model call failed (${stop.reason}); no more rounds for this problem`);
+      return false;
     }
     const attemptId = `planner_${round}`;
     const extra: Partial<SketchRecord> = { planner: true, refinedFrom: base.nodeId, round };
-    if (written === undefined) {
-      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...sketchRecordOf(problem, s, attemptId, submission, { holes: [], others: [], problem: flaw ?? "no blueprint" }, undefined, extra) } });
+    if ("flaw" in answer) {
+      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...sketchRecordOf(problem, s, attemptId, submission, { holes: [], others: [], problem: answer.flaw }, undefined, extra) } });
       return true;
     }
-    const cut = dropHeaderImports(written.aux, work.header);
-    const answered = { aux: cut.aux, proof: written.proof };
+    const cut = dropHeaderImports(answer.written.aux, work.header);
+    const answered = { aux: cut.aux, proof: answer.written.proof };
     const reading = readSketch(answered, { ...readOptions(s, target.statement), depths: baseDepths(problem, base.record, submission) });
     const report = reading.holes.length === 0 ? undefined : await problem.checkSketch(answered);
     const record = sketchRecordOf(problem, s, attemptId, answered, reading, report, extra);
     problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
-    problem.log(`refinement round ${round} (case ${base.case}): ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`}`);
+    problem.log(`refinement round ${round} (case ${base.case}): ${describeBlueprint(record)}`);
     return true;
+  }
+
+  const describeBlueprint = (record: SketchRecord): string =>
+    record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`;
+
+  /**
+   * One planner call in a fresh context (site `scheduler.planner`, the planner's role), the same for a refinement round and for a draft: the budget gate prices
+   * it as a task of one call, and its answer is the regions it wrote (`keys`: the aux region is asked for a round, the proof alone for a draft; the aux is
+   * empty when not asked). `skip`: the gate refused; `stopped`: the problem ended; `failed`: the model call failed (not a bad answer); `flaw`: the answer was no blueprint.
+   */
+  async function askPlanner(problem: ProblemContext, prompt: string, keys: readonly ("aux" | "proof")[]): Promise<{ skip: string } | { stopped: true } | { failed: string } | { flaw: string } | { written: { aux: string; proof: string } }> {
+    if (problem.budget.ask !== undefined) {
+      const answer = await problem.budget.ask({ site: "task", estimateUsd: priceBook(sessionRecords(problem)).sessionUsd * PLANNER_CALL_SHARE });
+      if (answer.action === "skip") return { skip: answer.reason };
+    }
+    try {
+      const answer = await completeJson<{ aux?: unknown; proof?: unknown }>(problem.llm, {
+        prompt, site: SITE_PLANNER, reuse: true,
+        schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: [...keys] },
+      });
+      if (typeof answer.value.proof === "string" && (!keys.includes("aux") || typeof answer.value.aux === "string")) return { written: { aux: keys.includes("aux") ? (answer.value.aux as string) : "", proof: answer.value.proof } };
+      return { flaw: `the planner's answer has no ${keys.includes("aux") ? "AUX and PROOF regions" : "PROOF region"}` };
+    } catch (error) {
+      if (isInterrupted(error)) throw error;
+      if (problem.signal.aborted || problem.budget.exhausted) return { stopped: true };
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof JsonAnswerError) return { flaw: `the planner's answer was not a blueprint: ${clip(message, 160)}` };
+      if (/the model call failed/.test(message)) return { failed: message };
+      throw error;
+    }
+  }
+
+  /** One draft, made a blueprint (or not): the record to write, and what ranks it. */
+  interface Draft {
+    record: SketchRecord;
+    /** The holes left after the lift, and the steps the proof had. */
+    holes: number;
+    steps: number;
+  }
+
+  /**
+   * One draft of the first blueprint (LP2, DP1): the planner's `have` sketch checked once through `checkSketch`, then lifted (`liftHaves`: the battery closes
+   * what it can, `extract_goal` states the rest, each step applies its lemma) and checked again, then read as a blueprint like any other. A draft Lean refuses,
+   * or that cannot be lifted, is recorded as it was written and not healthy: the refinement rounds revise it (case a). The record is not written here (the
+   * drafts are ranked first, DP3).
+   */
+  async function makeDraft(problem: ProblemContext, s: Settings, attemptId: string, proof: string, target: string): Promise<Draft> {
+    const check = problem.checkSketch as NonNullable<ProblemContext["checkSketch"]>;
+    const written = { aux: "", proof };
+    const extra: Partial<SketchRecord> = { planner: true, fromInformal: true };
+    const steps = haveSteps(proof).length;
+    const refused = (why: string, report?: Parameters<typeof sketchRecordOf>[5]): Draft => ({
+      record: sketchRecordOf(problem, s, attemptId, written, { holes: [], others: [], problem: why }, report, extra), holes: Number.MAX_SAFE_INTEGER, steps,
+    });
+    const first = await check(written);
+    if (first.leanStatus === undefined || first.messages.some((m) => m.severity === "error")) return refused("the draft proof has errors Lean reports", first);
+    let lift: Lift = { aux: "", proof, closed: 0, lifted: [] };
+    if (first.holes) {
+      lift = await liftHaves({ check, ...(problem.closeSorries !== undefined ? { battery: problem.closeSorries } : {}) }, { ...written, report: first });
+      if ("reason" in lift) return refused(`the draft's steps were not lifted: ${lift.reason}`, first);
+    }
+    const lifted = { aux: lift.aux, proof: lift.proof };
+    const report = lift.report ?? (lift.lifted.length === 0 && lift.closed === 0 ? first : await check(lifted));
+    const record = sketchRecordOf(problem, s, attemptId, lifted, readSketch(lifted, readOptions(s, target)), report, { ...extra, lifted: true });
+    return { record, holes: record.names.length, steps };
+  }
+
+  /**
+   * The first blueprint from the accepted informal proof (LP2, DP1, DP3; `RunConfig.longProof`): before the first outer session the planner writes the target's
+   * proof as `have` steps (one call for each of `drafts`, each asked of the budget gate like a refinement round), the harness makes each draft a blueprint
+   * (`makeDraft`), and the one with the fewest holes left is the draft: the others are recorded as Lean said (`discarded`) and never registered, written first
+   * so that the kept one is the last record. A healthy draft is preferred to one that is not; ties go to the one with fewer steps, then to the earlier. The
+   * kept draft is registered like any blueprint when healthy, and is the last blueprint Lean checked otherwise, so the refinement rounds revise it (case a).
+   * Not a round: the record has `planner` and `fromInformal` and no `round`. Made once: a problem that has a sketch record is left alone, so a resumed run
+   * reads the records (a call cut before them is returned at no charge, `LlmRequest.reuse`). A gate that skips a call, a call that fails and a problem that
+   * ends stop at the drafts made; an answer that is no proof is a draft that does not count. A hole stays `open` until Lean proves it.
+   */
+  async function draft(problem: ProblemContext, s: Settings): Promise<void> {
+    if (!s.fromInformal || !s.blueprints || !s.subgoals || problem.checkSketch === undefined) return;
+    if (problem.signal.aborted || problem.budget.exhausted || allSketchRecords(problem).length > 0) return;
+    const target = problem.memory.claim(problem.claimId);
+    if (target === undefined || accepted(target.status)) return;
+    const informal = informalSection(informalProofOfNodes(problem.memory.nodes(INFORMAL_PROOF_KIND, { claimId: problem.claimId }), (hash) => problem.memory.blobs.get(hash)));
+    if (informal === undefined) return;
+    const drafts: Draft[] = [];
+    let stopped: string | undefined;
+    for (let k = 1; k <= s.drafts && stopped === undefined; k++) {
+      const answer = await askPlanner(problem, draftPrompt({ target: target.statement, informal, ...(s.drafts > 1 ? { draft: { k, of: s.drafts } } : {}) }), ["proof"]);
+      if ("written" in answer) drafts.push(await makeDraft(problem, s, s.drafts > 1 ? `planner_draft_${k}` : "planner_draft", answer.written.proof, target.statement));
+      else if ("skip" in answer) stopped = `skipped by the budget gate: ${answer.skip}`;
+      else if ("failed" in answer) stopped = clip(answer.failed, 160);
+      else if ("stopped" in answer) return;
+      else problem.log(`draft ${k} of the first blueprint: none (${answer.flaw})`);
+    }
+    if (drafts.length === 0) {
+      if (stopped !== undefined) problem.log(`the draft blueprint from the informal proof: none (${stopped})`);
+      return;
+    }
+    // Worst first, so that the kept draft is the last record: a healthy draft beats one that is not, then the fewest holes, then the fewest steps, then the earlier draft.
+    const ranked = drafts.map((d, k) => ({ d, k })).sort((a, b) => Number(a.d.record.healthy) - Number(b.d.record.healthy) || b.d.holes - a.d.holes || b.d.steps - a.d.steps || b.k - a.k);
+    for (const [place, { d }] of ranked.entries()) {
+      const kept = place === ranked.length - 1;
+      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...d.record, ...(kept ? {} : { discarded: true }) } });
+      if (kept) problem.log(`the draft blueprint from the informal proof${drafts.length > 1 ? ` (best of ${drafts.length}, ${d.holes === Number.MAX_SAFE_INTEGER ? "none lifted" : `${d.holes} hole(s)`}, ${d.steps} step(s))` : ""}: ${describeBlueprint(d.record)}${stopped !== undefined ? `; the rest: ${stopped}` : ""}`);
+    }
   }
 
   /**
@@ -675,6 +776,12 @@ export function createM12Line(): Line {
     // What a cut left undone: the verdicts of sessions whose record was written, and the tasks of the sketches already recorded.
     repairVerdicts(problem);
     ensureTasks(problem, s);
+  }
+
+  /** `begin`, then the draft from the informal proof when `longProof` asks for it (before the first outer session; a resumed run that has its records does not draft again). */
+  async function beginDrafting(problem: ProblemContext): Promise<void> {
+    await begin(problem);
+    if (works.has(keyOf(problem))) await soft(problem, "the draft blueprint", () => draft(problem, settings(problem.options)));
   }
 
   /** The price, the value and the proof numbers behind a choice, and the choice. */
@@ -998,8 +1105,8 @@ export function createM12Line(): Line {
     // The work (a graph, the comparisons made, the counts) is made again from the memory's nodes and the ledger: see `begin`.
     resume: "rebuild",
     hooks: {
-      beforeProvers: (problem) => begin(problem),
-      resumeProblem: (problem) => begin(problem),
+      beforeProvers: (problem) => beginDrafting(problem),
+      resumeProblem: (problem) => beginDrafting(problem),
 
       afterAttempt: async (problem, attempt) => {
         const work = works.get(keyOf(problem));

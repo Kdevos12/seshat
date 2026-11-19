@@ -100,3 +100,42 @@ export function plannerPrompt(input: PlannerInput): string {
     'Answer with JSON: {"aux": the AUX region, "proof": the PROOF region (the tactic proof without the leading "by")}.',
   ].filter((t) => t !== "").join("\n\n");
 }
+
+/** The version of the draft's prompt (LP2, DP1), in its first line like the planner's. */
+export const DRAFT_VERSION = "draft-1";
+
+/** What the draft from the informal proof is told, and nothing else. */
+export interface DraftInput {
+  /** The target theorem's statement in signature form. */
+  target: string;
+  /** The accepted informal proof, as `informalSection` shows it: a title that says Lean has not checked it, and the proof quoted as data. */
+  informal: { title: string; text: string };
+  /** With several drafts (`longProof.drafts`): this one's number, from 1, and how many are asked. It makes each call a new one. */
+  draft?: { k: number; of: number };
+}
+
+/** The shape of a `have` sketch, as the draft is told it. */
+export const HAVE_SKETCH_FORMAT = [
+  "- The proof is the PROOF region: a tactic proof (without the leading `by`) made of `have` steps, one per step of the informal proof, in its order:",
+  "    -- step 1: <the informal step, in one line>",
+  "    have h_1 : <the statement of the step> := by sorry",
+  "- Give every step a complete Lean statement. A step may use the theorem's variables and the earlier steps h_1, ..., h_{k-1}; do not prove a step, its proof is `sorry`.",
+  "- Name the steps h_1, h_2, ... Write no `aux_` lemma, no `-- uses:` line and no AUX region: each step becomes a lemma by itself, with the earlier steps as hypotheses.",
+  "- End with a complete closing tactic that proves the theorem from the steps, with no `sorry` of its own.",
+  "- Write big operators as `∑ i ∈ s, f i` (not `in`).",
+].join("\n");
+
+/**
+ * The prompt of the draft (plan changes LP2, DP1): one model call in a fresh context that writes the theorem's proof as `have` steps from an accepted informal
+ * proof, each step preceded by the informal step as a comment. The proof is shown as unchecked data; the harness checks the sketch with Lean, lifts the steps into
+ * holes (`liftHaves`) and checks again, and a hole stays `open` until Lean proves it.
+ */
+export function draftPrompt(input: DraftInput): string {
+  return [
+    `Draft prompt ${DRAFT_VERSION}${input.draft !== undefined && input.draft.of > 1 ? ` (draft ${input.draft.k} of ${input.draft.of}, written independently of the others)` : ""}. You write the skeleton of a proof of one theorem in Lean 4 from an informal proof: its steps stated, each one still to be proved. You have no earlier conversation: everything you need is below.`,
+    `The theorem to prove:\ntheorem target ${input.target.trim()}`,
+    `${input.informal.title}. Lean decides what is true; if a step is wrong, state in its \`have\` what you believe is true instead.\n${input.informal.text}`,
+    `The format of the skeleton:\n${HAVE_SKETCH_FORMAT}`,
+    'Answer with JSON: {"proof": the PROOF region}.',
+  ].join("\n\n");
+}

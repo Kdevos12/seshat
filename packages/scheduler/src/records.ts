@@ -35,6 +35,15 @@ export interface SketchRecord {
   depth?: number[];
   /** A refinement round's blueprint (CA12): the planner wrote it, from the record `refinedFrom` (its node id), in round `round` (1, 2, ...). */
   planner?: boolean;
+  /**
+   * The first blueprint, drafted from the accepted informal proof (`RunConfig.longProof`, LP2): a planner call wrote the target's proof as `have` steps, and
+   * `lifted` says the harness made the steps holes (`liftHaves`: the battery closed what it could, Lean's `extract_goal` stated the rest). Not a refinement
+   * round: it has no `round`, and the rounds' count leaves it out.
+   */
+  fromInformal?: boolean;
+  lifted?: boolean;
+  /** A draft that was not kept (DP3, `longProof.drafts`): recorded as Lean said, never registered, and read by no consumer of the sketches but the audit. */
+  discarded?: boolean;
   refinedFrom?: string;
   round?: number;
   /** The repair pass's blueprint (CA13): the harness cut the failing blocks of the outer attempt `repairOf` to `sorry`, with no model call. */
@@ -51,6 +60,9 @@ export interface SketchRecord {
   /** The `decomposes_into` edge from the problem's claim to the holes, once made. */
   edgeId?: string;
 }
+
+/** A record a refinement round wrote: the planner's, and not a draft from the informal proof. */
+export const isRefinement = (record: Pick<SketchRecord, "planner" | "fromInformal">): boolean => record.planner === true && record.fromInformal !== true;
 
 /** Why a problem's refinement rounds stopped for the rest of the run (CA12): the planner's model call failed. */
 export const REFINE_STOP_KIND = "m12_refine_stop";

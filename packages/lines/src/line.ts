@@ -345,6 +345,12 @@ export interface ProblemContext {
    * lines other than M12.
    */
   checkSketch?: (submission: Submission) => Promise<ValidationReport>;
+  /**
+   * The classical battery on the `sorry` of a file `checkSketch` checked (`RunConfig.sorryBattery`, or `longProof`): with no model call, it tries the tactics of line M10
+   * on each `sorry` and returns the regions with the ones it closed, or undefined when it closed none. M12's draft from the informal proof (`liftHaves`) closes the
+   * steps a tactic closes before it lifts the others. Absent in a context an older caller builds, and for the lines other than M12.
+   */
+  closeSorries?: (submission: Submission, report: ValidationReport) => Promise<Submission | undefined>;
 }
 
 /** What a hole session is asked: the claim whose small file it works on, and the only context it has. */

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { BlobStore, extractSubmission, type HarnessEvent, HOLE_VERDICT_KIND, readEvents } from "@seshat/core";
 import { shown } from "@seshat/lit";
 import { informalProofOfNodes } from "@seshat/memory";
-import { type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type SessionRecord, type SketchRecord } from "@seshat/scheduler";
+import { isRefinement, type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type SessionRecord, type SketchRecord } from "@seshat/scheduler";
 import { gateReport } from "./gate-report.ts";
 import { triageOfNodes, triageProblem, TRIAGE_KIND, type TriageResult } from "./triage.ts";
 import { RunSetupError } from "./setup-error.ts";
@@ -299,7 +299,7 @@ export function audit(src: AuditSources): Audit {
         ...(last.problem !== undefined ? { problem: last.problem } : {}),
         ...(last.failureClass !== undefined ? { failureClass: last.failureClass } : {}),
         dropped: last.dropped ?? [],
-        plannerRounds: records.filter((r) => r.planner === true).length,
+        plannerRounds: records.filter(isRefinement).length,
         repairs: records.filter((r) => r.repairOf !== undefined).length,
         holeVerdicts: verdicts,
         ...(refineStops.has(problemId) ? { refineStop: (refineStops.get(problemId) as RefineStopRecord).reason } : {}),

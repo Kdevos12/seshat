@@ -29,17 +29,28 @@ export const LONG_PROOF_WEIGHTS = { evidence: 0, dead_end: 0 } as const;
 export interface LongProofConfig {
   triageUsd?: number;
   dryChecks?: number;
+  /** With line M12's `blueprints`: the first blueprint is drafted from the accepted informal proof (M12's `fromInformal`). Default true. */
+  draft?: boolean;
+  /** The drafts asked for, of which the one with the fewest holes is kept (M12's `drafts`). Default 1. */
+  drafts?: number;
 }
 
-/** What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` a whole number of at least 1, and `triage` on (the class comes from it). Problems in words; empty: fine. */
-export function longProofConfigProblems(config: unknown, triage: boolean): string[] {
+/**
+ * What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` and `drafts` whole numbers of at least 1, `draft` a boolean, and `triage` on (the class
+ * comes from it). The draft is for line M12's blueprints and does nothing without them (`draft: true` or `drafts` asked for in a run that has none is a problem). Problems
+ * in words; empty: fine.
+ */
+export function longProofConfigProblems(config: unknown, triage: boolean, blueprints = true): string[] {
   if (config === undefined) return [];
-  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer }"];
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer, draft?: boolean, drafts?: integer }"];
   const c = config as Record<string, unknown>;
   const problems: string[] = [];
-  for (const key of Object.keys(c)) if (key !== "triageUsd" && key !== "dryChecks") problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks)`);
+  for (const key of Object.keys(c)) if (!["triageUsd", "dryChecks", "draft", "drafts"].includes(key)) problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks, draft, drafts)`);
   if (c.triageUsd !== undefined && !(typeof c.triageUsd === "number" && c.triageUsd > 0)) problems.push(`longProof.triageUsd must be above 0, got ${String(c.triageUsd)}`);
   if (c.dryChecks !== undefined && !(Number.isInteger(c.dryChecks) && (c.dryChecks as number) >= 1)) problems.push(`longProof.dryChecks must be a whole number of at least 1, got ${String(c.dryChecks)}`);
+  if (c.draft !== undefined && typeof c.draft !== "boolean") problems.push(`longProof.draft must be true or false, got ${String(c.draft)}`);
+  if (c.drafts !== undefined && !(Number.isInteger(c.drafts) && (c.drafts as number) >= 1)) problems.push(`longProof.drafts must be a whole number of at least 1, got ${String(c.drafts)}`);
+  if (!blueprints && (c.draft === true || c.drafts !== undefined)) problems.push("longProof.draft and longProof.drafts need line M12 with the option blueprints");
   if (!triage) problems.push("longProof goes with triage: the `long` class is one of its classes");
   return problems;
 }

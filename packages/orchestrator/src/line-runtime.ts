@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { type BlobStore, hash32, hashJson, type Journal, newId, type RandomSource, seeded, type Submission } from "@seshat/core";
+import { type BlobStore, hash32, hashJson, type Journal, newId, type RandomSource, seeded, type Submission, type ValidationReport } from "@seshat/core";
 import type {
   HolePreflightRequest,
   HoleSessionRequest,
@@ -34,7 +34,7 @@ import type { HostTactics } from "@seshat/classical";
 import type { DecideConfig } from "@seshat/decide";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
-import { messageOf, type Registry } from "@seshat/registry";
+import { messageOf, type Registry, RegistryLeanChecker } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
 import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { BudgetGate } from "./budget-gate.ts";
@@ -43,6 +43,8 @@ import { problemDecide } from "./decide.ts";
 import { runChild } from "./child.ts";
 import { holePreflight } from "./hole-preflight.ts";
 import { runHoleSession } from "./hole-session.ts";
+import type { HostTactics } from "@seshat/classical";
+import { closeSorries, recordSorryBattery, SORRY_BATTERY_ACTOR, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { lineLlm } from "./llm.ts";
 import { type PlannerChoice, PlannerEscalation, type RoleBook, roleOfSite, THINKING_LEVELS } from "./roles.ts";
 import type { PriceBook } from "./prices.ts";
@@ -106,7 +108,7 @@ export interface RunLinesOptions {
   prices?: PriceBook;
   /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
-  /** The run's push of verified `lean.search` hits and its classical battery on `sorry` (`RunConfig.leanSearch`, `RunConfig.sorryBattery`): what a prover's checks carry, and the hole sessions' too (plan change DP4). Absent: off. */
+  /** The run's push of verified `lean.search` hits and its classical battery on `sorry` (`RunConfig.leanSearch`, `RunConfig.sorryBattery`, or `longProof` for the battery): what a prover's checks carry, the hole sessions' too (plan change DP4), and the lines' contexts as `ProblemContext.closeSorries` (DP1). Absent: off. */
   leanSearch?: LeanSearchPush;
   sorryBattery?: { config: SorryBatteryConfig; host: HostTactics };
   /** `RunConfig.longProof` is set: M12 continues a hole that its turns cut (plan change LP5, option `holeContinuation`). */
@@ -398,6 +400,25 @@ export class ProblemLines {
             },
             // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12).
             checkSketch: async (submission: Submission) => (await this.p.workbench.check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
+            ...(o.sorryBattery !== undefined
+              ? {
+                  closeSorries: async (submission: Submission, report: ValidationReport) =>
+                    (
+                      await closeSorries(
+                        {
+                          checker: new RegistryLeanChecker(o.registry, { actor: SORRY_BATTERY_ACTOR }),
+                          render: (x) => this.p.workbench.render(x),
+                          host: o.sorryBattery!.host,
+                          config: o.sorryBattery!.config,
+                          record: recordSorryBattery(o.journal, this.p.claimId, undefined, SORRY_BATTERY_ACTOR),
+                        },
+                        submission,
+                        report,
+                        own,
+                      )
+                    )?.submission,
+                }
+              : {}),
             holePreflight: (request: HolePreflightRequest) =>
               holePreflight(
                 {

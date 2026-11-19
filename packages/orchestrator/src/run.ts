@@ -175,7 +175,9 @@ export interface RunConfig {
    * Long proofs (plan change LP, documentation/scheduler.md, "The budget gate"; needs `triage`): the triage has a fourth class, `long`, for an accepted informal
    * proof over the short limits with at least half its facts found, when the allowance is at least `triageUsd` (default `DEFAULT_LONG_TRIAGE_USD`, $1); and
    * the budget gate follows the frontier's growth for such a problem: a closed hole or a registered healthy blueprint is progress, its sessions go on while
-   * holes close, and it stops, journaling why, after `dryChecks` (default 3) finished sessions in a row that closed none. Absent: off.
+   * holes close, and it stops, journaling why, after `dryChecks` (default 3) finished sessions in a row that closed none. With line M12's `blueprints` and an
+   * accepted informal proof (`informalFirst`), `draft` (default true) makes the first blueprint a `have` sketch the planner writes from that proof and the harness lifts
+   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3). Absent: off.
    */
   longProof?: LongProofConfig;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
@@ -538,7 +540,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
   if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   problems.push(...frontierConfigProblems(config.frontier));
-  problems.push(...longProofConfigProblems(config.longProof, config.triage === true));
+  problems.push(...longProofConfigProblems(config.longProof, config.triage === true, (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true));
   problems.push(...restartsConfigProblems(config.restarts));
   problems.push(...campaignConfigProblems(config.campaign));
   if (config.campaign !== undefined && config.horizon !== "campaign") problems.push("campaign settings go with horizon campaign");
@@ -692,7 +694,13 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) where M12 has blueprints; a value the person gave for those options stays.
+  const lp = config.longProof;
+  const lineOptions =
+    lp !== undefined && lp.draft !== false && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
+      ? { ...config.lineOptions, M12: { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}), ...config.lineOptions.M12 } }
+      : (config.lineOptions ?? {});
+  const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, lineOptions);
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
   // A consortium run is resumed after every turn: it starts only with lines that can be (documentation/human.md, "Turns").
   if (config.consortium !== undefined && resume === undefined) {
@@ -1166,6 +1174,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
       ...(roleBook !== undefined ? { roles: roleBook } : {}),
+      // The battery on a draft's steps (DP1): the run's own setting, or the default one when `longProof` asks for the draft.
+      ...(config.sorryBattery !== undefined || config.longProof !== undefined ? { sorryBattery: { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
     const outside = sitesSentOutside(resolveDecideSettings(config.decide));
