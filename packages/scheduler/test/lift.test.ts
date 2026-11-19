@@ -47,9 +47,9 @@ test("a 4-step draft whose battery closes one step gives 3 holes, each with the 
   assert.equal(lift.closed, 1);
   assert.deepEqual(lift.lifted, ["aux_h_1", "aux_h_3", "aux_h_4"]);
   assert.equal(lift.aux, [
-    "lemma aux_h_1 (n : ℕ) : n + 0 = n := by\n  sorry",
-    "lemma aux_h_3 (n : ℕ) (h_1 : n + 0 = n) (h_2 : n * 1 = n) : 0 + n = n := by\n  sorry",
-    "lemma aux_h_4 (n : ℕ) (h_1 : n + 0 = n) (h_2 : n * 1 = n) (h_3 : 0 + n = n) : n + 0 = 0 + n := by\n  sorry",
+    "-- step 1: add zero\nlemma aux_h_1 (n : ℕ) : n + 0 = n := by\n  sorry",
+    "-- step 3: zero is a left identity\nlemma aux_h_3 (n : ℕ) (h_1 : n + 0 = n) (h_2 : n * 1 = n) : 0 + n = n := by\n  sorry",
+    "-- step 4: commute\nlemma aux_h_4 (n : ℕ) (h_1 : n + 0 = n) (h_2 : n * 1 = n) (h_3 : 0 + n = n) : n + 0 = 0 + n := by\n  sorry",
   ].join("\n\n"));
   assert.match(lift.proof, /-- step 3: zero is a left identity\nhave h_3 : 0 \+ n = n := by apply aux_h_3 <;> assumption\n/);
   assert.match(lift.proof, /have h_2 : n \* 1 = n := by simp/);

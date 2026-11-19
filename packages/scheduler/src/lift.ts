@@ -24,8 +24,8 @@ export interface HaveStep {
 
 const HAVE = /(?<![\p{L}\p{N}_'.])have\s+([\p{L}_][\p{L}\p{N}_'.]*)\s*:(?!=)/gu;
 
-/** The offset of the first `:=` outside brackets at or after `from`, or undefined. */
-function assignment(masked: string, from: number): number | undefined {
+/** The offset of the first `:=` outside brackets of a masked text at or after `from`, or undefined: where a declaration's or a step's proof starts. */
+export function assignmentOffset(masked: string, from = 0): number | undefined {
   let depth = 0;
   for (let i = from; i < masked.length; i++) {
     const c = masked[i] as string;
@@ -53,7 +53,7 @@ export function haveSteps(proof: string): HaveStep[] {
   for (const m of masked.matchAll(HAVE)) {
     const start = m.index;
     const typeFrom = start + m[0].length;
-    const assign = assignment(masked, typeFrom);
+    const assign = assignmentOffset(masked, typeFrom);
     if (assign === undefined) continue;
     const lineIndex = starts.findLastIndex((s) => s <= start);
     const column = start - (starts[lineIndex] as number);
@@ -120,6 +120,14 @@ function signatureOf(text: string): string | undefined {
   return signature;
 }
 
+/** The comment on the line directly above a step (`-- step k: <the informal step>`), with its newline, for the lemma the step becomes: a hole session reads it as the step the hole formalizes. Empty when there is none. */
+function commentAbove(proof: string, step: HaveStep): string {
+  const before = proof.slice(0, step.start).split("\n");
+  before.pop();
+  const line = (before.at(-1) ?? "").trim();
+  return line.startsWith("--") ? `${line}\n` : "";
+}
+
 const wordsOf = (text: string): Set<string> => new Set([...maskCommentsAndStrings(text).matchAll(/[\p{L}_][\p{L}\p{N}_']*/gu)].map((m) => m[0]));
 
 /**
@@ -164,7 +172,7 @@ export async function liftHaves(deps: LiftDeps, input: LiftInput): Promise<Lift>
     used.add(name);
     lemmas.push({ name, signature, step });
   }
-  const aux = [sub.aux.replace(/\s+$/, ""), ...lemmas.map((l) => `lemma ${l.name} ${l.signature} := by\n  sorry`)].filter((t) => t !== "").join("\n\n");
+  const aux = [sub.aux.replace(/\s+$/, ""), ...lemmas.map((l) => `${commentAbove(sub.proof, l.step)}lemma ${l.name} ${l.signature} := by\n  sorry`)].filter((t) => t !== "").join("\n\n");
   const lifted = lemmas.map((l) => l.name);
   const rewrite = (body: (l: (typeof lemmas)[number]) => string): Submission => ({ aux, proof: replaceBodies(sub.proof, lemmas.map((l) => ({ step: l.step, body: body(l) }))) });
 
