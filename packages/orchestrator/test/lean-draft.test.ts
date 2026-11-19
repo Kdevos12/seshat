@@ -35,6 +35,10 @@ describe("leanDraft off: the run is what it was", () => {
     assert.deepEqual(attempts(events).map((a) => a.prover), ["p1"]);
     assert.ok(attempts(events).every((a) => a.settings === undefined));
     assert.equal(JSON.stringify(events).includes(DRAFT_MODE), false);
+    assert.equal(JSON.stringify(events).includes(SITE_LEAN_DRAFT), false);
+    // The event types are those of a run that never heard of the setting.
+    const baseline = await demoRun({ responses: [check("bad"), say("notes")], config: { ...base, leanDraft: undefined } });
+    assert.deepEqual(events.map((e) => e.type), baseline.events.map((e) => e.type));
   });
 });
 
@@ -128,6 +132,22 @@ describe("the draft's cost", () => {
     const [draft] = ofType(events, "attempt.finished");
     assert.ok((draft?.data.usd ?? 0) >= 0.1, `the draft cost ${String(draft?.data.usd)}`);
     assert.deepEqual(attempts(events).map((a) => a.prover), ["draft"]);
+  });
+});
+
+describe("a problem the triage called long", () => {
+  it("gets no draft: the probe's prover is the only attempt, and the triage's class is the reason", async () => {
+    const steps = Array.from({ length: 13 }, (_, i) => `${i + 1}. a fact`).join("\n");
+    const verdict = say(JSON.stringify({ verdict: "correct", findings: ["ok"] }));
+    const { events } = await demoRun({
+      responses: [say(`Proof.\n${steps}`), verdict, verdict, verdict, check("bad"), say("notes")],
+      lean: new DemoLean(answer),
+      config: { ...base, decide: { sites: { "budget.line": "off", "budget.wave": "off" } }, informalFirst: {}, triage: true, longProof: {}, leanDraft: {} },
+    });
+    const triage = ofType(events, "node.recorded").find((e) => e.data.kind === "formal_triage");
+    assert.equal((triage?.data.data as { class?: string } | undefined)?.class, "long");
+    assert.deepEqual(attempts(events).map((a) => a.prover), ["p1"]);
+    assert.equal(JSON.stringify(events).includes(DRAFT_MODE), false);
   });
 });
 

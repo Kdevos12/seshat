@@ -83,3 +83,23 @@ describe("the readings of a stall", () => {
     assert.equal(excludedAfterStall(attempts, "p9", new Set(["a2"]), true), undefined, "no attempt of the prover");
   });
 });
+
+describe("with bucketPrior and switchOnStall absent", () => {
+  it("draws and records what the options set to false do, whatever the bucket and the stalls hold: the claim's own attempts alone", async () => {
+    const base = { modes: ["standard", "nl_first"], thinking: ["low", "high"] };
+    for (let seed = 1; seed <= 8; seed++) {
+      const run = async (extra: object) => {
+        const w = await world({ ...base, seed, ...extra });
+        // A history that both options would read: the bucket's other claim favours one value, and the claim's own attempt was stopped by the repeat rule.
+        for (let k = 0; k < 4; k++) w.put(w.otherClaim, { mode: "nl_first", thinking: "high" }, "valid");
+        repeatFinding(w, w.put(w.claimId, { mode: "nl_first", thinking: "high" }, "invalid", "p1"));
+        const settings = (await w.fleet.hooks.beforeSession?.(w.session(2)))?.settings;
+        return { settings, allocation: allocations(w.memory, w.claimId).at(-1)?.data };
+      };
+      const absent = await run({});
+      const off = await run({ bucketPrior: false, switchOnStall: false });
+      assert.deepEqual(absent, off, `seed ${seed}`);
+      assert.equal(absent.allocation?.excluded, undefined);
+    }
+  });
+});
