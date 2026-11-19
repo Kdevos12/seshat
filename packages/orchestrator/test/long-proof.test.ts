@@ -4,6 +4,7 @@ import type { HarnessEvent } from "@seshat/core";
 import { createM12Line } from "@seshat/scheduler";
 import { BP_AUX, BP_PROOF } from "./blueprint-helpers.ts";
 import { liftAnswer } from "./lift-helpers.ts";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
 import { sessionPromptOf } from "./resume-helpers.ts";
 
@@ -127,5 +128,63 @@ induction n with
     assert.equal(planned(events).length, 0);
     await assert.rejects(() => run([], { longProof: { draft: true } }, { blueprints: false }), /longProof.draft and longProof.drafts need line M12 with the option blueprints/);
     await assert.rejects(() => run([], { longProof: { drafts: 0 } }), /longProof.drafts must be a whole number of at least 1/);
+  });
+});
+
+/** Three drafts: 3 holes after the lift (4 steps, the battery closes one), 2 holes in 3 steps, 2 holes in 2 steps. */
+const D1 = FOUR;
+const D2 = `have h_1 : 1 * n = n := by sorry
+have h_2 : n * 1 = n := by sorry
+have h_3 : 0 + n = n := by sorry
+exact main_ok`;
+const D3 = `have h_1 : 1 * n = n := by sorry
+have h_2 : 0 + n = n := by sorry
+exact main_ok`;
+
+describe("several drafts, ranked for free (DP3)", () => {
+  it("registers the draft with the fewest holes after the lift (ties to the fewer steps) and records the others, never registered", { timeout: 60000 }, async () => {
+    const prompts: string[] = [];
+    const asked = (text: string) => ((c: Context) => { prompts.push(sessionPromptOf(c)); return draftOf(text); }) as never;
+    const { events, faux } = await run([...informal, asked(D1), asked(D2), asked(D3), check("exact bad"), say("Notes.")], { longProof: { drafts: 3 } });
+    assert.equal(faux.getPendingResponseCount(), 0);
+    assert.equal(planned(events).length, 3);
+    assert.match(prompts[0] ?? "", /\(draft 1 of 3, written independently of the others\)/);
+    assert.match(prompts[2] ?? "", /\(draft 3 of 3, /);
+    const drafts = nodes(events, "m12_sketch");
+    assert.equal(drafts.length, 3);
+    assert.deepEqual(drafts.map((d) => d.healthy), [true, true, true], "healthy as Lean said, kept or not");
+    assert.deepEqual(drafts.map((d) => (d.names as string[]).length), [3, 2, 2], "the worst first, the kept draft last");
+    assert.deepEqual(drafts.map((d) => d.discarded), [true, true, undefined]);
+    assert.deepEqual(drafts.map((d) => d.registered), [false, false, true], "a draft that is not kept is never registered");
+    assert.ok(drafts.every((d) => d.fromInformal === true && d.planner === true && d.round === undefined));
+    // Only the kept draft's holes are claims, and the battery ran on every draft.
+    assert.equal(ofType(events, "claim.created").filter((e) => e.actor === "line:M12" && !(e.data.gloss ?? "").startsWith("link lemma")).length, 2);
+    assert.equal(nodes(events, "sorry_battery").length, 3);
+  });
+
+  it("drafts: 1 is the draft of LP2, and a healthy draft is kept over one Lean refused", { timeout: 60000 }, async () => {
+    const { events } = await run([...informal, draftOf(D3), check("exact bad"), say("Notes.")], { longProof: { drafts: 1 } });
+    assert.equal(nodes(events, "m12_sketch").length, 1);
+    assert.equal(planned(events).length, 1);
+    // A healthy draft is preferred to a refused one, whatever its holes: the refused one is recorded first and not kept.
+    const refused = "have h_1 : 1 * n = n := by bad_tactic\nexact main_ok";
+    const mixed = await run([...informal, draftOf(refused), draftOf(D1), check("exact bad"), say("Notes.")], { longProof: { drafts: 2 } });
+    const [worse, better] = nodes(mixed.events, "m12_sketch");
+    assert.deepEqual([worse?.healthy, worse?.discarded, better?.healthy, better?.discarded], [false, true, true, undefined]);
+  });
+
+  it("stops at the drafts made when the gate skips or a call fails, and the drafts made are ranked", { timeout: 60000 }, async () => {
+    const down = fauxAssistantMessage([], { stopReason: "error", errorMessage: "the model is down" });
+    const failed = await run([...informal, draftOf(D1), down, down, down, down, down, down], { longProof: { drafts: 3 } });
+    const [only, ...more] = nodes(failed.events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.equal(only?.healthy, true);
+    assert.equal(only?.discarded, undefined);
+    assert.equal(planned(failed.events).filter((m) => m.data.outcome === "ok").length, 1);
+    // A gate that refuses the first call: the gate is asked once, not once for each draft.
+    const skipped = await run([...informal, check("exact bad"), say("Notes.")], { longProof: { drafts: 3 }, seed: "draft-gate", budget: { problemUsd: 1 }, gate: { floor: 0, share: { task: 0.0001 } } });
+    assert.deepEqual(ofType(skipped.events, "budget.gated").map((e) => e.data).filter((g) => g.site === "task").map((g) => g.action), ["skip"]);
+    assert.equal(planned(skipped.events).length, 0);
+    assert.equal(nodes(skipped.events, "m12_sketch").length, 0);
   });
 });
