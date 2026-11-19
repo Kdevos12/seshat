@@ -1170,14 +1170,24 @@ export class Projection {
     return rows.map(validationRow);
   }
 
+  /** The attempts of this run that worked for a claim and for no task, as a Lean draft's (`attempt.started` with no `taskId`), in order. */
+  attemptsOfNoTask(claimId: string): AttemptRow[] {
+    const rows = this.db.prepare("select * from attempts where claim_id = ? and task_id is null and runs_ago = 0 order by started_seq").all(claimId) as unknown as StoredAttempt[];
+    return rows.map(attemptRow);
+  }
+
   /**
-   * What the attempts and the model calls for a problem cost: the attempts of its tasks, whether or
-   * not they finished (a session that never ended costs what its responses did), and the model
-   * calls its lines made.
+   * What the attempts and the model calls for a problem cost: the attempts of its tasks and the
+   * attempts of its claim that no task owns (a Lean draft's), whether or not they finished (a
+   * session that never ended costs what its responses did), and the model calls its lines made.
    */
   problemSpend(problemId: string): Spend {
     return this.spend(
-      { from: "attempts join tasks using (task_id) where tasks.problem_id = ?", params: [problemId] },
+      {
+        from: `attempts where task_id in (select task_id from tasks where problem_id = ?)
+          or (task_id is null and runs_ago = 0 and claim_id = (select claim_id from problems where problem_id = ?))`,
+        params: [problemId, problemId],
+      },
       { from: "model_calls where problem_id = ?", params: [problemId] },
     );
   }

@@ -2003,7 +2003,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             // under what is left of its cap, for one more session. Nothing left of the cap, or no session left: the gate judges.
             probeCut = false;
             const resumed = proverResumeOf(journal, blobs, first.taskId);
-            const left = gate.probeTotalUsd(capUsd) - spentBy(first.taskId);
+            const left = gate.probeTotalUsd(capUsd) - gate.probeSpentUsd(first.taskId);
             if (resumed !== undefined && resumed.session < sessionCap && left > 1e-9) {
               const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
               if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
@@ -2060,7 +2060,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         let cap: Ledger | undefined;
         if (gate.shortCap() !== undefined) {
           const total = gate.shortCap() as number;
-          cap = (sliceLedger ?? ledger).child(Math.max(0, total - working.reduce((sum, t) => sum + spentBy(t.taskId), 0)));
+          cap = (sliceLedger ?? ledger).child(Math.max(0, total - gate.probeSpentUsd(first.taskId) - rest.reduce((sum, t) => sum + spentBy(t.taskId), 0)));
         }
         return Promise.all([
           settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed, ...(cap !== undefined ? { cap } : {}) })),

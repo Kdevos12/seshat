@@ -7,7 +7,7 @@ import { AUX_BEGIN, AUX_END, dedent, Journal, newId, PROOF_BEGIN, PROOF_END, sta
 import { gateSettings } from "@seshat/scheduler";
 import { BudgetGate, Ledger } from "../src/index.ts";
 import { cutAtFirstBreak, DEFAULT_DRAFT_RESUMES, DEFAULT_DRAFT_TOKENS, DRAFT_MODE, checkLeanDraft, leanBlock } from "../src/lean-draft.ts";
-import { check, DemoLean, demoRun, ofType, proofOf, say } from "./m0-helpers.ts";
+import { check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 import type { FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 
 /** The simulated Lean of these tests: `bad` is an error on its line, `sorry` a hole with a goal, `finish` closes the file, and anything else leaves a goal. */
@@ -130,6 +130,20 @@ describe("the draft's cost", () => {
   });
 });
 
+describe("the draft's cost after an interruption", () => {
+  it("stays in the problem's spend: a resumed run seeds its ledger with it and asks no second draft", async () => {
+    const whole = await demoRun({ responses: [lean("bad"), check("bad"), say("notes")], pricePerMillion: 60, lean: new DemoLean(answer), config: { ...base, leanDraft: { resumes: 0 } } });
+    const draftCost = ofType(whole.events, "attempt.finished")[0]?.data.usd ?? 0;
+    assert.ok(draftCost > 0);
+    // Cut right after the draft's end: the probe has not started.
+    const at = whole.events.findIndex((e) => e.type === "attempt.finished");
+    const resumed = await demoResume({ dir: killedAt(whole.dir, at + 1), bench: whole.bench, pricePerMillion: 60, lean: new DemoLean(answer), responses: [check("bad"), say("notes")] });
+    assert.deepEqual(attempts(resumed.events).map((a) => a.prover), ["draft", "p1"], "no second draft");
+    const spent = ofType(resumed.events, "attempt.finished").reduce((sum, a) => sum + (a.data.usd ?? 0), 0);
+    assert.ok(Math.abs((resumed.result.problems[0]?.usd ?? NaN) - spent) < 1e-9, "the problem's spend counts the draft once");
+  });
+});
+
 describe("the gate and the draft", () => {
   function gate(triage: "long" | "short" | undefined) {
     const journal = Journal.open(mkdtempSync(join(tmpdir(), "mh-draft-")), "run_1");
@@ -150,6 +164,25 @@ describe("the gate and the draft", () => {
       } finally {
         journal.close();
       }
+    }
+  });
+
+  it("counts the draft in what the probe has spent, with the attempts of its task", () => {
+    const { journal, g } = gate(undefined);
+    try {
+      const done = (prover: string, usd: number, taskId?: string) => {
+        const attemptId = newId("att");
+        journal.emit("attempt.started", { attemptId, claimId: "clm_1", prover, iteration: 1, model: "m", ...(taskId !== undefined ? { taskId } : {}) }, `prover:${prover}`);
+        journal.emit("attempt.finished", { attemptId, outcome: "invalid", usd, inputTokens: 0, outputTokens: 0, durationMs: 1, turns: 1 }, `prover:${prover}`);
+      };
+      journal.emit("task.created", { taskId: "tsk_1", kind: "prove", problemId: "P1", claimId: "clm_1", dependsOn: [], owner: "prover:p1", acceptance: { type: "claim", claimId: "clm_1", minStatus: "computed" }, budget: { usd: 1 } }, "orchestrator");
+      for (const [from, to] of [["pending", "ready"], ["ready", "running"]]) journal.emit("task.status_changed", { taskId: "tsk_1", from, to, reason: "test" } as never, "orchestrator");
+      done("draft", 0.25);
+      done("p1", 0.5, "tsk_1");
+      assert.equal(g.probeSpentUsd("tsk_1"), 0.75);
+      assert.equal(g.probeSpentUsd("tsk_2"), 0.25);
+    } finally {
+      journal.close();
     }
   });
 

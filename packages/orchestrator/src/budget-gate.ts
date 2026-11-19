@@ -135,6 +135,12 @@ export class BudgetGate {
     return capUsd * (this.extensions() > 0 ? 3 : 1);
   }
 
+  /** What the probe has spent so far: its prover's attempts and the Lean draft that ran before them under the probe's ledger (the draft belongs to no task). */
+  probeSpentUsd(taskId: string): number {
+    const projection = this.o.journal.projection;
+    return [...projection.attemptsOfTask(taskId), ...projection.attemptsOfNoTask(this.o.claimId)].reduce((sum, a) => sum + (a.usd ?? 0), 0);
+  }
+
   /** The extensions granted to this problem: the probe rows after the first (a resumed run reads this, so that it grants none twice). */
   private extensions(): number {
     return Math.max(0, this.rows().filter((g) => g.site === "wave" && g.action === "probe").length - 1);
@@ -344,7 +350,7 @@ export class BudgetGate {
     const attempts = projection.attemptsOfTask(who.taskId);
     const last = attempts.at(-1);
     if (last === undefined || last.finished_seq === null || last.outcome !== "budget_exhausted") return undefined;
-    if (attempts.reduce((sum, a) => sum + (a.usd ?? 0), 0) < who.capUsd * (1 - 1e-9)) return undefined;
+    if (this.probeSpentUsd(who.taskId) < who.capUsd * (1 - 1e-9)) return undefined;
     const ids = new Set(attempts.map((a) => a.attempt_id));
     const checks = projection.validationsOfProblem(this.o.problemId).filter((v) => v.attempt_id !== null && ids.has(v.attempt_id)).length;
     if (checks < 1 || this.progress() !== undefined) return undefined;
