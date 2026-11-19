@@ -256,6 +256,18 @@ At most one repair per attempt and `maxRepairs` (default 2) per problem, counted
 
 **Not run.** Whether Lean's positions for a real error fall where `cutFailures` expects (an "unsolved goals" error at the `by`, an error in a term at the term) is untested: only the simulated Lean has run (`repair.test.ts`: two failing AUX lemmas become a blueprint of two holes and the battery proves one, a failing `have` with only the theorem's binders becomes a hole, an error in a statement gives no repair, `maxRepairs`, without `repair` nothing changes, and `cutFailures` on its shapes and refusals).
 
+## Long proofs: the `have` sketch and its lifter (plan changes LP2, DP1 to DP3)
+
+A long proof is a chain of short ones. The part that exists today is the **lifter**, `liftHaves` in `lift.ts` (plan change DP1): given a proof whose steps are `have h_k : T_k := by sorry`, it makes each step a hole, with Lean doing the extraction, the way DeepSeek-Prover-V2 cuts a proof into subgoals (each `sorry` a standalone lemma whose hypotheses are the local context, earlier steps included). No dependency is declared, so there is no `-- uses:` line, and no text is read for a context.
+
+1. **The battery.** With the report of the file Lean checked, the classical battery of line M10 (`closeSorries`, given to the lifter as a function) tries each `sorry` and closes in place the steps a tactic closes. Without the battery or the report this step is skipped.
+2. **The extraction.** One Lean check of the proof with every remaining `have h : T := by sorry` as `by extract_goal; sorry`. Mathlib's `extract_goal` prints, at each, the theorem it extracted: the binders of the target, the earlier steps, whatever the step is under (an `intro`'d variable, a `cases` branch) as hypotheses. The printed statements are read in file order, each renamed `lemma aux_<step> ... := by sorry` (a name already used gets a suffix) and added to the AUX region.
+3. **The rewrite.** Each step becomes `have h : T := by apply aux_h <;> assumption`, and the file is checked. If it has an error, and every lemma's explicit binders have names, the steps become `have h : T := aux_h <explicit binders>` and it is checked again; the file with fewer errors is the result.
+
+The result is an ordinary sketch in signature form that `readSketch` reads as a blueprint with no dependencies, registered with its link lemma checked by Lean like any other. A statement Lean printed that does not compile is an error in the returned file's report, so the file is not healthy and goes to refinement (case a) with the error. A probe Lean refuses, one that prints a different number of statements than there are steps, or a printed text that is no statement gives `{ reason }` and no lift. Nothing here sets a status: `extract_goal` only writes a statement, and a hole is `open` until `validate` accepts its proof.
+
+**Not run.** Whether `extract_goal` exists under that name in the pinned Mathlib, whether its output re-elaborates on real goals (instances, coercions, `⋯`, inaccessible names), and whether `apply aux_h <;> assumption` closes the rewritten step have not been run against a real Lean. The simulated Lean (`extractGoalMessages` in `packages/core/test/fake-lean.ts`) prints the statement the tactic would for the shapes the tests use: the theorem's binders, earlier steps, `intro`'d names and case binders, all of type `ℕ`. `lift.test.ts` runs it.
+
 ## Options of M12
 
 | Option | Default | Meaning |
