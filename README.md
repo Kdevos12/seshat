@@ -188,13 +188,14 @@ flowchart TB
   optprompts["harness optimize-prompts<br/>GEPA-style rewrite on a dev split,<br/>gate: held-out and temporal,<br/>patches a person merges"]:::built
   realopt["First real prompt optimization<br/>needs a model, Lean<br/>and the dataset"]:::wait
   realablate["First real ablation<br/>needs a model, Lean, Jev<br/>and the dataset"]:::wait
-  fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run"]:::built
+  fleet["Fleet policy<br/>Thompson sampling on verdicts,<br/>sampled settings, exploration<br/>floor, discount per run,<br/>bucket prior and restart in another<br/>mode after a Lean stall (both off)"]:::built
   heurbank["Heuristic card bank<br/>methods of reasoning, not tools:<br/>built-in and pack cards,<br/>a control arm per bucket"]:::built
   dag["nl_first sessions<br/>step DAG, checked,<br/>one lemma per step"]:::wait
   judge["judge: k calls,<br/>majority, disagreement,<br/>anti-sycophancy"]:::wait
   guards["M6 guards<br/>resolved citations,<br/>drift detectors"]:::real
   llm["LLMs through their APIs<br/>any provider, no training"]:::real
   budgetgate["Budget gate (off by default)<br/>price against chance before each launch,<br/>probe first, widen on Lean progress,<br/>exploration floor, skips kept in the journal"]:::real
+  leandraft["Lean draft (experimental, off)<br/>one Lean-only completion before the probe,<br/>checked once, cut at the first error, resumed once"]:::wait
   provers["Provers 1..N on pi<br/>fresh sessions that pass<br/>on their notes, in budgets<br/>of $, tokens and turns"]:::real
   orchestrator["Orchestrator<br/>budgets, stops,<br/>resume from the journal"]:::real
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::real
@@ -278,6 +279,8 @@ flowchart TB
   orchestrator -->|"tasks, budgets"| ledger
   ledger -->|"one task per prover"| provers
   budgetgate -->|"launch, probe,<br/>widen or skip"| provers
+  budgetgate -->|"at a fresh probe,<br/>if on"| leandraft
+  leandraft -->|"a candidate ends the problem,<br/>else the probe runs"| provers
   fleet -->|"posterior<br/>of the claim"| budgetgate
   ledger -->|"task events,<br/>routing decisions"| journal
   journal -->|"resume after<br/>a crash"| orchestrator
