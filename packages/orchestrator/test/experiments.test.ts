@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ablationProblems, armConfig, compareArms } from "../src/ablation.ts";
 import { allLines, DECIDE_SITES, EXPERIMENTS, experimentArms, experimentNames } from "../src/experiments.ts";
-import { buildReport, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
+import { buildReport, checkConfig, DEFAULT_CONFIG, type RunConfig, type RunOptions, type RunResult, RunSetupError } from "../src/index.ts";
 import { type ProblemEntry } from "@seshat/bench";
 import { runAblation } from "../src/ablation.ts";
 import { renderAblation } from "../src/ablation-table.ts";
@@ -104,7 +104,7 @@ describe("the solve-defaults experiment", () => {
   const arm = (name: string) => arms.find((a) => a.name === name) ?? assert.fail(name);
 
   it("sets solve-v2 against solve-v1, the baseline", () => {
-    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"], ["solve-v2-cards", "solve-v2"], ["solve-v2-lessons", "solve-v2"], ["solve-v2-informal-triage", "solve-v2-informal"], ["solve-v2-cpu", "solve-v2"]]);
+    assert.deepEqual(arms.map((a) => [a.name, a.versus]), [["solve-v1", undefined], ["solve-v2", "solve-v1"], ["solve-v2-blueprints", "solve-v2"], ["solve-v2-graph", "solve-v2"], ["solve-v2-blueprints-refine", "solve-v2-blueprints"], ["solve-v2-informal", "solve-v2"], ["solve-v2-cards", "solve-v2"], ["solve-v2-lessons", "solve-v2"], ["solve-v2-informal-triage", "solve-v2-informal"], ["solve-v2-cpu", "solve-v2"], ["solve-v2-long", "solve-v2"]]);
   });
 
   it("makes the blueprints arm solve-v2 plus line M12 with blueprints, and nothing else", () => {
@@ -113,6 +113,17 @@ describe("the solve-defaults experiment", () => {
     assert.deepEqual(blueprints, v2);
     assert.deepEqual(lines, [...(v2Lines ?? []), "M12"]);
     assert.deepEqual(lineOptions, { ...v2Options, M12: { blueprints: true } });
+  });
+
+  it("makes the long-proof arm solve-v2 plus the fields DP6 names, and nothing else", () => {
+    const { lines: v2Lines, lineOptions: v2Options, ...v2 } = armConfig(base, arm("solve-v2"));
+    const { lines, lineOptions, informalFirst, longProof, frontier, triage, sorryBattery, roles, ...long } = armConfig(base, arm("solve-v2-long"));
+    assert.deepEqual(long, v2);
+    assert.deepEqual(lines, [...(v2Lines ?? []), "M12"]);
+    assert.deepEqual(lineOptions, { ...v2Options, M12: { blueprints: true } });
+    assert.deepEqual({ informalFirst, longProof, frontier, triage, sorryBattery, roles }, { informalFirst: { passes: 1 }, longProof: { drafts: 3 }, frontier: { show: true }, triage: true, sorryBattery: {}, roles: { hole: { settings: { thinking: "off" } } } });
+    assert.equal(arm("solve-v2-long").versus, "solve-v2");
+    assert.deepEqual(checkConfig(armConfig(base, arm("solve-v2-long"))), [], "the arm is a configuration a run accepts");
   });
 
   it("makes the refine arm the blueprints arm plus refine and repair, and nothing else", () => {

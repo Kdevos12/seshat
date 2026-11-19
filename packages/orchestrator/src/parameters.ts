@@ -221,7 +221,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (off)",
     summary: "An informal proof first: a generator and a fresh-context verifier until `passes` verdicts `correct` in a row or `rounds` calls; an accepted proof is a hint, never a status.",
     cli: [],
-    sets: "neither (the arm solve-v2-informal of solve-defaults sets {})",
+    sets: "neither (the arm solve-v2-informal of solve-defaults sets {}, solve-v2-long sets { passes: 1 })",
     docs: "informal.md#The informal proof first (plan changes PA13, NL2, AL1, AL2, AL3)",
     tested: "informal.test.ts",
     status: "experimental",
@@ -234,7 +234,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (off)",
     summary: "After the informal loop, a formal-cost triage (no model call, no Lean) classes the problem invest, short or skip, and the budget gate reads it where the probe made no Lean progress.",
     cli: [],
-    sets: "neither (the arm solve-v2-informal-triage of solve-defaults sets true)",
+    sets: "neither (the arms solve-v2-informal-triage and solve-v2-long of solve-defaults set true)",
     docs: "scheduler.md#The budget gate",
     tested: "triage.test.ts",
     status: "experimental",
@@ -246,7 +246,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (off)",
     summary: "Long proofs, with `triage`: an accepted informal proof over the short limits (at least half its facts found) is triaged `long` when the allowance is at least `triageUsd`, and the budget gate follows the frontier's growth for it: its sessions go on while holes close, and it stops after `dryChecks` finished sessions in a row that closed none. With line M12's `blueprints` and an accepted informal proof, the first blueprint is a `have` sketch the planner writes from it and the harness lifts into holes (`draft`); `drafts` of them are asked for and the one with the fewest holes is kept. A hole that is proved, or an `aux_` lemma of the outer file that a check accepted, moves into a locked prefix of the problem's file, shown to the models by statement only (`freeze`).",
     cli: [],
-    sets: "M12's options fromInformal, drafts and freeze, and M3's fromFrozen (a value the person gave stays)",
+    sets: "M12's options fromInformal, drafts and freeze, and M3's fromFrozen (a value the person gave stays); the arm solve-v2-long of solve-defaults sets { drafts: 3 }",
     docs: "scheduler.md#Long proofs: the `have` sketch and its lifter (plan changes LP2, DP1 to DP3)",
     tested: "long-proof.test.ts",
     status: "experimental",
@@ -417,7 +417,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (off)",
     summary: "The verified frontier, a projection of the journal with no model call: with `show`, the state card, the turn's account, RESULT.md, report.md and the interface carry what Lean accepted so far (evidence apart, as evidence), and each outer session's opening message ends with one line on the budget left and the frontier.",
     cli: [],
-    sets: "neither (settings file)",
+    sets: "neither (settings file; the arm solve-v2-long of solve-defaults sets { show: true })",
     docs: "frontier.md#Where it is shown",
     tested: "frontier-show.test.ts",
     status: "experimental",
@@ -454,7 +454,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (every role has the run's model and settings)",
     summary: "A model, and sampling settings (temperature, topP, thinking), for each place the harness calls a model from; each call is charged at its own model's price.",
     cli: ["role", "role-setting"],
-    sets: "neither (solve passes the flags through)",
+    sets: "neither (solve passes the flags through; the arm solve-v2-long of solve-defaults sets roles.hole.settings.thinking to off)",
     docs: "models-setup.md#Roles: a model and settings for each place a model is called (CA15, CA23)",
     tested: "roles.test.ts",
     status: "stable",
@@ -943,7 +943,7 @@ export function renderParametersPage(): string {
   lines.push("", "## Host profile keys", "", "The keys of `config/hosts/*.json` (`packages/registry/src/host.ts`). `*` stands for a model or a capability id.", "", row(["key", "type", "what it does", "in a shipped profile"]), row(["---", "---", "---", "---"]));
   for (const k of HOST_PROFILE_KEYS) lines.push(row([code(k.key), k.type, k.summary, k.shipped ? "yes" : "no"]));
   lines.push("", "## Defaults sets and arms", "", "`harness solve --defaults v1|v2` (`DEFAULTS_SETS`, `SOLVE_SWITCHES` and `setConfig` in `student.ts`):", "");
-  lines.push("- `v1`: no `RunConfig` field beyond `defaults`, `gate: {}`, the lines M1 and M10, the consortium turn limit and the budget.", "- `v2`: `v1` plus `editTool`, `maskOldChecks`, `checkTimeoutSec` (the host's, 120 by default), `stateCard`, `budgetRounds`, `budgetShare: 2`, `firstCases`, `gate.probeExtend`, line M6 with its repeat rule alone, and the solve-level switches: the intake, `autoTool`, `leanSearch` and `lean.lsp` in `tools` (the last three when the host offers them).", "- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`), `solve-v2-cpu` (adds `sorryBattery`).", "");
+  lines.push("- `v1`: no `RunConfig` field beyond `defaults`, `gate: {}`, the lines M1 and M10, the consortium turn limit and the budget.", "- `v2`: `v1` plus `editTool`, `maskOldChecks`, `checkTimeoutSec` (the host's, 120 by default), `stateCard`, `budgetRounds`, `budgetShare: 2`, `firstCases`, `gate.probeExtend`, line M6 with its repeat rule alone, and the solve-level switches: the intake, `autoTool`, `leanSearch` and `lean.lsp` in `tools` (the last three when the host offers them).", "- Arms of `harness ablate --experiment solve-defaults`: `solve-v1`, `solve-v2`, `solve-v2-blueprints`, `solve-v2-graph`, `solve-v2-blueprints-refine`, `solve-v2-informal` (adds `informalFirst`), `solve-v2-cards` (adds `cards`), `solve-v2-cpu` (adds `sorryBattery`), `solve-v2-long` (adds `informalFirst` with one pass, line M12 with blueprints, `longProof` with 3 drafts, `frontier.show`, `triage`, `sorryBattery`, and the hole role's thinking at `off`).", "");
   lines.push("## Findings", "", "What the audit found, one line each. Nothing is fixed by this page.", "", "From the tables (computed):", "");
   const computed = computedFindings();
   lines.push(...(computed.length === 0 ? ["- none"] : computed.map((c) => `- ${c}`)), "", "From reading the code:", "", ...MANUAL_FINDINGS.map((m) => `- ${m}`), "");
