@@ -136,7 +136,7 @@ For questions and discussion, join the [Discord server](https://discord.gg/4Dbcn
 
 ## Citing Seshat
 
-If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub). Every release is archived on Zenodo: [10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) always points to the latest version, and [10.5281/zenodo.24354663](https://doi.org/10.5281/zenodo.24354663) to 1.0.0-beta.1 itself.
+If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub). [CHANGELOG.md](CHANGELOG.md) lists what each version changed. Every release is archived on Zenodo: [10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) always points to the latest version, and [10.5281/zenodo.24354663](https://doi.org/10.5281/zenodo.24354663) to 1.0.0-beta.1 itself.
 
 ```bibtex
 @software{devos2026seshat,
