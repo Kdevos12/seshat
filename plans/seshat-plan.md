@@ -1579,6 +1579,28 @@ change is an option (`RunConfig.longProof`), off by default; `v1` and `v2` stay 
   verifier; the arm sets `longProof.drafts` 3, the hole role's lowest thinking level and one informal pass (DP6).
   DP7 (local recursion on a `too_hard` hole) is built only if LP6 shows `too_hard` holes as the main stop.
 
+### Tasks 68 to 71: a Lean-only first draft, and modes learned like heuristics (CL0 to CL6)
+
+The plan change `plans/plan-change-chain-of-lean.md` (CL0 to CL6, approved in full on 2026-11-19, Ruling 45). Part A
+(CL1 to CL4) is experimental: in no defaults set, on only when a settings file or an arm sets it. Part B (CL5, CL6) is
+off by default until its arm wins. Each item lives in the one module the change's design table names. In this order:
+
+- Task 68 (CL0): `harness audit` gains a table of output tokens by role (prover, planner, hole, and the others the
+  journal names) and by kind (thinking, text outside tool calls, tool-call arguments), read from the response blobs
+  the journal keeps. A free pass over the real runs' journals, on any machine that has them, decides CL3.
+- Task 69 (CL5, CL6): the fleet's sampled settings (`mode`, `thinking`, `directive`) take the heuristic bank's bucket
+  posteriors as their prior, through one bucket-posterior function shared with the cards (no second sampler); after
+  M6's repeat rule ends a session or the claim stagnates, the next draw excludes the current `mode` and `thinking`;
+  first tries follow cost (battery, the draft when on, then the sampled session). An arm `solve-v2-fleet-modes`
+  measures it.
+- Task 70 (CL1, CL2): a prompt file `lean-draft.system.txt` (Lean only, comments of five words or fewer, two or three
+  worked examples, the have-sketch form of DP1); `gate.draft` (experimental): at the probe's start, under the probe's
+  ledger, one completion without tools at thinking `off`, checked by `lean.check`, cut at the first error with the rest
+  replaced by `sorry`, one resume from the verified prefix, then the sorry battery; a draft with no error and no `sorry`
+  goes through `validate`. One module, `lean-draft.ts`; not on `long` problems.
+- Task 71 (CL4, and CL3 if CL0 passes): an arm `solve-v2-long-draft` (`solve-v2-long` plus `gate.draft`), with the
+  kill rule of CL4; CL3 (`roles.hole.settings.style: "lean_draft"`) only if prose is above 20% of hole output tokens.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
