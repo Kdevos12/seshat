@@ -1,7 +1,7 @@
 import type { Json } from "@seshat/core";
 import { type Briefing, LINE_TITLES, type Line, type LineTool, type ProblemContext, type SessionContext } from "@seshat/lines";
 import { importHeader } from "./lemmas.ts";
-import { DEFAULT_PROMOTION, promoteCandidates, type PromotionOptions, recordCandidates } from "./promote.ts";
+import { DEFAULT_PROMOTION, promoteCandidates, type PromotionOptions, recordCandidates, recordFrozenCandidates } from "./promote.ts";
 import { USE_KIND, type UseData, usableLemmas } from "./records.ts";
 import {
   type Caps,
@@ -35,6 +35,8 @@ export const M3_OPTIONS = {
   promote: true,
   /** Also promote from attempts that failed. */
   fromFailed: false,
+  /** Candidates come from the lemmas M12 locked into the file (the `accepted_lemmas` nodes), failed attempts included, not from the attempts' regions. `RunConfig.longProof` sets it. */
+  fromFrozen: false,
   maxPerAttempt: DEFAULT_PROMOTION.maxPerAttempt,
   maxPerProblem: DEFAULT_PROMOTION.maxPerProblem,
   /** The briefing section; 0 lemmas leaves it out. */
@@ -192,7 +194,7 @@ export function createM3(deps: M3Deps = {}): Line {
       },
       afterAttempt: async (problem, attempt) => {
         const o = optionsOf(problem.options);
-        if (o.promote) recordCandidates(problem, attempt, promotionOf(o));
+        if (o.promote && !o.fromFrozen) recordCandidates(problem, attempt, promotionOf(o));
         if (attempt.submission === undefined) return undefined;
         // What the submission used, from the library and from the other sources: the report's share of proofs that use the library.
         const known: KnownName[] = usableLemmas(problem.memory).map((l) => ({ name: l.name, label: "library" }));
@@ -211,6 +213,7 @@ export function createM3(deps: M3Deps = {}): Line {
       afterProblem: async (problem) => {
         const o = optionsOf(problem.options);
         if (!o.promote) return;
+        if (o.fromFrozen) recordFrozenCandidates(problem, promotionOf(o));
         const r = await promoteCandidates(problem, isTrivial, promotionOf(o));
         if (r.promoted + r.duplicate + r.trivial + r.unproved > 0) {
           problem.log(`library: ${r.promoted} promoted, ${r.duplicate} duplicate, ${r.trivial} trivial, ${r.unproved} not proved alone, ${r.left} left`);

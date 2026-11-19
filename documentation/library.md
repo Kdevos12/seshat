@@ -183,6 +183,7 @@ Lean meta tool ([lean-meta.md](lean-meta.md)) would replace. PC12 (tactic mining
 |---|---|---|
 | `promote` | true | Grow the library. |
 | `fromFailed` | false | Also read the auxiliary lemmas of failed attempts. |
+| `fromFrozen` | false | Read the candidates from the lemmas M12 locked into the file (the `accepted_lemmas` nodes' `lemmas`, [scheduler.md](scheduler.md#long-proofs-the-have-sketch-and-its-lifter-plan-changes-lp2-dp1-to-dp3)), failed attempts included (LEGO keeps the verified lemmas of a failed attempt), read at `afterProblem`, instead of from each attempt's regions. `RunConfig.longProof` sets it when it freezes (plan change DP5). |
 | `maxPerAttempt`, `maxPerProblem` | 5, 10 | Candidates read from one attempt; promotions per problem. |
 | `briefingLemmas` | 5 | Results in the briefing section; 0 leaves it out (and nothing is drawn). |
 | `tool` | true | Offer `library_search`. |

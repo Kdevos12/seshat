@@ -246,7 +246,7 @@ export const RUN_PARAMETERS: { [K in keyof Required<RunConfig>]: ParameterInfo }
     default: "absent (off)",
     summary: "Long proofs, with `triage`: an accepted informal proof over the short limits (at least half its facts found) is triaged `long` when the allowance is at least `triageUsd`, and the budget gate follows the frontier's growth for it: its sessions go on while holes close, and it stops after `dryChecks` finished sessions in a row that closed none. With line M12's `blueprints` and an accepted informal proof, the first blueprint is a `have` sketch the planner writes from it and the harness lifts into holes (`draft`); `drafts` of them are asked for and the one with the fewest holes is kept. A hole that is proved, or an `aux_` lemma of the outer file that a check accepted, moves into a locked prefix of the problem's file, shown to the models by statement only (`freeze`).",
     cli: [],
-    sets: "M12's options fromInformal, drafts and freeze (a value the person gave stays)",
+    sets: "M12's options fromInformal, drafts and freeze, and M3's fromFrozen (a value the person gave stays)",
     docs: "scheduler.md#Long proofs: the `have` sketch and its lifter (plan changes LP2, DP1 to DP3)",
     tested: "long-proof.test.ts",
     status: "experimental",

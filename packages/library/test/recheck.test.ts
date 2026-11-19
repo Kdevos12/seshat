@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal } from "@seshat/core";
 import type { ProblemContext } from "@seshat/lines";
-import { MemoryStore } from "@seshat/memory";
-import { allLemmas, CANDIDATE_KIND, candidates, DEFAULT_PROMOTION, promoteCandidates, recheckLibrary, recordCandidates, usableLemmas } from "../src/index.ts";
+import { MemoryStore, recordAcceptedLemmas } from "@seshat/memory";
+import { allLemmas, CANDIDATE_KIND, candidates, DEFAULT_PROMOTION, promoteCandidates, recheckLibrary, recordCandidates, recordFrozenCandidates, usableLemmas } from "../src/index.ts";
 import { library } from "./helpers.ts";
 
 describe("compiling the library again when the Mathlib revision changes (PE1)", () => {
@@ -95,5 +95,20 @@ describe("compiling the library again when the Mathlib revision changes (PE1)", 
     const attempt = { attemptId: "a2", outcome: "invalid", submission: { aux: "theorem aux_y (n : ℕ) : n = n := by\n  simp -- x\n#reduce 1", proof: "simp" } } as never;
     assert.equal(recordCandidates(ctx, attempt, { ...DEFAULT_PROMOTION, fromFailed: true }), 0);
     assert.equal(candidates(memory).length, 0);
+  });
+});
+
+describe("candidates from the lemmas locked into the file (plan change DP5)", () => {
+  it("a lemma locked in a failed attempt is a pending candidate, read from the accepted_lemmas node, once", async () => {
+    const { memory, problem } = await library("rev-a");
+    const text = "lemma aux_frozen (n : ℕ) : n + 0 = n := by\n  simp";
+    const proofHash = memory.blobs.put(text);
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test" });
+    const ctx = { ...problem, problemId: "p9", claimId, target: { source: "import Mathlib\n" }, log: () => undefined } as unknown as ProblemContext;
+    recordAcceptedLemmas(memory, claimId, "a_failed", undefined, [{ name: "aux_frozen", statementId: "st0_x", proofHash }]);
+    assert.equal(recordFrozenCandidates(ctx, DEFAULT_PROMOTION), 1);
+    assert.equal(recordFrozenCandidates(ctx, DEFAULT_PROMOTION), 0, "the same lemma of the same attempt is recorded once");
+    const [candidate] = candidates(memory, { problemId: "p9" });
+    assert.deepEqual([candidate?.status, candidate?.attemptId, candidate?.name, candidate?.proof.trim()], ["pending", "a_failed", "aux_frozen", "simp"]);
   });
 });
