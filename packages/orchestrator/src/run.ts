@@ -694,11 +694,18 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) where M12 has blueprints; a value the person gave for those options stays.
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) and its frozen links (LP3) where M12 has blueprints; a value the person gave for those options stays.
   const lp = config.longProof;
   const lineOptions =
-    lp !== undefined && lp.draft !== false && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
-      ? { ...config.lineOptions, M12: { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}), ...config.lineOptions.M12 } }
+    lp !== undefined && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
+      ? {
+          ...config.lineOptions,
+          M12: {
+            ...(lp.draft !== false ? { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}) } : {}),
+            ...(lp.freeze !== false ? { freeze: true } : {}),
+            ...config.lineOptions.M12,
+          },
+        }
       : (config.lineOptions ?? {});
   const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, lineOptions);
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);

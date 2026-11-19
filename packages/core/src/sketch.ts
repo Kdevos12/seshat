@@ -25,6 +25,12 @@ export interface Sketch {
   suffix: string;
   /** Indentation of the tactic block. */
   indent: string;
+  /**
+   * Frozen links (plan change LP3): lemmas Lean accepted, locked between `prefix` and the AUX region. They are in every file Lean checks and the
+   * certifier replays, outside the editable regions: `editedOutsideRegions` flags an edit to them, and `assemble` leaves out of AUX the commands
+   * that restate one of them (same name and statement), so a prover that still writes one changes nothing. Absent: none.
+   */
+  locked?: string;
 }
 
 export class SketchError extends Error {}
@@ -154,9 +160,67 @@ function indentBlock(text: string, indent: string): string {
     .join("\n");
 }
 
-/** The file the prover edits: the original with the two editable regions marked. */
-export function renderSketch(sketch: Sketch, aux = "", proof = sketch.originalProof): string {
-  return assemble(sketch, { aux, proof }, true);
+/**
+ * The file the prover edits: the original with the two editable regions marked. `view`: the locked lemmas show their statements only
+ * (`lockedStatements`), for what the model reads; Lean's lines are those of the full file, which the view says.
+ */
+export function renderSketch(sketch: Sketch, aux = "", proof = sketch.originalProof, view = false): string {
+  if (!view || sketch.locked === undefined) return assemble(sketch, { aux, proof }, true);
+  return assemble({ ...sketch, locked: lockedStatements(sketch.locked) }, { aux: withoutLocked(aux, sketch.locked), proof }, true);
+}
+
+const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+
+/** What a locked command is known by: its name, and its statement for a lemma or a theorem (a proof may differ), else its whole text. */
+function lockedKey(command: Command): { name: string; key: string } | undefined {
+  const head = command.kind === "code" ? readDeclarationHead(command.text.trimEnd()) : undefined;
+  if (head === undefined || head.name === "") return undefined;
+  if (head.keyword !== "lemma" && head.keyword !== "theorem") return { name: head.name, key: command.text.trim() };
+  try {
+    return { name: head.name, key: prepareSketch(command.text.trimEnd(), head.name).statement };
+  } catch {
+    return { name: head.name, key: command.text.trim() };
+  }
+}
+
+/** The AUX region without the commands that restate a locked lemma or definition (same name, same statement): they are in the locked prefix already. */
+export function withoutLocked(aux: string, locked: string): string {
+  const held = new Map(splitCommands(locked).flatMap((c) => lockedKey(c) ?? []).map((k) => [k.name, k.key] as const));
+  if (held.size === 0) return aux;
+  return splitCommands(aux)
+    .filter((c) => {
+      const k = lockedKey(c);
+      return k === undefined || !sameText(held.get(k.name) ?? "\u0000", k.key);
+    })
+    .map((c) => aux.slice(c.start, c.end))
+    .join("");
+}
+
+/** The named commands of a locked text, each with its name, its statement (what `withoutLocked` compares) and its own text, in order. */
+export const lockedCommands = (locked: string): Array<{ name: string; statement: string; text: string }> =>
+  splitCommands(locked).flatMap((c) => {
+    const key = lockedKey(c);
+    return key === undefined ? [] : [{ name: key.name, statement: key.key, text: c.text.trimEnd() }];
+  });
+
+/** The names the locked prefix declares. */
+export const lockedNames = (locked: string): string[] => lockedCommands(locked).map((c) => c.name);
+
+/**
+ * The locked prefix as the model reads it: each lemma or theorem by its statement with the proof left out (a comment says so), definitions and
+ * other commands as they are. The size follows the statements, not the proofs.
+ */
+export function lockedStatements(locked: string): string {
+  const shown = splitCommands(locked).flatMap((c) => {
+    const head = c.kind === "code" ? readDeclarationHead(c.text.trimEnd()) : undefined;
+    if (head === undefined || (head.keyword !== "lemma" && head.keyword !== "theorem")) return [c.text.trimEnd()];
+    try {
+      return [`${head.keyword} ${head.name} ${prepareSketch(c.text.trimEnd(), head.name).statement} -- proved by Lean, the proof is not shown`];
+    } catch {
+      return [c.text.trimEnd()];
+    }
+  });
+  return `${shown.join("\n")}\n`;
 }
 
 export interface Submission {
@@ -169,11 +233,13 @@ export interface Submission {
  * the output has the same lines as the prover's file, so Lean positions match what it sees.
  */
 export function assemble(sketch: Sketch, submission: Submission, markers = true): string {
-  const aux = submission.aux.trim() === "" ? "" : `${submission.aux.replace(/\s+$/, "")}\n`;
+  const kept = sketch.locked === undefined ? submission.aux : withoutLocked(submission.aux, sketch.locked);
+  const aux = kept.trim() === "" ? "" : `${kept.replace(/\s+$/, "")}\n`;
+  const prefix = sketch.locked === undefined ? sketch.prefix : `${sketch.prefix}${sketch.locked.replace(/\s+$/, "")}\n\n`;
   const proof = indentBlock(dedent(submission.proof.replace(/^\s*\n/, "")).replace(/\s+$/, ""), sketch.indent);
-  if (!markers) return `${sketch.prefix}${aux}${aux === "" ? "" : "\n"}${sketch.header}\n${proof}${sketch.suffix}`;
+  if (!markers) return `${prefix}${aux}${aux === "" ? "" : "\n"}${sketch.header}\n${proof}${sketch.suffix}`;
   return (
-    `${sketch.prefix}${AUX_BEGIN}\n${aux}${AUX_END}\n${sketch.header}\n` +
+    `${prefix}${AUX_BEGIN}\n${aux}${AUX_END}\n${sketch.header}\n` +
     `${sketch.indent}${PROOF_BEGIN}\n${proof}\n${sketch.indent}${PROOF_END}${sketch.suffix}`
   );
 }
@@ -188,9 +254,13 @@ export function extractSubmission(text: string): Submission {
   };
 }
 
-/** True when the file differs from the sketch outside the two regions (those edits are discarded). */
+/**
+ * True when the file differs from the sketch outside the two regions (those edits are discarded). With a locked prefix, the file as the model reads it
+ * (`renderSketch` with `view`) is the sketch too: the prefix by its statements; any other change to the prefix is an edit outside the regions.
+ */
 export function editedOutsideRegions(sketch: Sketch, text: string): boolean {
-  return outside(text) !== outside(renderSketch(sketch));
+  const here = outside(text);
+  return here !== outside(renderSketch(sketch)) && (sketch.locked === undefined || here !== outside(renderSketch(sketch, "", sketch.originalProof, true)));
 }
 
 function outside(text: string): string {

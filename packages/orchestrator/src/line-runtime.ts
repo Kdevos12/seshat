@@ -417,6 +417,7 @@ export class ProblemLines {
                     )?.submission,
                 }
               : {}),
+            lock: (lemmas: string, options?: { verify?: boolean }) => this.p.workbench.lock(lemmas, { actor, signal: own, ...(options?.verify === false ? { verify: false } : {}) }),
             holePreflight: (request: HolePreflightRequest) =>
               holePreflight(
                 {

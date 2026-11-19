@@ -1,7 +1,7 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import type { HostTactics } from "@seshat/classical";
-import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, statementIdV0, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { classifyFailure, type FailureClass, frontier as frontierOf, frontierCardLines, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
@@ -382,7 +382,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,
-          file: workbench.render(shown),
+          file: workbench.render(shown, true),
           notes: cold ? undefined : notes,
           lastCheck: cold ? undefined : lastCheck,
           ...(cold ? { cold: { overlay: true } } : {}),
@@ -461,7 +461,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       notes = clipNotes(notes === undefined ? cut : `${notes}\n${cut}`, o.notesChars);
     }
     const outcome = outcomeOf(result);
-    if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
+    // The lemmas M12 locked into the file since the last node (plan change DP5) go in this node: the one record of what Lean accepted.
+    const frozen = workbench.takeFrozen().map((c) => ({ name: c.name, statementId: statementIdV0(c.statement, workbench.sketch.prefix), proofHash: o.blobs.put(c.text) }));
+    if (result.report !== undefined || frozen.length > 0) {
+      const lemmaStore = cardStore ?? (frozen.length > 0 ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined);
+      if (lemmaStore !== undefined) recordAcceptedLemmas(lemmaStore, workbench.claimId, attemptId, result.report, frozen);
+    }
     const failure =
       outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {

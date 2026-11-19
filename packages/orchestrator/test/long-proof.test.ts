@@ -126,7 +126,7 @@ induction n with
     const { events } = await run([...informal, check("exact bad"), say("Notes.")], { longProof: undefined, triage: false });
     assert.equal(nodes(events, "m12_sketch").some((n) => n.fromInformal === true), false);
     assert.equal(planned(events).length, 0);
-    await assert.rejects(() => run([], { longProof: { draft: true } }, { blueprints: false }), /longProof.draft and longProof.drafts need line M12 with the option blueprints/);
+    await assert.rejects(() => run([], { longProof: { draft: true } }, { blueprints: false }), /longProof.draft, longProof.drafts and longProof.freeze need line M12 with the option blueprints/);
     await assert.rejects(() => run([], { longProof: { drafts: 0 } }), /longProof.drafts must be a whole number of at least 1/);
   });
 });
