@@ -33,7 +33,7 @@ import type {
 import type { HostTactics } from "@seshat/classical";
 import type { DecideConfig } from "@seshat/decide";
 import type { LeanSearchPush } from "@seshat/lean-search";
-import type { Draw, DrawItem, DrawOptions, MemoryStore, ModelRanking } from "@seshat/memory";
+import { type Draw, type DrawItem, type DrawOptions, type MemoryStore, type ModelRanking, recordAcceptedLemmas } from "@seshat/memory";
 import { messageOf, type Registry, RegistryLeanChecker } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
 import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
@@ -417,7 +417,7 @@ export class ProblemLines {
                     )?.submission,
                 }
               : {}),
-            lock: (lemmas: string, options?: { verify?: boolean }) => this.p.workbench.lock(lemmas, { actor, signal: own, ...(options?.verify === false ? { verify: false } : {}) }),
+            lock: (lemmas: string, options?: { recorded?: boolean }) => this.p.workbench.lock(lemmas, { actor, signal: own, ...(options?.recorded === true ? { recorded: true } : {}) }),
             holePreflight: (request: HolePreflightRequest) =>
               holePreflight(
                 {
@@ -790,6 +790,9 @@ export class ProblemLines {
   async afterProblem(end: ProblemEnd): Promise<void> {
     // The tasks that are still ready are worked now, with what the problem's budget has left, before the lines close the problem.
     await this.step(true);
+    // Lemmas locked since the last prover session ended (a proved hole the scheduler worked just now) have no `accepted_lemmas` node yet: the last attempt's takes them.
+    const frozen = this.p.workbench.takeFrozenLemmas(this.run.o.blobs);
+    if (frozen.length > 0) recordAcceptedLemmas(this.run.o.memory, this.p.claimId, this.p.workbench.attemptIds.at(-1) ?? this.p.problemId, undefined, frozen, this.p.problemId);
     const signal = this.run.o.signal ?? new AbortController().signal;
     for (const { entry, hook } of this.with("afterProblem")) {
       await call(entry.line.id, "afterProblem", () => hook(this.context(entry, signal), end));

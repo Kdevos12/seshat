@@ -10,7 +10,7 @@ import {
   type Briefing, completeJson, type FinishedAttempt, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
-import { boundHistory, cutHeader, hasHole, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
+import { boundHistory, cutHeader, escapeRegExp, hasHole, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
 import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, contextFor, dependencyOrder, dropHeaderImports, headerWithContext, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
@@ -243,7 +243,7 @@ function stepOf(problem: ProblemContext, claimId: string): string | undefined {
     const stored = name === undefined ? undefined : problem.memory.blobs.get(record.submission);
     if (name === undefined || stored === undefined) continue;
     const commands = splitCommands((JSON.parse(stored) as { aux: string }).aux);
-    const at = commands.findIndex((c) => c.kind === "code" && new RegExp(`^(?:theorem|lemma)\\s+${name}\\b`).test(c.text.trimStart()));
+    const at = commands.findIndex((c) => c.kind === "code" && new RegExp(`^(?:theorem|lemma)\\s+${escapeRegExp(name)}(?![\\w'.])`).test(c.text.trimStart()));
     const above = commands[at - 1];
     // A blank line between the comment and the lemma makes it a note on something else, as it does for `-- uses:`.
     if (above === undefined || above.kind !== "comment" || ((/\s*$/.exec(above.text)?.[0] ?? "").split("\n").length - 1) > 1) return undefined;
@@ -791,14 +791,26 @@ export function createM12Line(): Line {
     return true;
   }
 
-  /** The prefix again, from the journal: the lemmas of the problem's `accepted_lemmas` nodes, in order, which a check accepted already. A text whose blob is gone is left out. */
+  /**
+   * The prefix again, from the journal: the lemmas of this problem's `accepted_lemmas` nodes, in order. A lemma whose blob is gone ends the run there (the ones after it
+   * may depend on it). The file is screened and checked with them once (`ProblemContext.lock`); if Lean does not accept it they are all dropped, and the log says so.
+   */
   async function relock(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
     if (!s.freeze || problem.lock === undefined) return;
-    const held = frozenLemmas(problem.memory, problem.claimId).flatMap((l) => {
+    const held: Array<{ name: string; text: string }> = [];
+    for (const l of frozenLemmas(problem.memory, problem.claimId, problem.problemId)) {
       const text = problem.memory.blobs.get(l.proofHash);
-      return text === undefined ? [] : [{ name: l.name, text }];
-    });
-    if (held.length === 0 || !(await problem.lock(held.map((l) => l.text).join("\n\n"), { verify: false }))) return;
+      if (text === undefined) {
+        problem.log(`frozen links: the text of ${l.name} is gone from the blob store; it and the lemmas after it are not locked again`);
+        break;
+      }
+      held.push({ name: l.name, text });
+    }
+    if (held.length === 0) return;
+    if (!(await problem.lock(held.map((l) => l.text).join("\n\n"), { recorded: true }))) {
+      problem.log(`frozen links: the file does not compile with ${held.map((l) => l.name).join(", ")} locked again from the journal; they are not locked`);
+      return;
+    }
     for (const l of held) work.frozen.add(l.name);
   }
 

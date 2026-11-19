@@ -33,6 +33,8 @@ export type FrozenLemma = { name: string; statementId: string; proofHash: string
 /** The data of an `accepted_lemmas` node. */
 export interface AcceptedLemmasData {
   attemptId: string;
+  /** The problem whose file the lemmas were locked into: two problems with one statement share a claim. Absent in a node that locked none. */
+  problemId?: string;
   /** The `aux_` lemmas of the session's last check that Lean accepted: no error in them and no `sorry`. */
   names: string[];
   /** Under `longProof`: the lemmas locked into the file since the session before, in order. Absent otherwise, and the node is then what it always was. */
@@ -89,17 +91,18 @@ export function acceptedLemmas(report: Pick<ValidationReport, "checked" | "messa
  * Records the lemmas Lean accepted in a session's last check, for the next session's card; `lemmas`: those locked into the file since the last node (`FrozenLemma`).
  * A session that checked nothing (`report` undefined) leaves the names as the last node had them.
  */
-export function recordAcceptedLemmas(store: MemoryStore, claimId: string, attemptId: string, report: Parameters<typeof acceptedLemmas>[0] | undefined, lemmas: readonly FrozenLemma[] = []): void {
+export function recordAcceptedLemmas(store: MemoryStore, claimId: string, attemptId: string, report: Parameters<typeof acceptedLemmas>[0] | undefined, lemmas: readonly FrozenLemma[] = [], problemId?: string): void {
   const before = store.nodes(ACCEPTED_LEMMAS_KIND, { claimId }).at(-1)?.data as Partial<AcceptedLemmasData> | undefined;
   const names = report !== undefined ? acceptedLemmas(report) : (before?.names ?? []);
-  const data: AcceptedLemmasData = { attemptId, names, ...(lemmas.length > 0 ? { lemmas: [...lemmas] } : {}) };
+  const data: AcceptedLemmasData = { attemptId, names, ...(lemmas.length > 0 ? { lemmas: [...lemmas], ...(problemId !== undefined ? { problemId } : {}) } : {}) };
   store.recordNode({ kind: ACCEPTED_LEMMAS_KIND, claimId, data });
 }
 
-/** The lemmas locked into a claim's file, in the order they were locked, from every `accepted_lemmas` node of the claim. */
-export function frozenLemmas(store: MemoryStore, claimId: string): Array<FrozenLemma & { attemptId: string }> {
+/** The lemmas locked into a claim's file, in the order they were locked, from every `accepted_lemmas` node of the claim; `problemId`: only the nodes of that problem's file. */
+export function frozenLemmas(store: MemoryStore, claimId: string, problemId?: string): Array<FrozenLemma & { attemptId: string }> {
   return store.nodes(ACCEPTED_LEMMAS_KIND, { claimId }).flatMap((node) => {
     const data = node.data as unknown as Partial<AcceptedLemmasData>;
+    if (problemId !== undefined && data.problemId !== problemId) return [];
     return (data.lemmas ?? []).map((lemma) => ({ ...lemma, attemptId: data.attemptId as string }));
   });
 }

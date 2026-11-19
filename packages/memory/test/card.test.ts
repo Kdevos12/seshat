@@ -114,6 +114,10 @@ describe("the lemmas locked into a file (plan change DP5)", () => {
     recordAcceptedLemmas(memory, claimId, "att_2", undefined, [lemma]);
     assert.deepEqual(memory.nodes("accepted_lemmas", { claimId }).at(-1)?.data, { attemptId: "att_2", names: ["aux_a"], lemmas: [lemma] });
     assert.deepEqual(frozenLemmas(memory, claimId), [{ ...lemma, attemptId: "att_2" }]);
+    // Two problems with one statement share the claim: a problem reads the nodes of its own file.
+    recordAcceptedLemmas(memory, claimId, "att_3", undefined, [{ ...lemma, name: "aux_b" }], "prob_1");
+    assert.deepEqual(frozenLemmas(memory, claimId, "prob_1").map((l) => l.name), ["aux_b"]);
+    assert.deepEqual(frozenLemmas(memory, claimId, "prob_2"), []);
     assert.match(stateCard(memory, claimId)?.text ?? "", /Lemmas Lean accepted: aux_a\./);
   });
 });

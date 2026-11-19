@@ -353,10 +353,10 @@ export interface ProblemContext {
   closeSorries?: (submission: Submission, report: ValidationReport) => Promise<Submission | undefined>;
   /**
    * Locks lemmas into the problem's file after its prefix (plan change LP3, frozen links): Lean checks them in every file and the certifier replays them whole,
-   * and the prover's edits cannot reach them. Lean checks the file with them first: false when it does not accept it (nothing is locked). `verify: false` for lemmas a
-   * check already accepted (a resumed run). Only M12 gets it, with its option `freeze`; it makes no claim's status. Absent in a context an older caller builds.
+   * and the prover's edits cannot reach them. The text is screened and Lean checks the file with it first: false when either refuses it (nothing is locked).
+   * `recorded: true` for lemmas an `accepted_lemmas` node holds already (a resumed run), which that node is not given again. Only M12 gets it, with its option `freeze`; it makes no claim's status. Absent in a context an older caller builds.
    */
-  lock?: (lemmas: string, options?: { verify?: boolean }) => Promise<boolean>;
+  lock?: (lemmas: string, options?: { recorded?: boolean }) => Promise<boolean>;
 }
 
 /** What a hole session is asked: the claim whose small file it works on, and the only context it has. */

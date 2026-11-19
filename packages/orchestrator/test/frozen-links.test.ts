@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { HarnessEvent } from "@seshat/core";
+import { join } from "node:path";
+import { BlobStore, type HarnessEvent, Journal, prepareSketch, ProofValidator, SKETCH_POLICY, toPlainHeader } from "@seshat/core";
+import { RegistryLeanChecker } from "@seshat/registry";
 import { createM12Line } from "@seshat/scheduler";
 import { blueprintAnswer } from "./blueprint-helpers.ts";
 import { AUX } from "./m12-helpers.ts";
-import { check, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { Workbench } from "../src/index.ts";
+import { check, DEMO_FILE, DemoLean, demoRegistry, demoResume, demoRun, killedAt, ofType, proofOf, say, tempDir } from "./m0-helpers.ts";
 import { certifier, sessionPromptOf } from "./resume-helpers.ts";
 
 /**
@@ -110,10 +113,62 @@ describe("frozen links in a long proof", () => {
     assert.equal(accepted(resumed.events).flatMap((n) => n.lemmas ?? []).length, 1);
   });
 
+  it("a resumed run does not lock the lemmas again when Lean refuses the file with them", { timeout: 120000 }, async () => {
+    const first = scenario((watch) => [watch(say("stop")), say("more")], { sessions: 3 });
+    const whole = await first.run();
+    const node = whole.events.findIndex((e) => e.type === "node.recorded" && e.data.kind === "accepted_lemmas" && (e.data.data as { lemmas?: unknown }).lemmas !== undefined);
+    assert.ok(node > 0);
+    const prompts: string[] = [];
+    // The check of the prefix alone (a proof of `sorry`) fails as soon as `aux_left` is in the file.
+    const lean = new DemoLean((code) => (proofOf(code)?.trim() === "sorry" && code.includes("lemma aux_left") ? { messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "unknown constant" }] } : blueprintAnswer(code)));
+    const resumed = await demoResume({
+      dir: killedAt(whole.dir, node + 1),
+      bench: whole.bench,
+      lines: { M12: createM12Line() },
+      lean,
+      certifier: certifier().certifier,
+      responses: [(c: Context) => { prompts.push(sessionPromptOf(c)); return check("exact hole_ok"); }, say("done"), say("Going on.")] as never,
+    });
+    assert.doesNotMatch(prompts[0] ?? "", /proved by Lean, the proof is not shown/);
+    assert.ok(resumed.events.length > 0);
+  });
+
+  it("the node of the lemmas names the problem whose file holds them, and a failed session does not lose them", { timeout: 60000 }, async () => {
+    const s = scenario(() => [() => { throw new Error("the provider is down"); }]);
+    const { events, result } = await s.run();
+    const nodes = accepted(events).filter((n) => n.lemmas !== undefined) as Array<{ problemId?: string; lemmas?: Array<{ name: string }> }>;
+    assert.deepEqual(nodes.flatMap((n) => n.lemmas?.map((l) => l.name) ?? []), ["aux_left"]);
+    assert.equal(nodes[0]?.problemId, result.problems[0]?.problemId);
+  });
+
   it("without the option nothing is locked: the file is as it was, and the node has no lemmas", { timeout: 60000 }, async () => {
     const s = scenario((watch) => [watch(say("stop"))], { freeze: false });
     const { events } = await s.run();
     assert.doesNotMatch(s.prompts[1] ?? "", /proved by Lean, the proof is not shown/);
     assert.deepEqual(accepted(events), []);
+  });
+});
+
+describe("Workbench.lock", () => {
+  async function workbench() {
+    const dir = tempDir();
+    const journal = Journal.open(dir, "run_test");
+    const blobs = new BlobStore(join(dir, "blobs"));
+    const registry = demoRegistry(new DemoLean())(journal, blobs);
+    const source = toPlainHeader(DEMO_FILE);
+    const sketch = prepareSketch(source, "Demo.add_zero'");
+    const reference = await new ProofValidator(new RegistryLeanChecker(registry), { policy: SKETCH_POLICY }).reference(sketch, source);
+    const statement = "(n : ℕ) : n + 0 = n";
+    journal.emit("claim.created", { claimId: "clm_a", statementId: `st9:${statement}`, statement, origin: "test", status: "open" }, "test");
+    return new Workbench({ journal, registry, problem: { source, sketch }, claimId: "clm_a", reference, blobs });
+  }
+
+  it("refuses a text with a hole and a text the validator's screen refuses, before Lean sees it", async () => {
+    const made = await workbench();
+    assert.equal(await made.lock("lemma aux_a (n : ℕ) : n = n := by\n  sorry", { actor: "test" }), false);
+    assert.equal(await made.lock("lemma aux_b (n : ℕ) : n = n := by\n  rfl\n\n#eval 1", { actor: "test" }), false);
+    assert.equal(await made.lock("lemma not_aux (n : ℕ) : n = n := by\n  rfl", { actor: "test" }), false);
+    assert.equal(made.sketch.locked, undefined, "nothing is locked");
+    assert.equal(made.takeFrozen().length, 0);
   });
 });

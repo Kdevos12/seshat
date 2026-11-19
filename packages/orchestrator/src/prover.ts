@@ -1,7 +1,7 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, CacheRetention, Model, Models } from "@earendil-works/pi-ai";
 import type { HostTactics } from "@seshat/classical";
-import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, statementIdV0, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
+import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
 import { classifyFailure, type FailureClass, frontier as frontierOf, frontierCardLines, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
@@ -462,10 +462,10 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
     }
     const outcome = outcomeOf(result);
     // The lemmas M12 locked into the file since the last node (plan change DP5) go in this node: the one record of what Lean accepted.
-    const frozen = workbench.takeFrozen().map((c) => ({ name: c.name, statementId: statementIdV0(c.statement, workbench.sketch.prefix), proofHash: o.blobs.put(c.text) }));
+    const frozen = workbench.takeFrozenLemmas(o.blobs);
     if (result.report !== undefined || frozen.length > 0) {
       const lemmaStore = cardStore ?? (frozen.length > 0 ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined);
-      if (lemmaStore !== undefined) recordAcceptedLemmas(lemmaStore, workbench.claimId, attemptId, result.report, frozen);
+      if (lemmaStore !== undefined) recordAcceptedLemmas(lemmaStore, workbench.claimId, attemptId, result.report, frozen, workbench.problemId);
     }
     const failure =
       outcome === "invalid" && result.report !== undefined
