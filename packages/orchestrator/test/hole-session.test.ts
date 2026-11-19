@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import type { HarnessEvent } from "@seshat/core";
+import { BlobStore, type HarnessEvent } from "@seshat/core";
+import { auditCommand } from "../src/audit.ts";
 import { M3 } from "@seshat/library";
 import { createM12Line, HOLE_HISTORY_CHARS } from "@seshat/scheduler";
 import { call, check, DEMO_FILE, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
@@ -102,6 +105,24 @@ describe("blueprints: sessions with tools on holes", () => {
     };
     await oneHole(named(HARD_AUX), check("exact hole_ok"), {}, [], lean, { checkTimeoutSec: 11 });
     assert.ok(limits.includes(11), `a check ran under 11 s: ${JSON.stringify(limits)}`);
+  });
+
+  it("saves a hole session's transcript through the run's writer, and the audit measures the hole role from it", { timeout: 60000 }, async () => {
+    const { dir, events } = await oneHole(named(HARD_AUX), check("exact hole_ok"));
+    const saved = readdirSync(join(dir, "transcripts")).filter((f) => f.startsWith("hole_"));
+    assert.equal(saved.length, 1, "one hole session, one transcript");
+    const messages = JSON.parse(readFileSync(join(dir, "transcripts", saved[0] as string), "utf8")) as Array<{ role: string }>;
+    assert.ok(messages.some((m) => m.role === "assistant"));
+    const request = ofType(events, "model_call.finished").find((m) => m.data.site === "scheduler.hole");
+    assert.equal(JSON.parse(new BlobStore(join(dir, "blobs")).get(request?.data.requestHash ?? "") ?? "{}").sessionId, saved[0]?.replace(/\.json$/, ""));
+    auditCommand(dir, { out: () => undefined });
+    const table = readFileSync(join(dir, "audit.md"), "utf8").split("\n").find((l) => l.startsWith("| hole |"));
+    assert.ok(table !== undefined && !table.includes("not recorded"), `the hole row is measured: ${table}`);
+    // The same run without its transcripts: the row keeps its calls and tokens, and its split is not recorded.
+    rmSync(join(dir, "transcripts", saved[0] as string));
+    auditCommand(dir, { out: () => undefined });
+    const bare = readFileSync(join(dir, "audit.md"), "utf8").split("\n").find((l) => l.startsWith("| hole |"));
+    assert.match(bare ?? "", /^\| hole \| \d+ \| \d+ \| not recorded \|/);
   });
 
   it("makes a hole with no dependency proved only when validate accepts its proof, and too_hard with the validator's reasons when it refuses", { timeout: 60000 }, async () => {

@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, StringEnum } from "@earendil-works/pi-ai";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { type BlobStore, HOLE_VERDICTS, type Journal, newId } from "@seshat/core";
 import type { HoleSessionRequest, HoleSessionResult, HoleVerdictCall } from "@seshat/lines";
 import type { HostTactics } from "@seshat/classical";
@@ -54,6 +54,8 @@ export interface HoleSessionDeps {
   leanSearch?: LeanSearchPush;
   /** The run's classical battery on the `sorry` of the hole's proof (`RunConfig.sorryBattery`). Absent: off. */
   sorryBattery?: { config: SorryBatteryConfig; host: HostTactics };
+  /** Saves the session's messages under its id, as a prover's session does (`ProverOptions.transcript`): the run's `transcripts/ID.json`, which `harness audit` reads. Absent: not saved. */
+  transcript?: (sessionId: string, messages: AgentMessage[]) => void;
   /** The library line's section and tool for the hole, searched by its statement (`ProblemLines.openHole`). Absent: none. */
   library?: (focus: { theorem: string; statement: string }) => Promise<OpenedSession>;
 }
@@ -129,7 +131,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
           site: SITE_HOLE,
           ...(d.role !== undefined ? { role: "hole" } : {}),
           ...(d.role?.record !== undefined ? { settings: d.role.record } : {}),
-          requestHash: d.blobs.put(JSON.stringify({ session: request.key, claimId: request.claimId })),
+          // The session id is in the request so that the audit can find the session's transcript from its calls.
+          requestHash: d.blobs.put(JSON.stringify({ session: request.key, claimId: request.claimId, sessionId })),
           durationMs: 0,
           usd: cost.usd,
           inputTokens: cost.inputTokens,
@@ -161,6 +164,7 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
       },
     },
   });
+  d.transcript?.(sessionId, result.messages);
   return {
     stop: result.stop,
     turns: result.turns,

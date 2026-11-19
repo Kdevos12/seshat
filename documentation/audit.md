@@ -74,7 +74,29 @@ gives certified over total for each bucket and the median Seshat lines of the ce
 for an ablation directory) and `runId`, so that records of several runs can be concatenated and pooled. An ablation directory has one `### Length`
 section per arm in `audit.md` and every arm's records in one `length.json`.
 
+## Output tokens by role and kind
+
+One table in `audit.md` for the run (plan change CL0, `packages/orchestrator/src/output-kinds.ts`), after "Length"; an ablation directory has one per arm.
+It says what a role's output is made of, which decides whether cutting prose could save anything. One row for each role seen: the call's `role`, else the
+role of its site (`prover.session`, `scheduler.planner`, `scheduler.hole`, `consult`), else the site, else "other". Columns: calls and output tokens (as
+the journal charged them: a prover session's `attempt.charged` events, a line's `model_call.finished` events), then **thinking**, **text** (outside tool
+calls) and **tool-call arguments**, each as tokens and a share of the split tokens, **prose share** (text over the split tokens) and **split covers** (the
+split tokens over the output tokens). Where the journal holds no split for a role, the cells say "not recorded".
+
+Where the split comes from:
+
+- **A session's transcript** (`transcripts/ID.json`, the prover sessions and, since plan change CL0, the hole sessions): each assistant message's
+  `usage.output` is divided among its `thinking`, `text` and `toolCall` parts in proportion to their characters (a tool call's characters are those of its
+  JSON arguments). A message with no usage counts characters / 4 tokens and is reported as "estimated from characters". The split is an estimate: the
+  provider reports one output number, not one for each part.
+- **A one-shot call's response blob** (the planner, the judge): the blob is the response text only, so text is the smaller of the call's output tokens and
+  its characters / 4 (`CHARS_PER_TOKEN`), and the rest of the output is thinking that was not stored; the thinking cell says how much.
+- **Nothing**: a hole session of a run made before hole sessions saved transcripts has no split. Its row keeps its calls and output tokens, and the split is
+  "not recorded". A hole session's calls name its transcript through the `sessionId` in their request blob.
+
+The table is markdown only; `length.json` holds per-problem records and this is per role.
+
 ## Tests
 
 `packages/orchestrator/test/audit.test.ts`: a scripted run with a certified and an uncertified problem; an ablation directory with two arms; a reference
-directory; the length table (a certified proof of known length, an uncertified file with `aux_` lemmas, holes and a timed check, a `.lean` and a `.md` reference, the buckets, `length.json`). Not run against a real run.
+directory; the output-kinds table (`output-kinds.test.ts`: a transcript split by characters, an estimated message, a planner call's unstored thinking, a hole session with and without a transcript) and the hole session's transcript (`hole-session.test.ts`); the length table (a certified proof of known length, an uncertified file with `aux_` lemmas, holes and a timed check, a `.lean` and a `.md` reference, the buckets, `length.json`). Not run against a real run.

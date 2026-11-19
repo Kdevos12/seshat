@@ -541,7 +541,7 @@ per prover, can take a ledger past its limit.
 | `projection.sqlite` | The queryable view of the journal. |
 | `config.json` | The configuration recorded in `run.started`, the problem ids and the code revision. |
 | `blobs/` | Every file a prover submitted, by its `submissionHash`, and every tool run's input and output, by its `inputHash` and `outputHash` ([journal.md](journal.md#blobs)). |
-| `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. |
+| `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. A hole session of M12 saves its messages the same way, as `transcripts/hole_ID.json` (the id is in the `requestHash` blob of its `model_call.finished` events); runs before plan change CL0 have none. |
 | `proofs/NAME-HASH.lean` | The file of each candidate proof. |
 | `report.md`, `report.json` | The report. |
 | `RESULT.md` | What the run found, built from the journal alone and rewritten after every certified result and at every stop ([quickstart.md](quickstart.md#resultmd)). |

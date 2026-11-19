@@ -97,6 +97,8 @@ describe("harness audit", () => {
     const text = readFileSync(file, "utf8");
     assert.match(text, /^# Audit/);
     assert.match(text, /Problems: 2, certified: 1, not certified: 1/);
+    assert.match(text, /^## Output tokens by role and kind$/m);
+    assert.match(text, /\| Role \| Calls \| Output tokens \| Thinking \| Text \| Tool-call arguments \| Prose share \| Split covers \|/);
     assert.match(text, /^## `hard` \(unsolved\)/m);
     assert.match(text, /lean_search x2, lean_check x1/);
     assert.match(text, /lemma aux_one/);

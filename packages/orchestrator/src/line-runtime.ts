@@ -104,6 +104,8 @@ export interface RunLinesOptions {
   decide?: DecideConfig;
   /** The host's prices, for the lines' model calls. */
   prices?: PriceBook;
+  /** The run's writer of `transcripts/ID.json` (`run.ts`): the hole sessions save their messages through it, as a prover's session does. Absent: not saved. */
+  transcript?: (sessionId: string, messages: AgentMessage[]) => void;
   /** The seconds a Lean check of a line's session with tools may take (`RunConfig.checkTimeoutSec`); absent: the workbench's policy. */
   checkTimeoutSec?: number;
   /** The run's push of verified `lean.search` hits and its classical battery on `sorry` (`RunConfig.leanSearch`, `RunConfig.sorryBattery`, or `longProof` for the battery): what a prover's checks carry, the hole sessions' too (plan change DP4), and the lines' contexts as `ProblemContext.closeSorries` (DP1). Absent: off. */
@@ -384,6 +386,7 @@ export class ProblemLines {
                       ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
                       ...(o.leanSearch !== undefined ? { leanSearch: o.leanSearch } : {}),
                       ...(o.sorryBattery !== undefined ? { sorryBattery: o.sorryBattery } : {}),
+                      ...(o.transcript !== undefined ? { transcript: o.transcript } : {}),
                       library: (focus) => this.openHole(focus, request.key),
                       workbench: (claimId) => o.benches.workbenchFor(claimId, false, own),
                       ...(o.turn !== undefined ? { turn: o.turn } : {}),

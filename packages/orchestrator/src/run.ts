@@ -927,6 +927,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     return await abandon(`the statement identity of line ${giver?.id}: ${messageOf(error)}`, error, registry);
   }
   for (const sub of ["transcripts", "proofs"]) mkdirSync(join(o.dir, sub), { recursive: true });
+  // The one writer of `transcripts/ID.json`: the provers' sessions (an attempt's id) and the hole sessions (`hole_...`) both write through it.
+  const transcript = (sessionId: string, messages: AgentMessage[]) => writeFileSync(join(o.dir, "transcripts", `${sessionId}.json`), `${JSON.stringify(messages)}\n`);
   // RESULT.md is rewritten after every certified result and at every stop (documentation/quickstart.md, "RESULT.md").
   const stopResultKeeping = keepResultCurrent(journal, o.dir, (line) => (o.log ?? (() => {}))(line));
 
@@ -1171,6 +1173,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       log,
       seed: config.seed ?? runId,
       ...(config.longProof !== undefined ? { longProof: true } : {}),
+      transcript,
       ...(leanSearch !== undefined ? { leanSearch } : {}),
       // The lines get the run's battery, or the default one under `longProof` (the draft's steps, DP1, and the hole sessions, DP4).
       ...(linesBattery !== undefined ? { sorryBattery: linesBattery } : {}),
@@ -1517,8 +1520,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       });
       live.workbench = workbench;
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
-      const transcript = (attemptId: string, messages: AgentMessage[]) =>
-        writeFileSync(join(o.dir, "transcripts", `${attemptId}.json`), `${JSON.stringify(messages)}\n`);
 
       // A problem that was begun: its attempts count as this problem's, and the candidate its checks
       // found is its candidate, with the certifier's answer for it if the journal holds one.

@@ -7,6 +7,7 @@ import { isRefinement, type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type Se
 import { gateReport } from "./gate-report.ts";
 import { triageOfNodes, triageProblem, TRIAGE_KIND, type TriageResult } from "./triage.ts";
 import { RunSetupError } from "./setup-error.ts";
+import { type OutputKindRow, outputKinds } from "./output-kinds.ts";
 import { auxLemmas, leanLines, leanTheorems, lengthBuckets, type LengthRecord, median, referenceLength } from "./length.ts";
 
 /**
@@ -80,6 +81,8 @@ export interface Audit {
   dossiers: AuditDossier[];
   /** One record for every problem, certified or not (plan change LP1, "Length"). */
   lengths: LengthRecord[];
+  /** Output tokens by role and kind (plan change CL0): one row for each role seen in the run. */
+  outputKinds: OutputKindRow[];
 }
 
 export interface AuditSources {
@@ -427,6 +430,7 @@ export function audit(src: AuditSources): Audit {
     gateStopsAfterProbe: gateReport(events)?.stoppedAtProbe ?? 0,
     dossiers,
     lengths,
+    outputKinds: outputKinds({ events, blob, ...(src.transcript !== undefined ? { transcript: src.transcript } : {}) }),
   };
 }
 
@@ -475,6 +479,32 @@ function renderLength(lengths: readonly LengthRecord[], heading: string): string
   return out;
 }
 
+/** The "Output tokens by role and kind" section (plan change CL0): what each role's output is made of, split by characters. */
+function renderOutputKinds(rows: readonly OutputKindRow[], heading: string): string[] {
+  const out = [
+    heading,
+    "",
+    "Output tokens as the journal charged them, by role (else by site). A session's tokens are split across thinking, text outside tool calls and tool-call arguments from its transcript, in proportion to characters; a one-shot call's text is its stored response (at most one token per 4 characters) and the rest of its output is thinking that was not stored. A row with no transcript (a hole session of an older run) has no split: \"not recorded\". Prose share is text over the split tokens.",
+    "",
+    "| Role | Calls | Output tokens | Thinking | Text | Tool-call arguments | Prose share | Split covers |",
+    "|---|---|---|---|---|---|---|---|",
+  ];
+  const share = (n: number, of: number) => `${Math.round((100 * n) / of)}%`;
+  const kind = (n: number, of: number) => `${Math.round(n)} (${share(n, of)})`;
+  for (const r of rows) {
+    if (r.split <= 0) {
+      out.push(`| ${r.role} | ${r.calls} | ${r.outputTokens} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | 0% |`);
+      continue;
+    }
+    const covers = `${share(Math.min(r.split, r.outputTokens), Math.max(r.outputTokens, 1))}${r.estimatedMessages > 0 ? `; ${r.estimatedMessages} message(s) estimated from characters` : ""}`;
+    const thinking = `${kind(r.thinking, r.split)}${r.thinkingNotStored > 0 ? `, ${Math.round(r.thinkingNotStored)} not stored` : ""}`;
+    out.push(`| ${r.role} | ${r.calls} | ${r.outputTokens} | ${thinking} | ${kind(r.text, r.split)} | ${kind(r.toolCalls, r.split)} | ${share(r.text, r.split)} | ${covers} |`);
+  }
+  if (rows.length === 0) out.push(`| none | 0 | 0 | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | 0% |`);
+  out.push("");
+  return out;
+}
+
 /** The Markdown of an audit; `level` is the heading depth of its title (an ablation's arm is one level lower). */
 export function renderAudit(a: Audit, title: string, level = 1): string[] {
   const h = (n: number) => "#".repeat(level + n);
@@ -488,6 +518,7 @@ export function renderAudit(a: Audit, title: string, level = 1): string[] {
     "",
   ];
   out.push(...renderLength(a.lengths, `${h(1)} Length`));
+  out.push(...renderOutputKinds(a.outputKinds, `${h(1)} Output tokens by role and kind`));
   for (const d of a.dossiers) {
     out.push(`${h(1)} \`${shown(d.problemId, 120)}\` (${d.outcome})`, "");
     out.push(`**Spend**: ${usd(d.spendUsd)}; by site: ${Object.entries(d.spendBySite).map(([s, v]) => `${s} ${usd(v)}`).join(", ") || "none"}.`, "");
