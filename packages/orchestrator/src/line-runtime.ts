@@ -43,7 +43,6 @@ import { problemDecide } from "./decide.ts";
 import { runChild } from "./child.ts";
 import { holePreflight } from "./hole-preflight.ts";
 import { runHoleSession } from "./hole-session.ts";
-import type { HostTactics } from "@seshat/classical";
 import { closeSorries, recordSorryBattery, SORRY_BATTERY_ACTOR, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { lineLlm } from "./llm.ts";
 import { type PlannerChoice, PlannerEscalation, type RoleBook, roleOfSite, THINKING_LEVELS } from "./roles.ts";
@@ -52,7 +51,6 @@ import { packetFault } from "./packet.ts";
 import type { Workbench } from "./problem.ts";
 import { steering } from "./team.ts";
 import type { Turn } from "./turns.ts";
-import type { SorryBatteryConfig } from "./sorry-battery.ts";
 import type { ClaimBenches } from "./validate.ts";
 
 /** A hook of a line threw: a failure of the harness, which names the line and the hook. */

@@ -1142,6 +1142,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   }
   // The classical battery on the `sorry` a session's check leaves: the run's setting, which the `test` mode of a campaign turns on for its turn whatever the setting is (LH5). The provers' sessions and the hole sessions use it.
   const sorryBattery = config.sorryBattery !== undefined || plateauMode === "test" ? { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } : undefined;
+  const linesBattery = sorryBattery ?? (config.longProof !== undefined ? { config: {}, host: { have: new Set(m10Packages(config)) } } : undefined);
   if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
@@ -1161,7 +1162,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       seed: config.seed ?? runId,
       ...(config.longProof !== undefined ? { longProof: true } : {}),
       ...(leanSearch !== undefined ? { leanSearch } : {}),
-      ...(sorryBattery !== undefined ? { sorryBattery } : {}),
+      // The lines get the run's battery, or the default one under `longProof` (the draft's steps, DP1, and the hole sessions, DP4).
+      ...(linesBattery !== undefined ? { sorryBattery: linesBattery } : {}),
       ...(config.consortium !== undefined ? { human: true } : {}),
       // Without a plateau window (no `plateauUsd` and no run allowance) no mode is ever entered, so the lines are not gated: they run as before the modes.
       ...(config.horizon === "campaign" && (config.campaign?.plateauUsd !== undefined || config.budget.runUsd !== undefined)
@@ -1174,8 +1176,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(o.signal !== undefined ? { signal: o.signal } : {}),
       ...(turn !== undefined ? { turn } : {}),
       ...(roleBook !== undefined ? { roles: roleBook } : {}),
-      // The battery on a draft's steps (DP1): the run's own setting, or the default one when `longProof` asks for the draft.
-      ...(config.sorryBattery !== undefined || config.longProof !== undefined ? { sorryBattery: { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } } : {}),
     });
     log(`lines: ${runLines.ids.join(", ")}`);
     const outside = sitesSentOutside(resolveDecideSettings(config.decide));
