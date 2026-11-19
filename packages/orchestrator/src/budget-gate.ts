@@ -18,6 +18,7 @@ import {
   widenRule,
 } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
+import { DRAFT_MODE } from "./lean-draft.ts";
 import { SHORT_PROBES, type TriageResult } from "./triage.ts";
 
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
@@ -183,9 +184,14 @@ export class BudgetGate {
     return { beta: p.success, counted: p.attempts };
   }
 
-  /** What a session of this problem costs: the mean of the sessions paid on the claim, else M12's first guess. */
+  /** Whether the formal-cost triage called the problem `long`: a problem the Lean draft (`RunConfig.leanDraft`) does not start with. */
+  get long(): boolean {
+    return this.o.triage?.()?.class === "long";
+  }
+
+  /** What a session of this problem costs: the mean of the sessions paid on the claim, else M12's first guess. A Lean draft is no session: its cost is not in the mean. */
   sessionUsd(): number {
-    const paid = this.attempts().flatMap((a) => (a.usd === null ? [] : [a.usd]));
+    const paid = this.o.journal.projection.attempts(this.o.claimId).flatMap((row) => (row.finished_seq === null || row.settings?.mode === DRAFT_MODE ? [] : [row.usd ?? 0]));
     return paid.length === 0 ? PRIOR_SESSION_USD : paid.reduce((sum, usd) => sum + usd, 0) / paid.length;
   }
 

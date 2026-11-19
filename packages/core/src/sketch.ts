@@ -146,7 +146,8 @@ function blockReachesEnd(masked: string, from: number): boolean {
     .every((line) => line.trim() === "" || (/^[ \t]*/.exec(line)?.[0].length ?? 0) >= column);
 }
 
-function dedent(text: string): string {
+/** The text without the indentation that all its non-blank lines share. */
+export function dedent(text: string): string {
   const lines = text.split("\n");
   const indents = lines.filter((l) => l.trim() !== "").map((l) => /^[ \t]*/.exec(l)?.[0].length ?? 0);
   const cut = indents.length === 0 ? 0 : Math.min(...indents);

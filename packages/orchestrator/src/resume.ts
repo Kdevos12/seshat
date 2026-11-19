@@ -1,3 +1,4 @@
+import { checkLeanDraft, type LeanDraftConfig } from "./lean-draft.ts";
 import type { SorryBatteryConfig } from "./sorry-battery.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -171,6 +172,7 @@ function configOf(recorded: unknown): RunConfig {
     ...(r.firstCases === true ? { firstCases: true } : {}),
     ...(typeof r.informalFirst === "object" && r.informalFirst !== null && !Array.isArray(r.informalFirst) ? { informalFirst: r.informalFirst as InformalFirst } : {}),
     ...(typeof r.cards === "object" && r.cards !== null && !Array.isArray(r.cards) ? { cards: r.cards as CardsConfig } : {}),
+    ...(typeof r.leanDraft === "object" && r.leanDraft !== null && !Array.isArray(r.leanDraft) && checkLeanDraft(r.leanDraft as LeanDraftConfig).length === 0 ? { leanDraft: r.leanDraft as LeanDraftConfig } : {}),
     ...(typeof r.sorryBattery === "object" && r.sorryBattery !== null && !Array.isArray(r.sorryBattery) ? { sorryBattery: r.sorryBattery as SorryBatteryConfig } : {}),
     ...(r.triage === true ? { triage: true } : {}),
     ...(r.longProof !== null && typeof r.longProof === "object" && !Array.isArray(r.longProof) && longProofConfigProblems(r.longProof, true).length === 0 ? { longProof: r.longProof as LongProofConfig } : {}),

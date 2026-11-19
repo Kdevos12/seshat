@@ -91,6 +91,7 @@ import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
 import { type RestartsConfig, resolveRestarts, restartsConfigProblems } from "./restarts.ts";
+import { checkLeanDraft, leanDraft, type LeanDraftConfig, type LeanDraftDeps } from "./lean-draft.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
 import { DEFAULT_DRY_CHECKS, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
@@ -164,6 +165,13 @@ export interface RunConfig {
    * check of the battery may take (default: the longest limit of a tactic). A closed `sorry` changes no claim's status. Absent: off.
    */
   sorryBattery?: SorryBatteryConfig;
+  /**
+   * A Lean-only first draft before the probe (plan change CL1, CL2, documentation/scheduler.md, "The Lean draft before the probe"; experimental): at a fresh
+   * probe of a problem that is not `long`, one completion with no tools at thinking `off`, capped at `maxOutputTokens` (default 1024), writes the proof as a
+   * `have`-sketch in Lean alone; Lean checks it, a draft that passes is a candidate like any other, and one with an error is cut at the first error and
+   * continued `resumes` times (default 1). Charged to the probe's ledger. Needs the budget gate. Absent: off, and a run that records and prompts as it always did.
+   */
+  leanDraft?: LeanDraftConfig;
   /**
    * The formal-cost triage (plan change PA14, documentation/scheduler.md, "The budget gate"): after the informal loop and before the first outer session, the
    * harness classes the problem `invest`, `short` or `skip` from what the journal holds (the informal proof, its facts, `plausible`, the first cases, the
@@ -551,6 +559,10 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
   if (config.cards !== undefined) problems.push(...checkCards(config.cards));
   if (config.sorryBattery !== undefined) problems.push(...checkSorryBattery(config.sorryBattery));
+  if (config.leanDraft !== undefined) {
+    problems.push(...checkLeanDraft(config.leanDraft));
+    if (config.gate === undefined) problems.push("leanDraft starts at the budget gate's probe: set gate");
+  }
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -986,6 +998,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
       ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
       ...(config.sorryBattery !== undefined ? { sorryBattery: { ...config.sorryBattery } } : {}),
+      ...(config.leanDraft !== undefined ? { leanDraft: { ...config.leanDraft } } : {}),
       ...(config.triage === true ? { triage: true } : {}),
       ...(config.longProof !== undefined ? { longProof: { ...config.longProof } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
@@ -1972,6 +1985,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       let probeCut = false;
       /** What a task's attempts have cost so far, in dollars. */
       const spentBy = (taskId: string): number => journal.projection.attemptsOfTask(taskId).reduce((sum, a) => sum + (a.usd ?? 0), 0);
+      /** What the Lean draft is given (`lean-draft.ts`): the problem's workbench, the prover role's model and the probe's ledger. */
+      const draftDeps = (probeLedger: Ledger): LeanDraftDeps => ({
+        config: config.leanDraft as LeanDraftConfig, workbench, journal, blobs, models: o.models, model: proverModel, modelName: proverRoleModel ?? config.model,
+        ledger: probeLedger, signal: controller.signal, prices, stamp: (modelId) => stampProvenance(provenance, { modelId }), transcript, log,
+        ...(turn !== undefined ? { turn } : {}), ...(linesBattery !== undefined ? { battery: linesBattery } : {}), ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+      });
       const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
         const [first, ...rest] = working;
         if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, launch(task)))));
@@ -1992,7 +2011,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             }
           } else if (resumedFirst === undefined || resumedFirst.session < 1) {
             // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
-            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
+            const probeLedger = (sliceLedger ?? ledger).child(capUsd);
+            // The Lean draft (`RunConfig.leanDraft`, CL2) comes first, under the probe's ledger, for a fresh problem the triage did not call `long`; a candidate ends the problem.
+            if (config.leanDraft !== undefined && again === undefined && !gate.long && (await leanDraft(draftDeps(probeLedger))).solved) return [];
+            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: probeLedger } }));
             if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
           }

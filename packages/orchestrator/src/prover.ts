@@ -614,7 +614,8 @@ function failureDetailOf(report: NonNullable<SessionResult["report"]>, statement
   return failure === undefined ? {} : { failureDetail: failure.detail };
 }
 
-function outcomeOf(result: SessionResult): AttemptOutcome {
+/** How an attempt came out, from why its session ended and whether it made a check. */
+export function outcomeOf(result: Pick<SessionResult, "stop" | "submissions">): AttemptOutcome {
   switch (result.stop) {
     case "solved":
       return "valid";
