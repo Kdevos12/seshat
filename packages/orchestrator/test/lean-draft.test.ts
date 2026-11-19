@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { AUX_BEGIN, AUX_END, dedent, Journal, newId, PROOF_BEGIN, PROOF_END, statementIdV0, type ValidationReport } from "@seshat/core";
 import { gateSettings } from "@seshat/scheduler";
 import { BudgetGate, Ledger } from "../src/index.ts";
-import { cutAtFirstBreak, DEFAULT_DRAFT_RESUMES, DEFAULT_DRAFT_TOKENS, DRAFT_MODE, checkLeanDraft, leanBlock } from "../src/lean-draft.ts";
+import { cutAtFirstBreak, DEFAULT_DRAFT_RESUMES, DEFAULT_DRAFT_TOKENS, DRAFT_MODE, SITE_LEAN_DRAFT, checkLeanDraft, leanBlock } from "../src/lean-draft.ts";
 import { check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 import type { FakeLeanAnswer } from "../../core/test/fake-lean.ts";
 
@@ -45,6 +45,7 @@ describe("a draft that checks clean", () => {
     const [draft, ...others] = attempts(events);
     assert.deepEqual([draft?.prover, others.length], ["draft", 0]);
     assert.equal(draft?.settings?.mode, "lean_draft");
+    assert.equal(draft?.site, SITE_LEAN_DRAFT);
     assert.equal(draft?.settings?.thinking, "off");
     assert.match(String(draft?.settings?.promptVersion), /^cl-/);
     const valid = ofType(events, "validation.finished").filter((e) => e.data.verdict === "valid");

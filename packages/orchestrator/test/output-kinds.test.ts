@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { HarnessEvent } from "@seshat/core";
+import { SITE_LEAN_DRAFT } from "../src/lean-draft.ts";
 import { CHARS_PER_TOKEN, outputKinds } from "../src/output-kinds.ts";
 
 const cost = (outputTokens: number) => ({ usd: 0, inputTokens: 0, outputTokens });
@@ -24,6 +25,11 @@ describe("output tokens by role and kind", () => {
     assert.equal(row?.outputTokens, 100);
     assert.ok(Math.abs((row?.thinking ?? 0) - 100 / 3) < 1e-9 && Math.abs((row?.text ?? 0) - 100 / 3) < 1e-9 && Math.abs((row?.toolCalls ?? 0) - 100 / 3) < 1e-9);
     assert.equal(row?.estimatedMessages, 0);
+  });
+
+  it("files a Lean draft's attempt under its own site, not under the prover's", () => {
+    const rows = outputKinds({ events: [started("a1"), charged("a1", 10), started("a2", SITE_LEAN_DRAFT), charged("a2", 7)] });
+    assert.deepEqual(rows.map((r) => [r.role, r.outputTokens]).sort(), [["gate.draft", 7], ["prover", 10]]);
   });
 
   it("estimates a message with no usage from its characters, and says so", () => {

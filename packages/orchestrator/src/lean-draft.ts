@@ -45,6 +45,8 @@ export const DEFAULT_DRAFT_RESUMES = 1;
 /** The prover name and actor of the draft's attempt. */
 export const DRAFT_PROVER = "draft";
 const ACTOR = `prover:${DRAFT_PROVER}`;
+/** The site of the draft's attempt, for the audit and the spend by site: its own row, neither a session of a prover nor a role's. */
+export const SITE_LEAN_DRAFT = "gate.draft";
 /** The `settings.mode` of the draft's attempt. */
 export const DRAFT_MODE = "lean_draft";
 
@@ -103,6 +105,7 @@ export async function leanDraft(d: LeanDraftDeps): Promise<DraftOutcome> {
       prover: DRAFT_PROVER,
       iteration: 1,
       model: d.modelName,
+      site: SITE_LEAN_DRAFT,
       ...(d.stamp !== undefined ? { provenance: d.stamp(d.modelName) } : {}),
       settings: { mode: DRAFT_MODE, thinking: "off", maxOutputTokens: maxTokens, resumes, promptVersion: LEAN_DRAFT_VERSION_RECORD.promptVersion },
     },

@@ -78,7 +78,7 @@ section per arm in `audit.md` and every arm's records in one `length.json`.
 
 One table in `audit.md` for the run (plan change CL0, `packages/orchestrator/src/output-kinds.ts`), after "Length"; an ablation directory has one per arm.
 It says what a role's output is made of, which decides whether cutting prose could save anything. One row for each role seen: the call's `role`, else the
-role of its site (`prover.session`, `scheduler.planner`, `scheduler.hole`, `consult`), else the site, else "other". Columns: calls and output tokens (as
+role of its site (`prover.session`, `scheduler.planner`, `scheduler.hole`, `consult`), else the site (the Lean draft's attempt is `gate.draft`, its own row, not the prover's), else "other". Columns: calls and output tokens (as
 the journal charged them: a prover session's `attempt.charged` events, a line's `model_call.finished` events), then **thinking**, **text** (outside tool
 calls) and **tool-call arguments**, each as tokens and a share of the split tokens, **prose share** (text over the split tokens) and **split covers** (the
 split tokens over the output tokens). Where the journal holds no split for a role, the cells say "not recorded".
