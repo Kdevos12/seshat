@@ -198,6 +198,8 @@ describe("the gate and the draft", () => {
       done("draft", 0.001, { mode: "lean_draft" });
       done("p1", 0.05);
       assert.equal(g.sessionUsd(), 0.05);
+      // The posterior is about sessions too: the draft's failure is not one.
+      assert.equal((g as unknown as { posterior(): { counted: number } }).posterior().counted, 1);
     } finally {
       journal.close();
     }

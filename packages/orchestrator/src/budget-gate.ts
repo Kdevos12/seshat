@@ -164,9 +164,12 @@ export class BudgetGate {
     return { remainingUsd: Number.isFinite(remaining) ? remaining : this.budgetUsd(), budgetUsd: this.budgetUsd() };
   }
 
-  /** The attempts of the claim as the fleet reads them: this run's and the earlier runs' of the chain, discounted per run. */
+  /**
+   * The sessions of the claim as the gate reads them, for its posterior and its prices: this run's and the earlier runs' of the chain, discounted per
+   * run. A Lean draft is an attempt for the memory and the audit but no session, so the gate's numbers leave it out (one predicate, here).
+   */
   private attempts(): Array<{ attempt: Attempt; usd: number | null }> {
-    return this.o.journal.projection.attempts(this.o.claimId).map((row) => ({
+    return this.o.journal.projection.attempts(this.o.claimId).filter((row) => row.settings?.mode !== DRAFT_MODE).map((row) => ({
       attempt: {
         attemptId: row.attempt_id,
         claimId: row.claim_id,
@@ -197,7 +200,7 @@ export class BudgetGate {
 
   /** What a session of this problem costs: the mean of the sessions paid on the claim, else M12's first guess. A Lean draft is no session: its cost is not in the mean. */
   sessionUsd(): number {
-    const paid = this.o.journal.projection.attempts(this.o.claimId).flatMap((row) => (row.finished_seq === null || row.settings?.mode === DRAFT_MODE ? [] : [row.usd ?? 0]));
+    const paid = this.attempts().flatMap(({ usd }) => (usd === null ? [] : [usd]));
     return paid.length === 0 ? PRIOR_SESSION_USD : paid.reduce((sum, usd) => sum + usd, 0) / paid.length;
   }
 
