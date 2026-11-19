@@ -195,7 +195,7 @@ rule turns off in the bucket (its sessions against the sessions given the other 
 never every value. `familyPriorWeight` and `cardMinObservations` are the bank's options; with `heuristics` off their
 defaults (2 and 8) apply. The bucket is computed once per session and used by the settings and the cards. The attempt
 records it under `heuristicBucket` (the cards' name for it, kept for the journals that hold it) even with no cards,
-so that later sessions find the bucket's history. Off, the draws and the settings recorded are those of every
+so that later sessions find the bucket's history. The claim's own attempts are in its bucket's history too, so they count twice (once in the claim's posterior, once in the bucket prior), as with the cards. Off, the draws and the settings recorded are those of every
 earlier version, byte for byte.
 
 ### Switching after a stall
