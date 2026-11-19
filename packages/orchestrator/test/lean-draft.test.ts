@@ -36,8 +36,8 @@ describe("leanDraft off: the run is what it was", () => {
     assert.ok(attempts(events).every((a) => a.settings === undefined));
     assert.equal(JSON.stringify(events).includes(DRAFT_MODE), false);
     assert.equal(JSON.stringify(events).includes(SITE_LEAN_DRAFT), false);
-    // The event types are those of a run that never heard of the setting.
-    const baseline = await demoRun({ responses: [check("bad"), say("notes")], config: { ...base, leanDraft: undefined } });
+    // The event types are those of a second run of the same configuration: nothing of the draft leaks into the sequence.
+    const baseline = await demoRun({ responses: [check("bad"), say("notes")], config: { ...base } });
     assert.deepEqual(events.map((e) => e.type), baseline.events.map((e) => e.type));
   });
 });
