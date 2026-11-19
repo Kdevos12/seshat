@@ -1,7 +1,7 @@
 import { type EventDataMap, hash32, type Journal, seeded, TASK_WRITER } from "@seshat/core";
 import { attemptWeights, DEFAULT_GAMMA, posteriorOf, sample, UNIFORM } from "@seshat/fleet";
 import { type BudgetAnswer, type BudgetAsk, type Decide, isInterrupted } from "@seshat/lines";
-import { type Attempt, failureDepth, type FrontierEntry, type FrontierKind } from "@seshat/memory";
+import { type Attempt, failureDepth, type FrontierEntry, type FrontierKind, type GrowthPoint } from "@seshat/memory";
 import {
   type GateAnswer,
   type GateQuery,
@@ -56,6 +56,11 @@ export interface BudgetGateOptions {
    * lemma included), case or reduction as Lean progress, outside a blueprint too. `evidence` entries never count. Absent: the measure is what it was.
    */
   frontierEntries?: () => readonly FrontierEntry[];
+  /**
+   * `RunConfig.longProof` (documentation/scheduler.md, "The budget gate"): for a problem the triage called `long`, a session is launched while the frontier grows and the
+   * problem is stopped after `dryChecks` finished sessions in a row that made it grow no more. `growth` is `frontierGrowth` (LH3). Absent: the rule alone.
+   */
+  longProof?: { dryChecks: number; growth: () => readonly GrowthPoint[] };
   /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
   informalAccepted?: () => boolean;
   /** The problem's formal-cost triage, when the run has one and it is journaled (PA14): read from the journal, so a resumed run reads the same. */
@@ -408,8 +413,53 @@ export class BudgetGate {
     return this.write(why === undefined ? verdict : { ...verdict, reason: why === INFORMAL_PROGRESS ? `${verdict.reason} (${why})` : `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
   }
 
+  /**
+   * The finished sessions of the problem, newest last, that closed nothing: the run at the end of the attempts, each counted unless the frontier grew while it ran
+   * (between the end of the session before it and its own). Resumable: it is read from the journal alone.
+   */
+  private dryRun(growth: readonly GrowthPoint[]): number {
+    const grew = growth.flatMap((p, i) => (i > 0 && p.score > (growth[i - 1] as GrowthPoint).score ? [p.seq] : []));
+    const ends = this.o.attemptIds().flatMap((id) => this.o.journal.projection.attempt(id)?.finished_seq ?? []).sort((a, b) => a - b);
+    let dry = 0;
+    let before = 0;
+    for (const end of ends) {
+      dry = grew.some((seq) => seq > before && seq <= end) ? 0 : dry + 1;
+      before = end;
+    }
+    return dry;
+  }
+
+  /** A session of a `long` problem: the frontier's growth decides, not the formula (the formula would stop a problem that is closing its holes). Undefined: not one. */
+  private longSession(who: { prover: string; session: number }): GateOutcome | undefined {
+    const long = this.o.longProof;
+    if (long === undefined || this.o.triage?.()?.class !== "long") return undefined;
+    const dry = this.dryRun(long.growth());
+    const stop = dry >= long.dryChecks;
+    const state = this.state();
+    return this.write(
+      {
+        site: "session",
+        action: stop ? "skip" : "launch",
+        by: "progress",
+        estimateUsd: this.sessionUsd(),
+        remainingUsd: state.remainingUsd,
+        budgetUsd: state.budgetUsd,
+        share: this.o.settings.share.session,
+        rung: this.o.rung(),
+        exploration: false,
+        progress: !stop,
+        reason: stop
+          ? `the problem is long and its last ${dry} finished session(s) closed no hole and added nothing to the frontier (the limit is ${long.dryChecks}): it stops`
+          : `the problem is long and its frontier grew within the last ${long.dryChecks} finished sessions (${dry} without growth): the session goes on`,
+      },
+      who,
+    );
+  }
+
   /** Before a session of a widened prover. */
   async session(who: { prover: string; session: number }): Promise<GateOutcome> {
+    const long = this.longSession(who);
+    if (long !== undefined) return long;
     const query = this.query("session", this.sessionUsd(), `session:${who.prover}:${who.session}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);

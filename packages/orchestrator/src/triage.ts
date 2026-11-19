@@ -11,8 +11,38 @@ import { INFORMAL_PROOF_KIND, informalProofOfNodes } from "@seshat/memory";
 /** The `formal_triage` node of a problem's claim. */
 export const TRIAGE_KIND = "formal_triage";
 
-/** The classes: `invest` (work it as usual), `short` (a try capped at a few probes), `skip` (the probe alone). */
-export type TriageClass = "invest" | "short" | "skip";
+/**
+ * The classes: `invest` (work it as usual), `short` (a try capped at a few probes), `skip` (the probe alone), and, under `RunConfig.longProof`,
+ * `long` (a proof over the short limits that is worth a long try: the gate follows the frontier's growth, not a cap).
+ */
+export type TriageClass = "invest" | "short" | "skip" | "long";
+
+/** The allowance, in dollars, from which a proof over the short limits is `long` and not `skip` (`RunConfig.longProof.triageUsd`). */
+export const DEFAULT_LONG_TRIAGE_USD = 1;
+/** The finished sessions in a row that may close no hole before the gate stops a `long` problem (`RunConfig.longProof.dryChecks`). */
+export const DEFAULT_DRY_CHECKS = 3;
+
+/** The frontier weights of a `long` problem's gate: a plausible test or a dead end is not a closed hole, so neither moves the frontier for the gate (a setting of `frontier.weights` overrides). */
+export const LONG_PROOF_WEIGHTS = { evidence: 0, dead_end: 0 } as const;
+
+/** `RunConfig.longProof`: the options of the `long` class and of the gate that follows it. */
+export interface LongProofConfig {
+  triageUsd?: number;
+  dryChecks?: number;
+}
+
+/** What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` a whole number of at least 1, and `triage` on (the class comes from it). Problems in words; empty: fine. */
+export function longProofConfigProblems(config: unknown, triage: boolean): string[] {
+  if (config === undefined) return [];
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer }"];
+  const c = config as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const key of Object.keys(c)) if (key !== "triageUsd" && key !== "dryChecks") problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks)`);
+  if (c.triageUsd !== undefined && !(typeof c.triageUsd === "number" && c.triageUsd > 0)) problems.push(`longProof.triageUsd must be above 0, got ${String(c.triageUsd)}`);
+  if (c.dryChecks !== undefined && !(Number.isInteger(c.dryChecks) && (c.dryChecks as number) >= 1)) problems.push(`longProof.dryChecks must be a whole number of at least 1, got ${String(c.dryChecks)}`);
+  if (!triage) problems.push("longProof goes with triage: the `long` class is one of its classes");
+  return problems;
+}
 
 /** An informal proof longer than this many characters is a large formalization. */
 export const MAX_PROOF_CHARS = 6000;
@@ -42,6 +72,8 @@ export interface TriageInput {
   statementChars?: number | undefined;
   /** The problem's allowance in dollars; absent: not small. */
   budgetUsd?: number | undefined;
+  /** Under `RunConfig.longProof`: the least allowance, in dollars, at which a proof over the short limits is `long`. Absent: there is no `long` class. */
+  longUsd?: number | undefined;
 }
 
 export interface TriageResult {
@@ -61,16 +93,24 @@ export function factShare(facts: readonly string[], hits: readonly string[]): nu
 
 export function triageProblem(input: TriageInput): TriageResult {
   const bad: string[] = [];
+  /** How many of `bad` only say that the proof is long: such a proof is `long` when nothing else is against it. */
+  let tooLong = 0;
   const notInvest: string[] = [];
   const proof = input.informal;
   const text = proof?.text ?? "";
   if (proof === undefined || !proof.accepted) bad.push(proof === undefined ? "no informal proof was written" : "no informal proof was accepted");
   else {
-    if (text.length > MAX_PROOF_CHARS) bad.push(`the informal proof has ${text.length} characters, over ${MAX_PROOF_CHARS}`);
+    if (text.length > MAX_PROOF_CHARS) {
+      bad.push(`the informal proof has ${text.length} characters, over ${MAX_PROOF_CHARS}`);
+      tooLong += 1;
+    }
     else if (text.length === 0) notInvest.push("the informal proof's text is not in the run: its length is not known");
     else if (text.length > SHORT_PROOF_CHARS) notInvest.push(`the informal proof has ${text.length} characters, over ${SHORT_PROOF_CHARS}`);
     const steps = proofSteps(text);
-    if (steps > MAX_STEPS) bad.push(`the informal proof has ${steps} numbered steps, over ${MAX_STEPS}`);
+    if (steps > MAX_STEPS) {
+      bad.push(`the informal proof has ${steps} numbered steps, over ${MAX_STEPS}`);
+      tooLong += 1;
+    }
     if (proof.facts.length > 0) {
       if (input.searched === false) notInvest.push(`${proof.facts.length} Mathlib fact(s) were not looked up (no lean.search)`);
       else {
@@ -83,6 +123,11 @@ export function triageProblem(input: TriageInput): TriageResult {
   if (input.statementChars !== undefined && input.statementChars > LONG_STATEMENT_CHARS) notInvest.push(`the statement has ${input.statementChars} characters, over ${LONG_STATEMENT_CHARS}`);
   if (input.plausible === "counterexample") notInvest.push("plausible found a counterexample: the statement is probably false, and a refutation is a short try");
   if (input.firstCases?.differs === true) notInvest.push(`the first cases differ on one of ${input.firstCases.rows} row(s): the statement is probably false, and a refutation is a short try`);
+  // A proof over the short limits, otherwise accepted, with at least half its facts looked up and found, under `longProof` and with room in the allowance: `long`.
+  const factsFound = proof !== undefined && (proof.facts.length === 0 || (input.searched !== false && factShare(proof.facts, proof.hits) >= MIN_FACT_SHARE));
+  if (tooLong > 0 && tooLong === bad.length && factsFound && input.longUsd !== undefined && (input.budgetUsd === undefined || input.budgetUsd >= input.longUsd)) {
+    return { class: "long", reasons: [...bad, ...notInvest, `the allowance is at least $${input.longUsd}: a long try, which the gate follows by the frontier's growth`] };
+  }
   if (bad.length > 0) {
     const small = input.budgetUsd !== undefined && input.budgetUsd < SMALL_BUDGET_USD;
     return { class: small ? "skip" : "short", reasons: [...bad, ...notInvest, small ? `the allowance of $${(input.budgetUsd as number).toFixed(4)} is under $${SMALL_BUDGET_USD}: a short try has no room` : "the allowance has room for a short try"] };
@@ -109,7 +154,7 @@ export function triageOfNodes(nodes: ReadonlyArray<{ data: unknown }>): TriageRe
   for (const node of [...nodes].reverse()) {
     const d = node.data as Partial<TriageData> | null;
     if (typeof d !== "object" || d === null) continue;
-    if ((d.class === "invest" || d.class === "short" || d.class === "skip") && Array.isArray(d.reasons)) return { class: d.class, reasons: d.reasons.map(String) };
+    if ((d.class === "invest" || d.class === "short" || d.class === "skip" || d.class === "long") && Array.isArray(d.reasons)) return { class: d.class, reasons: d.reasons.map(String) };
   }
   return undefined;
 }

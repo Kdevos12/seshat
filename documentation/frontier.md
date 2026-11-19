@@ -50,6 +50,10 @@ no Lean.
 
 In a campaign the frontier's top entries are the L0 of each session's dossier, and its `dead_end` entries feed the dead-end store ([campaign.md](campaign.md#the-dossier)).
 
+## Where the gate reads it
+
+With `RunConfig.longProof`, the budget gate reads the frontier's growth for a problem the triage called `long`: a new subclaim, case or reduction counts as Lean progress at the probe, and a widened problem stops after `dryChecks` finished sessions in a row with no growth ([scheduler.md](scheduler.md#the-budget-gate), "A long proof").
+
 ## The trust rule
 
 The frontier is a projection. It never changes a claim's status, and no model, tool or person can through it. An `evidence` entry is
