@@ -6,6 +6,7 @@ import { BP_AUX, BP_PROOF } from "./blueprint-helpers.ts";
 import { liftAnswer } from "./lift-helpers.ts";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
+import { readRecordedRun } from "../src/resume.ts";
 import { sessionPromptOf } from "./resume-helpers.ts";
 
 /** Long proofs (LP2, DP1, DP3): the faux provider and a simulated Lean that prints what `extract_goal` prints. */
@@ -120,6 +121,29 @@ induction n with
     assert.equal(round1?.round, 1);
     const flawed = await run([...informal, say("not json"), say("still not json"), check("exact bad"), say("Notes.")]);
     assert.equal(nodes(flawed.events, "m12_sketch").length, 0, "the prover writes the first blueprint as it always did");
+  });
+
+  it("a draft whose battery closes every step is submitted through validate, and is no blueprint (DP1)", { timeout: 60000 }, async () => {
+    const proof = "-- step 1: one is a right identity\nhave h_2 : n * 1 = n := by sorry\nexact main_ok";
+    const { events } = await run([...informal, draftOf(proof), check("exact bad"), say("Notes.")]);
+    const [draft] = nodes(events, "m12_sketch");
+    assert.equal(draft?.fromInformal, true);
+    assert.equal(draft?.healthy, false);
+    assert.match(String(draft?.problem), /the draft has no hole left: it was submitted to Lean through validate, which said \w+/);
+    const [battery] = nodes(events, "sorry_battery");
+    assert.deepEqual([battery?.tried, battery?.closed], [1, 1]);
+    // Lean decided: a validation of the target's own claim was recorded, with the draft's proof.
+    const claimId = ofType(events, "problem.registered")[0]?.data.claimId;
+    assert.ok(ofType(events, "validation.finished").some((v) => v.data.claimId === claimId), "the draft reached validate");
+  });
+
+  it("records longProof in run.started, which a resumption reads back; a run without it records none", { timeout: 60000 }, async () => {
+    const { events, dir } = await run([...informal, check("exact bad"), say("Notes.")], { longProof: { drafts: 2, freeze: false } });
+    const started = ofType(events, "run.started")[0];
+    assert.deepEqual((started?.data.config as Record<string, unknown>).longProof, { drafts: 2, freeze: false });
+    assert.deepEqual(readRecordedRun(dir).config.longProof, { drafts: 2, freeze: false });
+    const off = await run([...informal, check("exact bad"), say("Notes.")], { longProof: undefined, triage: false });
+    assert.equal("longProof" in (ofType(off.events, "run.started")[0]?.data.config as Record<string, unknown>), false);
   });
 
   it("is off without longProof, and needs M12's blueprints when asked for", { timeout: 60000 }, async () => {

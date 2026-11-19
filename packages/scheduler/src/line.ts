@@ -669,7 +669,7 @@ export function createM12Line(): Line {
 
   /**
    * One draft of the first blueprint (LP2, DP1): the planner's `have` sketch checked once through `checkSketch`, then lifted (`liftHaves`: the battery closes
-   * what it can, `extract_goal` states the rest, each step applies its lemma) and checked again, then read as a blueprint like any other. A draft Lean refuses,
+   * what it can, `extract_goal` states the rest, each step applies its lemma) and checked again, then read as a blueprint like any other. A draft with no hole left goes through `validate`. A draft Lean refuses,
    * or that cannot be lifted, is recorded as it was written and not healthy: the refinement rounds revise it (case a). The record is not written here (the
    * drafts are ranked first, DP3).
    */
@@ -690,6 +690,12 @@ export function createM12Line(): Line {
     }
     const lifted = { aux: lift.aux, proof: lift.proof };
     const report = lift.report ?? (lift.lifted.length === 0 && lift.closed === 0 ? first : await check(lifted));
+    // A draft with no hole left that Lean accepts whole (the battery closed every step, or the planner wrote a complete proof) is a proof, not a blueprint: Lean decides, through `validate`.
+    if (!report.holes && report.leanStatus !== undefined && !report.messages.some((m) => m.severity === "error")) {
+      const verdict = await problem.validate({ claimId: problem.claimId, proof: lifted.proof, ...(lifted.aux.trim() !== "" ? { aux: lifted.aux } : {}) });
+      const why = `the draft has no hole left: it was submitted to Lean through validate, which said ${verdict.verdict}${verdict.verdict === "valid" ? "" : ` (${verdict.reasons[0] ?? "no reason"})`}`;
+      return { record: sketchRecordOf(problem, s, attemptId, lifted, { holes: [], others: [], problem: why }, report, { ...extra, lifted: true }), holes: 0, steps };
+    }
     const record = sketchRecordOf(problem, s, attemptId, lifted, readSketch(lifted, readOptions(s, target)), report, { ...extra, lifted: true });
     return { record, holes: record.names.length, steps };
   }

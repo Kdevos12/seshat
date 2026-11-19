@@ -985,6 +985,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
       ...(config.sorryBattery !== undefined ? { sorryBattery: { ...config.sorryBattery } } : {}),
       ...(config.triage === true ? { triage: true } : {}),
+      ...(config.longProof !== undefined ? { longProof: { ...config.longProof } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
