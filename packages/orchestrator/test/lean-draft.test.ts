@@ -236,6 +236,14 @@ describe("the cut", () => {
     assert.equal(cutAtFirstBreak(outside)?.steps, PROOF);
   });
 
+  it("keeps a bullet at the margin with the step above it, and cuts before that step as a whole", () => {
+    const bullets = "have h_1 : a := by simp\nhave h_2 : b ∧ c := by\n  constructor\n· simp\n· bad\nexact h_2";
+    // The error is in the second bullet: the step h_2, bullets included, is the one cut.
+    assert.deepEqual(cutAtFirstBreak(report(bullets, [5])), { steps: "have h_1 : a := by simp", proof: "have h_1 : a := by simp\nsorry" });
+    // A break in the step before keeps nothing after it, and a bullet is never the start of a cut.
+    assert.equal(cutAtFirstBreak(report(bullets, [4]))?.steps, "have h_1 : a := by simp");
+  });
+
   it("says nothing when Lean named no error and no sorry", () => {
     assert.equal(cutAtFirstBreak(report(PROOF, [])), undefined);
   });
@@ -246,6 +254,8 @@ describe("the reply", () => {
     assert.equal(leanBlock("Here:\n```lean\nsimp\nlinarith\n```\nDone."), "simp\nlinarith");
     assert.equal(leanBlock("```lean4\nomega"), "omega");
     assert.equal(leanBlock("omega"), "omega");
+    // At the left margin, so that a draft and a continuation are cut in one layout.
+    assert.equal(leanBlock("```lean\n  simp\n    ring\n```"), "simp\n  ring");
     assert.equal(leanBlock("```lean\n\n```"), undefined);
   });
 

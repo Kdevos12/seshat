@@ -119,7 +119,7 @@ export async function leanDraft(d: LeanDraftDeps): Promise<DraftOutcome> {
   let state: CheckResult | undefined;
   const over = (): boolean => d.signal.aborted || d.turn?.ended !== undefined;
 
-  /** One completion, charged to the ledger and the attempt; its text, or undefined when none came (the reason is in `error` or the signal). */
+  /** One completion, charged to the ledger and the attempt; its lean block, or undefined when none came (the reason is in `error` or the signal). */
   const ask = async (prompt: string): Promise<string | undefined> => {
     if (over() || d.ledger.exhausted) return undefined;
     const user = { role: "user" as const, content: prompt, timestamp: Date.now() };
@@ -160,7 +160,7 @@ export async function leanDraft(d: LeanDraftDeps): Promise<DraftOutcome> {
       }
       const more = await ask(`${context}\n\n${resumePrompt(cut.steps, goal)}`);
       if (more === undefined) break;
-      state = await check(`${cut.steps === "" ? "" : `${cut.steps}\n`}${dedent(more)}`);
+      state = await check(`${cut.steps === "" ? "" : `${cut.steps}\n`}${more}`);
     }
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
@@ -204,11 +204,11 @@ function resumePrompt(steps: string, goal: string): string {
   return `${done}\nThe goal that is left after them is:\n\`\`\`\n${goal}\n\`\`\`\nContinue from there: write only the steps that come after the ones above, ending by closing this goal, in one lean block, at the left margin.\n\nReply:`;
 }
 
-/** The proof in the first lean block of a reply (an open block is read to the end of the reply, a reply with no block is the proof), or undefined when it is empty. */
+/** The proof in the first lean block of a reply (an open block is read to the end of the reply, a reply with no block is the proof), at the left margin (the one normalisation: the first draft and a continuation are joined, checked and cut in one layout), or undefined when it is empty. */
 export function leanBlock(reply: string): string | undefined {
   const fenced = /```(?:lean4?)?[ \t]*\r?\n([\s\S]*?)(?:```|$)/.exec(reply);
   const body = (fenced?.[1] ?? reply).replace(/^(?:[ \t]*\r?\n)+/, "").replace(/\s+$/, "");
-  return body === "" ? undefined : body;
+  return body === "" ? undefined : dedent(body);
 }
 
 /** The goal of the one `sorry` of a checked file that has no error, or undefined: Lean did not answer, there is an error, or the file does not have exactly one hole. */
@@ -217,8 +217,8 @@ function soleGoal(report: ValidationReport): string | undefined {
   return (report.sorries[0] as { goal: string }).goal;
 }
 
-/** A line that goes on a step of the line before it: an alternative of `induction ... with`, a `calc` step, `<;>`, `else`. */
-const CONTINUES = /^(?:\||_(?:\s|$)|<;>|else\b|termination_by|decreasing_by)/;
+/** A line that goes on a step of the line before it: an alternative of `induction ... with`, a `calc` step, a bullet `·` at the margin, `<;>`, `else`. */
+const CONTINUES = /^(?:\||·|_(?:\s|$)|<;>|else\b|termination_by|decreasing_by)/;
 
 /**
  * Where a checked file first breaks, as a cut of its proof: `steps`, the complete top-level steps that come before the first error or `sorry` that Lean placed in
@@ -231,7 +231,7 @@ export function cutAtFirstBreak(report: ValidationReport): { steps: string; proo
   const begin = lines.findIndex((l) => l.trim() === PROOF_BEGIN.trim()) + 1;
   const breaks = [...report.messages.filter((m) => m.severity === "error").map((m) => m.pos.line), ...report.sorries.map((s) => s.pos.line)];
   if (begin === 0 || breaks.length === 0) return undefined;
-  const proof = dedent(extractProof(report.checked)).split("\n");
+  const proof = dedent(extractSubmission(report.checked).proof).split("\n");
   const inside = breaks.map((line) => line - begin).filter((line) => line >= 1 && line <= proof.length);
   // The step that holds the first break starts at the last line at the left margin that is not the continuation of the one before it.
   let cut = proof.length;
@@ -244,11 +244,6 @@ export function cutAtFirstBreak(report: ValidationReport): { steps: string; proo
   while (cut > 0 && /^(?:\s*|\s*--.*)$/.test(proof[cut - 1] as string)) cut -= 1;
   const steps = proof.slice(0, cut).join("\n");
   return { steps, proof: steps === "" ? "sorry" : `${steps}\nsorry` };
-}
-
-/** The PROOF region of a checked file. */
-function extractProof(checked: string): string {
-  return extractSubmission(checked).proof;
 }
 
 /** What the attempt's failure was, as `attempt.finished` carries it: the class of the last whole draft's check. */
