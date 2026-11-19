@@ -27,11 +27,14 @@ theorem odd_add_odd (m n : ℕ) (hm : Odd m) (hn : Odd n) : Even (m + n) := by
 ```
 Reply:
 ```lean
-obtain ⟨a, ha⟩ := hm
-obtain ⟨b, hb⟩ := hn
+have h_1 : ∃ a, m = 2 * a + 1 := hm
+have h_2 : ∃ b, n = 2 * b + 1 := hn
 -- the sum is a double
-have h_1 : m + n = (a + b + 1) + (a + b + 1) := by omega
-exact ⟨a + b + 1, h_1⟩
+have h_3 : ∃ c, m + n = c + c := by
+  obtain ⟨a, ha⟩ := h_1
+  obtain ⟨b, hb⟩ := h_2
+  exact ⟨a + b + 1, by omega⟩
+exact h_3
 ```
 
 Theorem:

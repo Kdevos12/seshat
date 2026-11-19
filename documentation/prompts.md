@@ -21,7 +21,7 @@ It ends with three worked examples of easy Mathlib statements in that form, beca
 `have`-sketch of plan change DP1, so that `liftHaves` and the sorry battery read a draft unchanged.
 
 It is loaded and versioned as the prover's is: `LEAN_DRAFT_SYSTEM` in `prompt.ts` reads the file, its version record `prompts/lean-draft.system.version.json` holds
-`promptVersion` (`cl-1.0`) and the hash of the text, and a test fails when they disagree. `LEAN_DRAFT_TARGET` in `prompt-screen.ts` is its entry for the strict
+`promptVersion` (`cl-1.1`) and the hash of the text, and a test fails when they disagree. `LEAN_DRAFT_TARGET` in `prompt-screen.ts` is its entry for the strict
 screen, which a test applies to it, even against a baseline where every line counts as added. It is deliberately not in `PROMPT_TARGETS`: `harness
 optimize-prompts` measures a candidate through `RunConfig.prompts.proverSystem`, which does not reach the draft, so listing it there would measure the wrong
 prompt. A merge of a change to it is a human merge like any prompt's (Global Constraint 16). The version is recorded on the draft attempt's settings
