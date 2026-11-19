@@ -178,6 +178,26 @@ temperature with each request of the session, and runs it at the thinking level 
 that sample are merged key by key, in the order of the lines; a temperature outside 0 to 2 or an unknown thinking
 level is a line failure in `beforeSession`.
 
+### The bucket prior
+
+The settings above learn from the claim alone. With the option `bucketPrior` (default off) they also learn from the
+session's bucket (`bucketOf` of `@seshat/heuristics`: the problem's domains and the statement's features), the
+same way the heuristic cards do. The pieces are shared, in one module (`packages/fleet/src/bucket.ts`): the prior
+"w pseudo-sessions at a mean" (`withPrior`), the means of a keyed setting over a bucket's attempts (`valueMeans`),
+and the effect of one value against the others with M5's deactivation (`effectIn`, `deactivatedValues`; the cards'
+`cardEffect` is `effectIn` with the control as the comparison). `drawCard` and `sampleSettings` both call them;
+there is no second copy.
+
+With `bucketPrior` on, each discrete value's posterior on the claim starts from `familyPriorWeight`
+pseudo-sessions at the value's mean in the bucket (a value the bucket has not seen: the flat mean), and a value M5's
+rule turns off in the bucket (its sessions against the sessions given the other values of the same setting,
+`cardMinObservations` observations on each side and P(effect < 0) above 0.9) is not drawn while another value is left;
+never every value. `familyPriorWeight` and `cardMinObservations` are the bank's options; with `heuristics` off their
+defaults (2 and 8) apply. The bucket is computed once per session and used by the settings and the cards. The attempt
+records it under `heuristicBucket` (the cards' name for it, kept for the journals that hold it) even with no cards,
+so that later sessions find the bucket's history. Off, the draws and the settings recorded are those of every
+earlier version, byte for byte.
+
 ## Heuristic cards
 
 With the option `heuristics` (`true` for every card, or a list of card ids), each session gets at most one
@@ -355,6 +375,7 @@ Recorded through the memory store as `line:fleet`; the package owns the shape of
 | `crossModelWeight` | 0.5 | what another model's session counts in the bank's posteriors |
 | `familyPriorWeight` | 2 | the weight of a family's mean in the prior of each of its cards, from 0 to 8 |
 | `cardMinObservations` | 8 | a card is no longer drawn in a bucket once it has this many observations with it and in the control, and P(effect < 0) is above 0.9 (M5's rule) |
+| `bucketPrior` | false | learn the sampled settings from the session's bucket too: a value starts from its mean there and is not drawn once the bucket shows it hurts ([The bucket prior](#the-bucket-prior)) |
 | `modes` | null | `["standard","nl_first"]`; null: every session is a standard one |
 | `dagSteps` | 8 | the most steps in an informal-first session's DAG |
 | `coldStart` | false | add capped pseudo-counts from a `fleet.cold_start` decision ([decide.md](decide.md)) to the strategies' posteriors |
