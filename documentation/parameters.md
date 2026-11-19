@@ -242,7 +242,7 @@ One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options
 | `--implementation` | contract | the implementation to test | Test one implementation of the capability. |
 | `--case` | contract | the contract cases to run | Run only the named case (repeatable). |
 | `--out` | contract, lit probe, run, ablate, optimize-prompts, probe, solve, campaign, consolidate, heuristics, library, view | an output file or directory | Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a view or the mined cards. |
-| `--reference` | audit | a directory of reference dossiers | Show DIR/PROBLEM.md beside each dossier. |
+| `--reference` | audit | a directory of reference dossiers | Show DIR/PROBLEM.md beside each dossier, and measure the Lean length of DIR/PROBLEM.lean (or the Lean blocks of PROBLEM.md) for the length table. |
 | `--query` | lit probe | the query words | The words searched. |
 | `--limit` | lit probe | hits per site | How many hits to ask for. |
 | `--no-cache` | lit probe | skip the response cache | Do not read or write the cache. |

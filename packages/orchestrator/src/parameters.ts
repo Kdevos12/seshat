@@ -673,7 +673,7 @@ export const CLI_FLAGS: readonly CliFlag[] = [
   flag("implementation", ["contract"], cmd("the implementation to test"), "Test one implementation of the capability."),
   flag("case", ["contract"], cmd("the contract cases to run"), "Run only the named case (repeatable)."),
   flag("out", ["contract", "lit probe", "run", "ablate", "optimize-prompts", "probe", "solve", "campaign", "consolidate", "heuristics", "library", "view"], cmd("an output file or directory"), "Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a view or the mined cards."),
-  flag("reference", ["audit"], cmd("a directory of reference dossiers"), "Show DIR/PROBLEM.md beside each dossier."),
+  flag("reference", ["audit"], cmd("a directory of reference dossiers"), "Show DIR/PROBLEM.md beside each dossier, and measure the Lean length of DIR/PROBLEM.lean (or the Lean blocks of PROBLEM.md) for the length table."),
   flag("query", ["lit probe"], cmd("the query words"), "The words searched."),
   flag("limit", ["lit probe"], cmd("hits per site"), "How many hits to ask for."),
   flag("no-cache", ["lit probe"], cmd("skip the response cache"), "Do not read or write the cache."),

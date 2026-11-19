@@ -77,7 +77,7 @@ const usage = `usage:
               [--dates FILE] [--target prover.system] [--reflector-model PROVIDER/ID] [--iterations N] [--minibatch N] [--finalists N]
               --max-usd X [--reflect-budget-usd X] [--allow-unpriced] [--alpha X] [--min-gate-problems N] [--ledger FILE] [--reuse-gates] [the budget, prover, session and tool flags of run] [--draw-seed S] [--out DIR]
   harness probe RUN_DIR --checkout DIR --model PROVIDER/ID [--probe-size N | --probe-set FILE] [the run flags] [--out DIR]
-  harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: one dossier per problem not certified; an ablation directory gets a section per arm)
+  harness audit RUN_DIR [--reference DIR]   (audit.md next to the journal: a length table of every problem, and one dossier per problem not certified; length.json beside it; an ablation directory gets a section per arm)
   harness chunks RUN_DIR... [--chunk-k 1,3,6,10] [--budget-usd X]
   harness run --resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST]
   harness resume RUN_DIR [--checkout DIR] [--bench FILE] [--host HOST] [--quiet] (the same as run --resume; without --checkout, the run's resume.json gives the checkout, bench and host)
@@ -137,7 +137,7 @@ RUN_DIR/view.html (or --out FILE), one static page built from the journal alone:
 ablate: runs the cumulative configurations of plan section 6 (M0, then each line in order; --configs picks some) or one experiment
 (documentation/ablate.md) on the same problems at the same budget, and writes ablation.md and ablation.json into --out. solve-defaults runs on the host solve takes unless --host or HARNESS_HOST is given. --arms NAME,... (with --experiment) runs only those arms, in the experiment's order. --split N builds
 each configuration's memory on N problems and measures it on the others. A turn limit, --human and --offpeak are refused: the arms
-would no longer differ by their lines alone. audit: reads a run's journal (no model, no Lean) and writes audit.md, one dossier per problem that was not certified: spend by site, sessions, gate answers, last Lean errors, last sketch, informal proof, hygiene, literature; --reference DIR shows DIR/<problemId>.md beside each (documentation/audit.md). chunks: the cost-to-first-success curves of the runs for K provers in parallel.
+would no longer differ by their lines alone. audit: reads a run's journal (no model, no Lean) and writes audit.md, one dossier per problem that was not certified: spend by site, sessions, gate answers, last Lean errors, last sketch, informal proof, hygiene, literature, plus a length table of every problem (also as length.json); --reference DIR shows DIR/<problemId>.md beside each and measures its Lean length (documentation/audit.md). chunks: the cost-to-first-success curves of the runs for K provers in parallel.
 optimize-prompts: GEPA-style rewriting of the prover's system prompt (documentation/prompts.md). It splits the problems into dev, a held-out
 split and a temporal holdout (problems newer than --cutoff), rewrites the prompt on dev with the model, keeps a Pareto set per problem, and
 measures the best candidates against the merged prompt on the two splits the search never saw, at the same budget. It changes no prompt: it
