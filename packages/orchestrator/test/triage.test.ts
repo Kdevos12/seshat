@@ -187,6 +187,27 @@ describe("the budget gate follows the frontier for a long problem (LP4)", () => 
     return { journal, gate, session };
   }
 
+  it("widens on Lean progress at the probe, whatever the posterior's draw, for a long problem or not (LP6's real run)", async () => {
+    for (const triage of [{ class: "long" as const, reasons: ["r"] }, "none" as const]) {
+      const { journal, gate } = setup(triage);
+      try {
+        gate.probe();
+        // One failed attempt, then one that passed the fast check: the posterior is Beta(1, 2) or so, and Lean progress is there.
+        for (const outcome of ["invalid", "valid"] as const) {
+          const attemptId = newId("att");
+          journal.emit("attempt.started", { attemptId, claimId: "clm_1", prover: "p1", iteration: 1, model: "m" }, "prover:p1");
+          (gate as unknown as { o: { attemptIds: () => string[] } }).o.attemptIds().push(attemptId);
+          journal.emit("attempt.finished", { attemptId, outcome, usd: 0.01, inputTokens: 0, outputTokens: 0, durationMs: 1, turns: 1 }, "prover:p1");
+        }
+        const answer = await gate.widen(2);
+        assert.deepEqual([answer.action, answer.by, answer.verdict.progress], ["widen", "progress", true], String(triage === "none" ? "none" : triage.class));
+        assert.match(answer.reason, /Lean progress \(a proof passed the fast check\) and long proofs follow the frontier/);
+      } finally {
+        journal.close();
+      }
+    }
+  });
+
   it("goes on while holes close, one per session, as far as the allowance lets it", async () => {
     const { journal, gate, session } = setup();
     try {

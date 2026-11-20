@@ -58,8 +58,9 @@ export interface BudgetGateOptions {
    */
   frontierEntries?: () => readonly FrontierEntry[];
   /**
-   * `RunConfig.longProof` (documentation/scheduler.md, "The budget gate"): for a problem the triage called `long`, a session is launched while the frontier grows and the
-   * problem is stopped after `dryChecks` finished sessions in a row that made it grow no more. `growth` is `frontierGrowth` (LH3). Absent: the rule alone.
+   * `RunConfig.longProof` (documentation/scheduler.md, "The budget gate"): a probe with Lean progress widens the problem whatever its class, within its allowance;
+   * for a problem the triage called `long`, a session is launched while the frontier grows and the problem is stopped after `dryChecks` finished sessions in a row
+   * that made it grow no more. `growth` is `frontierGrowth` (LH3). Absent: the rule alone.
    */
   longProof?: { dryChecks: number; growth: () => readonly GrowthPoint[] };
   /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
@@ -422,6 +423,28 @@ export class BudgetGate {
     // An accepted informal proof counts as progress once (PA5): a later probe or judgement does not count it again.
     if (why === undefined && this.o.informalAccepted?.() === true && !this.rows().some((g) => g.site === "wave" && g.reason.includes(INFORMAL_PROGRESS))) why = INFORMAL_PROGRESS;
     const estimate = Math.max(1, provers) * this.sessionUsd();
+    // Long proofs follow the frontier (LP4): Lean progress at the probe widens the problem, as it keeps a long problem's sessions going. The formula's one
+    // Thompson draw from a posterior of one or two attempts would otherwise decide alone (LP6's real run: a problem with frozen links skipped on a draw of 0.002).
+    // The informal credit alone is not Lean progress; a wave the problem's allowance cannot pay goes to the formula.
+    const state = this.state();
+    if (this.o.longProof !== undefined && why !== undefined && why !== INFORMAL_PROGRESS && estimate <= state.remainingUsd) {
+      return this.write(
+        {
+          site: "wave",
+          action: "widen",
+          by: "progress",
+          estimateUsd: estimate,
+          remainingUsd: state.remainingUsd,
+          budgetUsd: state.budgetUsd,
+          share: this.o.settings.share.wave,
+          rung: this.o.rung(),
+          exploration: false,
+          progress: true,
+          reason: `the probe made Lean progress (${why}) and long proofs follow the frontier: the problem widens`,
+        },
+        { prover: "p1" },
+      );
+    }
     const query = { ...this.query("wave", estimate, `wave:${this.rows().filter((g) => g.site === "wave").length}`), progress: why !== undefined };
     const answer = widenRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);

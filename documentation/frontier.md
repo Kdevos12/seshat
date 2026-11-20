@@ -52,7 +52,7 @@ In a campaign the frontier's top entries are the L0 of each session's dossier, a
 
 ## Where the gate reads it
 
-With `RunConfig.longProof`, the budget gate reads the frontier's growth for a problem the triage called `long`: a new subclaim, case or reduction counts as Lean progress at the probe, and a widened problem stops after `dryChecks` finished sessions in a row with no growth ([scheduler.md](scheduler.md#the-budget-gate), "A long proof").
+With `RunConfig.longProof`, the budget gate reads the frontier's growth for a problem the triage called `long`: a new subclaim, case or reduction counts as Lean progress at the probe, Lean progress at the probe widens any problem of the run, and a widened problem stops after `dryChecks` finished sessions in a row with no growth ([scheduler.md](scheduler.md#the-budget-gate), "A long proof").
 
 ## The trust rule
 
