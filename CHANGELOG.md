@@ -24,7 +24,9 @@ behaviour is an option, off by default: `v1` and `v2` run as in 1.0.0-beta.1.
 - Plan changes: `plans/plan-change-long-proofs.md`, `plans/plan-change-decomposition-provers.md`,
   `plans/plan-change-chain-of-lean.md` (Rulings 43 to 45).
 
-Not yet run against a real Lean or model at the time of writing; the first measurements are in the ledger.
+First real measurement (Lean 4.27.0, `solve-v2-long`, three long Putnam problems the earlier runs had failed or
+solved in one arm only): two of three certified for $0.73, every session ran Lean. Known limit: on that run Lean's
+`extract_goal` timed out on every draft, so the `have` sketch lifted no hole yet. Details in the ledger.
 
 ## 1.0.0-beta.1 (2026-11-18)
 
