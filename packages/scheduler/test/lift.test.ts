@@ -5,13 +5,18 @@ import { extractGoalMessages } from "../../core/test/fake-lean.ts";
 import { haveSteps, liftHaves, readSketch, sorrySteps } from "../src/index.ts";
 
 /** A check of the simulated Lean: it prints what `extract_goal` prints, and calls an `apply ... <;> assumption` an error when `applyFails` is set. */
-function checker(options: { applyFails?: boolean; probeError?: string; hide?: boolean } = {}) {
+function checker(options: { applyFails?: boolean; probeError?: string; hide?: boolean; timeoutTogether?: boolean } = {}) {
   const calls: Submission[] = [];
   const check = async (sub: Submission): Promise<ValidationReport> => {
     calls.push(sub);
     const code = `theorem target (n : ℕ) : n + 0 = n := by\n${sub.proof}`;
     const probing = sub.proof.includes("extract_goal");
     const messages: ValidationReport["messages"] = probing && options.hide !== true ? extractGoalMessages(code) : [];
+    // Real problems: several extractions in one declaration run out of its heartbeats, and Lean prints no statement at all.
+    if (options.timeoutTogether === true && (sub.proof.match(/extract_goal/g) ?? []).length > 1) {
+      messages.length = 0;
+      messages.push({ severity: "error", pos: { line: 1, column: 8 }, text: "(deterministic) timeout at `isDefEq`, maximum number of heartbeats (200000) has been reached" });
+    }
     if (probing && options.probeError !== undefined) messages.push({ severity: "error", pos: { line: 2, column: 0 }, text: options.probeError });
     if (!probing && options.applyFails === true && sub.proof.includes("<;> assumption")) messages.push({ severity: "error", pos: { line: 2, column: 0 }, text: "apply failed" });
     return { verdict: "invalid", method: "repl", reasons: [], axioms: [], messages, sorries: [], checked: code, submissionHash: "h", editsOutsideRegions: false, holes: true, leanStatus: "sorry" };
@@ -91,7 +96,34 @@ test("the explicit arguments are the fallback when apply fails, and kept only if
 
 test("a probe Lean refuses, or that prints too few statements, gives a reason and no lift", async () => {
   const refused = await liftHaves({ check: checker({ probeError: "unknown tactic extract_goal" }).check }, { aux: "", proof: "have h : n = n := by sorry\nexact h" });
-  assert.match("reason" in refused ? refused.reason : "", /Lean refused the file with extract_goal: unknown tactic/);
+  assert.match("reason" in refused ? refused.reason : "", /Lean refused extract_goal for h: unknown tactic/);
   const few = await liftHaves({ check: checker({ hide: true }).check }, { aux: "", proof: "have h : n = n := by sorry\nexact h" });
-  assert.match("reason" in few ? few.reason : "", /printed 0 statement\(s\) for 1 step\(s\)/);
+  assert.match("reason" in few ? few.reason : "", /printed 0 statement\(s\) for h/);
+});
+
+test("when the extractions together time out, each step is probed alone and the lift goes on (LP6's real run)", async () => {
+  const { check, calls } = checker({ timeoutTogether: true });
+  const lift = await liftHaves({ check }, { aux: "", proof: "have h_1 : n + 0 = n := by sorry\nhave h_2 : 0 + n = n := by sorry\nexact h_1" });
+  assert.ok(!("reason" in lift), "reason" in lift ? lift.reason : "");
+  assert.deepEqual(lift.lifted, ["aux_h_1", "aux_h_2"]);
+  assert.match(lift.aux, /lemma aux_h_2 \(n : ℕ\) \(h_1 : n \+ 0 = n\) : 0 \+ n = n := by\n {2}sorry/);
+  // One probe of both, one of each, then the lifted file.
+  assert.equal(calls.filter((c) => c.proof.includes("extract_goal")).length, 3);
+  assert.equal(calls.at(-1)?.proof.includes("extract_goal"), false);
+  // A step that fails alone stops the lift, with its name.
+  const stuck = await liftHaves({ check: checker({ timeoutTogether: true, probeError: "unknown tactic" }).check }, { aux: "", proof: "have h_1 : n + 0 = n := by sorry\nhave h_2 : 0 + n = n := by sorry\nexact h_1" });
+  assert.match("reason" in stuck ? stuck.reason : "", /Lean refused extract_goal for h_1: unknown tactic/);
+});
+
+test("both forms Lean prints an extracted statement in are read: `:= sorry` (Lean 4.27) and `:= by sorry`", async () => {
+  for (const tail of [":= sorry", ":= by\n  sorry"]) {
+    const check = async (sub: Submission): Promise<ValidationReport> => {
+      const probing = sub.proof.includes("extract_goal");
+      const messages: ValidationReport["messages"] = probing ? [{ severity: "info", pos: { line: 2, column: 30 }, text: `theorem _example.extracted_1 (n : ℕ) : n = n ${tail}` }] : [];
+      return { verdict: "invalid", method: "repl", reasons: [], axioms: [], messages, sorries: [], checked: "", submissionHash: "h", editsOutsideRegions: false, holes: true, leanStatus: "sorry" };
+    };
+    const lift = await liftHaves({ check }, { aux: "", proof: "have h : n = n := by sorry\nexact h" });
+    assert.ok(!("reason" in lift), "reason" in lift ? lift.reason : "");
+    assert.match(lift.aux, /lemma aux_h \(n : ℕ\) : n = n := by\n {2}sorry/);
+  }
 });

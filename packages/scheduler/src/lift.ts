@@ -106,10 +106,13 @@ export type Lift = { aux: string; proof: string; closed: number; lifted: string[
 const errorsOf = (report: ValidationReport): ValidationReport["messages"] => report.messages.filter((m) => m.severity === "error");
 const firstLine = (text: string): string => (text.split("\n").find((l) => l.trim() !== "") ?? text).replace(/\s+/g, " ").trim().slice(0, 200);
 
-/** The signature of a statement Lean printed (`theorem extracted_1 (n : ℕ) : T := by sorry`), whitespace collapsed; undefined when the text is no such statement. */
+/**
+ * The signature of a statement Lean printed, whitespace collapsed; undefined when the text is no such statement. Lean 4.27's Mathlib prints
+ * `theorem _example.extracted_1 (n : ℕ) : T := sorry`; `:= by sorry` is read too.
+ */
 function signatureOf(text: string): string | undefined {
   const head = /^\s*(?:theorem|lemma)\s+\S+\s+/.exec(text);
-  const tail = /\s*:=\s*by\s+sorry\s*$/.exec(text);
+  const tail = /\s*:=\s*(?:by\s+)?sorry\s*$/.exec(text);
   if (head === null || tail === null || tail.index < head[0].length) return undefined;
   const signature = text.slice(head[0].length, tail.index).replace(/\s+/g, " ").trim();
   try {
@@ -130,18 +133,53 @@ function commentAbove(proof: string, step: HaveStep): string {
 
 const wordsOf = (text: string): Set<string> => new Set([...maskCommentsAndStrings(text).matchAll(/[\p{L}_][\p{L}\p{N}_']*/gu)].map((m) => m[0]));
 
+/** The statements Lean printed for one probe of these steps, in file order, as signatures; a reason when the probe gives no statement for every step. */
+async function probe(check: LiftDeps["check"], sub: Submission, steps: readonly HaveStep[]): Promise<string[] | { reason: string }> {
+  const label = steps.length === 1 ? (steps[0] as HaveStep).name : `${steps.length} steps`;
+  const report = await check({ aux: sub.aux, proof: replaceBodies(sub.proof, steps.map((step) => ({ step, body: "by extract_goal; sorry" }))) });
+  if (report.leanStatus === undefined || report.leanStatus === "timeout" || report.leanStatus === "server_error") return { reason: `the extraction of ${label} was not checked (${report.reasons[0] ?? report.leanStatus ?? "refused before Lean"})` };
+  const error = errorsOf(report)[0];
+  if (error !== undefined) return { reason: `Lean refused extract_goal for ${label}: ${firstLine(error.text)}` };
+  const printed = report.messages
+    .filter((m) => m.severity === "info" && /^\s*(?:theorem|lemma)\s/.test(m.text))
+    .sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
+  if (printed.length !== steps.length) return { reason: `extract_goal printed ${printed.length} statement(s) for ${label}` };
+  const signatures: string[] = [];
+  for (const [k, step] of steps.entries()) {
+    const signature = signatureOf((printed[k] as { text: string }).text);
+    if (signature === undefined) return { reason: `extract_goal's statement for ${step.name} is not a statement: ${firstLine((printed[k] as { text: string }).text)}` };
+    signatures.push(signature);
+  }
+  return signatures;
+}
+
+/** One probe of every step; when it gives no statement for every step, one probe for each step, in order, until one of them fails. */
+async function extract(check: LiftDeps["check"], sub: Submission, steps: readonly HaveStep[]): Promise<string[] | { reason: string }> {
+  const together = await probe(check, sub, steps);
+  if (Array.isArray(together) || steps.length === 1) return together;
+  const signatures: string[] = [];
+  for (const step of steps) {
+    const one = await probe(check, sub, [step]);
+    if (!Array.isArray(one)) return one;
+    signatures.push(one[0] as string);
+  }
+  return signatures;
+}
+
 /**
  * Lifts every `have h : T := by sorry` of a proof into an `aux_h` lemma (plan change DP1, DP2), in at most four steps:
  *
  * 1. the battery, when given with the file's report, closes in place the steps that a tactic closes (`closeSorries`);
  * 2. one Lean check of the proof with `extract_goal` at each remaining `sorry`, whose printed statements are the lemmas' (each is renamed `aux_<step>`
- *    and put in the AUX region, with the theorem's binders, the earlier steps and whatever the step is under as its hypotheses, as Lean has them);
+ *    and put in the AUX region, with the theorem's binders, the earlier steps and whatever the step is under as its hypotheses, as Lean has them); when
+ *    that check gives no statement for every step (the extractions together exceed the declaration's heartbeats, as on real problems), one check for each
+ *    step, with only its own `extract_goal` (`extract`);
  * 3. each step becomes `have h : T := by apply aux_h <;> assumption`, and the file is checked;
  * 4. if that file has an error and every lemma's explicit binders have names, each step becomes `have h : T := aux_h <explicit binders>` and the file is checked
  *    again; the file with the fewer errors is the result.
  *
- * The result's file has no `-- uses:` (each hole carries its context in its statement). `{ reason }` when Lean refused the probe (no `extract_goal`, an error
- * elsewhere in the file) or printed something that is no statement; the caller then keeps what it had. An extracted statement that does not elaborate is not
+ * The result's file has no `-- uses:` (each hole carries its context in its statement). `{ reason }` when Lean refused a step's own probe (no `extract_goal`,
+ * an error elsewhere in the file, a timeout) or printed something that is no statement; the caller then keeps what it had. An extracted statement that does not elaborate is not
  * caught here: it is an error in the returned file's report, which the caller's reading of it (a blueprint that is not healthy) sends on to refinement.
  */
 export async function liftHaves(deps: LiftDeps, input: LiftInput): Promise<Lift> {
@@ -152,20 +190,13 @@ export async function liftHaves(deps: LiftDeps, input: LiftInput): Promise<Lift>
   const closed = before - steps.length;
   if (steps.length === 0) return { ...sub, closed, lifted: [] };
 
-  const probe = await deps.check({ aux: sub.aux, proof: replaceBodies(sub.proof, steps.map((step) => ({ step, body: "by extract_goal; sorry" }))) });
-  if (probe.leanStatus === undefined || probe.leanStatus === "timeout" || probe.leanStatus === "server_error") return { reason: `the extraction was not checked (${probe.reasons[0] ?? probe.leanStatus ?? "refused before Lean"})` };
-  const error = errorsOf(probe)[0];
-  if (error !== undefined) return { reason: `Lean refused the file with extract_goal: ${firstLine(error.text)}` };
-  const printed = probe.messages
-    .filter((m) => m.severity === "info" && /^\s*(?:theorem|lemma)\s/.test(m.text))
-    .sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
-  if (printed.length !== steps.length) return { reason: `extract_goal printed ${printed.length} statement(s) for ${steps.length} step(s)` };
+  const signatures = await extract(deps.check, sub, steps);
+  if (!Array.isArray(signatures)) return signatures;
 
   const used = wordsOf(sub.aux);
   const lemmas: Array<{ name: string; signature: string; step: HaveStep }> = [];
   for (const [k, step] of steps.entries()) {
-    const signature = signatureOf((printed[k] as { text: string }).text);
-    if (signature === undefined) return { reason: `extract_goal's statement for ${step.name} is not a statement: ${firstLine((printed[k] as { text: string }).text)}` };
+    const signature = signatures[k] as string;
     const base = `aux_${step.name.replace(/\./g, "_")}`;
     let name = base;
     for (let n = 2; used.has(name); n++) name = `${base}_${n}`;

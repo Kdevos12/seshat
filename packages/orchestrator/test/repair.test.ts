@@ -163,7 +163,7 @@ describe("cutFailures", () => {
     assert.match(await reasonOf(checked, "bad"), /outside a have/);
     checked = file("", "have h : n = n := by\n  bad\nexact main_ok h");
     const refused = await cutFailures({ checked, messages: [at(checked, "bad")] }, { check: async (sub) => ({ ...(await lift.check(sub)), messages: [{ severity: "error", pos: { line: 1, column: 0 }, text: "unknown tactic" }] }) });
-    assert.match(String((refused as { reason: string }).reason), /cannot be lifted: Lean refused the file with extract_goal/);
+    assert.match(String((refused as { reason: string }).reason), /cannot be lifted: Lean refused extract_goal for h: /);
   });
 
   it("refuses an error in the fixed part and a declaration that is not an aux_ lemma", async () => {
