@@ -1,12 +1,14 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { BlobStore, type HarnessEvent, readEvents } from "@seshat/core";
+import { BlobStore, extractSubmission, type HarnessEvent, HOLE_VERDICT_KIND, readEvents } from "@seshat/core";
 import { shown } from "@seshat/lit";
 import { informalProofOfNodes } from "@seshat/memory";
-import { type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type SessionRecord, type SketchRecord } from "@seshat/scheduler";
+import { isRefinement, type RefineStopRecord, SESSION_KIND, SKETCH_KIND, type SessionRecord, type SketchRecord } from "@seshat/scheduler";
 import { gateReport } from "./gate-report.ts";
 import { triageOfNodes, triageProblem, TRIAGE_KIND, type TriageResult } from "./triage.ts";
 import { RunSetupError } from "./setup-error.ts";
+import { type OutputKindRow, outputKinds } from "./output-kinds.ts";
+import { auxLemmas, leanLines, leanTheorems, lengthBuckets, type LengthRecord, median, referenceLength } from "./length.ts";
 
 /**
  * `harness audit RUN_DIR` (plan change PA15, documentation/audit.md): what a person reads to see why a problem was not certified, built from the
@@ -77,6 +79,10 @@ export interface Audit {
   /** Problems the gate stopped at their probe: no Lean progress. */
   gateStopsAfterProbe: number;
   dossiers: AuditDossier[];
+  /** One record for every problem, certified or not (plan change LP1, "Length"). */
+  lengths: LengthRecord[];
+  /** Output tokens by role and kind (plan change CL0): one row for each role seen in the run. */
+  outputKinds: OutputKindRow[];
 }
 
 export interface AuditSources {
@@ -86,6 +92,8 @@ export interface AuditSources {
   /** The messages of an attempt's transcript, or undefined. */
   transcript?: (attemptId: string) => unknown;
   reference?: (problemId: string) => string | undefined;
+  /** The measured Lean length of a person's reference for a problem (`referenceLength`). */
+  referenceLength?: (problemId: string) => LengthRecord["reference"];
 }
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
@@ -107,7 +115,13 @@ function transcriptCalls(messages: unknown): Record<string, number> | undefined 
 
 export function audit(src: AuditSources): Audit {
   const events = src.events;
-  const blob = src.blob ?? (() => undefined);
+  const blob = (hash: string): string | undefined => {
+    try {
+      return src.blob?.(hash);
+    } catch {
+      return undefined;
+    }
+  };
   const problemClaim = new Map<string, string>();
   const claimProblem = new Map<string, string>();
   const parentOf = new Map<string, string>();
@@ -203,6 +217,18 @@ export function audit(src: AuditSources): Audit {
   const sketches = new Map<string, SketchRecord[]>();
   const sessionRecords = new Map<string, SessionRecord[]>();
   const refineStops = new Map<string, RefineStopRecord>();
+  // Verdicts of the holes of each problem, by hole claim: the last one wins (a hole may have several sessions).
+  const holeVerdicts = new Map<string, Map<string, string>>();
+  const noteVerdict = (pid: string, key: string, verdict: unknown, reason?: unknown) => {
+    if (typeof verdict !== "string") return;
+    const by = holeVerdicts.get(pid) ?? new Map<string, string>();
+    by.set(key, verdict === "too_hard" && typeof reason === "string" ? `${verdict} (${reason})` : verdict);
+    holeVerdicts.set(pid, by);
+  };
+  // The validations of each problem's own claim, in journal order, with their file's blob.
+  const ownValidations = new Map<string, Array<{ method: string; verdict: string; hash: string }>>();
+  // `lean.check` runs made inside the problem's attempts: the input blob, and the duration once finished.
+  const checkRuns = new Map<string, { problemId: string; inputHash: string; ms?: number }>();
   const hygiene = new Map<string, AuditDossier["hygiene"]>();
   const literature = new Map<string, AuditDossier["literature"]>();
   const informalNodes = new Map<string, Array<{ nodeId: string; data: unknown }>>();
@@ -214,6 +240,16 @@ export function audit(src: AuditSources): Audit {
     else if (e.type === "tool_run.started" && e.data.capability === "lean.search") searched = true;
   }
   for (const e of events) {
+    if (e.type === "validation.finished") {
+      const own = claimProblem.get(e.data.claimId);
+      if (own !== undefined) ownValidations.set(own, [...(ownValidations.get(own) ?? []), { method: e.data.method, verdict: e.data.verdict, hash: e.data.submissionHash }]);
+    } else if (e.type === "tool_run.started" && e.data.capability === "lean.check" && e.data.attemptId !== undefined) {
+      const pid = attemptProblem.get(e.data.attemptId);
+      if (pid !== undefined) checkRuns.set(e.data.toolRunId, { problemId: pid, inputHash: e.data.inputHash });
+    } else if (e.type === "tool_run.finished") {
+      const run = checkRuns.get(e.data.toolRunId);
+      if (run !== undefined) run.ms = e.data.durationMs;
+    }
     if (e.type === "validation.finished" && e.data.verdict === "invalid" && e.data.reasons.length > 0) {
       const problemId = problemOfClaim(e.data.claimId);
       if (problemId !== undefined) leanErrors.set(problemId, [...(leanErrors.get(problemId) ?? []), e.data.reasons.join("\n")]);
@@ -224,7 +260,12 @@ export function audit(src: AuditSources): Audit {
       const pid = typeof d?.problemId === "string" ? d.problemId : problemOfClaim(e.data.claimId);
       if (pid === undefined) continue;
       if (e.data.kind === SKETCH_KIND) sketches.set(pid, [...(sketches.get(pid) ?? []), e.data.data as unknown as SketchRecord]);
-      else if (e.data.kind === SESSION_KIND) sessionRecords.set(pid, [...(sessionRecords.get(pid) ?? []), e.data.data as unknown as SessionRecord]);
+      else if (e.data.kind === SESSION_KIND) {
+        sessionRecords.set(pid, [...(sessionRecords.get(pid) ?? []), e.data.data as unknown as SessionRecord]);
+        const r = e.data.data as unknown as SessionRecord;
+        noteVerdict(pid, r.claimId ?? r.taskId, r.verdict, r.reason);
+      }
+      else if (e.data.kind === HOLE_VERDICT_KIND) noteVerdict(pid, e.data.claimId ?? e.data.nodeId, d?.verdict, d?.reason);
       else if (e.data.kind === "m12_refine_stop") refineStops.set(pid, e.data.data as unknown as RefineStopRecord);
       else if (e.data.kind === "hygiene" && d !== undefined) hygiene.set(pid, [...(hygiene.get(pid) ?? []), { check: String(d.check ?? ""), result: String(d.result ?? ""), ...(typeof d.detail === "string" ? { detail: d.detail } : {}) }]);
       else if (e.data.kind === "literature" && d !== undefined && d.verdict !== "unrelated") literature.set(pid, [...(literature.get(pid) ?? []), { title: String(d.title ?? ""), url: String(d.url ?? ""), verdict: String(d.verdict ?? "") }]);
@@ -261,7 +302,7 @@ export function audit(src: AuditSources): Audit {
         ...(last.problem !== undefined ? { problem: last.problem } : {}),
         ...(last.failureClass !== undefined ? { failureClass: last.failureClass } : {}),
         dropped: last.dropped ?? [],
-        plannerRounds: records.filter((r) => r.planner === true).length,
+        plannerRounds: records.filter(isRefinement).length,
         repairs: records.filter((r) => r.repairOf !== undefined).length,
         holeVerdicts: verdicts,
         ...(refineStops.has(problemId) ? { refineStop: (refineStops.get(problemId) as RefineStopRecord).reason } : {}),
@@ -298,6 +339,85 @@ export function audit(src: AuditSources): Audit {
       ...(reference !== undefined ? { reference } : {}),
     });
   }
+  const lengths: LengthRecord[] = [];
+  for (const problemId of problemClaim.keys()) {
+    const certified = certifiedOf(problemId);
+    const mine = [...sessions.values()].filter((s) => attemptProblem.get(s.attemptId) === problemId);
+    const validations = ownValidations.get(problemId) ?? [];
+    const records = sketches.get(problemId) ?? [];
+    // The file measured: the certified proof, else the last failed check of the problem's own claim, else its last check, else the last sketch.
+    let picked: { text: string; source: NonNullable<LengthRecord["file"]>["source"]; counted: "regions" | "file" } | undefined;
+    const fromBlob = (hash: string | undefined): { text: string; counted: "regions" | "file" } | undefined => {
+      const raw = hash === undefined ? undefined : blob(hash);
+      if (raw === undefined) return undefined;
+      try {
+        const sub = extractSubmission(raw);
+        return { text: `${sub.aux}\n${sub.proof}`, counted: "regions" };
+      } catch {
+        return { text: raw, counted: "file" };
+      }
+    };
+    const lastOf = (pred: (v: { method: string; verdict: string }) => boolean) => [...validations].reverse().find((v) => pred(v) && blob(v.hash) !== undefined)?.hash;
+    const order: Array<[NonNullable<LengthRecord["file"]>["source"], string | undefined]> = certified
+      ? [["certified_validation", lastOf((v) => v.method === "kernel_replay" && v.verdict === "valid") ?? lastOf((v) => v.verdict === "valid")]]
+      : [["last_failed_validation", lastOf((v) => v.verdict === "invalid")], ["last_validation", lastOf(() => true)]];
+    for (const [source, hash] of order) {
+      const got = fromBlob(hash);
+      if (got !== undefined) {
+        picked = { ...got, source };
+        break;
+      }
+    }
+    const lastSketch = records[records.length - 1];
+    if (picked === undefined && lastSketch !== undefined && typeof lastSketch.submission === "string") {
+      const raw = blob(lastSketch.submission);
+      if (raw !== undefined) {
+        let text = raw;
+        try {
+          const parsed = obj(JSON.parse(raw));
+          if (typeof parsed?.aux === "string" || typeof parsed?.proof === "string") text = `${String(parsed?.aux ?? "")}\n${String(parsed?.proof ?? "")}`;
+        } catch {
+          // Not JSON: the text is the file.
+        }
+        picked = { text, source: "last_sketch", counted: "regions" };
+      }
+    }
+    const verdicts: Record<string, number> = {};
+    for (const v of holeVerdicts.get(problemId)?.values() ?? []) verdicts[v] = (verdicts[v] ?? 0) + 1;
+    const sessionChecks = mine.filter((s) => s.leanChecks !== undefined);
+    const runs = [...checkRuns.values()].filter((r) => r.problemId === problemId);
+    const checkTimes: LengthRecord["checkTimes"] = [];
+    for (const r of runs) {
+      const input = r.ms === undefined ? undefined : blob(r.inputHash);
+      if (input === undefined || r.ms === undefined) continue;
+      try {
+        const snippets = obj(JSON.parse(input))?.snippets;
+        if (Array.isArray(snippets)) checkTimes.push({ chars: snippets.reduce((n: number, x) => n + (typeof obj(x)?.code === "string" ? (obj(x)?.code as string).length : 0), 0), ms: r.ms });
+      } catch {
+        // An input that is not JSON gives no size.
+      }
+    }
+    const stopReasons: Record<string, number> = {};
+    for (const s of mine) if (s.stoppedBy !== undefined) stopReasons[s.stoppedBy] = (stopReasons[s.stoppedBy] ?? 0) + 1;
+    const reference = src.referenceLength?.(problemId);
+    lengths.push({
+      problemId,
+      status: certified ? "certified" : "not certified",
+      outcome: outcomes.get(problemId) ?? "not finished",
+      ...(picked !== undefined
+        ? {
+            file: { source: picked.source, counted: picked.counted, lines: leanLines(picked.text), chars: picked.text.length, theorems: leanTheorems(picked.text).length },
+            auxLemmas: auxLemmas(picked.text),
+          }
+        : {}),
+      ...(lastSketch !== undefined ? { holes: { count: lastSketch.names.length, dropped: (lastSketch.dropped ?? []).length, healthy: lastSketch.healthy, verdicts } } : {}),
+      ...(sessionChecks.length > 0 ? { leanChecks: sessionChecks.reduce((n, s) => n + (s.leanChecks ?? 0), 0) } : {}),
+      leanCheckRuns: runs.length,
+      checkTimes,
+      stopReasons,
+      ...(reference !== undefined ? { reference } : {}),
+    });
+  }
   const finished = events.find((e) => e.type === "run.finished");
   const all = [...sessions.values()];
   return {
@@ -309,6 +429,8 @@ export function audit(src: AuditSources): Audit {
     sessionsWithoutCheck: all.filter((s) => (s.leanChecks ?? 0) === 0).length,
     gateStopsAfterProbe: gateReport(events)?.stoppedAtProbe ?? 0,
     dossiers,
+    lengths,
+    outputKinds: outputKinds({ events, blob, ...(src.transcript !== undefined ? { transcript: src.transcript } : {}) }),
   };
 }
 
@@ -322,6 +444,67 @@ function fenced(text: string): string[] {
 const usd = (n: number) => `$${n.toFixed(4)}`;
 const counts = (r: Record<string, number>) => Object.entries(r).map(([k, v]) => `${k} x${v}`).join(", ") || "none";
 
+const NOT_RECORDED = "not recorded";
+const cell = (v: string | number | undefined): string => (v === undefined ? NOT_RECORDED : String(v));
+
+/** The "Length" section (plan change LP1): every problem, then the success against reference length. */
+function renderLength(lengths: readonly LengthRecord[], heading: string): string[] {
+  const out = [
+    heading,
+    "",
+    "Lean lines are the lines that are neither blank nor only a comment (`--` and `/- -/`), of the file's `aux` and `proof` regions when the text has the markers, else of the whole text; characters count the same text. The file is the certified proof, else the problem's last failed check, else its last sketch. A number the journal does not hold is \"not recorded\".",
+    "",
+    "| Problem | Status | File (source) | Lines | Chars | `aux_` | Holes (verdicts) | `lean_check` | Check time vs size | Stopped by | Reference lines (theorems) |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
+  ];
+  for (const r of lengths) {
+    const times = r.checkTimes;
+    const biggest = times.length === 0 ? undefined : times.reduce((x, y) => (y.chars > x.chars ? y : x));
+    const timing = biggest === undefined ? NOT_RECORDED : `${times.length} timed; median ${median(times.map((t) => t.ms))} ms; largest ${biggest.chars} chars in ${biggest.ms} ms`;
+    const holes = r.holes === undefined ? "none" : `${r.holes.count} (${r.holes.healthy ? "healthy" : "not healthy"}${r.holes.dropped > 0 ? `, ${r.holes.dropped} dropped` : ""}; ${counts(r.holes.verdicts)})`;
+    const checks = r.leanChecks !== undefined ? String(r.leanChecks) : r.leanCheckRuns > 0 ? `${r.leanCheckRuns} tool runs` : NOT_RECORDED;
+    out.push(
+      `| \`${shown(r.problemId, 80)}\` | ${r.status} | ${r.file === undefined ? NOT_RECORDED : r.file.source.replace(/_/g, " ")} | ${cell(r.file?.lines)} | ${cell(r.file?.chars)} | ${cell(r.auxLemmas)} | ${holes} | ${checks} | ${timing} | ${Object.keys(r.stopReasons).length === 0 ? NOT_RECORDED : counts(r.stopReasons)} | ${r.reference === undefined ? "no reference" : `${r.reference.lines} (${r.reference.theorems})`} |`,
+    );
+  }
+  out.push(
+    "",
+    "Success against reference length (reference lines counted the same way; the median is of the certified problems' Seshat lines):",
+    "",
+    "| Reference lines | Certified / total | Median Seshat lines (certified) |",
+    "|---|---|---|",
+  );
+  for (const b of lengthBuckets(lengths)) out.push(`| ${b.bucket} | ${b.certified} / ${b.total} | ${cell(b.medianCertifiedLines)} |`);
+  out.push("");
+  return out;
+}
+
+/** The "Output tokens by role and kind" section (plan change CL0): what each role's output is made of, split by characters. */
+function renderOutputKinds(rows: readonly OutputKindRow[], heading: string): string[] {
+  const out = [
+    heading,
+    "",
+    "Output tokens as the journal charged them, by role (else by site). A session's tokens are split across thinking, text outside tool calls and tool-call arguments from its transcript, in proportion to characters; a one-shot call's text is its stored response (at most one token per 4 characters) and the rest of its output is thinking that was not stored. A row with no transcript (a hole session of an older run) has no split: \"not recorded\". Prose share is text over the split tokens.",
+    "",
+    "| Role | Calls | Output tokens | Thinking | Text | Tool-call arguments | Prose share | Split covers |",
+    "|---|---|---|---|---|---|---|---|",
+  ];
+  const share = (n: number, of: number) => `${Math.round((100 * n) / of)}%`;
+  const kind = (n: number, of: number) => `${Math.round(n)} (${share(n, of)})`;
+  for (const r of rows) {
+    if (r.split <= 0) {
+      out.push(`| ${r.role} | ${r.calls} | ${r.outputTokens} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | 0% |`);
+      continue;
+    }
+    const covers = `${share(Math.min(r.split, r.outputTokens), Math.max(r.outputTokens, 1))}${r.estimatedMessages > 0 ? `; ${r.estimatedMessages} message(s) estimated from characters` : ""}`;
+    const thinking = `${kind(r.thinking, r.split)}${r.thinkingNotStored > 0 ? `, ${Math.round(r.thinkingNotStored)} not stored` : ""}`;
+    out.push(`| ${r.role} | ${r.calls} | ${r.outputTokens} | ${thinking} | ${kind(r.text, r.split)} | ${kind(r.toolCalls, r.split)} | ${share(r.text, r.split)} | ${covers} |`);
+  }
+  if (rows.length === 0) out.push(`| none | 0 | 0 | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | ${NOT_RECORDED} | 0% |`);
+  out.push("");
+  return out;
+}
+
 /** The Markdown of an audit; `level` is the heading depth of its title (an ablation's arm is one level lower). */
 export function renderAudit(a: Audit, title: string, level = 1): string[] {
   const h = (n: number) => "#".repeat(level + n);
@@ -334,6 +517,8 @@ export function renderAudit(a: Audit, title: string, level = 1): string[] {
     `- Problems the budget gate stopped after the probe: ${a.gateStopsAfterProbe}.`,
     "",
   ];
+  out.push(...renderLength(a.lengths, `${h(1)} Length`));
+  out.push(...renderOutputKinds(a.outputKinds, `${h(1)} Output tokens by role and kind`));
   for (const d of a.dossiers) {
     out.push(`${h(1)} \`${shown(d.problemId, 120)}\` (${d.outcome})`, "");
     out.push(`**Spend**: ${usd(d.spendUsd)}; by site: ${Object.entries(d.spendBySite).map(([s, v]) => `${s} ${usd(v)}`).join(", ") || "none"}.`, "");
@@ -389,7 +574,7 @@ export function auditTargets(dir: string): Array<{ name: string; dir: string }> 
 }
 
 export interface AuditIo {
-  /** A directory of `<problemId>.md` files: a person's reference solutions. */
+  /** A directory of `<problemId>.md` (or `.lean`) files: a person's reference solutions. */
   reference?: string | undefined;
   out: (line: string) => void;
 }
@@ -416,6 +601,7 @@ function auditOf(dir: string, reference: string | undefined): Audit {
     },
     ...(reference !== undefined
       ? {
+          referenceLength: (problemId: string) => referenceLength(reference, problemId),
           reference: (problemId: string) => {
             const file = join(reference, `${problemId.replace(/[\\/]/g, "_")}.md`);
             return existsSync(file) ? readFileSync(file, "utf8") : undefined;
@@ -425,18 +611,25 @@ function auditOf(dir: string, reference: string | undefined): Audit {
   });
 }
 
-/** `harness audit DIR [--reference DIR]`: writes `audit.md` into DIR (a run, or an ablation with one section per arm) and returns its path. Reads only. */
+/** `harness audit DIR [--reference DIR]`: writes `audit.md` and `length.json` into DIR (a run, or an ablation with one section per arm) and returns the path of `audit.md`. Reads only. */
 export function auditCommand(dir: string, io: AuditIo): string {
   const root = resolve(dir);
   const reference = io.reference !== undefined ? resolve(io.reference) : undefined;
   if (reference !== undefined && !existsSync(reference)) throw new RunSetupError(`--reference ${io.reference} does not exist`);
   const targets = auditTargets(root);
   const lines: string[] = [];
-  if (targets.length === 1 && targets[0]?.name === "run") lines.push(...renderAudit(auditOf(targets[0].dir, reference), "Audit"));
+  const records: Array<LengthRecord & { arm: string; runId?: string }> = [];
+  const section = (name: string, dir: string, title: string, level: number) => {
+    const a = auditOf(dir, reference);
+    lines.push(...renderAudit(a, title, level));
+    records.push(...a.lengths.map((r) => ({ arm: name, ...(a.runId !== undefined ? { runId: a.runId } : {}), ...r })));
+  };
+  if (targets.length === 1 && targets[0]?.name === "run") section("run", targets[0].dir, "Audit", 1);
   else {
     lines.push("# Audit of an ablation", "", `${targets.length} arm(s), one section each.`, "");
-    for (const t of targets) lines.push(...renderAudit(auditOf(t.dir, reference), `Arm ${t.name}`, 2));
+    for (const t of targets) section(t.name, t.dir, `Arm ${t.name}`, 2);
   }
+  writeFileSync(join(root, "length.json"), `${JSON.stringify({ records }, null, 2)}\n`);
   const file = join(root, "audit.md");
   writeFileSync(file, `${lines.join("\n")}\n`);
   io.out(`Audit: ${file}`);

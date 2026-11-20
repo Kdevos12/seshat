@@ -1,10 +1,19 @@
+/**
+ * The fleet's sampled settings (documentation/fleet.md, "Sampled settings"): the options that describe them, and
+ * `sampleSettings`, the one draw of a session's temperature, thinking level, directive and mode.
+ *
+ * Called by `fleet.ts` once per session. The bucket arithmetic is `bucket.ts`'s, the values a stall leaves out are
+ * `stall.ts`'s. It never records anything: the caller puts the settings and their draws in the allocation.
+ */
 import { DIRECTIVE_TEXTS } from "@seshat/heuristics";
 import type { JsonObject } from "@seshat/lines";
-import type { Attempt } from "@seshat/memory";
-import { UNIFORM } from "./beta.ts";
+import type { Attempt, DeactivationRule } from "@seshat/memory";
+import { betaMean, UNIFORM } from "./beta.ts";
+import { deactivatedValues, settingKeyOf, valueMeans, withPrior } from "./bucket.ts";
 import { thompson } from "./choose.ts";
 import { type AttemptWeight, group } from "./posterior.ts";
 import type { RandomSource } from "./random.ts";
+import type { Excluded } from "./stall.ts";
 
 /**
  * The directives a session can be given at random (plan change PC6, after Nexus): one sentence that
@@ -86,20 +95,29 @@ export function samplesSettings(config: SettingsConfig): boolean {
   return config.temperature !== undefined || config.thinking !== undefined || config.directives !== undefined || config.modes !== undefined;
 }
 
+/**
+ * The bucket's history for the settings (option `bucketPrior`, documentation/fleet.md, "The bucket prior"): the finished
+ * attempts of the session's bucket, on any claim, with the weight of the prior and M5's rule of deactivation.
+ */
+export interface SettingsBucket {
+  history: readonly Attempt[];
+  /** The weight, in pseudo-sessions, of a value's mean in the bucket in the prior of its posterior on the claim. */
+  priorWeight: number;
+  rule: DeactivationRule;
+  weigh?: AttemptWeight;
+}
+
 /** What `sampleSettings` decided, and the draws it was decided from. */
 export interface SampledSettings {
   /** The settings to record on the attempt. */
   settings: JsonObject;
   /** The draw of each value of each learned setting, rounded: `{ thinking: { low: 0.41, high: 0.77 } }`. */
   draws: { [setting: string]: { [value: string]: number } };
+  /** The values `exclude` left out of a draw (only those that were candidates and left another value): what the allocation records. */
+  excluded?: Excluded;
 }
 
 const round = (x: number): number => Math.round(x * 10000) / 10000;
-
-/** The value a recorded setting has, as the text its posterior is kept under. */
-function keyOf(value: unknown): string | undefined {
-  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
-}
 
 /**
  * One session's settings. The discrete settings (thinking level, directive, mode, and a temperature given as a
@@ -108,6 +126,14 @@ function keyOf(value: unknown): string | undefined {
  * highest draw; a value nothing is known of has the flat posterior, so it is tried. A temperature given as a range
  * is drawn uniformly (nothing is learned over a continuum here), and a fixed one is just recorded. The draws come
  * from `random`, which the caller seeds from the run's seed, the problem, the prover and the session.
+ *
+ * With `bucket`, a value's posterior on the claim starts from `priorWeight` pseudo-sessions at the value's mean in the
+ * bucket (the prior the heuristic cards take from their family), and a value M5's rule turns off in the bucket (its
+ * sessions against the sessions given the other values of the setting) is not drawn while another value is left.
+ * Without it, nothing here changes.
+ *
+ * `exclude` (option `switchOnStall`) leaves out the value of `mode` and of `thinking` that a stalled attempt had, while
+ * another value is left; the values it did leave out are returned as `excluded`.
  *
  * `ignored` says whether the session's model family ignores a setting at a thinking level (`undefined`: the run's
  * own). A temperature it ignores is not sampled and spends no arm: the settings say so under `ignored`.
@@ -119,12 +145,35 @@ export function sampleSettings(
   partial: number,
   weigh?: AttemptWeight,
   ignored?: (setting: string, thinking: string | undefined) => boolean,
+  bucket?: SettingsBucket,
+  exclude?: Excluded,
 ): SampledSettings {
   const settings: JsonObject = {};
   const draws: SampledSettings["draws"] = {};
+  const excluded: Excluded = {};
   const learn = (name: string, values: readonly (string | number)[]): string | number | undefined => {
-    const posteriors = group(attempts, (attempt) => keyOf(attempt.settings?.[name]), partial, weigh);
-    const picked = thompson(random, values.map((value) => [String(value), posteriors.get(String(value))?.choice ?? UNIFORM] as const));
+    const posteriors = group(attempts, (attempt) => settingKeyOf(attempt, name), partial, weigh);
+    let candidates = values;
+    let means: Map<string, number> | undefined;
+    if (bucket !== undefined) {
+      const key = (attempt: Attempt) => settingKeyOf(attempt, name);
+      means = valueMeans(bucket.history, key, partial, bucket.weigh);
+      const off = deactivatedValues(values.map(String), bucket.history, key, bucket.rule, bucket.weigh);
+      candidates = values.filter((value) => !off.includes(String(value)));
+    }
+    const out = name === "mode" || name === "thinking" ? exclude?.[name] : undefined;
+    if (out !== undefined && candidates.some((value) => String(value) === out) && candidates.some((value) => String(value) !== out)) {
+      candidates = candidates.filter((value) => String(value) !== out);
+      excluded[name as keyof Excluded] = out;
+    }
+    const picked = thompson(
+      random,
+      candidates.map((value) => {
+        const own = posteriors.get(String(value))?.choice;
+        const mean = means?.get(String(value));
+        return [String(value), bucket === undefined ? (own ?? UNIFORM) : withPrior(own, { mean: mean ?? betaMean(UNIFORM), weight: bucket.priorWeight })] as const;
+      }),
+    );
     if (picked === undefined) return undefined;
     draws[name] = Object.fromEntries(picked.draws.map(([value, draw]) => [value, round(draw)]));
     return values.find((value) => String(value) === picked.choice);
@@ -166,5 +215,5 @@ export function sampleSettings(
     const value = learn("mode", config.modes);
     if (value !== undefined) settings.mode = value;
   }
-  return { settings, draws };
+  return { settings, draws, ...(Object.keys(excluded).length > 0 ? { excluded } : {}) };
 }

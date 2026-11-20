@@ -27,7 +27,7 @@ export interface WorkReading {
   helpers: string;
 }
 
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** True when the text (comments and strings aside) names the dependency as an identifier. */
 const mentions = (text: string, name: string): boolean =>

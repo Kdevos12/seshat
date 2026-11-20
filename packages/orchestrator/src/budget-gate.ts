@@ -1,7 +1,7 @@
 import { type EventDataMap, hash32, type Journal, seeded, TASK_WRITER } from "@seshat/core";
 import { attemptWeights, DEFAULT_GAMMA, posteriorOf, sample, UNIFORM } from "@seshat/fleet";
 import { type BudgetAnswer, type BudgetAsk, type Decide, isInterrupted } from "@seshat/lines";
-import { type Attempt, failureDepth, type FrontierEntry, type FrontierKind } from "@seshat/memory";
+import { type Attempt, failureDepth, type FrontierEntry, type FrontierKind, type GrowthPoint } from "@seshat/memory";
 import {
   type GateAnswer,
   type GateQuery,
@@ -18,6 +18,7 @@ import {
   widenRule,
 } from "@seshat/scheduler";
 import type { Ledger } from "./budget.ts";
+import { DRAFT_MODE } from "./lean-draft.ts";
 import { SHORT_PROBES, type TriageResult } from "./triage.ts";
 
 /** A failed check at this depth or deeper typed every step and left only goals: Lean got somewhere (documentation/scheduler.md, "The budget gate"). */
@@ -56,6 +57,12 @@ export interface BudgetGateOptions {
    * lemma included), case or reduction as Lean progress, outside a blueprint too. `evidence` entries never count. Absent: the measure is what it was.
    */
   frontierEntries?: () => readonly FrontierEntry[];
+  /**
+   * `RunConfig.longProof` (documentation/scheduler.md, "The budget gate"): a probe with Lean progress widens the problem whatever its class, within its allowance;
+   * for a problem the triage called `long`, a session is launched while the frontier grows and the problem is stopped after `dryChecks` finished sessions in a row
+   * that made it grow no more. `growth` is `frontierGrowth` (LH3). Absent: the rule alone.
+   */
+  longProof?: { dryChecks: number; growth: () => readonly GrowthPoint[] };
   /** Whether the problem has an accepted `informal_proof` node: an informal plan counts once as progress at the widening (PA5, task 51). */
   informalAccepted?: () => boolean;
   /** The problem's formal-cost triage, when the run has one and it is journaled (PA14): read from the journal, so a resumed run reads the same. */
@@ -129,6 +136,12 @@ export class BudgetGate {
     return capUsd * (this.extensions() > 0 ? 3 : 1);
   }
 
+  /** What the probe has spent so far: its prover's attempts and the Lean draft that ran before them under the probe's ledger (the draft belongs to no task). */
+  probeSpentUsd(taskId: string): number {
+    const projection = this.o.journal.projection;
+    return [...projection.attemptsOfTask(taskId), ...projection.attemptsOfNoTask(this.o.claimId)].reduce((sum, a) => sum + (a.usd ?? 0), 0);
+  }
+
   /** The extensions granted to this problem: the probe rows after the first (a resumed run reads this, so that it grants none twice). */
   private extensions(): number {
     return Math.max(0, this.rows().filter((g) => g.site === "wave" && g.action === "probe").length - 1);
@@ -152,9 +165,12 @@ export class BudgetGate {
     return { remainingUsd: Number.isFinite(remaining) ? remaining : this.budgetUsd(), budgetUsd: this.budgetUsd() };
   }
 
-  /** The attempts of the claim as the fleet reads them: this run's and the earlier runs' of the chain, discounted per run. */
+  /**
+   * The sessions of the claim as the gate reads them, for its posterior and its prices: this run's and the earlier runs' of the chain, discounted per
+   * run. A Lean draft is an attempt for the memory and the audit but no session, so the gate's numbers leave it out (one predicate, here).
+   */
   private attempts(): Array<{ attempt: Attempt; usd: number | null }> {
-    return this.o.journal.projection.attempts(this.o.claimId).map((row) => ({
+    return this.o.journal.projection.attempts(this.o.claimId).filter((row) => row.settings?.mode !== DRAFT_MODE).map((row) => ({
       attempt: {
         attemptId: row.attempt_id,
         claimId: row.claim_id,
@@ -178,9 +194,14 @@ export class BudgetGate {
     return { beta: p.success, counted: p.attempts };
   }
 
-  /** What a session of this problem costs: the mean of the sessions paid on the claim, else M12's first guess. */
+  /** Whether the formal-cost triage called the problem `long`: a problem the Lean draft (`RunConfig.leanDraft`) does not start with. */
+  get long(): boolean {
+    return this.o.triage?.()?.class === "long";
+  }
+
+  /** What a session of this problem costs: the mean of the sessions paid on the claim, else M12's first guess. A Lean draft is no session: its cost is not in the mean. */
   sessionUsd(): number {
-    const paid = this.attempts().flatMap((a) => (a.usd === null ? [] : [a.usd]));
+    const paid = this.attempts().flatMap(({ usd }) => (usd === null ? [] : [usd]));
     return paid.length === 0 ? PRIOR_SESSION_USD : paid.reduce((sum, usd) => sum + usd, 0) / paid.length;
   }
 
@@ -333,7 +354,7 @@ export class BudgetGate {
     const attempts = projection.attemptsOfTask(who.taskId);
     const last = attempts.at(-1);
     if (last === undefined || last.finished_seq === null || last.outcome !== "budget_exhausted") return undefined;
-    if (attempts.reduce((sum, a) => sum + (a.usd ?? 0), 0) < who.capUsd * (1 - 1e-9)) return undefined;
+    if (this.probeSpentUsd(who.taskId) < who.capUsd * (1 - 1e-9)) return undefined;
     const ids = new Set(attempts.map((a) => a.attempt_id));
     const checks = projection.validationsOfProblem(this.o.problemId).filter((v) => v.attempt_id !== null && ids.has(v.attempt_id)).length;
     if (checks < 1 || this.progress() !== undefined) return undefined;
@@ -402,14 +423,81 @@ export class BudgetGate {
     // An accepted informal proof counts as progress once (PA5): a later probe or judgement does not count it again.
     if (why === undefined && this.o.informalAccepted?.() === true && !this.rows().some((g) => g.site === "wave" && g.reason.includes(INFORMAL_PROGRESS))) why = INFORMAL_PROGRESS;
     const estimate = Math.max(1, provers) * this.sessionUsd();
+    // Long proofs follow the frontier (LP4): Lean progress at the probe widens the problem, as it keeps a long problem's sessions going. The formula's one
+    // Thompson draw from a posterior of one or two attempts would otherwise decide alone (LP6's real run: a problem with frozen links skipped on a draw of 0.002).
+    // The informal credit alone is not Lean progress; a wave the problem's allowance cannot pay goes to the formula.
+    const state = this.state();
+    if (this.o.longProof !== undefined && why !== undefined && why !== INFORMAL_PROGRESS && estimate <= state.remainingUsd) {
+      return this.write(
+        {
+          site: "wave",
+          action: "widen",
+          by: "progress",
+          estimateUsd: estimate,
+          remainingUsd: state.remainingUsd,
+          budgetUsd: state.budgetUsd,
+          share: this.o.settings.share.wave,
+          rung: this.o.rung(),
+          exploration: false,
+          progress: true,
+          reason: `the probe made Lean progress (${why}) and long proofs follow the frontier: the problem widens`,
+        },
+        { prover: "p1" },
+      );
+    }
     const query = { ...this.query("wave", estimate, `wave:${this.rows().filter((g) => g.site === "wave").length}`), progress: why !== undefined };
     const answer = widenRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);
     return this.write(why === undefined ? verdict : { ...verdict, reason: why === INFORMAL_PROGRESS ? `${verdict.reason} (${why})` : `${verdict.reason} (Lean progress: ${why})` }, { prover: "p1" }, decisionId);
   }
 
+  /**
+   * The finished sessions of the problem, newest last, that closed nothing: the run at the end of the attempts, each counted unless the frontier grew while it ran
+   * (between the end of the session before it and its own). Resumable: it is read from the journal alone.
+   */
+  private dryRun(growth: readonly GrowthPoint[]): number {
+    const grew = growth.flatMap((p, i) => (i > 0 && p.score > (growth[i - 1] as GrowthPoint).score ? [p.seq] : []));
+    const ends = this.o.attemptIds().flatMap((id) => this.o.journal.projection.attempt(id)?.finished_seq ?? []).sort((a, b) => a - b);
+    let dry = 0;
+    let before = 0;
+    for (const end of ends) {
+      dry = grew.some((seq) => seq > before && seq <= end) ? 0 : dry + 1;
+      before = end;
+    }
+    return dry;
+  }
+
+  /** A session of a `long` problem: the frontier's growth decides, not the formula (the formula would stop a problem that is closing its holes). Undefined: not one. */
+  private longSession(who: { prover: string; session: number }): GateOutcome | undefined {
+    const long = this.o.longProof;
+    if (long === undefined || this.o.triage?.()?.class !== "long") return undefined;
+    const dry = this.dryRun(long.growth());
+    const stop = dry >= long.dryChecks;
+    const state = this.state();
+    return this.write(
+      {
+        site: "session",
+        action: stop ? "skip" : "launch",
+        by: "progress",
+        estimateUsd: this.sessionUsd(),
+        remainingUsd: state.remainingUsd,
+        budgetUsd: state.budgetUsd,
+        share: this.o.settings.share.session,
+        rung: this.o.rung(),
+        exploration: false,
+        progress: !stop,
+        reason: stop
+          ? `the problem is long and its last ${dry} finished session(s) closed no hole and added nothing to the frontier (the limit is ${long.dryChecks}): it stops`
+          : `the problem is long and its frontier grew within the last ${long.dryChecks} finished sessions (${dry} without growth): the session goes on`,
+      },
+      who,
+    );
+  }
+
   /** Before a session of a widened prover. */
   async session(who: { prover: string; session: number }): Promise<GateOutcome> {
+    const long = this.longSession(who);
+    if (long !== undefined) return long;
     const query = this.query("session", this.sessionUsd(), `session:${who.prover}:${who.session}`);
     const answer = gateRule(query, this.state(), this.o.settings);
     const { verdict, decisionId } = await this.broken(answer, query);

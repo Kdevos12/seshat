@@ -573,6 +573,16 @@ export class Journal {
         if (d.site !== "wave" || d.action !== "probe") throw new Error(`${what}: a probe is the problem's first launch: a wave probed, by probe`);
         return;
       case "progress":
+        // A session of a `long` problem follows the frontier's growth: launched while it grew within the last few sessions (progress true), stopped when it did not (false).
+        if (d.site === "session") {
+          if (d.progress === undefined || (d.action === "skip") === d.progress || (d.action !== "skip" && d.action !== "launch")) throw new Error(`${what}: a session by progress is launched with progress true or skipped with progress false`);
+          return;
+        }
+        // A wave of a long-proof run widens on Lean progress (progress true); otherwise a wave by progress is a skip for want of it (false).
+        if (d.site === "wave" && d.action === "widen") {
+          if (d.progress !== true) throw new Error(`${what}: a wave widened by progress says progress true`);
+          return;
+        }
         if (d.site !== "wave" || d.action !== "skip" || d.progress !== false) throw new Error(`${what}: no progress is what a progress skip says: a wave skipped with progress false`);
         return;
       case "decide": {

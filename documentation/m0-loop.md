@@ -326,7 +326,7 @@ randomness, so the same journal gives the same card, byte for byte. `stateCard(s
 beside the projection, and returns the structured card (`goal`, `holes`, `lemmas`, `approaches`, `timeouts`, as `StateCardData`, which `stateCardData` gives alone) with its bounded `text` (`renderStateCard` makes the text from the data), so that a later pass (a consolidation pass, an idea generator) calls it without the run loop. The card holds, in this
 order: the goal's statement id and status; the holes (the claims joined to the goal by `decomposes_into`) with their goal text and status; the
 lemmas Lean accepted, by name (the `aux_` lemmas of the last session's check with no error and no `sorry`, recorded as an `accepted_lemmas`
-node when the option is on); the failed approaches as (strategy label, failure class, first error normalised) with a count, the most frequent
+node when the option is on; under `longProof` the node also lists the lemmas locked into the file, [scheduler.md](scheduler.md#long-proofs-the-have-sketch-and-its-lifter-plan-changes-lp2-dp1-to-dp3)); the failed approaches as (strategy label, failure class, first error normalised) with a count, the most frequent
 first; the timeouts with their count. A session counts once, by the class and typed detail of its last check (`failureDetail`, which the prover
 records itself when the option is on and M1 does not); the normalisation is `normalizeDetail`, the one the failure memory uses. A session with no
 strategy label (no M1) shows `unlabelled`. A timeout is counted on its own line, and a check Lean never answered says nothing about an approach.
@@ -541,7 +541,7 @@ per prover, can take a ledger past its limit.
 | `projection.sqlite` | The queryable view of the journal. |
 | `config.json` | The configuration recorded in `run.started`, the problem ids and the code revision. |
 | `blobs/` | Every file a prover submitted, by its `submissionHash`, and every tool run's input and output, by its `inputHash` and `outputHash` ([journal.md](journal.md#blobs)). |
-| `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. |
+| `transcripts/ATTEMPT_ID.json` | The messages of each session, as pi keeps them. A hole session of M12 saves its messages the same way, as `transcripts/hole_ID.json` (the id is in the `requestHash` blob of its `model_call.finished` events); runs before plan change CL0 have none. |
 | `proofs/NAME-HASH.lean` | The file of each candidate proof. |
 | `report.md`, `report.json` | The report. |
 | `RESULT.md` | What the run found, built from the journal alone and rewritten after every certified result and at every stop ([quickstart.md](quickstart.md#resultmd)). |

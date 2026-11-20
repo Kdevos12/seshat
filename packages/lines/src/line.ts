@@ -345,6 +345,18 @@ export interface ProblemContext {
    * lines other than M12.
    */
   checkSketch?: (submission: Submission) => Promise<ValidationReport>;
+  /**
+   * The classical battery on the `sorry` of a file `checkSketch` checked (`RunConfig.sorryBattery`, or `longProof`): with no model call, it tries the tactics of line M10
+   * on each `sorry` and returns the regions with the ones it closed, or undefined when it closed none. M12's draft from the informal proof (`liftHaves`) closes the
+   * steps a tactic closes before it lifts the others. Absent in a context an older caller builds, and for the lines other than M12.
+   */
+  closeSorries?: (submission: Submission, report: ValidationReport) => Promise<Submission | undefined>;
+  /**
+   * Locks lemmas into the problem's file after its prefix (plan change LP3, frozen links): Lean checks them in every file and the certifier replays them whole,
+   * and the prover's edits cannot reach them. The text is screened and Lean checks the file with it first: false when either refuses it (nothing is locked).
+   * `recorded: true` for lemmas an `accepted_lemmas` node holds already (a resumed run), which that node is not given again. Only M12 gets it, with its option `freeze`; it makes no claim's status. Absent in a context an older caller builds.
+   */
+  lock?: (lemmas: string, options?: { recorded?: boolean }) => Promise<boolean>;
 }
 
 /** What a hole session is asked: the claim whose small file it works on, and the only context it has. */
@@ -359,6 +371,8 @@ export interface HoleSessionRequest {
    * dependency stub). A check the claim's own workbench accepts (a file without `sorry` that Lean accepts) ends it too.
    */
   done: (submission: Submission, report: ValidationReport) => boolean;
+  /** The lemma's name in the file (`aux_bound`), for what the lines look up. */
+  name?: string;
   /** Names the session in the journal's model calls (`<task>:<session>`). */
   key: string;
 }

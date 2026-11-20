@@ -29,7 +29,7 @@ import { modelOrderOf } from "@seshat/fleet";
 import { environmentImports, environmentProbe, leanEnvRecord, readLock } from "@seshat/lean-env";
 import { type JsonObject, type LineId, type LineRegistry, lineLeanEnv, resolveLines, resumeRefusals } from "@seshat/lines";
 import { registryDefinitions, seedDefinitions } from "./library-registry.ts";
-import { CARD_NOTES_CHARS, frontier as frontierOf, type FrontierKind, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
+import { CARD_NOTES_CHARS, frontier as frontierOf, frontierGrowth, type FrontierKind, INFORMAL_PROOF_KIND, informalProofOfNodes, MemoryStore, type ModelRanking, sketchOfNodes, type StatementIdentity } from "@seshat/memory";
 import { maskedCount } from "./mask.ts";
 import { LEAN_SEARCH, LeanSearchPush, PRIVATE_REASON, RegistryLeanSearch } from "@seshat/lean-search";
 import { LEAN_CERTIFY, messageOf, pricesHash, RegistryLeanCertifier, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -91,9 +91,10 @@ import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
 import { type RestartsConfig, resolveRestarts, restartsConfigProblems } from "./restarts.ts";
+import { checkLeanDraft, leanDraft, type LeanDraftConfig, type LeanDraftDeps } from "./lean-draft.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
-import { recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
+import { DEFAULT_DRY_CHECKS, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
 import { runChild } from "./child.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
@@ -165,12 +166,28 @@ export interface RunConfig {
    */
   sorryBattery?: SorryBatteryConfig;
   /**
+   * A Lean-only first draft before the probe (plan change CL1, CL2, documentation/scheduler.md, "The Lean draft before the probe"; experimental): at a fresh
+   * probe of a problem that is not `long`, one completion with no tools at thinking `off`, capped at `maxOutputTokens` (default 1024), writes the proof as a
+   * `have`-sketch in Lean alone; Lean checks it, a draft that passes is a candidate like any other, and one with an error is cut at the first error and
+   * continued `resumes` times (default 1). Charged to the probe's ledger. Needs the budget gate. Absent: off, and a run that records and prompts as it always did.
+   */
+  leanDraft?: LeanDraftConfig;
+  /**
    * The formal-cost triage (plan change PA14, documentation/scheduler.md, "The budget gate"): after the informal loop and before the first outer session, the
    * harness classes the problem `invest`, `short` or `skip` from what the journal holds (the informal proof, its facts, `plausible`, the first cases, the
    * statement's size) with no model call, journals it as a `formal_triage` node, and the budget gate reads it: `skip` gives the problem its probe alone,
    * `short` caps the work after the probe at a few probes, `invest` changes nothing. Without the gate it is only journaled. Absent or false: off.
    */
   triage?: boolean;
+  /**
+   * Long proofs (plan change LP, documentation/scheduler.md, "The budget gate"; needs `triage`): the triage has a fourth class, `long`, for an accepted informal
+   * proof over the short limits with at least half its facts found, when the allowance is at least `triageUsd` (default `DEFAULT_LONG_TRIAGE_USD`, $1); and
+   * the budget gate follows the frontier's growth for such a problem: a closed hole or a registered healthy blueprint is progress, its sessions go on while
+   * holes close, and it stops, journaling why, after `dryChecks` (default 3) finished sessions in a row that closed none. With line M12's `blueprints` and an
+   * accepted informal proof (`informalFirst`), `draft` (default true) makes the first blueprint a `have` sketch the planner writes from that proof and the harness lifts
+   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3). Absent: off.
+   */
+  longProof?: LongProofConfig;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
   cacheRetention?: CacheRetention;
   /**
@@ -531,6 +548,7 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.autoTool !== undefined && config.tools.includes(config.autoTool)) problems.push(`autoTool ${config.autoTool} is also in tools: name it once`);
   if (config.budgetShare !== undefined && !(config.budgetShare > 0)) problems.push(`budgetShare must be above 0, got ${config.budgetShare}`);
   problems.push(...frontierConfigProblems(config.frontier));
+  problems.push(...longProofConfigProblems(config.longProof, config.triage === true, (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true));
   problems.push(...restartsConfigProblems(config.restarts));
   problems.push(...campaignConfigProblems(config.campaign));
   if (config.campaign !== undefined && config.horizon !== "campaign") problems.push("campaign settings go with horizon campaign");
@@ -541,6 +559,10 @@ export function checkConfig(config: RunConfig): string[] {
   if (config.informalFirst !== undefined) problems.push(...checkInformalFirst(config.informalFirst));
   if (config.cards !== undefined) problems.push(...checkCards(config.cards));
   if (config.sorryBattery !== undefined) problems.push(...checkSorryBattery(config.sorryBattery));
+  if (config.leanDraft !== undefined) {
+    problems.push(...checkLeanDraft(config.leanDraft));
+    if (config.gate === undefined) problems.push("leanDraft starts at the budget gate's probe: set gate");
+  }
   if (config.consortium !== undefined) problems.push(...checkConsortium(config.consortium));
   if (config.offpeak?.maxWaitMinutes !== undefined && !(config.offpeak.maxWaitMinutes > 0)) {
     problems.push(`offpeak.maxWaitMinutes must be a positive number of minutes, got ${config.offpeak.maxWaitMinutes}`);
@@ -684,7 +706,22 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, config.lineOptions ?? {});
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) and its frozen links (LP3) where M12 has blueprints, and M3's candidates from them (DP5); a value the person gave for those options stays.
+  const lp = config.longProof;
+  const lineOptions =
+    lp !== undefined && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
+      ? {
+          ...config.lineOptions,
+          M12: {
+            ...(lp.draft !== false ? { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}) } : {}),
+            ...(lp.freeze !== false ? { freeze: true } : {}),
+            ...config.lineOptions.M12,
+          },
+          // M3 reads its candidates from the lemmas M12 locks, failed attempts included (DP5).
+          ...((config.lines ?? []).includes("M3") && lp.freeze !== false ? { M3: { fromFrozen: true, ...config.lineOptions.M3 } } : {}),
+        }
+      : (config.lineOptions ?? {});
+  const enabled = resolveLines(config.lines ?? [], o.lines ?? LINES, lineOptions);
   if (enabled.problems.length > 0) throw new RunSetupError(`the lines of the run${resume !== undefined ? " as the journal recorded them" : ""}: ${enabled.problems.join("; ")}`);
   // A consortium run is resumed after every turn: it starts only with lines that can be (documentation/human.md, "Turns").
   if (config.consortium !== undefined && resume === undefined) {
@@ -902,6 +939,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     return await abandon(`the statement identity of line ${giver?.id}: ${messageOf(error)}`, error, registry);
   }
   for (const sub of ["transcripts", "proofs"]) mkdirSync(join(o.dir, sub), { recursive: true });
+  // The one writer of `transcripts/ID.json`: the provers' sessions (an attempt's id) and the hole sessions (`hole_...`) both write through it.
+  const transcript = (sessionId: string, messages: AgentMessage[]) => writeFileSync(join(o.dir, "transcripts", `${sessionId}.json`), `${JSON.stringify(messages)}\n`);
   // RESULT.md is rewritten after every certified result and at every stop (documentation/quickstart.md, "RESULT.md").
   const stopResultKeeping = keepResultCurrent(journal, o.dir, (line) => (o.log ?? (() => {}))(line));
 
@@ -959,7 +998,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       ...(config.informalFirst !== undefined ? { informalFirst: { ...informalSettings(config.informalFirst) } } : {}),
       ...(config.cards !== undefined ? { cards: { ...config.cards } } : {}),
       ...(config.sorryBattery !== undefined ? { sorryBattery: { ...config.sorryBattery } } : {}),
+      ...(config.leanDraft !== undefined ? { leanDraft: { ...config.leanDraft } } : {}),
       ...(config.triage === true ? { triage: true } : {}),
+      ...(config.longProof !== undefined ? { longProof: { ...config.longProof } } : {}),
       ...(config.stateCard === true ? { stateCard: true } : {}),
       ...(config.consolidation === true ? { consolidation: true } : {}),
       ...(config.budgetRounds === true ? { budgetRounds: true } : {}),
@@ -1124,6 +1165,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     if (chain !== undefined) openEpochOf(journal, memory, chain, provenance, log);
     if (libraryDefinitions.length > 0) log(`the run starts with ${seedDefinitions(memory, libraryDefinitions).length} definition(s) of the library registry`);
   }
+  // The classical battery on the `sorry` a session's check leaves: the run's setting, which the `test` mode of a campaign turns on for its turn whatever the setting is (LH5). The provers' sessions and the hole sessions use it.
+  const sorryBattery = config.sorryBattery !== undefined || plateauMode === "test" ? { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } : undefined;
+  const linesBattery = sorryBattery ?? (config.longProof !== undefined ? { config: {}, host: { have: new Set(m10Packages(config)) } } : undefined);
   if (memory !== undefined && enabled.lines.length > 0) {
     benches = new ClaimBenches({ journal, registry, memory, blobs, log, ...(certifier !== undefined ? { certifier } : {}) });
     runLines = new RunLines({
@@ -1141,6 +1185,11 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       thinkingLevel: config.thinkingLevel,
       log,
       seed: config.seed ?? runId,
+      ...(config.longProof !== undefined ? { longProof: true } : {}),
+      transcript,
+      ...(leanSearch !== undefined ? { leanSearch } : {}),
+      // The lines get the run's battery, or the default one under `longProof` (the draft's steps, DP1, and the hole sessions, DP4).
+      ...(linesBattery !== undefined ? { sorryBattery: linesBattery } : {}),
       ...(config.consortium !== undefined ? { human: true } : {}),
       // Without a plateau window (no `plateauUsd` and no run allowance) no mode is ever entered, so the lines are not gated: they run as before the modes.
       ...(config.horizon === "campaign" && (config.campaign?.plateauUsd !== undefined || config.budget.runUsd !== undefined)
@@ -1426,7 +1475,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
                 ...(config.triage === true ? { triage: () => triageOfNodes(journal.projection.nodes(TRIAGE_KIND, claimId)) } : {}),
                 ...(memory !== undefined ? { informalAccepted: () => informalProofOfNodes(memory.nodes(INFORMAL_PROOF_KIND, { claimId }), () => undefined)?.accepted === true } : {}),
                 ...(memory !== undefined ? { leanProgress: () => progressOf(memory, entry.id, claimId), epochWeight: (epoch: number) => memory.weightOf(epoch) } : {}),
-                ...(config.frontier?.show === true ? (() => { const store = memory ?? new MemoryStore({ journal, blobs }); return { frontierEntries: () => frontierOf(store, claimId, config.frontier?.weights !== undefined ? { weights: config.frontier.weights } : {}).entries }; })() : {}),
+                ...(config.frontier?.show === true || config.longProof !== undefined
+                  ? (() => {
+                      const store = memory ?? new MemoryStore({ journal, blobs });
+                      const weights = { ...(config.longProof !== undefined ? LONG_PROOF_WEIGHTS : {}), ...config.frontier?.weights };
+                      return {
+                        frontierEntries: () => frontierOf(store, claimId, { weights }).entries,
+                        ...(config.longProof !== undefined ? { longProof: { dryChecks: config.longProof.dryChecks ?? DEFAULT_DRY_CHECKS, growth: () => frontierGrowth(store, claimId, { weights }) } } : {}),
+                      };
+                    })()
+                  : {}),
                 decide: problemDecide({
                   line: GATE_LINE,
                   config: resolveDecideSettings(config.decide),
@@ -1475,8 +1533,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       });
       live.workbench = workbench;
       workbench.onCandidate(() => controller.abort(ABORT_SOLVED));
-      const transcript = (attemptId: string, messages: AgentMessage[]) =>
-        writeFileSync(join(o.dir, "transcripts", `${attemptId}.json`), `${JSON.stringify(messages)}\n`);
 
       // A problem that was begun: its attempts count as this problem's, and the candidate its checks
       // found is its candidate, with the certifier's answer for it if the journal holds one.
@@ -1750,6 +1806,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(cases !== undefined ? { firstCases: { rows: cases.table.rows.length, differs: cases.table.rows.some((r) => new Set(r.values.filter((v) => v !== null)).size > 1) } } : {}),
           statementChars: entry.statement.length,
           budgetUsd: capUsd,
+          ...(config.longProof !== undefined ? { longUsd: config.longProof.triageUsd ?? DEFAULT_LONG_TRIAGE_USD } : {}),
         });
         recordTriage(journal, { claimId, problemId: entry.id, result });
         log(`${entry.fullName}: the formal-cost triage says ${result.class} (${result.reasons.join("; ")})`);
@@ -1866,8 +1923,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           ...(config.maskOldChecks === true ? { maskOldChecks: true } : {}),
           ...(consultConfig !== undefined ? { consult: { config: consultConfig, resolveModel: (name: string) => resolveModel(o.models, name), problemId: entry.id } } : {}),
           ...(leanSearch !== undefined ? { leanSearch } : {}),
-          // The `test` mode puts the battery on each `sorry` on for its turn, whatever the run's own setting (LH5).
-          ...(config.sorryBattery !== undefined || plateauMode === "test" ? { sorryBattery: { config: config.sorryBattery ?? {}, host: { have: new Set(m10Packages(config)) } } } : {}),
+          ...(sorryBattery !== undefined ? { sorryBattery } : {}),
           ...(firstCases !== undefined ? { firstCases: firstCases.section } : {}),
           ...(shownCards !== undefined && task === proverTasks[0] ? { cards: shownCards } : {}),
           ...(o.retry !== undefined ? { retry: o.retry } : {}),
@@ -1929,6 +1985,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
       let probeCut = false;
       /** What a task's attempts have cost so far, in dollars. */
       const spentBy = (taskId: string): number => journal.projection.attemptsOfTask(taskId).reduce((sum, a) => sum + (a.usd ?? 0), 0);
+      /** What the Lean draft is given (`lean-draft.ts`): the problem's workbench, the prover role's model and the probe's ledger. */
+      const draftDeps = (probeLedger: Ledger): LeanDraftDeps => ({
+        config: config.leanDraft as LeanDraftConfig, workbench, journal, blobs, models: o.models, model: proverModel, modelName: proverRoleModel ?? config.model,
+        ledger: probeLedger, signal: controller.signal, prices, stamp: (modelId) => stampProvenance(provenance, { modelId }), transcript, log,
+        ...(turn !== undefined ? { turn } : {}), ...(linesBattery !== undefined ? { battery: linesBattery } : {}), ...(config.checkTimeoutSec !== undefined ? { checkTimeoutSec: config.checkTimeoutSec } : {}),
+      });
       const gated = async (): Promise<PromiseSettledResult<ProverResult>[]> => {
         const [first, ...rest] = working;
         if (gate === undefined || first === undefined) return Promise.all(working.map((task) => settleRun(startProver(task, launch(task)))));
@@ -1941,7 +2003,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             // under what is left of its cap, for one more session. Nothing left of the cap, or no session left: the gate judges.
             probeCut = false;
             const resumed = proverResumeOf(journal, blobs, first.taskId);
-            const left = gate.probeTotalUsd(capUsd) - spentBy(first.taskId);
+            const left = gate.probeTotalUsd(capUsd) - gate.probeSpentUsd(first.taskId);
             if (resumed !== undefined && resumed.session < sessionCap && left > 1e-9) {
               const result = await settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed, probe: { sessions: resumed.session + 1, ledger: (sliceLedger ?? ledger).child(left) } }));
               if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
@@ -1949,7 +2011,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             }
           } else if (resumedFirst === undefined || resumedFirst.session < 1) {
             // A probe whose session was started before the interruption is over: the gate decides what follows from what it made.
-            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: (sliceLedger ?? ledger).child(capUsd) } }));
+            const probeLedger = (sliceLedger ?? ledger).child(capUsd);
+            // The Lean draft (`RunConfig.leanDraft`, CL2) comes first, under the probe's ledger, for a fresh problem the triage did not call `long`; a candidate ends the problem.
+            if (config.leanDraft !== undefined && again === undefined && !gate.long && (await leanDraft(draftDeps(probeLedger))).solved) return [];
+            const result = await settleRun(startProver(first, { begin: true, resumed: resumedFirst, probe: { sessions: 1, ledger: probeLedger } }));
             if (result.status === "fulfilled" && result.value.stop === "slice") probeCut = true;
             if (result.status === "rejected" || result.value.stop !== "probe") return [result];
           }
@@ -1995,7 +2060,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
         let cap: Ledger | undefined;
         if (gate.shortCap() !== undefined) {
           const total = gate.shortCap() as number;
-          cap = (sliceLedger ?? ledger).child(Math.max(0, total - working.reduce((sum, t) => sum + spentBy(t.taskId), 0)));
+          cap = (sliceLedger ?? ledger).child(Math.max(0, total - gate.probeSpentUsd(first.taskId) - rest.reduce((sum, t) => sum + spentBy(t.taskId), 0)));
         }
         return Promise.all([
           settleRun(startProver(first, { begin: tasks.get(first.taskId)?.status === "ready", resumed: probed, ...(cap !== undefined ? { cap } : {}) })),

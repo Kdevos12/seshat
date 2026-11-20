@@ -1,3 +1,11 @@
+/**
+ * The fleet line (plan §11, documentation/fleet.md): the hooks that decide, for each session of each prover, the
+ * strategy, the model, the sampled settings and the heuristic card, and that keep the width of a subgoal.
+ *
+ * Called by the orchestrator through the line's hooks (`beforeSession`, `afterAttempt`, `resumeProblem`...). The
+ * draws are `choose.ts`, `settings.ts` and `heuristics.ts`'s; the bucket and the stall are `bucket.ts`'s and
+ * `stall.ts`'s. It records each decision as an `allocation` node and never changes a claim's status: Lean does.
+ */
 import { coldStartPriors, DEFAULT_COLD_START_WEIGHT, fadedWeight, MAX_COLD_START_WEIGHT, withPrior } from "@seshat/decide";
 import { type Attempt, attemptDepth, STRATEGIES } from "@seshat/memory";
 import { isInterrupted, LINE_TITLES } from "@seshat/lines";
@@ -11,9 +19,10 @@ import {
 } from "./dag.ts";
 import { attemptWeights, DEFAULT_GAMMA } from "./discount.ts";
 import { type EscalationOptions, shouldEscalate } from "./escalation.ts";
-import { type AttemptWeight, modelPosteriors, posteriorOf, strategyPosteriors } from "./posterior.ts";
+import { type AttemptWeight, modelPosteriors, posteriorOf, stagnating, strategyPosteriors } from "./posterior.ts";
 import { hash32, type RandomSource, seeded } from "./random.ts";
 import { sampleSettings, samplesSettings, type SettingsConfig, settingsConfigOf } from "./settings.ts";
+import { excludedAfterStall, repeatStopped } from "./stall.ts";
 import { Gate, widthFor, type WidthOptions } from "./width.ts";
 import { bucketOf, historyOf, statementFeatures } from "@seshat/heuristics";
 import {
@@ -79,6 +88,10 @@ export const FLEET_OPTIONS = {
   familyPriorWeight: DEFAULT_FAMILY_PRIOR_WEIGHT,
   /** A card is no longer drawn in a bucket after this many observations with it and in the control, when P(effect < 0) is above 0.9 (M5's rule). */
   cardMinObservations: DEFAULT_CARD_MIN_OBSERVATIONS,
+  /** Learn the sampled settings (thinking, directive, mode, a list of temperatures) from the session's bucket too (documentation/fleet.md, "The bucket prior"): a value starts from its mean in the bucket and is not drawn once the bucket shows it hurts. Off: the claim's own attempts only. */
+  bucketPrior: false,
+  /** Restart in another mode after a Lean stall (documentation/fleet.md, "Switching after a stall"): when the prover's last attempt was stopped by M6's repeat rule, or the claim stagnates, the next draw of `mode` and of `thinking` leaves out the value that attempt had, while another is left. */
+  switchOnStall: false,
   /** Seed the strategy choice with a prior from `decide` (site fleet.cold_start): a Choice over the families, as pseudo-counts of weight `coldStartWeight`. Off: the flat prior. */
   coldStart: false,
   /** The total weight of that prior in pseudo-attempts (0 to 4): the journal's own attempts outweigh it after a few. */
@@ -102,6 +115,8 @@ interface FleetConfig {
   dagSteps: number;
   coldStart: boolean;
   coldStartWeight: number;
+  bucketPrior: boolean;
+  switchOnStall: boolean;
   heuristics?: HeuristicsConfig;
 }
 
@@ -153,6 +168,8 @@ function configOf(options: Readonly<JsonObject>): FleetConfig {
     dagSteps: Math.max(1, Math.floor(num("dagSteps"))),
     coldStart: bool("coldStart"),
     coldStartWeight,
+    bucketPrior: bool("bucketPrior"),
+    switchOnStall: bool("switchOnStall"),
     ...(heuristics !== undefined ? { heuristics } : {}),
   };
 }
@@ -494,13 +511,38 @@ export function createFleet(env: FleetEnv = {}): Line {
           run.assigned.set(session.attemptId, strategy);
         }
 
+        // The session's bucket, once, for the settings and the cards: the attempts of problems of its kind, on any claim.
+        // The attempt records it under `heuristicBucket` (the name the cards gave it, kept for the journals that hold it).
+        let bucketed: { bucket: string; domains: readonly string[]; features: ReturnType<typeof statementFeatures>; history: Attempt[] } | undefined;
+        if (config.heuristics !== undefined || config.bucketPrior) {
+          const statement = session.memory.claim(session.claimId)?.statement ?? session.target.statement;
+          const domains = session.domain ?? [];
+          const features = statementFeatures(statement);
+          const bucket = bucketOf(domains, features);
+          const history = session.memory
+            .claims()
+            .flatMap((claim) => session.memory.attempts(claim.claimId))
+            .filter((attempt) => attempt.settings?.heuristicBucket === bucket);
+          bucketed = { bucket, domains, features, history };
+        }
+
         // The settings sampled for the session (temperature, thinking level, directive, mode), from their own stream.
         let settings: JsonObject | undefined;
         let settingDraws: AllocationData["settingDraws"];
+        let excluded: AllocationData["excluded"];
         let dag: string | undefined;
         let dagNote: string | undefined;
         if (samplesSettings(config.settings)) {
           const sessionModel = model ?? session.model;
+          // After a Lean stall the draw leaves out the mode and the thinking level the stalled attempt had (option switchOnStall).
+          const stalled = config.switchOnStall
+            ? excludedAfterStall(
+                attempts,
+                session.prover,
+                repeatStopped(session.memory.nodes("drift", { claimId: session.claimId })),
+                stagnating(strategyPosteriors(attempts, config.partial, weights), { below: config.width.widenBelow, minAttempts: config.width.minAttempts }),
+              )
+            : undefined;
           const sampled = sampleSettings(
             randomFor(`${key}:settings`),
             config.settings,
@@ -508,8 +550,18 @@ export function createFleet(env: FleetEnv = {}): Line {
             config.partial,
             weights,
             session.ignoresSetting === undefined ? undefined : (setting, thinking) => session.ignoresSetting?.(sessionModel, setting, thinking) ?? false,
+            config.bucketPrior && bucketed !== undefined
+              ? {
+                  history: bucketed.history,
+                  priorWeight: config.heuristics?.familyPriorWeight ?? DEFAULT_FAMILY_PRIOR_WEIGHT,
+                  rule: { minObservations: config.heuristics?.minObservations ?? DEFAULT_CARD_MIN_OBSERVATIONS },
+                  weigh: weigh(bucketed.history),
+                }
+              : undefined,
+            stalled,
           );
           settings = sampled.settings;
+          excluded = sampled.excluded;
           if (Object.keys(sampled.draws).length > 0) settingDraws = sampled.draws;
           if (settings.mode === "nl_first") {
             const made = await stepDagFor(session, run, config, model);
@@ -532,13 +584,13 @@ export function createFleet(env: FleetEnv = {}): Line {
           }
         }
 
+        // With the bucket prior and no cards, the attempt still records its bucket, so that later sessions find its history.
+        if (config.bucketPrior && config.heuristics === undefined && bucketed !== undefined) settings = { ...settings, heuristicBucket: bucketed.bucket };
+
         // The session's heuristic card (documentation/fleet.md, "Heuristic cards"), from its own stream, after the strategy and the mode.
-        if (config.heuristics !== undefined) {
+        if (config.heuristics !== undefined && bucketed !== undefined) {
           const bank = runBank(session.registry, config.heuristics);
-          const statement = session.memory.claim(session.claimId)?.statement ?? session.target.statement;
-          const features = statementFeatures(statement);
-          const domains = session.domain ?? [];
-          const bucket = bucketOf(domains, features);
+          const { features, domains, bucket } = bucketed;
           const mode = typeof settings?.mode === "string" ? settings.mode : "standard";
           const taken = new Set<string>();
           const takenCards = new Set<string>();
@@ -547,10 +599,7 @@ export function createFleet(env: FleetEnv = {}): Line {
             if (work.heuristicFamily !== undefined) taken.add(work.heuristicFamily);
             if (work.heuristic !== undefined) takenCards.add(work.heuristic);
           }
-          const history = session.memory
-            .claims()
-            .flatMap((claim) => session.memory.attempts(claim.claimId))
-            .filter((attempt) => attempt.settings?.heuristicBucket === bucket);
+          const history = bucketed.history;
           const drawn = drawCard(randomFor(`${key}:heuristics`), {
             bank,
             context: { domains, features, ...historyOf(attempts), mode },
@@ -601,6 +650,7 @@ export function createFleet(env: FleetEnv = {}): Line {
             ...(draws !== undefined ? { draws } : {}),
             ...(settings !== undefined ? { settings } : {}),
             ...(settingDraws !== undefined ? { settingDraws } : {}),
+            ...(excluded !== undefined ? { excluded } : {}),
             ...(dag !== undefined ? { dag } : {}),
             ...(dagNote !== undefined ? { dagNote } : {}),
           } satisfies AllocationData,

@@ -8,6 +8,12 @@ export const HOLE_VERDICT_KIND = "hole_verdict";
 export const HOLE_FALSE_VERDICT = "statement_wrong";
 export const HOLE_VERDICTS = ["proved", HOLE_FALSE_VERDICT, "too_hard"] as const;
 export type HoleVerdict = (typeof HOLE_VERDICTS)[number];
+/**
+ * Why a hole session ended `too_hard` (the optional `reason` of the `hole_verdict` node and of the `m12_session` record): `turns` (the session reached its response
+ * limit, or its context limit), `budget` (the problem's money ran out) or `model_said` (the model said so, or ended the session without a proof). A fact about the session.
+ */
+export const HOLE_TOO_HARD_REASONS = ["turns", "budget", "model_said"] as const;
+export type HoleTooHardReason = (typeof HOLE_TOO_HARD_REASONS)[number];
 /** The evidence node a `statement_wrong` verdict without a Lean-checked negation leaves on the claim: a suspicion, never a status. */
 export const SUSPECT_FALSE_KIND = "suspect_false";
 

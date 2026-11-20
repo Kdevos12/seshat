@@ -12,6 +12,7 @@ export * from "./proofnumbers.ts";
 export * from "./holes.ts";
 export * from "./refine.ts";
 export * from "./repair.ts";
+export * from "./lift.ts";
 export * from "./records.ts";
 export * from "./pricing.ts";
 export * from "./subsume.ts";

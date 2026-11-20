@@ -1,14 +1,18 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, StringEnum } from "@earendil-works/pi-ai";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { type BlobStore, HOLE_VERDICTS, type Journal, newId } from "@seshat/core";
 import type { HoleSessionRequest, HoleSessionResult, HoleVerdictCall } from "@seshat/lines";
+import type { HostTactics } from "@seshat/classical";
+import type { LeanSearchPush } from "@seshat/lean-search";
 import type { Ledger } from "./budget.ts";
 import type { PriceBook } from "./prices.ts";
+import type { OpenedSession } from "./line-runtime.ts";
 import type { RoleUse } from "./roles.ts";
 import type { Workbench } from "./problem.ts";
 import { runSession } from "./session.ts";
+import { type SorryBatteryConfig, sessionSorryBattery } from "./sorry-battery.ts";
 import type { Turn } from "./turns.ts";
 
 /** The site of a hole session's model responses in the journal's `model_call.finished` events. */
@@ -46,6 +50,14 @@ export interface HoleSessionDeps {
    * settings sent with each request and recorded on each response's event. Absent: none, and the events are what they always were.
    */
   role?: Pick<RoleUse, "temperature" | "topP" | "record">;
+  /** The run's push of verified `lean.search` hits into the check answers (`RunConfig.leanSearch`), as a prover's session has it. Absent: none. */
+  leanSearch?: LeanSearchPush;
+  /** The run's classical battery on the `sorry` of the hole's proof (`RunConfig.sorryBattery`). Absent: off. */
+  sorryBattery?: { config: SorryBatteryConfig; host: HostTactics };
+  /** Saves the session's messages under its id, as a prover's session does (`ProverOptions.transcript`): the run's `transcripts/ID.json`, which `harness audit` reads. Absent: not saved. */
+  transcript?: (sessionId: string, messages: AgentMessage[]) => void;
+  /** The library line's section and tool for the hole, searched by its statement (`ProblemLines.openHole`). Absent: none. */
+  library?: (focus: { theorem: string; statement: string }) => Promise<OpenedSession>;
 }
 
 /** The arguments of `hole_verdict`. */
@@ -92,6 +104,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
   };
   const model = await d.resolveModel(d.model);
   const sessionId = `hole_${newId("hs")}`;
+  // What a prover's session is given when the run has it (plan change DP4): the library's section and tool for this hole, the push of `lean.search` hits, the battery.
+  const library = d.library === undefined ? undefined : await d.library({ theorem: request.name ?? "", statement: real.sketch.statement });
   const result = await runSession({
     models: d.models,
     model,
@@ -99,7 +113,7 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     ...(d.role?.temperature !== undefined ? { temperature: d.role.temperature } : {}),
     ...(d.role?.topP !== undefined ? { topP: d.role.topP } : {}),
     systemPrompt: HOLE_SYSTEM,
-    prompt: request.prompt,
+    prompt: `${request.prompt}${(library?.sections ?? []).map((section) => `\n\n# ${section.title}\n${section.text}`).join("")}`,
     workbench: bench,
     attemptId: sessionId,
     actor: d.actor,
@@ -117,7 +131,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
           site: SITE_HOLE,
           ...(d.role !== undefined ? { role: "hole" } : {}),
           ...(d.role?.record !== undefined ? { settings: d.role.record } : {}),
-          requestHash: d.blobs.put(JSON.stringify({ session: request.key, claimId: request.claimId })),
+          // The session id is in the request so that the audit can find the session's transcript from its calls.
+          requestHash: d.blobs.put(JSON.stringify({ session: request.key, claimId: request.claimId, sessionId })),
           durationMs: 0,
           usd: cost.usd,
           inputTokens: cost.inputTokens,
@@ -131,10 +146,13 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     wrapUp: false,
     ...(d.turn !== undefined ? { turn: d.turn } : {}),
     ...(d.prices !== undefined ? { prices: d.prices } : {}),
-    tools: [verdictTool as AgentTool<never, unknown>],
+    tools: [verdictTool as AgentTool<never, unknown>, ...(library?.tools ?? [])],
     endingTools: ["hole_verdict"],
     editTool: true,
     maskOldChecks: true,
+    // The battery tries the hole's own proof: the `sorry` of the given lemmas in the aux region stay.
+    ...(d.sorryBattery !== undefined ? { sorryBattery: sessionSorryBattery(d.journal, bench, undefined, d.sorryBattery, ["proof"]) } : {}),
+    ...(d.leanSearch !== undefined ? { appendToCheck: d.leanSearch.forSession() } : {}),
     ...(d.checkTimeoutSec !== undefined ? { checkTimeoutSec: d.checkTimeoutSec } : {}),
     lines: {
       afterCheck: async (check) => {
@@ -146,6 +164,7 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
       },
     },
   });
+  d.transcript?.(sessionId, result.messages);
   return {
     stop: result.stop,
     turns: result.turns,

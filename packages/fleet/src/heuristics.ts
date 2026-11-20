@@ -1,7 +1,16 @@
+/**
+ * The bank of heuristic cards in the fleet (documentation/fleet.md, "Heuristic cards"): the options of the bank, the
+ * draw of one session's card (`drawCard`) and a card's measured effect in a bucket (`cardEffect`).
+ *
+ * Called by `fleet.ts` once per session, and by the report. The prior and the effect arithmetic are `bucket.ts`'s,
+ * shared with the sampled settings. It never records anything and never changes a claim's status: a card is a
+ * sentence in the briefing, nothing more.
+ */
 import { applies, type BankCard, bankOf, type CardContext, type HeuristicCard, strategyOfCard } from "@seshat/heuristics";
 import type { Briefing, JsonObject } from "@seshat/lines";
-import { armOf, type Attempt, effectOf, type ItemEffect, shouldDeactivate } from "@seshat/memory";
-import { type Beta, betaMean, UNIFORM } from "./beta.ts";
+import { type Attempt, type ItemEffect, shouldDeactivate } from "@seshat/memory";
+import { betaMean, UNIFORM } from "./beta.ts";
+import { effectIn, type Prior, settingKeyOf, withPrior } from "./bucket.ts";
 import { thompson } from "./choose.ts";
 import { type AttemptWeight, group } from "./posterior.ts";
 import type { RandomSource } from "./random.ts";
@@ -106,25 +115,7 @@ export function controlFor(attempt: Pick<Attempt, "settings">, cardId: string): 
  * session counts its weight.
  */
 export function cardEffect(cardId: string, history: readonly Attempt[], weigh: AttemptWeight = () => 1): ItemEffect {
-  const tally = (pick: (attempt: Attempt) => boolean) => {
-    let successes = 0;
-    let failures = 0;
-    let attempts = 0;
-    for (const attempt of history) {
-      if (!pick(attempt) || (attempt.outcome !== "valid" && attempt.outcome !== "invalid")) continue;
-      const w = weigh(attempt);
-      attempts += 1;
-      if (attempt.outcome === "valid") successes += w;
-      else failures += w;
-    }
-    return armOf(successes, failures, attempts);
-  };
-  return effectOf(
-    cardId,
-    {},
-    tally((a) => a.settings?.heuristic === cardId),
-    tally((a) => controlFor(a, cardId)),
-  );
+  return effectIn(cardId, history, (a) => a.settings?.heuristic === cardId, (a) => controlFor(a, cardId), weigh);
 }
 
 /** What `drawCard` decided, and the draws it was decided from. */
@@ -188,10 +179,7 @@ export function drawCard(random: RandomSource, input: CardDrawInput): CardDraw {
   const off = deactivated.length > 0 ? { deactivated } : {};
   if (eligible.length === 0) return { rule: "none_applicable", ...off };
   if (random() < input.config.noCardShare) return { rule: "control", ...off, eligible: eligible.map((card) => card.id) };
-  const settingOf = (key: string) => (attempt: Attempt): string | undefined => {
-    const value = attempt.settings?.[key];
-    return typeof value === "string" ? value : undefined;
-  };
+  const settingOf = (name: string) => (attempt: Attempt): string | undefined => settingKeyOf(attempt, name);
   // Provers on one subgoal look at it in different ways: families no other prover holds first; when every family is
   // held, the families that still have a card no other prover holds; only then any card again.
   const takenCards = input.takenCards ?? new Set<string>();
@@ -203,17 +191,12 @@ export function drawCard(random: RandomSource, input: CardDrawInput): CardDraw {
   const familyPosteriors = group(input.history, settingOf("heuristicFamily"), input.partial, weigh);
   const family = thompson(random, families.map((f) => [f, familyPosteriors.get(f)?.choice ?? UNIFORM] as const));
   if (family === undefined) return { rule: "none_applicable", ...off };
-  const mean = betaMean(familyPosteriors.get(family.choice)?.choice ?? UNIFORM);
-  const w = input.config.familyPriorWeight;
+  const prior: Prior = { mean: betaMean(familyPosteriors.get(family.choice)?.choice ?? UNIFORM), weight: input.config.familyPriorWeight };
   const cardPosteriors = group(input.history, settingOf("heuristic"), input.partial, weigh);
   const familyCards = eligible.filter((card) => card.family === family.choice);
   const freeInFamily = familyCards.filter((card) => !takenCards.has(card.id));
   const inFamily = freeInFamily.length > 0 ? freeInFamily : familyCards;
-  const withPrior = (b: Beta | undefined): Beta => {
-    const base = b ?? UNIFORM;
-    return { alpha: base.alpha + w * mean, beta: base.beta + w * (1 - mean) };
-  };
-  const card = thompson(random, inFamily.map((c) => [c.id, withPrior(cardPosteriors.get(c.id)?.choice)] as const));
+  const card = thompson(random, inFamily.map((c) => [c.id, withPrior(cardPosteriors.get(c.id)?.choice, prior)] as const));
   const chosen = inFamily.find((c) => c.id === card?.choice);
   if (chosen === undefined || card === undefined) return { rule: "none_applicable", ...off };
   return {

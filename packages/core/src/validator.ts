@@ -12,7 +12,7 @@ import {
   STANDARD_AXIOMS,
 } from "./lean.ts";
 import { blankComments, firstCharacterLiteral, NAME_PART, NAME_PART_CHARACTER, NAME_START, NAME_START_CHARACTER, readDeclarationHead, splitCommands, TOKEN_START } from "./lean-source.ts";
-import { assemble, editedOutsideRegions, extractSubmission, type Sketch, SketchError, type Submission } from "./sketch.ts";
+import { assemble, editedOutsideRegions, extractSubmission, type Sketch, SketchError, type Submission, withoutLocked } from "./sketch.ts";
 
 export interface ValidationPolicy {
   allowedAxioms: readonly string[];
@@ -437,8 +437,10 @@ export class ProofValidator {
       };
     }
     const checked = assemble(sketch, submission);
-    const holes = hasHoles(submission);
-    const reasons = structuralCheck(submission, this.policy);
+    // What Lean reads: the commands that restate a locked lemma are not in the file (`assemble`), so a stub of a frozen hole is no hole of it.
+    const read = sketch.locked === undefined ? submission : { ...submission, aux: withoutLocked(submission.aux, sketch.locked) };
+    const holes = hasHoles(read);
+    const reasons = structuralCheck(read, this.policy);
     // A refused submission never reaches Lean: nothing in it runs.
     if (reasons.length > 0) {
       return {

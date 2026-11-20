@@ -11,6 +11,22 @@ prompt hash is the same.
 
 Prompt text changes only with a human merge (Global Constraint 16). Nothing in the harness writes a prompt in place.
 
+## The draft prompt (plan change CL1)
+
+A second prompt file, `packages/orchestrator/prompts/lean-draft.system.txt`, is the system prompt of the Lean-only first draft of `RunConfig.leanDraft`
+([scheduler.md](scheduler.md#the-lean-draft-before-the-probe-plan-change-cl1-cl2-experimental)). It has no placeholder. It says: write only Lean 4, as the
+tactics after `:= by`, in one ```` ```lean ```` block; the proof is a chain of `have h_k : T := by ...` steps (or `calc` lines) that ends by closing the goal;
+at most one comment of five words or fewer above a step; no prose and no markdown outside the block; and the same list of refused Lean as the prover's prompt.
+It ends with three worked examples of easy Mathlib statements in that form, because Chain of Draft falls from 91% to 65% without examples. The form is the
+`have`-sketch of plan change DP1, so that `liftHaves` and the sorry battery read a draft unchanged.
+
+It is loaded and versioned as the prover's is: `LEAN_DRAFT_SYSTEM` in `prompt.ts` reads the file, its version record `prompts/lean-draft.system.version.json` holds
+`promptVersion` (`cl-1.1`) and the hash of the text, and a test fails when they disagree. `LEAN_DRAFT_TARGET` in `prompt-screen.ts` is its entry for the strict
+screen, which a test applies to it, even against a baseline where every line counts as added. It is deliberately not in `PROMPT_TARGETS`: `harness
+optimize-prompts` measures a candidate through `RunConfig.prompts.proverSystem`, which does not reach the draft, so listing it there would measure the wrong
+prompt. A merge of a change to it is a human merge like any prompt's (Global Constraint 16). The version is recorded on the draft attempt's settings
+(`promptVersion`), the one place the draft prompt shows in a journal.
+
 ## Measuring a candidate: `RunConfig.prompts`
 
 `RunConfig.prompts.proverSystem` replaces the text of the system prompt for one run. It is how `harness ablate` measures a candidate prompt:

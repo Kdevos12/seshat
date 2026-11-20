@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import type { HarnessEvent } from "@seshat/core";
+import { BlobStore, type HarnessEvent } from "@seshat/core";
+import { auditCommand } from "../src/audit.ts";
+import { M3 } from "@seshat/library";
 import { createM12Line, HOLE_HISTORY_CHARS } from "@seshat/scheduler";
-import { call, check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
+import { call, check, DEMO_FILE, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 import { loopTelemetry } from "../src/loop-telemetry.ts";
 import { BP_AUX, BP_PROOF, blueprintAnswer, HARD_AUX, LEFT_STUB, WRONG_AUX } from "./blueprint-helpers.ts";
 import { assertSound, certifier, consumed, sessionPromptOf } from "./resume-helpers.ts";
@@ -103,6 +107,24 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.ok(limits.includes(11), `a check ran under 11 s: ${JSON.stringify(limits)}`);
   });
 
+  it("saves a hole session's transcript through the run's writer, and the audit measures the hole role from it", { timeout: 60000 }, async () => {
+    const { dir, events } = await oneHole(named(HARD_AUX), check("exact hole_ok"));
+    const saved = readdirSync(join(dir, "transcripts")).filter((f) => f.startsWith("hole_"));
+    assert.equal(saved.length, 1, "one hole session, one transcript");
+    const messages = JSON.parse(readFileSync(join(dir, "transcripts", saved[0] as string), "utf8")) as Array<{ role: string }>;
+    assert.ok(messages.some((m) => m.role === "assistant"));
+    const request = ofType(events, "model_call.finished").find((m) => m.data.site === "scheduler.hole");
+    assert.equal(JSON.parse(new BlobStore(join(dir, "blobs")).get(request?.data.requestHash ?? "") ?? "{}").sessionId, saved[0]?.replace(/\.json$/, ""));
+    auditCommand(dir, { out: () => undefined });
+    const table = readFileSync(join(dir, "audit.md"), "utf8").split("\n").find((l) => l.startsWith("| hole |"));
+    assert.ok(table !== undefined && !table.includes("not recorded"), `the hole row is measured: ${table}`);
+    // The same run without its transcripts: the row keeps its calls and tokens, and its split is not recorded.
+    rmSync(join(dir, "transcripts", saved[0] as string));
+    auditCommand(dir, { out: () => undefined });
+    const bare = readFileSync(join(dir, "audit.md"), "utf8").split("\n").find((l) => l.startsWith("| hole |"));
+    assert.match(bare ?? "", /^\| hole \| \d+ \| \d+ \| not recorded \|/);
+  });
+
   it("makes a hole with no dependency proved only when validate accepts its proof, and too_hard with the validator's reasons when it refuses", { timeout: 60000 }, async () => {
     const answer = (code: string) => (code.includes("exact bad_axiom") ? { axioms: ["evil_axiom"] } : blueprintAnswer(code));
     const refused = await oneHole(named(HARD_AUX), check("exact bad_axiom"), {}, [], new DemoLean(answer));
@@ -173,6 +195,54 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.match(prompt, /Earlier sessions on this lemma did not succeed:\n- session 1:/);
     assert.ok(prompt.slice(prompt.indexOf("Earlier sessions")).length <= HOLE_HISTORY_CHARS + 80);
     assert.doesNotMatch(prompt, /aux_third|main_ok|n \* 1|Three lemmas are left/, "no sketch, no other hole, no outer notes");
+  });
+
+  /** A hole `aux_x` that is about doubling, with the note above it that the sketch's author wrote. The hole session asks the library tool for "added to itself", and its opening prompt and that answer are kept. */
+  async function doublingHole(note: string, config: Record<string, unknown> = {}, lines: Record<string, unknown> = {}, file?: string) {
+    const seen: { prompt?: string; answer?: string } = {};
+    const hole = `${note}lemma aux_x (n : ℕ) : 2 * n = n + n := by\n  sorry`;
+    const toolAnswer = (context: Parameters<typeof sessionPromptOf>[0]): string => {
+      const result = context.messages.filter((m) => m.role === "toolResult").at(-1);
+      return result?.role === "toolResult" ? result.content.map((c) => (c.type === "text" ? c.text : "")).join("") : "";
+    };
+    const run = await demoRun({
+      lines: { M12: createM12Line(), ...lines } as never,
+      config: { lines: ["M12", ...Object.keys(lines)], provers: 1, sessions: 2, ...config, lineOptions: { M12: { ...OPTIONS, holeSessions: 1, rounds: 1 } } },
+      lean: new DemoLean(blueprintAnswer),
+      ...(file !== undefined ? { file } : {}),
+      responses: [
+        check("exact main_ok aux_x", hole),
+        say("One lemma is left."),
+        (context: Parameters<typeof sessionPromptOf>[0]) => ((seen.prompt = sessionPromptOf(context)), call("library_search", { query: "added to itself" })),
+        (context: Parameters<typeof sessionPromptOf>[0]) => ((seen.answer = toolAnswer(context)), say("I cannot do this.")),
+        say("Going on."),
+      ],
+    });
+    return { ...run, ...seen };
+  }
+
+  it("shows a hole session the informal step above its lemma, quoted and said to be unchecked, and nothing when the sketch says none", { timeout: 60000 }, async () => {
+    const noted = await doublingHole("-- uses: \n-- step 2: twice n is n added to itself\n");
+    assert.match(noted.prompt ?? "", /The step of the informal plan that this lemma formalizes\. It is a note from the plan's author, unchecked: it may be wrong or incomplete; use it as a hint, and Lean decides\.\n> step 2: twice n is n added to itself/);
+    assert.doesNotMatch(noted.prompt ?? "", /uses:/);
+    const plain = await doublingHole("");
+    assert.ok(plain.prompt !== undefined);
+    assert.doesNotMatch(plain.prompt, /informal plan|step 2/);
+    // A blank line between the note and the lemma: the note is about something else.
+    const apart = await doublingHole("-- step 2: twice n\n\n");
+    assert.doesNotMatch(apart.prompt ?? "", /informal plan/);
+  });
+
+  it("gives a hole session the library's section and tool searched by the hole's statement, and the library only when the run has it", { timeout: 60000 }, async () => {
+    // The problem is `n + 0 = n`: the library's own section lists `zero_eq` first for it; the hole is about doubling, so `double_eq` comes first for the hole.
+    const header = DEMO_FILE.replace("namespace Demo\n", "namespace Demo\n\n/-- Twice a number is the number added to itself. -/\ntheorem double_eq (n : ℕ) : 2 * n = n + n := by\n  omega\n\n/-- Adding zero. -/\ntheorem zero_eq (n : ℕ) : n + 0 = n := by\n  rfl\n");
+    const withLibrary = await doublingHole("", { seed: "hole-library" }, { M3 }, header);
+    assert.match(withLibrary.prompt ?? "", /\n\n# Library\nDeclarations that may help[\s\S]*\n1\. \[this file\] double_eq/);
+    assert.match(withLibrary.answer ?? "", /double_eq \(n : ℕ\) : 2 \* n = n \+ n/, "the tool answers from the file's declarations");
+    const without = await doublingHole("");
+    assert.doesNotMatch(without.prompt ?? "", /# Library/);
+    assert.match(without.answer ?? "", /library_search/);
+    assert.doesNotMatch(without.answer ?? "", /double_eq/, "without the line the tool does not exist: the session gets an error");
   });
 
   it("tells the next session that a hole's dependency is false, not that the hole waits for it to be proved", { timeout: 60000 }, async () => {

@@ -422,6 +422,19 @@ describe("attempts, charges and sites", () => {
     journal.close();
   });
 
+  it("counts in the problem's spend the attempts of its claim that no task owns (a Lean draft's), and in no task's", () => {
+    const journal = Journal.open(tempDir(), "run_1");
+    seedProblem(journal);
+    makeTask(journal, "tsk_1");
+    journal.emit("attempt.started", { attemptId: "att_d", claimId: "clm_1", prover: "draft", iteration: 1, model: "faux" }, "prover:draft");
+    journal.emit("attempt.charged", { attemptId: "att_d", usd: 0.125, inputTokens: 10, outputTokens: 5 }, "prover:draft");
+    const p = journal.projection;
+    assert.deepEqual(p.attemptsOfNoTask("clm_1").map((a) => a.attempt_id), ["att_d"]);
+    assert.deepEqual(p.taskSpend("tsk_1"), { usd: 0, inputTokens: 0, outputTokens: 0, requests: 0 });
+    assert.deepEqual(p.problemSpend("prb_clm_1"), { usd: 0.125, inputTokens: 10, outputTokens: 5, requests: 1 });
+    journal.close();
+  });
+
   it("keeps what a prover carries to its next session", () => {
     const journal = Journal.open(tempDir(), "run_1");
     seedProblem(journal);

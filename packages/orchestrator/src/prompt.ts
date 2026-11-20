@@ -20,6 +20,15 @@ export const PROVER_SYSTEM_FILE = "packages/orchestrator/prompts/prover.system.t
 export const PROVER_SYSTEM_TEMPLATE = readFileSync(new URL("../prompts/prover.system.txt", import.meta.url), "utf8").replace(/\n$/, "");
 
 /**
+ * The draft prompt (plan change CL1, documentation/prompts.md, "The draft prompt"): the system prompt of the Lean-only first draft of `RunConfig.leanDraft`
+ * (`lean-draft.ts`). A file like the prover's, with no placeholder, and its own version record, which a merge bumps and a test checks against the text.
+ */
+export const LEAN_DRAFT_SYSTEM_FILE = "packages/orchestrator/prompts/lean-draft.system.txt";
+export const LEAN_DRAFT_VERSION_FILE = "packages/orchestrator/prompts/lean-draft.system.version.json";
+export const LEAN_DRAFT_SYSTEM = readFileSync(new URL("../prompts/lean-draft.system.txt", import.meta.url), "utf8").replace(/\n$/, "");
+export const LEAN_DRAFT_VERSION_RECORD = JSON.parse(readFileSync(new URL("../prompts/lean-draft.system.version.json", import.meta.url), "utf8")) as { promptVersion: string; sha256: string };
+
+/**
  * The system prompt of an M0 prover session; `tools` are the names of its tools besides lean_check. `template` replaces the prompt's
  * text for a measurement run of a candidate (`RunConfig.prompts`); the default is the merged prompt.
  */

@@ -4,7 +4,6 @@ import type { HostTactics } from "@seshat/classical";
 import { type AttemptCarry, type AttemptOutcome, type BlobStore, type Journal, type Json, newId, type Provenance, SITE_PROVER_SESSION, type Submission, type ValidationReport } from "@seshat/core";
 import type { LeanSearchPush } from "@seshat/lean-search";
 import type { AttemptAnnotation } from "@seshat/lines";
-import { RegistryLeanChecker } from "@seshat/registry";
 import { classifyFailure, type FailureClass, frontier as frontierOf, frontierCardLines, type FrontierOptions, MemoryStore, recordAcceptedLemmas, stateCard } from "@seshat/memory";
 import { type ConsultConfig, CONSULT_TOOL, consultTool } from "./consult.ts";
 import { pageForSession } from "./consolidation-show.ts";
@@ -22,7 +21,7 @@ import type { RoleBook } from "./roles.ts";
 import { ABORT_BUDGET, type PacketMode, runSession, type SessionLimits, type SessionOptions, type SessionResult } from "./session.ts";
 import { informalBriefing } from "./informal.ts";
 import { sketchBriefing } from "./sketch.ts";
-import { closeSorries, recordSorryBattery, SORRY_BATTERY_ACTOR, type SorryBatteryConfig } from "./sorry-battery.ts";
+import { sessionSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { buildDossier } from "./dossier-build.ts";
 import { teamBriefing, teamVeto } from "./team.ts";
 import { capabilityTool, type PinnedTool, toolBinding, toolName } from "./tools.ts";
@@ -383,7 +382,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         systemPrompt: system,
         prompt: sessionPrompt({
           theorem: workbench.sketch.fullName,
-          file: workbench.render(shown),
+          file: workbench.render(shown, true),
           notes: cold ? undefined : notes,
           lastCheck: cold ? undefined : lastCheck,
           ...(cold ? { cold: { overlay: true } } : {}),
@@ -421,23 +420,7 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
         ...(o.checkTimeoutSec !== undefined ? { checkTimeoutSec: o.checkTimeoutSec } : {}),
         ...(o.editTool === true ? { editTool: true } : {}),
         ...(o.maskOldChecks === true ? { maskOldChecks: true } : {}),
-        ...(o.sorryBattery !== undefined
-          ? {
-              sorryBattery: (sub: Submission, rep: ValidationReport, sig?: AbortSignal) =>
-                closeSorries(
-                  {
-                    checker: new RegistryLeanChecker(workbench.registry, { attemptId, actor: SORRY_BATTERY_ACTOR }),
-                    render: (x) => workbench.render(x),
-                    host: o.sorryBattery!.host,
-                    config: o.sorryBattery!.config,
-                    record: recordSorryBattery(journal, workbench.claimId, attemptId, SORRY_BATTERY_ACTOR),
-                  },
-                  sub,
-                  rep,
-                  sig,
-                ),
-            }
-          : {}),
+        ...(o.sorryBattery !== undefined ? { sorryBattery: sessionSorryBattery(journal, workbench, attemptId, o.sorryBattery) } : {}),
         ...(o.leanSearch !== undefined ? { appendToCheck: (o.leanSearch as LeanSearchPush).forSession() } : {}),
       });
     } catch (error) {
@@ -478,7 +461,12 @@ async function proveLoop(o: ProverOptions, progress: { attempts: number }): Prom
       notes = clipNotes(notes === undefined ? cut : `${notes}\n${cut}`, o.notesChars);
     }
     const outcome = outcomeOf(result);
-    if (cardStore !== undefined && result.report !== undefined) recordAcceptedLemmas(cardStore, workbench.claimId, attemptId, result.report);
+    // The lemmas M12 locked into the file since the last node (plan change DP5) go in this node: the one record of what Lean accepted.
+    const frozen = workbench.takeFrozenLemmas(o.blobs);
+    if (result.report !== undefined || frozen.length > 0) {
+      const lemmaStore = cardStore ?? (frozen.length > 0 ? new MemoryStore({ journal, blobs: o.blobs }).withActor(actor) : undefined);
+      if (lemmaStore !== undefined) recordAcceptedLemmas(lemmaStore, workbench.claimId, attemptId, result.report, frozen, workbench.problemId);
+    }
     const failure =
       outcome === "invalid" && result.report !== undefined
         ? failureClass(result.report, {
@@ -626,7 +614,8 @@ function failureDetailOf(report: NonNullable<SessionResult["report"]>, statement
   return failure === undefined ? {} : { failureDetail: failure.detail };
 }
 
-function outcomeOf(result: SessionResult): AttemptOutcome {
+/** How an attempt came out, from why its session ended and whether it made a check. */
+export function outcomeOf(result: Pick<SessionResult, "stop" | "submissions">): AttemptOutcome {
   switch (result.stop) {
     case "solved":
       return "valid";

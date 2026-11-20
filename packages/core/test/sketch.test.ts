@@ -359,3 +359,32 @@ sorry
     assert.equal(sketch.originalProof, "sorry");
   });
 });
+
+describe("a locked prefix (frozen links, plan change LP3)", () => {
+  const source = "import A\n\ntheorem t (n : Nat) : n + 0 = n := by\n  sorry\n";
+  const lemma = "lemma aux_one (n : Nat) : 0 + n = n := by\n  simp\n";
+  const sketch = { ...prepareSketch(source, "t"), locked: lemma };
+
+  it("is in every file Lean checks, before the AUX region, and the model's view shows its statement only", () => {
+    const full = assemble(sketch, { aux: "", proof: "simp" });
+    assert.ok(full.indexOf("  simp\n\n") >= 0 && full.indexOf("lemma aux_one") < full.indexOf(AUX_BEGIN));
+    const view = renderSketch(sketch, "", "simp", true);
+    assert.match(view, /lemma aux_one \(n : Nat\) : 0 \+ n = n -- proved by Lean, the proof is not shown\n/);
+    assert.equal(view.includes("  simp\n\n"), false);
+  });
+
+  it("leaves out of AUX a command that restates a locked lemma, and keeps one with another statement", () => {
+    const restated = assemble(sketch, { aux: "lemma aux_one (n : Nat) : 0 + n = n := by\n  omega\n", proof: "simp" });
+    assert.equal(restated.includes("omega"), false);
+    assert.equal(restated.split("lemma aux_one").length, 2);
+    const other = assemble(sketch, { aux: "lemma aux_one (n : Nat) : n = n := by\n  rfl\n", proof: "simp" });
+    assert.equal(other.split("lemma aux_one").length, 3, "Lean refuses the duplicate name");
+  });
+
+  it("an edit to the prefix is an edit outside the regions; the file as the model reads it is not", () => {
+    assert.equal(editedOutsideRegions(sketch, renderSketch(sketch, "", "simp")), false);
+    assert.equal(editedOutsideRegions(sketch, renderSketch(sketch, "", "simp", true)), false);
+    assert.equal(editedOutsideRegions(sketch, renderSketch(sketch, "", "simp").replace("  simp\n\n", "  omega\n\n")), true);
+    assert.equal(editedOutsideRegions(sketch, renderSketch(sketch, "", "simp", true).replace("0 + n = n --", "n = n --")), true);
+  });
+});

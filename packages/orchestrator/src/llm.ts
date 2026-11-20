@@ -129,7 +129,7 @@ export function lineLlm(o: LineLlmOptions): Llm {
 }
 
 /** The text of an answer, without its thinking. */
-function textOf(message: AssistantMessage): string {
+export function textOf(message: AssistantMessage): string {
   return message.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n")

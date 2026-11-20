@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
-import { PROMPT_TARGETS, promptTarget, screenPrompt, targetProblems } from "../src/prompt-screen.ts";
-import { PROMPT_VERSION, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_RECORD, promptHash, systemPrompt } from "../src/prompt.ts";
+import { LEAN_DRAFT_TARGET, PROMPT_TARGETS, promptTarget, screenPrompt, targetProblems } from "../src/prompt-screen.ts";
+import { LEAN_DRAFT_SYSTEM, LEAN_DRAFT_VERSION_RECORD, PROMPT_VERSION, PROVER_SYSTEM_TEMPLATE, PROVER_VERSION_RECORD, promptHash, systemPrompt } from "../src/prompt.ts";
 import { sha256Hex } from "@seshat/core";
 import { RunSetupError } from "../src/run.ts";
 import { check, demoRun } from "./m0-helpers.ts";
@@ -39,6 +39,34 @@ describe("the version of the prompt", () => {
   it("is recorded with the hash of the text, so that a prompt cannot change without its version", () => {
     assert.equal(PROVER_VERSION_RECORD.sha256, sha256Hex(PROVER_SYSTEM_TEMPLATE), "the prompt text changed: bump the version and the hash in prompts/prover.system.version.json (the patch of `harness optimize-prompts` does)");
     assert.equal(PROMPT_VERSION, PROVER_VERSION_RECORD.promptVersion);
+  });
+});
+
+describe("the draft prompt as a file (CL1)", () => {
+  it("is a prompt file with a version record of its own that cannot drift from its text", () => {
+    assert.deepEqual(targetProblems(LEAN_DRAFT_TARGET), []);
+    assert.equal(LEAN_DRAFT_VERSION_RECORD.sha256, sha256Hex(LEAN_DRAFT_SYSTEM), "the draft prompt changed: bump the version and the hash in prompts/lean-draft.system.version.json");
+    assert.match(LEAN_DRAFT_VERSION_RECORD.promptVersion, /^cl-\d+\.\d+$/);
+  });
+
+  it("passes the strict screen, even against an empty baseline where every line counts as added", () => {
+    assert.deepEqual(screenPrompt(LEAN_DRAFT_SYSTEM, LEAN_DRAFT_TARGET), []);
+    // Every one of its lines is a line a rewrite adds: none of the phrase rules fires on it, and it names a token the validator refuses only to refuse it.
+    // The baseline holds the same characters and the same length, and none of its lines.
+    const scrambled = LEAN_DRAFT_SYSTEM.split("\n").reverse().map((line) => [...line].reverse().join("")).join("\n");
+    // The one thing it still says is that the prompt names the tokens the validator refuses, which it does to refuse them.
+    assert.deepEqual(screenPrompt(LEAN_DRAFT_SYSTEM, { ...LEAN_DRAFT_TARGET, current: scrambled }).filter((r) => !r.startsWith("it names the Lean token")), []);
+  });
+
+  it("asks for Lean only in the have-sketch form, and shows worked examples (Chain of Draft fails without them)", () => {
+    assert.match(LEAN_DRAFT_SYSTEM, /have h_k : T := by/);
+    assert.match(LEAN_DRAFT_SYSTEM, /at most five words/);
+    assert.equal(LEAN_DRAFT_SYSTEM.split("Reply:").length - 1, 3, "three worked examples");
+    assert.doesNotMatch(LEAN_DRAFT_SYSTEM, /\{\{/);
+  });
+
+  it("is not an optimization target: the optimizer would measure the prover's prompt, not this one", () => {
+    assert.ok(!PROMPT_TARGETS.some((t) => t.id === LEAN_DRAFT_TARGET.id));
   });
 });
 

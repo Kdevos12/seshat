@@ -9,6 +9,9 @@ import {
   type ClaimStatus,
   type Journal,
   type LeanCertifier,
+  lockedCommands,
+  lockedNames,
+  hasHoles,
   newId,
   PROOF_BEGIN,
   PROOF_END,
@@ -19,12 +22,16 @@ import {
   sha256Hex,
   SKETCH_POLICY,
   type Sketch,
+  splitCommands,
+  statementIdV0,
+  structuralCheck,
   type Submission,
   toPlainHeader,
   type ValidationPolicy,
   type ValidationReport,
 } from "@seshat/core";
 import { withEnvironmentImports } from "@seshat/lean-env";
+import type { FrozenLemma } from "@seshat/memory";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 
 /** A bench problem ready to work on: its file in plain-header form, checked against the index, and cut into a sketch. */
@@ -147,6 +154,9 @@ export class Workbench {
   private readonly listeners: Array<(candidate: Candidate) => void> = [];
   private readonly started: string[] = [];
   private readonly checked = new Map<string, Submission>();
+  private locked = "";
+  /** How many of the locked commands an `accepted_lemmas` node holds already (`takeFrozen`). */
+  private recorded = 0;
 
   constructor(options: WorkbenchOptions) {
     this.journal = options.journal;
@@ -161,8 +171,44 @@ export class Workbench {
     this.negation = options.negation ?? false;
   }
 
+  /** The problem's sketch with the lemmas locked so far (`lock`): every check, the displayed file and the certifier's candidate carry them. */
   get sketch(): Sketch {
-    return this.problem.sketch;
+    return this.locked === "" ? this.problem.sketch : { ...this.problem.sketch, locked: this.locked };
+  }
+
+  /**
+   * Locks lemmas into the file after its prefix (plan change LP3, frozen links): from now on they are in every file Lean checks and the certifier replays
+   * whole, and out of reach of the prover's edits. A command already locked, by name, is not locked twice. The text is screened here, as the validator screens a
+   * region (`structuralCheck`, and no `sorry`), then Lean checks the file with it first (a file of `sorry`, which is no validation and changes no status): a lemma
+   * that does not compile there, or a check Lean could not answer, is not locked and the answer is false. `recorded`: the lemmas are in an `accepted_lemmas` node
+   * already (a resumed run locks them again from there), and `takeFrozen` does not give them again.
+   */
+  async lock(text: string, context: { actor: string; signal?: AbortSignal; recorded?: boolean }): Promise<boolean> {
+    const held = new Set(lockedNames(this.locked));
+    const fresh = splitCommands(text).filter((c) => c.kind === "code" && !lockedNames(c.text).some((name) => held.has(name)));
+    if (fresh.length === 0) return true;
+    const added = fresh.map((c) => c.text.trimEnd()).join("\n\n");
+    const screened = { aux: added, proof: "trivial" };
+    if (hasHoles(screened) || structuralCheck(screened, SKETCH_POLICY).length > 0) return false;
+    const before = this.locked;
+    this.locked = `${before}${added}\n\n`;
+    const { report } = await this.check({ aux: "", proof: "sorry" }, { actor: context.actor, ...(context.signal ? { signal: context.signal } : {}) });
+    const ok = (report.leanStatus === "valid" || report.leanStatus === "sorry") && !report.messages.some((m) => m.severity === "error");
+    if (!ok) this.locked = before;
+    else if (context.recorded === true) this.recorded = lockedCommands(this.locked).length;
+    return ok;
+  }
+
+  /** The commands locked since the last call, for the `accepted_lemmas` node of the session that ends (plan change DP5). */
+  takeFrozen(): Array<{ name: string; statement: string; text: string }> {
+    const fresh = lockedCommands(this.locked).slice(this.recorded);
+    this.recorded += fresh.length;
+    return fresh;
+  }
+
+  /** `takeFrozen` as the records of an `accepted_lemmas` node: the statement's id and the blob that holds the lemma's text. */
+  takeFrozenLemmas(blobs: BlobStore): FrozenLemma[] {
+    return this.takeFrozen().map((c) => ({ name: c.name, statementId: statementIdV0(c.statement, this.sketch.prefix), proofHash: blobs.put(c.text) }));
   }
 
   get candidate(): Candidate | undefined {
@@ -188,9 +234,9 @@ export class Workbench {
     else this.listeners.push(listener);
   }
 
-  /** The prover's file with these regions. */
-  render(submission: Submission): string {
-    return renderSketch(this.sketch, submission.aux, submission.proof);
+  /** The prover's file with these regions; `view`: as the model reads it, the locked lemmas by their statements only. */
+  render(submission: Submission, view = false): string {
+    return renderSketch(this.sketch, submission.aux, submission.proof, view);
   }
 
   /** The regions of the attempt's last check, whatever its verdict; undefined before its first. */

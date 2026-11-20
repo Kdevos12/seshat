@@ -34,6 +34,8 @@ export type AllocationData = {
   /** The settings sampled for the session, as recorded on the attempt, and the draw of each value of the ones learned. */
   settings?: { [setting: string]: Json };
   settingDraws?: { [setting: string]: { [value: string]: number } };
+  /** `switchOnStall`: the mode and the thinking level the draw left out because the prover's last attempt, which had them, stalled. */
+  excluded?: { mode?: string; thinking?: string };
   /** The node of the step DAG an informal-first session works from, or why a session drawn for that mode ran as a standard one. */
   dag?: string;
   dagNote?: string;

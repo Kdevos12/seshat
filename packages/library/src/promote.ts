@@ -1,4 +1,5 @@
 import { type Json, leanTextProblems } from "@seshat/core";
+import { frozenLemmas } from "@seshat/memory";
 import type { FinishedAttempt, ProblemContext } from "@seshat/lines";
 import {
   CANDIDATE_KIND,
@@ -47,9 +48,30 @@ function stampOf(problem: ProblemContext): { mathlibRev?: string; promotedAt?: s
 export function recordCandidates(problem: ProblemContext, attempt: FinishedAttempt, options: PromotionOptions): number {
   if (attempt.submission === undefined || attempt.submission.aux.trim() === "") return 0;
   if (attempt.outcome !== "valid" && !(options.fromFailed && attempt.outcome === "invalid")) return 0;
-  const { lemmas, skipped } = parseAuxRegion(attempt.submission.aux);
+  return recordLemmas(problem, attempt.attemptId, attempt.submission.aux, options);
+}
+
+/**
+ * Under `longProof` (option `fromFrozen`): the candidates come from the `accepted_lemmas` nodes of the problem instead of the attempts' regions (plan change DP5). Each lemma
+ * M12 locked into the file, a check having accepted it, is read from the blob of its Lean text, whatever became of the attempt that locked it: LEGO keeps the verified
+ * lemmas of a failed attempt. Judged by `promoteCandidates` as any candidate is. Returns the candidates recorded.
+ */
+export function recordFrozenCandidates(problem: ProblemContext, options: PromotionOptions): number {
+  const byAttempt = new Map<string, string[]>();
+  for (const l of frozenLemmas(problem.memory, problem.claimId)) {
+    const text = problem.memory.blobs.get(l.proofHash);
+    if (text !== undefined) byAttempt.set(l.attemptId, [...(byAttempt.get(l.attemptId) ?? []), text]);
+  }
+  let recorded = 0;
+  for (const [attemptId, texts] of byAttempt) recorded += recordLemmas(problem, attemptId, texts.join("\n\n"), options);
+  return recorded;
+}
+
+/** The lemmas of an auxiliary region (`parseAuxRegion`) as `pending` candidates of an attempt, the same lemma of the same attempt once. */
+function recordLemmas(problem: ProblemContext, attemptId: string, aux: string, options: PromotionOptions): number {
+  const { lemmas, skipped } = parseAuxRegion(aux);
   for (const s of skipped) problem.log(`library: ${s.name} is not a candidate: ${s.reason}`);
-  const known = new Set(candidates(problem.memory, { problemId: problem.problemId }).filter((c) => c.attemptId === attempt.attemptId).map((c) => c.name));
+  const known = new Set(candidates(problem.memory, { problemId: problem.problemId }).filter((c) => c.attemptId === attemptId).map((c) => c.name));
   const header = importHeader(problem.target.source);
   let recorded = 0;
   for (const lemma of lemmas.slice(0, options.maxPerAttempt)) {
@@ -65,7 +87,7 @@ export function recordCandidates(problem: ProblemContext, attempt: FinishedAttem
       status: "pending",
       problemId: problem.problemId,
       claimId: problem.claimId,
-      attemptId: attempt.attemptId,
+      attemptId,
       name: lemma.name,
       statement: lemma.statement,
       proof: lemma.proof,

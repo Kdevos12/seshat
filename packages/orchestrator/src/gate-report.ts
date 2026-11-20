@@ -72,7 +72,7 @@ export function gateReport(events: readonly HarnessEvent[]): GateReport | undefi
       stat.skipped += 1;
       stat.avoidedUsd += d.estimateUsd;
       if (d.by === "memory") certifiedEarlier += 1;
-      else if (d.by === "progress") stoppedAtProbe += 1;
+      else if (d.by === "progress" && d.site === "wave") stoppedAtProbe += 1;
     } else {
       stat.launched += 1;
       if (d.exploration) {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, type AttemptOutcome, Journal, newId } from "@seshat/core";
-import { acceptedLemmas, MemoryStore, recordAcceptedLemmas, renderStateCard, stateCard, stateCardData, type StateCardData } from "../src/index.ts";
+import { acceptedLemmas, frozenLemmas, MemoryStore, recordAcceptedLemmas, renderStateCard, stateCard, stateCardData, type StateCardData } from "../src/index.ts";
 
 function open(): { memory: MemoryStore; journal: Journal } {
   const dir = mkdtempSync(join(tmpdir(), "mh-card-"));
@@ -99,5 +99,25 @@ describe("the state card", () => {
     assert.deepEqual(acceptedLemmas({ ...base, leanStatus: "lean_error", messages: [error] }), ["aux_a"]);
     assert.deepEqual(acceptedLemmas({ ...base, leanStatus: "timeout", messages: [] }), []);
     assert.deepEqual(acceptedLemmas({ ...base, leanStatus: undefined as never, messages: [] }), []);
+  });
+});
+
+describe("the lemmas locked into a file (plan change DP5)", () => {
+  const report = { leanStatus: "ok", checked: "theorem aux_a : True := trivial", messages: [], sorries: [] } as never;
+
+  it("a node without frozen lemmas is what it always was; with them it adds `lemmas`, and a session that checked nothing keeps the names", async () => {
+    const { memory } = open();
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n + 0 = n", origin: "test" });
+    recordAcceptedLemmas(memory, claimId, "att_1", report);
+    assert.deepEqual(memory.nodes("accepted_lemmas", { claimId }).at(-1)?.data, { attemptId: "att_1", names: ["aux_a"] });
+    const lemma = { name: "aux_a", statementId: "st0_x", proofHash: "h1" };
+    recordAcceptedLemmas(memory, claimId, "att_2", undefined, [lemma]);
+    assert.deepEqual(memory.nodes("accepted_lemmas", { claimId }).at(-1)?.data, { attemptId: "att_2", names: ["aux_a"], lemmas: [lemma] });
+    assert.deepEqual(frozenLemmas(memory, claimId), [{ ...lemma, attemptId: "att_2" }]);
+    // Two problems with one statement share the claim: a problem reads the nodes of its own file.
+    recordAcceptedLemmas(memory, claimId, "att_3", undefined, [{ ...lemma, name: "aux_b" }], "prob_1");
+    assert.deepEqual(frozenLemmas(memory, claimId, "prob_1").map((l) => l.name), ["aux_b"]);
+    assert.deepEqual(frozenLemmas(memory, claimId, "prob_2"), []);
+    assert.match(stateCard(memory, claimId)?.text ?? "", /Lemmas Lean accepted: aux_a\./);
   });
 });

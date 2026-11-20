@@ -179,6 +179,8 @@ describe("the simulated marathon (LH7.1)", () => {
     const last = mean(openings.slice(2 * third));
     assert.ok(last <= middle * 1.1 + 200, `opening messages: middle ${middle.toFixed(0)}, last ${last.toFixed(0)} characters`);
 
-    assert.ok(Date.now() - started < 30_000, `took ${Date.now() - started} ms`);
+    // A bound against a run whose cost grows with its age (a replay of the whole journal at each turn would take minutes), not a benchmark: the test
+    // takes about 13 s on a cloud machine and 58 s on a workstation with a slow disk (2026-11-20), where a 30 s bound failed on unchanged code.
+    assert.ok(Date.now() - started < 120_000, `took ${Date.now() - started} ms`);
   });
 });

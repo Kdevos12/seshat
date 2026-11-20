@@ -1,5 +1,7 @@
 import { availableTactics, type HostTactics, suggestion, type TacticSpec } from "@seshat/classical";
 import { type HarnessEvent, type Journal, type LeanCheckResult, type LeanChecker, newId, scanRegion, type Submission, type ValidationReport } from "@seshat/core";
+import { RegistryLeanChecker } from "@seshat/registry";
+import type { Workbench } from "./problem.ts";
 
 /**
  * The classical battery on the `sorry` a prover session leaves (Ruling 40, documentation/classical.md, "The battery on a session's sorry"):
@@ -62,6 +64,8 @@ export interface SorryBatteryDeps {
   /** The tactics the host's Lean has beyond the core ones (line M10's `packages`). */
   host: HostTactics;
   config: SorryBatteryConfig;
+  /** The regions whose `sorry` the battery tries. Absent: both. A hole session tries its proof only: the `sorry` of the given lemmas in its aux region stay. */
+  regions?: ReadonlyArray<"aux" | "proof">;
   /** Records the attempt as a node of the journal. Absent: nothing is recorded. */
   record?: (data: SorryBatteryRecord) => void;
 }
@@ -117,7 +121,7 @@ export async function closeSorries(d: SorryBatteryDeps, submission: Submission, 
   if (report.leanStatus === undefined || !report.holes || report.sorries.length === 0 || signal?.aborted === true) return undefined;
   if (report.messages.some((m) => m.severity === "error")) return undefined;
   const maxSorries = d.config.maxSorries ?? DEFAULT_MAX_SORRIES;
-  const occurrences = findSorries(submission).slice(0, maxSorries);
+  const occurrences = findSorries(submission).filter((at) => d.regions?.includes(at.region) ?? true).slice(0, maxSorries);
   if (occurrences.length === 0) return undefined;
   const tactics = batteryTactics(d.host);
   const timeoutSec = d.config.timeoutSec ?? Math.max(10, ...tactics.map((t) => t.timeoutSec));
@@ -222,4 +226,31 @@ export function sorryBatteryTally(events: readonly HarnessEvent[]): SorryBattery
 
 export function renderSorryBatteryTally(t: SorryBatteryTally): string {
   return `sorry closed by the harness: ${t.closed} of ${t.tried} (${t.attempts} battery run(s), no model call; a closed sorry changes the session's file and no claim's status).`;
+}
+
+/**
+ * The battery as a session's `sorryBattery` option, on the workbench the session checks with: the checks are the registry's, recorded under `attemptId` (absent for a
+ * session that is no attempt, a hole session's), and the attempt is recorded as a node on the workbench's claim. `host` and `config` are the run's (`RunConfig.sorryBattery`).
+ */
+export function sessionSorryBattery(
+  journal: Journal,
+  workbench: Workbench,
+  attemptId: string | undefined,
+  battery: { config: SorryBatteryConfig; host: HostTactics },
+  regions?: ReadonlyArray<"aux" | "proof">,
+): (submission: Submission, report: ValidationReport, signal?: AbortSignal) => Promise<SorryBatteryOutcome | undefined> {
+  return (submission, report, signal) =>
+    closeSorries(
+      {
+        checker: new RegistryLeanChecker(workbench.registry, { ...(attemptId !== undefined ? { attemptId } : {}), actor: SORRY_BATTERY_ACTOR }),
+        render: (x) => workbench.render(x),
+        host: battery.host,
+        config: battery.config,
+        ...(regions !== undefined ? { regions } : {}),
+        record: recordSorryBattery(journal, workbench.claimId, attemptId, SORRY_BATTERY_ACTOR),
+      },
+      submission,
+      report,
+      signal,
+    );
 }

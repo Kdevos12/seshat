@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { BlobStore, type HarnessEvent, sha256Hex } from "@seshat/core";
+import { AUX_BEGIN, AUX_END, BlobStore, type HarnessEvent, PROOF_BEGIN, PROOF_END, sha256Hex } from "@seshat/core";
 import { audit, auditCommand } from "../src/audit.ts";
+import { lengthBuckets, referenceLength } from "../src/length.ts";
 import { scriptedRun, type ScriptedSpec } from "./ablate-helpers.ts";
 import { tempDir } from "./m0-helpers.ts";
 
@@ -96,13 +97,15 @@ describe("harness audit", () => {
     const text = readFileSync(file, "utf8");
     assert.match(text, /^# Audit/);
     assert.match(text, /Problems: 2, certified: 1, not certified: 1/);
+    assert.match(text, /^## Output tokens by role and kind$/m);
+    assert.match(text, /\| Role \| Calls \| Output tokens \| Thinking \| Text \| Tool-call arguments \| Prose share \| Split covers \|/);
     assert.match(text, /^## `hard` \(unsolved\)/m);
     assert.match(text, /lean_search x2, lean_check x1/);
     assert.match(text, /lemma aux_one/);
     assert.match(text, /planner rounds: 1; repairs: 1/);
     assert.match(text, /plausible no_counterexample/);
     assert.match(text, /\*\*Formal-cost triage\*\*: short \(computed from the journal now\): no informal proof was accepted/);
-    assert.doesNotMatch(text, /`easy`/);
+    assert.doesNotMatch(text, /^## `easy`/m, "a certified problem has no dossier, only a row in the length table");
     assert.equal(readFileSync(join(dir, "journal.jsonl"), "utf8"), before);
     assert.ok(lines.some((l) => l.includes("audit.md")));
   });
@@ -133,5 +136,74 @@ describe("harness audit", () => {
     assert.doesNotMatch(text, /never shown/);
     auditCommand(dir, { out: () => undefined });
     assert.doesNotMatch(readFileSync(join(dir, "audit.md"), "utf8"), /Reference solution/);
+  });
+
+  it("measures the length of every problem, and the success against reference length", () => {
+    const { run, dir, attempts } = build();
+    const blobs = new BlobStore(join(dir, "blobs"));
+    // The certified proof: no markers, so the whole text is counted; 3 of its 6 lines are Lean.
+    const proved = "import Mathlib\n-- a comment\n\n/- a block\n   comment -/\ntheorem easy : True := by\n  trivial\n";
+    // The last failed file of `hard`: two regions, two aux_ lemmas, 4 Lean lines in all.
+    const failed = `${AUX_BEGIN}\nlemma aux_a : True := by\n  trivial\ntheorem aux_b : True := aux_a\n${AUX_END}\ntheorem hard : True := by\n${PROOF_BEGIN}\n  sorry\n${PROOF_END}\n`;
+    const input = JSON.stringify({ snippets: [{ id: "x", code: "x".repeat(1000) }] });
+    const ids = { proved: blobs.put(proved), failed: blobs.put(failed), input: blobs.put(input) };
+    const hardClaim = run.claims.hard as string;
+    const extra = [
+      { type: "validation.finished", data: { validationId: "v1", claimId: run.claims.easy, method: "kernel_replay", verdict: "valid", reasons: [], axioms: [], submissionHash: ids.proved } },
+      { type: "validation.finished", data: { validationId: "v2", claimId: hardClaim, method: "repl", verdict: "invalid", reasons: ["e"], axioms: [], submissionHash: ids.failed } },
+      { type: "tool_run.started", data: { toolRunId: "tr_c1", capability: "lean.check", implementation: "x", version: "1", inputHash: ids.input, attemptId: attempts[1] } },
+      { type: "tool_run.finished", data: { toolRunId: "tr_c1", outcome: "ok", durationMs: 2500 } },
+    ] as unknown as HarnessEvent[];
+    const result = audit({
+      events: [...run.events, ...extra],
+      blob: (h) => blobs.get(h),
+      referenceLength: (id) => (id === "easy" ? { lines: 10, theorems: 1, from: "lean" } : id === "hard" ? { lines: 150, theorems: 9, from: "md" } : undefined),
+    });
+    const [easy, hard] = [result.lengths.find((r) => r.problemId === "easy")!, result.lengths.find((r) => r.problemId === "hard")!];
+    assert.equal(easy.status, "certified");
+    assert.deepEqual(easy.file, { source: "certified_validation", counted: "file", lines: 3, chars: proved.length, theorems: 1 });
+    assert.equal(easy.auxLemmas, 0);
+    assert.equal(hard.status, "not certified");
+    assert.equal(hard.file?.source, "last_failed_validation");
+    assert.equal(hard.file?.counted, "regions");
+    assert.equal(hard.file?.lines, 4);
+    assert.equal(hard.auxLemmas, 2);
+    assert.deepEqual(hard.holes, { count: 0, dropped: 0, healthy: true, verdicts: { too_hard: 1 } });
+    assert.equal(hard.leanCheckRuns, 1);
+    assert.deepEqual(hard.checkTimes, [{ chars: 1000, ms: 2500 }]);
+    assert.deepEqual(hard.stopReasons, { model: 2 });
+    assert.equal(easy.leanChecks, undefined, "the helper's attempts record no check count: not recorded, not guessed");
+    const rows = Object.fromEntries(lengthBuckets(result.lengths).map((b) => [b.bucket, b]));
+    assert.deepEqual(rows["<30"], { bucket: "<30", total: 1, certified: 1, medianCertifiedLines: 3 });
+    assert.deepEqual(rows["100-299"], { bucket: "100-299", total: 1, certified: 0 });
+    assert.deepEqual(rows["no reference"], { bucket: "no reference", total: 0, certified: 0 });
+  });
+
+  it("counts reference lengths from a .lean file and from the Lean blocks of a .md, and writes the table and length.json", () => {
+    const { dir } = build();
+    const ref = tempDir("audit-reflen-");
+    writeFileSync(join(ref, "easy.lean"), "-- header\nimport Mathlib\n\n/-- doc -/\ntheorem a : True := trivial\nlemma b : True := trivial\n");
+    writeFileSync(join(ref, "hard.md"), "Prose.\n```lean\ntheorem h1 : True := by\n  trivial\n```\nMore.\n```python\nnot lean\n```\n");
+    assert.deepEqual(referenceLength(ref, "easy"), { lines: 3, theorems: 2, from: "lean" });
+    assert.deepEqual(referenceLength(ref, "hard"), { lines: 2, theorems: 1, from: "md" });
+    assert.equal(referenceLength(ref, "none"), undefined);
+    auditCommand(dir, { reference: ref, out: () => undefined });
+    const text = readFileSync(join(dir, "audit.md"), "utf8");
+    assert.match(text, /^## Length$/m);
+    assert.match(text, /\| `easy` \| certified \| not recorded \|/);
+    assert.match(text, /\| `hard` \| not certified \|.* \| 2 \(1\) \|$/m);
+    assert.match(text, /\| <30 \| 1 \/ 2 \| not recorded \|/);
+    assert.match(text, /\| no reference \| 0 \/ 0 \|/);
+    const json = JSON.parse(readFileSync(join(dir, "length.json"), "utf8")) as { records: Array<{ arm: string; problemId: string; reference?: { lines: number } }> };
+    assert.deepEqual(json.records.map((r) => [r.arm, r.problemId, r.reference?.lines]), [["run", "easy", 3], ["run", "hard", 2]]);
+  });
+
+  it("keeps one set of length records per arm of an ablation directory", () => {
+    const root = mkdtempSync(join(tempDir("audit-len-ab-"), "x-"));
+    for (const arm of ["a", "b"]) build(join(root, "arms", arm, "measure"));
+    auditCommand(root, { out: () => undefined });
+    const json = JSON.parse(readFileSync(join(root, "length.json"), "utf8")) as { records: Array<{ arm: string }> };
+    assert.deepEqual(json.records.map((r) => r.arm), ["a", "a", "b", "b"]);
+    assert.equal((readFileSync(join(root, "audit.md"), "utf8").match(/^### Length$/gm) ?? []).length, 2);
   });
 });

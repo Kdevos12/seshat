@@ -43,7 +43,60 @@ alphabetical order, each with its summary and dossiers.
 solving run". The files are the person's: the harness gives them to no prompt, no line and no model. A problem that was certified has no dossier, so its
 reference is not shown.
 
+## Length
+
+Every problem of the run, certified ones included, has a row in the "Length" section (and a record in `length.json`, below); it comes before the
+dossiers. Nothing is guessed: a number the journal does not hold is "not recorded". Columns and where each comes from:
+
+- **Status**: certified (claim `proved` or `refuted`) or not.
+- **File, lines, characters, theorems**: the file measured is, for a certified problem, the blob of the last valid `validation.finished` of the problem's own
+  claim (the `kernel_replay` one first); for an uncertified one, the blob of its last invalid validation, else of its last validation, else the text of its
+  last `m12_sketch` record. A validation is journaled only for a check that Lean answered and that left no `sorry`, so a problem that only ever submitted
+  files with holes is measured by its last sketch, and one with neither shows "not recorded". The text counted is the prover's two regions (`aux` and `proof`)
+  when the blob has the markers, else the whole text; the header the harness adds is not counted. **Lines** are Lean lines: neither blank nor only a
+  comment (`--`, and `/- -/` blocks, nested; strings are not parsed). **Characters** count the same text.
+- **`aux_`**: the `theorem` and `lemma` declarations of that text whose name starts with `aux_`.
+- **Holes**: from the problem's last `m12_sketch` record: its holes, those dropped, whether it was healthy; and the verdicts (`proved`, `statement_wrong`,
+  `too_hard`, shown as `too_hard (turns)` when the node says why), one per hole claim, the last winning, from `hole_verdict` nodes and `m12_session` records.
+- **`lean_check`**: the sum of the problems' sessions' counts (`attempt.finished.checks`, or the calls in the transcript); when no session recorded one, the
+  `lean.check` tool runs made inside its attempts, said so; else "not recorded".
+- **Check time vs size**: the `lean.check` tool runs of the problem's attempts whose input blob (the code sent, characters) and `durationMs` are both in the
+  run directory: how many, the median time, and the largest code with its time. A check made outside an attempt has no problem and is left out.
+- **Stopped by**: the sessions' `stoppedBy` counts.
+- **Reference lines (theorems)**: with `--reference DIR`, `DIR/PROBLEM_ID.lean`, else the Lean code blocks (fenced `lean`) of `DIR/PROBLEM_ID.md`, counted
+  the same way (non-blank, non-comment lines), with its `theorem` and `lemma` count. A `.md` with no Lean block counts as no reference. The harness gives it
+  to no prompt, no line and no model.
+
+A second table, "success against reference length", buckets the problems by reference lines (`<30`, `30-99`, `100-299`, `>=300`, and `no reference`) and
+gives certified over total for each bucket and the median Seshat lines of the certified ones with a recorded file.
+
+**`length.json`** is written next to `audit.md`: `{ "records": [...] }`, one record per problem with the fields above, plus `arm` (`run`, or the arm's name
+for an ablation directory) and `runId`, so that records of several runs can be concatenated and pooled. An ablation directory has one `### Length`
+section per arm in `audit.md` and every arm's records in one `length.json`.
+
+## Output tokens by role and kind
+
+One table in `audit.md` for the run (plan change CL0, `packages/orchestrator/src/output-kinds.ts`), after "Length"; an ablation directory has one per arm.
+It says what a role's output is made of, which decides whether cutting prose could save anything. One row for each role seen: the call's `role`, else the
+role of its site (`prover.session`, `scheduler.planner`, `scheduler.hole`, `consult`), else the site (the Lean draft's attempt is `gate.draft`, its own row, not the prover's), else "other". Columns: calls and output tokens (as
+the journal charged them: a prover session's `attempt.charged` events, a line's `model_call.finished` events), then **thinking**, **text** (outside tool
+calls) and **tool-call arguments**, each as tokens and a share of the split tokens, **prose share** (text over the split tokens) and **split covers** (the
+split tokens over the output tokens). Where the journal holds no split for a role, the cells say "not recorded".
+
+Where the split comes from:
+
+- **A session's transcript** (`transcripts/ID.json`, the prover sessions and, since plan change CL0, the hole sessions): each assistant message's
+  `usage.output` is divided among its `thinking`, `text` and `toolCall` parts in proportion to their characters (a tool call's characters are those of its
+  JSON arguments). A message with no usage counts characters / 4 tokens and is reported as "estimated from characters". The split is an estimate: the
+  provider reports one output number, not one for each part.
+- **A one-shot call's response blob** (the planner, the judge): the blob is the response text only, so text is the smaller of the call's output tokens and
+  its characters / 4 (`CHARS_PER_TOKEN`), and the rest of the output is thinking that was not stored; the thinking cell says how much.
+- **Nothing**: a hole session of a run made before hole sessions saved transcripts has no split. Its row keeps its calls and output tokens, and the split is
+  "not recorded". A hole session's calls name its transcript through the `sessionId` in their request blob.
+
+The table is markdown only; `length.json` holds per-problem records and this is per role.
+
 ## Tests
 
 `packages/orchestrator/test/audit.test.ts`: a scripted run with a certified and an uncertified problem; an ablation directory with two arms; a reference
-directory. Not run against a real run.
+directory; the output-kinds table (`output-kinds.test.ts`: a transcript split by characters, an estimated message, a planner call's unstored thinking, a hole session with and without a transcript) and the hole session's transcript (`hole-session.test.ts`); the length table (a certified proof of known length, an uncertified file with `aux_` lemmas, holes and a timed check, a `.lean` and a `.md` reference, the buckets, `length.json`). Not run against a real run.

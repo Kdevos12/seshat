@@ -1,21 +1,24 @@
-import { HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleVerdict, hash32, leanTextProblems, seeded, sha256Hex, statementIdV0, SUSPECT_FALSE_KIND } from "@seshat/core";
+import {
+  HOLE_FALSE_VERDICT, HOLE_WAITING_REASON, HOLE_VERDICT_KIND, type HoleTooHardReason, type HoleVerdict, hash32, leanTextProblems, lockedNames, lockedStatements, readDeclarationHead, seeded, sha256Hex, splitCommands, statementIdV0, SUSPECT_FALSE_KIND,
+} from "@seshat/core";
 import {
   Atms, checkEdge, DERIVATION_KIND, type DerivationRecord, GraphState, linkFor, lemmaValue, memorySource, parseSignature, realize,
 } from "@seshat/graph";
 import { LeanMeta } from "@seshat/lean-meta";
-import { INFORMAL_PROOF_KIND, informalProofOfNodes, informalSection, sketchOfNodes } from "@seshat/memory";
+import { frozenLemmas, INFORMAL_PROOF_KIND, informalProofOfNodes, informalSection, quotedSketch, sketchOfNodes } from "@seshat/memory";
 import {
   type Briefing, completeJson, type FinishedAttempt, type HoleSessionResult, isInterrupted, JsonAnswerError, type JsonObject, type Line, LINE_TITLES, type ProblemContext, type ScheduledTask, type TaskEnd, type TaskInfo,
 } from "@seshat/lines";
 import { GivenClause, type Clause } from "./kernel.ts";
-import { boundHistory, cutHeader, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
+import { boundHistory, cutHeader, escapeRegExp, hasHole, readWork, stubsRegion, stubOf, type Dependency } from "./hole-work.ts";
 import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, contextFor, dependencyOrder, dropHeaderImports, headerWithContext, linkProof, readSketch, type ReadOptions, type SketchReading } from "./holes.ts";
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import { cutFailures } from "./repair.ts";
-import { PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
+import { haveSteps, liftHaves, type Lift } from "./lift.ts";
+import { draftPrompt, PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
-  asRecord, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
+  asRecord, isRefinement, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
 } from "./records.ts";
 import { backwardSubsume, forwardSubsume, isLinkLemma, type SubsumeOptions } from "./subsume.ts";
 
@@ -52,10 +55,18 @@ export const M12_OPTIONS = {
   refine: false,
   /** The most refinement rounds for one problem (refine only). */
   maxRefinements: 8,
+  /** A hole whose last session was cut by its turns gets one more session than `holeSessions`, before a refinement round splits it (plan change LP5). The orchestrator turns it on under `RunConfig.longProof`. */
+  holeContinuation: false,
   /** The repair pass (CA13, blueprints only): an outer session that ends on a file with Lean errors has its failing blocks cut to `sorry`, with no model call, and the result is a blueprint if Lean and M12 read it as one. */
   repair: false,
   /** The most repairs for one problem (repair only). */
   maxRepairs: 2,
+  /** The first blueprint comes from the accepted informal proof (LP2, DP1, blueprints only): before the first outer session a planner call writes the target's proof as `have` steps, and the harness lifts them into holes. `RunConfig.longProof` sets it. */
+  fromInformal: false,
+  /** The drafts asked for (DP3, `fromInformal` only): the one with the fewest holes after the lift is registered; the others are recorded and never registered. */
+  drafts: 1,
+  /** Frozen links (LP3, blueprints only): a hole that is proved, or an `aux_` lemma of the outer file that a check accepted, moves into a locked prefix of the problem's file, shown to the models by statement only. `RunConfig.longProof` sets it (its `freeze`, default true). */
+  freeze: false,
   /** Seeds the scheduler's draws. Null: the run's seed. */
   seed: null,
 } satisfies JsonObject;
@@ -75,8 +86,12 @@ interface Settings {
   holeSessions: number;
   refine: boolean;
   maxRefinements: number;
+  holeContinuation: boolean;
+  freeze: boolean;
   repair: boolean;
   maxRepairs: number;
+  fromInformal: boolean;
+  drafts: number;
   seed: string | number | null;
 }
 
@@ -102,8 +117,12 @@ function settings(options: Readonly<JsonObject>): Settings {
     holeSessions: num("holeSessions", 1),
     refine: flag("refine"),
     maxRefinements: num("maxRefinements", 0),
+    holeContinuation: flag("holeContinuation"),
+    freeze: flag("freeze"),
     repair: flag("repair"),
     maxRepairs: num("maxRepairs", 0),
+    fromInformal: flag("fromInformal"),
+    drafts: num("drafts", 1),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -125,6 +144,9 @@ interface Work {
   meta: LeanMeta;
   /** The blueprints (their records) whose refinement round the budget gate skipped, so that the gate is not asked again for the same state (CA12). */
   refineSkipped: Set<string>;
+  /** The names locked into the problem's file (`freeze`), rebuilt from the `accepted_lemmas` nodes; and the lemmas Lean refused to have there, not tried again. */
+  frozen: Set<string>;
+  unfrozen: Set<string>;
 }
 
 /** What reading a sketch is asked: a blueprint, when the option is on (CA9). */
@@ -171,12 +193,16 @@ function sessionRecords(problem: ProblemContext): SessionRecord[] {
     .filter((record) => record.problemId === problem.problemId);
 }
 
-function sketchRecords(problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> {
+/** Every sketch record of the problem, a draft that was not kept included (`SketchRecord.discarded`). */
+function allSketchRecords(problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> {
   return problem.memory
     .nodes(SKETCH_KIND, { claimId: problem.claimId })
     .map((node) => ({ nodeId: node.nodeId, record: asRecord<SketchRecord>(node.data) }))
     .filter(({ record }) => record.problemId === problem.problemId);
 }
+
+/** The sketches the scheduler works from: a draft that was not kept is left out, so that it is never registered, revised or counted. */
+const sketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> => allSketchRecords(problem).filter(({ record }) => record.discarded !== true);
 
 /** The tasks the scheduler made for the problem, in the order they were made. */
 const ownTasks = (problem: ProblemContext): TaskInfo[] => problem.tasks.list({ kinds: ["prove"] }).filter((task) => task.proposedBy === ACTOR);
@@ -204,16 +230,46 @@ function holeInfo(problem: ProblemContext, claimId: string, latestFirst = false)
   return undefined;
 }
 
+/** The most characters of a hole's informal step that its prompt shows. */
+const STEP_CHARS = 600;
+
+/**
+ * The informal step a hole formalizes, when the blueprint says it: the comment directly above the hole's lemma in the aux region of the latest blueprint that has
+ * it (a `-- step k:` line, or any note the sketch's author left there), without the `-- uses:` and `-- refines:` directives. It is the sketch's own text, unchecked.
+ */
+function stepOf(problem: ProblemContext, claimId: string): string | undefined {
+  for (const { record } of sketchRecords(problem).reverse()) {
+    const name = record.blueprint === true && record.registered ? record.names[record.holes.indexOf(claimId)] : undefined;
+    const stored = name === undefined ? undefined : problem.memory.blobs.get(record.submission);
+    if (name === undefined || stored === undefined) continue;
+    const commands = splitCommands((JSON.parse(stored) as { aux: string }).aux);
+    const at = commands.findIndex((c) => c.kind === "code" && new RegExp(`^(?:theorem|lemma)\\s+${escapeRegExp(name)}(?![\\w'.])`).test(c.text.trimStart()));
+    const above = commands[at - 1];
+    // A blank line between the comment and the lemma makes it a note on something else, as it does for `-- uses:`.
+    if (above === undefined || above.kind !== "comment" || ((/\s*$/.exec(above.text)?.[0] ?? "").split("\n").length - 1) > 1) return undefined;
+    const lines = above.text.split("\n").filter((l) => !/^--\s*(?:uses|refines):/.test(l.trim())).map((l) => l.replace(/^\s*--\s?/, "").trim()).filter((l) => l !== "");
+    return lines.length === 0 ? undefined : clip(lines.join(" "), STEP_CHARS);
+  }
+  return undefined;
+}
+
+/** Why a hole session ended `too_hard`: the model said so, or the session was cut by its turns (or its context), or by the money, or the model ended it with no proof (`HOLE_TOO_HARD_REASONS`). */
+function tooHardReason(result: Pick<HoleSessionResult, "stop" | "verdict">): HoleTooHardReason {
+  if (result.verdict?.verdict === "too_hard") return "model_said";
+  if (result.stop === "turns" || result.stop === "context") return "turns";
+  return result.stop === "budget" ? "budget" : "model_said";
+}
+
 /** The session of a hole whose work was done (no error, every `sorry` in a stub), the latest. */
 const workOf = (problem: ProblemContext, claimId: string): SessionRecord | undefined => sessionRecords(problem).filter((r) => r.claimId === claimId && r.workDone === true).at(-1);
 
 /** The verdicts of a hole of this problem, read from the memory's `hole_verdict` nodes. */
-function verdictsOf(problem: ProblemContext, claimId: string): Array<{ verdict: HoleVerdict; negationValidated: boolean; argument?: string; sessionId?: string }> {
+function verdictsOf(problem: ProblemContext, claimId: string): Array<{ verdict: HoleVerdict; negationValidated: boolean; argument?: string; sessionId?: string; reason?: HoleTooHardReason }> {
   return problem.memory
     .nodes(HOLE_VERDICT_KIND, { claimId })
-    .map((node) => node.data as { problemId?: string; verdict: HoleVerdict; negationValidated?: boolean; argument?: string; sessionId?: string })
+    .map((node) => node.data as { problemId?: string; verdict: HoleVerdict; negationValidated?: boolean; argument?: string; sessionId?: string; reason?: HoleTooHardReason })
     .filter((data) => data.problemId === problem.problemId)
-    .map((data) => ({ verdict: data.verdict, negationValidated: data.negationValidated === true, ...(data.argument !== undefined ? { argument: data.argument } : {}), ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}) }));
+    .map((data) => ({ verdict: data.verdict, negationValidated: data.negationValidated === true, ...(data.argument !== undefined ? { argument: data.argument } : {}), ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}), ...(data.reason !== undefined ? { reason: data.reason } : {}) }));
 }
 
 /** Lean accepted a proof of the hole's negation: the one thing that makes a hole false for the scheduler. */
@@ -234,6 +290,9 @@ function dedent(text: string): string {
   const cut = indents.length === 0 ? 0 : Math.min(...indents);
   return lines.map((l) => l.slice(cut)).join("\n");
 }
+
+/** A proved lemma as a Lean command: the statement in signature form, and the proof indented under `by`. */
+const lemmaText = (name: string, statement: string, proof: string): string => `lemma ${name} ${statement.trim()} := by\n${dedent(proof).split("\n").map((l) => `  ${l}`).join("\n")}`;
 
 const clip = (text: string, n: number): string => {
   const t = text.replace(/\s+/g, " ").trim();
@@ -522,7 +581,7 @@ export function createM12Line(): Line {
     if (!s.blueprints || !s.refine || !s.subgoals || problem.checkSketch === undefined) return false;
     if (problem.signal.aborted || problem.budget.exhausted) return false;
     if (problem.memory.nodes(REFINE_STOP_KIND, { claimId: problem.claimId }).some((n) => asRecord<RefineStopRecord>(n.data).problemId === problem.problemId)) return false;
-    const rounds = sketchRecords(problem).filter(({ record }) => record.planner === true).length;
+    const rounds = sketchRecords(problem).filter(({ record }) => isRefinement(record)).length;
     if (rounds >= s.maxRefinements) return false;
     const target = problem.memory.claim(problem.claimId);
     if (target === undefined || accepted(target.status)) return false;
@@ -541,50 +600,144 @@ export function createM12Line(): Line {
       ...(sketch !== undefined ? { sketch } : {}),
       ...(informal !== undefined ? { informal } : {}),
     });
-    // The gate prices the round as a task of one call: a share of what an inner session has cost on this problem (its first guess before any).
-    if (problem.budget.ask !== undefined) {
-      const answer = await problem.budget.ask({ site: "task", estimateUsd: priceBook(sessionRecords(problem)).sessionUsd * PLANNER_CALL_SHARE });
-      if (answer.action === "skip") {
-        work.refineSkipped.add(base.nodeId);
-        problem.log(`refinement round ${round}: skipped by the budget gate (${answer.reason})`);
-        return false;
-      }
+    const answer = await askPlanner(problem, prompt, ["aux", "proof"]);
+    if ("skip" in answer) {
+      work.refineSkipped.add(base.nodeId);
+      problem.log(`refinement round ${round}: skipped by the budget gate (${answer.skip})`);
+      return false;
     }
-    let written: { aux: string; proof: string } | undefined;
-    let flaw: string | undefined;
-    try {
-      const answer = await completeJson<{ aux?: unknown; proof?: unknown }>(problem.llm, {
-        prompt, site: SITE_PLANNER, reuse: true,
-        schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: ["aux", "proof"] },
-      });
-      if (typeof answer.value.proof === "string" && typeof answer.value.aux === "string") written = { aux: answer.value.aux, proof: answer.value.proof };
-      else flaw = "the planner's answer has no AUX and PROOF regions";
-    } catch (error) {
-      if (isInterrupted(error)) throw error;
-      if (problem.signal.aborted || problem.budget.exhausted) return false;
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof JsonAnswerError) flaw = `the planner's answer was not a blueprint: ${clip(message, 160)}`;
-      else if (/the model call failed/.test(message)) {
-        const stop: RefineStopRecord = { problemId: problem.problemId, round, reason: clip(message, 200) };
-        problem.memory.recordNode({ kind: REFINE_STOP_KIND, claimId: problem.claimId, data: { ...stop } });
-        problem.log(`refinement round ${round}: the planner's model call failed (${stop.reason}); no more rounds for this problem`);
-        return false;
-      } else throw error;
+    if ("stopped" in answer) return false;
+    if ("failed" in answer) {
+      const stop: RefineStopRecord = { problemId: problem.problemId, round, reason: clip(answer.failed, 200) };
+      problem.memory.recordNode({ kind: REFINE_STOP_KIND, claimId: problem.claimId, data: { ...stop } });
+      problem.log(`refinement round ${round}: the planner's model call failed (${stop.reason}); no more rounds for this problem`);
+      return false;
     }
     const attemptId = `planner_${round}`;
     const extra: Partial<SketchRecord> = { planner: true, refinedFrom: base.nodeId, round };
-    if (written === undefined) {
-      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...sketchRecordOf(problem, s, attemptId, submission, { holes: [], others: [], problem: flaw ?? "no blueprint" }, undefined, extra) } });
+    if ("flaw" in answer) {
+      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...sketchRecordOf(problem, s, attemptId, submission, { holes: [], others: [], problem: answer.flaw }, undefined, extra) } });
       return true;
     }
-    const cut = dropHeaderImports(written.aux, work.header);
-    const answered = { aux: cut.aux, proof: written.proof };
+    const cut = dropHeaderImports(answer.written.aux, work.header);
+    const answered = { aux: cut.aux, proof: answer.written.proof };
     const reading = readSketch(answered, { ...readOptions(s, target.statement), depths: baseDepths(problem, base.record, submission) });
     const report = reading.holes.length === 0 ? undefined : await problem.checkSketch(answered);
     const record = sketchRecordOf(problem, s, attemptId, answered, reading, report, extra);
     problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
-    problem.log(`refinement round ${round} (case ${base.case}): ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`}`);
+    problem.log(`refinement round ${round} (case ${base.case}): ${describeBlueprint(record)}`);
     return true;
+  }
+
+  const describeBlueprint = (record: SketchRecord): string =>
+    record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${record.problem ?? (record.errors ?? ["Lean's check"])[0] ?? "no named hole"})`;
+
+  /**
+   * One planner call in a fresh context (site `scheduler.planner`, the planner's role), the same for a refinement round and for a draft: the budget gate prices
+   * it as a task of one call, and its answer is the regions it wrote (`keys`: the aux region is asked for a round, the proof alone for a draft; the aux is
+   * empty when not asked). `skip`: the gate refused; `stopped`: the problem ended; `failed`: the model call failed (not a bad answer); `flaw`: the answer was no blueprint.
+   */
+  async function askPlanner(problem: ProblemContext, prompt: string, keys: readonly ("aux" | "proof")[]): Promise<{ skip: string } | { stopped: true } | { failed: string } | { flaw: string } | { written: { aux: string; proof: string } }> {
+    if (problem.budget.ask !== undefined) {
+      const answer = await problem.budget.ask({ site: "task", estimateUsd: priceBook(sessionRecords(problem)).sessionUsd * PLANNER_CALL_SHARE });
+      if (answer.action === "skip") return { skip: answer.reason };
+    }
+    try {
+      const answer = await completeJson<{ aux?: unknown; proof?: unknown }>(problem.llm, {
+        prompt, site: SITE_PLANNER, reuse: true,
+        schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: [...keys] },
+      });
+      if (typeof answer.value.proof === "string" && (!keys.includes("aux") || typeof answer.value.aux === "string")) return { written: { aux: keys.includes("aux") ? (answer.value.aux as string) : "", proof: answer.value.proof } };
+      return { flaw: `the planner's answer has no ${keys.includes("aux") ? "AUX and PROOF regions" : "PROOF region"}` };
+    } catch (error) {
+      if (isInterrupted(error)) throw error;
+      if (problem.signal.aborted || problem.budget.exhausted) return { stopped: true };
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof JsonAnswerError) return { flaw: `the planner's answer was not a blueprint: ${clip(message, 160)}` };
+      if (/the model call failed/.test(message)) return { failed: message };
+      throw error;
+    }
+  }
+
+  /** One draft, made a blueprint (or not): the record to write, and what ranks it. */
+  interface Draft {
+    record: SketchRecord;
+    /** The holes left after the lift, and the steps the proof had. */
+    holes: number;
+    steps: number;
+  }
+
+  /**
+   * One draft of the first blueprint (LP2, DP1): the planner's `have` sketch checked once through `checkSketch`, then lifted (`liftHaves`: the battery closes
+   * what it can, `extract_goal` states the rest, each step applies its lemma) and checked again, then read as a blueprint like any other. A draft with no hole left goes through `validate`. A draft Lean refuses,
+   * or that cannot be lifted, is recorded as it was written and not healthy: the refinement rounds revise it (case a). The record is not written here (the
+   * drafts are ranked first, DP3).
+   */
+  async function makeDraft(problem: ProblemContext, s: Settings, attemptId: string, proof: string, target: string): Promise<Draft> {
+    const check = problem.checkSketch as NonNullable<ProblemContext["checkSketch"]>;
+    const written = { aux: "", proof };
+    const extra: Partial<SketchRecord> = { planner: true, fromInformal: true };
+    const steps = haveSteps(proof).length;
+    const refused = (why: string, report?: Parameters<typeof sketchRecordOf>[5]): Draft => ({
+      record: sketchRecordOf(problem, s, attemptId, written, { holes: [], others: [], problem: why }, report, extra), holes: Number.MAX_SAFE_INTEGER, steps,
+    });
+    const first = await check(written);
+    if (first.leanStatus === undefined || first.messages.some((m) => m.severity === "error")) return refused("the draft proof has errors Lean reports", first);
+    let lift: Lift = { aux: "", proof, closed: 0, lifted: [] };
+    if (first.holes) {
+      lift = await liftHaves({ check, ...(problem.closeSorries !== undefined ? { battery: problem.closeSorries } : {}) }, { ...written, report: first });
+      if ("reason" in lift) return refused(`the draft's steps were not lifted: ${lift.reason}`, first);
+    }
+    const lifted = { aux: lift.aux, proof: lift.proof };
+    const report = lift.report ?? (lift.lifted.length === 0 && lift.closed === 0 ? first : await check(lifted));
+    // A draft with no hole left that Lean accepts whole (the battery closed every step, or the planner wrote a complete proof) is a proof, not a blueprint: Lean decides, through `validate`.
+    if (!report.holes && report.leanStatus !== undefined && !report.messages.some((m) => m.severity === "error")) {
+      const verdict = await problem.validate({ claimId: problem.claimId, proof: lifted.proof, ...(lifted.aux.trim() !== "" ? { aux: lifted.aux } : {}) });
+      const why = `the draft has no hole left: it was submitted to Lean through validate, which said ${verdict.verdict}${verdict.verdict === "valid" ? "" : ` (${verdict.reasons[0] ?? "no reason"})`}`;
+      return { record: sketchRecordOf(problem, s, attemptId, lifted, { holes: [], others: [], problem: why }, report, { ...extra, lifted: true }), holes: 0, steps };
+    }
+    const record = sketchRecordOf(problem, s, attemptId, lifted, readSketch(lifted, readOptions(s, target)), report, { ...extra, lifted: true });
+    return { record, holes: record.names.length, steps };
+  }
+
+  /**
+   * The first blueprint from the accepted informal proof (LP2, DP1, DP3; `RunConfig.longProof`): before the first outer session the planner writes the target's
+   * proof as `have` steps (one call for each of `drafts`, each asked of the budget gate like a refinement round), the harness makes each draft a blueprint
+   * (`makeDraft`), and the one with the fewest holes left is the draft: the others are recorded as Lean said (`discarded`) and never registered, written first
+   * so that the kept one is the last record. A healthy draft is preferred to one that is not; ties go to the one with fewer steps, then to the earlier. The
+   * kept draft is registered like any blueprint when healthy, and is the last blueprint Lean checked otherwise, so the refinement rounds revise it (case a).
+   * Not a round: the record has `planner` and `fromInformal` and no `round`. Made once: a problem that has a sketch record is left alone, so a resumed run
+   * reads the records (a call cut before them is returned at no charge, `LlmRequest.reuse`). A gate that skips a call, a call that fails and a problem that
+   * ends stop at the drafts made; an answer that is no proof is a draft that does not count. A hole stays `open` until Lean proves it.
+   */
+  async function draft(problem: ProblemContext, s: Settings): Promise<void> {
+    if (!s.fromInformal || !s.blueprints || !s.subgoals || problem.checkSketch === undefined) return;
+    if (problem.signal.aborted || problem.budget.exhausted || allSketchRecords(problem).length > 0) return;
+    const target = problem.memory.claim(problem.claimId);
+    if (target === undefined || accepted(target.status)) return;
+    const informal = informalSection(informalProofOfNodes(problem.memory.nodes(INFORMAL_PROOF_KIND, { claimId: problem.claimId }), (hash) => problem.memory.blobs.get(hash)));
+    if (informal === undefined) return;
+    const drafts: Draft[] = [];
+    let stopped: string | undefined;
+    for (let k = 1; k <= s.drafts && stopped === undefined; k++) {
+      const answer = await askPlanner(problem, draftPrompt({ target: target.statement, informal, ...(s.drafts > 1 ? { draft: { k, of: s.drafts } } : {}) }), ["proof"]);
+      if ("written" in answer) drafts.push(await makeDraft(problem, s, s.drafts > 1 ? `planner_draft_${k}` : "planner_draft", answer.written.proof, target.statement));
+      else if ("skip" in answer) stopped = `skipped by the budget gate: ${answer.skip}`;
+      else if ("failed" in answer) stopped = clip(answer.failed, 160);
+      else if ("stopped" in answer) return;
+      else problem.log(`draft ${k} of the first blueprint: none (${answer.flaw})`);
+    }
+    if (drafts.length === 0) {
+      if (stopped !== undefined) problem.log(`the draft blueprint from the informal proof: none (${stopped})`);
+      return;
+    }
+    // Worst first, so that the kept draft is the last record: a healthy draft beats one that is not, then the fewest holes, then the fewest steps, then the earlier draft.
+    const ranked = drafts.map((d, k) => ({ d, k })).sort((a, b) => Number(a.d.record.healthy) - Number(b.d.record.healthy) || b.d.holes - a.d.holes || b.d.steps - a.d.steps || b.k - a.k);
+    for (const [place, { d }] of ranked.entries()) {
+      const kept = place === ranked.length - 1;
+      problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...d.record, ...(kept ? {} : { discarded: true }) } });
+      if (kept) problem.log(`the draft blueprint from the informal proof${drafts.length > 1 ? ` (best of ${drafts.length}, ${d.holes === Number.MAX_SAFE_INTEGER ? "none lifted" : `${d.holes} hole(s)`}, ${d.steps} step(s))` : ""}: ${describeBlueprint(d.record)}${stopped !== undefined ? `; the rest: ${stopped}` : ""}`);
+    }
   }
 
   /**
@@ -603,7 +756,7 @@ export function createM12Line(): Line {
     if (target === undefined || accepted(target.status) || problem.signal.aborted || problem.budget.exhausted) return;
     const made = sketchRecords(problem).filter(({ record }) => record.repairOf !== undefined);
     if (made.some(({ record }) => record.repairOf === attempt.attemptId) || made.length >= s.maxRepairs) return;
-    const cut = cutFailures({ checked: report.checked, messages: report.messages, target: target.statement });
+    const cut = await cutFailures({ checked: report.checked, messages: report.messages }, { check: problem.checkSketch });
     if ("reason" in cut) {
       problem.log(`repair of ${attempt.attemptId}: none (${cut.reason})`);
       return;
@@ -614,10 +767,85 @@ export function createM12Line(): Line {
       problem.log(`repair of ${attempt.attemptId}: none (the cut file is no blueprint: ${reading.problem ?? "no named hole"})`);
       return;
     }
-    const checked = await problem.checkSketch(regions);
+    const checked = cut.report ?? (await problem.checkSketch(regions));
     const record = sketchRecordOf(problem, s, `${attempt.attemptId}:repair`, regions, reading, checked, { repairOf: attempt.attemptId });
     problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...record } });
     problem.log(`repair of ${attempt.attemptId}: ${cut.cuts.join("; ")}; ${record.healthy ? `a blueprint with ${record.names.join(", ")}` : `not a blueprint (${(record.errors ?? [])[0] ?? "Lean's check"})`}`);
+  }
+
+  /**
+   * Frozen links (LP3): locks `text`, lemmas Lean accepted (with the helper lemmas they need), into the problem's file after its prefix. Lean checks the file with them
+   * first (`ProblemContext.lock`); a name already locked, or a text Lean does not accept there, is left in the AUX region as it was, and not tried again. The next
+   * `accepted_lemmas` node of the problem records them (DP5), and `relock` makes the prefix again from it. Returns whether it was locked. Nothing here sets a status.
+   */
+  async function freeze(problem: ProblemContext, work: Work, text: string, source: "hole" | "aux"): Promise<boolean> {
+    const names = lockedNames(text);
+    if (problem.lock === undefined || names.length === 0 || names.some((name) => work.frozen.has(name) || work.unfrozen.has(name))) return false;
+    if (!(await problem.lock(text))) {
+      for (const name of names) work.unfrozen.add(name);
+      problem.log(`frozen links: ${names.join(", ")} stay in the AUX region (Lean does not accept the file with them locked)`);
+      return false;
+    }
+    for (const name of names) work.frozen.add(name);
+    problem.log(`frozen links: ${names.join(", ")} (${source === "hole" ? "a proved hole" : "closed in the outer file"}) are locked into the file`);
+    return true;
+  }
+
+  /**
+   * The prefix again, from the journal: the lemmas of this problem's `accepted_lemmas` nodes, in order. A lemma whose blob is gone ends the run there (the ones after it
+   * may depend on it). The file is screened and checked with them once (`ProblemContext.lock`); if Lean does not accept it they are all dropped, and the log says so.
+   */
+  async function relock(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
+    if (!s.freeze || problem.lock === undefined) return;
+    const held: Array<{ name: string; text: string }> = [];
+    for (const l of frozenLemmas(problem.memory, problem.claimId, problem.problemId)) {
+      const text = problem.memory.blobs.get(l.proofHash);
+      if (text === undefined) {
+        problem.log(`frozen links: the text of ${l.name} is gone from the blob store; it and the lemmas after it are not locked again`);
+        break;
+      }
+      held.push({ name: l.name, text });
+    }
+    if (held.length === 0) return;
+    if (!(await problem.lock(held.map((l) => l.text).join("\n\n"), { recorded: true }))) {
+      problem.log(`frozen links: the file does not compile with ${held.map((l) => l.name).join(", ")} locked again from the journal; they are not locked`);
+      return;
+    }
+    for (const l of held) work.frozen.add(l.name);
+  }
+
+  /** The proved holes of the current blueprint move into the locked prefix: `lemma name statement := by proof`, with the helper lemmas its proof carries. */
+  async function freezeProved(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
+    if (!s.freeze || !s.blueprints) return;
+    const current = sketchRecords(problem).filter(({ record }) => record.blueprint === true && record.healthy && record.registered).at(-1)?.record;
+    if (current === undefined) return;
+    const source = memorySource(problem.memory, () => work.header);
+    for (const [k, id] of current.holes.entries()) {
+      const name = current.names[k] as string;
+      const claim = problem.memory.claim(id);
+      if (claim === undefined || !accepted(claim.status) || work.frozen.has(name) || work.unfrozen.has(name)) continue;
+      const proof = source.proofOf(id, "proved");
+      if (proof === undefined) continue;
+      await freeze(problem, work, `${proof.aux.trim() === "" ? "" : `${proof.aux.trim()}\n\n`}${lemmaText(name, claim.statement, proof.proof)}`, "hole");
+    }
+  }
+
+  /**
+   * The closed `aux_` lemmas of an outer file that a check with no Lean error accepted: the longest run of complete named commands from the start of the AUX region (a
+   * command after a `sorry`, or one that declares no name, may depend on what it cannot be lifted above), up to its last `aux_` lemma, moves into the locked prefix.
+   */
+  async function freezeClosed(problem: ProblemContext, work: Work, s: Settings, check: { submission: { aux: string }; report: { messages: ReadonlyArray<{ severity: string }>; editsOutsideRegions: boolean; leanStatus?: string } }): Promise<void> {
+    if (!s.freeze || check.report.leanStatus === undefined || check.report.editsOutsideRegions || check.report.messages.some((m) => m.severity === "error")) return;
+    const run: string[] = [];
+    let last = 0;
+    for (const command of splitCommands(check.submission.aux)) {
+      if (command.kind !== "code") continue;
+      const head = readDeclarationHead(command.text.trimEnd());
+      if (head === undefined || head.name === "" || hasHole(command.text)) break;
+      run.push(command.text.trimEnd());
+      if ((head.keyword === "lemma" || head.keyword === "theorem") && head.name.startsWith("aux_")) last = run.length;
+    }
+    if (last > 0) await freeze(problem, work, run.slice(0, last).join("\n\n"), "aux");
   }
 
   async function begin(problem: ProblemContext): Promise<void> {
@@ -636,11 +864,20 @@ export function createM12Line(): Line {
       swept: new Set(),
       meta: new LeanMeta(problem.registry, { actor: ACTOR }),
       refineSkipped: new Set(),
+      frozen: new Set(),
+      unfrozen: new Set(),
     };
     works.set(keyOf(problem), work);
+    await relock(problem, work, s);
     // What a cut left undone: the verdicts of sessions whose record was written, and the tasks of the sketches already recorded.
     repairVerdicts(problem);
     ensureTasks(problem, s);
+  }
+
+  /** `begin`, then the draft from the informal proof when `longProof` asks for it (before the first outer session; a resumed run that has its records does not draft again). */
+  async function beginDrafting(problem: ProblemContext): Promise<void> {
+    await begin(problem);
+    if (works.has(keyOf(problem))) await soft(problem, "the draft blueprint", () => draft(problem, settings(problem.options)));
   }
 
   /** The price, the value and the proof numbers behind a choice, and the choice. */
@@ -685,12 +922,12 @@ export function createM12Line(): Line {
   const WAITING = HOLE_WAITING_REASON;
 
   /** Writes a session's verdict node, once: a session that has its node is left alone. */
-  function recordVerdict(problem: ProblemContext, task: TaskInfo, claimId: string, sessionId: string, verdict: HoleVerdict, extra: { negationValidated?: boolean; argument?: string } = {}): void {
+  function recordVerdict(problem: ProblemContext, task: TaskInfo, claimId: string, sessionId: string, verdict: HoleVerdict, extra: { negationValidated?: boolean; argument?: string; reason?: HoleTooHardReason } = {}): void {
     if (verdictsOf(problem, claimId).some((v) => v.sessionId === sessionId)) return;
     problem.memory.recordNode({
       kind: HOLE_VERDICT_KIND,
       claimId,
-      data: { problemId: problem.problemId, taskId: task.taskId, claimId, sessionId, verdict, ...(extra.negationValidated === true ? { negationValidated: true } : {}), ...(extra.argument !== undefined ? { argument: clip(extra.argument, 400) } : {}) },
+      data: { problemId: problem.problemId, taskId: task.taskId, claimId, sessionId, verdict, ...(extra.negationValidated === true ? { negationValidated: true } : {}), ...(extra.argument !== undefined ? { argument: clip(extra.argument, 400) } : {}), ...(extra.reason !== undefined ? { reason: extra.reason } : {}) },
     });
   }
 
@@ -708,7 +945,7 @@ export function createM12Line(): Line {
       if (record.problemId !== problem.problemId || record.verdict === undefined) continue;
       const sessionId = `${record.taskId}:${record.session}`;
       const task = { taskId: record.taskId } as TaskInfo;
-      recordVerdict(problem, task, record.claimId, sessionId, record.verdict as HoleVerdict, { ...(record.negationValidated === true ? { negationValidated: true } : {}), ...(record.argument !== undefined ? { argument: record.argument } : {}) });
+      recordVerdict(problem, task, record.claimId, sessionId, record.verdict as HoleVerdict, { ...(record.negationValidated === true ? { negationValidated: true } : {}), ...(record.argument !== undefined ? { argument: record.argument } : {}), ...(record.reason !== undefined ? { reason: record.reason } : {}) });
       if (record.verdict === HOLE_FALSE_VERDICT && record.negationValidated !== true && !problem.memory.nodes(SUSPECT_FALSE_KIND, { claimId: record.claimId }).some((n) => (n.data as { sessionId?: string }).sessionId === sessionId)) {
         recordSuspect(problem, record.claimId, "session", sessionId, record.argument ?? "the prover says the lemma is false");
       }
@@ -770,10 +1007,12 @@ export function createM12Line(): Line {
     return { checked: check.checked, reason: check.reason };
   }
 
-  function holePrompt(problem: ProblemContext, work: Work, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[]): string {
+  function holePrompt(problem: ProblemContext, work: Work, s: Settings, info: HoleInfo, claimStatement: string, session: number, limit: number, turns: number, failures: readonly string[], step?: string): string {
     const own = problem.memory.claim(info.claimId)?.header ?? work.header;
     // The blueprint's context (definitions and proved lemmas the hole names) is the end of the claim's header: shown whole, apart from the problem's own header, which may be cut.
-    const context = own.length > work.header.length && own.startsWith(work.header) ? own.slice(work.header.length).trim() : "";
+    // With frozen links the proved lemmas of that context are shown by their statements (`lockedStatements`): a long header no longer pushes them out of the prompt, and their proofs are not the session's reading.
+    const whole = own.length > work.header.length && own.startsWith(work.header) ? own.slice(work.header.length).trim() : "";
+    const context = s.freeze && whole !== "" ? lockedStatements(whole).trim() : whole;
     const header = cutHeader(context === "" ? own : work.header);
     const stubs = stubsRegion(info.deps);
     return [
@@ -784,6 +1023,7 @@ export function createM12Line(): Line {
         ? `These lemmas are given, with the proof \`sorry\`; use them by name, only inside the proof of ${info.name} itself (a helper lemma you add must not use them), and keep them exactly as they are in the aux region of every check:\n${stubs}`
         : "No lemma is given: prove it from the header.",
       `The lemma to prove:\nlemma ${info.name} ${claimStatement.trim()} := by\n  <your proof>`,
+      step !== undefined ? `The step of the informal plan that this lemma formalizes. It is a note from the plan's author, unchecked: it may be wrong or incomplete; use it as a hint, and Lean decides.\n${quotedSketch(step)}` : "",
       `Start with lean_check(aux, proof)${info.deps.length > 0 ? ", whose aux begins with the given lemmas" : ""}; then change it with lean_edit. The work is done when Lean reports no error${info.deps.length > 0 ? " and the only sorry are in the given lemmas" : " and no sorry is left"}.`,
       failures.length > 0 ? `Earlier sessions on this lemma did not succeed:\n${boundHistory(failures).join("\n")}` : "",
     ].filter((line) => line !== "").join("\n\n");
@@ -792,8 +1032,9 @@ export function createM12Line(): Line {
   /** A hole's work with tools (CA10, CA11): pre-flight, then sessions on the small file, each ending with a verdict. */
   async function innerHole(problem: ProblemContext, work: Work, s: Settings, task: TaskInfo, owner: string, info: HoleInfo): Promise<TaskEnd> {
     const claimId = info.claimId;
-    const limit = task.budget.sessions ?? s.holeSessions;
+    const sessions = task.budget.sessions ?? s.holeSessions;
     const turns = task.budget.turns ?? s.holeTurns;
+    const step = stepOf(problem, claimId);
     for (;;) {
       const status = problem.memory.claim(claimId)?.status;
       if (accepted(status)) {
@@ -804,6 +1045,8 @@ export function createM12Line(): Line {
       if (workOf(problem, claimId) !== undefined) return { ended: "failed", reason: WAITING };
       if (falseOf(problem, claimId)) return { ended: "failed", reason: `the hole ${info.name} is false: Lean accepted a proof of its negation` };
       const mine = sessionRecords(problem).filter((r) => r.taskId === task.taskId);
+      // A hole whose last session was cut by its turns gets one session more, under the same caps (plan change LP5): its work was going on when the limit came.
+      const limit = sessions + (s.holeContinuation && mine.at(-1)?.reason === "turns" ? 1 : 0);
       if (mine.length >= limit) return { ended: "failed", reason: `${owner} used its ${limit} hole session${limit === 1 ? "" : "s"} without a proof` };
       if (problem.signal.aborted) return { ended: "failed", reason: "the problem ended" };
       if (problem.budget.exhausted) return { ended: "failed", reason: "the problem's budget ran out" };
@@ -815,11 +1058,11 @@ export function createM12Line(): Line {
       const session = mine.length + 1;
       const sessionId = `${task.taskId}:${session}`;
       const failures = mine.map((r) => clip(`- session ${r.session}: ${r.reasons.join("; ") || "no proof"}`, 300));
-      const prompt = holePrompt(problem, work, info, claim?.statement ?? "", session, limit, turns, failures);
+      const prompt = holePrompt(problem, work, s, info, claim?.statement ?? "", session, limit, turns, failures, step);
       let result: HoleSessionResult;
       try {
         result = await (problem.holeSession as NonNullable<ProblemContext["holeSession"]>)({
-          claimId, prompt, turns, key: sessionId,
+          claimId, prompt, turns, key: sessionId, name: info.name,
           done: (submission, report) => readWork(submission, report, info.deps).done,
         });
       } catch (error) {
@@ -877,6 +1120,7 @@ export function createM12Line(): Line {
       const record: SessionRecord = {
         problemId: problem.problemId, taskId: task.taskId, claimId, session, ok: verdict === "proved" && workRecord.workDone !== true, usd: result.usd,
         reasons: reasons.slice(0, 3).map((r) => clip(r, 160)), stop: result.stop, turns: result.turns, verdict, ...workRecord,
+        ...(verdict === "too_hard" ? { reason: tooHardReason(result) } : {}),
         ...(negationValidated ? { negationValidated: true } : {}), ...(result.verdict?.argument !== undefined ? { argument: clip(result.verdict.argument, 400) } : {}),
       };
       problem.memory.recordNode({ kind: SESSION_KIND, claimId, data: { ...record } });
@@ -959,8 +1203,8 @@ export function createM12Line(): Line {
     // The work (a graph, the comparisons made, the counts) is made again from the memory's nodes and the ledger: see `begin`.
     resume: "rebuild",
     hooks: {
-      beforeProvers: (problem) => begin(problem),
-      resumeProblem: (problem) => begin(problem),
+      beforeProvers: (problem) => beginDrafting(problem),
+      resumeProblem: (problem) => beginDrafting(problem),
 
       afterAttempt: async (problem, attempt) => {
         const work = works.get(keyOf(problem));
@@ -1020,6 +1264,14 @@ export function createM12Line(): Line {
         };
       },
 
+      // Frozen links (LP3): the holes proved since the last session move into the locked prefix before the next one starts, so that its file and its briefing show them by statement.
+      beforeSession: async (session) => {
+        const work = works.get(keyOf(session));
+        const s = settings(session.options);
+        if (work !== undefined && s.freeze && s.blueprints && s.subgoals) await soft(session, "freezing the proved holes", () => freezeProved(session, work, s));
+        return undefined;
+      },
+
       // How to write a blueprint, for the outer prover, only with the option `blueprints` (PA16): the format nothing else told it.
       briefingSections: async (session): Promise<readonly Briefing[] | undefined> => {
         const s = settings(session.options);
@@ -1031,6 +1283,8 @@ export function createM12Line(): Line {
       afterCheck: async (session, check) => {
         const s = settings(session.options);
         if (!s.blueprints || !s.subgoals || !works.has(keyOf(session)) || !check.report.holes) return undefined;
+        const work = works.get(keyOf(session)) as Work;
+        await soft(session, "freezing the closed lemmas", () => freezeClosed(session, work, s, check));
         const reading = readSketch(check.submission, readOptions(s, session.memory.claim(session.claimId)?.statement));
         return { notice: blueprintNotice(reading, { refusedBeforeLean: check.report.leanStatus === undefined, errors: check.report.messages.filter((m) => m.severity === "error").length, editsOutsideRegions: check.report.editsOutsideRegions }) };
       },
@@ -1049,6 +1303,7 @@ export function createM12Line(): Line {
         if (work === undefined) return undefined;
         const source = memorySource(session.memory, () => work.header);
         const lines: string[] = [];
+        const frozen: string[] = [];
         const open: string[] = [];
         const stuck: string[] = [];
         const refutedHoles: string[] = [];
@@ -1068,9 +1323,14 @@ export function createM12Line(): Line {
             const claim = session.memory.claim(id);
             if (claim === undefined) continue;
             if (accepted(claim.status)) {
+              // A frozen hole is in the file before the AUX region: its statement, and no proof.
+              if (work.frozen.has(name)) {
+                frozen.push(`lemma ${name} ${claim.statement.trim()}`);
+                continue;
+              }
               const proof = source.proofOf(id, "proved");
               if (proof === undefined) continue;
-              lines.push(`lemma ${name} ${claim.statement.trim()} := by\n${dedent(proof.proof).split("\n").map((l) => `  ${l}`).join("\n")}${proof.aux.trim() !== "" ? `\n(with the helper lemmas:\n${proof.aux.trim()}\n)` : ""}`);
+              lines.push(`${lemmaText(name, claim.statement, proof.proof)}${proof.aux.trim() !== "" ? `\n(with the helper lemmas:\n${proof.aux.trim()}\n)` : ""}`);
             } else if (claim.status === "open") {
               // A hole found false (Lean accepted its negation) is a fact; a hole a prover only says is false is a suspicion, and the next session is told so (CA11).
               if (falseOf(session, id)) {
@@ -1093,8 +1353,9 @@ export function createM12Line(): Line {
             }
           }
         }
-        if (lines.length === 0 && open.length === 0 && stuck.length === 0 && refutedHoles.length === 0 && suspected.length === 0 && waiting.length === 0 && falseDeps.length === 0 && refusedDerivations.length === 0) return undefined;
+        if (lines.length === 0 && frozen.length === 0 && open.length === 0 && stuck.length === 0 && refutedHoles.length === 0 && suspected.length === 0 && waiting.length === 0 && falseDeps.length === 0 && refusedDerivations.length === 0) return undefined;
         const text = [
+          frozen.length > 0 ? `Proved by the scheduler, Lean accepted each, and locked in the file before your AUX region; use them by name, do not write them in AUX (a statement written there again is left out, and you cannot change them):\n\n${frozen.join("\n")}` : "",
           lines.length > 0 ? `The scheduler proved these lemmas of your sketch; Lean accepted each. Put them in the auxiliary region under these names:\n\n${lines.join("\n\n")}` : "",
           open.length > 0 ? `Still open, and worked on between your sessions: ${open.join(", ")}.` : "",
           refutedHoles.length > 0 ? `False, and Lean accepted a proof of the negation of: ${refutedHoles.join(", ")}. Restate ${refutedHoles.length === 1 ? "it" : "them"}.` : "",
