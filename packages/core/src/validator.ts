@@ -149,6 +149,9 @@ export function hasHoles(submission: Submission): boolean {
 
 const SCRATCH_PATTERNS = ["#check", "example"].map(tokenPattern);
 
+/** The reason of a report whose file holds a scratch command (`hasScratch`): such a file is never valid, and its work is never done. */
+export const SCRATCH_REASON = "the file holds scratch commands (#check, example): remove them for the work to count";
+
 /**
  * Whether a submission's regions hold a scratch command (`#check`, `example`), read outside comments as the holes are
  * (`hasHoles`): a token anywhere, so that one behind `open X in` or `set_option a b in`, or indented, where it does
@@ -495,7 +498,7 @@ export class ProofValidator {
     }
     const seen = interpret(result, lineCount(checked), sketch.fullName);
     // Without holes the policies agree: the structural checks were the same, and so is the verdict.
-    if (scratch) reasons.push("the file holds scratch commands (#check, example): remove them for the work to count");
+    if (scratch) reasons.push(SCRATCH_REASON);
     else if (holes) reasons.push("the file still has holes (sorry or admit)");
     if (seen.errors.length > 0) reasons.push(`lean: ${seen.errors.length} error(s)`);
     if (seen.sorries.length > 0) reasons.push(`lean: ${seen.sorries.length} sorry(s) left`);
