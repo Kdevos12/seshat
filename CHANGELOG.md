@@ -27,7 +27,9 @@ behaviour is an option, off by default: `v1` and `v2` run as in 1.0.0-beta.1.
 First real measurement (Lean 4.27.0, `solve-v2-long`, three long Putnam problems the earlier runs had failed or
 solved in one arm only): two of three certified for $0.73, every session ran Lean. On that run the `have` sketch lifted no
 hole: the lifter did not read the form Lean 4.27 prints (`:= sorry`), and a draft's extractions together timed out. Both
-are fixed (one probe per step after a timeout) and not yet run again. Also fixed from that run: under `longProof`, Lean
+are fixed (one probe per step after a timeout), with printing options under which `extract_goal`'s statements read back
+and a leading `by` in a draft stripped: rerun with no model on that run's nine drafts, eight are lifted into 7 to 12 lemmas
+each with no Lean error (the ninth draft has a Lean error of its own). Also fixed from that run: under `longProof`, Lean
 progress at the probe widens the problem (one low draw of the gate's posterior had stopped a problem with frozen links).
 Details in the ledger.
 
