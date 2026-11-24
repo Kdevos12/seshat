@@ -1,4 +1,4 @@
-import { type BlobStore, CheckFailedError, type Journal, type LeanCertifier, prepareSketch, ProofValidator, SCRATCH_POLICY, SKETCH_POLICY } from "@seshat/core";
+import { type BlobStore, CheckFailedError, type Journal, type LeanCertifier, prepareSketch, ProofValidator, SKETCH_POLICY } from "@seshat/core";
 import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import type { MemoryStore } from "@seshat/memory";
 import { messageOf, RegistryLeanChecker, type Registry } from "@seshat/registry";
@@ -215,8 +215,6 @@ export class ClaimBenches {
         reference: type,
         blobs: this.o.blobs,
         negation,
-        // Sessions on this small file may look around with `#check` and `example`; a file that holds one is never valid (`SCRATCH_POLICY`).
-        policy: SCRATCH_POLICY,
         ...(this.o.certifier !== undefined ? { certifier: this.o.certifier } : {}),
       });
       this.benches.set(key, bench);

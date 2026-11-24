@@ -352,6 +352,16 @@ describe("blueprints: sessions with tools on holes", () => {
     assert.match(prompts[0] ?? "", /False, and Lean accepted a proof of the negation of: aux_x/);
   });
 
+  it("lets a hole session's own checks hold #check and example, and keeps validate on the sketch policy (owner, 2026-11-24)", { timeout: 60000 }, async () => {
+    const negation = { verdict: "statement_wrong", argument: "false", negation_proof: "exact neg_ok", negation_aux: "#check Nat.pred_le\n\ntheorem aux_n : True := trivial" };
+    const { lean, events } = await oneHole(named(WRONG_AUX), check("exact bad", "#check Nat.succ_le\n\nexample : True := trivial"), {}, [call("hole_verdict", negation)]);
+    const codes = lean.calls.map((c) => c.code);
+    assert.ok(codes.some((code) => code.includes("#check Nat.succ_le")), "the session's check reached Lean");
+    // `validate` of the negation is no check of the session: its scratch command is refused before Lean, and the negation is not validated.
+    assert.ok(!codes.some((code) => code.includes("#check Nat.pred_le")), "validate's check never reached Lean");
+    assert.deepEqual(nodes(events, "hole_verdict").map((v) => v.negationValidated), [undefined]);
+  });
+
   it("records only a suspicion when the prover gives an argument and no proof: a suspect_false node, no status, labelled unverified", { timeout: 60000 }, async () => {
     const { events, prompts } = await oneHole(named(WRONG_AUX), call("hole_verdict", { verdict: "statement_wrong", argument: "take n = 0: 0 = 1" }));
     const hole = holeOf(events);

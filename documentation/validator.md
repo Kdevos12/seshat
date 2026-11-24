@@ -131,8 +131,12 @@ tokens, `#eval` among them). A file that holds one, under any policy, is a sketc
 makes no candidate and is never certified, and M12's `readWork` does not count it as done. `hasScratch` finds
 one as the holes are found, as a token of either region outside comments: behind an `open X in` or `set_option
 a b in` prefix, or indented where no command of the aux region starts, it is found too, and a name such as
-`aux_example` is none (`#check_failure` counts, and the structural checks refuse it under every policy). Only the workbench of a claim's own small file, where hole
-sessions work, uses it; the problem's file, `validate`'s outer checks and the certifier keep their policies.
+`aux_example` is none (`#check_failure` counts, and the structural checks refuse it under every policy).
+Only the checks of a hole session use `SCRATCH_POLICY`: `runHoleSession` passes `scratch: true` to `Workbench.check` for each of the session's
+checks (`lean_check`, `lean_edit`), and the policy of the claim's workbench stays `SKETCH_POLICY`.
+Every other check keeps its policy: `validate` of any claim (a sub-claim, a negation, a link lemma, on any line),
+M12's `checkSketch` and `closeSorries` on a claim's small file, a prover's checks on the problem's file, and the
+certifier.
 Why: on run 7, 25 of the 283 checks of hole sessions were refused before Lean ran, most for a `#check` or an
 `example` in aux (VL1).
 

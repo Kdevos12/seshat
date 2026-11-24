@@ -330,8 +330,9 @@ export interface ProblemContext {
   ignoresSetting?: (model: string, setting: string, thinking?: string) => boolean;
   /**
    * A session of a model with tools on one claim's own small file (`lean_check`, `lean_edit` and the `hole_verdict` tool): what M12's
-   * blueprints use to work a hole (documentation/scheduler.md, "Hole sessions"). The orchestrator gives it; absent in a context an older caller
-   * builds, and a line that needs it works without.
+   * blueprints use to work a hole (documentation/scheduler.md, "Hole sessions"). Its checks let scratch commands (`#check`, `example`) through
+   * (`SCRATCH_POLICY`), and a file that holds one is never valid. The orchestrator gives it; absent in a context an older caller builds, and a line
+   * that needs it works without.
    */
   holeSession?: (request: HoleSessionRequest) => Promise<HoleSessionResult>;
   /**

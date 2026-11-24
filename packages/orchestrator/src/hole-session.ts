@@ -79,11 +79,12 @@ function verdictParameters() {
 export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionRequest): Promise<HoleSessionResult> {
   const real = await d.workbench(request.claimId);
   const checks: { submission?: import("@seshat/core").Submission; report?: import("@seshat/core").ValidationReport; accepted: boolean; finished: boolean; progress?: { first: number; last: number } } = { accepted: false, finished: false };
-  // The workbench with checks that carry no attempt id (the journal knows no attempt of this session).
+  // The workbench with checks that carry no attempt id (the journal knows no attempt of this session), and that let the session look around
+  // with `#check` and `example` (`SCRATCH_POLICY`, owner 2026-11-24): a file that holds one is never valid, so it is never the hole's proof.
   const bench: Workbench = Object.assign(Object.create(real) as Workbench, {
     check: async (submission: Parameters<Workbench["check"]>[0], context: Parameters<Workbench["check"]>[1]) => {
       const { attemptId: _none, ...rest } = context;
-      return await real.check(submission, rest);
+      return await real.check(submission, { ...rest, scratch: true });
     },
   });
   let verdict: HoleVerdictCall | undefined;

@@ -245,12 +245,13 @@ export class Workbench {
   }
 
   /**
-   * Checks a submission. `timeoutSec` bounds this check's Lean run in place of the policy's (a prover's bounded check, CA4); the
-   * policy itself, which the validator's own calls and the certifier use, is not changed.
+   * Checks a submission. `timeoutSec` bounds this check's Lean run in place of the policy's (a prover's bounded check, CA4); `scratch`
+   * lets scratch commands (`#check`, `example`) through the structural checks of this check (`ValidationPolicy.scratch`, a hole
+   * session's check, `runHoleSession`). The policy itself, which the validator's own calls and the certifier use, is not changed.
    */
   async check(
     submission: Submission,
-    context: { attemptId?: string; actor: string; signal?: AbortSignal; problemId?: string; timeoutSec?: number },
+    context: { attemptId?: string; actor: string; signal?: AbortSignal; problemId?: string; timeoutSec?: number; scratch?: boolean },
   ): Promise<CheckResult> {
     if (context.attemptId !== undefined) this.checked.set(context.attemptId, submission);
     const submitted = this.render(submission);
@@ -263,7 +264,13 @@ export class Workbench {
     const report =
       markers.length > 0
         ? refused(submitted, markers)
-        : await new ProofValidator(checker, { policy: context.timeoutSec === undefined ? this.policy : { ...this.policy, timeoutSec: context.timeoutSec } }).validate(
+        : await new ProofValidator(checker, {
+            policy: {
+              ...this.policy,
+              ...(context.timeoutSec !== undefined ? { timeoutSec: context.timeoutSec } : {}),
+              ...(context.scratch === true ? { scratch: true } : {}),
+            },
+          }).validate(
             this.sketch,
             submitted,
             this.reference,
