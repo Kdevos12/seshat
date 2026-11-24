@@ -25,6 +25,12 @@ export interface ValidationPolicy {
    * holes come back. A file with a hole is never valid.
    */
   holes: boolean;
+  /**
+   * Lets scratch commands through in the aux region (`#check` and `example`, which add no constant), so that a session can look at terms and try a
+   * tactic on a side goal in its working file (owner, 2026-11-24, VL1). A file that holds one is a sketch like a file with a hole: never valid, so it
+   * never makes a candidate, and `validate` and the certifier, which use other policies, refuse it as before.
+   */
+  scratch?: boolean;
 }
 
 export const DEFAULT_POLICY: ValidationPolicy = {
@@ -37,6 +43,17 @@ export const DEFAULT_POLICY: ValidationPolicy = {
 
 /** The policy of a prover's checks while it works: the default one, with holes allowed. */
 export const SKETCH_POLICY: ValidationPolicy = { ...DEFAULT_POLICY, holes: true };
+
+/** The policy of a session's checks on a claim's own small file (a hole session): `SKETCH_POLICY`, with scratch commands allowed. */
+export const SCRATCH_POLICY: ValidationPolicy = { ...SKETCH_POLICY, scratch: true };
+
+/** A command of the aux region that is scratch work: `#check <term>` or `example ... := ...` (`ValidationPolicy.scratch`). */
+const SCRATCH_COMMAND = /^\s*(?:#check(?![\p{L}\p{N}_!?'])|example(?![\p{L}\p{N}_!?']))/u;
+
+/** Whether the aux region holds a scratch command (`#check`, `example`), read outside comments and strings. */
+export function hasScratch(submission: Submission): boolean {
+  return splitCommands(submission.aux).some((command) => command.kind === "code" && SCRATCH_COMMAND.test(scanRegion(command.text).masked));
+}
 
 /** The tokens `SKETCH_POLICY` lets through. */
 export const HOLE_TOKENS: readonly string[] = ["sorry", "admit"];
@@ -265,6 +282,7 @@ export function structuralCheck(submission: Submission, policy: ValidationPolicy
       if (!scoped) break;
       text = text.slice(scoped[0].length);
     }
+    if (policy.scratch === true && SCRATCH_COMMAND.test(text)) continue;
     const head = readDeclarationHead(text);
     if (!head || !AUX_KEYWORDS.has(head.keyword)) {
       const first = text.trim().split(/\s+/)[0] ?? "";
@@ -439,7 +457,8 @@ export class ProofValidator {
     const checked = assemble(sketch, submission);
     // What Lean reads: the commands that restate a locked lemma are not in the file (`assemble`), so a stub of a frozen hole is no hole of it.
     const read = sketch.locked === undefined ? submission : { ...submission, aux: withoutLocked(submission.aux, sketch.locked) };
-    const holes = hasHoles(read);
+    const scratch = this.policy.scratch === true && hasScratch(read);
+    const holes = hasHoles(read) || scratch;
     const reasons = structuralCheck(read, this.policy);
     // A refused submission never reaches Lean: nothing in it runs.
     if (reasons.length > 0) {
@@ -464,7 +483,8 @@ export class ProofValidator {
     }
     const seen = interpret(result, lineCount(checked), sketch.fullName);
     // Without holes the policies agree: the structural checks were the same, and so is the verdict.
-    if (holes) reasons.push("the file still has holes (sorry or admit)");
+    if (scratch) reasons.push("the aux region holds scratch commands (#check, example): remove them for the work to count");
+    else if (holes) reasons.push("the file still has holes (sorry or admit)");
     if (seen.errors.length > 0) reasons.push(`lean: ${seen.errors.length} error(s)`);
     if (seen.sorries.length > 0) reasons.push(`lean: ${seen.sorries.length} sorry(s) left`);
     const axioms = seen.axioms ?? [];

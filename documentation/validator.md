@@ -123,6 +123,16 @@ A file with holes is never valid: its report has `holes: true` and the reason
 file without holes, both policies run the same checks and give the same verdict. `hasHoles` tells
 whether a submission's regions hold `sorry` or `admit`.
 
+**Scratch commands (owner, 2026-11-24).** `SCRATCH_POLICY` is `SKETCH_POLICY` with `scratch` on: the aux region
+may also hold `#check <term>` and `example ... := ...`, which add no constant, so that a session can look at a
+term or try a tactic on a side goal in its working file. Every other rule holds inside them (the forbidden
+tokens, `#eval` among them). A file that holds one is a sketch: `holes: true`, the reason `the aux region holds
+scratch commands (#check, example): remove them for the work to count`, never valid, so it makes no candidate,
+and M12's `readWork` does not count it as done. Only the workbench of a claim's own small file, where hole
+sessions work, uses it; the problem's file, `validate`'s outer checks and the certifier keep their policies.
+Why: on run 7, 25 of the 283 checks of hole sessions were refused before Lean ran, most for a `#check` or an
+`example` in aux (VL1). `hasScratch` tells whether a submission's aux holds one.
+
 ## Structural checks
 
 Both regions are scanned with comments blanked, where Lean is sure to read one (the strict reading,

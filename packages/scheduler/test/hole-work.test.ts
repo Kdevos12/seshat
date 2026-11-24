@@ -94,3 +94,9 @@ test("holeSessionLimit: one continuation with true; with \"progress\", more whil
   // Before holeSessions is used up, the limit is holeSessions.
   assert.equal(holeSessionLimit("progress", 3, [cut(2, 2)]), 3);
 });
+
+test("readWork: a file whose aux holds a scratch command (#check, example) is not done", () => {
+  const work = readWork({ aux: "#check Nat.succ\n\nexample : 1 = 1 := rfl", proof: "  simp" }, report({ leanStatus: "valid", holes: true }), []);
+  assert.equal(work.done, false);
+  assert.match(work.reason ?? "", /scratch commands/);
+});

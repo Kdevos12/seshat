@@ -1061,6 +1061,7 @@ export function createM12Line(): Line {
       `The lemma to prove:\nlemma ${info.name} ${claimStatement.trim()} := by\n  <your proof>`,
       step !== undefined ? `The step of the informal plan that this lemma formalizes. It is a note from the plan's author, unchecked: it may be wrong or incomplete; use it as a hint, and Lean decides.\n${quotedSketch(step)}` : "",
       `Start with lean_check(aux, proof)${info.deps.length > 0 ? ", whose aux begins with the given lemmas" : ""}; then change it with lean_edit. The work is done when Lean reports no error${info.deps.length > 0 ? " and the only sorry are in the given lemmas" : " and no sorry is left"}.`,
+      "To look around, the aux region may hold `#check <term>` and `example ... := ...` commands: Lean answers them, and the work counts only once they are removed.",
       failures.length > 0 ? `Earlier sessions on this lemma did not succeed:\n${boundHistory(failures).join("\n")}` : "",
     ].filter((line) => line !== "").join("\n\n");
   }
