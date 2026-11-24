@@ -78,7 +78,7 @@ function verdictParameters() {
  */
 export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionRequest): Promise<HoleSessionResult> {
   const real = await d.workbench(request.claimId);
-  const checks: { submission?: import("@seshat/core").Submission; report?: import("@seshat/core").ValidationReport; accepted: boolean; finished: boolean } = { accepted: false, finished: false };
+  const checks: { submission?: import("@seshat/core").Submission; report?: import("@seshat/core").ValidationReport; accepted: boolean; finished: boolean; progress?: { first: number; last: number } } = { accepted: false, finished: false };
   // The workbench with checks that carry no attempt id (the journal knows no attempt of this session).
   const bench: Workbench = Object.assign(Object.create(real) as Workbench, {
     check: async (submission: Parameters<Workbench["check"]>[0], context: Parameters<Workbench["check"]>[1]) => {
@@ -158,6 +158,10 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
       afterCheck: async (check) => {
         checks.submission = check.submission;
         checks.report = check.report;
+        if (check.report.leanStatus !== undefined) {
+          const distance = check.report.messages.filter((m) => m.severity === "error").length + check.report.sorries.length;
+          checks.progress = { first: checks.progress?.first ?? distance, last: distance };
+        }
         checks.accepted ||= check.accepted;
         checks.finished = check.accepted || request.done(check.submission, check.report);
         return checks.finished ? { line: "M12", reason: "the work on the lemma is done" } : undefined;
@@ -174,5 +178,6 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     finished: checks.finished,
     accepted: checks.accepted,
     ...(verdict !== undefined ? { verdict } : {}),
+    ...(checks.progress !== undefined ? { progress: checks.progress } : {}),
   };
 }

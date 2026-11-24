@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ValidationReport } from "@seshat/core";
-import { HOLE_HEADER_CHARS, HOLE_HISTORY_CHARS, boundHistory, cutHeader, readWork, stubsRegion } from "../src/index.ts";
+import { HOLE_HEADER_CHARS, HOLE_HISTORY_CHARS, boundHistory, cutHeader, holeSessionLimit, readWork, stubsRegion } from "../src/index.ts";
 
 const dep = { name: "aux_a", statement: "(n : Nat) : n + 0 = n" };
 const report = (over: Partial<ValidationReport> = {}): ValidationReport => ({
@@ -74,4 +74,23 @@ test("the header is shown whole when short and cut after its first lines when lo
   assert.ok(kept.join("\n").length <= HOLE_HISTORY_CHARS);
   assert.ok(kept.length >= 1 && kept.at(-1) === entries.at(-1), "the newest is kept");
   assert.deepEqual(boundHistory(["- session 1: a"]), ["- session 1: a"]);
+});
+
+test("holeSessionLimit: one continuation with true; with \"progress\", more while each cut session brings Lean closer to done (VL3)", () => {
+  const cut = (first: number, last: number) => ({ reason: "turns" as const, progress: { first, last } });
+  // false and true are LP5's rule, whatever the progress.
+  assert.equal(holeSessionLimit(false, 2, [cut(3, 1), cut(1, 0)]), 2);
+  assert.equal(holeSessionLimit(true, 2, [cut(3, 3), cut(3, 3)]), 3);
+  assert.equal(holeSessionLimit(true, 2, [cut(3, 1), { reason: "model_said" as const }]), 2);
+  // Errors falling by one each session: one more session each time, past holeSessions.
+  const falling = [cut(6, 5), cut(5, 4), cut(4, 3), cut(3, 2)];
+  for (let k = 2; k <= falling.length; k++) assert.equal(holeSessionLimit("progress", 2, falling.slice(0, k)), k + 1, `after ${k} sessions`);
+  // Flat errors: no continuation.
+  assert.equal(holeSessionLimit("progress", 2, [cut(2, 2), cut(2, 2)]), 2);
+  // An oscillation (fewer within the session, but not fewer than the session before) ends it, as do a session Lean did not check and one the model ended.
+  assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), cut(3, 1)]), 2);
+  assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), { reason: "turns" as const }]), 2);
+  assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), { reason: "model_said" as const, progress: { first: 2, last: 0 } }]), 2);
+  // Before holeSessions is used up, the limit is holeSessions.
+  assert.equal(holeSessionLimit("progress", 3, [cut(2, 2)]), 3);
 });

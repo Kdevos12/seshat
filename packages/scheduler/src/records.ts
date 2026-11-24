@@ -106,6 +106,8 @@ export interface SessionRecord {
   /** `statement_wrong`: Lean accepted the proof of the negation through `validate`; and the prover's argument. The `hole_verdict` node is made again from these if a cut lost it. */
   negationValidated?: boolean;
   argument?: string;
+  /** A hole session: Lean's errors plus `sorry` at its first and last check that Lean ran (`HoleSessionResult.progress`). */
+  progress?: { first: number; last: number };
 }
 
 /** The pre-flight of a hole, before any paid session (CA11): what the battery, `plausible` and the battery on the negation found. An evidence node. */

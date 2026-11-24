@@ -55,8 +55,13 @@ export const M12_OPTIONS = {
   refine: false,
   /** The most refinement rounds for one problem (refine only). */
   maxRefinements: 8,
-  /** A hole whose last session was cut by its turns gets one more session than `holeSessions`, before a refinement round splits it (plan change LP5). The orchestrator turns it on under `RunConfig.longProof`. */
+  /**
+   * A hole whose last session was cut by its turns gets one more session than `holeSessions`, before a refinement round splits it (plan change LP5). The
+   * orchestrator turns it on under `RunConfig.longProof`.
+   */
   holeContinuation: false,
+  /** With `holeContinuation`: past `holeSessions`, more sessions while each one cut by its turns brought Lean closer to done, instead of one (plan change VL3, `holeSessionLimit`). */
+  holeProgress: false,
   /** The repair pass (CA13, blueprints only): an outer session that ends on a file with Lean errors has its failing blocks cut to `sorry`, with no model call, and the result is a blueprint if Lean and M12 read it as one. */
   repair: false,
   /** The most repairs for one problem (repair only). */
@@ -86,7 +91,7 @@ interface Settings {
   holeSessions: number;
   refine: boolean;
   maxRefinements: number;
-  holeContinuation: boolean;
+  holeContinuation: HoleContinuation;
   freeze: boolean;
   repair: boolean;
   maxRepairs: number;
@@ -117,7 +122,7 @@ function settings(options: Readonly<JsonObject>): Settings {
     holeSessions: num("holeSessions", 1),
     refine: flag("refine"),
     maxRefinements: num("maxRefinements", 0),
-    holeContinuation: flag("holeContinuation"),
+    holeContinuation: flag("holeContinuation") && flag("holeProgress") ? "progress" : flag("holeContinuation"),
     freeze: flag("freeze"),
     repair: flag("repair"),
     maxRepairs: num("maxRepairs", 0),
@@ -281,6 +286,26 @@ function compileErrorOf(problem: ProblemContext, claimId: string): string | unde
     .nodes(PREFLIGHT_KIND, { claimId })
     .map((n) => asRecord<PreflightRecord>(n.data))
     .find((r) => r.problemId === problem.problemId && r.compileError !== undefined)?.compileError;
+}
+
+/** M12's options `holeContinuation` and `holeProgress` together: none, one session more for a hole cut by its turns (LP5), or more while Lean shows progress (VL3). */
+export type HoleContinuation = boolean | "progress";
+
+/**
+ * How many sessions a hole may have, given the ones it had (`mine`, in order) and `holeSessions` (plan changes LP5, VL3). `false`: `holeSessions`. `true`: one
+ * more when the last was cut by its turns. `"progress"`: past `holeSessions`, one more each time the last session was cut by its turns and brought the file
+ * closer to done, by Lean's count of errors plus `sorry`: fewer at its last check than at its first, and than at the last check of the session before it, so
+ * a session that only oscillates ends the continuation. The money is the gate's and the problem's, as for any session.
+ */
+export function holeSessionLimit(mode: HoleContinuation, sessions: number, mine: readonly Pick<SessionRecord, "reason" | "progress">[]): number {
+  const last = mine.at(-1);
+  if (mode === false || last?.reason !== "turns") return sessions;
+  if (mode === true) return sessions + 1;
+  if (mine.length < sessions) return sessions;
+  const before = mine.at(-2)?.progress;
+  const p = last.progress;
+  const closer = p !== undefined && p.last < p.first && (before === undefined || p.last < before.last);
+  return closer ? mine.length + 1 : mine.length;
 }
 
 /** The text without the indentation all its lines share. */
@@ -1056,8 +1081,8 @@ export function createM12Line(): Line {
       if (workOf(problem, claimId) !== undefined) return { ended: "failed", reason: WAITING };
       if (falseOf(problem, claimId)) return { ended: "failed", reason: `the hole ${info.name} is false: Lean accepted a proof of its negation` };
       const mine = sessionRecords(problem).filter((r) => r.taskId === task.taskId);
-      // A hole whose last session was cut by its turns gets one session more, under the same caps (plan change LP5): its work was going on when the limit came.
-      const limit = sessions + (s.holeContinuation && mine.at(-1)?.reason === "turns" ? 1 : 0);
+      // A hole whose last session was cut by its turns gets more sessions, under the same caps (plan changes LP5, VL3): its work was going on when the limit came.
+      const limit = holeSessionLimit(s.holeContinuation, sessions, mine);
       if (mine.length >= limit) return { ended: "failed", reason: `${owner} used its ${limit} hole session${limit === 1 ? "" : "s"} without a proof` };
       if (problem.signal.aborted) return { ended: "failed", reason: "the problem ended" };
       if (problem.budget.exhausted) return { ended: "failed", reason: "the problem's budget ran out" };
@@ -1133,6 +1158,7 @@ export function createM12Line(): Line {
         reasons: reasons.slice(0, 3).map((r) => clip(r, 160)), stop: result.stop, turns: result.turns, verdict, ...workRecord,
         ...(verdict === "too_hard" ? { reason: tooHardReason(result) } : {}),
         ...(negationValidated ? { negationValidated: true } : {}), ...(result.verdict?.argument !== undefined ? { argument: clip(result.verdict.argument, 400) } : {}),
+        ...(result.progress !== undefined ? { progress: result.progress } : {}),
       };
       problem.memory.recordNode({ kind: SESSION_KIND, claimId, data: { ...record } });
       repairVerdicts(problem);

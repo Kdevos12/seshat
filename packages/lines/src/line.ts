@@ -400,6 +400,11 @@ export interface HoleSessionResult {
   accepted: boolean;
   /** The verdict the model gave with `hole_verdict`, if it did. */
   verdict?: HoleVerdictCall;
+  /**
+   * How far the file was from done at the session's first and last check that Lean ran (a check refused before Lean is not counted): Lean's errors plus the
+   * `sorry` it reports. Absent when Lean ran no check. It orders the work (plan change VL3); it is no status.
+   */
+  progress?: { first: number; last: number };
 }
 
 export interface HolePreflightRequest {
