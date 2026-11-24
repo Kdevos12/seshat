@@ -1,6 +1,7 @@
+import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { get, message } from "./api.ts";
-import { flatFields, labelOf, subJson, subValues } from "./fields.ts";
+import { flatFields, labelOf, lineOptionValues, setLineOption, subJson, subValues, type LineOptionKind } from "./fields.ts";
 import { Notice } from "./ui.tsx";
 
 /**
@@ -25,9 +26,66 @@ export interface ParameterView {
   solveSet?: string;
 }
 
+/** A line of the registry with its options, each typed by its default (`GET /api/parameters`, `lines`). */
+export interface LineView {
+  id: string;
+  title: string;
+  options: Array<{ name: string; kind: LineOptionKind; default: string }>;
+}
+
 interface ParameterList {
   groups: Array<{ id: string; summary: string }>;
   parameters: ParameterView[];
+  lines?: LineView[];
+}
+
+/** `lineOptions` as typed fields: one fold per line that has options, each option entered as its default's type; the JSON box stays under "Edit as JSON". */
+function LineOptions(props: { id: string; lines: readonly LineView[]; value: string; set: (value: string) => void; json: JSX.Element }) {
+  const { id, lines, value, set, json } = props;
+  const values = lineOptionValues(value);
+  if (values === undefined) return json;
+  return (
+    <>
+      <div class="subfields lines">
+        {lines.map((line) => {
+          const here = values[line.id] ?? {};
+          const count = Object.keys(here).length;
+          return (
+            <details key={line.id} data-line={line.id} open={count > 0 ? true : undefined}>
+              <summary class="small">
+                {line.id}: {line.title}
+                {count > 0 ? ` (${count} set)` : ""}
+              </summary>
+              {line.options.map((o) => {
+                const sid = `${id}-${line.id}-${o.name}`;
+                const put = (v: string) => set(setLineOption(value, line.id, o.name, o.kind, v));
+                return (
+                  <div key={o.name}>
+                    <label for={sid} class="small">
+                      {labelOf(o.name)} <code class="muted">{o.name}</code>
+                    </label>
+                    {o.kind === "boolean" ? (
+                      <select id={sid} value={here[o.name] ?? ""} onChange={(e) => put((e.target as HTMLSelectElement).value)}>
+                        <option value="">Default ({o.default === "true" ? "on" : "off"})</option>
+                        <option value="true">On</option>
+                        <option value="false">Off</option>
+                      </select>
+                    ) : (
+                      <input id={sid} type={o.kind === "number" ? "number" : "text"} step="any" value={here[o.name] ?? ""} placeholder={o.default} spellcheck={false} onInput={(e) => put((e.target as HTMLInputElement).value)} />
+                    )}
+                  </div>
+                );
+              })}
+            </details>
+          );
+        })}
+      </div>
+      <details class="expert">
+        <summary class="small">Edit as JSON</summary>
+        {json}
+      </details>
+    </>
+  );
 }
 
 /** What the person typed, as the values a settings file holds: the filled-in fields only, or what is wrong with one of them. */
@@ -64,8 +122,8 @@ export function collectSettings(parameters: readonly ParameterView[], raw: Reado
   return { settings };
 }
 
-function Field(props: { p: ParameterView; value: string; set: (value: string) => void }) {
-  const { p, value, set } = props;
+function Field(props: { p: ParameterView; value: string; set: (value: string) => void; lines?: readonly LineView[] }) {
+  const { p, value, set, lines } = props;
   const id = `setting-${p.key}`;
   const shownDefault = p.solveDefault ?? p.default;
   const mark = p.solveDefault === undefined ? "" : p.solveDefault === "true" ? `on in ${p.solveSet}` : `${p.solveSet} default`;
@@ -80,7 +138,9 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
         {p.status === "beta" || p.status === "experimental" ? <span class={`chip badge ${p.status}`}> {p.status}</span> : null}
         {mark !== "" ? <span class="chip badge solve-default"> {mark}</span> : null}
       </label>
-      {p.kind === "boolean" || p.kind === "choice" ? (
+      {p.key === "lineOptions" && lines !== undefined && lines.length > 0 ? (
+        <LineOptions id={id} lines={lines} value={value} set={set} json={json} />
+      ) : p.kind === "boolean" || p.kind === "choice" ? (
         <select id={id} value={value} onChange={on} aria-describedby={`${id}-help`}>
           <option value="">Default ({shownDefault})</option>
           {p.kind === "boolean" ? (
@@ -135,7 +195,7 @@ function Field(props: { p: ParameterView; value: string; set: (value: string) =>
         <input id={id} type={p.kind === "integer" || p.kind === "number" ? "number" : "text"} step={p.kind === "integer" ? "1" : "any"} value={value} onInput={on} placeholder={shownDefault} spellcheck={false} aria-describedby={`${id}-help`} />
       )}
       <p class="muted small" id={`${id}-help`}>
-        {p.summary} {p.kind === "json" && flat === undefined ? `JSON: ${p.type}.` : p.kind === "list" ? "Separate the items with commas." : ""}
+        {p.summary} {p.key === "lineOptions" && lines !== undefined && lines.length > 0 ? "Each line's options, with their defaults; a line takes them only when it is enabled." : p.kind === "json" && flat === undefined ? `JSON: ${p.type}.` : p.kind === "list" ? "Separate the items with commas." : ""}
       </p>
     </div>
   );
@@ -181,7 +241,7 @@ export function SettingsPanel(props: { command: "solve" | "run"; defaults?: "v1"
           const basic = here.filter((p) => p.ui === "basic");
           const advanced = here.filter((p) => p.ui === "advanced");
           if (here.length === 0) return null;
-          const field = (p: ParameterView) => <Field key={p.key} p={p} value={raw[p.key] ?? ""} set={(value) => setRaw((r) => ({ ...r, [p.key]: value }))} />;
+          const field = (p: ParameterView) => <Field key={p.key} p={p} value={raw[p.key] ?? ""} set={(value) => setRaw((r) => ({ ...r, [p.key]: value }))} {...(list.lines !== undefined ? { lines: list.lines } : {})} />;
           return (
             <fieldset key={g.id} class="group" data-group={g.id}>
               <legend>{labelOf(g.id)}</legend>

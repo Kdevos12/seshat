@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { RUN_PARAMETERS } from "@seshat/orchestrator";
-import { flatFields, labelOf, subJson, subValues } from "../web/src/fields.ts";
+import { flatFields, labelOf, lineOptionValues, setLineOption, subJson, subValues } from "../web/src/fields.ts";
 
 describe("the settings panel's fields (UX9)", () => {
   it("names a key in words, the key itself kept beside it", () => {
@@ -44,5 +44,21 @@ describe("the settings panel's fields (UX9)", () => {
     assert.deepEqual(subValues(""), {});
     assert.equal(subValues("[1]"), undefined, "not an object: the JSON box stays the editor");
     assert.equal(subValues("{bad"), undefined);
+  });
+
+  it("sets and clears one line option in lineOptions, typed by its default, and drops a line left with none", () => {
+    let text = setLineOption("", "fleet", "bucketPrior", "boolean", "true");
+    assert.equal(text, '{"fleet":{"bucketPrior":true}}');
+    text = setLineOption(text, "fleet", "switchOnStall", "boolean", "false");
+    text = setLineOption(text, "M12", "drafts", "number", "3");
+    text = setLineOption(text, "M6", "framing", "text", "123");
+    assert.deepEqual(JSON.parse(text), { fleet: { bucketPrior: true, switchOnStall: false }, M12: { drafts: 3 }, M6: { framing: "123" } });
+    assert.deepEqual(lineOptionValues(text), { fleet: { bucketPrior: "true", switchOnStall: "false" }, M12: { drafts: "3" }, M6: { framing: "123" } });
+    text = setLineOption(text, "M12", "drafts", "number", "");
+    assert.equal(JSON.parse(text).M12, undefined, "a line with no option left is dropped");
+    assert.equal(setLineOption('{"M1":{"a":1}}', "M1", "a", "number", ""), "", "no option at all is the empty text");
+    assert.deepEqual(JSON.parse(setLineOption("", "M3", "limit", "json", '{"n": 2}')), { M3: { limit: { n: 2 } } });
+    assert.equal(lineOptionValues("[1]"), undefined, "not an object of objects: the JSON box alone");
+    assert.equal(lineOptionValues('{"M1": 3}'), undefined);
   });
 });

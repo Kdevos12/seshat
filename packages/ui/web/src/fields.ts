@@ -61,3 +61,49 @@ export function subValues(text: string): Record<string, string> | undefined {
     return undefined;
   }
 }
+
+/** The kind of a line option's field: its default's type (`json` for a `null`, a list or an object default). */
+export type LineOptionKind = "boolean" | "number" | "text" | "json";
+
+/** The options a `lineOptions` JSON text sets, line by line, each value as the text its field shows; undefined when the text is not an object of objects. */
+export function lineOptionValues(text: string): Record<string, Record<string, string>> | undefined {
+  if (text.trim() === "") return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    const out: Record<string, Record<string, string>> = {};
+    for (const [line, options] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof options !== "object" || options === null || Array.isArray(options)) return undefined;
+      out[line] = Object.fromEntries(Object.entries(options as Record<string, unknown>).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The `lineOptions` JSON text with one option of one line set to what its field holds, or removed when the field is empty: a line left with no
+ * option is dropped, and no option at all is the empty text. A number or JSON field that does not parse is kept as its text, which the server refuses.
+ */
+export function setLineOption(text: string, line: string, name: string, kind: LineOptionKind, value: string): string {
+  let typed: Record<string, Record<string, unknown>> = {};
+  if (lineOptionValues(text) !== undefined && text.trim() !== "") typed = JSON.parse(text) as Record<string, Record<string, unknown>>;
+  const v = value.trim();
+  const read = (): unknown => {
+    if (kind === "boolean") return v === "true";
+    if (kind === "number") return Number.isFinite(Number(v)) ? Number(v) : v;
+    if (kind === "text") return v;
+    try {
+      return JSON.parse(v) as unknown;
+    } catch {
+      return v;
+    }
+  };
+  const here = { ...(typed[line] ?? {}) };
+  if (v === "") delete here[name];
+  else here[name] = read();
+  if (Object.keys(here).length === 0) delete typed[line];
+  else typed[line] = here;
+  return Object.keys(typed).length === 0 ? "" : JSON.stringify(typed);
+}

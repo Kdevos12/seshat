@@ -291,6 +291,17 @@ function dedent(text: string): string {
   return lines.map((l) => l.slice(cut)).join("\n");
 }
 
+/**
+ * The PROOF region without a leading `by`, which the prompts ask the planner to leave out and which it sometimes writes anyway (run6, 2003 B3: Lean read
+ * `:= by by` and the draft had an error of the harness's making). The tactics on the line of the `by` stay first; the lines after it lose their shared indentation.
+ */
+export function tacticsOf(proof: string): string {
+  const m = /^\s*by(?=\s)[ \t]*(.*)(?:\n([\s\S]*))?$/.exec(proof);
+  if (m === null) return proof;
+  const [first, rest] = [m[1]?.trim() ?? "", m[2] === undefined ? "" : dedent(m[2])];
+  return [first, rest].filter((part) => part !== "").join("\n");
+}
+
 /** A proved lemma as a Lean command: the statement in signature form, and the proof indented under `by`. */
 const lemmaText = (name: string, statement: string, proof: string): string => `lemma ${name} ${statement.trim()} := by\n${dedent(proof).split("\n").map((l) => `  ${l}`).join("\n")}`;
 
@@ -647,7 +658,7 @@ export function createM12Line(): Line {
         prompt, site: SITE_PLANNER, reuse: true,
         schema: { type: "object", properties: { aux: { type: "string" }, proof: { type: "string" } }, required: [...keys] },
       });
-      if (typeof answer.value.proof === "string" && (!keys.includes("aux") || typeof answer.value.aux === "string")) return { written: { aux: keys.includes("aux") ? (answer.value.aux as string) : "", proof: answer.value.proof } };
+      if (typeof answer.value.proof === "string" && (!keys.includes("aux") || typeof answer.value.aux === "string")) return { written: { aux: keys.includes("aux") ? (answer.value.aux as string) : "", proof: tacticsOf(answer.value.proof) } };
       return { flaw: `the planner's answer has no ${keys.includes("aux") ? "AUX and PROOF regions" : "PROOF region"}` };
     } catch (error) {
       if (isInterrupted(error)) throw error;

@@ -1,4 +1,4 @@
-import { DEFAULT_DEFAULTS, GROUP_SUMMARY, PARAMETER_GROUPS, RUN_PARAMETERS, settingKind, settingsFileKeys, solveDefaultsOf, SOLVE_OWN_FLAGS, type DefaultsName, type ParameterStatus, type ParameterUi, type RunConfig, type SettingKind } from "@seshat/orchestrator";
+import { DEFAULT_DEFAULTS, GROUP_SUMMARY, LINES, PARAMETER_GROUPS, RUN_PARAMETERS, settingKind, settingsFileKeys, solveDefaultsOf, SOLVE_OWN_FLAGS, type DefaultsName, type ParameterStatus, type ParameterUi, type RunConfig, type SettingKind } from "@seshat/orchestrator";
 
 /**
  * The catalogue the settings menu is drawn from (`GET /api/parameters`): the entries of `packages/orchestrator/src/parameters.ts` that a person sees
@@ -26,9 +26,42 @@ export interface ParameterView {
   solveSet?: DefaultsName;
 }
 
+/** One option of a line, for the typed fields of `lineOptions`: its kind is its default's (a `null` default takes any JSON). */
+export interface LineOptionView {
+  name: string;
+  kind: "boolean" | "number" | "text" | "json";
+  /** The default, as JSON text. */
+  default: string;
+}
+
+/** A line of the registry (`LINES`) and its options: what `lineOptions` can set for it. */
+export interface LineView {
+  id: string;
+  title: string;
+  options: LineOptionView[];
+}
+
 export interface ParameterList {
   groups: Array<{ id: string; summary: string }>;
   parameters: ParameterView[];
+  /** The lines that have options, in id order, with each option's default: read from the registry, so a line's new option is in the menu the day it is added. */
+  lines: LineView[];
+}
+
+/** The lines of the registry that have options, each option typed by its default. */
+export function lineViews(): LineView[] {
+  return Object.values(LINES)
+    .filter((line) => line.options !== undefined && Object.keys(line.options).length > 0)
+    .sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }))
+    .map((line) => ({
+      id: line.id,
+      title: line.title,
+      options: Object.entries(line.options ?? {}).map(([name, value]): LineOptionView => ({
+        name,
+        kind: typeof value === "boolean" ? "boolean" : typeof value === "number" ? "number" : typeof value === "string" ? "text" : "json",
+        default: JSON.stringify(value),
+      })),
+    }));
 }
 
 /**
@@ -57,5 +90,5 @@ export function parameterList(o: { command?: string; defaults?: DefaultsName } =
       ...(set !== undefined && effective[key] !== undefined ? { solveDefault: effective[key], solveSet: set } : {}),
     };
   });
-  return { groups: PARAMETER_GROUPS.filter((g) => parameters.some((p) => p.group === g)).map((id) => ({ id, summary: GROUP_SUMMARY[id] })), parameters };
+  return { groups: PARAMETER_GROUPS.filter((g) => parameters.some((p) => p.group === g)).map((id) => ({ id, summary: GROUP_SUMMARY[id] })), parameters, lines: lineViews() };
 }

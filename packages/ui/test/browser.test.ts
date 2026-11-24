@@ -89,7 +89,10 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       await page.fill("#setting-budgetShare", "3");
       await page.selectOption("#setting-triage", "true");
       await page.fill("#setting-sorryBattery-maxSorries", "4");
-      assert.match(await page.locator("details.settings-all > summary").textContent(), /\(3 changed\)/, "the summary counts the changed settings");
+      // A line's option, typed by its default: the fleet's bucket prior (chain of Lean, CL5).
+      await page.locator("details[data-line=fleet]").evaluate((e: any) => (e.open = true));
+      await page.selectOption("#setting-lineOptions-fleet-bucketPrior", "true");
+      assert.match(await page.locator("details.settings-all > summary").textContent(), /\(4 changed\)/, "the summary counts the changed settings");
       await page.screenshot({ path: join(shots, "settings-panel.png"), fullPage: false });
       await page.fill("#statement", "Every number equals itself.");
       await page.click("button:has-text('Prepare the statement')");
@@ -97,7 +100,7 @@ describe("the page in a real browser", { skip: pw === undefined ? "Playwright is
       const jobs = (await s.call("GET", "/api/jobs")).json().jobs as Array<{ command: string[] }>;
       const file = jobs[0]?.command.find((a) => a.startsWith("--settings="))?.slice("--settings=".length);
       assert.ok(file, "the start request carried the settings");
-      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { budgetShare: 3, triage: true, sorryBattery: { maxSorries: 4 } }, "only the filled-in fields, the sub-field as JSON");
+      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { budgetShare: 3, triage: true, sorryBattery: { maxSorries: 4 }, lineOptions: { fleet: { bucketPrior: true } } }, "only the filled-in fields, the sub-fields as JSON");
       assert.deepEqual(problems, []);
     } finally {
       await browser.close();

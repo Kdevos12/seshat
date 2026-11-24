@@ -107,6 +107,9 @@ test("when the extractions together time out, each step is probed alone and the 
   assert.ok(!("reason" in lift), "reason" in lift ? lift.reason : "");
   assert.deepEqual(lift.lifted, ["aux_h_1", "aux_h_2"]);
   assert.match(lift.aux, /lemma aux_h_2 \(n : ℕ\) \(h_1 : n \+ 0 = n\) : 0 \+ n = n := by\n {2}sorry/);
+  // Each probe runs extract_goal under printing options whose output Lean reads back (coercions with their types, no field notation, proofs in full, binders with their types).
+  for (const option of ["pp.coercions.types", "pp.numericTypes", "pp.proofs", "pp.funBinderTypes", "pp.piBinderTypes"]) assert.ok(calls[0]?.proof.includes(`set_option ${option} true in`), option);
+  assert.ok(calls[0]?.proof.includes("set_option pp.fieldNotation false in"));
   // One probe of both, one of each, then the lifted file.
   assert.equal(calls.filter((c) => c.proof.includes("extract_goal")).length, 3);
   assert.equal(calls.at(-1)?.proof.includes("extract_goal"), false);

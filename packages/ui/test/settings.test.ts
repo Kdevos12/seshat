@@ -55,6 +55,18 @@ describe("the catalogue the settings menu reads (GET /api/parameters)", () => {
     assert.equal((await s.call("GET", "/api/parameters?command=solve&defaults=v9")).status, 400);
   });
 
+  it("lists every line that has options, each option typed by its default, from the registry (the fleet's bucketPrior and switchOnStall included)", async () => {
+    const s = await server();
+    const { lines } = (await (await s.call("GET", "/api/parameters")).json()) as { lines: Array<{ id: string; title: string; options: Array<{ name: string; kind: string; default: string }> }> };
+    const fleet = lines.find((l) => l.id === "fleet");
+    assert.ok(fleet !== undefined && fleet.title !== "");
+    for (const name of ["bucketPrior", "switchOnStall"]) assert.deepEqual(fleet.options.find((o) => o.name === name), { name, kind: "boolean", default: "false" });
+    const m12 = lines.find((l) => l.id === "M12");
+    assert.ok(m12 !== undefined && m12.options.length > 0, "M12 has options");
+    assert.ok(lines.every((l) => l.options.length > 0), "a line without options is left out");
+    assert.ok(lines.every((l) => l.options.every((o) => ["boolean", "number", "text", "json"].includes(o.kind))));
+  });
+
   it("needs the session's token", async () => {
     const s = await server();
     const response = await fetch(`${s.server.origin}/api/parameters`);
