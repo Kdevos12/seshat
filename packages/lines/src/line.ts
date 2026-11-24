@@ -404,8 +404,9 @@ export interface HoleSessionResult {
   /** The verdict the model gave with `hole_verdict`, if it did. */
   verdict?: HoleVerdictCall;
   /**
-   * How far the file was from done at the session's first and last check that Lean ran (a check refused before Lean is not counted): Lean's errors plus the
-   * `sorry` it reports. Absent when Lean ran no check. It orders the work (plan change VL3); it is no status.
+   * How far the file was from done at the session's first and last check that Lean answered (`leanStatus` `valid`, `sorry` or `lean_error`; a check refused
+   * before Lean, a timeout and a server or REPL error are not counted): Lean's errors plus the `sorry` it reports. Absent when Lean answered no check. It orders
+   * the work (plan change VL3); it is no status.
    */
   progress?: { first: number; last: number };
 }
