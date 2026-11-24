@@ -126,7 +126,7 @@ Seshat is a TypeScript monorepo on top of [pi](https://github.com/earendil-works
 
 ## Status
 
-Beta, version 1.0.0-beta.1. The core loop runs for real: `harness solve` with a real model and Lean 4.27.0, the fast check, the certifier's kernel replay, the budget gate, the tactic battery, Lean's language server and search. Many research lines (lemma library, lessons, curriculum, ATP and SMT with reconstruction, the heuristic card bank, consortium turns) are built and tested against a simulated Lean and model and wait for their first real runs. [documentation/status.md](documentation/status.md) has the details.
+Beta, version 1.0.0-beta.2. The core loop runs for real: `harness solve` with a real model and Lean 4.27.0, the fast check, the certifier's kernel replay, the budget gate, the tactic battery, Lean's language server and search. Many research lines (lemma library, lessons, curriculum, ATP and SMT with reconstruction, the heuristic card bank, consortium turns) are built and tested against a simulated Lean and model and wait for their first real runs. [documentation/status.md](documentation/status.md) has the details.
 
 ## Contributing
 
@@ -136,14 +136,14 @@ For questions and discussion, join the [Discord server](https://discord.gg/4Dbcn
 
 ## Citing Seshat
 
-If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub). [CHANGELOG.md](CHANGELOG.md) lists what each version changed. Every release is archived on Zenodo: [10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) always points to the latest version, and [10.5281/zenodo.24354663](https://doi.org/10.5281/zenodo.24354663) to 1.0.0-beta.1 itself.
+If you use Seshat in your work, please cite it ([CITATION.cff](CITATION.cff), or "Cite this repository" on GitHub). [CHANGELOG.md](CHANGELOG.md) lists what each version changed. Every release is archived on Zenodo: [10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) always points to the latest version, and each version has its own DOI on that page ([10.5281/zenodo.24354663](https://doi.org/10.5281/zenodo.24354663) is 1.0.0-beta.1).
 
 ```bibtex
 @software{devos2026seshat,
   author  = {de Vos, Kyllian},
   title   = {Seshat: a harness for autonomous mathematical research with language models},
   year    = {2026},
-  version = {1.0.0-beta.1},
+  version = {1.0.0-beta.2},
   doi     = {10.5281/zenodo.24354662},
   url     = {https://github.com/Kdevos12/seshat},
   license = {Apache-2.0}

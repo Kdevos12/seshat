@@ -15,8 +15,8 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.24354663"
     description: "Version 1.0.0-beta.1"
-version: "1.0.0-beta.1"
-date-released: "2026-11-18"
+version: "1.0.0-beta.2"
+date-released: "2026-11-24"
 license: Apache-2.0
 keywords:
   - automated theorem proving
