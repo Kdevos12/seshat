@@ -24,7 +24,7 @@ export function liftAnswer(code: string): FakeLeanAnswer {
   if (!/\bsorry\b/.test(proof) && !proof.includes("extract_goal") && !proof.includes("first |")) return blueprintAnswer(code);
   for (const { l, k } of region) {
     const step = /have\s+\S+\s*:\s*(.*?)\s*:=\s*by\s+(.*)$/.exec(l);
-    if (step !== null && !/^(sorry|extract_goal)/.test(step[2] as string) && step[1] !== "n * 1 = n" && !(step[2] as string).startsWith("apply aux_")) return error(k, "the tactic failed to close the goal");
+    if (step !== null && !/^(sorry|extract_goal|\(set_option pp\.)/.test(step[2] as string) && step[1] !== "n * 1 = n" && !(step[2] as string).startsWith("apply aux_")) return error(k, "the tactic failed to close the goal");
   }
   const messages = extractGoalMessages(code);
   const sorries = region.flatMap(({ l, k }) => (/(?<![\p{L}\p{N}_])sorry(?![\p{L}\p{N}_])/u.test(l) ? [{ pos: { line: k + 1, column: l.indexOf("sorry") }, goal: "n : ℕ\n⊢ a step" }] : []));
