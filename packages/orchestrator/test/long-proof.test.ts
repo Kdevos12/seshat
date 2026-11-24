@@ -122,14 +122,25 @@ induction n with
     assert.equal(round1?.healthy, true);
   });
 
-  it("sends a draft that leaves the theorem itself as a step to the first refinement round (run 7, VL1)", { timeout: 60000 }, async () => {
-    const proof = "-- step 1: zero on the right\nhave h_1 : n * 1 = n := by sorry\n-- step 2: the theorem\nhave h_2 :  n + 0  = n := by sorry\nexact h_2";
+  it("sends a draft whose first step is the theorem itself to the first refinement round (run 7, VL1)", { timeout: 60000 }, async () => {
+    const proof = "-- step 1: the theorem\nhave h_1 :  n + 0  = n := by sorry\nexact h_1";
     const { events, faux } = await run([...informal, draftOf(proof), answer(BP_AUX, BP_PROOF), check("exact bad"), say("Notes.")]);
     assert.equal(faux.getPendingResponseCount(), 0);
     const [draft, round1] = nodes(events, "m12_sketch");
     assert.equal(draft?.healthy, false);
-    assert.match(String(draft?.problem), /leaves the theorem itself as its step h_2/);
+    assert.match(String(draft?.problem), /leaves the theorem itself as its step h_1/);
     assert.equal(round1?.round, 1);
+  });
+
+  it("keeps a draft whose last step restates the theorem after other steps: it combines them, which it has as hypotheses", { timeout: 60000 }, async () => {
+    // `main_ok` is the simulated Lean's word for a main proof that closes the target from its steps.
+    const proof = "-- step 1: zero on the right\nhave h_1 : 1 * n = n := by sorry\n-- step 2: the theorem, from step 1\nhave h_2 :  n + 0  = n := by sorry\nexact main_ok";
+    const { events, faux } = await run([...informal, draftOf(proof), check("exact bad"), say("Notes.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [draft, ...more] = nodes(events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.equal(draft?.healthy, true, String(draft?.problem ?? draft?.errors));
+    assert.deepEqual(draft?.names, ["aux_h_1", "aux_h_2"]);
   });
 
   it("sends a draft Lean refuses to the first refinement round, and a draft with no proof makes no record", { timeout: 60000 }, async () => {

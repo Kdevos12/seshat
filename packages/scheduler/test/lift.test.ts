@@ -131,10 +131,13 @@ test("both forms Lean prints an extracted statement in are read: `:= sorry` (Lea
   }
 });
 
-test("restatedStep: a step left to sorry whose type is the target's conclusion, spacing aside (VL1)", () => {
+test("restatedStep: a first step left to sorry whose type is the target's conclusion, spacing aside (VL1)", () => {
   const target = "(p : Polynomial ℝ) (hp : ∀ x, 0 ≤ p.eval x) : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2";
-  const proof = "have h_1 : p.degree ≥ 0 := by sorry\nhave h_2 : ∃ q r : Polynomial ℝ,\n    p = q ^ 2 + r ^ 2 := by sorry\nexact h_2";
-  assert.equal(restatedStep(proof, target), "h_2");
+  assert.equal(restatedStep("have h_2 : ∃ q r : Polynomial ℝ,\n    p = q ^ 2 + r ^ 2 := by sorry\nexact h_2", target), "h_2");
+  assert.equal(restatedStep("intro x\nhave h_1 : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2 := by sorry\nhave h_2 : p.degree ≥ 0 := by sorry\nexact h_1", target), "h_1");
+  // A later step that restates the conclusion combines the steps before it, which it has as hypotheses: a real step.
+  assert.equal(restatedStep("have h_1 : p.degree ≥ 0 := by sorry\nhave h_2 : ∃ q r : Polynomial ℝ,\n    p = q ^ 2 + r ^ 2 := by sorry\nexact h_2", target), undefined);
+  assert.equal(restatedStep("have h1 : p.degree ≥ 0 := by exact foo\nhave h_final : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2 := by sorry\nexact h_final", target), undefined);
   // A step that proves it (no sorry) is no hole, and a different statement is a step.
   assert.equal(restatedStep("have h_2 : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2 := by exact foo\nexact h_2", target), undefined);
   assert.equal(restatedStep("have h_1 : p.degree ≥ 0 := by sorry\nexact bar", target), undefined);
