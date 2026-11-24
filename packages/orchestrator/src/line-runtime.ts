@@ -36,7 +36,7 @@ import type { LeanSearchPush } from "@seshat/lean-search";
 import { type Draw, type DrawItem, type DrawOptions, type MemoryStore, type ModelRanking, recordAcceptedLemmas } from "@seshat/memory";
 import { messageOf, type Registry, RegistryLeanChecker } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
-import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
+import { ladderDue, NO_PROGRESS, plannerRounds, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
@@ -465,10 +465,7 @@ export class ProblemLines {
     const roles = this.run.o.roles;
     if (roles === undefined || roleOfSite(site) !== "planner" || !roles.has("planner")) return undefined;
     this.escalation ??= new PlannerEscalation(roles, {
-      rounds: () => this.run.o.memory.nodes(SKETCH_KIND, { claimId: this.p.claimId }).filter((node) => {
-        const record = asRecord<SketchRecord>(node.data);
-        return record.problemId === this.p.problemId && record.planner === true;
-      }).length,
+      rounds: () => plannerRounds(this.run.o.memory, this.p.problemId, this.p.claimId),
       progress: () => progressOf(this.run.o.memory, this.p.problemId, this.p.claimId),
       allowanceUsd: () => this.p.ledger.limitUsd,
       spentOn: (model) =>

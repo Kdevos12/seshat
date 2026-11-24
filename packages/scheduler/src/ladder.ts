@@ -56,11 +56,23 @@ export function progressOf(memory: MemoryStore, problemId: string, claimId: stri
   let holes: number | undefined;
   for (const node of memory.nodes(SKETCH_KIND, { claimId })) {
     const sketch = asRecord<SketchRecord>(node.data);
-    if (sketch.problemId !== problemId || !sketch.healthy || !sketch.registered) continue;
+    // A hole's local redraft (DP7) is a blueprint of the hole, not of the problem: its holes are no measure of the problem's best sketch.
+    if (sketch.problemId !== problemId || !sketch.healthy || !sketch.registered || sketch.redraftOf !== undefined) continue;
     const open = sketch.holes.filter((id) => !accepted(memory, id)).length;
     holes = holes === undefined ? open : Math.min(holes, open);
   }
   return { proved, holes };
+}
+
+/**
+ * The planner's rounds on the problem so far: its `m12_sketch` records (the draft from the informal proof, the refinement rounds), what the planner's
+ * escalation counts (CA15). A hole's local redraft (DP7) is no round of the problem's blueprint and is not counted.
+ */
+export function plannerRounds(memory: MemoryStore, problemId: string, claimId: string): number {
+  return memory.nodes(SKETCH_KIND, { claimId }).filter((node) => {
+    const record = asRecord<SketchRecord>(node.data);
+    return record.problemId === problemId && record.planner === true && record.redraftOf === undefined;
+  }).length;
 }
 
 /** Whether `now` is progress over `before`: a new proved subclaim, or fewer open holes in the best healthy sketch. */
