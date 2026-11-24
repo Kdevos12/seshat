@@ -175,6 +175,25 @@ describe("refinement rounds (CA12, PA11)", () => {
     assert.equal(nodes(events, "m12_sketch").length, 2, "then a refinement round splits it");
   });
 
+  it("with holeProgress, a check that Lean did not answer (a timeout) measures no distance (VL3)", { timeout: 60000 }, async () => {
+    // Session 2 goes from 2 errors to a check that timed out: no message, which is no distance 0, so the session made no progress and the hole gets no third.
+    const lean = new DemoLean((code) => {
+      const proof = proofOf(code) ?? "";
+      if (proof.includes("tmo")) return { error: { status: "timeout", message: "the check took too long" } };
+      const k = /errs_(\d+)/.exec(proof)?.[1];
+      return k === undefined ? blueprintAnswer(code) : { messages: Array.from({ length: Number(k) }, () => ({ severity: "error" as const, pos: { line: 1, column: 0 }, text: "unsolved goals" })) };
+    });
+    const { events, faux } = await run(
+      [check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), check("exact errs_3"), check("exact errs_2"), check("exact errs_2"), check("exact tmo"), answer(SPLIT_AUX, SPLIT_PROOF), check("exact hole_ok"), check("exact hole_ok")],
+      { holeTurns: 2, holeProgress: true },
+      { triage: true, longProof: {} },
+      lean,
+    );
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const tooHard = nodes(events, "m12_session").filter((n) => n.verdict === "too_hard");
+    assert.deepEqual(tooHard.map((n) => [n.session, n.reason, n.progress]), [[1, "turns", { first: 3, last: 2 }], [2, "turns", { first: 2, last: 2 }]]);
+  });
+
   it("does nothing without the option refine: a hole that ended too hard is the end of it", { timeout: 60000 }, async () => {
     const { events } = await run([check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), say("I cannot do this.")], { refine: false });
     assert.equal(nodes(events, "m12_sketch").length, 1);

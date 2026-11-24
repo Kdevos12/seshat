@@ -2,7 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, StringEnum } from "@earendil-works/pi-ai";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { type BlobStore, HOLE_VERDICTS, type Journal, newId } from "@seshat/core";
+import { type BlobStore, HOLE_VERDICTS, type Journal, type LeanCheckStatus, newId } from "@seshat/core";
 import type { HoleSessionRequest, HoleSessionResult, HoleVerdictCall } from "@seshat/lines";
 import type { HostTactics } from "@seshat/classical";
 import type { LeanSearchPush } from "@seshat/lean-search";
@@ -59,6 +59,9 @@ export interface HoleSessionDeps {
   /** The library line's section and tool for the hole, searched by its statement (`ProblemLines.openHole`). Absent: none. */
   library?: (focus: { theorem: string; statement: string }) => Promise<OpenedSession>;
 }
+
+/** The statuses of a check that Lean answered (`LeanCheckStatus`): the only ones VL3's progress reads. */
+const LEAN_ANSWERS: readonly LeanCheckStatus[] = ["valid", "sorry", "lean_error"];
 
 /** The arguments of `hole_verdict`. */
 function verdictParameters() {
@@ -159,7 +162,8 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
       afterCheck: async (check) => {
         checks.submission = check.submission;
         checks.report = check.report;
-        if (check.report.leanStatus !== undefined) {
+        // Only a check that Lean answered measures the distance: a timeout, a server or REPL error has no messages, which is no distance 0.
+        if (check.report.leanStatus !== undefined && LEAN_ANSWERS.includes(check.report.leanStatus)) {
           const distance = check.report.messages.filter((m) => m.severity === "error").length + check.report.sorries.length;
           checks.progress = { first: checks.progress?.first ?? distance, last: distance };
         }
