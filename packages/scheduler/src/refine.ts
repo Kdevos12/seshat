@@ -139,3 +139,16 @@ export function draftPrompt(input: DraftInput): string {
     'Answer with JSON: {"proof": the PROOF region}.',
   ].join("\n\n");
 }
+
+/**
+ * What a hole's local redraft (DP7) is shown in place of the informal proof: the step of the larger plan that the hole formalizes (`-- step k:` above its lemma),
+ * quoted as data and said to be unchecked, or that the plan has none. The hole's sessions did not prove it whole, so the draft writes it as smaller steps.
+ */
+export function holeStepSection(step: string | undefined): { title: string; text: string } {
+  return {
+    title: "The step of a larger proof that this theorem is, as the plan's author wrote it, checked by no one and not by Lean",
+    text:
+      "Sessions with Lean did not prove the theorem whole: write its proof as smaller steps. The note is a hint, not a proof; it may be wrong or incomplete.\n" +
+      (step === undefined ? "> (the plan has no note for this step: draft the steps from the statement)" : quotedSketch(step)),
+  };
+}

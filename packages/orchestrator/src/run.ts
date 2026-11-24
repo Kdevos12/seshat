@@ -94,7 +94,7 @@ import { type RestartsConfig, resolveRestarts, restartsConfigProblems } from "./
 import { checkLeanDraft, leanDraft, type LeanDraftConfig, type LeanDraftDeps } from "./lean-draft.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
-import { DEFAULT_DRY_CHECKS, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
+import { DEFAULT_DRY_CHECKS, DEFAULT_REDRAFT_DEPTH, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
 import { runChild } from "./child.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
@@ -185,7 +185,9 @@ export interface RunConfig {
    * the budget gate follows the frontier's growth for such a problem: a closed hole or a registered healthy blueprint is progress, its sessions go on while
    * holes close, and it stops, journaling why, after `dryChecks` (default 3) finished sessions in a row that closed none. With line M12's `blueprints` and an
    * accepted informal proof (`informalFirst`), `draft` (default true) makes the first blueprint a `have` sketch the planner writes from that proof and the harness lifts
-   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3). Absent: off.
+   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3); a hole that ends
+   * `too_hard` for a reason other than the budget gets that draft with itself as the target, registered on its claim, nested at most `depth` deep (default 1; 0: off; DP7).
+   * Absent: off.
    */
   longProof?: LongProofConfig;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
@@ -706,7 +708,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) and its frozen links (LP3) where M12 has blueprints, and M3's candidates from them (DP5); a value the person gave for those options stays.
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3), its frozen links (LP3) and its local redraft of a hole that ended too hard
+  // (DP7, to `depth`) where M12 has blueprints, and M3's candidates from them (DP5); a value the person gave for those options stays.
   const lp = config.longProof;
   const lineOptions =
     lp !== undefined && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
@@ -715,6 +718,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           M12: {
             ...(lp.draft !== false ? { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}) } : {}),
             ...(lp.freeze !== false ? { freeze: true } : {}),
+            ...((lp.depth ?? DEFAULT_REDRAFT_DEPTH) > 0 ? { redraftDepth: lp.depth ?? DEFAULT_REDRAFT_DEPTH } : {}),
             ...config.lineOptions.M12,
           },
           // M3 reads its candidates from the lemmas M12 locks, failed attempts included (DP5).

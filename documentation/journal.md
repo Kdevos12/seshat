@@ -153,7 +153,7 @@ this one starts on. `relative` is its directory relative to the new run's, tried
 whose directories moved together still reads; `path` is the absolute one it falls back to. The projection replays that journal before this one, and the run is refused when the
 journal no longer ends at `lastHash` ([memory.md](memory.md#memory-across-runs)).
 
-`run.started`'s `config` may carry `longProof` (`RunConfig.longProof`, as given: `triageUsd`, `dryChecks`, `draft`, `drafts`, `freeze`; optional, absent without it), which a resumed run reads back so that the `long` triage class, the gate that follows the frontier and the battery that M12's draft uses are what they were. It may also carry `leanSearch: true` and `private: true` (`RunConfig.leanSearch`, `RunConfig.private`; optional, present only when
+`run.started`'s `config` may carry `longProof` (`RunConfig.longProof`, as given: `triageUsd`, `dryChecks`, `draft`, `drafts`, `freeze`, `depth`; optional, absent without it), which a resumed run reads back so that the `long` triage class, the gate that follows the frontier, the battery that M12's draft uses and the depth of its local redraft are what they were. It may also carry `leanSearch: true` and `private: true` (`RunConfig.leanSearch`, `RunConfig.private`; optional, present only when
 on, so that a run without them records what it always did). The search that `leanSearch` makes after a check adds no event: each search is a tool
 run of `lean.search` and each verification of its hits a tool run of `lean.check`, both by the actor `lean.search` and with no `attemptId`
 ([lean.md](lean.md#search-pushed-by-the-harness)). A hit is not a claim and changes no status.

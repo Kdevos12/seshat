@@ -146,7 +146,8 @@ describe("refinement rounds (CA12, PA11)", () => {
     assert.equal(plain.faux.getPendingResponseCount(), 0);
     assert.deepEqual(nodes(plain.events, "hole_verdict").map((v) => [v.verdict, v.reason]), [["too_hard", "turns"], ["proved", undefined], ["proved", undefined], ["proved", undefined]]);
     assert.equal(nodes(plain.events, "m12_session").filter((n) => n.verdict === "too_hard").length, 1, "without longProof the hole has its one session and is split");
-    const long = await run(responses(true), hole, { triage: true, longProof: {} });
+    // `depth: 0`: the hole goes to the round, not to its local redraft (DP7, long-proof.test.ts).
+    const long = await run(responses(true), hole, { triage: true, longProof: { depth: 0 } });
     assert.equal(long.faux.getPendingResponseCount(), 0);
     const tooHard = nodes(long.events, "m12_session").filter((n) => n.verdict === "too_hard");
     assert.deepEqual(tooHard.map((n) => [n.session, n.turns, n.reason]), [[1, 2, "turns"], [2, 2, "turns"]], "one continuation, then no more");
@@ -165,7 +166,7 @@ describe("refinement rounds (CA12, PA11)", () => {
     const { events, faux } = await run(
       [check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), ...session(3, 2), ...session(2, 1), ...session(1, 1), answer(SPLIT_AUX, SPLIT_PROOF), check("exact hole_ok"), check("exact hole_ok")],
       { holeTurns: 2, holeProgress: true },
-      { triage: true, longProof: {} },
+      { triage: true, longProof: { depth: 0 } },
       lean,
     );
     assert.equal(faux.getPendingResponseCount(), 0);

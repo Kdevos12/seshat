@@ -16,7 +16,7 @@ import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import { cutFailures } from "./repair.ts";
 import { haveSteps, liftHaves, type Lift, restatedStep } from "./lift.ts";
-import { draftPrompt, PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
+import { draftPrompt, holeStepSection, PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
   asRecord, isRefinement, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
 } from "./records.ts";
@@ -70,6 +70,12 @@ export const M12_OPTIONS = {
   fromInformal: false,
   /** The drafts asked for (DP3, `fromInformal` only): the one with the fewest holes after the lift is registered; the others are recorded and never registered. */
   drafts: 1,
+  /**
+   * The local redraft of a hole (DP7, blueprints only): a hole whose sessions ended `too_hard` for a reason other than the budget gets the draft of `fromInformal` with
+   * itself as the target (its informal step as the plan, checked on its own file, lifted), registered on its claim, before any refinement round; nested at most this
+   * deep (1: a hole of the problem's blueprint, never a hole of a redraft). 0: off. `RunConfig.longProof.depth` sets it (default 1).
+   */
+  redraftDepth: 0,
   /** Frozen links (LP3, blueprints only): a hole that is proved, or an `aux_` lemma of the outer file that a check accepted, moves into a locked prefix of the problem's file, shown to the models by statement only. `RunConfig.longProof` sets it (its `freeze`, default true). */
   freeze: false,
   /** Seeds the scheduler's draws. Null: the run's seed. */
@@ -97,6 +103,7 @@ interface Settings {
   maxRepairs: number;
   fromInformal: boolean;
   drafts: number;
+  redraftDepth: number;
   seed: string | number | null;
 }
 
@@ -128,6 +135,7 @@ function settings(options: Readonly<JsonObject>): Settings {
     maxRepairs: num("maxRepairs", 0),
     fromInformal: flag("fromInformal"),
     drafts: num("drafts", 1),
+    redraftDepth: num("redraftDepth", 0),
     seed: typeof seed === "number" || typeof seed === "string" ? seed : null,
   };
 }
@@ -152,6 +160,8 @@ interface Work {
   /** The names locked into the problem's file (`freeze`), rebuilt from the `accepted_lemmas` nodes; and the lemmas Lean refused to have there, not tried again. */
   frozen: Set<string>;
   unfrozen: Set<string>;
+  /** The holes whose local redraft (DP7) the budget gate skipped or that came to no record, not asked again by this process. */
+  redraftSkipped: Set<string>;
 }
 
 /** What reading a sketch is asked: a blueprint, when the option is on (CA9). */
@@ -208,6 +218,37 @@ function allSketchRecords(problem: ProblemContext): Array<{ nodeId: string; reco
 
 /** The sketches the scheduler works from: a draft that was not kept is left out, so that it is never registered, revised or counted. */
 const sketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> => allSketchRecords(problem).filter(({ record }) => record.discarded !== true);
+
+/** The sketches of the problem's own claim: a hole's local redraft (DP7, `redraftOf`) left out. */
+const ownSketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> => sketchRecords(problem).filter(({ record }) => record.redraftOf === undefined);
+
+/** The blueprint a hole was drafted into (DP7): the latest healthy, registered record whose `redraftOf` is the hole. */
+const redraftInto = (problem: ProblemContext, claimId: string): SketchRecord | undefined =>
+  sketchRecords(problem).filter(({ record }) => record.redraftOf === claimId && record.healthy && record.registered).at(-1)?.record;
+
+/**
+ * How deep a claim sits below the problem's (DP7): the nesting of the `decomposes_into` edges that registered the blueprints it is a hole of, 1 for a hole of the
+ * problem's blueprint, 2 for a hole of a hole's redraft. The edges of `-- uses:` between the holes of one blueprint are not nesting. Infinite for a claim that is
+ * no registered hole.
+ */
+function nestingOf(problem: ProblemContext, claimId: string): number {
+  const records = sketchRecords(problem).filter(({ record }) => record.healthy && record.registered);
+  let depth = 0;
+  for (let id = claimId; id !== problem.claimId; depth++) {
+    const record = records.find(({ record }) => record.holes.includes(id))?.record;
+    if (record === undefined || depth > records.length) return Number.POSITIVE_INFINITY;
+    id = record.redraftOf ?? problem.claimId;
+  }
+  return depth;
+}
+
+/** The holes M12 works now: those of the problem's current blueprint (the latest healthy, registered one), and of their redrafts, nested (DP7). */
+function currentHoles(problem: ProblemContext): string[] {
+  const current = ownSketchRecords(problem).filter(({ record }) => record.blueprint === true && record.healthy && record.registered).at(-1)?.record;
+  const holes = [...(current?.holes ?? [])];
+  for (let k = 0; k < holes.length; k++) for (const id of redraftInto(problem, holes[k] as string)?.holes ?? []) if (!holes.includes(id)) holes.push(id);
+  return holes;
+}
 
 /** The tasks the scheduler made for the problem, in the order they were made. */
 const ownTasks = (problem: ProblemContext): TaskInfo[] => problem.tasks.list({ kinds: ["prove"] }).filter((task) => task.proposedBy === ACTOR);
@@ -438,12 +479,14 @@ export function createM12Line(): Line {
    * What the sessions ended with, made into claims: for each sketch recorded and not yet registered, its holes become claims,
    * the problem's claim gets a `decomposes_into` edge to them that Lean checks (the link lemma is proved from the sketch's own main
    * proof), the holes that are instances of known facts close, and the rest get their tasks. Everything here can be done twice.
+   * A hole's local redraft (DP7) is registered the same way on the hole's claim, under the hole's header: its holes are claims under it.
    */
   async function registerAll(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
     for (const { nodeId, record } of sketchRecords(problem)) {
       if (record.registered) continue;
-      const parent = problem.memory.claim(problem.claimId);
-      const header = work.header;
+      const parentId = record.redraftOf ?? problem.claimId;
+      const parent = problem.memory.claim(parentId);
+      const header = record.redraftOf === undefined ? work.header : (parent?.header ?? work.header);
       const stored = problem.memory.blobs.get(record.submission);
       if (!record.healthy || parent === undefined || stored === undefined) {
         problem.memory.updateNode(nodeId, { registered: true }, "the sketch is not split");
@@ -465,16 +508,16 @@ export function createM12Line(): Line {
         const statements = dependencyOrder(reading.holes, hole.name).map((name) => reading.holes.find((h) => h.name === name)?.statement ?? "");
         const holeHeader = headerWithContext(header, contextFor(reading.others, statements));
         const ensured = await problem.memory.ensureClaim({
-          statement: hole.statement, header: holeHeader, origin: ACTOR, parentId: problem.claimId, kind: "formal",
+          statement: hole.statement, header: holeHeader, origin: ACTOR, parentId, kind: "formal",
           gloss: `${hole.name}, a hole of the sketch of attempt ${record.attemptId}`,
         });
         holes.push(ensured.claimId);
       }
-      // The decomposition: the problem's claim from its holes, once Lean has checked that the sketch's main proof closes it.
-      let edge = problem.memory.edges({ from: problem.claimId, kinds: ["decomposes_into"] }).find((e) => e.to.length === holes.length && holes.every((h) => e.to.includes(h)));
+      // The decomposition: the problem's claim (or the redrafted hole's) from its holes, once Lean has checked that the sketch's main proof closes it.
+      let edge = problem.memory.edges({ from: parentId, kinds: ["decomposes_into"] }).find((e) => e.to.length === holes.length && holes.every((h) => e.to.includes(h)));
       if (edge === undefined) {
-        const link = linkFor("decomposes_into", { id: problem.claimId, statement: parent.statement }, holes.map((id) => ({ id, statement: problem.memory.claim(id)?.statement ?? "" })));
-        if (link !== undefined) edge = problem.memory.addEdge({ kind: "decomposes_into", from: problem.claimId, to: holes, link, note: `the sketch of ${record.attemptId}` });
+        const link = linkFor("decomposes_into", { id: parentId, statement: parent.statement }, holes.map((id) => ({ id, statement: problem.memory.claim(id)?.statement ?? "" })));
+        if (link !== undefined) edge = problem.memory.addEdge({ kind: "decomposes_into", from: parentId, to: holes, link, note: `the sketch of ${record.attemptId}` });
       }
       if (edge !== undefined && edge.status !== "lean_checked") {
         const proof = linkProof(submission, reading, parseSignature(parent.statement).binders);
@@ -535,9 +578,10 @@ export function createM12Line(): Line {
   /**
    * Whether the holes of a healthy blueprint have all had their sessions and one is not proved (CA12, case b): every hole is accepted, or has a
    * verdict and no task that can still run; at least one of them is false, refuted, or ended without a proof. A hole worked out on its stubs
-   * that waits for the lemmas it uses is neither: it ends when they do.
+   * that waits for the lemmas it uses is neither: it ends when they do. A hole drafted again as a blueprint of its own (DP7) has failed when that
+   * blueprint's holes have, and is worked until then (`within`: the redrafts read on the way, so that a claim met again ends the reading).
    */
-  function holesFailed(problem: ProblemContext, record: SketchRecord): boolean {
+  function holesFailed(problem: ProblemContext, record: SketchRecord, within: ReadonlySet<SketchRecord> = new Set()): boolean {
     const tasks = ownTasks(problem);
     let failed = false;
     for (const id of record.holes) {
@@ -552,6 +596,12 @@ export function createM12Line(): Line {
         failed = true;
         continue;
       }
+      const sub = redraftInto(problem, id);
+      if (sub !== undefined && !within.has(sub)) {
+        if (!holesFailed(problem, sub, new Set([...within, record]))) return false;
+        failed = true;
+        continue;
+      }
       if (tasks.some((task) => task.claimId === id && live(task))) return false;
       const last = verdictsOf(problem, id).at(-1);
       if (last === undefined) return false;
@@ -560,9 +610,12 @@ export function createM12Line(): Line {
     return failed;
   }
 
-  /** The blueprint a refinement round revises, and why (CA12): case b, the healthy one whose holes have all had their sessions; or case a, the last one Lean checked when no blueprint is healthy. */
+  /**
+   * The blueprint a refinement round revises, and why (CA12): case b, the healthy one whose holes have all had their sessions; or case a, the last one Lean checked
+   * when no blueprint is healthy. A round revises the problem's own blueprint: a hole's local redraft (DP7) is part of the hole's work, never a base.
+   */
   function refineBase(problem: ProblemContext): { nodeId: string; record: SketchRecord; case: "a" | "b" } | undefined {
-    const records = sketchRecords(problem).filter(({ record }) => record.blueprint === true);
+    const records = ownSketchRecords(problem).filter(({ record }) => record.blueprint === true);
     const refined = new Set(records.flatMap(({ record }) => (record.refinedFrom !== undefined ? [record.refinedFrom] : [])));
     const healthy = records.filter(({ record }) => record.healthy);
     if (healthy.length > 0) {
@@ -707,12 +760,17 @@ export function createM12Line(): Line {
    * One draft of the first blueprint (LP2, DP1): the planner's `have` sketch checked once through `checkSketch`, then lifted (`liftHaves`: the battery closes
    * what it can, `extract_goal` states the rest, each step applies its lemma) and checked again, then read as a blueprint like any other. A draft with no hole left goes through `validate`. A draft Lean refuses,
    * or that cannot be lifted, is recorded as it was written and not healthy: the refinement rounds revise it (case a). The record is not written here (the
-   * drafts are ranked first, DP3).
+   * drafts are ranked first, DP3). With `claimId`, a hole's local redraft (DP7): everything is done on that claim's own file, `target` is its statement, and
+   * the record has `redraftOf`.
    */
-  async function makeDraft(problem: ProblemContext, s: Settings, attemptId: string, proof: string, target: string): Promise<Draft> {
-    const check = problem.checkSketch as NonNullable<ProblemContext["checkSketch"]>;
+  async function makeDraft(problem: ProblemContext, s: Settings, attemptId: string, proof: string, target: string, claimId?: string): Promise<Draft> {
+    const on = claimId === undefined ? undefined : { claimId };
+    const sketch = problem.checkSketch as NonNullable<ProblemContext["checkSketch"]>;
+    const check = on === undefined ? sketch : (submission: Parameters<typeof sketch>[0]) => sketch(submission, on);
+    const closeSorries = problem.closeSorries;
+    const battery = closeSorries === undefined || on === undefined ? closeSorries : (submission: Parameters<typeof closeSorries>[0], report: Parameters<typeof closeSorries>[1]) => closeSorries(submission, report, on);
     const written = { aux: "", proof };
-    const extra: Partial<SketchRecord> = { planner: true, fromInformal: true };
+    const extra: Partial<SketchRecord> = { planner: true, fromInformal: true, ...(claimId !== undefined ? { redraftOf: claimId } : {}) };
     const steps = haveSteps(proof).length;
     const refused = (why: string, report?: Parameters<typeof sketchRecordOf>[5]): Draft => ({
       record: sketchRecordOf(problem, s, attemptId, written, { holes: [], others: [], problem: why }, report, extra), holes: Number.MAX_SAFE_INTEGER, steps,
@@ -723,14 +781,14 @@ export function createM12Line(): Line {
     if (again !== undefined) return refused(`the draft leaves the theorem itself as its step ${again}: it is no step toward it`, first);
     let lift: Lift = { aux: "", proof, closed: 0, lifted: [] };
     if (first.holes) {
-      lift = await liftHaves({ check, ...(problem.closeSorries !== undefined ? { battery: problem.closeSorries } : {}) }, { ...written, report: first });
+      lift = await liftHaves({ check, ...(battery !== undefined ? { battery } : {}) }, { ...written, report: first });
       if ("reason" in lift) return refused(`the draft's steps were not lifted: ${lift.reason}`, first);
     }
     const lifted = { aux: lift.aux, proof: lift.proof };
     const report = lift.report ?? (lift.lifted.length === 0 && lift.closed === 0 ? first : await check(lifted));
     // A draft with no hole left that Lean accepts whole (the battery closed every step, or the planner wrote a complete proof) is a proof, not a blueprint: Lean decides, through `validate`.
     if (!report.holes && report.leanStatus !== undefined && !report.messages.some((m) => m.severity === "error")) {
-      const verdict = await problem.validate({ claimId: problem.claimId, proof: lifted.proof, ...(lifted.aux.trim() !== "" ? { aux: lifted.aux } : {}) });
+      const verdict = await problem.validate({ claimId: claimId ?? problem.claimId, proof: lifted.proof, ...(lifted.aux.trim() !== "" ? { aux: lifted.aux } : {}) });
       const why = `the draft has no hole left: it was submitted to Lean through validate, which said ${verdict.verdict}${verdict.verdict === "valid" ? "" : ` (${verdict.reasons[0] ?? "no reason"})`}`;
       return { record: sketchRecordOf(problem, s, attemptId, lifted, { holes: [], others: [], problem: why }, report, { ...extra, lifted: true }), holes: 0, steps };
     }
@@ -747,34 +805,82 @@ export function createM12Line(): Line {
    * Not a round: the record has `planner` and `fromInformal` and no `round`. Made once: a problem that has a sketch record is left alone, so a resumed run
    * reads the records (a call cut before them is returned at no charge, `LlmRequest.reuse`). A gate that skips a call, a call that fails and a problem that
    * ends stop at the drafts made; an answer that is no proof is a draft that does not count. A hole stays `open` until Lean proves it.
+   *
+   * With `hole`, the hole's local redraft (DP7, `redraftDepth`): the same drafts with the hole as the target, its informal step (`stepOf`) as the plan, on the
+   * hole's own file, each call asked of the problem's budget gate; the records have `redraftOf`, and a hole that has one is not drafted again. Returns whether a
+   * record was written, or that the gate skipped a call before any was.
    */
-  async function draft(problem: ProblemContext, s: Settings): Promise<void> {
-    if (!s.fromInformal || !s.blueprints || !s.subgoals || problem.checkSketch === undefined) return;
-    if (problem.signal.aborted || problem.budget.exhausted || allSketchRecords(problem).length > 0) return;
-    const target = problem.memory.claim(problem.claimId);
-    if (target === undefined || accepted(target.status)) return;
-    const informal = informalSection(informalProofOfNodes(problem.memory.nodes(INFORMAL_PROOF_KIND, { claimId: problem.claimId }), (hash) => problem.memory.blobs.get(hash)));
-    if (informal === undefined) return;
+  async function draft(problem: ProblemContext, s: Settings, hole?: string): Promise<"written" | "skipped" | "none"> {
+    if (!(hole === undefined ? s.fromInformal : s.redraftDepth > 0) || !s.blueprints || !s.subgoals || problem.checkSketch === undefined) return "none";
+    if (problem.signal.aborted || problem.budget.exhausted) return "none";
+    if (hole === undefined ? allSketchRecords(problem).length > 0 : allSketchRecords(problem).some(({ record }) => record.redraftOf === hole)) return "none";
+    const target = problem.memory.claim(hole ?? problem.claimId);
+    if (target === undefined || accepted(target.status)) return "none";
+    const informal = hole === undefined
+      ? informalSection(informalProofOfNodes(problem.memory.nodes(INFORMAL_PROOF_KIND, { claimId: problem.claimId }), (hash) => problem.memory.blobs.get(hash)))
+      : holeStepSection(stepOf(problem, hole));
+    if (informal === undefined) return "none";
+    const name = hole === undefined ? undefined : (holeInfo(problem, hole, true)?.name ?? "aux_lemma");
+    const what = name === undefined ? "the draft blueprint from the informal proof" : `the local redraft of ${name}`;
     const drafts: Draft[] = [];
     let stopped: string | undefined;
+    let skipped = false;
     for (let k = 1; k <= s.drafts && stopped === undefined; k++) {
       const answer = await askPlanner(problem, draftPrompt({ target: target.statement, informal, ...(s.drafts > 1 ? { draft: { k, of: s.drafts } } : {}) }), ["proof"]);
-      if ("written" in answer) drafts.push(await makeDraft(problem, s, s.drafts > 1 ? `planner_draft_${k}` : "planner_draft", answer.written.proof, target.statement));
-      else if ("skip" in answer) stopped = `skipped by the budget gate: ${answer.skip}`;
+      const attemptId = `${name === undefined ? "planner_draft" : `${name}:draft`}${s.drafts > 1 ? `_${k}` : ""}`;
+      if ("written" in answer) drafts.push(await makeDraft(problem, s, attemptId, answer.written.proof, target.statement, hole));
+      else if ("skip" in answer) [stopped, skipped] = [`skipped by the budget gate: ${answer.skip}`, true];
       else if ("failed" in answer) stopped = clip(answer.failed, 160);
-      else if ("stopped" in answer) return;
-      else problem.log(`draft ${k} of the first blueprint: none (${answer.flaw})`);
+      else if ("stopped" in answer) return "none";
+      else problem.log(`draft ${k} of ${name ?? "the first blueprint"}: none (${answer.flaw})`);
     }
     if (drafts.length === 0) {
-      if (stopped !== undefined) problem.log(`the draft blueprint from the informal proof: none (${stopped})`);
-      return;
+      if (stopped !== undefined) problem.log(`${what}: none (${stopped})`);
+      return skipped ? "skipped" : "none";
     }
     // Worst first, so that the kept draft is the last record: a healthy draft beats one that is not, then the fewest holes, then the fewest steps, then the earlier draft.
     const ranked = drafts.map((d, k) => ({ d, k })).sort((a, b) => Number(a.d.record.healthy) - Number(b.d.record.healthy) || b.d.holes - a.d.holes || b.d.steps - a.d.steps || b.k - a.k);
     for (const [place, { d }] of ranked.entries()) {
       const kept = place === ranked.length - 1;
       problem.memory.recordNode({ kind: SKETCH_KIND, claimId: problem.claimId, data: { ...d.record, ...(kept ? {} : { discarded: true }) } });
-      if (kept) problem.log(`the draft blueprint from the informal proof${drafts.length > 1 ? ` (best of ${drafts.length}, ${d.holes === Number.MAX_SAFE_INTEGER ? "none lifted" : `${d.holes} hole(s)`}, ${d.steps} step(s))` : ""}: ${describeBlueprint(d.record)}${stopped !== undefined ? `; the rest: ${stopped}` : ""}`);
+      if (kept) problem.log(`${what}${drafts.length > 1 ? ` (best of ${drafts.length}, ${d.holes === Number.MAX_SAFE_INTEGER ? "none lifted" : `${d.holes} hole(s)`}, ${d.steps} step(s))` : ""}: ${describeBlueprint(d.record)}${stopped !== undefined ? `; the rest: ${stopped}` : ""}`);
+    }
+    return "written";
+  }
+
+  /**
+   * Whether a hole of the current blueprints is due its local redraft (DP7): it is open, not false, its file compiles, its work is not done on stubs, no task of it
+   * can still run, its last verdict is `too_hard` for a reason other than the budget, it sits at most `redraftDepth` deep (`nestingOf`), and it has no redraft yet.
+   */
+  function redraftDue(problem: ProblemContext, s: Settings, claimId: string, tasks: readonly TaskInfo[]): boolean {
+    if (problem.memory.claim(claimId)?.status !== "open" || falseOf(problem, claimId) || compileErrorOf(problem, claimId) !== undefined || workOf(problem, claimId) !== undefined) return false;
+    if (tasks.some((task) => task.claimId === claimId && live(task))) return false;
+    const last = verdictsOf(problem, claimId).at(-1);
+    if (last?.verdict !== "too_hard" || last.reason === "budget") return false;
+    return nestingOf(problem, claimId) <= s.redraftDepth && !allSketchRecords(problem).some(({ record }) => record.redraftOf === claimId);
+  }
+
+  /**
+   * The local redrafts (DP7): each hole of the current blueprints that is due one gets its draft (`draft` with the hole), which is registered at once, so its holes
+   * get their tasks in this step. A redraft the gate skips stops the redrafts of this step, and the gate is not asked again for that hole by this process; a redraft
+   * that came to no record is not asked again either. A hole whose redraft is not healthy is left to the refinement round (case b), as it was.
+   */
+  async function redraft(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
+    if (!s.blueprints || !s.subgoals || s.redraftDepth <= 0) return;
+    for (;;) {
+      const tasks = ownTasks(problem);
+      const hole = currentHoles(problem).find((id) => !work.redraftSkipped.has(id) && redraftDue(problem, s, id, tasks));
+      if (hole === undefined) return;
+      const made = await draft(problem, s, hole);
+      if (made !== "written") {
+        work.redraftSkipped.add(hole);
+        if (made === "skipped") return;
+        continue;
+      }
+      await registerAll(problem, work, s);
+      await sweep(problem, work, s);
+      await propagate(problem, work);
+      ensureTasks(problem, s);
     }
   }
 
@@ -855,7 +961,7 @@ export function createM12Line(): Line {
   /** The proved holes of the current blueprint move into the locked prefix: `lemma name statement := by proof`, with the helper lemmas its proof carries. */
   async function freezeProved(problem: ProblemContext, work: Work, s: Settings): Promise<void> {
     if (!s.freeze || !s.blueprints) return;
-    const current = sketchRecords(problem).filter(({ record }) => record.blueprint === true && record.healthy && record.registered).at(-1)?.record;
+    const current = ownSketchRecords(problem).filter(({ record }) => record.blueprint === true && record.healthy && record.registered).at(-1)?.record;
     if (current === undefined) return;
     const source = memorySource(problem.memory, () => work.header);
     for (const [k, id] of current.holes.entries()) {
@@ -904,6 +1010,7 @@ export function createM12Line(): Line {
       refineSkipped: new Set(),
       frozen: new Set(),
       unfrozen: new Set(),
+      redraftSkipped: new Set(),
     };
     works.set(keyOf(problem), work);
     await relock(problem, work, s);
@@ -915,7 +1022,7 @@ export function createM12Line(): Line {
   /** `begin`, then the draft from the informal proof when `longProof` asks for it (before the first outer session; a resumed run that has its records does not draft again). */
   async function beginDrafting(problem: ProblemContext): Promise<void> {
     await begin(problem);
-    if (works.has(keyOf(problem))) await soft(problem, "the draft blueprint", () => draft(problem, settings(problem.options)));
+    if (works.has(keyOf(problem))) await soft(problem, "the draft blueprint", async () => void (await draft(problem, settings(problem.options))));
   }
 
   /** The price, the value and the proof numbers behind a choice, and the choice. */
@@ -934,7 +1041,7 @@ export function createM12Line(): Line {
     const groups: PnGroup[] = [];
     for (const { record } of sketchRecords(problem)) {
       if (!record.healthy || !record.registered) continue;
-      groups.push({ parent: problem.claimId, parts: record.holes });
+      groups.push({ parent: record.redraftOf ?? problem.claimId, parts: record.holes });
       for (const id of record.holes) {
         const claim = problem.memory.claim(id);
         const task = ready.find((t) => t.claimId === id);
@@ -1271,6 +1378,8 @@ export function createM12Line(): Line {
         await soft(problem, "subsumption", () => sweep(problem, work, s));
         await soft(problem, "propagation", () => propagate(problem, work));
         ensureTasks(problem, s);
+        // A hole that ended too hard is drafted again as a blueprint of its own (DP7), before a refinement round revises the whole.
+        if (s.blueprints && s.redraftDepth > 0) await soft(problem, "the local redraft", () => redraft(problem, work, s));
         // A refinement round, when one is due (CA12): its blueprint is registered and its holes get tasks like any other.
         if (s.blueprints && s.refine) {
           await soft(problem, "the refinement round", async () => {
@@ -1352,10 +1461,11 @@ export function createM12Line(): Line {
         const falseDeps: string[] = [];
         const refusedDerivations: string[] = [];
         const nameOf = new Map<string, string>();
-        for (const { record } of sketchRecords(session)) for (const [k, id] of record.holes.entries()) nameOf.set(id, record.names[k] ?? "aux_lemma");
+        // The outer prover's sketches only: the holes of a hole's local redraft (DP7) are lemmas of that hole's file, not of the prover's.
+        for (const { record } of ownSketchRecords(session)) for (const [k, id] of record.holes.entries()) nameOf.set(id, record.names[k] ?? "aux_lemma");
         const tasks = ownTasks(session);
         const seen = new Set<string>();
-        for (const { record } of sketchRecords(session)) {
+        for (const { record } of ownSketchRecords(session)) {
           for (const [k, id] of record.holes.entries()) {
             if (seen.has(id)) continue;
             seen.add(id);
@@ -1388,7 +1498,9 @@ export function createM12Line(): Line {
                 else waiting.push(name);
                 continue;
               }
-              const working = tasks.some((task) => task.claimId === id && task.status !== "done" && task.status !== "failed" && task.status !== "cancelled");
+              // A hole drafted again as a blueprint of its own (DP7) is worked while that blueprint's holes are.
+              const sub = redraftInto(session, id);
+              const working = tasks.some((task) => task.claimId === id && task.status !== "done" && task.status !== "failed" && task.status !== "cancelled") || (sub !== undefined && !holesFailed(session, sub));
               (working ? open : stuck).push(name);
             }
           }

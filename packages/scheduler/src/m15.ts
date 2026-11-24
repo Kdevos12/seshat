@@ -163,7 +163,8 @@ const sketchRecords = (problem: ProblemContext): SketchRecord[] => sketchRecords
 /** The sketches of a problem that became a checked decomposition, with their main proofs. */
 function sketchEntriesOf(memory: MemoryStore, problemId: string, claimId: string): SketchEntry[] {
   return sketchRecordsOf(memory, problemId, claimId).flatMap((r): SketchEntry[] => {
-    if (!r.healthy || !r.registered || r.edgeId === undefined) return [];
+    // A hole's local redraft (DP7) decomposes the hole, not the problem: it is no sketch of the target.
+    if (!r.healthy || !r.registered || r.edgeId === undefined || r.redraftOf !== undefined) return [];
     const blob = memory.blobs.get(r.submission);
     if (blob === undefined) return [];
     try {

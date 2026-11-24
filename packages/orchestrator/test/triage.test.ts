@@ -76,6 +76,13 @@ describe("triageProblem (PA14)", () => {
     assert.equal(longProofConfigProblems({ triageUsd: 0, dryChecks: 0, other: 1 }, true).length, 3);
   });
 
+  it("checks longProof.depth, the local redraft's depth (DP7): a whole number of at least 0, with M12's blueprints", () => {
+    for (const depth of [0, 1, 3]) assert.deepEqual(longProofConfigProblems({ depth }, true), [], String(depth));
+    for (const depth of [-1, 1.5, "1", true, null]) assert.deepEqual(longProofConfigProblems({ depth }, true), [`longProof.depth must be a whole number of at least 0, got ${String(depth)}`], String(depth));
+    assert.deepEqual(longProofConfigProblems({ depth: 1 }, true, false), ["longProof.depth needs line M12 with the option blueprints"]);
+    assert.deepEqual(longProofConfigProblems({}, true, false), [], "absent, it asks nothing of the lines");
+  });
+
   it("is journaled as a node and read back", () => {
     const journal = open();
     try {

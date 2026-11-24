@@ -22,6 +22,9 @@ export const DEFAULT_LONG_TRIAGE_USD = 1;
 /** The finished sessions in a row that may close no hole before the gate stops a `long` problem (`RunConfig.longProof.dryChecks`). */
 export const DEFAULT_DRY_CHECKS = 3;
 
+/** The most nested local redrafts of a `too_hard` hole (`RunConfig.longProof.depth`, DP7): 1 redrafts a hole of the problem's blueprint, never a hole of a redraft. */
+export const DEFAULT_REDRAFT_DEPTH = 1;
+
 /** The frontier weights of a `long` problem's gate: a plausible test or a dead end is not a closed hole, so neither moves the frontier for the gate (a setting of `frontier.weights` overrides). */
 export const LONG_PROOF_WEIGHTS = { evidence: 0, dead_end: 0 } as const;
 
@@ -35,25 +38,33 @@ export interface LongProofConfig {
   drafts?: number;
   /** With line M12's `blueprints`: proved holes and accepted `aux_` lemmas move into a locked prefix of the problem's file, shown by statement only (M12's `freeze`, LP3). Default true. */
   freeze?: boolean;
+  /**
+   * With line M12's `blueprints`: how deep a hole that ended `too_hard` (for a reason other than the budget) is drafted again as a blueprint of its own, the hole
+   * as its target, before a refinement round (M12's `redraftDepth`, DP7); 0 turns it off. Default `DEFAULT_REDRAFT_DEPTH` (1).
+   */
+  depth?: number;
 }
 
 /**
- * What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` and `drafts` whole numbers of at least 1, `draft` and `freeze` booleans, and `triage` on (the class
- * comes from it). The draft and the frozen links are for line M12's blueprints and do nothing without them (`draft: true`, `drafts` or `freeze: true` asked for in a run that has none is a problem). Problems
+ * What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` and `drafts` whole numbers of at least 1, `depth` a whole number of at least 0, `draft` and `freeze` booleans, and
+ * `triage` on (the class comes from it). The draft, the frozen links and the local redraft are for line M12's blueprints and do nothing without them (`draft: true`, `drafts`, `freeze: true` or `depth`
+ * asked for in a run that has none is a problem). Problems
  * in words; empty: fine.
  */
 export function longProofConfigProblems(config: unknown, triage: boolean, blueprints = true): string[] {
   if (config === undefined) return [];
-  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer, draft?: boolean, drafts?: integer, freeze?: boolean }"];
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer, draft?: boolean, drafts?: integer, freeze?: boolean, depth?: integer }"];
   const c = config as Record<string, unknown>;
   const problems: string[] = [];
-  for (const key of Object.keys(c)) if (!["triageUsd", "dryChecks", "draft", "drafts", "freeze"].includes(key)) problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks, draft, drafts, freeze)`);
+  for (const key of Object.keys(c)) if (!["triageUsd", "dryChecks", "draft", "drafts", "freeze", "depth"].includes(key)) problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks, draft, drafts, freeze, depth)`);
   if (c.triageUsd !== undefined && !(typeof c.triageUsd === "number" && c.triageUsd > 0)) problems.push(`longProof.triageUsd must be above 0, got ${String(c.triageUsd)}`);
   if (c.dryChecks !== undefined && !(Number.isInteger(c.dryChecks) && (c.dryChecks as number) >= 1)) problems.push(`longProof.dryChecks must be a whole number of at least 1, got ${String(c.dryChecks)}`);
   if (c.draft !== undefined && typeof c.draft !== "boolean") problems.push(`longProof.draft must be true or false, got ${String(c.draft)}`);
   if (c.drafts !== undefined && !(Number.isInteger(c.drafts) && (c.drafts as number) >= 1)) problems.push(`longProof.drafts must be a whole number of at least 1, got ${String(c.drafts)}`);
   if (c.freeze !== undefined && typeof c.freeze !== "boolean") problems.push(`longProof.freeze must be true or false, got ${String(c.freeze)}`);
+  if (c.depth !== undefined && !(Number.isInteger(c.depth) && (c.depth as number) >= 0)) problems.push(`longProof.depth must be a whole number of at least 0, got ${String(c.depth)}`);
   if (!blueprints && (c.draft === true || c.drafts !== undefined || c.freeze === true)) problems.push("longProof.draft, longProof.drafts and longProof.freeze need line M12 with the option blueprints");
+  if (!blueprints && c.depth !== undefined) problems.push("longProof.depth needs line M12 with the option blueprints");
   if (!triage) problems.push("longProof goes with triage: the `long` class is one of its classes");
   return problems;
 }
