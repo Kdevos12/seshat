@@ -99,4 +99,8 @@ test("readWork: a file whose aux holds a scratch command (#check, example) is no
   const work = readWork({ aux: "#check Nat.succ\n\nexample : 1 = 1 := rfl", proof: "  simp" }, report({ leanStatus: "valid", holes: true }), []);
   assert.equal(work.done, false);
   assert.match(work.reason ?? "", /scratch commands/);
+  // Behind a scoped prefix, or indented, it is a scratch command still.
+  for (const aux of ["open Nat in\n#check succ\n\ntheorem aux_a : True := trivial", "theorem aux_a : True := trivial\n  example : True := trivial"]) {
+    assert.equal(readWork({ aux, proof: "  simp" }, report({ leanStatus: "valid", holes: true }), []).done, false, aux);
+  }
 });

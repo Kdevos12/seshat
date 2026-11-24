@@ -67,7 +67,7 @@ export function readWork(submission: Submission, report: ValidationReport, deps:
   if (report.leanStatus === undefined || report.leanStatus === "server_error" || report.leanStatus === "timeout") return refuse("Lean did not check the file");
   if (report.editsOutsideRegions) return refuse("the file was changed outside the regions");
   if (report.messages.some((m) => m.severity === "error")) return refuse("Lean reports an error");
-  if (hasScratch(submission)) return refuse("the aux region holds scratch commands (#check, example): remove them for the work to count");
+  if (hasScratch(submission)) return refuse("the file holds scratch commands (#check, example): remove them for the work to count");
   // Lean's own report, besides the text scan below: every sorry it reports lies in a dependency stub, and no axiom beyond the allowed ones.
   const stray = report.axioms.filter((a) => !WORK_AXIOMS.includes(a));
   if (stray.length > 0) return refuse(`the file depends on ${stray.join(", ")}: no axiom is allowed beyond the standard ones`);

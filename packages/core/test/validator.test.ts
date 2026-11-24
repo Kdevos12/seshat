@@ -370,6 +370,33 @@ describe("structuralCheck", () => {
     assert.equal(clean.verdict, "valid", "without scratch the scratch policy is the sketch policy");
   });
 
+  it("finds a scratch command behind an `open ... in` or `set_option ... in` prefix, or indented, and never makes such a file valid", async () => {
+    const forms = [
+      "#check Nat.succ\n\ntheorem aux_a : True := trivial",
+      "open Nat in\n#check succ\n\ntheorem aux_a : True := trivial",
+      "set_option pp.all true in\n#check Nat.succ\n\ntheorem aux_a : True := trivial",
+      "open Nat in\nexample : True := trivial\n\ntheorem aux_a : True := trivial",
+      "theorem aux_a : True := trivial\n  #check Nat",
+      "theorem aux_a : True := trivial\n  example : True := trivial",
+    ];
+    const validator = new ProofValidator(new FakeChecker(), { policy: SCRATCH_POLICY });
+    const reference = await validator.reference(sketch, fixture);
+    for (const aux of forms) {
+      assert.equal(hasScratch({ aux, proof: "  simp" }), true, aux);
+      const report = await validator.validate(sketch, withProof("  simp [aux_a]\n  omega", aux), reference);
+      assert.equal(report.verdict, "invalid", aux);
+      assert.equal(report.holes, true, aux);
+    }
+    // Under the other policies too: a file that holds a scratch command is never valid.
+    const sketching = new ProofValidator(new FakeChecker(), { policy: SKETCH_POLICY });
+    const indented = await sketching.validate(sketch, withProof("  simp [aux_a]\n  omega", "theorem aux_a : True := trivial\n  #check Nat"), reference);
+    assert.equal(indented.verdict, "invalid");
+    // A name that only holds the word is no scratch command.
+    for (const aux of ["theorem aux_example : True := trivial", "theorem aux_a : True := aux_b.example", "theorem aux_check : True := trivial"]) {
+      assert.equal(hasScratch({ aux, proof: "  simp" }), false, aux);
+    }
+  });
+
   it("allows only aux_ theorems and definitions with plain attributes", () => {
     refused("def helper : ℕ := 1", "  simp", /name 'helper' must start with 'aux_'/);
     refused("instance : Inhabited ℕ := ⟨0⟩", "  simp", /only theorem, lemma, def and abbrev are allowed here, found 'instance'/);
