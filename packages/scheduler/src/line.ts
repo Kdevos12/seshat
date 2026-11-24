@@ -342,15 +342,16 @@ export type HoleContinuation = boolean | "progress";
 /**
  * How many sessions a hole may have, given the ones it had (`mine`, in order) and `holeSessions` (plan changes LP5, VL3). `false`: `holeSessions`. `true`: one
  * more when the last was cut by its turns. `"progress"`: past `holeSessions`, one more each time the last session was cut by its turns and brought the file
- * closer to done, by Lean's count of errors plus `sorry`: fewer at its last check than at its first, and than at the last check of the session before it, so
- * a session that only oscillates ends the continuation. The money is the gate's and the problem's, as for any session.
+ * closer to done, by Lean's count of errors plus `sorry`: fewer at its last check than at its first, and than at the last check of the last session before it that
+ * Lean checked, so a session that only oscillates ends the continuation. The money is the gate's and the problem's, as for any session.
  */
 export function holeSessionLimit(mode: HoleContinuation, sessions: number, mine: readonly Pick<SessionRecord, "reason" | "progress">[]): number {
   const last = mine.at(-1);
   if (mode === false || last?.reason !== "turns") return sessions;
   if (mode === true) return sessions + 1;
   if (mine.length < sessions) return sessions;
-  const before = mine.at(-2)?.progress;
+  // The session before it that Lean checked: one that Lean never checked has no progress, and is skipped.
+  const before = mine.slice(0, -1).findLast((record) => record.progress !== undefined)?.progress;
   const p = last.progress;
   const closer = p !== undefined && p.last < p.first && (before === undefined || p.last < before.last);
   return closer ? mine.length + 1 : mine.length;

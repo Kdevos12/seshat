@@ -91,6 +91,9 @@ test("holeSessionLimit: one continuation with true; with \"progress\", more whil
   assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), cut(3, 1)]), 2);
   assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), { reason: "turns" as const }]), 2);
   assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), { reason: "model_said" as const, progress: { first: 2, last: 0 } }]), 2);
+  // The session before that measures is the last one Lean checked: a session in between with no progress is skipped.
+  assert.equal(holeSessionLimit("progress", 2, [cut(2, 1), { reason: "model_said" as const }, cut(3, 2)]), 3, "2 is not fewer than 1");
+  assert.equal(holeSessionLimit("progress", 2, [cut(3, 2), { reason: "turns" as const }, cut(2, 1)]), 4);
   // Before holeSessions is used up, the limit is holeSessions.
   assert.equal(holeSessionLimit("progress", 3, [cut(2, 2)]), 3);
 });
