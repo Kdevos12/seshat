@@ -342,15 +342,17 @@ export interface ProblemContext {
   /**
    * Checks a sketch (the regions of a file with holes) on the problem's own file, as a prover's `lean_check` does, outside a session: no attempt, no
    * model. What M12's refinement rounds use to read the blueprint the planner wrote. Absent in a context an older caller builds, and for the
-   * lines other than M12.
+   * lines other than M12. With `claimId` (M12's local redraft of a hole, DP7): on that claim's own small file, the one its hole sessions work on, instead of the
+   * problem's; absent: the problem's file, as before.
    */
-  checkSketch?: (submission: Submission) => Promise<ValidationReport>;
+  checkSketch?: (submission: Submission, options?: { claimId?: string }) => Promise<ValidationReport>;
   /**
    * The classical battery on the `sorry` of a file `checkSketch` checked (`RunConfig.sorryBattery`, or `longProof`): with no model call, it tries the tactics of line M10
    * on each `sorry` and returns the regions with the ones it closed, or undefined when it closed none. M12's draft from the informal proof (`liftHaves`) closes the
-   * steps a tactic closes before it lifts the others. Absent in a context an older caller builds, and for the lines other than M12.
+   * steps a tactic closes before it lifts the others. Absent in a context an older caller builds, and for the lines other than M12. With `claimId`: on the file
+   * `checkSketch` checked for that claim (DP7).
    */
-  closeSorries?: (submission: Submission, report: ValidationReport) => Promise<Submission | undefined>;
+  closeSorries?: (submission: Submission, report: ValidationReport, options?: { claimId?: string }) => Promise<Submission | undefined>;
   /**
    * Locks lemmas into the problem's file after its prefix (plan change LP3, frozen links): Lean checks them in every file and the certifier replays them whole,
    * and the prover's edits cannot reach them. The text is screened and Lean checks the file with it first: false when either refuses it (nothing is locked).
