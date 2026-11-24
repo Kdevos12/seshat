@@ -47,7 +47,7 @@ describe("the ladder", () => {
         w.memory.recordNode({ kind: SKETCH_KIND, claimId: root, data: data as unknown as Json });
       };
       record([a as string, b as string], { planner: true });
-      record([c as string], { attemptId: "aux_0:draft", planner: true, redraftOf: a as string });
+      record([c as string], { attemptId: "aux_0@000000:draft", planner: true, redraftOf: a as string });
       assert.deepEqual(progressOf(w.memory, "prb_1", root), { proved: 0, holes: 2 });
       assert.equal(plannerRounds(w.memory, "prb_1", root), 1);
     } finally {

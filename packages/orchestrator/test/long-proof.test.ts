@@ -308,7 +308,7 @@ describe("local recursion on a hole that is too hard (DP7)", () => {
     assert.equal(more.length, 0);
     assert.equal(top?.redraftOf, undefined);
     assert.equal(sub?.redraftOf, hardClaim, "the redraft is registered on the hole's claim");
-    assert.deepEqual([sub?.healthy, sub?.registered, sub?.lifted, sub?.fromInformal, sub?.planner, sub?.round, sub?.attemptId], [true, true, true, true, true, undefined, "aux_hard:draft"]);
+    assert.deepEqual([sub?.healthy, sub?.registered, sub?.lifted, sub?.fromInformal, sub?.planner, sub?.round, sub?.attemptId], [true, true, true, true, true, undefined, `aux_hard@${String(hardClaim).slice(-6)}:draft`]);
     assert.deepEqual(sub?.names, ["aux_h_1", "aux_h_2"]);
     // Its holes are claims under the hole, with a `decomposes_into` edge from the hole that Lean checked (the link lemma, as for any blueprint).
     const subHoles = sub?.holes as string[];
@@ -366,7 +366,7 @@ describe("local recursion on a hole that is too hard (DP7)", () => {
     const [, sub, subSub, ...more] = nodes(deep.events, "m12_sketch");
     assert.equal(more.length, 0);
     assert.equal(subSub?.redraftOf, (sub?.holes as string[])[0]);
-    assert.equal(subSub?.attemptId, "aux_h_1:draft");
+    assert.equal(subSub?.attemptId, `aux_h_1@${(sub?.holes as string[])[0]?.slice(-6)}:draft`, "named by the hole's name and its claim id");
     assert.equal(subSub?.healthy, false);
     assert.match(String(subSub?.problem), /the draft proof has errors Lean reports/);
   });

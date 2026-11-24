@@ -837,7 +837,8 @@ export function createM12Line(): Line {
     let skipped = false;
     for (let k = 1; k <= s.drafts && stopped === undefined; k++) {
       const answer = await askPlanner(problem, draftPrompt({ target: target.statement, informal, ...(s.drafts > 1 ? { draft: { k, of: s.drafts } } : {}) }), ["proof"]);
-      const attemptId = `${name === undefined ? "planner_draft" : `${name}:draft`}${s.drafts > 1 ? `_${k}` : ""}`;
+      // A hole's redraft is named by the hole's name and the end of its claim id: two holes of one name (in two blueprints) have two ids, the same on a resume.
+      const attemptId = `${hole === undefined ? "planner_draft" : `${name}@${hole.slice(-6)}:draft`}${s.drafts > 1 ? `_${k}` : ""}`;
       if ("written" in answer) drafts.push(await makeDraft(problem, s, attemptId, answer.written.proof, target.statement, hole));
       else if ("skip" in answer) [stopped, skipped] = [`skipped by the budget gate: ${answer.skip}`, true];
       else if ("failed" in answer) stopped = clip(answer.failed, 160);
