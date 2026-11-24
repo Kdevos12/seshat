@@ -1,4 +1,4 @@
-import { maskCommentsAndStrings, type Submission, type ValidationReport } from "@seshat/core";
+import { collapseWhitespace, maskCommentsAndStrings, splitStatement, type Submission, type ValidationReport } from "@seshat/core";
 import { parseSignature } from "@seshat/graph";
 
 /**
@@ -82,6 +82,16 @@ export function replaceBodies(proof: string, replacements: ReadonlyArray<{ step:
   let out = proof;
   for (const { step, body } of [...replacements].sort((a, b) => b.step.bodyFrom - a.step.bodyFrom)) out = `${out.slice(0, step.bodyFrom)} ${body}${out.slice(step.bodyTo)}`;
   return out;
+}
+
+/**
+ * The first step left to `sorry` whose type is the target's conclusion, read as text with its spacing collapsed: a draft that leaves the theorem itself as one
+ * of its holes makes no step toward it (run 7, 1999 A2, VL1: `have h_2 : IsSumSq p := by sorry` under the theorem's own hypothesis). Undefined when none is.
+ */
+export function restatedStep(proof: string, target: string): string | undefined {
+  const goal = splitStatement(target)?.type ?? target;
+  const want = collapseWhitespace(goal).trim();
+  return sorrySteps(proof).find((step) => collapseWhitespace(proof.slice(step.typeFrom, step.typeTo)).trim() === want)?.name;
 }
 
 /** What `liftHaves` is given: a Lean check of a file with holes, and, when the run has it, the classical battery on a checked file's `sorry` (`closeSorries` of the orchestrator). */

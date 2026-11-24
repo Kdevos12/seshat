@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildTable, defaultColumns } from "@seshat/induction";
-import { lakatosRepair, splitStatement, withPremise } from "../src/index.ts";
+import { splitStatement } from "@seshat/core";
+import { lakatosRepair, withPremise } from "../src/index.ts";
 
 const numbers = Array.from({ length: 61 }, (_, i) => i);
 const table = () => buildTable({ family: "integers", objects: numbers, objectIds: numbers.map(String), columns: defaultColumns("integers") });

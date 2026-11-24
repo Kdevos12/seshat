@@ -1,3 +1,4 @@
+import { splitStatement } from "@seshat/core";
 import type { DataTable } from "@seshat/induction";
 
 /**
@@ -127,18 +128,6 @@ function atomLean(a: Atom, table: DataTable, variable: string): string | undefin
     case ">=": return `(${term}) ≥ ${a.value}`;
     default: return `(${term}) ≤ ${a.value}`;
   }
-}
-
-/** Splits a signature at its first colon outside brackets: the binders, and the type after the colon. */
-export function splitStatement(statement: string): { binders: string; type: string } | undefined {
-  let depth = 0;
-  for (let i = 0; i < statement.length; i++) {
-    const c = statement[i] as string;
-    if ("([{⦃".includes(c)) depth++;
-    else if (")]}⦄".includes(c)) depth--;
-    else if (c === ":" && depth === 0 && statement[i + 1] !== "=") return { binders: statement.slice(0, i).trim(), type: statement.slice(i + 1).trim() };
-  }
-  return undefined;
 }
 
 /** The statement with one more hypothesis, after the binders: `(n : ℕ) (h : P) : Q`. */

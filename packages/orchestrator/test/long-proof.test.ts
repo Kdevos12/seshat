@@ -108,7 +108,7 @@ induction n with
 
   it("sends a draft whose extracted statement does not compile to the first refinement round", { timeout: 60000 }, async () => {
     // `intro _` names nothing: the statement extract_goal prints has `x✝`, which Lean cannot read back.
-    const proof = "intro _\n-- step 1: zero on the right\nhave h_1 : n + 0 = n := by sorry\nexact main_ok";
+    const proof = "intro _\n-- step 1: zero on the right\nhave h_1 : n + 0 = 0 + n := by sorry\nexact main_ok";
     const { events, faux } = await run([...informal, draftOf(proof), answer(BP_AUX, BP_PROOF), check("exact bad"), say("Notes.")]);
     assert.equal(faux.getPendingResponseCount(), 0);
     const [draft, round1] = nodes(events, "m12_sketch");
@@ -119,6 +119,16 @@ induction n with
     assert.equal(round1?.fromInformal, undefined);
     assert.equal(round1?.refinedFrom, draft?.nodeId);
     assert.equal(round1?.healthy, true);
+  });
+
+  it("sends a draft that leaves the theorem itself as a step to the first refinement round (run 7, VL1)", { timeout: 60000 }, async () => {
+    const proof = "-- step 1: zero on the right\nhave h_1 : n * 1 = n := by sorry\n-- step 2: the theorem\nhave h_2 :  n + 0  = n := by sorry\nexact h_2";
+    const { events, faux } = await run([...informal, draftOf(proof), answer(BP_AUX, BP_PROOF), check("exact bad"), say("Notes.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [draft, round1] = nodes(events, "m12_sketch");
+    assert.equal(draft?.healthy, false);
+    assert.match(String(draft?.problem), /leaves the theorem itself as its step h_2/);
+    assert.equal(round1?.round, 1);
   });
 
   it("sends a draft Lean refuses to the first refinement round, and a draft with no proof makes no record", { timeout: 60000 }, async () => {

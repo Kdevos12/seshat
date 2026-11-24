@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Submission, ValidationReport } from "@seshat/core";
 import { extractGoalMessages } from "../../core/test/fake-lean.ts";
-import { haveSteps, liftHaves, readSketch, sorrySteps } from "../src/index.ts";
+import { haveSteps, liftHaves, readSketch, restatedStep, sorrySteps } from "../src/index.ts";
 
 /** A check of the simulated Lean: it prints what `extract_goal` prints, and calls an `apply ... <;> assumption` an error when `applyFails` is set. */
 function checker(options: { applyFails?: boolean; probeError?: string; hide?: boolean; timeoutTogether?: boolean } = {}) {
@@ -129,4 +129,13 @@ test("both forms Lean prints an extracted statement in are read: `:= sorry` (Lea
     assert.ok(!("reason" in lift), "reason" in lift ? lift.reason : "");
     assert.match(lift.aux, /lemma aux_h \(n : ℕ\) : n = n := by\n {2}sorry/);
   }
+});
+
+test("restatedStep: a step left to sorry whose type is the target's conclusion, spacing aside (VL1)", () => {
+  const target = "(p : Polynomial ℝ) (hp : ∀ x, 0 ≤ p.eval x) : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2";
+  const proof = "have h_1 : p.degree ≥ 0 := by sorry\nhave h_2 : ∃ q r : Polynomial ℝ,\n    p = q ^ 2 + r ^ 2 := by sorry\nexact h_2";
+  assert.equal(restatedStep(proof, target), "h_2");
+  // A step that proves it (no sorry) is no hole, and a different statement is a step.
+  assert.equal(restatedStep("have h_2 : ∃ q r : Polynomial ℝ, p = q ^ 2 + r ^ 2 := by exact foo\nexact h_2", target), undefined);
+  assert.equal(restatedStep("have h_1 : p.degree ≥ 0 := by sorry\nexact bar", target), undefined);
 });

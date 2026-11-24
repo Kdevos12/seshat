@@ -15,7 +15,7 @@ import { type BaseDepths, BLUEPRINT_FORMAT, blueprintNotice, contextFor, depende
 import { leafPrice, priceBook, taskWeight } from "./pricing.ts";
 import { ProofNumbers, type PnClaim, type PnGroup } from "./proofnumbers.ts";
 import { cutFailures } from "./repair.ts";
-import { haveSteps, liftHaves, type Lift } from "./lift.ts";
+import { haveSteps, liftHaves, type Lift, restatedStep } from "./lift.ts";
 import { draftPrompt, PLANNER_CALL_SHARE, PLANNER_ERRORS, PLANNER_ERROR_CHARS, plannerPrompt, type PlannerHole, SITE_PLANNER } from "./refine.ts";
 import {
   asRecord, isRefinement, PREFLIGHT_KIND, type PreflightRecord, REFINE_STOP_KIND, type RefineStopRecord, SESSION_KIND, type SessionRecord, SKETCH_KIND, type SketchRecord, SUBSUMPTION_KIND, type SubsumptionRecord,
@@ -719,6 +719,8 @@ export function createM12Line(): Line {
     });
     const first = await check(written);
     if (first.leanStatus === undefined || first.messages.some((m) => m.severity === "error")) return refused("the draft proof has errors Lean reports", first);
+    const again = restatedStep(proof, target);
+    if (again !== undefined) return refused(`the draft leaves the theorem itself as its step ${again}: it is no step toward it`, first);
     let lift: Lift = { aux: "", proof, closed: 0, lifted: [] };
     if (first.holes) {
       lift = await liftHaves({ check, ...(problem.closeSorries !== undefined ? { battery: problem.closeSorries } : {}) }, { ...written, report: first });
