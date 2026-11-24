@@ -130,6 +130,9 @@ function atomLean(a: Atom, table: DataTable, variable: string): string | undefin
   }
 }
 
+/** `splitStatement` lives in `@seshat/core` now (the lifter reads it too); this package still exports it, as it did. */
+export { splitStatement };
+
 /** The statement with one more hypothesis, after the binders: `(n : ℕ) (h : P) : Q`. */
 export function withPremise(statement: string, premise: string, name = "h_repair"): string | undefined {
   const parts = splitStatement(statement);
