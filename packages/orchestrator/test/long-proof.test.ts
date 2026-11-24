@@ -98,6 +98,14 @@ induction n with
     assert.deepEqual(draft?.names, ["aux_h_1", "aux_h_2"]);
   });
 
+  it("reads a draft written with a leading `by` as its tactics (run6, 2003 B3)", { timeout: 60000 }, async () => {
+    const { events, faux } = await run([...informal, draftOf(`by\n${FOUR.split("\n").map((l) => `  ${l}`).join("\n")}`), check("exact bad"), say("Notes.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [draft] = nodes(events, "m12_sketch");
+    assert.equal(draft?.healthy, true, String(draft?.problem ?? draft?.errors));
+    assert.deepEqual(draft?.names, ["aux_h_1", "aux_h_3", "aux_h_4"]);
+  });
+
   it("sends a draft whose extracted statement does not compile to the first refinement round", { timeout: 60000 }, async () => {
     // `intro _` names nothing: the statement extract_goal prints has `x✝`, which Lean cannot read back.
     const proof = "intro _\n-- step 1: zero on the right\nhave h_1 : n + 0 = n := by sorry\nexact main_ok";

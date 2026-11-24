@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blueprintNotice, dependencyOrder, dropHeaderImports, readSketch } from "../src/index.ts";
+import { blueprintNotice, dependencyOrder, dropHeaderImports, readSketch, tacticsOf } from "../src/index.ts";
 
 const hole = (name: string, statement: string, uses?: string): string => `${uses === undefined ? "" : `-- uses: ${uses}\n`}lemma ${name} ${statement} := by\n  sorry`;
 const A = hole("aux_a", "(n : Nat) : n + 0 = n");
@@ -173,4 +173,11 @@ test("a hole deeper than 3 is refused with the reason (CA12)", () => {
   assert.equal(r.problem, "aux_x refines too deep (depth 4, at most 3)");
   assert.match(blueprintNotice(r, { refusedBeforeLean: false, errors: 0, editsOutsideRegions: false }), /refines too deep/);
   assert.equal(readSketch({ aux, proof: "exact aux_b 1" }, { ...blueprint, depths: depths([["aux_old", 2]]) }).problem, undefined);
+});
+
+test("a PROOF region written with a leading `by` loses it; one without keeps its text (run6, 2003 B3)", () => {
+  assert.equal(tacticsOf("by\n  let L : ℕ → ℕ := id\n  have h : L 0 = 0 := by sorry\n    -- deeper\n  exact h"), "let L : ℕ → ℕ := id\nhave h : L 0 = 0 := by sorry\n  -- deeper\nexact h");
+  assert.equal(tacticsOf("  by simp\n"), "simp");
+  assert.equal(tacticsOf("by intro n\n  exact n"), "intro n\nexact n");
+  for (const kept of ["by_contra h\nexact h", "have h : 1 = 1 := by rfl\nexact h", "simp"]) assert.equal(tacticsOf(kept), kept);
 });

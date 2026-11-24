@@ -136,10 +136,11 @@ const wordsOf = (text: string): Set<string> => new Set([...maskCommentsAndString
 /**
  * What each step's body is during a probe: `extract_goal` under printing options whose output Lean reads back. With the defaults it does not on real goals
  * (Lean 4.27, run6's drafts): a coercion loses its target type (`↑(m.choose k)` under `ℤ` fails to synthesize `HMul ℤ ℕ ℤ`), field notation after a postfix
- * notation is misread (`n !.factorization p`), a numeral loses its type, and a proof inside a term is printed `⋯`.
+ * notation is misread (`n !.factorization p`), a numeral loses its type, a proof inside a term is printed `⋯`, and the binders of an `∃` or a `fun` lose their
+ * types (`∃ f, ...` whose `f k` Lean could not elaborate again: "Function expected", 1999 A2).
  */
 export const EXTRACT_BODY =
-  "by (set_option pp.coercions.types true in set_option pp.numericTypes true in set_option pp.fieldNotation false in set_option pp.proofs true in extract_goal); sorry";
+  "by (set_option pp.coercions.types true in set_option pp.numericTypes true in set_option pp.fieldNotation false in set_option pp.proofs true in set_option pp.funBinderTypes true in set_option pp.piBinderTypes true in extract_goal); sorry";
 
 /** The statements Lean printed for one probe of these steps, in file order, as signatures; a reason when the probe gives no statement for every step. */
 async function probe(check: LiftDeps["check"], sub: Submission, steps: readonly HaveStep[]): Promise<string[] | { reason: string }> {
