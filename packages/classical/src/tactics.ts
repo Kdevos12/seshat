@@ -97,6 +97,14 @@ export function isUnknownTactic(result: LeanCheckResult): boolean {
   return result.messages.some((m) => m.severity === "error" && /unknown tactic|unknown identifier|unknown constant|<input>:\d+:\d+: expected|unexpected (token|identifier)|expected '|expected tactic/iu.test(m.text));
 }
 
+/**
+ * A tactic that parses but says it cannot work any more: Mathlib's `polyrith` once the external service it relied on shut
+ * down (seen on Lean 4.27.0, 2026-11-24). The probe counts it as missing, so the battery does not spend a try on it.
+ */
+export function isRetiredTactic(result: LeanCheckResult): boolean {
+  return result.messages.some((m) => m.severity === "error" && /is no longer available|has been shut down/iu.test(m.text));
+}
+
 /** A success: Lean accepted the file without an error or a `sorry`. */
 export function succeeded(result: LeanCheckResult): boolean {
   return result.status === "valid" && !result.messages.some((m) => m.severity === "error");

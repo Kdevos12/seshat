@@ -193,6 +193,12 @@ describe("the host probe", () => {
     assert.equal(probe.unreachable, undefined);
   });
 
+  it("counts a tactic that parses but says it is no longer available as missing (polyrith on Lean 4.27.0)", async () => {
+    const probe = await probeHost(new ScriptedLean({ hammer: { ok: true }, canonical: { ok: true }, polyrith: { retired: true }, bv_decide: { ok: true } }), {});
+    assert.deepEqual(probe.missing, ["polyrith"]);
+    assert.equal(probe.have.has("polyrith"), false);
+  });
+
   it("learns nothing from a probe that timed out or whose import failed (review M3)", async () => {
     const timedOut = await probeHost(new ScriptedLean({ hammer: { timeout: true }, canonical: { timeout: true }, polyrith: { timeout: true }, bv_decide: { timeout: true } }), {});
     assert.ok(timedOut.unreachable !== undefined);

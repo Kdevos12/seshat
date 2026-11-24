@@ -52,7 +52,9 @@ decision procedures first, then the search tactics.
 `grind` carries a commutative-ring module that normalizes by a Gröbner basis (the Lean reference,
 section on the algebraic solver), so polynomial identities with hypotheses are one of its jobs: the
 router lists it right after `ring` for `polynomial_identity`. `polyrith` is a candidate only when the
-host's Lean has it: whether it is still in the pinned Mathlib is read from the host, not assumed.
+host's Lean has it: whether it is still in the pinned Mathlib is read from the host, not assumed. On
+Lean 4.27.0's Mathlib it parses but answers that it is no longer available, its external service having
+shut down; the probe counts a tactic that says so as missing (`isRetiredTactic`).
 
 The router is a guess from syntax. A wrong guess costs one failed try, and the posteriors below
 learn it. Its precision (the share of goals whose winning tactic is in the first three of its list)
