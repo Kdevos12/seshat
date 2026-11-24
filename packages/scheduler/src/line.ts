@@ -222,9 +222,16 @@ const sketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record:
 /** The sketches of the problem's own claim: a hole's local redraft (DP7, `redraftOf`) left out. */
 const ownSketchRecords = (problem: ProblemContext): Array<{ nodeId: string; record: SketchRecord }> => sketchRecords(problem).filter(({ record }) => record.redraftOf === undefined);
 
-/** The blueprint a hole was drafted into (DP7): the latest healthy, registered record whose `redraftOf` is the hole. */
+/**
+ * The blueprint a hole was drafted into (DP7): the latest healthy, registered record whose `redraftOf` is the hole and whose `decomposes_into` edge from the hole
+ * Lean checked. A redraft whose link lemma Lean did not accept can never derive the hole (only a `lean_checked` edge propagates), so the hole is not taken as
+ * redrafted: its holes get no work, and the hole goes to a refinement round as one that failed (case b).
+ */
 const redraftInto = (problem: ProblemContext, claimId: string): SketchRecord | undefined =>
-  sketchRecords(problem).filter(({ record }) => record.redraftOf === claimId && record.healthy && record.registered).at(-1)?.record;
+  sketchRecords(problem).filter(({ record }) => record.redraftOf === claimId && record.healthy && record.registered && edgeChecked(problem, record)).at(-1)?.record;
+
+/** Whether Lean checked a registered record's `decomposes_into` edge (its link lemma). */
+const edgeChecked = (problem: ProblemContext, record: SketchRecord): boolean => record.edgeId !== undefined && problem.memory.edge(record.edgeId)?.status === "lean_checked";
 
 /**
  * How deep a claim sits below the problem's (DP7): the nesting of the `decomposes_into` edges that registered the blueprints it is a hole of, 1 for a hole of the
@@ -450,6 +457,8 @@ export function createM12Line(): Line {
     const tasks = ownTasks(problem);
     for (const { record } of sketchRecords(problem)) {
       if (!record.healthy || !record.registered) continue;
+      // A hole's redraft whose link lemma Lean did not accept can never derive the hole (`redraftInto`): its holes get no work.
+      if (record.redraftOf !== undefined && !edgeChecked(problem, record)) continue;
       for (const [k, claimId] of record.holes.entries()) {
         if (problem.memory.claim(claimId)?.status !== "open") continue;
         // A blueprint's hole whose work is done waits for its dependencies (the graph derives it when they are accepted), and one whose negation Lean accepted is false.

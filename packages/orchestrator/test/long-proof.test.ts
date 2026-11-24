@@ -390,6 +390,33 @@ describe("local recursion on a hole that is too hard (DP7)", () => {
     assert.deepEqual([round?.round, round?.refinedFrom], [1, top?.nodeId], "the round revises the problem's blueprint, not the redraft");
   });
 
+  it("leaves a hole whose redraft's link lemma Lean did not accept to the refinement round: that redraft can never derive it", { timeout: 60000 }, async () => {
+    // The second link lemma checked is the redraft's (the first is the problem's blueprint's): it is refused, as Lean would refuse a link that does not close.
+    const links: string[] = [];
+    const line = withContext((problem) => ({
+      validate: async (request) => {
+        const claim = problem.memory.claim(request.claimId);
+        if ((claim?.gloss ?? "").startsWith("link lemma") && !links.includes(request.claimId)) links.push(request.claimId);
+        if (links[1] === request.claimId) return { verdict: "invalid", status: claim?.status ?? "open", reasons: ["lean: 1 error(s)"] };
+        return await problem.validate(request);
+      },
+    }));
+    const { events, faux } = await hard(
+      [say("I cannot do this."), draftOf(SUB), answer(SPLIT_AUX, "exact main_ok aux_s1 aux_s2 aux_third"), check("exact hole_ok"), check("exact hole_ok")],
+      {}, { refine: true }, line,
+    );
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [top, sub, round, ...more] = nodes(events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.deepEqual([sub?.redraftOf !== undefined, sub?.healthy, sub?.registered], [true, true, true]);
+    assert.ok(!ofType(events, "edge.status_changed").some((e) => e.data.edgeId === sub?.edgeId && e.data.to === "lean_checked"), "the redraft's edge is not checked");
+    // The redraft's holes get no session (the round's split may name the same statements: none before it); the round splits the hole (case b).
+    const recorded = ofType(events, "node.recorded");
+    const roundAt = recorded.findIndex((e) => e.data.nodeId === round?.nodeId);
+    assert.ok(!recorded.slice(0, roundAt).some((e) => e.data.kind === "m12_session" && (sub?.holes as string[]).includes((e.data.data as { claimId?: string }).claimId ?? "")));
+    assert.deepEqual([round?.round, round?.refinedFrom], [1, top?.nodeId]);
+  });
+
   it("asks the problem's budget gate before its planner call: a skip stops the recursion, with no call and no spend, and the gate is asked once", { timeout: 60000 }, async () => {
     const asked: Array<{ site: string; estimateUsd: number }> = [];
     const gate = withContext((problem) => ({
