@@ -259,7 +259,10 @@ export function audit(src: AuditSources): Audit {
       const d = obj(e.data.data);
       const pid = typeof d?.problemId === "string" ? d.problemId : problemOfClaim(e.data.claimId);
       if (pid === undefined) continue;
-      if (e.data.kind === SKETCH_KIND) sketches.set(pid, [...(sketches.get(pid) ?? []), e.data.data as unknown as SketchRecord]);
+      // The problem's own sketches: a hole's local redraft (DP7, `redraftOf`) is a blueprint of the hole, neither the problem's last sketch nor its file.
+      if (e.data.kind === SKETCH_KIND) {
+        if (d?.redraftOf === undefined) sketches.set(pid, [...(sketches.get(pid) ?? []), e.data.data as unknown as SketchRecord]);
+      }
       else if (e.data.kind === SESSION_KIND) {
         sessionRecords.set(pid, [...(sessionRecords.get(pid) ?? []), e.data.data as unknown as SessionRecord]);
         const r = e.data.data as unknown as SessionRecord;

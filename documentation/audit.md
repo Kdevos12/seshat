@@ -22,7 +22,8 @@ exploring), and the problems the budget gate stopped after their probe (no Lean 
 - **Budget gate**: every answer for the problem, with its site, action, who decided and its words.
 - **Last Lean errors**: the reasons of the last three invalid validations of the problem's claims (the hole claims of its sketch included), the first 300
   characters of each.
-- **Last sketch or blueprint**: the first 1500 characters of the newest `m12_sketch` record's text, and M12's records: whether it was healthy, the
+- **Last sketch or blueprint**: the first 1500 characters of the newest `m12_sketch` record's text (of the problem's own sketches: a hole's local
+  redraft, DP7, a record with `redraftOf`, is left out here and in the length section), and M12's records: whether it was healthy, the
   problem that kept it from being split, the holes dropped, the planner's refinement rounds, the repairs, the hole verdicts of the inner sessions and
   why the refinement stopped.
 - **Informal proof**: the `informal_proof` node: accepted or not, its verifier verdicts and its models.

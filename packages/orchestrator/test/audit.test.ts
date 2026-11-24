@@ -20,6 +20,8 @@ function spec(): ScriptedSpec {
     nodes: [
       { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "a", submission: sha256Hex(SKETCH), names: ["aux_one"], healthy: false, problem: "a hole states the target", dropped: ["aux_two"], planner: true, registered: false, holes: [] } },
       { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "b", submission: sha256Hex(SKETCH), names: [], healthy: true, repairOf: "a", registered: false, holes: [] } },
+      // A hole's local redraft (DP7): not the problem's last sketch.
+      { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "aux_one:draft", submission: sha256Hex("{}"), names: [], healthy: false, problem: "the draft proof has errors Lean reports", planner: true, fromInformal: true, redraftOf: "c", registered: true, holes: [] } },
       { kind: "m12_session", claimId: "hard", data: { problemId: "hard", taskId: "t", claimId: "c", session: 1, ok: false, usd: 0.1, reasons: [], verdict: "too_hard" } },
       { kind: "informal_proof", claimId: "hard", data: { problemId: "hard", accepted: false, passes: 0, required: 2, rounds: 3, verdicts: ["incorrect", "gap"], models: { planner: "faux/p", verifier: "faux/v" }, stop: "rounds", facts: [], hits: [] } },
       { kind: "hygiene", claimId: "hard", data: { check: "plausible", result: "no_counterexample" } },
