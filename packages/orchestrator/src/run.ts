@@ -708,8 +708,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3), its frozen links (LP3) and its local redraft of a hole that ended too hard
-  // (DP7, to `depth`) where M12 has blueprints, and M3's candidates from them (DP5); a value the person gave for those options stays.
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3), its frozen links (LP3), its local redraft of a hole that ended too hard
+  // (DP7, to `depth`) and, with `holeProgress`, the continuation of a hole while Lean shows progress (VL3) where M12 has blueprints, and M3's candidates from them (DP5);
+  // a value the person gave for those options stays.
   const lp = config.longProof;
   const lineOptions =
     lp !== undefined && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
@@ -719,6 +720,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
             ...(lp.draft !== false ? { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}) } : {}),
             ...(lp.freeze !== false ? { freeze: true } : {}),
             ...((lp.depth ?? DEFAULT_REDRAFT_DEPTH) > 0 ? { redraftDepth: lp.depth ?? DEFAULT_REDRAFT_DEPTH } : {}),
+            ...(lp.holeProgress === true ? { holeProgress: true } : {}),
             ...config.lineOptions.M12,
           },
           // M3 reads its candidates from the lemmas M12 locks, failed attempts included (DP5).

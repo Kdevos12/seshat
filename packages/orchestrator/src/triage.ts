@@ -43,20 +43,25 @@ export interface LongProofConfig {
    * as its target, before a refinement round (M12's `redraftDepth`, DP7); 0 turns it off. Default `DEFAULT_REDRAFT_DEPTH` (1).
    */
   depth?: number;
+  /**
+   * With line M12's `blueprints`: a hole cut by its turns gets more sessions instead of one, while each such session brought Lean closer to done (M12's
+   * `holeProgress`, VL3; the plan's `holeContinuation: "progress"`). Default false.
+   */
+  holeProgress?: boolean;
 }
 
 /**
- * What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` and `drafts` whole numbers of at least 1, `depth` a whole number of at least 0, `draft` and `freeze` booleans, and
- * `triage` on (the class comes from it). The draft, the frozen links and the local redraft are for line M12's blueprints and do nothing without them (`draft: true`, `drafts`, `freeze: true` or `depth`
- * asked for in a run that has none is a problem). Problems
+ * What `RunConfig.longProof` allows: an object, `triageUsd` above 0, `dryChecks` and `drafts` whole numbers of at least 1, `depth` a whole number of at least 0, `draft`, `freeze` and
+ * `holeProgress` booleans, and `triage` on (the class comes from it). The draft, the frozen links, the local redraft and the progress rule are for line M12's blueprints and do nothing without
+ * them (`draft: true`, `drafts`, `freeze: true`, `depth` or `holeProgress: true` asked for in a run that has none is a problem). Problems
  * in words; empty: fine.
  */
 export function longProofConfigProblems(config: unknown, triage: boolean, blueprints = true): string[] {
   if (config === undefined) return [];
-  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer, draft?: boolean, drafts?: integer, freeze?: boolean, depth?: integer }"];
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return ["longProof must be an object: { triageUsd?: number, dryChecks?: integer, draft?: boolean, drafts?: integer, freeze?: boolean, depth?: integer, holeProgress?: boolean }"];
   const c = config as Record<string, unknown>;
   const problems: string[] = [];
-  for (const key of Object.keys(c)) if (!["triageUsd", "dryChecks", "draft", "drafts", "freeze", "depth"].includes(key)) problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks, draft, drafts, freeze, depth)`);
+  for (const key of Object.keys(c)) if (!["triageUsd", "dryChecks", "draft", "drafts", "freeze", "depth", "holeProgress"].includes(key)) problems.push(`longProof.${key} is not a setting (triageUsd, dryChecks, draft, drafts, freeze, depth, holeProgress)`);
   if (c.triageUsd !== undefined && !(typeof c.triageUsd === "number" && c.triageUsd > 0)) problems.push(`longProof.triageUsd must be above 0, got ${String(c.triageUsd)}`);
   if (c.dryChecks !== undefined && !(Number.isInteger(c.dryChecks) && (c.dryChecks as number) >= 1)) problems.push(`longProof.dryChecks must be a whole number of at least 1, got ${String(c.dryChecks)}`);
   if (c.draft !== undefined && typeof c.draft !== "boolean") problems.push(`longProof.draft must be true or false, got ${String(c.draft)}`);
@@ -64,7 +69,9 @@ export function longProofConfigProblems(config: unknown, triage: boolean, bluepr
   if (c.freeze !== undefined && typeof c.freeze !== "boolean") problems.push(`longProof.freeze must be true or false, got ${String(c.freeze)}`);
   if (c.depth !== undefined && !(Number.isInteger(c.depth) && (c.depth as number) >= 0)) problems.push(`longProof.depth must be a whole number of at least 0, got ${String(c.depth)}`);
   if (!blueprints && (c.draft === true || c.drafts !== undefined || c.freeze === true)) problems.push("longProof.draft, longProof.drafts and longProof.freeze need line M12 with the option blueprints");
+  if (c.holeProgress !== undefined && typeof c.holeProgress !== "boolean") problems.push(`longProof.holeProgress must be true or false, got ${String(c.holeProgress)}`);
   if (!blueprints && c.depth !== undefined) problems.push("longProof.depth needs line M12 with the option blueprints");
+  if (!blueprints && c.holeProgress === true) problems.push("longProof.holeProgress needs line M12 with the option blueprints");
   if (!triage) problems.push("longProof goes with triage: the `long` class is one of its classes");
   return problems;
 }

@@ -83,6 +83,13 @@ describe("triageProblem (PA14)", () => {
     assert.deepEqual(longProofConfigProblems({}, true, false), [], "absent, it asks nothing of the lines");
   });
 
+  it("checks longProof.holeProgress, VL3's continuation while Lean shows progress: a boolean, with M12's blueprints", () => {
+    for (const holeProgress of [true, false]) assert.deepEqual(longProofConfigProblems({ holeProgress }, true), [], String(holeProgress));
+    for (const holeProgress of ["progress", 1, null]) assert.deepEqual(longProofConfigProblems({ holeProgress }, true), [`longProof.holeProgress must be true or false, got ${String(holeProgress)}`], String(holeProgress));
+    assert.deepEqual(longProofConfigProblems({ holeProgress: true }, true, false), ["longProof.holeProgress needs line M12 with the option blueprints"]);
+    assert.deepEqual(longProofConfigProblems({ holeProgress: false }, true, false), []);
+  });
+
   it("is journaled as a node and read back", () => {
     const journal = open();
     try {
