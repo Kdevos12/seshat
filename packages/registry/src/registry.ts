@@ -163,8 +163,10 @@ export class Registry {
   private readonly instances = new Map<string, Promise<ImplementationInstance>>();
   private privateRun = false;
   private readonly localOnly = new Set<string>();
+  private readonly options: RegistryOptions;
 
   constructor(options: RegistryOptions) {
+    this.options = options;
     const packs = [...(options.packs ?? [])].sort((a, b) => (a.manifest.name < b.manifest.name ? -1 : 1));
     const packProblems: string[] = [];
     const capabilities = new Map(options.catalog.capabilities);
@@ -206,6 +208,18 @@ export class Registry {
       host: hostProfileHash(options.host),
       ...(packs.length > 0 ? { packs: packs.map((p) => packRecord(p)) } : {}),
     });
+  }
+
+  /**
+   * A registry like this one, in which the host gives every implementation of the capability `id` these settings over its own:
+   * for a contract case whose check needs a setting the host does not have (`ContractCase.settings`). The caller closes it.
+   */
+  withSettings(id: string, settings: Record<string, Json>): Registry {
+    const binding = this.host.capabilities[id];
+    if (binding === undefined) throw new CapabilityError("unavailable", id, `${id} is not offered on host ${this.host.host}`);
+    const merged = Object.fromEntries(this.capability(id).manifest.implementations.map((spec) => [spec.id, { ...(binding.settings?.[spec.id] ?? {}), ...settings }]));
+    const host: HostProfile = { ...this.options.host, capabilities: { ...this.options.host.capabilities, [id]: { ...binding, settings: { ...binding.settings, ...merged } } } };
+    return new Registry({ ...this.options, host });
   }
 
   /**

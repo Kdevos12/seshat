@@ -103,6 +103,51 @@ describe("runContract", () => {
     assert.equal(report.implementation, "backup");
     assert.deepEqual(report.cases.map((c) => c.failures), [["failed: math.add/backup failed: solver crashed"]]);
   });
+
+  it("runs a case with settings in a registry of its own, whose implementation gets them over the host's", async () => {
+    const withSettings = loadCatalog(
+      writeCatalog({
+        "math.add": {
+          manifest: addManifest(),
+          contract: {
+            capability: "math.add",
+            cases: [
+              { name: "the host's offset", input: { a: 1, b: 2 }, expect: [{ path: "sum", equals: 13 }] },
+              { name: "the case's offset", input: { a: 1, b: 2 }, settings: { offset: 100 }, expect: [{ path: "sum", equals: 103 }] },
+            ],
+          },
+        },
+      }),
+    );
+    const made: number[] = [];
+    let closed = 0;
+    const offsetAdd: ImplementationFactory = (context) => {
+      const offset = context.settings.offset as number;
+      made.push(offset);
+      return {
+        invoke: async (input) => {
+          const { a, b } = input as { a: number; b: number };
+          return { sum: a + b + offset };
+        },
+        close: async () => {
+          closed++;
+        },
+      };
+    };
+    const registry = new Registry({ catalog: withSettings, host: { host: "test", capabilities: { "math.add": { use: ["js"], settings: { js: { offset: 10 } } } } }, factories: { "js-add": offsetAdd } });
+    try {
+      const report = await runContract(registry, "math.add");
+      assert.deepEqual(report.cases.map((c) => [c.name, c.passed, c.failures]), [
+        ["the host's offset", true, []],
+        ["the case's offset", true, []],
+      ]);
+      assert.deepEqual(made, [10, 100]);
+      assert.equal(closed, 1, "the case's own registry is closed after it; the host's stays open");
+      assert.equal(((await registry.invoke("math.add", { a: 0, b: 0 })).output as { sum: number }).sum, 10);
+    } finally {
+      await registry.close();
+    }
+  });
 });
 
 /**

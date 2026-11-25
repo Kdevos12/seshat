@@ -298,7 +298,8 @@ run has; for Python their code first imports `comb` (as `binomial`), `factorial`
 `capabilities/compute.python/contract.json` has 19 cases: exact arithmetic, the last line and what
 was printed, a statement, variables within a scope, a new scope that starts empty, a sympy Gröbner
 basis, a python-sat model, a clarabel SDP, an error message, the call's own time limit, the memory
-limit, `import js`, `pyodide.ffi`, `_pyodide_core` and `pyodide._core` refused, no socket from
+limit (run with `memoryMb` 256, the case's own `settings`, and an allocation of 400 MB that only the
+cap refuses), `import js`, `pyodide.ffi`, `_pyodide_core` and `pyodide._core` refused, no socket from
 JavaScript reached past the import guard, no network, no file outside the scratch directory, and
 files in it. They need the real Pyodide: `pnpm harness contract compute.python` on a host with
 `PYODIDE_DIR`, and `packages/registry/test/python.test.ts` runs them when `PYODIDE_DIR` is set and

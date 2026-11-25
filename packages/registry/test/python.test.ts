@@ -431,4 +431,11 @@ describe("the contract of compute.python", () => {
       assert.ok(names.includes(name), `the contract has no case ${name}`);
     }
   });
+
+  it("checks the memory cap below Pyodide's own maximum, with a cap of the case's own", () => {
+    const memory = catalog.capabilities.get("compute.python")?.contract.find((c) => c.name === "the memory limit");
+    assert.deepEqual(memory?.settings, { memoryMb: 256 });
+    const mb = Number(/bytearray\((\d+) \* 1024\*\*2\)/u.exec((memory?.input as { code: string }).code)?.[1]);
+    assert.ok(mb > 256 && mb < 2048, `${mb} MB lies between the case's cap and Pyodide's maximum`);
+  });
 });

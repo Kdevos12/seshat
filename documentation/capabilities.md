@@ -541,7 +541,11 @@ output, and an optional `timeoutMs`. A case may also have:
 - `before`: inputs called first, in the case's scope, for a case about state (stateful capabilities
   only);
 - `fails` in place of `expect`: `{"code": "failed", "matches": "..."}`, the error the call must end
-  with, and a regular expression its message must match.
+  with, and a regular expression its message must match;
+- `settings`: settings that each of the host's implementations gets for this case over its own,
+  for a check that needs a limit the host does not set (the memory case of `compute.python` runs
+  with `memoryMb` 256). The case runs in a registry of its own (`Registry.withSettings`), closed
+  after the case.
 
 Each case of a stateful capability runs in a scope of its own, released after the case.
 

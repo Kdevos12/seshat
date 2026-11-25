@@ -145,9 +145,12 @@
     },
     {
       "name": "the memory limit",
-      "purpose": "An allocation past the WebAssembly memory cap (2048 MB by default) is a MemoryError, not a dead process.",
+      "purpose": "An allocation past the WebAssembly memory cap is a MemoryError, not a dead process. The case caps the memory at 256 MB and allocates 400 MB, which Pyodide's own maximum (2 GB) would allow: only the cap refuses it.",
+      "settings": {
+        "memoryMb": 256
+      },
       "input": {
-        "code": "len(bytearray(2000 * 1024**2))"
+        "code": "len(bytearray(400 * 1024**2))"
       },
       "fails": {
         "code": "failed",
