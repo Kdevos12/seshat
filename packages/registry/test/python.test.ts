@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Json } from "@seshat/core";
-import { CapabilityError, loadCatalog, loadHostProfile, PYODIDE_VERSION, pythonFactory, Registry, runContract, type HostProfile } from "../src/index.ts";
+import { CapabilityError, loadCatalog, loadHostProfile, PYODIDE_VERSION, PYTHON_PRELUDE, pythonFactory, Registry, runContract, type HostProfile } from "../src/index.ts";
 import { tempDir } from "./helpers.ts";
 
 /** compute.python (plan change CX3) against a stand-in for Pyodide: the child process, its protocol, its limits and its scopes. */
@@ -227,6 +228,43 @@ describe("compute.python over the stand-in", () => {
     } finally {
       await r.close();
     }
+  });
+});
+
+/** The prelude is plain Python: where the machine has a python3, it runs there, with a `js` module planted first. */
+const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
+
+describe("the prelude every interpreter runs first", () => {
+  it("removes and refuses the JavaScript modules, and runs a call's code in its own namespace", { skip: python3 ? false : "no python3 on this host" }, () => {
+    const driver = [
+      "import sys, types",
+      'sys.modules["js"] = types.ModuleType("js")',
+      PYTHON_PRELUDE,
+      "import json",
+      'print("js" in sys.modules)',
+      'print(__seshat_run("a = 2**64", 100))',
+      'print(__seshat_run("print(7)\\na + 1", 100))',
+      'for code in ["import js", "from pyodide.ffi import to_js", "import importlib\\nimportlib.import_module(\\"pyodide_js\\")", "__seshat_run"]:',
+      "    try:",
+      "        __seshat_run(code, 100)",
+      '        print("not refused: " + code)',
+      "    except Exception as error:",
+      "        print(type(error).__name__ + ': ' + str(error))",
+    ].join("\n");
+    const run = spawnSync("python3", ["-I", "-c", driver], { encoding: "utf8", env: {} });
+    assert.equal(run.status, 0, run.stderr);
+    const lines = run.stdout.trim().split("\n");
+    assert.equal(lines[0], "False", "a js module loaded before the prelude is removed");
+    const statement = JSON.parse(lines[1] as string) as { result_type: string; result: unknown };
+    assert.deepEqual([statement.result_type, statement.result], ["statement", null]);
+    assert.equal(lines[2], "7");
+    assert.equal((JSON.parse(lines[3] as string) as { result: string }).result, "18446744073709551617");
+    assert.deepEqual(lines.slice(4), [
+      "ImportError: the module js is not available in this sandbox: it would reach JavaScript",
+      "ImportError: the module pyodide.ffi is not available in this sandbox: it would reach JavaScript",
+      "ImportError: the module pyodide_js is not available in this sandbox: it would reach JavaScript",
+      "NameError: name '__seshat_run' is not defined",
+    ]);
   });
 });
 

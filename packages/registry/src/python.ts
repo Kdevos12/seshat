@@ -53,6 +53,76 @@ export const DEFAULT_PYTHON_SETTINGS: Omit<PythonSettings, "pyodideDir"> = {
 
 const CHILD = fileURLToPath(new URL("./python-child.ts", import.meta.url));
 
+/**
+ * The Python each interpreter runs once before any call (python-child.ts): the import guard, which removes `js`, `pyodide_js`,
+ * `pyodide.ffi` and `pyodide.http` from `sys.modules` and from the `pyodide` package and refuses them through `builtins.__import__`
+ * and a finder first on `sys.meta_path`, and `__seshat_run(code, max)`, which runs a call's code in a namespace of its own (the
+ * session's variables) and answers the JSON of `result_type`, `result` (the last expression's `repr`) and `elapsed_ms`.
+ */
+export const PYTHON_PRELUDE = String.raw`
+def __seshat_setup():
+    import ast, builtins, importlib.abc, json, sys, time
+    blocked = ("js", "pyodide_js", "pyodide.ffi", "pyodide.http")
+    def refused(name):
+        return any(name == b or name.startswith(b + ".") for b in blocked)
+    # Pyodide's own modules are imported while the blocked ones still can be, so that one it imports late (to load a
+    # package) has its names already: the guard is for the model's code, not for Pyodide.
+    import importlib, pkgutil
+    for package in ("pyodide", "_pyodide"):
+        try:
+            root = importlib.import_module(package)
+        except ImportError:
+            continue
+        for info in pkgutil.iter_modules(getattr(root, "__path__", []), package + "."):
+            if not refused(info.name):
+                try:
+                    importlib.import_module(info.name)
+                except Exception:
+                    pass
+    for name in list(sys.modules):
+        if refused(name):
+            del sys.modules[name]
+    try:
+        import pyodide
+        for attr in ("ffi", "http"):
+            if hasattr(pyodide, attr):
+                delattr(pyodide, attr)
+    except ImportError:
+        pass
+    class Refuse(importlib.abc.MetaPathFinder):
+        def find_spec(self, name, path=None, target=None):
+            if refused(name):
+                raise ImportError("the module " + name + " is not available in this sandbox: it would reach JavaScript")
+            return None
+    sys.meta_path.insert(0, Refuse())
+    plain_import = builtins.__import__
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0 and refused(name):
+            raise ImportError("the module " + name + " is not available in this sandbox: it would reach JavaScript")
+        return plain_import(name, globals, locals, fromlist, level)
+    builtins.__import__ = guarded_import
+    user = {"__name__": "__main__", "__builtins__": builtins}
+    def run(code, max_stdout):
+        tree = ast.parse(code, "<code>", "exec")
+        last = tree.body[-1] if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+        if last is not None:
+            tree.body.pop()
+        started = time.perf_counter()
+        exec(compile(tree, "<code>", "exec"), user)
+        value = None
+        if last is not None:
+            value = eval(compile(ast.Expression(last.value), "<code>", "eval"), user)
+        elapsed = (time.perf_counter() - started) * 1000
+        return json.dumps({
+            "result_type": "expression" if last is not None else "statement",
+            "result": None if last is None else repr(value),
+            "elapsed_ms": round(elapsed, 3),
+        })
+    return run
+__seshat_run = __seshat_setup()
+del __seshat_setup
+`;
+
 /** The settings of a factory context, checked: a wrong type is a fault of the host profile, said at once. */
 export function pythonSettings(raw: Record<string, Json>): PythonSettings {
   const problems: string[] = [];
@@ -152,7 +222,7 @@ class Interpreter {
       });
     });
     this.child.stdin.write(
-      `${JSON.stringify({ loader: join(dir, "pyodide.mjs"), indexURL: dir, scratch: this.scratch, wasmMemoryMb: settings.memoryMb, maxStdout: settings.maxStdout })}\n`,
+      `${JSON.stringify({ loader: join(dir, "pyodide.mjs"), prelude: PYTHON_PRELUDE, indexURL: dir, scratch: this.scratch, wasmMemoryMb: settings.memoryMb, maxStdout: settings.maxStdout })}\n`,
     );
   }
 

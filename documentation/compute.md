@@ -195,7 +195,7 @@ Each interpreter is a Node process started with:
 | Files | `--permission`, with `--allow-fs-read` on the child script, Pyodide's directory and the scratch directory only, and `--allow-fs-write` on the scratch directory only. Python itself sees its own in-memory file system, with the scratch directory mounted at `/scratch` as its working directory; the host's files are not there. |
 | Processes and workers | refused by `--permission` (no `--allow-child-process`, no `--allow-worker`). |
 | Environment | empty (Windows keeps `SystemRoot`): none of the harness's keys reaches the process that runs the model's code. Python's `HOME` is `/scratch`. |
-| JavaScript | Pyodide is given an empty object as its `js` module, `js` and `pyodide_js` are unregistered, and, before any call, `js`, `pyodide_js`, `pyodide.ffi` and `pyodide.http` are removed from `sys.modules` and from the `pyodide` package and refused by an import hook (`builtins.__import__` and a finder first on `sys.meta_path`). |
+| JavaScript | Pyodide is given an empty object as its `js` module, `js` and `pyodide_js` are unregistered, and, before any call, `js`, `pyodide_js`, `pyodide.ffi` and `pyodide.http` are removed from `sys.modules` and from the `pyodide` package and refused by an import hook (`builtins.__import__` and a finder first on `sys.meta_path`). Pyodide's own modules (`pyodide.*`, `_pyodide.*`) are imported just before, so that the guard does not stop Pyodide loading a package. |
 | Network | the JavaScript globals that reach it (`fetch`, `WebSocket`, `XMLHttpRequest`, `EventSource`) are deleted before Python runs; Pyodide's socket file system is not turned on; packages are read from the local copy, never downloaded (`packageBaseUrl` is the local directory). Node 22's permission model does not restrict the network itself. |
 | Memory | Python's memory is WebAssembly memory, capped at `memoryMb` (2048 MB): a growth past it is refused, which Python sees as a `MemoryError`, and the session lives on. The JavaScript heap is capped by `--max-old-space-size` at `heapMb` (1024 MB); past it the process dies and the call fails. |
 | Time | the call's `timeout`, then the process is killed. |
@@ -294,7 +294,9 @@ semidefinite cone is what the SDP case checks.
 runs a toy language): the protocol, scopes and their release, the time limit, a process that runs
 out of memory, the WebAssembly cap, the empty environment, the file permissions of the real
 `--permission` process, the deleted `fetch`, the version check, `maxSessions`, and health without
-Pyodide. `packages/orchestrator/test/compute-python.test.ts` covers the host's compute tool: the
+Pyodide. The Python every interpreter runs first (`PYTHON_PRELUDE`: the import guard and the function
+that runs a call) is plain Python, and the same test runs it on the machine's `python3` when it has
+one. `packages/orchestrator/test/compute-python.test.ts` covers the host's compute tool: the
 choice, the fallback when Sage does not answer, a `solve` that records `compute.python`, and the
 first-cases code run by a `python3` when the machine has one.
 
