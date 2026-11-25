@@ -1624,6 +1624,22 @@ design table names. In this order:
 - Task 76 (VL10): `harness campaign --long`, a preset only; its B5 run (at most $5) only on the owner's go. VL7 and VL8
   wait for the measured numbers that call for them.
 
+### Tasks 77 to 80: CPU tools for non-linear exploration (CX1 to CX10)
+
+The plan change `plans/plan-change-cpu-exploration.md` (CX1 to CX10, approved in full on 2026-11-25, Ruling 47). Each item
+lives in the one module its design table names; no new package. In this order:
+
+- Task 77 (CX1, CX2): the M10 router tags each goal with its moves (E1 to E12) and `harness audit` counts them, checked
+  on 40 hand-labelled statements; the first real M16 run, on a Sidon-set construction, against an `iid` arm at the same
+  spend (`M16.strategy`). The two measurements order Tasks 78 to 80.
+- Task 78 (CX3, CX4): the capability `compute.python` on Pyodide, the host's compute tool when Sage is absent; a
+  certificate stage in M10's battery (modular obstruction, local Gröbner cofactors, rounded SOS, Bernstein boxes), each
+  candidate a screened Lean text submitted through `validate`; one real-Lean pass at $0.
+- Task 79 (CX5 to CX8, CX10): local search between M16's model rounds (CA20's graph search folded in); SAT and MaxSAT
+  encoders for M11; Z3 recipes for invariants and small optima; M8's guessing and growth through `compute.python`; one
+  heuristic card per move.
+- Task 80 (CX9): native packs, each only on a measured need. The paid comparison run (at most $1) only on the owner's go.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
