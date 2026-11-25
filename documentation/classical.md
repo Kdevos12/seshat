@@ -83,7 +83,7 @@ characters), and from the router's features when it could read the goal.
 
 E7 (a change of representation), E10 (a rewrite path) and E11 (an intermediate lemma) have no syntactic signal and
 are never tagged. The moves are journaled in the `battery_run` node with the domains (below), and `harness audit`
-counts them over a run's problems ([audit.md](audit.md)).
+counts them over a run's problems ([audit.md](audit.md#exploration-moves)).
 
 **Recall.** `packages/classical/test/fixtures/labelled-moves.json` holds 40 statements labelled by hand (every 15th
 problem of `bench/fc-bench-v1-discrete.json` from index 7, and the two Putnam statements the repository holds), with
