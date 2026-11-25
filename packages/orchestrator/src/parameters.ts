@@ -783,6 +783,7 @@ export const CLI_FLAGS: readonly CliFlag[] = [
   flag("settings", ["run", "solve", "campaign"], cmd("a settings file of RunConfig keys"), "A JSON file whose keys are RunConfig keys (documentation/parameters.md, \"Settings file\"): after the defaults set, before the flags, which win."),
   flag("no-write", ["doctor"], cmd("do not write the sandboxed profile"), "Only check."),
   flag("rewrite", ["doctor"], cmd("overwrite the sandboxed profile"), "Write config/hosts/sandboxed.json over an existing file."),
+  flag("agents", ["doctor"], cmd("check the coding agents"), "Show the coding agents' section whatever config/library-builder.json selects, with every agent of the default CLI and ACP tables: installed, version, flags or ACP initialize; no model call (documentation/library-builder.md, \"Checking the agents\")."),
   flag("allow-unpriced", ["optimize-prompts"], cmd("admit models with no price"), "Let the optimization use a model no dollar cap can see."),
   flag("min-gate-problems", ["optimize-prompts"], cmd("problems a gate needs"), "Whole number of at least 1."),
   flag("ledger", ["optimize-prompts"], cmd("a ledger file of measurements"), "Reuse and extend this file."),

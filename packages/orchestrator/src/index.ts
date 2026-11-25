@@ -7,6 +7,7 @@ export * from "./consortium.ts";
 export * from "./consult.ts";
 export * from "./roles.ts";
 export * from "./doctor.ts";
+export * from "./doctor-agents.ts";
 export * from "./feedback.ts";
 export * from "./audit.ts";
 export * from "./cards.ts";

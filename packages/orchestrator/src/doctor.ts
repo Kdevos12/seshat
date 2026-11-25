@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import type { HostProfile } from "@seshat/registry";
 import { DEFAULT_LEAN_SERVER_MEMORY_WARN_MB } from "@seshat/registry";
+import { type AgentsCheckOptions, codingAgentChecks } from "./doctor-agents.ts";
 import { leanMemoryCheck, leanServerMemoryFromPs } from "./lean-memory.ts";
 import { PriceBook } from "./prices.ts";
 import { enabledBackends } from "./lit-enabled.ts";
@@ -20,7 +21,7 @@ import { blendedPrice, cheapestModel, DEFAULT_DEFAULTS, describeSet } from "./st
 export type CheckStatus = "ok" | "warn" | "missing";
 
 export interface Check {
-  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults" | "literature";
+  id: "lean" | "kimina" | "lean-memory" | "credentials" | "prices" | "network" | "isolation" | "defaults" | "literature" | "coding-agent";
   status: CheckStatus;
   title: string;
   /** What was found, in plain words. */
@@ -34,8 +35,11 @@ export interface DoctorSystem {
   env: Readonly<Record<string, string | undefined>>;
   /** The path of an executable found on PATH. */
   which(command: string): string | undefined;
-  /** Runs a command with a time limit; a command that cannot start is code -1. */
-  run(command: string, args: readonly string[], timeoutMs?: number): Promise<{ code: number; stdout: string; stderr: string }>;
+  /**
+   * Runs a command with a time limit; a command that cannot start is code -1. `options` gives it exactly this environment and
+   * this directory (the coding agents' checks); without them it inherits the process's.
+   */
+  run(command: string, args: readonly string[], timeoutMs?: number, options?: { env?: Record<string, string>; cwd?: string }): Promise<{ code: number; stdout: string; stderr: string }>;
   /** Any HTTP answer is `status`; no answer is `error`. */
   http(url: string, timeoutMs?: number): Promise<{ status: number } | { error: string }>;
   /** The user and group of this process, for a container started as the same user. */
@@ -65,12 +69,14 @@ export function realSystem(): DoctorSystem {
       }
       return undefined;
     },
-    run(command, args, timeoutMs = 15_000) {
+    run(command, args, timeoutMs = 15_000, options = {}) {
       return new Promise((resolve) => {
-        execFile(command, [...args], { timeout: timeoutMs, encoding: "utf8" }, (error, stdout, stderr) => {
+        const child = execFile(command, [...args], { timeout: timeoutMs, encoding: "utf8", ...(options.env !== undefined ? { env: options.env } : {}), ...(options.cwd !== undefined ? { cwd: options.cwd } : {}) }, (error, stdout, stderr) => {
           const code = error === null ? 0 : typeof (error as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((error as unknown as { code: number }).code) : -1;
           resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") || (error?.message ?? "") });
         });
+        // Nothing is typed in: a program that waits for its standard input reads its end at once.
+        child.stdin?.end();
       });
     },
     async http(url, timeoutMs = 8000) {
@@ -155,6 +161,8 @@ export interface DoctorOptions {
   write?: "auto" | "rewrite" | "never";
   /** The name of the profile it writes. Default `sandboxed`. */
   profileName?: string;
+  /** The coding agents' section (plan change EA1): shown when the config selects `coding-agent`, or with `all` (`--agents`). Absent: not shown. */
+  agents?: AgentsCheckOptions;
 }
 
 export interface DoctorReport {
@@ -340,6 +348,9 @@ export async function doctor(o: DoctorOptions): Promise<DoctorReport> {
 
   // 8. The literature search: what the host profile enables. No request is made here (`harness lit probe` makes them).
   checks.push(literatureCheck(profile, system.env));
+
+  // 9. The coding agents, when the library builder uses one or `--agents` asks: installed, their version, their flags or `initialize`; $0.
+  if (o.agents !== undefined) checks.push(...((await codingAgentChecks(system, o.agents)) ?? []));
 
   return { host: profile.host, checks, ok: !checks.some((c) => c.status === "missing"), ...(isolation !== undefined ? { isolation } : {}), ...(chosen !== undefined ? { model: chosen } : {}) };
 }
@@ -544,6 +555,7 @@ export function renderDoctor(report: DoctorReport): string[] {
   const mark: Record<CheckStatus, string> = { ok: "ok     ", warn: "warning", missing: "MISSING" };
   const lines = [`Seshat doctor, host ${report.host}`, ""];
   for (const c of report.checks) {
+    if (c.id === "coding-agent" && c === report.checks.find((x) => x.id === "coding-agent")) lines.push("", "Coding agents (the library builder's; a run does not need them):");
     lines.push(`${mark[c.status]}  ${c.title}: ${c.detail}`);
     if (c.fix !== undefined) lines.push(`         What to do: ${c.fix}`);
   }

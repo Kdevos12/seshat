@@ -57,7 +57,7 @@ is invalid, and the agent is not started.
 
    A flag whose value is not set (`{model}`, `{budget_usd}`) is left out with its value. No row was checked against an installed
    release, only against published documentation where the column says so: **check each against the installed release** before
-   the first real build.
+   the first real build (`harness doctor --agents` does it, [Checking the agents](#checking-the-agents)).
    `sandbox` is a command put in front of the agent (`bwrap ...`); without one the builder is not made unless
    the settings say `unsandboxed: true`, the rule of the certifier ([certifier.md](certifier.md#where-untrusted-code-runs)).
 3. **The environment of the agent is `PATH`, a `HOME` and `TMPDIR` of its own, and the variables the settings' `env` names, and nothing
@@ -116,11 +116,30 @@ with an error, or an agent that exits during its turn, is judged by its files, l
 | `goose` | `goose acp` |
 
 `agy` has no default ACP command; `gemini`, `hermes` and `goose` have no default CLI command: with those, `command` is required. The
-ACP defaults are the plan's names; none has been run. `model` reaches an ACP agent only through a `{model}` placeholder in a
-`command` of the person's: the defaults pass none. The protocol's method and field names are in one module,
+ACP defaults are the plan's names; none has been run (`harness doctor --agents` sends each installed one `initialize`). `model`
+reaches an ACP agent only through a `{model}` placeholder in a `command` of the person's: the defaults pass none. The protocol's method and field names are in one module,
 `packages/library-builder/src/acp-protocol.ts`, written against the specification's version 1 as published on 2026-11-25. Seshat
 implements the messages itself, without the protocol's TypeScript SDK that the plan named: no new dependency, and the few messages a
 client needs fit in one module.
+
+## Checking the agents
+
+`harness doctor` has a section "Coding agents" when `config/library-builder.json` selects `coding-agent`, or with `--agents`
+(plan change EA1). It costs nothing: no prompt is sent, no session is opened, no model is called. For the configured agent (and with
+`--agents`, for every agent of the two default tables that is installed; the others are listed in one line) it says:
+
+- whether the agent's program is installed (on `PATH`, or the path the command names), and what `--version` prints (the program for a
+  default command; the tokens before the first flag for a command of the person's);
+- for the CLI transport, whether the help of the non-interactive mode (`claude --help`, `codex exec --help`, the tokens before the first
+  flag and `--help`) names every flag the command passes, placeholders given a value; a flag it does not name is a warning, since a
+  release may have renamed it (some programs do not list every flag in their help);
+- for ACP, whether the agent answers `initialize` within 10 seconds, and with what: the protocol version, `loadSession`, its MCP
+  capabilities (`http`, `sse`), its name and version. Nothing is sent after `initialize`, and the process group is killed.
+
+The checks run as a build would run the agent: behind its `sandbox`, with its environment only (`PATH`, a `HOME` and `TMPDIR` of their
+own, the variables of `agent.env`), in an empty directory. No value of that environment is printed: the agent's own output is cut to a
+line and every value of `agent.env` in it is hidden. A `${env:NAME}` that is not set is named (never guessed) and the checks run without
+it. Everything the section finds is a warning at worst: a run does not need a coding agent, so `doctor`'s exit code does not change.
 
 ## The gate
 
@@ -224,6 +243,8 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
   names of `acp-protocol.ts` follow the published specification and must be checked against a real agent; so must the default ACP commands,
   whether an agent asks permission before its edits at all, and whether the default MCP server starts behind the person's sandbox (`uvx`
   fetches the pinned release unless it is cached, and a sandbox without network refuses that).
+- `harness doctor`'s coding agents' section ran against a fake ACP agent and simulated programs only: no installed agent's `--version`,
+  help or `initialize` has been seen, so whether `--version` and `--help` behave as assumed (an adapter may take neither) is not known.
 - No real `lake`, Lean or certifier: the gate's `build` is a fake `lake`, and the fake certifier compares statements by text where the real one compares terms.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.

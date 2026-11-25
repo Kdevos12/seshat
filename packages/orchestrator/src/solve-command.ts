@@ -27,6 +27,8 @@ export interface DoctorFlags {
   model?: string;
   noWrite?: boolean;
   rewrite?: boolean;
+  /** `--agents`: the coding agents' section whatever config/library-builder.json selects, with every default agent (EA1). */
+  agents?: boolean;
 }
 
 export interface SolveFlags extends DoctorFlags {
@@ -159,6 +161,7 @@ export async function doctorReport(flags: DoctorFlags, io: Pick<CommandIo, "mode
     configDir,
     leanProject: leanProjectOf(host, configDir, system),
     write: flags.noWrite === true ? "never" : flags.rewrite === true ? "rewrite" : "auto",
+    agents: { configPath: join(configDir, "library-builder.json"), all: flags.agents === true },
     ...(flags.model !== undefined ? { model: flags.model } : {}),
   });
 }

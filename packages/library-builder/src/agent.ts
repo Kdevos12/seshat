@@ -22,8 +22,8 @@ export type Transport = (typeof TRANSPORTS)[number];
  * run with no model or no dollar cap passes neither. `claude-code` and `codex` were checked against their published
  * documentation on 2026-11-25 (EA1): in print mode Claude Code denies every permission prompt unless a mode says otherwise, so
  * the agent could not write its files without `--permission-mode acceptEdits`, and `codex exec` runs in a read-only sandbox
- * unless `--sandbox workspace-write` is given. The others are as the plan named them; check each against the installed release
- * (documentation/library-builder.md, "Not run").
+ * unless `--sandbox workspace-write` is given. The others are as the plan named them; `harness doctor --agents` checks each
+ * against the installed release (documentation/library-builder.md, "Not run").
  */
 export const DEFAULT_COMMANDS: Readonly<Partial<Record<AgentName, readonly string[]>>> = {
   "claude-code": ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--model", "{model}", "--max-budget-usd", "{budget_usd}"],
@@ -35,7 +35,8 @@ export const DEFAULT_COMMANDS: Readonly<Partial<Record<AgentName, readonly strin
 
 /**
  * The default ACP command of each agent (plan change EA2): the agent itself where it speaks ACP, an adapter where it does not
- * (`claude-agent-acp`, `codex-acp`, `pi-acp`), as the plan names them. An agent with no entry needs `command`. None has been run.
+ * (`claude-agent-acp`, `codex-acp`, `pi-acp`), as the plan names them. An agent with no entry needs `command`. None has been run;
+ * `harness doctor --agents` sends each installed one `initialize` and nothing else.
  */
 export const DEFAULT_ACP_COMMANDS: Readonly<Partial<Record<AgentName, readonly string[]>>> = {
   "claude-code": ["claude-agent-acp"],
@@ -146,6 +147,40 @@ export function renderCommand(settings: AgentSettings, budget: BuildBudget, time
     out.push(filled);
   }
   return [...(settings.sandbox ?? []), ...out];
+}
+
+/** What `harness doctor` runs to check an agent as it is installed (plan change EA1): no prompt, no session, no model call. */
+export interface AgentProbePlan {
+  transport: Transport;
+  /** The command a build would run, the sandbox in front, every placeholder given a value so that every flag shows. */
+  argv: string[];
+  /** The agent's program: the first token after the sandbox. */
+  program: string;
+  /** Prints the version: the program (or, for a command of the person's, its tokens before the first flag) and `--version`. */
+  version: string[];
+  /** CLI only: the help of the non-interactive mode (the tokens before the first flag, and `--help`). */
+  help?: string[];
+  /** CLI only: the flags the command passes, which that help should name. */
+  flags: string[];
+}
+
+export function probePlan(settings: AgentSettings): AgentProbePlan {
+  const transport = settings.transport ?? "cli";
+  const sandbox = settings.sandbox ?? [];
+  const argv = renderCommand({ ...settings, model: settings.model ?? "MODEL" }, { usd: 1, seconds: 60 }, 60);
+  const own = argv.slice(sandbox.length);
+  const firstFlag = own.findIndex((t) => t.startsWith("-"));
+  const leading = firstFlag < 0 ? own : own.slice(0, firstFlag);
+  const program = own[0] ?? "";
+  const versionBase = settings.command === undefined ? [program] : leading;
+  return {
+    transport,
+    argv,
+    program,
+    version: [...sandbox, ...versionBase, "--version"],
+    ...(transport === "cli" ? { help: [...sandbox, ...leading, "--help"] } : {}),
+    flags: transport === "cli" ? [...new Set(own.filter((t) => t.startsWith("-")).map((t) => t.split("=")[0] as string))] : [],
+  };
 }
 
 /** The environment of the agent's process: `PATH` and what the settings name. */

@@ -92,6 +92,7 @@ export const CLI_OPTIONS = {
   settings: { type: "string" },
   "no-write": { type: "boolean" },
   rewrite: { type: "boolean" },
+  agents: { type: "boolean" },
   "allow-unpriced": { type: "boolean" },
   "min-gate-problems": { type: "string" },
   ledger: { type: "string" },

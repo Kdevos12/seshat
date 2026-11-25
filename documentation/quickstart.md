@@ -206,7 +206,7 @@ The lines read the journal file and write nothing. `--quiet` turns them off. `ha
 
 ## harness doctor
 
-`harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]` checks the machine, in the order
+`harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite] [--agents]` checks the machine, in the order
 a person would fix it, and says for each thing what it found and what to do. It exits 1 when something a
 run needs is missing.
 
@@ -220,6 +220,7 @@ run needs is missing.
 | Network | the chosen model's provider cannot be reached | to check the connection, a firewall or a proxy |
 | Literature search | (a warning, never a failure) the host profile has no `lit.search`, or it enables no backend; no request is made ([literature.md](literature.md)) | to use a profile that lists it |
 | Certifier isolation | (a warning, not a failure) the host profile has no sandbox for the certifier and this machine has none | that results stay `computed` |
+| Coding agents | (warnings, never a failure; shown only when `config/library-builder.json` selects `coding-agent`, or with `--agents`) the configured agent is not installed, its help does not name a flag the command passes, its ACP command does not answer `initialize` within 10 s, or the config names a variable that is not set; `--agents` adds every agent of the default tables, the ones not installed in one line. No prompt and no model call; no value of the agent's environment is shown ([library-builder.md](library-builder.md#checking-the-agents)) | to install the agent, correct `agent.command` for the installed release, or set the variable |
 
 **The isolation profile.** The certifier runs a candidate's Lean code, and it refuses to without a sandbox
 ([certifier.md](certifier.md#where-untrusted-code-runs); Ruling 22). When the host profile in use has no
