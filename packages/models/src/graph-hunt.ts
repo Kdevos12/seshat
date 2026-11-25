@@ -254,7 +254,8 @@ export interface GraphHitData {
   edges: Array<[number, number]>;
   /** The hit in one line, for the report: the graph, whether Lean confirmed it, and the certificate's hash. */
   description: string;
-  source: "battery" | "local_search" | "family";
+  /** `sat`: a model of a SAT encoder (plan change CX6), whose program is the encoder. */
+  source: "battery" | "local_search" | "family" | "sat";
   filter: GraphFilter;
   programHash: string;
   /** The hash of the certificate in the run's blob store. */
@@ -358,7 +359,7 @@ function recordHit(
  * marked unconfirmed, with the class of Lean's error. A graph above `GRAPH_HUNT.leanVertices` is not sent
  * (class `too_large`). Returns true when Lean accepted a proof.
  */
-async function confirmHit(
+export async function confirmHit(
   problem: ProblemContext,
   statement: GraphStatement,
   input: { graph: GraphObject; source: GraphHitData["source"]; filter: GraphFilter; program: string; score?: string; seed?: number; detail?: string },
@@ -403,6 +404,8 @@ function recordSearch(problem: ProblemContext, data: Omit<GraphSearchData, "summ
 
 export interface GraphHuntServices {
   search?: GraphSearchRunner;
+  /** The model requests for graphs, counted against `GRAPH_HUNT.modelRequests`, when the caller shares them with another step (CX6's encoder). */
+  counted?: { llm: Llm; left: () => number };
   /** A stand-in for SageMath's generator; the registry's `compute.sage` when absent and the host offers it. */
   sage?: SageRun;
 }
@@ -433,7 +436,7 @@ export async function huntGraphs(problem: ProblemContext, statement: GraphStatem
     problem.log("M11: the graphs of this statement were already tried");
     return;
   }
-  const { llm, left } = countedLlm(problem.llm, GRAPH_HUNT.modelRequests);
+  const { llm, left } = services.counted ?? countedLlm(problem.llm, GRAPH_HUNT.modelRequests);
   const sageOffered = services.sage !== undefined || (typeof problem.registry.offers === "function" && problem.registry.offers("compute.sage"));
   const sage = services.sage ?? (sageOffered ? sageThroughRegistry(problem.registry, { scope: `${problem.runId}/${problem.problemId}`, actor: ACTOR }) : undefined);
   const spent = (): boolean => problem.budget.exhausted || problem.signal.aborted;

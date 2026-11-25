@@ -574,13 +574,62 @@ returns goes through the same recheck by Lean.
 
 Not run: the Lean templates against a real Lean, SageMath's generator, a real model. The proofs the simulated Lean accepts in the tests are the ones it was told to accept.
 
+## SAT encoders
+
+Plan change CX6. With the option `sat` (`--line-option M11.sat=true`, off by default), the line looks for finite counterexamples
+of the statements it reads with a SAT solver, after the battery: `encoders.ts` writes the CNF, `sat.ts` builds it and sends it to
+python-sat in the host's compute tool. The tool is `registryCompute` of `@seshat/classical` with the need `pysat`, so
+`compute.python` comes first ([compute.md](compute.md)); the orchestrator gives it to the line (`createM11({compute})`), since this
+package cannot import that one. A CaDiCaL binary would be used only if a host profile named one; none does, and none is added.
+The CNF goes as its DIMACS body, deflated and in base64, in one call or in chunks of one call each (at most 40) to the session's
+interpreter, then a call that solves it with the first of CaDiCaL 1.5.3, Glucose 4 and MiniSat 2.2 that python-sat starts and
+prints whether it is satisfiable and the true variables of the object. A timeout, a failure or an answer that is not strict JSON
+is `unknown`, never UNSAT.
+
+- **Magmas.** When the battery found no counter-model, `encodeMagma` encodes the counter-models of each order from 1 to
+  `satMagmaOrder`: variable `a·n² + b·n + c + 1` says `a * b = c`, exactly one per cell; each subterm whose value is not a
+  table entry gets one-hot auxiliary variables (implied from its two arguments and the table, at most one true), every
+  hypothesis holds at every assignment of its variables, and one selector per assignment of the conclusion's variables says
+  it fails there. The first order with a model ends the search: the decoded magma must fail the statement under the law
+  evaluator too, and is then recorded as a `counter_model` (battery `magmas:sat:<n>`) whose negation goes through `validate`,
+  as the battery's do.
+- **Graphs.** With `graphs` on, a statement in the template's fragment (`graphFormula`: hypotheses and a conclusion built from
+  `G.CliqueFree k`, `Gᶜ.CliqueFree k`, comparisons of `G.edgeFinset.card` or `#G.edgeFinset`, `Fintype.card V`, `G.minDegree`,
+  `G.maxDegree` with a numeral, and `∀ v, G.degree v ≤ d` for any comparison, joined by `¬`, `∧`, `∨`, `→`) is encoded first, with
+  no model call: variable `k` is the k-th pair `(0,1), (0,2), …`, counts by a totalizer, and the negation of the statement is
+  asserted (an order the statement's `Fintype.card V` excludes is false as written and costs no call). A model is a graph that
+  goes to `confirmHit` with source `sat`, the Lean check of every graph hit (above 8 vertices it is recorded, not sent, as
+  `too_large`). A statement outside the fragment gets, after the lists and the search, one model request (site `encode.sat`,
+  counted in the same cap of `GRAPH_HUNT.modelRequests` as the predicate's) for an encoder: Python defining `encode(n)` over the
+  same edge variables, run in the compute tool with the solving code, from order 1 up; its first model goes to `confirmHit`.
+
+Every CNF has lex-leader symmetry breaking: for each transposition of neighbours `(i, i+1)`, the object's cells (the table row by
+row, or the pairs) are lexicographically at most those of its image (`Cnf.lexLeq`, exact on its variables). Each isomorphism class
+keeps its lex-least member, so no class is lost; the statements are all invariant under renaming. The brute-force tests check that
+every model of the magma CNF to order 3 and of a graph CNF on 5 vertices breaks the statement, and that every class of breaking
+objects has one.
+
+Trust: a model is only a candidate. Its witness reaches Lean as numbers written by the line's templates (`negationProofs`,
+`graphNegationProofs`), never as text a model or a solver wrote, and only `validate` changes the claim; a wrong encoder, the
+model's or ours, costs a try. Each search is a `sat_search` node (statement hash, encoder, every order tried with its variables,
+clauses, solver and status, the outcome, whether Lean confirmed). UNSAT at every order is recorded as computed evidence, "no
+counterexample of order 1 to n", in that node and in the briefing, never as `refuted` or `proved`; an UNSAT of an encoder the model
+wrote is not evidence and is recorded as `unknown`. A resumed process finds the node and does not search again. MaxSAT, which the
+plan change's title names, is not built: no acceptance asks for it.
+
+Not run: python-sat in a real Pyodide (its solver names, the time on an order-5 magma CNF), any of it against a real Lean or model.
+The tests (`packages/models/test/sat.test.ts`) use a compute tool that reads the protocol and runs a small DPLL written in the test:
+a counter-model of order 5 planted in it (the left-zero band against "semigroups are commutative", the CNF sent in chunks), a
+graph of order 10 planted the same way (two 5-cycles against "a triangle-free graph on 10 vertices has an independent set of 5"),
+R(3,3) = 6 as UNSAT evidence with no status, and a wrong encoder from the model whose graph Lean rejects, the claim unchanged.
+
 ## The line
 
 `M11` is the line ([lines.md](lines.md)). `packages/orchestrator/src/lines.ts` registers it, so
 `harness run --lines M11` runs it; it needs no other line, and it compares the variants of the
 problem's claim when a line such as M2 has recorded them. It looks sequences up in the table and in
 the OEIS through the registry's `oeis.search`, as `line:M11`; `createM11({oeis})` makes one that asks
-another `OeisSource` instead. It makes no model call, except for the option `graphs` (off by default), which asks the model for programs about graphs ([below](#statements-about-graphs)).
+another `OeisSource` instead. It makes no model call, except for the option `graphs` (off by default), which asks the model for programs about graphs ([below](#statements-about-graphs)), and, with `sat` on too, for an encoder of a graph statement outside the SAT template ([SAT encoders](#sat-encoders)).
 
 | Hook | What it does |
 |---|---|
@@ -639,6 +688,9 @@ edge that is not `computed`, and a fingerprint alone refutes nothing. The option
 | `toolMaxNumber` | 30 | The numbers a statement is tried on by the tool |
 | `leanFiles` | 200 | The most files the Lean evaluator sends for a problem (its statement and the claims around it together) and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
 | `lawWork` | 500 000 000 | The most steps the law evaluator may take, as `magmaWork` bounds them (the assignments of variables, each costing the occurrences of variables in the law and 4), for a problem and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
+| `sat` | false | The SAT encoders for finite counterexamples ([SAT encoders](#sat-encoders)); off by default |
+| `satMagmaOrder`, `satGraphOrder` | 5, 10 | The largest order the SAT encoders try, from 1, for magmas and for graphs |
+| `satTimeoutSec`, `satMaxClauses` | 60, 300 000 | The time of one call of the compute tool, and the most clauses of one CNF (a larger one ends the search for that statement as `too_large`) |
 
 A value out of range fails the problem's `beforeProvers` with the name of the option.
 

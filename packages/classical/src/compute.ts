@@ -10,10 +10,10 @@ import { CapabilityError, type Registry } from "@seshat/registry";
 export const COMPUTE_TOOLS: readonly string[] = ["compute.sage", "compute.python"];
 
 /** The packages a caller may need that only some compute capabilities' pinned sets have. */
-export type ComputeNeed = "clarabel";
+export type ComputeNeed = "clarabel" | "pysat";
 
-/** What each compute capability's pinned package set has of `ComputeNeed`: Pyodide's has clarabel, Sage's has not. */
-const PROVIDES: Readonly<Record<string, readonly ComputeNeed[]>> = { "compute.python": ["clarabel"], "compute.sage": [] };
+/** What each compute capability's pinned package set has of `ComputeNeed`: Pyodide's has clarabel and python-sat, Sage's has neither. */
+const PROVIDES: Readonly<Record<string, readonly ComputeNeed[]>> = { "compute.python": ["clarabel", "pysat"], "compute.sage": [] };
 
 /** `COMPUTE_TOOLS` with those that have every one of `needs` first, each part in its own order. */
 export function computeOrder(needs: readonly ComputeNeed[] = []): string[] {

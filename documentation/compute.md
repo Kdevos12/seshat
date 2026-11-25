@@ -286,7 +286,8 @@ problem "the host's compute tool" (CA17, `RunConfig.autoTool`): the first of `CO
 (`compute.sage`, then `compute.python`, in `@seshat/classical`'s `compute.ts`, which the orchestrator's
 `tools.ts` re-exports) that the host offers. The same file orders the tools for a caller that needs a
 package only one of them has (`computeOrder(["clarabel"])` puts `compute.python` first, for line M10's
-certificate stage), and its `registryCompute` passes to the next tool when a call finds one unavailable. When the run pins its
+certificate stage; `computeOrder(["pysat"])` does the same for line M11's SAT encoders, plan change CX6,
+[models.md](models.md#sat-encoders)), and its `registryCompute` passes to the next tool when a call finds one unavailable. When the run pins its
 tools at its start and that tool does not answer, the next one the host offers takes its place
 (`computeFallbacks`, `pinTools`): the run logs "compute.sage cannot be reached ...: compute.python is
 used in its place" and records `compute.python` as its `autoTool`; the prompt's hash in `run.started`

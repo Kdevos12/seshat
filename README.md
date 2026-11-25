@@ -201,6 +201,7 @@ flowchart TB
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::real
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
+  satenc["SAT encoders (M11.sat, off)<br/>magmas and graphs, lex-leader CNF,<br/>python-sat; UNSAT is evidence only"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
@@ -329,6 +330,9 @@ flowchart TB
   m11 -->|"statements about graphs,<br/>option M11.graphs"| graphhunt
   graphhunt -->|"nauty graphs to 10 vertices"| sage
   graphhunt -->|"negation from the witness"| fast
+  m11 -->|"no counter-model in the battery,<br/>option M11.sat"| satenc
+  satenc -->|"CNF to python-sat"| python
+  satenc -->|"negation from the decoded<br/>magma or graph"| fast
   bench -->|"problems, when<br/>M8 is on"| m8
   llm -->|"hypotheses as programs,<br/>step DAGs, programs"| m8
   m8 -->|"columns and hypotheses<br/>run in"| sandbox
