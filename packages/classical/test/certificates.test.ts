@@ -36,6 +36,7 @@ import {
   type SolveContext,
   snippetFor,
   solveGoal,
+  SDP_TIME_SHARE,
   SOS_PY,
   sosCandidates,
 } from "../src/index.ts";
@@ -86,7 +87,7 @@ function gramAnswer(data: Record<string, unknown>, squares: ReadonlyArray<Readon
   return JSON.stringify({ status: "Solved", x });
 }
 
-const call = { timeoutSec: 30 };
+const call = { deadline: Number.POSITIVE_INFINITY };
 
 describe("the certificate stage reads goals as polynomials (CX4)", () => {
   it("reads binders, hypotheses, ≠, ¬ ∃ and ∀ in the conclusion", () => {
@@ -393,7 +394,7 @@ describe("the host's compute tool for the stage", () => {
     const tool = registryCompute(registry as never, { actor: "line:M10", scope: "s1", needs: CERTIFICATE_NEEDS });
     assert.equal(tool?.capability, "compute.python");
     assert.deepEqual(await tool?.run("print(1)", { timeoutSec: 5 }), { stdout: "ok\n" });
-    assert.deepEqual(calls[0], { id: "compute.python", input: { code: "print(1)", timeout: 5 }, options: { actor: "line:M10", scope: "s1" } });
+    assert.deepEqual(calls[0], { id: "compute.python", input: { code: "print(1)", timeout: 5 }, options: { actor: "line:M10", scope: "s1", timeoutMs: 5000 } });
     assert.equal(registryCompute({ ...registry, offers: () => false } as never, { actor: "a", scope: "s" }), undefined);
   });
 
@@ -449,6 +450,45 @@ describe("the stage's Python programs", () => {
     const poly = (raw: unknown): Poly => new Poly(n, (raw as Array<[number[], string, string]>).map(([m, a, b]) => [m, rat(BigInt(a), BigInt(b))]));
     const sum = poly(out.cofactors[0]).mul(poly(data.gens[0])).add(poly(out.cofactors[1]).mul(poly(data.gens[1])));
     assert.ok(sum.equals(poly(data.target)));
+  });
+});
+
+describe("the stage's time", () => {
+  /** A compute tool that answers nothing useful and uses `use(timeoutSec)` milliseconds of each call. */
+  const slowTool = (use: (timeoutSec: number) => number) => {
+    const calls: Array<{ timeoutSec: number; timeLimit: unknown }> = [];
+    const tool: ComputeTool = {
+      capability: "compute.python",
+      async run(code, { timeoutSec }) {
+        const data = JSON.parse(JSON.parse((/^DATA = (".*")\n/u.exec(code) as RegExpExecArray)[1] as string) as string) as Record<string, unknown>;
+        calls.push({ timeoutSec, timeLimit: data.timeLimit });
+        await new Promise((resolveWait) => setTimeout(resolveWait, use(timeoutSec)));
+        return { stdout: "{}\n" };
+      },
+    };
+    return { tool, calls };
+  };
+
+  it("takes (c)'s time again before its Putinar program, and gives clarabel 0.8 of each call", async () => {
+    const { tool, calls } = slowTool(() => 1100);
+    await sosCandidates(goalOf("(x : ℝ) (h : 0 ≤ x) : 0 ≤ x ^ 2 + 1"), tool, { deadline: Date.now() + 3500 });
+    assert.deepEqual(calls.map((c) => c.timeoutSec), [3, 2], "the second call gets what the first left");
+    assert.deepEqual(calls.map((c) => c.timeLimit), [3 * SDP_TIME_SHARE, 2 * SDP_TIME_SHARE]);
+    const late = slowTool(() => 0);
+    const out = await sosCandidates(goalOf("(x : ℝ) (h : 0 ≤ x) : 0 ≤ x ^ 2 + 1"), late.tool, { deadline: Date.now() + 500 });
+    assert.equal(late.calls.length, 0);
+    assert.match(out.note ?? "", /time for this method is spent/);
+  });
+
+  it("keeps a slice of the budget for (d) when (c) uses all the time it is given", async () => {
+    const statement = "(x : ℝ) (h0 : 0 ≤ x) (h1 : x ≤ 1) : x ^ 2 ≤ x";
+    const bernstein = bernsteinCandidates(goalOf(statement), DEFAULT_CERTIFICATES).candidates[0]?.script as string;
+    const lean = new ScriptedLean({ [tacticOf(snippetFor({ header: HEADER, statement }, bernstein))]: { ok: true } });
+    const { tool, calls } = slowTool((timeoutSec) => timeoutSec * 1000);
+    const out = await runCertificates({ checker: lean, goal: { header: HEADER, statement }, domain: "general", settings: DEFAULT_CERTIFICATES, compute: tool, budgetSec: 5, maxSubmissions: 1, submit: async () => true });
+    // Of 5 s, 1.25 s are kept for (d): (c) gets one call of 3 s, and no time for its second.
+    assert.deepEqual(calls.map((c) => c.timeoutSec), [3]);
+    assert.equal(out.winner?.tactic, "cert.bernstein");
   });
 });
 

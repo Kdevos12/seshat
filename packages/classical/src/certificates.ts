@@ -38,8 +38,20 @@ export const DEFAULT_CERTIFICATES: CertificateSettings = { maxModulus: 64, maxBo
 export const MAX_RESIDUE_CASES = 4096;
 /** Seconds one certificate's Lean check may take. */
 export const CERTIFICATE_TRY_SEC = 30;
-/** Seconds one compute call may take. */
+/** Seconds one compute call may take, the interpreter's start included. */
 export const COMPUTE_CALL_SEC = 30;
+/** The part of a call's time clarabel may take (its `time_limit`): it then returns a status instead of being stopped with its interpreter. */
+export const SDP_TIME_SHARE = 0.8;
+
+/** When a generator's compute calls must end, and the signal that cuts them short. */
+export interface ComputeBudget {
+  /** `Date.now()` past which no call runs; each call gets the time to it, at most `COMPUTE_CALL_SEC`. */
+  deadline: number;
+  signal?: AbortSignal;
+}
+
+/** The seconds the next call gets: the time to the deadline, at most `COMPUTE_CALL_SEC`; below 1, none. */
+const callSeconds = (deadline: number): number => Math.min(COMPUTE_CALL_SEC, Math.floor((deadline - Date.now()) / 1000));
 
 /**
  * What the stage needs of the host's compute tool (`registryCompute`'s `needs`): (c) needs clarabel, which only
@@ -425,7 +437,7 @@ const MAX_CERT_VARS = 6;
  * (b) The target equation as a combination of the equation hypotheses, `target = Σ cᵢ · hᵢ`, the cofactors
  * from the compute tool, checked here exactly, written for `linear_combination`.
  */
-export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: { timeoutSec: number; signal?: AbortSignal }): Promise<Generated> {
+export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: ComputeBudget): Promise<Generated> {
   const outside = outsideFragment(goal, "polyrith");
   if (outside !== undefined || goal.target.kind !== "atom") return { candidates: [], note: outside ?? "outside the fragment" };
   const eqs = goal.hyps.filter((h) => h.atom.rel === "=");
@@ -433,7 +445,10 @@ export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | 
   const n = goal.vars.length;
   const gens = eqs.map((h) => h.atom.lhs.sub(h.atom.rhs));
   const target = goal.target.atom.lhs.sub(goal.target.atom.rhs);
-  const answer = await compute.run(pythonWith({ nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE }, POLYRITH_PY), options);
+  const timeoutSec = callSeconds(options.deadline);
+  if (timeoutSec < 1) return { candidates: [], note: "not tried: the time for this method is spent" };
+  const call = { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) };
+  const answer = await compute.run(pythonWith({ nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE }, POLYRITH_PY), call);
   const out = lastJson(answer) as { member?: unknown; cofactors?: unknown } | undefined;
   if (out === undefined || typeof out !== "object" || out === null || typeof out.member !== "boolean") return { candidates: [], note: `${compute.capability} gave no answer in the expected form` };
   if (!out.member) return { candidates: [], note: "the conclusion is not in the ideal of the equation hypotheses" };
@@ -694,7 +709,7 @@ function sosScripts(goal: PolyGoal, terms: readonly SosTerm[]): string[] {
  * with the hypotheses `0 ≤ g` as Putinar multipliers. The SDP runs in the compute tool (clarabel); the rounding,
  * the projection, the LDLᵀ and the check of the identity run here, exactly.
  */
-export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: { timeoutSec: number; signal?: AbortSignal }): Promise<Generated> {
+export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: ComputeBudget): Promise<Generated> {
   const outside = outsideFragment(goal, "sos");
   if (outside !== undefined || goal.target.kind !== "atom") return { candidates: [], note: outside ?? "outside the fragment" };
   const f = goal.target.atom.rhs.sub(goal.target.atom.lhs);
@@ -735,6 +750,12 @@ export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undef
       last = `outside the fragment: more than ${MAX_UNKNOWNS} unknowns or ${MAX_CONSTRAINTS} constraints`;
       continue;
     }
+    // The time is taken again before each program: the Putinar one gets what the plain one left.
+    const timeoutSec = callSeconds(options.deadline);
+    if (timeoutSec < 1) {
+      last = "not tried: the time for this method is spent";
+      break;
+    }
     const data = {
       blocks: program.blocks.map((b) => b.basis.length),
       // Not read by the program: the monomials of each Gram basis, for a person reading the call in the journal.
@@ -742,9 +763,9 @@ export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undef
       nx: program.nx,
       rows: program.rows.map((row) => row.map(([k, v]) => [k, Number(v.n) / Number(v.d)])),
       rhs: program.rhs.map((v) => Number(v.n) / Number(v.d)),
-      timeLimit: options.timeoutSec,
+      timeLimit: Math.max(0.5, SDP_TIME_SHARE * timeoutSec),
     };
-    const answer = await compute.run(pythonWith(data, SOS_PY), options);
+    const answer = await compute.run(pythonWith(data, SOS_PY), { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
     const out = lastJson(answer) as { status?: unknown; x?: unknown } | undefined;
     if (out === undefined || typeof out !== "object" || out === null || typeof out.status !== "string" || !Array.isArray(out.x) || out.x.length !== program.nx + 1 || !out.x.every((v) => typeof v === "number" && Number.isFinite(v))) {
       last = `${compute.capability} gave no answer in the expected form`;
@@ -1034,17 +1055,27 @@ export async function runCertificates(options: CertificateStageOptions): Promise
     for (const method of options.settings.methods) notes.push({ method, note: `outside the fragment: ${goal}` });
     return { tries, cpuMs: 0, notes, submissions };
   }
-  for (const method of options.settings.methods) {
+  const methods = options.settings.methods;
+  // A slice of the budget is kept for each later method that needs no tool and can take the goal, so that the compute
+  // calls and the checks of (b) and (c) cannot starve (d).
+  const slice = Math.min(CERTIFICATE_TRY_SEC * 1000, budgetMs / 4);
+  const kept = (method: CertificateMethod): number => slice * methods.slice(methods.indexOf(method) + 1).filter((m) => !NEEDS_COMPUTE.has(m) && outsideFragment(goal, m) === undefined).length;
+  /** The time a method may spend: what is left of the budget, less what is kept for the methods after it. */
+  const available = (method: CertificateMethod): number => left() - kept(method);
+  for (const method of methods) {
     if (options.signal?.aborted) break;
     if (left() < 1000) {
       notes.push({ method, note: "not tried: the battery's budget is spent" });
       continue;
     }
-    const timeoutSec = Math.max(1, Math.min(COMPUTE_CALL_SEC, Math.floor(left() / 1000)));
+    if (available(method) < 1000) {
+      notes.push({ method, note: "not tried: the time left is kept for the methods after it that need no tool" });
+      continue;
+    }
     const started = Date.now();
     let generated: Generated;
     try {
-      const call = { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) };
+      const call = { deadline: started + available(method), ...(options.signal !== undefined ? { signal: options.signal } : {}) };
       generated =
         method === "modular" ? modularCandidates(goal, options.settings)
           : method === "polyrith" ? await polyrithCandidates(goal, options.compute, call)
@@ -1061,13 +1092,13 @@ export async function runCertificates(options: CertificateStageOptions): Promise
     }
     let accepted = false;
     for (const candidate of generated.candidates) {
-      if (options.signal?.aborted || left() < 1000 || submissions >= options.maxSubmissions) break;
+      if (options.signal?.aborted || available(method) < 1000 || submissions >= options.maxSubmissions) break;
       const screened = leanTextProblems(candidate.script);
       if (screened.length > 0) {
         notes.push({ method, note: `a candidate failed the screen: ${screened[0]}` });
         continue;
       }
-      const limit = Math.max(1, Math.min(CERTIFICATE_TRY_SEC, Math.floor(left() / 1000)));
+      const limit = Math.max(1, Math.min(CERTIFICATE_TRY_SEC, Math.floor(available(method) / 1000)));
       const t0 = Date.now();
       let record: TryRecord;
       try {

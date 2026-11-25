@@ -37,6 +37,7 @@ export interface ComputeAnswer {
 export interface ComputeTool {
   /** The capability that answers (the one tried next, before the first call), for the notes. */
   readonly capability: string;
+  /** Runs `code`; the call ends within `timeoutSec`, the interpreter's start included (a new session's first call starts one). */
   run(code: string, options: { timeoutSec: number; signal?: AbortSignal }): Promise<ComputeAnswer>;
   /** Ends the session. */
   release?(): Promise<void>;
@@ -59,7 +60,8 @@ export function registryCompute(registry: Pick<Registry, "offers" | "invoke" | "
       for (;;) {
         const capability = candidates[at] as string;
         try {
-          const result = await registry.invoke(capability, { code, timeout: timeoutSec }, { actor: options.actor, scope: options.scope, ...(signal !== undefined ? { signal } : {}) });
+          // The code's own limit, and the registry's over the whole call, which covers the interpreter's start as well.
+          const result = await registry.invoke(capability, { code, timeout: timeoutSec }, { actor: options.actor, scope: options.scope, timeoutMs: Math.ceil(timeoutSec * 1000), ...(signal !== undefined ? { signal } : {}) });
           const out = (result.output ?? {}) as { stdout?: unknown; result?: unknown };
           return { stdout: typeof out.stdout === "string" ? out.stdout : "", ...(typeof out.result === "string" ? { result: out.result } : {}) };
         } catch (error) {

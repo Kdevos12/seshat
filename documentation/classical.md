@@ -162,7 +162,12 @@ evidence at most, and are not recorded as anything else.
 holds (`applicableCertificates`, the generators' own shape tests with no compute call: (b) and (c) count only with a
 compute tool), the tactics run under `cpuBudgetSec` minus `certificateSec` (default 30, at most half the budget); on
 one that none holds, they get the whole budget and the stage only writes its notes. The stage spends what is left,
-Lean time and compute time together, each Lean check at most 30 s and each compute call at most 30 s. When the
+Lean time and compute time together, each Lean check at most 30 s and each compute call at most 30 s, the
+interpreter's start included (the registry's limit on the call covers it); (c) takes its time again before its
+Putinar program, which gets what the plain one left, and gives clarabel 0.8 of a call's time as its `time_limit`, so
+that the solver returns a status rather than being stopped with its interpreter. The methods run in the order of
+the table, but a method that needs no tool and can take the goal keeps a slice of the budget (a quarter, at most
+30 s) from the methods before it, so that (b) and (c) cannot spend the time of (d). When the
 reserve cut the tactics short and the stage closes nothing, what it left of the budget goes back to the tactics
 not tried yet. Its submissions count against `maxSubmissions` with the tactics'. Each Lean check is a try `cert.<method>` in the
 same `battery_run` node as the tactics, so it has a Beta posterior per (domain, method) like theirs; the node's
