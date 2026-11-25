@@ -2,7 +2,9 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { BlobStore, Journal } from "@seshat/core";
 import { LakeCertifier } from "@seshat/lean-local";
+import { defaultArgs, LEAN_LSP_MCP_VERSION, serverVariables } from "@seshat/lean-lsp";
 import {
+  type AcpMcpServer,
   activeRuns,
   adoptBuild,
   type AgentSettings,
@@ -70,12 +72,26 @@ export function loadLibraryBuilderConfig(path: string, env: Readonly<Record<stri
   return { builder: "coding-agent", "coding-agent": section };
 }
 
+/**
+ * The MCP server an ACP agent is given when its settings name none (plan change EA2): the `lean-lsp-mcp` command that `lean.lsp`
+ * wraps (`uvx` with the pinned release, the harness's own variables), pointed at the agent's clone.
+ */
+export function defaultAcpMcpServer(): AcpMcpServer {
+  return { name: "lean-lsp", command: "uvx", args: defaultArgs("uvx", LEAN_LSP_MCP_VERSION), env: serverVariables({ command: "uvx" }, "{clone}") };
+}
+
+/** The agent's settings as the builder gets them: over ACP with no `acp.mcpServers`, the default server; otherwise as written. */
+export function withAcpDefaults(agent: AgentSettings): AgentSettings {
+  if (agent.transport !== "acp" || agent.acp?.mcpServers !== undefined) return agent;
+  return { ...agent, acp: { ...agent.acp, mcpServers: [defaultAcpMcpServer()] } };
+}
+
 /** The builder the config selects. Throws when the sandbox rules are not met (the agent's, the certifier's). */
 export function makeLibraryBuilder(config: LibraryBuilderConfig): { builder: LibraryBuilder; budget: { usd?: number; seconds?: number }; timeoutSec: number } {
   if (config.builder === "none") return { builder: new NoneBuilder(), budget: {}, timeoutSec: 60 };
   const c = config["coding-agent"] as CodingAgentConfig;
   const builder = new CodingAgentBuilder({
-    settings: c.agent,
+    settings: withAcpDefaults(c.agent),
     repo: resolve(c.repo),
     ...(c.build !== undefined ? { build: c.build } : {}),
     certifierFor: (projectDir) => new LakeCertifier({ ...c.certifier, projectDir }),

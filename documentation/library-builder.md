@@ -23,7 +23,7 @@ interface LibraryBuilder {
 | Builder | Does |
 |---|---|
 | `none` (default) | Builds nothing. The result is `skipped`, and the gap is only recorded. |
-| `coding-agent` | Runs an external CLI agent in a clone of the environment's project, then applies the gate below. |
+| `coding-agent` | Runs an external agent (its command line, or an ACP session: [Transports](#transports)) in a clone of the environment's project, then applies the gate below. |
 
 A **spec** (`LibrarySpec`, written by a person or by a later spec writer, never by the agent) has a job, a domain, a reason,
 the imports the new files may use, the items to formalize (an informal statement, the expected name and `def` or `theorem`),
@@ -73,6 +73,55 @@ is invalid, and the agent is not started.
    is killed at its time limit or on abort. **Seshat cuts no network itself**: that no code reaches the network while the build runs is the sandbox's job (`bwrap --unshare-net`,
    say), and `lake exe cache get` needs a network of its own, so a sandbox for the build step has to allow it or the cache has to be filled before.
 
+## Transports
+
+How Seshat talks to the agent is `agent.transport` (plan change EA2): `cli` (the default, as above) or `acp`. Both are one builder:
+the clone, the agent's environment (`PATH`, its own `HOME` and `TMPDIR`, the variables of `env` and nothing else), the `sandbox`
+command in front, the time limit, the gate and the record are the same, and the gate decides what is kept whatever the transport.
+**Seshat decides, never the agent**: neither an exit code nor a stop reason is a verdict.
+
+With `acp`, Seshat is a client of the **Agent Client Protocol** (JSON-RPC 2.0, one message per line on the agent's standard input and
+output). It starts the agent's ACP command, then:
+
+1. `initialize` with protocol version 1 and **no `fs` and no `terminal` capability**: the agent reads and writes with its own tools,
+   inside the sandbox, and the gate reads what it left. An agent that answers another protocol version is refused.
+2. `session/new` with the clone as `cwd` and the MCP servers of `acp.mcpServers` (stdio; `{clone}` in a value is the clone's
+   directory). Absent, `harness library build` gives the `lean-lsp-mcp` command that `lean.lsp` wraps (`uvx` with the pinned
+   release, `LEAN_PROJECT_PATH` the clone); `[]` gives none.
+3. `session/prompt` with the spec's prompt (the same text as on standard input over the CLI). The agent's `agent_message_chunk`
+   text is kept as its output; `usage_update` is recorded (tokens used, context size, cumulative cost).
+4. **Permission requests** (`session/request_permission`) are answered by the settings: a tool kind listed in `acp.deny` (default
+   `["fetch"]`: the network is the sandbox's to give, and the CLI transport's print mode denies a fetch too) is refused; a request
+   that names a path outside the clone (after links) is refused whatever its kind; anything else is allowed, once (`allow_once`
+   rather than `allow_always`, so that every request is asked). Every answer is journaled with its reason.
+5. **Every other request of the agent** (`fs/read_text_file`, `fs/write_text_file`, `terminal/*`, anything else) is answered
+   "method not found" and recorded. A line that is not a JSON-RPC message is counted and ignored; a line longer than 4 MiB ends the run.
+6. At the time limit or on abort, Seshat sends `session/cancel`, waits `acp.cancelGraceSec` (default 5) for the turn to end, then kills
+   the process group as the CLI transport does: the build is `failed`. When the reported cost reaches the dollar budget (`budget.usd`,
+   in USD), Seshat cancels the turn and the gate judges what was written. The cost is recorded, not charged anywhere: `harness library
+   build` has no ledger, and the job's caller (plan change EA3) charges it.
+
+When the turn ends, the process group is killed and the files are judged. A protocol that never reaches the prompt (the agent exits,
+speaks something else, refuses `initialize` or `session/new`) is a build that `failed`: the agent did not start. A prompt answered
+with an error, or an agent that exits during its turn, is judged by its files, like a CLI agent's non-zero exit code.
+
+| `agent` | Default ACP command |
+|---|---|
+| `claude-code` | `claude-agent-acp` (adapter) |
+| `codex` | `codex-acp` (adapter) |
+| `opencode` | `opencode acp` |
+| `pi` | `pi-acp` (adapter) |
+| `gemini` | `gemini --experimental-acp` |
+| `hermes` | `hermes acp` |
+| `goose` | `goose acp` |
+
+`agy` has no default ACP command; `gemini`, `hermes` and `goose` have no default CLI command: with those, `command` is required. The
+ACP defaults are the plan's names; none has been run. `model` reaches an ACP agent only through a `{model}` placeholder in a
+`command` of the person's: the defaults pass none. The protocol's method and field names are in one module,
+`packages/library-builder/src/acp-protocol.ts`, written against the specification's version 1 as published on 2026-11-25. Seshat
+implements the messages itself, without the protocol's TypeScript SDK that the plan named: no new dependency, and the few messages a
+client needs fit in one module.
+
 ## The gate
 
 All of it is Seshat's, in order; the first rule that fails ends the build, and each check is journaled.
@@ -99,7 +148,9 @@ exist only there. In `harness library build` that is a `LakeCertifier` with the 
 
 `recordBuild` writes one `library_build` node ([memory.md](memory.md#nodes)) with: the agent, the model, the budget and time limit, the argv, the
 keys of the agent's environment, the base commit, the prompt and the diff (as blobs, by hash), the end of the agent's output, the spec, every
-gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. An accepted build also records each
+gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. Over ACP it also holds `transport: "acp"`
+and `acp`: what `initialize` answered, the session id, the stop reason, the MCP servers' names, every permission answer with its reason, the
+requests refused, the usage reported and why the turn was cancelled. A build over the CLI has neither field. An accepted build also records each
 new definition as a `lean_definition` node, `unreviewed` ([below](#review-status-of-definitions)). Gaps are `library_gap` nodes. A build
 never creates a claim and never changes a claim's status: the only things that change a status are `validate` and the certifier
 ([trust.md](trust.md)). `harness library build` writes the record to a journal directory of its own (`--out`, default `runs/library-ID`). That journal has no run in it, so it is
@@ -153,8 +204,8 @@ definition nobody checked ([memory.md](memory.md#definitions-and-their-review-st
 
 ## Config
 
-`config/library-builder.json` selects the builder (`none` as shipped). For `coding-agent` it holds `agent` (`agent`, `command`, `model`, `env`,
-`sandbox`, `unsandboxed`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`, `env`), `certifier` (the `LakeCertifier` settings except `projectDir`),
+`config/library-builder.json` selects the builder (`none` as shipped). For `coding-agent` it holds `agent` (`agent`, `transport`, `command`, `model`, `env`,
+`sandbox`, `unsandboxed`, and for `acp` the optional `acp`: `mcpServers`, `deny`, `cancelGraceSec`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`, `env`), `certifier` (the `LakeCertifier` settings except `projectDir`),
 `budget` and `timeoutSec`. Only the selected section is read and its `${env:NAME}` variables expanded. The model is the config's string, never
 chosen by the harness.
 
@@ -169,6 +220,10 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
 ## Not run
 
 - No real coding agent: the default commands are not checked against installed programs (two were checked against published documentation on 2026-11-25, and corrected), and the stream-json output is not read at all (only the files count).
+- No real ACP agent or adapter: the transport ran against a fake agent script only (`test/fixtures/fake-acp-agent.mjs`). The message and field
+  names of `acp-protocol.ts` follow the published specification and must be checked against a real agent; so must the default ACP commands,
+  whether an agent asks permission before its edits at all, and whether the default MCP server starts behind the person's sandbox (`uvx`
+  fetches the pinned release unless it is cached, and a sandbox without network refuses that).
 - No real `lake`, Lean or certifier: the gate's `build` is a fake `lake`, and the fake certifier compares statements by text where the real one compares terms.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.

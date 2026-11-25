@@ -15,7 +15,9 @@ import {
   LibraryBuilderConfigError,
   loadLibraryBuilderConfig,
   makeLibraryBuilder,
+  withAcpDefaults,
 } from "../src/library-build-command.ts";
+import { LEAN_LSP_MCP_VERSION } from "@seshat/lean-lsp";
 import { libraryDefinitionsCommand, libraryDeprecateCommand, libraryReviewCommand, registryDefinitions, seedDefinitions } from "../src/library-registry.ts";
 
 function tmp(): string {
@@ -48,6 +50,17 @@ describe("the library builder's config", () => {
     assert.deepEqual(expandEnv(["${env:A}x", { b: "${env:A}" }], { A: "1" }), ["1x", { b: "1" }]);
     writeFileSync(path, JSON.stringify({ builder: "other" }));
     assert.throws(() => loadLibraryBuilderConfig(path, {}), LibraryBuilderConfigError);
+  });
+
+  it("gives an ACP agent the lean-lsp-mcp server pointed at its clone unless the settings name servers (EA2)", () => {
+    const server = withAcpDefaults({ agent: "gemini", transport: "acp", unsandboxed: true }).acp?.mcpServers?.[0];
+    assert.equal(server?.name, "lean-lsp");
+    assert.equal(server?.command, "uvx");
+    assert.ok(server?.args?.includes(`lean-lsp-mcp==${LEAN_LSP_MCP_VERSION}`));
+    assert.equal(server?.env?.LEAN_PROJECT_PATH, "{clone}");
+    assert.deepEqual(withAcpDefaults({ agent: "gemini", transport: "acp", unsandboxed: true, acp: { mcpServers: [] } }).acp?.mcpServers, []);
+    const cli = { agent: "pi" as const, unsandboxed: true };
+    assert.equal(withAcpDefaults(cli), cli, "the CLI transport's settings are passed as they are");
   });
 });
 

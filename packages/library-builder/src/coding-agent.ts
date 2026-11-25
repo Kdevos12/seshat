@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LeanCertifier } from "@seshat/core";
 import { type CommandRunner, spawnRunner } from "@seshat/lean-env";
-import { type AgentRunner, type AgentSettings, agentEnvironment, promptHash, renderCommand, renderPrompt, sandboxProblem, spawnAgent } from "./agent.ts";
+import { acpAgentRunner } from "./acp.ts";
+import { type AgentRunner, type AgentSettings, agentEnvironment, promptHash, renderCommand, renderPrompt, settingsProblem, spawnAgent } from "./agent.ts";
 import { type BuildOptions, type BuildProvenance, type BuildStatus, type LibraryBuildResult, type LibraryBuilder, newBuildId } from "./builder.ts";
 import { changesFrom, DEFAULT_LIMITS, type DiffLimits } from "./diff.ts";
 import { gateRunner } from "./runner.ts";
@@ -28,7 +29,7 @@ export interface CodingAgentOptions {
   ref?: string;
   /** Runs `git` and `lake`, behind `gateRunner` (allowlisted environment, the agent's sandbox). Default: starts the programs. */
   run?: CommandRunner;
-  /** Starts the agent. Default: starts the program. */
+  /** Starts the agent. Default: starts the program, as the settings' transport says (`spawnAgent` for `cli`, `acpAgentRunner` for `acp`). */
   agentRunner?: AgentRunner;
   log?: (line: string) => void;
   /** The environment the agent's `PATH` is read from. Default: the process's. */
@@ -41,18 +42,20 @@ const GIT = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
 const ABORTED = "the build was aborted";
 
 /**
- * The `coding-agent` builder (plan change LC4). It clones the project, runs an external CLI agent in the clone,
- * non-interactively, with the prompt on standard input and only the environment the settings name, and then judges what
+ * The `coding-agent` builder (plan change LC4). It clones the project, runs an external agent in the clone,
+ * non-interactively, with the prompt on standard input (`cli`) or in an ACP session (`acp`, plan change EA2), with only the
+ * environment the settings name, and then judges what
  * the agent left by Seshat's gate (`runGate`), which the agent never touches: the diff is read from the files, not from the clone's
  * git directory; the gate builds its own fresh checkout; the certifier is Seshat's. The agent's own word is not used for anything.
- * Written against the agents' command lines and run here only with a fake agent script (documentation/library-builder.md).
+ * The two transports differ only in how the agent is started and spoken to: the clone, the environment, the sandbox and the gate are the same.
+ * Written against the agents' command lines and ACP, and run here only with fake agent scripts (documentation/library-builder.md).
  */
 export class CodingAgentBuilder implements LibraryBuilder {
   readonly id = "coding-agent";
   readonly #o: CodingAgentOptions;
 
   constructor(options: CodingAgentOptions) {
-    const refusal = sandboxProblem(options.settings);
+    const refusal = settingsProblem(options.settings);
     if (refusal !== undefined) throw new Error(`coding-agent: ${refusal}`);
     this.#o = options;
   }
@@ -136,7 +139,10 @@ export class CodingAgentBuilder implements LibraryBuilder {
       provenance.promptHash = promptHash(prompt);
       provenance.command = argv;
       provenance.envKeys = Object.keys(env).sort();
-      const agentRun = await (o.agentRunner ?? spawnAgent)(argv, {
+      const acp = o.settings.transport === "acp";
+      if (acp) provenance.transport = "acp";
+      const runner = o.agentRunner ?? (acp ? acpAgentRunner({ ...(o.settings.acp !== undefined ? { settings: o.settings.acp } : {}), ...(options.budget.usd !== undefined ? { budgetUsd: options.budget.usd } : {}) }) : spawnAgent);
+      const agentRun = await runner(argv, {
         cwd: work,
         env,
         stdin: prompt,
@@ -145,6 +151,7 @@ export class CodingAgentBuilder implements LibraryBuilder {
       });
       provenance.agentOutput = agentRun.output;
       provenance.agentMs = agentRun.ms;
+      if (agentRun.acp !== undefined) provenance.acp = agentRun.acp;
       if (agentRun.aborted || aborted()) return abortedResult();
       if (agentRun.timedOut) return result("failed", `the agent did not finish within ${options.budget.seconds ?? options.timeoutSec} seconds`);
       if (agentRun.code === null) return result("failed", `the agent did not start: ${agentRun.output.trim().split("\n").pop() ?? ""}`);

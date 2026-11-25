@@ -5,6 +5,7 @@ import {
   agentEnvironment,
   allowedPrefix,
   changesFrom,
+  DEFAULT_ACP_COMMANDS,
   DEFAULT_COMMANDS,
   diffViolations,
   moduleOfPath,
@@ -54,10 +55,13 @@ describe("the agent's command", () => {
   });
 
   it("has a default for each agent that reads the prompt on standard input, and takes a template of the person's", () => {
-    for (const a of AGENTS) assert.ok(DEFAULT_COMMANDS[a].length > 0 && !DEFAULT_COMMANDS[a].some((t) => t.includes("{prompt}")), a);
-    assert.equal(DEFAULT_COMMANDS.codex[0], "codex");
-    assert.deepEqual(DEFAULT_COMMANDS.codex.slice(0, 2), ["codex", "exec"]);
-    assert.deepEqual(DEFAULT_COMMANDS.opencode.slice(0, 2), ["opencode", "run"]);
+    for (const a of AGENTS) {
+      const commands = [DEFAULT_COMMANDS[a], DEFAULT_ACP_COMMANDS[a]].filter((c) => c !== undefined);
+      assert.ok(commands.length > 0 && commands.every((c) => c.length > 0 && !c.some((t) => t.includes("{prompt}"))), a);
+    }
+    assert.equal(DEFAULT_COMMANDS.codex?.[0], "codex");
+    assert.deepEqual(DEFAULT_COMMANDS.codex?.slice(0, 2), ["codex", "exec"]);
+    assert.deepEqual(DEFAULT_COMMANDS.opencode?.slice(0, 2), ["opencode", "run"]);
     assert.deepEqual(renderCommand({ agent: "pi", command: "my-agent --fast --limit {budget_seconds}", unsandboxed: true }, { seconds: 90 }, 600), ["my-agent", "--fast", "--limit", "90"]);
   });
 
