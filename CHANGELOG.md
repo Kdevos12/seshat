@@ -3,7 +3,7 @@
 Each version of Seshat, newest first. A version is archived on Zenodo when it is released
 ([10.5281/zenodo.24354662](https://doi.org/10.5281/zenodo.24354662) points to the latest).
 
-## 1.0.0-beta.2 (2026-11-24)
+## 1.0.0-beta.2 (2026-11-25)
 
 Long proofs as chains of short ones that Lean checks one at a time, and a cheap Lean-only first draft. Every new
 behaviour is an option, off by default: `v1` and `v2` run as in 1.0.0-beta.1.
