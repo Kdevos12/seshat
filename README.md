@@ -259,6 +259,7 @@ flowchart TB
 
   m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::real
   battery["Tactics in parallel<br/>decide, omega, norm_num, simp,<br/>linarith, grind, aesop, hammer..."]:::real
+  certs["Certificate stage (CX4), E6 goals:<br/>modular obstruction, cofactors,<br/>sums of squares, Bernstein boxes"]:::wait
   subgraph JUDGE["Judge: Lean"]
     fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::real
     certifier["Certifier (lean_certify)<br/>fresh process, kernel<br/>replay, axioms and<br/>statement compared"]:::real
@@ -382,6 +383,9 @@ flowchart TB
   m10 -->|"cheapest tactics first,<br/>stop at the first success"| battery
   battery -->|"Lean files"| leancheck
   battery -->|"a success is submitted<br/>through validate"| fast
+  battery -->|"no tactic closed<br/>a goal tagged E6"| certs
+  certs -->|"Gröbner cofactors,<br/>an SDP by clarabel"| python
+  certs -->|"Lean text written from integers,<br/>rationals and the goal's names,<br/>submitted through validate"| fast
   m10 -->|"SMT-LIB, TPTP"| smtz3 & vampire & eprover
   smtz3 & vampire & eprover -->|"unsat is evidence,<br/>premises go to grind,<br/>aesop, hammer"| battery
   m10 -->|"tries, evidence,<br/>posteriors from the journal"| journal

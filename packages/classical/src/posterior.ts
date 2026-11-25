@@ -31,6 +31,8 @@ export interface BatteryRunData {
   tries: TryRecord[];
   /** The tactic that closed the goal, and the proof text that was submitted. */
   solved?: { tactic: string; proof: string };
+  /** Why each method of the certificate stage (plan change CX4) gave no accepted proof, when the stage ran; its tries are `cert.<method>` in `tries`. */
+  certificates?: Array<{ method: string; note: string }>;
   /** What `validate` said about the submission. */
   submission?: { verdict: "valid" | "invalid"; status?: string; validationId?: string; reasons?: string[] };
   /** Lean time spent, in milliseconds. */

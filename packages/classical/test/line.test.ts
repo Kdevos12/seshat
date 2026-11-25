@@ -254,3 +254,69 @@ describe("the briefing", () => {
     assert.equal(describeTried(openMemory(), "clm_none"), undefined);
   });
 });
+
+describe("the certificate stage in the line (plan change CX4)", () => {
+  const SOS = "(a b : ℝ) : 2 * a * b ≤ a ^ 2 + b ^ 2";
+  const HINTS = "nlinarith [sq_nonneg (a - b)]";
+
+  /** A compute tool whose clarabel returns the Gram matrix of (a - b)², and counts its sessions. */
+  function compute() {
+    const tool = {
+      capability: "compute.python",
+      calls: 0,
+      released: 0,
+      scopes: [] as string[],
+      async run(code: string) {
+        tool.calls++;
+        assert.ok(code.includes("clarabel"));
+        return { stdout: `${JSON.stringify({ status: "Solved", x: [1, -1, 1, 0] })}\n` };
+      },
+      async release() {
+        tool.released++;
+      },
+    };
+    return tool;
+  }
+
+  it("closes a goal tagged E6 with a certificate, with no model call, and ends the compute session", async () => {
+    const tool = compute();
+    const services: M10Services = {
+      compute: (_problem, scope) => {
+        tool.scopes.push(scope);
+        return tool;
+      },
+    };
+    const { problem, requests, lean, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false }, script: { [HINTS]: { ok: true } } });
+    const refuse = (what: string) => new Proxy({}, { get: () => { throw new Error(`the stage called ${what}`); } });
+    Object.assign(problem as object, { llm: refuse("a model"), decide: refuse("decide") });
+    await hook(createM10(services), "beforeProvers")(problem);
+    assert.deepEqual(requests.map((r) => r.proof), [HINTS]);
+    assert.equal(lean.calls.at(-1)?.id, "m10:cert.sos");
+    assert.equal(tool.calls, 1);
+    assert.equal(tool.released, 1);
+    assert.deepEqual(tool.scopes, [`m10:p1:${claimId}:certificates`]);
+    assert.match(describeTried(memory, claimId) ?? "", /cert\.sos closed the goal in Lean and the proof passed the fast check/);
+  });
+
+  it("tells the provers which certificates failed, and opens no compute session on a goal not tagged E6", async () => {
+    const tool = compute();
+    const { problem, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false } });
+    await hook(createM10({ compute: () => tool }), "beforeProvers")(problem);
+    assert.match(describeTried(memory, claimId) ?? "", /Certificates written without a model and checked by Lean did not close the goal: a sum of squares/);
+    const other = compute();
+    const plain = await problemOf({ options: { firstOrder: false } });
+    await hook(createM10({ compute: () => other }), "beforeProvers")(plain.problem);
+    assert.equal(other.calls + other.released, 0);
+  });
+
+  it("reads its options, and is off with certificates false", async () => {
+    const o = readOptions(M10_DEFAULTS);
+    assert.deepEqual([o.certificates, o.maxModulus, o.maxBoxes, o.certificateSec], [true, 64, 16, 30]);
+    assert.throws(() => readOptions({ ...M10_DEFAULTS, maxModulus: 1 }), /option M10\.maxModulus is an integer from 2 to 256/);
+    const tool = compute();
+    const { problem, lean } = await problemOf({ statement: SOS, options: { firstOrder: false, certificates: false } });
+    await hook(createM10({ compute: () => tool }), "beforeProvers")(problem);
+    assert.ok(!lean.calls.some((c) => c.id.includes("cert.")));
+    assert.equal(tool.calls, 0);
+  });
+});

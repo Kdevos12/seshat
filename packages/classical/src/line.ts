@@ -7,6 +7,8 @@ import { type Claim, type MemoryStore, screenProse } from "@seshat/memory";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type AtpTool, parseAtpTools, type FirstOrderSettings, FIRST_ORDER_RUN, type FirstOrderRunData, registrySolvers, type Solvers, solveFirstOrder } from "./firstorder.ts";
 import { type HostProbe, probeHost } from "./probe.ts";
+import { routeStatement } from "./router.ts";
+import { CERTIFICATE_METHODS, type ComputeTool, DEFAULT_CERTIFICATES, isCertificateTry, registryCompute } from "./certificates.ts";
 import { BATTERY_RUN, type BatteryRunData, Posteriors } from "./posterior.ts";
 import { type Premise, type PremiseSelector, parseCutoffs } from "./premises.ts";
 import { type GoalClient, posteriorOrderer, searchGoal } from "./search.ts";
@@ -35,6 +37,14 @@ export const M10_DEFAULTS = {
   /** Run the battery on the open subgoals of the problem's claim too (claims joined to it by `decomposes_into`). */
   subgoals: true,
   maxSubgoals: 8,
+  /** The certificate stage (plan change CX4) after the tactics, on goals the router tags E6: modular obstruction, cofactors, sums of squares, Bernstein boxes. */
+  certificates: true,
+  /** The largest modulus of the modular obstruction. */
+  maxModulus: 64,
+  /** The most boxes of the Bernstein subdivision. */
+  maxBoxes: 16,
+  /** Seconds of `cpuBudgetSec` kept for the certificate stage on a goal tagged E6 (at most half of it). */
+  certificateSec: 30,
   /** Run ATP and SMT with reconstruction when the battery fails. */
   firstOrder: true,
   atpTimeoutSec: 20,
@@ -62,6 +72,10 @@ export interface M10Options {
   probe: boolean;
   subgoals: boolean;
   maxSubgoals: number;
+  certificates: boolean;
+  maxModulus: number;
+  maxBoxes: number;
+  certificateSec: number;
   firstOrder: boolean;
   atpTimeoutSec: number;
   atpTools: AtpTool[];
@@ -111,6 +125,10 @@ export function readOptions(raw: Readonly<JsonObject>): M10Options {
     probe: flag("probe"),
     subgoals: flag("subgoals"),
     maxSubgoals: integer("maxSubgoals", 0, 100),
+    certificates: flag("certificates"),
+    maxModulus: integer("maxModulus", 2, 256),
+    maxBoxes: integer("maxBoxes", 1, 256),
+    certificateSec: integer("certificateSec", 1, 3600),
     firstOrder: flag("firstOrder"),
     atpTimeoutSec: integer("atpTimeoutSec", 1, 300),
     atpTools: parseAtpTools(list("atpTools")),
@@ -132,6 +150,8 @@ export interface M10Services {
   premises?: (problem: ProblemContext) => readonly Premise[];
   /** Task 11's MePo or SInE. Default: symbol overlap mixed with BM25. */
   selector?: PremiseSelector;
+  /** The compute tool of the certificate stage, in a scope of its own. Default: the registry's compute.python, else compute.sage; none when the host offers neither. */
+  compute?: (problem: ProblemContext, scope: string) => ComputeTool | undefined;
 }
 
 /** The probe of each registry, by header: an answer is kept, an unreachable Lean is asked again at the next goal. */
@@ -171,7 +191,15 @@ export function subgoalsOf(memory: MemoryStore, claimId: string, limit: number):
 const ran = (memory: MemoryStore, kind: string, claim: Claim): boolean => memory.nodes(kind, { claimId: claim.claimId }).some((n) => (n.data as { statement?: string }).statement === claim.statement);
 
 function settings(options: M10Options): SolveSettings {
-  return { ...DEFAULT_SETTINGS, parallel: options.parallel, cpuBudgetSec: options.cpuBudgetSec, maxSubmissions: options.maxSubmissions, order: options.order, hammerCutoffs: options.hammerCutoffs };
+  return {
+    ...DEFAULT_SETTINGS,
+    parallel: options.parallel,
+    cpuBudgetSec: options.cpuBudgetSec,
+    maxSubmissions: options.maxSubmissions,
+    order: options.order,
+    hammerCutoffs: options.hammerCutoffs,
+    ...(options.certificates ? { certificates: { ...DEFAULT_CERTIFICATES, maxModulus: options.maxModulus, maxBoxes: options.maxBoxes, reserveSec: options.certificateSec, methods: CERTIFICATE_METHODS } } : {}),
+  };
 }
 
 /** Runs a stage; a goal whose text the screen refuses is skipped with a log line, as no stage of it may reach Lean. */
@@ -212,6 +240,10 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
     const goal: ClaimGoal = { claimId: claim.claimId, header, statement: claim.claimId === problem.claimId ? problem.target.statement : claim.statement };
     const label = claim.claimId === problem.claimId ? "the target" : `subgoal ${claim.claimId}`;
     if (!ran(problem.memory, BATTERY_RUN, claim)) {
+      // One compute session per goal the certificate stage may run on (tagged E6), ended when the goal's battery ends.
+      const scope = `m10:${problem.problemId}:${claim.claimId}:certificates`;
+      const wantsCompute = options.certificates && routeStatement(goal.statement).moves.includes("E6");
+      const compute = wantsCompute ? (services.compute !== undefined ? services.compute(problem, scope) : registryCompute(problem.registry, { actor: ACTOR, scope })) : undefined;
       const ctx: SolveContext = {
         checker,
         memory: problem.memory,
@@ -221,8 +253,9 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
         random: randomFor(problem.seed, claim.claimId),
         signal: problem.signal,
         log: problem.log,
+        ...(compute !== undefined ? { compute } : {}),
       };
-      const out = await refusing(problem, label, () => solveGoal(ctx, goal));
+      const out = await refusing(problem, label, () => solveGoal(ctx, goal)).finally(() => compute?.release?.().catch(() => {}));
       if (out === undefined) continue;
       problem.log(
         out.settled
@@ -322,17 +355,30 @@ async function runSearch(problem: ProblemContext, options: M10Options, claim: Cl
 
 const seconds = (ms: number): string => `${Math.max(1, Math.round(ms / 1000))} s`;
 
+/** The certificate stage's methods in words, for the briefing. */
+const CERTIFICATE_WORDS: Readonly<Record<string, string>> = {
+  "cert.modular": "a modular obstruction (reduce mod m, then decide)",
+  "cert.polyrith": "cofactors of the equation hypotheses (linear_combination)",
+  "cert.sos": "a sum of squares (nlinarith hints, linear_combination)",
+  "cert.bernstein": "Bernstein bounds on boxes (linarith, nlinarith)",
+};
+
 /** What the classical tools did about a claim, in words, for a session's opening message; undefined when they did nothing. */
 export function describeTried(memory: MemoryStore, claimId: string): string | undefined {
   const lines: string[] = [];
   const runs = memory.nodes(BATTERY_RUN, { claimId }).map((n) => n.data as unknown as BatteryRunData);
   if (runs.length > 0) {
     const byTactic = new Map<string, { outcome: string; ms: number }>();
+    const certificates = new Map<string, string>();
     let domain = "general";
     for (const run of runs) {
       domain = run.domains[0] ?? domain;
       for (const t of run.tries) {
         if (t.outcome === "aborted" || t.outcome === "error") continue;
+        if (isCertificateTry(t.tactic)) {
+          if (certificates.get(t.tactic) !== "success") certificates.set(t.tactic, t.outcome);
+          continue;
+        }
         const known = byTactic.get(t.tactic);
         byTactic.set(t.tactic, { outcome: t.outcome, ms: (known?.ms ?? 0) + t.timeMs });
       }
@@ -341,6 +387,8 @@ export function describeTried(memory: MemoryStore, claimId: string): string | un
     const total = failed.reduce((n, [, v]) => n + v.ms, 0);
     lines.push(`A syntactic router (a guess, not a proof) filed the goal under "${domain}".`);
     if (failed.length > 0) lines.push(`Lean tactics already tried on the whole goal, without a model: ${failed.map(([t, v]) => (v.outcome === "timeout" ? `${t} (timed out)` : t)).join(", ")}; they failed in ${seconds(total)} of Lean time. Do not repeat them on the goal as stated.`);
+    const certFailed = [...certificates].filter(([, o]) => o !== "success").map(([t]) => CERTIFICATE_WORDS[t] ?? t);
+    if (certFailed.length > 0) lines.push(`Certificates written without a model and checked by Lean did not close the goal: ${certFailed.join(", ")}.`);
     const solved = runs.find((r) => r.solved !== undefined);
     if (solved?.solved !== undefined) lines.push(`${solved.solved.tactic} closed the goal in Lean${solved.submission?.verdict === "valid" ? ` and the proof passed the fast check (validation ${solved.submission.validationId ?? "not recorded"})` : ", but validate did not accept the proof it submitted"}.`);
   }

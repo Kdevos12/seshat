@@ -131,6 +131,56 @@ tries `hammer@16`, `hammer@64` and `hammer@256`, which is `hammer {aesopPremises
 each cutoff has its own posterior. The configuration syntax is written from the LeanHammer README and
 has not run.
 
+## The certificate stage (plan change CX4)
+
+`certificates.ts`, with the exact arithmetic in `polynomial.ts`. On a goal the router tags E6 ("a
+certificate of a bound or an impossibility", CX1), when no tactic closed it, the battery tries four kinds of
+certificate that a plain Mathlib checks, with no model call, in this order, before the ATPs:
+
+| Method (try name) | Fragment | What is computed, and where | The Lean text |
+|---|---|---|---|
+| (a) modular obstruction (`cert.modular`) | an equation over `ℤ` or `ℕ`: a hypothesis, or the conclusion's `≠`, `¬ (a = b)` or `¬ ∃ xs, a = b` | the moduli `m ≤ maxModulus` (default 64, at most 4096 residue tuples) where the equation has no solution, in TypeScript; the two with the fewest tuples | `have h := congrArg (Int.cast : ℤ → ZMod m) h₀`, `push_cast at h`, `revert h`, `generalize (x : ZMod m) = r` per variable, `revert r ...`, `decide` (`exfalso` first when the conclusion is not `False`) |
+| (b) local polyrith (`cert.polyrith`) | an equation over `ℤ`, `ℚ`, `ℝ` or `ℂ` and at least one equation hypothesis, at most 6 variables | in the compute tool: sympy's Gröbner basis says whether the conclusion lies in the ideal of the hypotheses, then an ansatz of growing degree (up to 2 above the goal's) solved exactly over `Fraction` gives cofactors | `linear_combination (c₁) * h₁ + (c₂) * h₂`; over `ℤ` only integer cofactors |
+| (c) sums of squares (`cert.sos`) | `a ≤ b` (or `≥`) over `ℝ` or `ℚ`, at most 6 variables, Gram bases of at most 36 monomials | first a plain sum of squares on the Newton polytope's box, then with every hypothesis `g ≥ 0` (`≤`, `<` between polynomials) as a Putinar multiplier; clarabel in the compute tool maximizes `t` with every Gram matrix `⪰ t·I`; here the answer is rounded to rationals (denominators 1 to 10⁸, coarsest first), projected exactly onto the linear constraints, and factored by exact LDLᵀ | `nlinarith [sq_nonneg (l₁), mul_nonneg hpos (sq_nonneg (l₂)), ...]` (each multiplier `have hpos : 0 ≤ g := by linarith`), then the identity `have hsos : 0 ≤ d₁ * (l₁) ^ 2 + ... := add_nonneg ...` closed by `linear_combination hsos` |
+| (d) Bernstein subdivision (`cert.bernstein`) | `a ≤ b` or `a < b` over `ℝ` or `ℚ`, every variable of `b - a` between numeral bounds in the hypotheses, at most 64 coefficients a box | in TypeScript: the Bernstein coefficients of `b - a` on the box, the box split at the midpoint of its widest side until each box's coefficients are nonnegative (positive for `<`), at most `maxBoxes` (default 16) boxes; a negative value at a corner stops it | one `rcases le_total x c with h \| h` per split, and on each box `linarith` (a second candidate: `nlinarith`) with the Bernstein products `mul_nonneg (pow_nonneg (sub_nonneg.2 h₀) i) (pow_nonneg (sub_nonneg.2 h₁) j)` as hints |
+
+The goal is read by `readPolyGoal`: variables of one number sort, the hypotheses that are polynomial relations
+(the others are left aside), and a conclusion behind `∀` binders and `→` hypotheses, which the candidate
+introduces first (`intro`, `rintro`). A goal outside a method's fragment gets a note saying why, and no call.
+
+**Trust.** Every candidate is a Lean text written by the stage from integers, rationals, the goal's own variable
+and hypothesis names and fresh names it checks are unused; nothing a tool printed reaches it verbatim. A tool's
+answer is data (JSON on its last output line), read strictly: a malformed answer, cofactors that do not combine
+to the conclusion, or a Gram matrix whose exact LDLᵀ has a negative pivot gives no candidate. Every identity a
+certificate rests on is checked here, exactly, before Lean sees it. The text then passes the screen
+(`leanTextProblems`), is checked as `example <statement> := by <certificate>` by `lean.check` (a tool run of
+`line:M10`, id `m10:cert.<method>`), and a success goes through `validate` exactly as a tactic's does: the stage
+changes no status, and `native_decide` is never written. The SDP value, the residues and the coefficients are
+evidence at most, and are not recorded as anything else.
+
+**Budget and journal.** The stage spends the battery's budget: on a goal tagged E6 the tactics run under
+`cpuBudgetSec` minus `certificateSec` (default 30, at most half the budget), and the stage spends what is left,
+Lean time and compute time together, each Lean check at most 30 s and each compute call at most 30 s. Its
+submissions count against `maxSubmissions` with the tactics'. Each Lean check is a try `cert.<method>` in the
+same `battery_run` node as the tactics, so it has a Beta posterior per (domain, method) like theirs; the node's
+`certificates` field says why each method gave no accepted proof. The briefing names the certificates that
+failed.
+
+**The compute tool.** (b) and (c) use the host's compute tool through the registry (`registryCompute`):
+`compute.python` (CX3; its pinned packages have sympy and clarabel), else `compute.sage` (which has sympy; (c)
+then fails at the import of clarabel and says so). One session per goal (scope
+`m10:<problem>:<claim>:certificates`), released when the goal's battery ends; every call is a tool run. Without
+either, (b) and (c) are skipped with the note "the host offers no compute tool"; (a) and (d) need none.
+
+**Not verified.** Nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
+Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed). Unchecked: that
+`push_cast` and `generalize` leave the residues as written and that kernel `decide` on `ZMod m` finishes within
+30 s for the larger tuples; that `linear_combination` closes `≤` goals on Mathlib for Lean 4.27.0; that `linarith`
+expands the Bernstein products (else the `nlinarith` candidate); clarabel's `PSDTriangleConeT` order (upper
+triangle by columns, off-diagonal scaled by √2, as the program assumes; a wrong order gives matrices the exact
+check refuses, so no false candidate); whether its precision suffices for olympiad inequalities; the programs on
+Sage.
+
 ## The screen of text that reaches Lean
 
 Statements, headers, tactics, lemma names and premise names that a model wrote or chose are put into Lean
@@ -258,7 +308,7 @@ run skips every goal that has a `battery_run` or `first_order_run` node and a se
 makes no Lean call.
 
 `beforeProvers` works the problem's target and then each open subgoal (a claim joined to the target by a
-`decomposes_into` edge, at most `maxSubgoals`): the battery, then ATP and SMT if the battery failed. A goal
+`decomposes_into` edge, at most `maxSubgoals`): the battery (with its certificate stage on a goal tagged E6), then ATP and SMT if the battery failed. A goal
 the battery closes ends the line for that goal, and for the target ends the hook. Every Lean try is a
 `lean.check` tool run of the actor `line:M10`, so the journal has it. With `search` on and the target still
 open, the goal-level search runs last.
@@ -267,15 +317,17 @@ Options (`--line-option M10.<name>=<value>`): `parallel` 4, `cpuBudgetSec` 60, `
 `order` thompson|mean, `hammerCutoffs` "16,64,256", `packages` "" (the optional tactics the profile
 promises, not probed), `probe` true, `subgoals` true, `maxSubgoals` 8, `firstOrder` true,
 `atpTimeoutSec` 20, `premiseCutoffs` "16,64,256", `reconstructBudgetSec` 60, `search` false,
-`searchNodes` 60, `orderer` posterior|decide. A bad value stops the hook with the option's name.
+`searchNodes` 60, `orderer` posterior|decide, and for the certificate stage `certificates` true,
+`maxModulus` 64, `maxBoxes` 16, `certificateSec` 30. A bad value stops the hook with the option's name.
 
 The **briefing** (`describeTried`) says, from the nodes, what was tried: the router's domain as a guess,
 the tactics that failed and the Lean time they took ("do not repeat them on the goal as stated"), the
-tactic that closed the goal and whether `validate` accepted its proof, what z3 and Vampire answered and
+tactic that closed the goal and whether `validate` accepted its proof, the certificates that Lean did not
+accept, what z3 and Vampire answered and
 whether Lean accepted a reconstruction, and the search. A goal M10 did nothing on has no briefing.
 
-The services (`M10Services`) replace the registry's `lean.check`, the solvers, the premise index and
-the selector, for tests and for Tasks 9 and 11.
+The services (`M10Services`) replace the registry's `lean.check`, the solvers, the premise index,
+the selector and the certificate stage's compute tool, for tests and for Tasks 9 and 11.
 
 ## `prove.search`
 

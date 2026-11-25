@@ -4,6 +4,7 @@
  */
 export * from "./battery.ts";
 export * from "./capabilities.ts";
+export * from "./certificates.ts";
 export * from "./firstorder.ts";
 export * from "./line.ts";
 export * from "./nontrivial.ts";
