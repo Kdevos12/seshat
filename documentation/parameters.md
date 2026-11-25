@@ -255,10 +255,10 @@ One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options
 
 | flag | commands | sets | help |
 | --- | --- | --- | --- |
-| `--host` | capabilities, health, lit probe, contract, run, ablate, optimize-prompts, probe, resume, solve, campaign, doctor, consolidate | host: config/hosts/HOST.json | The host profile; default HARNESS_HOST, then local (solve and doctor use the sandboxed profile doctor wrote, when it exists). |
+| `--host` | capabilities, health, lit probe, contract, certificates, run, ablate, optimize-prompts, probe, resume, solve, campaign, doctor, consolidate | host: config/hosts/HOST.json | The host profile; default HARNESS_HOST, then local (solve and doctor use the sandboxed profile doctor wrote, when it exists). |
 | `--implementation` | contract | the implementation to test | Test one implementation of the capability. |
 | `--case` | contract | the contract cases to run | Run only the named case (repeatable). |
-| `--out` | contract, lit probe, run, ablate, optimize-prompts, probe, solve, campaign, consolidate, heuristics, library, view | an output file or directory | Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a view or the mined cards. |
+| `--out` | contract, certificates, lit probe, run, ablate, optimize-prompts, probe, solve, campaign, consolidate, heuristics, library, view | an output file or directory | Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a certificate pass, a view or the mined cards. |
 | `--reference` | audit | a directory of reference dossiers | Show DIR/PROBLEM.md beside each dossier, and measure the Lean length of DIR/PROBLEM.lean (or the Lean blocks of PROBLEM.md) for the length table. |
 | `--query` | lit probe | the query words | The words searched. |
 | `--limit` | lit probe | hits per site | How many hits to ask for. |
@@ -277,7 +277,7 @@ One table for every flag of `harness` (the keys of `CLI_OPTIONS` in `cli-options
 | `--checkout` | run, ablate, optimize-prompts, probe, resume | the bench repository's checkout | A checkout of the bench's repository. |
 | `--sample` | run, ablate, optimize-prompts | RunConfig.selection | Choose N problems at random. |
 | `--seed` | run, ablate, optimize-prompts | RunConfig.selection | The seed of --sample (default m0); not the seed of the memory draws (that is --draw-seed). |
-| `--problem` | run, ablate, optimize-prompts | RunConfig.selection | Choose a problem by id (repeatable). |
+| `--problem` | run, ablate, optimize-prompts, certificates | RunConfig.selection | Choose a problem by id (repeatable). |
 | `--all` | run, ablate, optimize-prompts | RunConfig.selection | Every problem of the bench. |
 | `--sequence` | run, ablate | RunConfig.selection | A sequence of the bench, worked in order with --concurrency 1. |
 | `--tag` | run, ablate | RunConfig.selection | The problems tagged analogy or induction. |

@@ -1067,7 +1067,11 @@ export async function runCertificates(options: CertificateStageOptions): Promise
       }
       notes.push({ method, note: `Lean accepted the certificate (${candidate.detail}) but validate refused it` });
     }
-    if (!accepted && !notes.some((n) => n.method === method)) notes.push({ method, note: `Lean accepted none of ${generated.candidates.length} candidate(s) (${generated.candidates[0]?.detail})` });
+    if (!accepted && !notes.some((n) => n.method === method)) {
+      const mine = tries.filter((t) => t.tactic === certificateTactic(method));
+      const count = (o: TryRecord["outcome"]): number => mine.filter((t) => t.outcome === o).length;
+      notes.push({ method, note: `Lean accepted none of ${generated.candidates.length} candidate(s) (${generated.candidates[0]?.detail}): ${count("failed")} failed, ${count("timeout")} timed out, ${count("error")} without an answer from Lean, ${generated.candidates.length - mine.length} not checked` });
+    }
   }
   return { tries, cpuMs: spent, notes, submissions };
 }

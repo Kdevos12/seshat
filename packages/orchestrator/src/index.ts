@@ -47,6 +47,7 @@ export * from "./turns.ts";
 export * from "./validate.ts";
 export * from "./view.ts";
 export * from "./campaign.ts";
+export * from "./certificate-pass.ts";
 export * from "./campaign-config.ts";
 export * from "./campaign-digest.ts";
 export * from "./campaign-watch.ts";

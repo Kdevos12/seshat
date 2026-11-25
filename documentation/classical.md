@@ -172,6 +172,26 @@ then fails at the import of clarabel and says so). One session per goal (scope
 `m10:<problem>:<claim>:certificates`), released when the goal's battery ends; every call is a tool run. Without
 either, (b) and (c) are skipped with the note "the host offers no compute tool"; (a) and (d) need none.
 
+**The real pass ($0).** `bench/cx4-certificates.json` holds the inputs of CX4's real pass: 20 olympiad-style
+inequalities over `ℝ` (18 expected to have a sum of squares, 4 of them with Putinar multipliers; 4 on a box for
+Bernstein, two of which are in both lists) and
+20 integer equations (16 for a modular obstruction, one of them over `ℕ`; 4 ideal memberships over `ℤ` for
+cofactors), each with the methods expected to close it. On a host with Lean 4.27.0 and Mathlib (and Pyodide for
+(b) and (c)):
+
+```sh
+pnpm harness certificates bench/cx4-certificates.json --host local --out cx4-pass.json
+```
+
+runs every method of the stage on every problem, one method at a time, with no tactics, no model, no claim and no
+`validate` (`certificate-pass.ts`): each Lean check is a `lean.check` tool run of `line:M10`, each compute call one
+of `compute.python` (else `compute.sage`), in a session per problem. It prints, per problem, whether the router tags
+it E6 and the methods whose certificate Lean accepted, then the count per method (accepted, expected, and checks
+Lean did not answer); `--out` writes the report as JSON, `--problem ID` (repeatable) picks problems. It changes no
+status and writes no journal. One problem, `eq-15` (`¬ ∃ x y : ℤ, x ^ 2 = 8 * y + 2`), is not tagged E6 by the
+router, which reads the consequent after the last comma: the pass runs the stage on it anyway, and the battery
+would not. It has not run: this machine has no Lean.
+
 **Not verified.** Nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
 Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed). Unchecked: that
 `push_cast` and `generalize` leave the residues as written and that kernel `decide` on `ZMod m` finishes within

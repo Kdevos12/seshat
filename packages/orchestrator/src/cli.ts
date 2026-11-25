@@ -34,6 +34,7 @@ import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCo
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { commandHelp, shortHelp } from "./help.ts";
+import { certificatesCommand } from "./certificate-pass.ts";
 import { watchProgress } from "./progress.ts";
 import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
@@ -58,6 +59,7 @@ const usage = `usage:
   harness health [CAPABILITY] [--host HOST]
   harness lit probe [--host NAME] [--query "words"] [--limit N] [--out DIR] [--no-cache]   (what each literature site answers, and what the parser makes of it)
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
+  harness certificates FILE [--host HOST] [--problem ID]... [--out FILE]   (line M10's certificate stage alone on a small bench such as bench/cx4-certificates.json: no model, no claim, $0; documentation/classical.md)
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
@@ -332,6 +334,9 @@ async function main(): Promise<number> {
       case "contract":
         if (target === undefined) break;
         return await contract(registry, target);
+      case "certificates":
+        if (target === undefined) break;
+        return await certificatesCommand(registry, target, { ...(values.problem !== undefined ? { problems: values.problem } : {}), ...(values.out !== undefined ? { out: values.out } : {}), log: (l) => console.log(l) });
     }
     console.error(usage);
     return 2;

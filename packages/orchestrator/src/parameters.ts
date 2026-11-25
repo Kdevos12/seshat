@@ -695,10 +695,10 @@ const flag = (name: string, commands: readonly string[], maps: FlagMaps, help: s
 
 /** Every flag of the `harness` command line (the keys of `CLI_OPTIONS`), with the commands that read it. One parser serves every command, so a flag a command does not read is accepted and ignored there (only `resume` refuses the flags that describe a run). */
 export const CLI_FLAGS: readonly CliFlag[] = [
-  flag("host", ["capabilities", "health", "lit probe", "contract", "run", "ablate", "optimize-prompts", "probe", "resume", "solve", "campaign", "doctor", "consolidate"], { kind: "host", to: "config/hosts/HOST.json" }, "The host profile; default HARNESS_HOST, then local (solve and doctor use the sandboxed profile doctor wrote, when it exists)."),
+  flag("host", ["capabilities", "health", "lit probe", "contract", "certificates", "run", "ablate", "optimize-prompts", "probe", "resume", "solve", "campaign", "doctor", "consolidate"], { kind: "host", to: "config/hosts/HOST.json" }, "The host profile; default HARNESS_HOST, then local (solve and doctor use the sandboxed profile doctor wrote, when it exists)."),
   flag("implementation", ["contract"], cmd("the implementation to test"), "Test one implementation of the capability."),
   flag("case", ["contract"], cmd("the contract cases to run"), "Run only the named case (repeatable)."),
-  flag("out", ["contract", "lit probe", "run", "ablate", "optimize-prompts", "probe", "solve", "campaign", "consolidate", "heuristics", "library", "view"], cmd("an output file or directory"), "Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a view or the mined cards."),
+  flag("out", ["contract", "certificates", "lit probe", "run", "ablate", "optimize-prompts", "probe", "solve", "campaign", "consolidate", "heuristics", "library", "view"], cmd("an output file or directory"), "Where the command writes: a directory for a run, ablation or proposals, a file for a contract report, a certificate pass, a view or the mined cards."),
   flag("reference", ["audit"], cmd("a directory of reference dossiers"), "Show DIR/PROBLEM.md beside each dossier, and measure the Lean length of DIR/PROBLEM.lean (or the Lean blocks of PROBLEM.md) for the length table."),
   flag("query", ["lit probe"], cmd("the query words"), "The words searched."),
   flag("limit", ["lit probe"], cmd("hits per site"), "How many hits to ask for."),
@@ -717,7 +717,7 @@ export const CLI_FLAGS: readonly CliFlag[] = [
   flag("checkout", ["run", "ablate", "optimize-prompts", "probe", "resume"], cmd("the bench repository's checkout"), "A checkout of the bench's repository."),
   flag("sample", ["run", "ablate", "optimize-prompts"], rc("selection"), "Choose N problems at random."),
   flag("seed", ["run", "ablate", "optimize-prompts"], rc("selection"), "The seed of --sample (default m0); not the seed of the memory draws (that is --draw-seed)."),
-  flag("problem", ["run", "ablate", "optimize-prompts"], rc("selection"), "Choose a problem by id (repeatable)."),
+  flag("problem", ["run", "ablate", "optimize-prompts", "certificates"], rc("selection"), "Choose a problem by id (repeatable)."),
   flag("all", ["run", "ablate", "optimize-prompts"], rc("selection"), "Every problem of the bench."),
   flag("sequence", ["run", "ablate"], rc("selection"), "A sequence of the bench, worked in order with --concurrency 1."),
   flag("tag", ["run", "ablate"], rc("selection"), "The problems tagged analogy or induction."),
