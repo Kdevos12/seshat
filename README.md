@@ -215,7 +215,7 @@ flowchart TB
   m8["Line M8: inductive engine<br/>data tables, hypotheses as<br/>programs, conjecture pool"]:::wait
   m3["Line M3: lemma library<br/>promoted aux lemmas, BM25 search,<br/>library_search"]:::built
   m13["Line M13: theory exploration<br/>minimal laws, integer relations,<br/>candidates for the library"]:::wait
-  m16["Line M16: program search<br/>islands of scored programs,<br/>rung 2 of the ladder"]:::wait
+  m16["Line M16: program search<br/>islands of scored programs,<br/>local search between rounds,<br/>rung 2 of the ladder"]:::wait
   m4["Line M4: context compiler<br/>frozen prefix, tail, premises,<br/>expand, graph_query"]:::real
   m5["Line M5: lessons<br/>from accepted proofs and recurring<br/>failures, deactivated by effect"]:::built
   m14["Line M14: repairs<br/>typed critics, Lakatos repair<br/>of refuted conjectures"]:::wait

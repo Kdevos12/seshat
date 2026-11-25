@@ -291,6 +291,27 @@ round and draft numbers change, which keep the calls apart for `reuse`. The call
 the same way. CX2's measurement runs both arms on one construction at the same spend and keeps the islands as the default
 only if they beat `iid`; that run is the owner's, on a real model, and has not run.
 
+**Local search between model rounds** (plan change CX5): a spec may name a `neighborhood`, the moves of a local search on the
+witness: `bits` (flip one entry of a list of 0/1 or booleans), `intList` (move one entry by 1 to 3, or, with both `min` and
+`max`, one move in four to any value of the range), `permutation` (swap two entries), `graph` (`{n, edges}`: add or remove an
+edge, add a vertex with one or two edges or remove one, the vertex count kept in `[min, max]`, by default the start's), or
+`{move}`, a JavaScript function expression from an object to a neighbor, run in the sandbox with a seeded `Math.random`. Before
+each model round, and once after the last, a phase (`makeLocalPhase`) starts from the best witness so far (the best program's
+output on the witness input, or the local search's best when it scores more) and moves it by `runLocalSearch`: each step scores
+`localNeighbors` moves in one sandbox run with the spec's scoring program on the witness input, and takes one by the method,
+`localMethod`: `anneal` (the best move when it is no worse, else with probability exp(Δ/T), T starting at `localTemperature` and
+multiplied by 0.95 each step) or `tabu` (the best move not among the last `tabuTenure` objects, better or worse, unless it beats
+the phase's best). A phase ends after `plateauSteps` steps without a better witness, `localSteps` steps, `localMs` of wall time,
+or the target; only then does the model round run. An improved object is scored like a program's output: its total is the
+program's it started from with the witness input's score replaced, so the target, the briefing and the submission read it as
+they read a program's; when it beats every program the witness submitted to Lean is the local object, through `leanTerm` like
+any witness. Each phase's source is seeded from the run's seed, the problem and the spec (apart from the program search's
+source, which it leaves alone), and each phase is a `search_local` node (seed, steps, objects scored, start and best scores);
+a resumed process that finds a phase's node runs it again for the steps on record and not by the time, so it reproduces it.
+The phase needs the JavaScript `score` (a `scoreSage` spec gets a note and no local search) and the witness input among the
+inputs. Without `neighborhood` nothing of this runs and the search is the one it was. A `flip` neighborhood for
+matrix-multiplication schemes is a `{move}` program in a spec, not code of the harness.
+
 Every program, the model's and the scoring one, runs in the sandbox (above) with a time per call, a total time and a heap
 limit; a program that fails, loops or returns an invalid output has no score and is not added. The programs that were
 scored are `search_program` nodes (code, score, signature, round, island), at most `recordPrograms`.
@@ -327,7 +348,8 @@ graph of a battery; when nothing is found and a score exists, two searches run, 
 
 - **Local search.** Hill climbing with restarts: a random graph, then each step scores `neighbors` moves (add or remove an edge, add or
   remove a vertex within the filter's range) in one sandbox run and takes the best, sideways moves included; a climb that does not
-  improve for 25 steps restarts. A graph whose score reaches 1 (and that passes the filter) is a hit. The draws come from `seeded(seed)`, the seed
+  improve for 25 steps restarts. Since plan change CX5 this is M16's `runLocalSearch` with the `graph` neighborhood (`graphNeighbor`),
+  annealing at temperature 0, one code path; on the same seed and score it gives the graph and the effort it gave before. A graph whose score reaches 1 (and that passes the filter) is a hit. The draws come from `seeded(seed)`, the seed
   M11 derives from the run's seed and journals, so the same seed and score give the same graph (unless the wall time cuts the search).
 - **Families.** M16's program search (`runSearch`: islands, the same prompt, the sandbox, `reuse`d model requests) with a `SearchSpec`
   whose programs map a parameter `k` (1 to 8) to a graph `{n, edges}` and whose score is the model's graph score summed over the
@@ -381,6 +403,9 @@ options, a whole problem on numbers and on magmas, resuming, the briefing) and `
 laws from the free monoid, the laws of the numbers, left-projection magmas, the cut, the line M13 with
 its sink, PSLQ relations) and `m16.test.ts` (the database: clusters, seeded draws, the biases, resets; what reaches Lean;
 scoring in the sandbox and through a Sage stand-in; a faux-model run that improves a toy score and submits the
-witness; resume; the budget; the `iid` strategy: one prompt, one island, no resets, the same calls, and the line run with it). None of it needs Lean, a model or a network.
+witness; resume; the budget; the `iid` strategy: one prompt, one island, no resets, the same calls, and the line run with it;
+the local search of CX5: annealing and tabu with a seeded source, each neighborhood's moves, a toy score that reaches its
+target in fewer model rounds with the `bits` neighborhood than without, the same search without a neighborhood whatever the
+local options, a journaled phase replayed by its step count, the phases that say why they do nothing). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.
