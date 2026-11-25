@@ -308,6 +308,10 @@ they read a program's; when it beats every program the witness submitted to Lean
 any witness. Each phase's source is seeded from the run's seed, the problem and the spec (apart from the program search's
 source, which it leaves alone), and each phase is a `search_local` node (seed, steps, objects scored, start and best scores);
 a resumed process that finds a phase's node runs it again for the steps on record and not by the time, so it reproduces it.
+The steps on record fix how far a replay goes, not what each step scores: the sandbox's time per call is wall time, so a
+scoring run cut by it in the run and not in the replay (or the reverse: a slower or busier machine, other limits) gives the
+moves of that step no score or another one, and **the replay diverges from that step on**. A replay reproduces a phase on a
+machine as fast and with the same limits; elsewhere it may end on another witness, which goes to Lean like any.
 The phase needs the JavaScript `score` (a `scoreSage` spec gets a note and no local search) and the witness input among the
 inputs. Without `neighborhood` nothing of this runs and the search is the one it was. A `flip` neighborhood for
 matrix-multiplication schemes is a `{move}` program in a spec, not code of the harness.
