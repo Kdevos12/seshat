@@ -363,3 +363,71 @@ describe("novelty and balanced parents (plan change LH5)", () => {
     assert.ok(greedy.sample(1, seeded(1))?.programs[0]?.code === "best", "without the option the draw is the softmax");
   });
 });
+
+describe("the iid baseline (plan change CX2)", () => {
+  const seed = "(n) => [0]";
+  const candidates = ["(n) => [0, 1]", "(n) => [0, 1, 2]", "(n) => [0, 1, 2, 3]", "(n) => [0, 1, 2, 3, 4]", "(n) => [0, 1, 2, 3, 4, 5]", "(n) => [0, 1, 2, 3, 4, 5, 6]", "(n) => [0, 1, 2, 3, 4, 5, 6, 7]", "(n) => [0, 1, 2, 3, 4, 5, 6, 7, 8]"];
+  const scorer = async (code: string) => ({ ok: true as const, signature: [code.length], score: code.length });
+  const noTarget: SearchSpec = { ...(({ target: _t, ...rest }) => rest)(spec), seeds: [seed] };
+  const run = async (strategy: "islands" | "iid" | undefined) => {
+    const llm = scriptedLlm(candidates.map((program) => ({ program })));
+    const resets: number[][] = [];
+    const islands = new Set<number>();
+    const options = { ...SEARCH_DEFAULTS, rounds: 4, samples: 2, resetEvery: 2, ...(strategy !== undefined ? { strategy } : {}) };
+    const result = await runSearch(llm, noTarget, options, scorer, seeded(4), { events: { reset: (e) => resets.push(e.islands), program: (e) => islands.add(e.island) } });
+    return { result, prompts: llm.requests.map((r) => r.prompt), resets, islands };
+  };
+
+  it("asks the same prompt every time, with one island and no resets, for the same number of calls", async () => {
+    const iid = await run("iid");
+    const islands = await run(undefined);
+    assert.equal(iid.prompts.length, 8, "rounds x samples");
+    assert.equal(islands.prompts.length, 8, "the same spend as the islands");
+    const body = (p: string) => p.replace(/ \(round \d+\)/g, "").replace(/ \(draft \d+ of \d+\)/g, "");
+    assert.equal(new Set(iid.prompts.map(body)).size, 1, "one prompt");
+    assert.equal(new Set(iid.prompts).size, 8, "each call is its own for reuse");
+    assert.ok(iid.prompts.every((p) => p.includes(seed) && !candidates.some((c) => p.includes(c))), "only the seed is shown");
+    assert.deepEqual([iid.resets, [...iid.islands]], [[], [0]]);
+    assert.equal(iid.result.best?.code, candidates[7], "the best program found is kept");
+    assert.ok(islands.resets.length > 0 && islands.islands.size === 3, "the islands reset and use three islands");
+    assert.ok(islands.prompts.some((p) => candidates.some((c) => p.includes(c))), "the islands feed found programs back");
+  });
+
+  it("is the islands when absent, and reads the option", async () => {
+    const absent = await run(undefined);
+    const named = await run("islands");
+    assert.deepEqual([named.prompts, named.result, named.resets], [absent.prompts, absent.result, absent.resets]);
+    assert.equal(M16_OPTIONS.strategy, "islands");
+    assert.equal("strategy" in readM16Options(M16_OPTIONS), false, "the default leaves the search options as they were");
+    assert.equal(readM16Options({ ...M16_OPTIONS, strategy: "iid" }).strategy, "iid");
+    const { strategy: _s, ...older } = M16_OPTIONS;
+    assert.equal(readM16Options(older).strategy, undefined, "options written before CX2 are the islands");
+    assert.throws(() => readM16Options({ ...M16_OPTIONS, strategy: "beam" }), /option M16\.strategy/);
+  });
+
+  it("runs the line with M16.strategy=iid and submits the witness it finds", async () => {
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    declareSearch(memory, claimId, spec);
+    const llm = scriptedLlm([{ program: "(n) => [1, 1, 1, 1]" }, { program: "(n) => Array.from({length: n}, (_, i) => 9 - i)" }]);
+    const requests: ValidateRequest[] = [];
+    const tasks: TaskInfo[] = [];
+    const problem = {
+      line: "M16", runId: "r", problemId: "p", claimId, memory, llm, log: () => {}, signal: new AbortController().signal,
+      budget: { exhausted: false, usd: 0, limitUsd: undefined },
+      tasks: {
+        list: (q: { kinds?: string[]; claimId?: string } = {}) => tasks.filter((t) => (q.kinds === undefined || q.kinds.includes(t.kind)) && (q.claimId === undefined || t.claimId === q.claimId)),
+        propose: (p: { kind: string; claimId?: string }) => (tasks.push({ taskId: "t1", kind: p.kind, status: "ready", claimId: p.claimId, dependsOn: [], proposedBy: "line:M16" } as unknown as TaskInfo), { accepted: true, taskId: "t1" }),
+      },
+      validate: async (request: ValidateRequest): Promise<ValidateResult> => (requests.push(request), { verdict: "valid", status: "computed", reasons: [] }),
+      options: { ...M16_OPTIONS, samples: 1, rounds: 8, callMs: 150, totalMs: 4000, strategy: "iid" },
+    } as unknown as ProblemContext;
+    const line = createM16();
+    await line.hooks.beforeProvers?.(problem);
+    const end = await line.hooks.runTask?.(problem, tasks[0] as TaskInfo, "p1");
+    assert.match(end?.reason ?? "", /best score 30, target reached; Lean: valid/);
+    assert.equal(requests.length, 1);
+    assert.equal(llm.requests.length, 2, "stopped at the target");
+    assert.ok(llm.requests.every((r) => r.prompt.includes("Array.from({length: n}, (_, i) => i)") && !r.prompt.includes("[1, 1, 1, 1]")), "the seed's prompt each time");
+  });
+});

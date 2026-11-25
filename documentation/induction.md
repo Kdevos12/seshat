@@ -282,6 +282,15 @@ island. Every draw comes from a source seeded with the run's seed, the problem a
 same twice, and a resumed process replays the model's answers from the journal and goes through the same rounds.
 The defaults are small for our budget; all are options (`--line-option M16.rounds=20`).
 
+**The `iid` baseline** (plan change CX2): the option `strategy` is `islands` (the default; an absent value means the same, and
+the search options are then what they were before the option) or `iid`, the baseline of "Simple Baselines are Competitive
+with Code Evolution" (arXiv 2602.16805). With `iid` (`--line-option M16.strategy=iid`) the database has one island and is
+never reset, and every model call gets the same programs in its prompt, the seeds drawn once after they are scored; only the
+round and draft numbers change, which keep the calls apart for `reuse`. The calls are the same as the islands' (`rounds` times
+`samples`, each still stopped by the target and the budget), and the best program found by any call is kept and submitted
+the same way. CX2's measurement runs both arms on one construction at the same spend and keeps the islands as the default
+only if they beat `iid`; that run is the owner's, on a real model, and has not run.
+
 Every program, the model's and the scoring one, runs in the sandbox (above) with a time per call, a total time and a heap
 limit; a program that fails, loops or returns an invalid output has no score and is not added. The programs that were
 scored are `search_program` nodes (code, score, signature, round, island), at most `recordPrograms`.
@@ -372,6 +381,6 @@ options, a whole problem on numbers and on magmas, resuming, the briefing) and `
 laws from the free monoid, the laws of the numbers, left-projection magmas, the cut, the line M13 with
 its sink, PSLQ relations) and `m16.test.ts` (the database: clusters, seeded draws, the biases, resets; what reaches Lean;
 scoring in the sandbox and through a Sage stand-in; a faux-model run that improves a toy score and submits the
-witness; resume; the budget). None of it needs Lean, a model or a network.
+witness; resume; the budget; the `iid` strategy: one prompt, one island, no resets, the same calls, and the line run with it). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.

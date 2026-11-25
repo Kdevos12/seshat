@@ -60,6 +60,12 @@ export interface SearchOptions {
   novelty?: number;
   /** Parents balanced (plan change LH5): half of the programs a prompt shows come from the best cluster, half from the other clusters. Absent: the softmax draw. */
   parentSplit?: boolean;
+  /**
+   * The strategy (plan change CX2). `islands`, the default (also when absent): the database above feeds the best programs back into each prompt.
+   * `iid`: the baseline of "Simple Baselines are Competitive with Code Evolution": one island, no resets, and every model call gets the same programs
+   * (the seeds, drawn once), for the same `rounds` and `samples`, so the same number of calls; the best program found is kept all the same.
+   */
+  strategy?: "islands" | "iid";
   limits: Partial<ProgramLimits>;
 }
 
@@ -289,7 +295,9 @@ export async function runSearch(
   random: RandomSource,
   hooks: { events?: Partial<SearchEvents>; shouldStop?: () => boolean; signal?: AbortSignal; model?: string; counterexamples?: string; screen?: (code: string) => Promise<boolean> } = {},
 ): Promise<SearchResult> {
-  const db = new ProgramDatabase(options.islands, options);
+  const iid = options.strategy === "iid";
+  const islands = iid ? 1 : options.islands;
+  const db = new ProgramDatabase(islands, options);
   let evaluated = 0;
   let globalBest = -Infinity;
   const scoredCodes: string[] = [];
@@ -312,12 +320,14 @@ export async function runSearch(
     }
     hooks.events?.program?.({ round, island, code, evaluation, isBest });
   };
-  for (const seed of spec.seeds) for (let i = 0; i < options.islands; i++) await consider(seed, 0, i);
+  for (const seed of spec.seeds) for (let i = 0; i < islands; i++) await consider(seed, 0, i);
   if (db.best() === undefined) return { best: undefined, rounds: 0, evaluated, reached: false, stoppedBy: "rounds" };
+  // CX2's `iid`: the programs of every prompt are drawn once, from the seeds; only the round and draft numbers (which keep the calls apart for `reuse`) change.
+  const fixed = iid ? db.sample(options.shown, random) : undefined;
   for (let round = 1; round <= options.rounds; round++) {
     if (reached()) return { best: db.best(), rounds: round - 1, evaluated, reached: true, stoppedBy: "target" };
-    if (options.resetEvery > 0 && round > 1 && (round - 1) % options.resetEvery === 0) hooks.events?.reset?.({ round, islands: db.reset(random) });
-    const drawn = db.sample(options.shown, random);
+    if (!iid && options.resetEvery > 0 && round > 1 && (round - 1) % options.resetEvery === 0) hooks.events?.reset?.({ round, islands: db.reset(random) });
+    const drawn = fixed ?? db.sample(options.shown, random);
     if (drawn === undefined) break;
     for (let k = 0; k < options.samples; k++) {
       if (hooks.shouldStop?.() === true) return { best: db.best(), rounds: round - 1, evaluated, reached: reached(), stoppedBy: "budget" };

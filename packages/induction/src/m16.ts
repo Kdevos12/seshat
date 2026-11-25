@@ -34,6 +34,8 @@ export const M16_OPTIONS: JsonObject = {
   memoryMb: 128,
   /** Submit the witness through `validate` when the target score is reached (or the task has no target). */
   submit: true,
+  /** `islands` (the database with resets), or `iid`: every call gets the seeds' prompt, one island, no resets, the same calls (plan change CX2). */
+  strategy: "islands",
 };
 
 interface Settings extends SearchOptions {
@@ -56,9 +58,17 @@ export function readM16Options(raw: Readonly<JsonObject>): Settings {
     // Not in `M16_OPTIONS`: only a campaign's `construct` mode sets them (documentation/campaign.md, "Plateau modes").
     ...(typeof raw.novelty === "number" && raw.novelty > 0 ? { novelty: Math.min(1, raw.novelty) } : {}),
     ...(raw.parentSplit === true ? { parentSplit: true } : {}),
+    ...(strategyOf(raw) === "iid" ? { strategy: "iid" as const } : {}),
     limits: { callMs: o.integer("callMs", 10, 60_000), totalMs: o.integer("totalMs", 1000, 300_000), memoryMb: o.integer("memoryMb", 32, 1024) },
     submit: o.flag("submit"),
   };
+}
+
+/** The search strategy (plan change CX2): absent is `islands`, so options written before the option keep their meaning. */
+function strategyOf(raw: Readonly<JsonObject>): "islands" | "iid" {
+  const value = raw.strategy ?? "islands";
+  if (value !== "islands" && value !== "iid") throw new RangeError(`option M16.strategy is "islands" or "iid", not ${JSON.stringify(value)}`);
+  return value;
 }
 
 /** Declares the scoring program of a claim: the task that carries it is of kind `search`. Returns the node's id; once per spec. */
