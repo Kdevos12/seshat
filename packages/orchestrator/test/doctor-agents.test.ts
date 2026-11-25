@@ -103,6 +103,20 @@ describe("harness doctor: the coding agents (EA1)", () => {
     assert.match(calls[0]?.env?.HOME ?? "", /seshat-doctor-agent-/);
   });
 
+  it("never prints a value that a ${env:NAME} put in the command, over ACP or the CLI", async () => {
+    const env = { PATH: process.env.PATH ?? "", LB_KEY: "sk-in-the-command" };
+    const acp = await codingAgentChecks({ ...realSystem(), env }, {
+      configPath: config({ agent: "gemini", transport: "acp", command: [process.execPath, FAKE_ACP, "--key=${env:LB_KEY}"], env: { FAKE_SCENARIO: "good" }, unsandboxed: true }),
+      all: false,
+    });
+    const answers = (_c: string, args: readonly string[]) => (args.includes("--version") ? { code: 1, stdout: "", stderr: "" } : { code: 0, stdout: "usage", stderr: "" });
+    const cli = await codingAgentChecks(machine({ has: ["claude"], answers, env }), { configPath: config({ agent: "claude-code", command: ["claude", "${env:LB_KEY}", "-p"], unsandboxed: true }), all: false });
+    const text = renderDoctor({ host: "h", checks: [...(acp ?? []), ...(cli ?? [])], ok: true }).join("\n");
+    assert.match(text, /answered initialize/);
+    assert.match(text, /`claude \[hidden\] --help`/);
+    assert.ok(!text.includes("sk-in-the-command"), text);
+  });
+
   it("with --agents lists every default agent, the installed ones checked and the others in one line", async () => {
     const calls: Array<{ argv: string[] }> = [];
     const checks = await codingAgentChecks(machine({ has: ["codex"], calls }), { configPath: "/nonexistent/library-builder.json", all: true });

@@ -147,8 +147,9 @@ client needs fit in one module.
   capabilities (`http`, `sse`), its name and version. Nothing is sent after `initialize`, and the process group is killed.
 
 The checks run as a build would run the agent: behind its `sandbox`, with its environment only (`PATH`, a `HOME` and `TMPDIR` of their
-own, the variables of `agent.env`), in an empty directory. No value of that environment is printed: the agent's own output is cut to a
-line and every value of `agent.env` in it is hidden. A `${env:NAME}` that is not set is named (never guessed) and the checks run without
+own, the variables of `agent.env`), in an empty directory. No value of the config is printed: every value a `${env:NAME}` of the
+agent's section expanded to, wherever it stands (`command`, `sandbox`, `env`), and every value of `agent.env` is shown as `[hidden]`,
+in the commands the section prints as in the agent's own output, which is cut to a line. A `${env:NAME}` that is not set is named (never guessed) and the checks run without
 it. Everything the section finds is a warning at worst: a run does not need a coding agent, so `doctor`'s exit code does not change.
 
 ## The gate
@@ -176,7 +177,8 @@ exist only there. In `harness library build` that is a `LakeCertifier` with the 
 ## What is journaled
 
 `recordBuild` writes one `library_build` node ([memory.md](memory.md#nodes)) with: the agent, the model, the budget and time limit, the argv, the
-keys of the agent's environment, the base commit, the prompt and the diff (as blobs, by hash), the end of the agent's output, the spec, every
+keys of the agent's environment (never a value: in the argv and the agent's output, every value of `agent.env` and every value a
+`${env:NAME}` of the config expanded to is `[hidden]`), the base commit, the prompt and the diff (as blobs, by hash), the end of the agent's output, the spec, every
 gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. Over ACP it also holds `transport: "acp"`
 and `acp`: what `initialize` answered, the session id, the stop reason, the MCP servers' names, every permission answer with its reason, the
 requests refused, the usage reported and why the turn was cancelled. A build over the CLI has neither field. An accepted build also records each

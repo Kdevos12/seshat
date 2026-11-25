@@ -190,6 +190,17 @@ export function probePlan(settings: AgentSettings): AgentProbePlan {
   };
 }
 
+/**
+ * `text` with every secret of four characters or more replaced by `[hidden]`, the longest first so that a secret that holds another
+ * is hidden whole. The secrets are the values the person's config gave (`${env:NAME}` expanded, the agent's variables): what the
+ * harness prints of a command and what it journals of one pass through here.
+ */
+export function maskSecrets(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of [...new Set(secrets)].filter((s) => s.length >= 4).sort((a, b) => b.length - a.length)) out = out.replaceAll(secret, "[hidden]");
+  return out;
+}
+
 /** The environment of the agent's process: `PATH` and what the settings name. */
 export function agentEnvironment(settings: AgentSettings, home: string, parent: Readonly<Record<string, string | undefined>> = process.env): Record<string, string> {
   const env: Record<string, string> = { HOME: home, TMPDIR: home };

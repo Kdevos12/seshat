@@ -9,6 +9,7 @@ import {
   type AcpProbe,
   DEFAULT_ACP_COMMANDS,
   DEFAULT_COMMANDS,
+  maskSecrets,
   probeAcp,
   probePlan,
   settingsProblem,
@@ -35,15 +36,23 @@ export interface AgentsCheckOptions {
 
 const ACP_TIMEOUT_MS = 10_000;
 
-/** The settings of the config's agent, with `${env:NAME}` expanded; a name that is not set is listed, never guessed, never shown. */
-function expandAgent(raw: Record<string, unknown>, env: DoctorSystem["env"]): { settings: AgentSettings; unset: string[] } {
+/**
+ * The settings of the config's agent, with `${env:NAME}` expanded; a name that is not set is listed, never guessed, never shown.
+ * `secrets` holds every value an expansion put in, wherever it was (the command, the sandbox, the variables), and the agent's
+ * variables: none of them is printed.
+ */
+function expandAgent(raw: Record<string, unknown>, env: DoctorSystem["env"]): { settings: AgentSettings; unset: string[]; secrets: string[] } {
   const unset = new Set<string>();
+  const secrets = new Set<string>();
   /** The text with its variables filled, or undefined when one of them is not set. */
   const fill = (text: string): string | undefined => {
     let complete = true;
     const out = text.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => {
       const v = env[name];
-      if (v !== undefined && v !== "") return v;
+      if (v !== undefined && v !== "") {
+        secrets.add(v);
+        return v;
+      }
       unset.add(name);
       complete = false;
       return "";
@@ -66,14 +75,14 @@ function expandAgent(raw: Record<string, unknown>, env: DoctorSystem["env"]): { 
       if (value !== undefined) vars[k] = value;
     }
     settings.env = vars;
+    for (const v of Object.values(vars)) secrets.add(v);
   }
-  return { settings, unset: [...unset].sort() };
+  return { settings, unset: [...unset].sort(), secrets: [...secrets] };
 }
 
-/** Text from a program, made safe to print: every value of the agent's environment is hidden, and it is cut to a line. */
+/** Text made safe to print: every secret of the config is hidden (`maskSecrets`), and it is cut to a line. */
 function shown(text: string, secrets: readonly string[]): string {
-  let out = text.trim().split("\n")[0] ?? "";
-  for (const secret of secrets) if (secret.length >= 4) out = out.replaceAll(secret, "[hidden]");
+  const out = maskSecrets(text.trim().split("\n")[0] ?? "", secrets);
   return out.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 160);
 }
 
@@ -88,16 +97,16 @@ function executable(system: DoctorSystem, program: string): string | undefined {
 }
 
 /** One agent: installed or not, and the check that says what was found. */
-async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { probe: typeof probeAcp; unset?: readonly string[]; configured: boolean }): Promise<{ installed: boolean; check: Check }> {
+async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { probe: typeof probeAcp; unset?: readonly string[]; secrets?: readonly string[]; configured: boolean }): Promise<{ installed: boolean; check: Check }> {
   const transport: Transport = settings.transport ?? "cli";
-  const title = `Coding agent ${settings.agent} (${transport}${o.configured ? ", configured" : ""})`;
+  const secrets = [...(o.secrets ?? []), ...Object.values(settings.env ?? {})];
+  const title = shown(`Coding agent ${settings.agent} (${transport}${o.configured ? ", configured" : ""})`, secrets);
   const problem = settingsProblem({ ...settings, ...(o.configured ? {} : { unsandboxed: true }) });
   if (problem !== undefined && !/needs a sandbox command/.test(problem)) {
-    return { installed: false, check: { id: "coding-agent", status: "warn", title, detail: `The settings cannot make a builder: ${problem}.`, fix: "Correct the agent section of config/library-builder.json (documentation/library-builder.md, \"Config\")." } };
+    return { installed: false, check: { id: "coding-agent", status: "warn", title, detail: `The settings cannot make a builder: ${shown(problem, secrets)}.`, fix: "Correct the agent section of config/library-builder.json (documentation/library-builder.md, \"Config\")." } };
   }
   const plan = probePlan(settings);
   const path = executable(system, plan.program);
-  const secrets = Object.values(settings.env ?? {});
   if (path === undefined) {
     return {
       installed: false,
@@ -118,7 +127,7 @@ async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { pr
     const [vProgram, ...vArgs] = plan.version as [string, ...string[]];
     const version = await system.run(vProgram, vArgs, 15_000, { env, cwd: home });
     const said = shown(version.stdout || version.stderr, secrets);
-    notes.push(version.code === 0 && said !== "" ? `${said} (${path})` : `installed at ${path}, no version (\`${plan.program} --version\` exited ${version.code})`);
+    notes.push(version.code === 0 && said !== "" ? `${said} (${shown(path, secrets)})` : `installed at ${shown(path, secrets)}, no version (\`${shown(plan.program, secrets)} --version\` exited ${version.code})`);
     if (plan.help !== undefined) {
       const [hProgram, ...hArgs] = plan.help as [string, ...string[]];
       const help = await system.run(hProgram, hArgs, 15_000, { env, cwd: home });
@@ -153,7 +162,7 @@ async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { pr
     }
     if (o.configured && problem !== undefined) {
       warn = true;
-      notes.push(problem);
+      notes.push(shown(problem, secrets));
     }
     return {
       installed: true,
@@ -185,9 +194,9 @@ export async function codingAgentChecks(system: DoctorSystem, o: AgentsCheckOpti
   const section = (raw?.["coding-agent"] ?? undefined) as { agent?: unknown } | undefined;
   let configured: { agent: AgentName; transport: Transport; custom: boolean } | undefined;
   if (section?.agent !== undefined && section.agent !== null && typeof section.agent === "object") {
-    const { settings, unset } = expandAgent(section.agent as Record<string, unknown>, system.env);
+    const { settings, unset, secrets } = expandAgent(section.agent as Record<string, unknown>, system.env);
     configured = { agent: settings.agent, transport: settings.transport ?? "cli", custom: settings.command !== undefined };
-    checks.push((await checkAgent(system, settings, { probe, unset, configured: true })).check);
+    checks.push((await checkAgent(system, settings, { probe, unset, secrets, configured: true })).check);
   } else if (selected) {
     checks.push({ id: "coding-agent", status: "warn", title: "Coding agent", detail: `${o.configPath} selects coding-agent but names no agent.`, fix: "Fill in coding-agent.agent (documentation/library-builder.md, \"Config\")." });
   }

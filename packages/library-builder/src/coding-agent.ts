@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { LeanCertifier } from "@seshat/core";
 import { type CommandRunner, spawnRunner } from "@seshat/lean-env";
 import { acpAgentRunner } from "./acp.ts";
-import { type AgentRunner, type AgentSettings, agentEnvironment, promptHash, renderCommand, renderPrompt, settingsProblem, spawnAgent } from "./agent.ts";
+import { type AgentRunner, type AgentSettings, agentEnvironment, maskSecrets, promptHash, renderCommand, renderPrompt, settingsProblem, spawnAgent } from "./agent.ts";
 import { type BuildOptions, type BuildProvenance, type BuildStatus, type LibraryBuildResult, type LibraryBuilder, newBuildId } from "./builder.ts";
 import { changesFrom, DEFAULT_LIMITS, type DiffLimits } from "./diff.ts";
 import { gateRunner } from "./runner.ts";
@@ -34,6 +34,12 @@ export interface CodingAgentOptions {
   log?: (line: string) => void;
   /** The environment the agent's `PATH` is read from. Default: the process's. */
   parentEnv?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Values never journaled: hidden (`maskSecrets`), with the values of `settings.env`, in the recorded command and the agent's
+   * output. `harness library build` gives every value its config's `${env:NAME}` expanded to, so that a key written into `command`
+   * is not kept.
+   */
+  secrets?: readonly string[];
 }
 
 const GIT = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
@@ -137,7 +143,8 @@ export class CodingAgentBuilder implements LibraryBuilder {
       const env = agentEnvironment(o.settings, home, o.parentEnv);
       provenance.prompt = prompt;
       provenance.promptHash = promptHash(prompt);
-      provenance.command = argv;
+      const secrets = [...(o.secrets ?? []), ...Object.values(o.settings.env ?? {})];
+      provenance.command = argv.map((token) => maskSecrets(token, secrets));
       provenance.envKeys = Object.keys(env).sort();
       const acp = o.settings.transport === "acp";
       if (acp) provenance.transport = "acp";
@@ -149,12 +156,12 @@ export class CodingAgentBuilder implements LibraryBuilder {
         timeoutMs: (options.budget.seconds ?? options.timeoutSec) * 1000,
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
       });
-      provenance.agentOutput = agentRun.output;
+      provenance.agentOutput = maskSecrets(agentRun.output, secrets);
       provenance.agentMs = agentRun.ms;
       if (agentRun.acp !== undefined) provenance.acp = agentRun.acp;
       if (agentRun.aborted || aborted()) return abortedResult();
       if (agentRun.timedOut) return result("failed", `the agent did not finish within ${options.budget.seconds ?? options.timeoutSec} seconds`);
-      if (agentRun.code === null) return result("failed", `the agent did not start: ${agentRun.output.trim().split("\n").pop() ?? ""}`);
+      if (agentRun.code === null) return result("failed", `the agent did not start: ${provenance.agentOutput.trim().split("\n").pop() ?? ""}`);
       // The exit code is not a verdict: an agent that exits 1 after writing good files is judged by its files, and one that exits 0 by the same.
 
       let changes;

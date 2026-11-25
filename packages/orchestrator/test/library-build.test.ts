@@ -45,6 +45,8 @@ describe("the library builder's config", () => {
     const config = loadLibraryBuilderConfig(path, { LIBRARY_BUILDER_API_KEY: "k", LIBRARY_BUILDER_REPO: "/p" });
     assert.equal(config["coding-agent"]?.repo, "/p");
     assert.deepEqual(config["coding-agent"]?.agent.env, { ANTHROPIC_API_KEY: "k" });
+    // Every value an expansion put in is kept aside, so that the builder hides it in what it journals.
+    assert.deepEqual(config.secrets?.sort(), ["/p", "k"]);
     // The shipped example names no sandbox, so it does not start an agent until the person sets one.
     assert.throws(() => makeLibraryBuilder(config), /needs a sandbox command/);
     assert.deepEqual(expandEnv(["${env:A}x", { b: "${env:A}" }], { A: "1" }), ["1x", { b: "1" }]);

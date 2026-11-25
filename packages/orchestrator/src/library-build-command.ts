@@ -39,19 +39,25 @@ export interface CodingAgentConfig {
 export interface LibraryBuilderConfig {
   builder: "none" | "coding-agent";
   "coding-agent"?: CodingAgentConfig;
+  /** Every value a `${env:NAME}` of the section expanded to: the builder hides them in what it journals of the command. */
+  secrets?: string[];
 }
 
-/** Replaces `${env:NAME}` by the variable; a variable that is not set is an error, never an empty string (a key is never guessed). */
-export function expandEnv(value: unknown, env: Readonly<Record<string, string | undefined>> = process.env): unknown {
+/**
+ * Replaces `${env:NAME}` by the variable; a variable that is not set is an error, never an empty string (a key is never guessed).
+ * Each value put in is appended to `expanded` when it is given.
+ */
+export function expandEnv(value: unknown, env: Readonly<Record<string, string | undefined>> = process.env, expanded?: string[]): unknown {
   if (typeof value === "string") {
     return value.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => {
       const v = env[name];
       if (v === undefined || v === "") throw new LibraryBuilderConfigError(`the variable ${name}, which the library builder's config names, is not set`);
+      expanded?.push(v);
       return v;
     });
   }
-  if (Array.isArray(value)) return value.map((v) => expandEnv(v, env));
-  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnv(v, env)]));
+  if (Array.isArray(value)) return value.map((v) => expandEnv(v, env, expanded));
+  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnv(v, env, expanded)]));
   return value;
 }
 
@@ -65,11 +71,12 @@ export function loadLibraryBuilderConfig(path: string, env: Readonly<Record<stri
   }
   if (raw.builder !== "none" && raw.builder !== "coding-agent") throw new LibraryBuilderConfigError(`${path}: builder must be none or coding-agent, got ${JSON.stringify(raw.builder)}`);
   if (raw.builder === "none") return { builder: "none" };
-  const section = expandEnv(raw["coding-agent"], env) as CodingAgentConfig | undefined;
+  const secrets: string[] = [];
+  const section = expandEnv(raw["coding-agent"], env, secrets) as CodingAgentConfig | undefined;
   if (section === undefined || typeof section.repo !== "string" || section.agent === undefined || section.certifier === undefined) {
     throw new LibraryBuilderConfigError(`${path}: coding-agent needs agent, repo and certifier`);
   }
-  return { builder: "coding-agent", "coding-agent": section };
+  return { builder: "coding-agent", "coding-agent": section, secrets: [...new Set(secrets)] };
 }
 
 /**
@@ -93,6 +100,7 @@ export function makeLibraryBuilder(config: LibraryBuilderConfig): { builder: Lib
   const builder = new CodingAgentBuilder({
     settings: withAcpDefaults(c.agent),
     repo: resolve(c.repo),
+    ...(config.secrets !== undefined ? { secrets: config.secrets } : {}),
     ...(c.build !== undefined ? { build: c.build } : {}),
     certifierFor: (projectDir) => new LakeCertifier({ ...c.certifier, projectDir }),
   });

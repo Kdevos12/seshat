@@ -3,7 +3,9 @@ import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { type BuildOptions, NoneBuilder, type LibraryBuildResult } from "../src/index.ts";
+import { BlobStore, Journal } from "@seshat/core";
+import { MemoryStore } from "@seshat/memory";
+import { type BuildOptions, NoneBuilder, type LibraryBuildResult, recordBuild } from "../src/index.ts";
 import type { CommandRunner } from "@seshat/lean-env";
 import { fakeRunner, harness, SPEC } from "./fixtures.ts";
 
@@ -13,6 +15,11 @@ async function run(scenario: string, spec = SPEC, options: BuildOptions = OPTION
   const h = harness();
   const result = await h.builder(scenario).build(spec, options);
   return { result, h };
+}
+
+function memory(): MemoryStore {
+  const dir = mkdtempSync(join(tmpdir(), "mh-agent-mem-"));
+  return new MemoryStore({ journal: Journal.open(dir, "run_agent"), blobs: new BlobStore(join(dir, "blobs")) });
 }
 
 const failedRule = (r: LibraryBuildResult): string | undefined => r.gate.find((c) => !c.ok)?.rule;
@@ -257,6 +264,17 @@ describe("the coding-agent builder and Seshat's gate", () => {
     } finally {
       delete process.env.HARNESS_SECRET_KEY;
     }
+  });
+
+  it("journals no value of the config's: a key in the command is hidden in the command and in the agent's output", async () => {
+    const h = harness();
+    const command = [process.execPath, join(import.meta.dirname, "fixtures", "fake-agent.mjs"), "--api-key=sk-from-the-config", "--token", "tok-of-the-agent"];
+    const result = await h.builder("good", { secrets: ["sk-from-the-config"] }, { command, env: { FAKE_SCENARIO: "good", AGENT_TOKEN: "tok-of-the-agent" } }).build(SPEC, OPTIONS);
+    assert.equal(result.status, "accepted", result.reason);
+    assert.deepEqual(result.provenance.command?.slice(-3), ["--api-key=[hidden]", "--token", "[hidden]"]);
+    assert.match(result.provenance.agentOutput ?? "", /args: --api-key=\[hidden\] --token \[hidden\]/);
+    const journaled = JSON.stringify(recordBuild(memory(), result).node.data);
+    assert.ok(!journaled.includes("sk-from-the-config") && !journaled.includes("tok-of-the-agent"), journaled);
   });
 
   it("will not start without a sandbox or an explicit opt-out", () => {
