@@ -10,12 +10,15 @@ export type AgentName = (typeof AGENTS)[number];
 /**
  * The default command of each agent: the program and its flags for one non-interactive run with the prompt on standard input
  * (plan change LC4). A token with a `{placeholder}` that has no value is dropped, and so is a flag just before it, so a
- * run with no model or no dollar cap passes neither. These are the flags as the plan names them; check each against the
- * installed release (documentation/library-builder.md, "Not run").
+ * run with no model or no dollar cap passes neither. `claude-code` and `codex` were checked against their published
+ * documentation on 2026-11-25 (EA1): in print mode Claude Code denies every permission prompt unless a mode says otherwise, so
+ * the agent could not write its files without `--permission-mode acceptEdits`, and `codex exec` runs in a read-only sandbox
+ * unless `--sandbox workspace-write` is given. The others are as the plan named them; check each against the installed release
+ * (documentation/library-builder.md, "Not run").
  */
 export const DEFAULT_COMMANDS: Readonly<Record<AgentName, readonly string[]>> = {
-  "claude-code": ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", "{model}", "--max-budget-usd", "{budget_usd}"],
-  codex: ["codex", "exec", "--model", "{model}"],
+  "claude-code": ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--model", "{model}", "--max-budget-usd", "{budget_usd}"],
+  codex: ["codex", "exec", "--sandbox", "workspace-write", "--model", "{model}"],
   opencode: ["opencode", "run", "--model", "{model}"],
   agy: ["agy", "--output-format", "stream-json", "--model", "{model}"],
   pi: ["pi", "-p", "--model", "{model}"],

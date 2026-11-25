@@ -42,9 +42,15 @@ describe("specProblems", () => {
 describe("the agent's command", () => {
   it("fills the placeholders and drops a flag whose value is missing", () => {
     const full = renderCommand({ agent: "claude-code", model: "m-1", unsandboxed: true }, { usd: 3 }, 600);
-    assert.deepEqual(full, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", "m-1", "--max-budget-usd", "3"]);
+    assert.deepEqual(full, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--model", "m-1", "--max-budget-usd", "3"]);
     const bare = renderCommand({ agent: "claude-code", unsandboxed: true }, {}, 600);
-    assert.deepEqual(bare, ["claude", "-p", "--output-format", "stream-json", "--verbose"]);
+    assert.deepEqual(bare, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"]);
+  });
+
+  it("lets the default agents write their files (EA1: checked against the published documentation on 2026-11-25)", () => {
+    // Claude Code's print mode denies every permission prompt by default, and `codex exec` starts in a read-only sandbox.
+    assert.deepEqual(renderCommand({ agent: "codex", unsandboxed: true }, {}, 60), ["codex", "exec", "--sandbox", "workspace-write"]);
+    assert.ok(renderCommand({ agent: "claude-code", unsandboxed: true }, {}, 60).join(" ").includes("--permission-mode acceptEdits"));
   });
 
   it("has a default for each agent that reads the prompt on standard input, and takes a template of the person's", () => {

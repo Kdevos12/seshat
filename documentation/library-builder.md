@@ -47,17 +47,18 @@ is invalid, and the agent is not started.
 2. The agent runs non-interactively with the prompt on standard input, in a process group that is killed at the time limit or
    on abort. Its command is the settings' `command` (an argv, or a string split on whitespace) or the default for its name:
 
-   | `agent` | Default command | Note |
+   | `agent` | Default command | Checked |
    |---|---|---|
-   | `claude-code` | `claude -p --output-format stream-json --verbose [--model M] [--max-budget-usd N]` | |
-   | `codex` | `codex exec [--model M]` | |
-   | `opencode` | `opencode run [--model M]` | |
-   | `agy` | `agy --output-format stream-json [--model M]` | |
-   | `pi` | `pi -p [--model M]` | |
+   | `claude-code` | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits [--model M] [--max-budget-usd N]` | Against the published CLI reference, 2026-11-25: every flag exists (`--max-budget-usd` is print mode only). Print mode denies a permission prompt that no one answers, so without `--permission-mode acceptEdits` the agent could not write its files; that flag was added. Bash commands (`lake build`) still ask and are denied: set `command` with `--permission-mode bypassPermissions` behind a sandbox for an agent that builds its own work. That a prompt on standard input alone, with no query argument, is read is not stated there. |
+   | `codex` | `codex exec --sandbox workspace-write [--model M]` | Against the published non-interactive guide, 2026-11-25: with no prompt argument `codex exec` reads the prompt from standard input; it runs in a read-only sandbox by default, so `--sandbox workspace-write` was added. `--model` is not named on that page. |
+   | `opencode` | `opencode run [--model M]` | Not checked: the published CLI page shows `opencode run "message"` and names neither `--model` nor standard input. |
+   | `agy` | `agy --output-format stream-json [--model M]` | Not checked. |
+   | `pi` | `pi -p [--model M]` | Not checked. |
 
-   A flag whose value is not set (`{model}`, `{budget_usd}`) is left out with its value. The defaults are the plan's names and the
-   flags that those programs documented when this was written: **check each against the installed release** before the first
-   real build. `sandbox` is a command put in front of the agent (`bwrap ...`); without one the builder is not made unless
+   A flag whose value is not set (`{model}`, `{budget_usd}`) is left out with its value. No row was checked against an installed
+   release, only against published documentation where the column says so: **check each against the installed release** before
+   the first real build.
+   `sandbox` is a command put in front of the agent (`bwrap ...`); without one the builder is not made unless
    the settings say `unsandboxed: true`, the rule of the certifier ([certifier.md](certifier.md#where-untrusted-code-runs)).
 3. **The environment of the agent is `PATH`, a `HOME` and `TMPDIR` of its own, and the variables the settings' `env` names, and nothing
    else.** The harness's own keys (the model providers', `JEV_API_KEY`, `LEAN_SERVER_API_KEY`) never reach it unless a person copies one
@@ -167,7 +168,7 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
 
 ## Not run
 
-- No real coding agent: the five default commands are not checked against the installed programs, and the stream-json output is not read at all (only the files count).
+- No real coding agent: the default commands are not checked against installed programs (two were checked against published documentation on 2026-11-25, and corrected), and the stream-json output is not read at all (only the files count).
 - No real `lake`, Lean or certifier: the gate's `build` is a fake `lake`, and the fake certifier compares statements by text where the real one compares terms.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.
