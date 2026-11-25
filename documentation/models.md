@@ -582,9 +582,10 @@ python-sat in the host's compute tool. The tool is `registryCompute` of `@seshat
 `compute.python` comes first ([compute.md](compute.md)); the orchestrator gives it to the line (`createM11({compute})`), since this
 package cannot import that one. A CaDiCaL binary would be used only if a host profile named one; none does, and none is added.
 The CNF goes as its DIMACS body, deflated and in base64, in one call or in chunks of one call each (at most 40) to the session's
-interpreter, then a call that solves it with the first of CaDiCaL 1.5.3, Glucose 4 and MiniSat 2.2 that python-sat starts and
-prints whether it is satisfiable and the true variables of the object. A timeout, a failure or an answer that is not strict JSON
-is `unknown`, never UNSAT.
+interpreter, then a call that checks that the chunks join to what was sent (its length and SHA-256: zlib ignores what follows
+the end of its stream, so a stale chunk of the session in front would decode to another CNF), solves it with the first of
+CaDiCaL 1.5.3, Glucose 4 and MiniSat 2.2 that python-sat starts and prints whether it is satisfiable and the true variables of
+the object. A mismatch, a timeout, a failure or an answer that is not strict JSON is `unknown`, never UNSAT.
 
 - **Magmas.** When the battery found no counter-model, `encodeMagma` encodes the counter-models of each order from 1 to
   `satMagmaOrder`: variable `a·n² + b·n + c + 1` says `a * b = c`, exactly one per cell; each subterm whose value is not a

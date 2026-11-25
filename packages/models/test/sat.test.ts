@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { BlobStore, Journal } from "@seshat/core";
 import type { Llm, ProblemContext, ValidateRequest, ValidateResult } from "@seshat/lines";
@@ -108,7 +109,7 @@ function dpll(clauses: number[][], variables: number, assumptions: number[] = []
 type Solver = (clauses: number[][], variables: number, show: number) => number[] | undefined;
 
 /** Reads the chunks and the solving call of `solveCnf` (and a model encoder's call), and answers with `solve` as python-sat would. */
-function fakeCompute(solve: Solver, encoderAnswer?: (code: string, n: number, show: number) => number[] | undefined): SatCompute & { calls: string[] } {
+function fakeCompute(solve: Solver, encoderAnswer?: (code: string, n: number, show: number) => number[] | undefined, o: { staleSession?: boolean } = {}): SatCompute & { calls: string[] } {
   let chunks: string[] = [];
   const calls: string[] = [];
   return {
@@ -122,10 +123,18 @@ function fakeCompute(solve: Solver, encoderAnswer?: (code: string, n: number, sh
         const model = encoderAnswer?.(code, n, show);
         return { stdout: JSON.stringify(model === undefined ? { sat: false, solver: "fake" } : { sat: true, true: model, solver: "fake" }) };
       }
-      if (/^_seshat_cnf = \[\]/m.test(code)) chunks = [];
+      // A stale session loses the reset of `_seshat_cnf`, so that the chunks of an earlier CNF stay in front.
+      if (/^_seshat_cnf = \[\]/m.test(code) && o.staleSession !== true) chunks = [];
+      if (/^_seshat_cnf = \['/m.test(code)) chunks = [];
       for (const m of code.matchAll(/_seshat_cnf(?: = \[|\.append\()'([A-Za-z0-9+/=]*)'/g)) chunks.push(m[1] as string);
       if (!code.includes("from pysat.solvers import Solver")) return { stdout: '{"sat": false, "solver": "chunk"}' };
-      const text = inflateSync(Buffer.from(chunks.join(""), "base64")).toString("utf8");
+      // The check of the joined chunks, as the Python makes it.
+      const check = /len\(_seshat_joined\) == (\d+) and hashlib\.sha256\(.*\)\.hexdigest\(\) == '([0-9a-f]{64})'/.exec(code);
+      const joined = chunks.join("");
+      if (check !== null && (joined.length !== Number(check[1]) || createHash("sha256").update(joined).digest("hex") !== check[2])) {
+        return { stdout: JSON.stringify({ error: "the chunks of the CNF do not join to what was sent (length or SHA-256)" }) };
+      }
+      const text = inflateSync(Buffer.from(joined, "base64")).toString("utf8");
       const clauses: number[][] = [];
       let variables = 0;
       for (const line of text.split("\n")) {
@@ -426,6 +435,29 @@ describe("line M11 with the option sat", () => {
     const none = await setup({ statement: SEMIGROUPS, options: { exhaustive: 1, samples: 0 } });
     await none.run();
     assert.deepEqual([none.sat()[0]?.outcome, none.requests.length], ["not_run", 0]);
+  });
+
+  it("checks the length and SHA-256 of the joined chunks before solving: a stale session's CNF is never solved for this one", async () => {
+    // Two CNFs too large for one call each, made of pseudo-random clauses; the session keeps the first one's chunks in front of the second's.
+    const big = (seed: number, unit: number) => {
+      const cnf = new Cnf();
+      cnf.variables = 3000;
+      let x = seed;
+      const next = () => (x = (x * 1103515245 + 12345) % 2147483648);
+      for (let i = 0; i < 20_000; i++) cnf.add([(next() % 3000) + 1, -((next() % 3000) + 1), (next() % 3000) + 1]);
+      cnf.add([unit]);
+      return cnf;
+    };
+    const seen: number[] = [];
+    const compute = fakeCompute((clauses) => (seen.push(clauses.length), undefined), undefined, { staleSession: true });
+    const first = await solveCnf(compute, big(1, 1), { show: 0, timeoutSec: 1 });
+    assert.equal(first.status, "unsat");
+    const chunked = compute.calls.length;
+    assert.ok(chunked > 2, "the CNF went in chunks");
+    const second = await solveCnf(compute, big(2, -1), { show: 0, timeoutSec: 1 });
+    assert.equal(second.status, "unknown", "the first CNF's answer is not taken for the second's");
+    assert.match(second.note ?? "", /do not join to what was sent/);
+    assert.equal(seen.length, 1, "nothing was solved for the second CNF");
   });
 
   it("solves a contradiction without a call, and treats a failing tool as unknown, never UNSAT", async () => {

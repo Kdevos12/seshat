@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { isInterrupted } from "@seshat/lines";
 
@@ -152,40 +153,54 @@ export const SAT_MAX_CHUNKS = 40;
 
 /**
  * The Python that solves the clauses in `_seshat_clauses` with python-sat (CaDiCaL, then Glucose, then MiniSat, the first that
- * the installed python-sat has) and prints one JSON line: whether it is satisfiable, and the true variables up to `show`.
+ * the installed python-sat has) and prints one JSON line: whether it is satisfiable, and the true variables up to `show`. When
+ * `_seshat_clauses` is None (the chunks did not join to what was sent), it prints an error and solves nothing.
  */
 function solvePython(show: number): string {
   return [
     "import json",
-    "from pysat.solvers import Solver",
     "_seshat_out = None",
-    "for _seshat_name in ('cadical153', 'glucose4', 'minisat22'):",
-    "    try:",
-    "        _seshat_solver = Solver(name=_seshat_name, bootstrap_with=_seshat_clauses)",
-    "    except Exception:",
-    "        continue",
-    "    with _seshat_solver:",
-    "        _seshat_ok = _seshat_solver.solve()",
-    "        _seshat_model = _seshat_solver.get_model() if _seshat_ok else []",
-    `    _seshat_out = {"sat": bool(_seshat_ok), "true": [v for v in (_seshat_model or []) if 0 < v <= ${show}], "solver": _seshat_name}`,
-    "    break",
+    "if _seshat_clauses is None:",
+    "    _seshat_out = {'error': 'the chunks of the CNF do not join to what was sent (length or SHA-256)'}",
+    "else:",
+    "    from pysat.solvers import Solver",
+    "    for _seshat_name in ('cadical153', 'glucose4', 'minisat22'):",
+    "        try:",
+    "            _seshat_solver = Solver(name=_seshat_name, bootstrap_with=_seshat_clauses)",
+    "        except Exception:",
+    "            continue",
+    "        with _seshat_solver:",
+    "            _seshat_ok = _seshat_solver.solve()",
+    "            _seshat_model = _seshat_solver.get_model() if _seshat_ok else []",
+    `        _seshat_out = {"sat": bool(_seshat_ok), "true": [v for v in (_seshat_model or []) if 0 < v <= ${show}], "solver": _seshat_name}`,
+    "        break",
     "print(json.dumps(_seshat_out if _seshat_out is not None else {'error': 'no solver of python-sat could start'}))",
   ].join("\n");
 }
 
-/** The Python that reads the chunks of `_seshat_cnf` (deflated DIMACS, base64) into `_seshat_clauses`. */
-const READ_CHUNKS = [
-  "import base64, zlib",
-  "_seshat_clauses = []",
-  "_seshat_clause = []",
-  "for _seshat_t in zlib.decompress(base64.b64decode(''.join(_seshat_cnf))).decode().split():",
-  "    _seshat_v = int(_seshat_t)",
-  "    if _seshat_v == 0:",
-  "        _seshat_clauses.append(_seshat_clause)",
-  "        _seshat_clause = []",
-  "    else:",
-  "        _seshat_clause.append(_seshat_v)",
-].join("\n");
+/**
+ * The Python that reads the chunks of `_seshat_cnf` (deflated DIMACS, base64) into `_seshat_clauses`, after checking that they
+ * join to `data`, by its length and SHA-256: a lost reset or a stale chunk of the session would otherwise decode to another CNF
+ * (zlib ignores what follows the end of its stream), and that CNF's answer would be taken for this one's. On a mismatch
+ * `_seshat_clauses` is None.
+ */
+function readChunks(data: string): string {
+  return [
+    "import base64, hashlib, zlib",
+    "_seshat_joined = ''.join(_seshat_cnf)",
+    "_seshat_clauses = None",
+    `if len(_seshat_joined) == ${data.length} and hashlib.sha256(_seshat_joined.encode('ascii')).hexdigest() == '${createHash("sha256").update(data, "ascii").digest("hex")}':`,
+    "    _seshat_clauses = []",
+    "    _seshat_clause = []",
+    "    for _seshat_t in zlib.decompress(base64.b64decode(_seshat_joined)).decode().split():",
+    "        _seshat_v = int(_seshat_t)",
+    "        if _seshat_v == 0:",
+    "            _seshat_clauses.append(_seshat_clause)",
+    "            _seshat_clause = []",
+    "        else:",
+    "            _seshat_clause.append(_seshat_v)",
+  ].join("\n");
+}
 
 /** Reads the solver's line: strict JSON, the variables integers in range. */
 function readAnswer(stdout: string, show: number): SatAnswer {
@@ -223,7 +238,7 @@ async function call(compute: SatCompute, code: string, timeoutSec: number, signa
 export async function solveCnf(compute: SatCompute, cnf: Cnf, options: { show: number; timeoutSec: number; signal?: AbortSignal }): Promise<SatAnswer> {
   if (cnf.contradiction) return { status: "unsat", solver: "none (the formula is false as written)" };
   const data = deflateSync(Buffer.from(cnf.dimacs(), "utf8")).toString("base64");
-  const solve = `${READ_CHUNKS}\n${solvePython(options.show)}`;
+  const solve = `${readChunks(data)}\n${solvePython(options.show)}`;
   if (data.length + solve.length + 40 <= CODE_LIMIT) return call(compute, `_seshat_cnf = ['${data}']\n${solve}`, options.timeoutSec, options.signal, options.show);
   const size = CODE_LIMIT - 100;
   const chunks = Math.ceil(data.length / size);
