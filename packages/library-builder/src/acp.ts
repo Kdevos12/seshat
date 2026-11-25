@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, readlinkSync, type Stats } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
 import {
   ACP_PROTOCOL_VERSION,
   type AcpAgentInfo,
@@ -74,26 +74,84 @@ const TAIL = 8000;
 const MAX_ANSWERS = 200;
 const MAX_REFUSED = 50;
 
-/** Whether `path` (absolute, or relative to `root`) is `root` or inside it, after links of the part that exists are followed. */
-export function insideDirectory(root: string, path: string): boolean {
-  const realRoot = existsSync(root) ? realpathSync(root) : resolve(root);
-  let target = isAbsolute(path) ? resolve(path) : resolve(root, path);
-  // The nearest part of the path that exists is resolved through its links; the rest is appended as written.
-  let rest = "";
-  while (!existsSync(target) && dirname(target) !== target) {
-    rest = rest === "" ? target.slice(dirname(target).length + 1) : join(target.slice(dirname(target).length + 1), rest);
-    target = dirname(target);
+/** The most links followed in one path, as the kernel's limit (ELOOP); a path with more is judged outside. */
+const MAX_LINKS = 40;
+
+/**
+ * `path` (absolute) resolved one component at a time as the kernel would: a link is read where it stands and followed, and `..`
+ * goes to the parent of what the components before it resolved to, not of what they spell. The part that does not exist yet is
+ * appended as written; a `..` in that part has no parent to resolve, and the path is refused (undefined), as it is past MAX_LINKS.
+ * An error other than a missing component (a name too long, a directory that cannot be searched) is thrown.
+ */
+function physicalPath(path: string): string | undefined {
+  const todo = path.split("/").reverse();
+  let current = "/";
+  let links = 0;
+  let missing = false;
+  while (todo.length > 0) {
+    const part = todo.pop() as string;
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (missing) return undefined;
+      current = dirname(current);
+      continue;
+    }
+    const next = current === "/" ? `/${part}` : `${current}/${part}`;
+    if (!missing) {
+      let stat: Stats;
+      try {
+        stat = lstatSync(next);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+        missing = true;
+        current = next;
+        continue;
+      }
+      if (stat.isSymbolicLink()) {
+        links += 1;
+        if (links > MAX_LINKS) return undefined;
+        const target = readlinkSync(next);
+        todo.push(...target.split("/").reverse());
+        if (target.startsWith("/")) current = "/";
+        continue;
+      }
+    }
+    current = next;
   }
-  const real = join(existsSync(target) ? realpathSync(target) : target, rest);
-  const rel = relative(realRoot, real);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+  return current;
 }
 
-/** The policy of plan change EA2: a denied kind is refused, a path outside the clone is refused, everything else is allowed. */
+/**
+ * Whether `path` (absolute, or relative to `root`) is `root` or inside it, every component resolved physically (`physicalPath`).
+ * A path that is empty, holds a NUL byte, starts with `~` (a home the agent's tools may expand) or is a URI (`file://...`) is
+ * judged outside: what it names is the agent's to interpret, not Seshat's.
+ */
+export function insideDirectory(root: string, path: string): boolean {
+  if (path === "" || path.includes("\0") || path.startsWith("~") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path)) return false;
+  const absolute = (p: string) => (isAbsolute(p) ? p : `${process.cwd()}/${p}`);
+  const realRoot = physicalPath(absolute(root));
+  const real = physicalPath(isAbsolute(path) ? path : `${absolute(root)}/${path}`);
+  if (realRoot === undefined || real === undefined) return false;
+  return real === realRoot || real.startsWith(realRoot === "/" ? "/" : `${realRoot}/`);
+}
+
+/**
+ * The policy of plan change EA2: a denied kind is refused, a path outside the clone is refused, everything else is allowed. A path
+ * that cannot be resolved is refused with the reason. The answer is advisory: the agent's tool acts after it, on a path that may have
+ * changed in between, so only the sandbox confines the agent (documentation/library-builder.md, "Transports").
+ */
 export function decidePermission(request: PermissionRequest, o: { clone: string; deny: readonly string[] }): { decision: "allow" | "deny"; reason: string } {
   if (o.deny.includes(request.kind)) return { decision: "deny", reason: `the settings deny the tool kind ${request.kind}` };
-  const outside = request.paths.find((p) => !insideDirectory(o.clone, p));
-  if (outside !== undefined) return { decision: "deny", reason: `${outside.slice(0, 200)} is outside the clone` };
+  for (const path of request.paths) {
+    let inside: boolean;
+    try {
+      inside = insideDirectory(o.clone, path);
+    } catch (error) {
+      return { decision: "deny", reason: `${path.slice(0, 200)} could not be resolved: ${(error as Error).message.slice(0, 200)}` };
+    }
+    if (!inside) return { decision: "deny", reason: `${path.slice(0, 200)} is outside the clone` };
+  }
   return { decision: "allow", reason: request.paths.length > 0 ? "inside the clone" : "no path outside the clone" };
 }
 

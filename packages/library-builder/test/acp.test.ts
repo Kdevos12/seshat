@@ -268,6 +268,29 @@ describe("the permission policy", () => {
     assert.equal(decidePermission({ ...request, kind: "execute" }, { clone: root, deny: ["execute"] }).decision, "deny");
     assert.equal(decidePermission({ ...request, paths: [join(root, "a.lean"), "/tmp/x"] }, { clone: root, deny: [] }).decision, "deny");
   });
+
+  it("resolves each component physically: the root's first character, `..` after a link, `~`, URIs and NUL", () => {
+    const root = mkdtempSync(join(tmpdir(), "mh-acp-root-"));
+    mkdirSync(join(root, "d"));
+    mkdirSync(join(root, "lean", "sub"), { recursive: true });
+    symlinkSync("/etc", join(root, "d", "link"));
+    symlinkSync(join(root, "lean", "sub"), join(root, "lean", "in"));
+    // A path that does not exist from its first component on: the walk reaches `/`, where one character too many was cut.
+    assert.equal(insideDirectory(root, `/X${root.slice(1)}/evil`), false);
+    // `..` after a link is the parent of the link's target (/etc/.. is /), not the directory that holds the link.
+    assert.equal(insideDirectory(root, join(root, "d") + "/link/../passwd"), false);
+    assert.equal(insideDirectory(root, "d/link/../passwd"), false);
+    assert.equal(insideDirectory(root, `${root}/lean/in/../x.lean`), true, "a link inside the clone stays inside");
+    assert.equal(insideDirectory(root, `${root}/lean/new/../x.lean`), false, "a `..` after a part that does not exist is refused");
+    for (const path of ["~/x.lean", "~root/.ssh/x", `file://${root}/a.lean`, `file:${root}/a.lean`, `${root}/a\0b`, ""]) {
+      assert.equal(insideDirectory(root, path), false, JSON.stringify(path));
+    }
+    assert.equal(insideDirectory("/", "/etc/passwd"), true, "everything is inside the root directory");
+    // A path the walk cannot resolve is denied with the reason, never thrown.
+    const long = decidePermission({ toolCallId: "c", kind: "edit", paths: [`${root}/${"a".repeat(300)}/x`], options: [] }, { clone: root, deny: [] });
+    assert.equal(long.decision, "deny");
+    assert.match(long.reason, /could not be resolved: ENAMETOOLONG/);
+  });
 });
 
 describe("probeAcp (harness doctor --agents)", () => {

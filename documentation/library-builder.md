@@ -92,8 +92,13 @@ output). It starts the agent's ACP command, then:
    text is kept as its output; `usage_update` is recorded (tokens used, context size, cumulative cost).
 4. **Permission requests** (`session/request_permission`) are answered by the settings: a tool kind listed in `acp.deny` (default
    `["fetch"]`: the network is the sandbox's to give, and the CLI transport's print mode denies a fetch too) is refused; a request
-   that names a path outside the clone (after links) is refused whatever its kind; anything else is allowed, once (`allow_once`
-   rather than `allow_always`, so that every request is asked). Every answer is journaled with its reason.
+   that names a path outside the clone is refused whatever its kind; anything else is allowed, once (`allow_once`
+   rather than `allow_always`, so that every request is asked). Every answer is journaled with its reason. A path is placed by
+   resolving each component physically, as the kernel would: a link is followed where it stands and `..` goes to the parent of
+   what came before it, so `clone/d/link/../passwd` with `link` to `/etc` is `/passwd`. A path that starts with `~`, is a URI
+   (`file://...`), holds a NUL byte, has a `..` after a part that does not exist, or cannot be resolved (a name too long) is
+   refused. **The answer is advisory, and racy**: the agent's tool acts after it, on a path that may have changed in between (a link
+   made after the check), and an agent may not ask at all. Only the sandbox confines the agent.
 5. **Every other request of the agent** (`fs/read_text_file`, `fs/write_text_file`, `terminal/*`, anything else) is answered
    "method not found" and recorded. A line that is not a JSON-RPC message is counted and ignored; a line longer than 4 MiB ends the run.
 6. At the time limit or on abort, Seshat sends `session/cancel`, waits `acp.cancelGraceSec` (default 5) for the turn to end, then kills
