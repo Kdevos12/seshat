@@ -105,8 +105,11 @@ output). It starts the agent's ACP command, then:
    exits during a build (an uncaught error, `process.exit`), the agent's process group is killed first, on either transport.
 6. At the time limit or on abort, Seshat sends `session/cancel`, waits `acp.cancelGraceSec` (default 5) for the turn to end, then kills
    the process group as the CLI transport does: the build is `failed`. When the reported cost reaches the dollar budget (`budget.usd`,
-   in USD), Seshat cancels the turn and the gate judges what was written. The cost is recorded, not charged anywhere: `harness library
-   build` has no ledger, and the job's caller (plan change EA3) charges it.
+   in USD), Seshat cancels the turn, waits `acp.cancelGraceSec` in the same way and kills the process group if the turn has not
+   ended, and the gate judges what was written. The cost is recorded, not charged anywhere: `harness library
+   build` has no ledger, and the job's caller (plan change EA3) charges it. **An agent that reports no cost** (no `usage_update`
+   with a cost in USD) **has no dollar budget over ACP**: no default ACP command passes a budget flag, and only the time limit
+   stops it.
 
 When the turn ends, the process group is killed and the files are judged. A protocol that never reaches the prompt (the agent exits,
 speaks something else, refuses `initialize` or `session/new`) is a build that `failed`: the agent did not start. A prompt answered

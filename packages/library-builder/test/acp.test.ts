@@ -237,6 +237,16 @@ describe("the ACP transport of the coding-agent builder (EA2)", () => {
     assert.equal(result.status, "accepted", result.reason);
   });
 
+  it("kills an agent that ignores the cancel at the dollar budget after the grace period, and judges what was written", async () => {
+    const started = performance.now();
+    const { result, messages } = await acpRun("budget_deaf", { options: { budget: { usd: 1, seconds: 30 }, timeoutSec: 30 }, extra: { acp: { cancelGraceSec: 0.3 } } });
+    assert.ok(performance.now() - started < 10_000, "the build waited for the time limit");
+    assert.equal(messages.filter((m) => m.method === "session/cancel").length, 1);
+    assert.equal(result.provenance.acp?.cancelled, "budget");
+    assert.match(result.provenance.agentOutput ?? "", /killed 0.3 s after the cancel at the dollar budget/);
+    assert.equal(result.status, "accepted", result.reason);
+  });
+
   it("reports an abort as an abort, after a cancel", async () => {
     const controller = new AbortController();
     const h = harness();

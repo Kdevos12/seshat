@@ -112,6 +112,12 @@ async function onPrompt(id, sessionId) {
       usage(sessionId, 9);
       await cancelSeen;
       return send({ id, result: { stopReason: "cancelled" } });
+    case "budget_deaf":
+      // Reports a cost over the budget and ignores the cancel: its process group is killed after the grace period.
+      put(join(cwd, DIR, "Basic.lean"), GOOD);
+      usage(sessionId, 9);
+      setInterval(() => {}, 60_000);
+      return;
     case "hang":
       await cancelSeen;
       return send({ id, result: { stopReason: "cancelled" } });

@@ -320,9 +320,9 @@ const said = (o: Outcome): string => ("error" in o ? o.error : "stop" in o ? (o.
  * are the same for both. It starts the agent's ACP command (the sandbox in front, the environment the builder gives), then
  * `initialize` (no `fs`, no `terminal`), `session/new` in the clone with the settings' MCP servers, and `session/prompt` with the
  * spec's prompt; it answers permission requests by the settings' policy and refuses every other request of the agent. At the time
- * limit, on abort, or at a reported cost that reaches the dollar budget it sends `session/cancel`; after the time limit or an abort
- * it waits `cancelGraceSec` and kills the process group, as the CLI transport does. The exit code it returns is 0 when the turn
- * ended, 1 when the agent answered the prompt with an error, and null when the protocol never reached the prompt: like the CLI's,
+ * limit, on abort, or at a reported cost that reaches the dollar budget it sends `session/cancel`, waits `cancelGraceSec` and kills
+ * the process group, as the CLI transport does at its time limit. The exit code it returns is 0 when the turn
+ * ended, 1 when the agent answered the prompt with an error or was killed after the cancel at the budget, and null when the protocol never reached the prompt: like the CLI's,
  * it is never a verdict, and the gate reads the files.
  */
 export function acpAgentRunner(config: AcpRunnerConfig = {}): AgentRunner {
@@ -339,11 +339,15 @@ export function acpAgentRunner(config: AcpRunnerConfig = {}): AgentRunner {
     let sessionId: string | undefined;
     let cancelling = false;
     let agent: Launched | undefined;
+    let graceTimer: NodeJS.Timeout | undefined;
     const cancel = (why: NonNullable<AcpRecord["cancelled"]>) => {
       if (cancelling || sessionId === undefined) return;
       cancelling = true;
       record.cancelled = why;
       agent?.send({ method: METHODS.cancel, params: cancelParams(sessionId) });
+      // At the budget the turn is still being waited for: the grace period starts here, and its end kills the process group, which
+      // ends the turn as an exit does.
+      if (why === "budget") graceTimer = setTimeout(() => agent?.kill(), graceMs).unref();
     };
     agent = launch(argv, {
       cwd,
@@ -386,6 +390,7 @@ export function acpAgentRunner(config: AcpRunnerConfig = {}): AgentRunner {
     });
     const a = agent;
     const end = (code: number | null, flags: { timedOut?: boolean; aborted?: boolean } = {}, note?: string): AgentRun => {
+      clearTimeout(graceTimer);
       a.kill();
       if (note !== undefined) keep(`\nacp: ${note}`);
       if (sessionId !== undefined) record.sessionId = sessionId;
@@ -430,6 +435,8 @@ export function acpAgentRunner(config: AcpRunnerConfig = {}): AgentRunner {
     }
     if ("error" in first) return end(1, {}, `the agent answered ${METHODS.prompt} with an error: ${first.error}`);
     if (first.stop === "fatal") return end(null, {}, said(first));
+    // Killed at the end of the budget's grace period: the turn was reached, so the files are judged, as after a prompt answered with an error.
+    if (record.cancelled === "budget") return end(1, {}, `killed ${graceMs / 1000} s after the cancel at the dollar budget`);
     return end(first.code ?? null, {}, `the agent exited before answering ${METHODS.prompt}`);
   };
 }
