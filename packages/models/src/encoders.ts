@@ -233,6 +233,9 @@ function parseFormula(text: string, statement: GraphStatement): GraphFormula | s
     }
     if (t === ")" || t === "∧" || t === "∨" || t === "→") return `unexpected ${t}`;
     at++;
+    // As in Lean, a ∀ binds to the end of its group: `∀ v, P v → Q` is `∀ v, (P v → Q)`. Its body is read only when it is one
+    // token, a bound on the degree; anything after it in the group would be inside the ∀, where the fragment has no reading.
+    if (t.startsWith("∀") && tokens[at] !== undefined && tokens[at] !== ")") return `outside the fragment: a ∀ whose body is more than one degree bound: ${t.slice(0, 60)} ${tokens[at]}`;
     return atom(t);
   };
   const f = expr();
@@ -243,7 +246,9 @@ function parseFormula(text: string, statement: GraphStatement): GraphFormula | s
 /**
  * The statement as a formula of the template's fragment: its hypotheses imply its conclusion, each built from `G.CliqueFree k`,
  * `Gᶜ.CliqueFree k`, comparisons of `G.edgeFinset.card` (or `#G.edgeFinset`), `Fintype.card V`, `G.minDegree`, `G.maxDegree` with
- * a numeral, and `∀ v, G.degree v ≤ d` (any comparison), joined by `¬`, `∧`, `∨`, `→` and parentheses. Anything else: the reason.
+ * a numeral, and `∀ v, G.degree v ≤ d` (any comparison), joined by `¬`, `∧`, `∨`, `→` and parentheses. A `∀` reaches to the end of
+ * its group, as in Lean, so it is read only when its body is that one comparison: `∀ v, G.degree v ≥ 1 → G.minDegree ≥ 1` is outside
+ * the fragment, and `(∀ v, G.degree v ≥ 1) → G.minDegree ≥ 1` inside. Anything else: the reason.
  */
 export function graphFormula(statement: GraphStatement): { formula: GraphFormula } | { reason: string } {
   const split = splitSignature(statement.text);

@@ -595,7 +595,9 @@ is `unknown`, never UNSAT.
   as the battery's do.
 - **Graphs.** With `graphs` on, a statement in the template's fragment (`graphFormula`: hypotheses and a conclusion built from
   `G.CliqueFree k`, `Gᶜ.CliqueFree k`, comparisons of `G.edgeFinset.card` or `#G.edgeFinset`, `Fintype.card V`, `G.minDegree`,
-  `G.maxDegree` with a numeral, and `∀ v, G.degree v ≤ d` for any comparison, joined by `¬`, `∧`, `∨`, `→`) is encoded first, with
+  `G.maxDegree` with a numeral, and `∀ v, G.degree v ≤ d` for any comparison, joined by `¬`, `∧`, `∨`, `→`; a `∀` reaches to the
+  end of its group as in Lean, so `∀ v, G.degree v ≥ 1 → G.minDegree ≥ 1` is outside the fragment and needs its parentheses,
+  `(∀ v, G.degree v ≥ 1) → G.minDegree ≥ 1`, to be read) is encoded first, with
   no model call: variable `k` is the k-th pair `(0,1), (0,2), …`, counts by a totalizer, and the negation of the statement is
   asserted (an order the statement's `Fintype.card V` excludes is false as written and costs no call). A model is a graph that
   goes to `confirmHit` with source `sat`, the Lean check of every graph hit (above 8 vertices it is recorded, not sent, as

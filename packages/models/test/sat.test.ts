@@ -214,6 +214,13 @@ describe("the template encoders", () => {
     assert.ok("formula" in formula(GRAPH("(h : ∀ v, 3 ≤ G.degree v) : G.edgeFinset.card ≥ 6 ∨ G.maxDegree < 2 → G.minDegree ≠ 1")));
     const outside = formula(GRAPH("(h : G.Connected) : ∃ p : G.Walk _ _, p.IsHamiltonian"));
     assert.match((outside as { reason: string }).reason, /outside the fragment: G\.Connected/);
+    // Lean reads `∀ v, P v → Q` as `∀ v, (P v → Q)`, false on three vertices with one edge; read as `(∀ v, P v) → Q` it is a tautology,
+    // which would be UNSAT evidence for a false statement. It is outside the fragment; with the parentheses, inside.
+    for (const body of [": ∀ v, G.degree v ≥ 1 → G.minDegree ≥ 1", ": ∀ v, G.degree v ≥ 1 ∧ G.minDegree ≥ 1", ": G.minDegree ≥ 0 ∧ ∀ v, G.degree v ≥ 1 ∨ G.maxDegree = 2", "(h : ∀ v, G.degree v ≥ 1 → G.minDegree ≥ 1) : G.maxDegree ≥ 0"]) {
+      assert.match((formula(GRAPH(body)) as { reason: string }).reason ?? "", /a ∀ whose body is more than one degree bound/, body);
+    }
+    assert.ok("formula" in formula(GRAPH(": (∀ v, G.degree v ≥ 1) → G.minDegree ≥ 1")));
+    assert.ok("formula" in formula(GRAPH(": ¬ ∀ v, G.degree v ≥ 1")));
   });
 
   it("encodes the graphs that break a statement of the fragment: every model breaks it, and every class of them has one", () => {
