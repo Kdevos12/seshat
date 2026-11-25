@@ -1,51 +1,18 @@
 /**
- * Exact rational arithmetic on `bigint`, for the algorithms of this package that must not round:
- * the guessing of recurrences, which solves linear systems over the rationals.
+ * Exact rational arithmetic on `bigint`, for the algorithms of this package that must not round: the guessing of
+ * recurrences, which solves linear systems over the rationals. The rationals themselves are `@seshat/classical`'s
+ * (`rational.ts`), under the short names this package uses; the linear algebra is this package's.
  */
-export interface Rat {
-  /** The numerator. */
-  readonly n: bigint;
-  /** The denominator: above 0, and coprime to the numerator. */
-  readonly d: bigint;
-}
+import { isZero, ONE, type Rat, rat, ZERO, gcd, radd, rdiv, req, rmul, rneg, rshow, rsub } from "@seshat/classical";
 
-export function gcd(a: bigint, b: bigint): bigint {
-  let x = a < 0n ? -a : a;
-  let y = b < 0n ? -b : b;
-  while (y !== 0n) [x, y] = [y, x % y];
-  return x;
-}
-
-export function rat(n: bigint | number, d: bigint | number = 1n): Rat {
-  let num = BigInt(n);
-  let den = BigInt(d);
-  if (den === 0n) throw new RangeError("a rational with denominator 0");
-  if (den < 0n) {
-    num = -num;
-    den = -den;
-  }
-  const g = gcd(num, den);
-  return g <= 1n ? { n: num, d: den } : { n: num / g, d: den / g };
-}
-
-export const ZERO: Rat = { n: 0n, d: 1n };
-export const ONE: Rat = { n: 1n, d: 1n };
-
-export const add = (a: Rat, b: Rat): Rat => rat(a.n * b.d + b.n * a.d, a.d * b.d);
-export const sub = (a: Rat, b: Rat): Rat => rat(a.n * b.d - b.n * a.d, a.d * b.d);
-export const mul = (a: Rat, b: Rat): Rat => rat(a.n * b.n, a.d * b.d);
-export const neg = (a: Rat): Rat => ({ n: -a.n, d: a.d });
-export const isZero = (a: Rat): boolean => a.n === 0n;
-export const eq = (a: Rat, b: Rat): boolean => a.n === b.n && a.d === b.d;
-
-export function div(a: Rat, b: Rat): Rat {
-  if (b.n === 0n) throw new RangeError("division by the rational 0");
-  return rat(a.n * b.d, a.d * b.n);
-}
-
-export function show(a: Rat): string {
-  return a.d === 1n ? `${a.n}` : `${a.n}/${a.d}`;
-}
+export { gcd, isZero, ONE, type Rat, rat, ZERO };
+export const add = radd;
+export const sub = rsub;
+export const mul = rmul;
+export const neg = rneg;
+export const div = rdiv;
+export const eq = req;
+export const show = rshow;
 
 /**
  * The nullspace of a matrix over the rationals, as a basis of vectors `v` with `matrix * v = 0`

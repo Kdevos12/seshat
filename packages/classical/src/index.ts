@@ -13,6 +13,7 @@ export * from "./parse.ts";
 export * from "./posterior.ts";
 export * from "./premises.ts";
 export * from "./process.ts";
+export * from "./rational.ts";
 export * from "./probe.ts";
 export * from "./router.ts";
 export * from "./sandbox.ts";

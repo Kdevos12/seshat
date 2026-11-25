@@ -40,7 +40,8 @@ import {
   SOS_PY,
   sosCandidates,
 } from "../src/index.ts";
-import { Poly, rat } from "../src/polynomial.ts";
+import { Poly } from "../src/polynomial.ts";
+import { rat } from "../src/rational.ts";
 import { ScriptedLean, tacticOf } from "./fake-lean.ts";
 
 const HEADER = "import Mathlib";

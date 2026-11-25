@@ -1,7 +1,8 @@
 import { type LeanChecker, leanTextProblems } from "@seshat/core";
 import type { ComputeAnswer, ComputeNeed, ComputeTool } from "./compute.ts";
 import { parseStatement, type Term, Unreadable, canonicalSort } from "./parse.ts";
-import { ldlt, ONE, Poly, type Rat, rat, rcmp, rdiv, rmul, rneg, roundTo, rsign, rsub, radd, isInteger, isZero, solveLinear, toPoly, ZERO } from "./polynomial.ts";
+import { ldlt, Poly, solveLinear, toPoly } from "./polynomial.ts";
+import { isInteger, isZero, ONE, type Rat, rat, radd, rcmp, rdiv, rmul, rneg, roundTo, rsign, rsub, ZERO } from "./rational.ts";
 import type { TryRecord } from "./posterior.ts";
 import { type Goal, snippetFor, succeeded } from "./tactics.ts";
 

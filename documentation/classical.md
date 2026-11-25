@@ -133,7 +133,7 @@ has not run.
 
 ## The certificate stage (plan change CX4)
 
-`certificates.ts`, with the exact arithmetic in `polynomial.ts`. Off by default (`--line-option
+`certificates.ts`, with the exact arithmetic in `polynomial.ts` and `rational.ts` (the rationals `@seshat/induction` uses too). Off by default (`--line-option
 M10.certificates=true` turns it on): the plan leaves every item off unless it says otherwise, and a paid
 comparison of runs with and without the stage decides; `harness certificates` (below) runs every method whatever
 the option says. On a goal the router tags E6 ("a
