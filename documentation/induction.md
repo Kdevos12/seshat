@@ -124,7 +124,7 @@ the conjecturing then turns into claims to prove.
 ## The first cases the harness pushes
 
 A table of small cases does not need line M8 when the statement itself says what to evaluate. With `RunConfig.firstCases` (plan change PA10; on in
-`harness solve`'s set `v2`, off in `v1`) and a compute tool in the run (`autoTool`, or `compute.sage` among the tools), the harness does this once for
+`harness solve`'s set `v2`, off in `v1`) and a compute tool in the run (`autoTool`, or `compute.sage` or `compute.python` among the tools; for Python the code first imports `binomial`, `factorial` and `prod` from `math`, [compute.md](compute.md#the-hosts-compute-tool)), the harness does this once for
 each problem before the provers start, with no model call: it reads the statement's own expression (`first-cases.ts`), asks the compute capability
 for its values at n = 0 or 1 (1 when a hypothesis says n is positive) up to 8 values, and, when the host offers `oeis.search`, the run is not private
 and the person did not refuse third parties, looks the left side's integer sequence up in the OEIS. The first session's opening message then has a

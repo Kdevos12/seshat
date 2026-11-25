@@ -2,7 +2,9 @@
 
 Two stateful capabilities run the code a model writes: `compute.sage` (SageMath, below) and
 `compute.python` (Python with numpy, scipy, sympy and solvers, on Pyodide,
-[below](#python-on-pyodide-computepython)).
+[below](#python-on-pyodide-computepython)). "The host's compute tool" of `harness solve` is the
+first of them the host offers and that answers: Sage where it runs, Python without it
+([its rule](#the-hosts-compute-tool)).
 
 The capability `compute.sage` gives the provers a computer algebra system:
 [SageMath](https://www.sagemath.org), the open-source counterpart of Mathematica and of the
@@ -256,13 +258,24 @@ Settings of the implementation `pyodide`, in the host profile (`capabilities.com
 | `startSec` | 60 | Seconds an interpreter may take to start. |
 | `maxStdout` | 20000 | Characters of printed output kept per call. |
 
-### On the hosts
+### The host's compute tool
 
 The `local` profile offers both tools: `compute.sage` (Docker, then a local install) and
 `compute.python`, marked `optional` so that `harness health` shows a missing Pyodide as a warning.
 The `server` profile offers Sage in Docker only: the dedicated server has Docker and the full Sage,
-and the plan names `local` alone for Pyodide; a server that wants it adds the same entry. A run
-gives it to the provers with `--tool compute.python`.
+and the plan names `local` alone for Pyodide; a server that wants it adds the same entry.
+
+`harness solve --auto-tool` (and the `v2` defaults, and the bench arms of `harness ablate`) give a
+problem "the host's compute tool" (CA17, `RunConfig.autoTool`): the first of `COMPUTE_TOOLS`
+(`compute.sage`, then `compute.python`, in `tools.ts`) that the host offers. When the run pins its
+tools at its start and that tool does not answer, the next one the host offers takes its place
+(`computeFallbacks`, `pinTools`): the run logs "compute.sage cannot be reached ...: compute.python is
+used in its place" and records `compute.python` as its `autoTool`. Sage stays the tool wherever it
+answers. The first cases the harness computes for a parameterised statement
+([induction.md](induction.md#the-first-cases-the-harness-pushes)) go through whichever of the two the
+run has; for Python their code first imports `comb` (as `binomial`), `factorial` and `prod` from
+`math`, the built-ins Sage has. Lines M8, M11 and M16, whose code is Sage's, still need
+`compute.sage` (CX8 moves M8's guessing to Python).
 
 ### Its contract and tests
 
@@ -281,7 +294,9 @@ semidefinite cone is what the SDP case checks.
 runs a toy language): the protocol, scopes and their release, the time limit, a process that runs
 out of memory, the WebAssembly cap, the empty environment, the file permissions of the real
 `--permission` process, the deleted `fetch`, the version check, `maxSessions`, and health without
-Pyodide.
+Pyodide. `packages/orchestrator/test/compute-python.test.ts` covers the host's compute tool: the
+choice, the fallback when Sage does not answer, a `solve` that records `compute.python`, and the
+first-cases code run by a `python3` when the machine has one.
 
 ## Not done yet
 

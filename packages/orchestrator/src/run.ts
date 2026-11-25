@@ -86,7 +86,7 @@ import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordCon
 import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { describeRoles, RoleBook, type RolesConfig, resolveRoles } from "./roles.ts";
 import { recordSketch, sketchProblem } from "./sketch.ts";
-import { checkTools, pinTools, toolName } from "./tools.ts";
+import { checkTools, COMPUTE_TOOLS, computeFallbacks, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
@@ -133,7 +133,9 @@ export interface RunConfig {
    * A `direct` capability (the host's compute tool, `compute.sage`) that a problem's sessions get besides `tools` when the router files
    * the problem's statement as finite, about a graph or about numbers (`fileStatement`, documentation/literature.md, "Solve options"). It is
    * checked and pinned at the start of the run like a tool, and recorded as `autoTool` in `run.started`; the problems that are not filed do
-   * not get it. Absent: none, and a run that records and prompts as it always did.
+   * not get it. A compute tool that cannot be reached at the start is replaced by the next of `COMPUTE_TOOLS` the host offers and that
+   * answers (compute.python when Sage is absent, plan change CX3), which is then the one recorded. Absent: none, and a run that records and
+   * prompts as it always did.
    */
   autoTool?: string;
   /**
@@ -930,12 +932,16 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const autoIds = config.autoTool !== undefined ? [config.autoTool] : [];
   const toolProblems = checkTools(registry, [...config.tools, ...autoIds]);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
+  // "The host's compute tool" (CA17): when the run's `autoTool` cannot be reached, the next compute tool the host offers takes its place
+  // (compute.python on Pyodide when Sage is absent, plan change CX3). A fallback the run could not give its provers is not tried.
+  const autoFallbacks = config.autoTool !== undefined ? computeFallbacks(registry, config.autoTool).filter((id) => !config.tools.includes(id) && checkTools(registry, [id]).length === 0) : [];
   // A tool that cannot be reached now would answer every prover's call with an error.
-  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? []);
+  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? [], config.autoTool !== undefined ? { [config.autoTool]: autoFallbacks } : {});
   if (pinnedAll.problems.length > 0) return await abandon(pinnedAll.problems.join("; "), undefined, registry);
-  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`): pinned together, recorded apart.
-  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => t.capability !== config.autoTool) };
-  const pinnedAuto = pinnedAll.tools.find((t) => t.capability === config.autoTool);
+  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`, or the fallback that replaced it): pinned together, recorded apart.
+  const autoPinned = (t: { capability: string }): boolean => t.capability === config.autoTool || autoFallbacks.includes(t.capability);
+  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => !autoPinned(t)) };
+  const pinnedAuto = pinnedAll.tools.find(autoPinned);
   // The statement identity of the run is the one an enabled line gives; without one, the text's.
   const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
   let identity: StatementIdentity | undefined;
@@ -1690,7 +1696,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
       // The first cases of the statement (`RunConfig.firstCases`). The compute tool is the run's `autoTool` (or a compute tool it was given by name), whether or not the
       // router files this statement: the router does not read big operators, and a sum is the shape the table is for. Computed once, on first use.
-      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
+      const computeTool = pinnedAuto ?? pinned.tools.find((t) => COMPUTE_TOOLS.includes(t.capability));
       let casesDone: { value: Awaited<ReturnType<typeof computeFirstCases>> } | undefined;
       const casesOnce = async (): Promise<Awaited<ReturnType<typeof computeFirstCases>>> => {
         casesDone ??= {

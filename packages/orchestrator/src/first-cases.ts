@@ -280,10 +280,15 @@ export function firstCasesPlan(statement: string): FirstCasesPlan | undefined {
   return { variable, from: hypotheses.some((h) => positive.test(h)) ? 1 : 0, sides: found };
 }
 
-/** The Sage code of the plan: it prints one JSON list `[[n, lhs, rhs], ...]` with the values as text, `null` for a case that failed. */
-export function firstCasesCode(plan: FirstCasesPlan, count = FIRST_CASES_COUNT): string {
+/**
+ * The code of the plan: it prints one JSON list `[[n, lhs, rhs], ...]` with the values as text, `null` for a case that failed. The
+ * translation is Sage's and plain Python's at once (`**`, `sum`, integers that stay exact); for `compute.python` (plan change CX3) a first
+ * line brings `binomial`, `factorial` and `prod`, which Sage has as built-ins, from Python's `math`.
+ */
+export function firstCasesCode(plan: FirstCasesPlan, count = FIRST_CASES_COUNT, capability = "compute.sage"): string {
   const cell = (sage: string): string => `_cell(lambda ${plan.variable}: ${sage}, ${plan.variable})`;
   return [
+    ...(capability === "compute.python" ? ["from math import comb as binomial, factorial, prod"] : []),
     "import json",
     "def _cell(f, n):",
     "    try:",
@@ -358,7 +363,7 @@ export async function computeFirstCases(statement: string, o: FirstCasesOptions)
   const scope = `first-cases:${plan.variable}:${plan.from}`;
   let table: FirstCasesTable | undefined;
   try {
-    const result = await o.registry.invoke(o.capability, { code: firstCasesCode(plan), timeout: FIRST_CASES_TIMEOUT_SEC }, {
+    const result = await o.registry.invoke(o.capability, { code: firstCasesCode(plan, FIRST_CASES_COUNT, o.capability), timeout: FIRST_CASES_TIMEOUT_SEC }, {
       actor: COMPUTE_ACTOR,
       scope,
       ...(o.implementation !== undefined ? { implementation: o.implementation } : {}),

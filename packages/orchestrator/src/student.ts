@@ -6,6 +6,7 @@ import { DEFAULT_CHECK_TIMEOUT_SEC } from "@seshat/registry";
 import type { PriceBook } from "./prices.ts";
 import { DEFAULT_CONSULT_CALLS } from "./consult.ts";
 import { describeRoles } from "./roles.ts";
+import { COMPUTE_TOOLS } from "./tools.ts";
 
 /**
  * The defaults of `harness solve` (plan change PB6, documentation/quickstart.md, "Student defaults"): what a run should do when its
@@ -73,9 +74,17 @@ export const SOLVE_SWITCHES: Readonly<Record<DefaultsName, Readonly<SolveSwitche
   v2: { intake: true, autoTool: true, leanSearch: true, leanLsp: true },
 };
 
-/** The capability that gives `lean.search`, and the compute tool of `autoTool`, as a host profile names them. */
+/** The capability that gives `lean.search`, and the preferred compute tool of `autoTool`, as a host profile names them. */
 export const SEARCH_CAPABILITY = "lean.search";
-export const COMPUTE_TOOL = "compute.sage";
+export const COMPUTE_TOOL = COMPUTE_TOOLS[0] as string;
+
+/**
+ * The host's compute tool (CA17): the first of `COMPUTE_TOOLS` the host offers, compute.sage before compute.python. A run whose
+ * `autoTool` cannot be reached at its start takes the next one the host offers that answers (`computeFallbacks`, plan change CX3).
+ */
+export function hostComputeTool(offers: (capability: string) => boolean): string | undefined {
+  return COMPUTE_TOOLS.find((id) => offers(id));
+}
 /** The Lean language server, a tool `v2` gives the prover beside lean_check when the host offers it. */
 export const LEAN_LSP_TOOL = "lean.lsp";
 
@@ -97,7 +106,7 @@ export function describeSet(name: DefaultsName, offers?: (capability: string) =>
   if (name === "v2") lines.push("line M6's repeat rule");
   if (studentGate(name).probeExtend === true) lines.push("one extension for a probe its cap cut (the budget gate)");
   if (sw.intake) lines.push("the intake gate (hygiene tests; the literature only with your yes)");
-  if (sw.autoTool) lines.push(`${COMPUTE_TOOL} for finite, graph and number statements${offers !== undefined && !offers(COMPUTE_TOOL) ? " (this host does not offer it)" : ""}`);
+  if (sw.autoTool) lines.push(`the host's compute tool (${COMPUTE_TOOLS.join(", else ")}) for finite, graph and number statements${offers !== undefined && hostComputeTool(offers) === undefined ? " (this host offers none)" : ""}`);
   if (sw.leanSearch) lines.push(`${SEARCH_CAPABILITY}, remote services only with your yes${offers !== undefined && !offers(SEARCH_CAPABILITY) ? " (this host does not offer it)" : ""}`);
   if (sw.leanLsp) lines.push(`${LEAN_LSP_TOOL} for the prover (goals, diagnostics, several tactics at a line)${offers !== undefined && !offers(LEAN_LSP_TOOL) ? " (this host does not offer it)" : ""}`);
   // Not in any set: only a run that was asked for it (`--consult`, plan change NL3, beta).
@@ -309,7 +318,7 @@ export function benchAdditions(defaults: DefaultsName, offers: (capability: stri
   const sw = SOLVE_SWITCHES[defaults];
   return {
     ...(sw.intake ? { intake: { hygiene: true, literature: true, consent: { allowed: true, via: "bench" as const }, capShare: INTAKE_ALLOWANCE_SHARE } } : {}),
-    ...(sw.autoTool && offers(COMPUTE_TOOL) ? { autoTool: COMPUTE_TOOL } : {}),
+    ...(sw.autoTool && hostComputeTool(offers) !== undefined ? { autoTool: hostComputeTool(offers) as string } : {}),
     ...(sw.leanSearch && offers(SEARCH_CAPABILITY) ? { leanSearch: true } : {}),
     ...(sw.leanLsp && offers(LEAN_LSP_TOOL) ? { tools: [LEAN_LSP_TOOL], optionalTools: [LEAN_LSP_TOOL] } : {}),
   };

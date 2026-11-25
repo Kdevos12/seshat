@@ -155,7 +155,7 @@ defaults of either command: the controller adds them to a named defaults set lat
 - **`--auto-tool`** (CA17): `fileStatement` (`solve-tools.ts`) files the problem's statement: `finite` when the router's domains include `finite`, `graph` when
   the text mentions a graph (`SimpleGraph`, `Graph`, `Digraph`, `Subgraph`, `Matching`, `Clique`, `Colorable`, `Hamiltonian`, `Adj`), `number` when the router's
   primary domain is arithmetic (`closed`, `presburger`, `linear_real`, `polynomial_identity`, `nonlinear_arith`) or every variable is a number; any other
-  statement is not filed. A filed statement gets `compute.sage` if the host offers it, and the run says so before it starts. The router has no `graph` or
+  statement is not filed. A filed statement gets the host's compute tool, `compute.sage`, or `compute.python` on a host that offers no Sage or whose Sage does not answer at the start ([compute.md](compute.md#the-hosts-compute-tool)), and the run says so before it starts. The router has no `graph` or
   `number` domain of its own: these two words are this task's reading of it.
 - **Test lemmas** (CA21): with `--intake` the first cases are tried for a Lean statement too and shown in the signature, and recorded again, with the other two
   hygiene checks, as `hygiene` nodes when the run begins.
