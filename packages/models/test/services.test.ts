@@ -82,8 +82,10 @@ describe("the OEIS, the LMFDB and FindStat as capabilities", () => {
     for (const host of ["local", "server"]) {
       const profile = loadHostProfile(join(REPO, "config", "hosts", `${host}.json`));
       const optional = Object.entries(profile.capabilities).flatMap(([id, binding]) => (binding.optional === true ? [id] : []));
-      // decide.ask (Task 20) is optional too: off unless a run asks for it; so are the processes smt.z3, atp.vampire (Task 6) and atp.eprover, and lean.search (Task 40: no backend unless the host sets one up).
-      assert.deepEqual(optional.sort(), [...CAPABILITIES, "decide.ask", "lit.search", "smt.z3", "atp.vampire", "atp.eprover", "lean.search"].sort(), host);
+      // decide.ask (Task 20) is optional too: off unless a run asks for it; so are the processes smt.z3, atp.vampire (Task 6) and atp.eprover, and lean.search (Task 40: no backend unless the host sets one up),
+      // and, on the local host only, compute.python (CX3: nothing without a local Pyodide).
+      const local = host === "local" ? ["compute.python"] : [];
+      assert.deepEqual(optional.sort(), [...CAPABILITIES, "decide.ask", "lit.search", "smt.z3", "atp.vampire", "atp.eprover", "lean.search", ...local].sort(), host);
     }
   });
 
