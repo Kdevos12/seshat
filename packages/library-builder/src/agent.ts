@@ -163,13 +163,22 @@ export interface AgentProbePlan {
   argv: string[];
   /** The agent's program: the first token after the sandbox. */
   program: string;
-  /** Prints the version: the program (or, for a command of the person's, its tokens before the first flag) and `--version`. */
-  version: string[];
-  /** CLI only: the help of the non-interactive mode (the tokens before the first flag, and `--help`). */
+  /**
+   * Prints the version: the program (or, for a command of the person's, its tokens before the first flag) and `--version`. Absent
+   * for a command of the person's whose program is not one of the agents' (`AGENT_PROGRAMS`): its tokens may be an interpreter and
+   * a script, which `--version` would run.
+   */
+  version?: string[];
+  /** CLI only: the help of the non-interactive mode (the tokens before the first flag, and `--help`); absent when `version` is. */
   help?: string[];
   /** CLI only: the flags the command passes, which that help should name. */
   flags: string[];
 }
+
+/** The programs of the default commands of both transports: the ones `harness doctor` asks `--version` and `--help` of. */
+export const AGENT_PROGRAMS: ReadonlySet<string> = new Set(
+  [...Object.values(DEFAULT_COMMANDS), ...Object.values(DEFAULT_ACP_COMMANDS)].map((argv) => argv[0] as string),
+);
 
 export function probePlan(settings: AgentSettings): AgentProbePlan {
   const transport = settings.transport ?? "cli";
@@ -179,13 +188,14 @@ export function probePlan(settings: AgentSettings): AgentProbePlan {
   const firstFlag = own.findIndex((t) => t.startsWith("-"));
   const leading = firstFlag < 0 ? own : own.slice(0, firstFlag);
   const program = own[0] ?? "";
-  const versionBase = settings.command === undefined ? [program] : leading;
+  const custom = settings.command !== undefined;
+  const probed = !custom || AGENT_PROGRAMS.has(program.split("/").pop() ?? "");
   return {
     transport,
     argv,
     program,
-    version: [...sandbox, ...versionBase, "--version"],
-    ...(transport === "cli" ? { help: [...sandbox, ...leading, "--help"] } : {}),
+    ...(probed ? { version: [...sandbox, ...(custom ? leading : [program]), "--version"] } : {}),
+    ...(probed && transport === "cli" ? { help: [...sandbox, ...leading, "--help"] } : {}),
     flags: transport === "cli" ? [...new Set(own.filter((t) => t.startsWith("-")).map((t) => t.split("=")[0] as string))] : [],
   };
 }

@@ -40,7 +40,7 @@ describe("harness doctor: the coding agents (EA1)", () => {
     assert.equal(await codingAgentChecks(machine(), { configPath: "/nonexistent/library-builder.json", all: false }), undefined);
   });
 
-  it("reports a fake ACP agent that answers initialize as ready, with its version, and sends nothing else", async () => {
+  it("reports a fake ACP agent that answers initialize as ready, and sends nothing else", async () => {
     const log = join(tempDir("mh-doctor-acp-"), "messages.jsonl");
     const system: DoctorSystem = { ...realSystem(), env: { PATH: process.env.PATH ?? "" } };
     const checks = await codingAgentChecks(system, { configPath: config({ agent: "gemini", transport: "acp", command: [process.execPath, FAKE_ACP], env: { FAKE_SCENARIO: "good", FAKE_LOG: log }, unsandboxed: true }), all: false });
@@ -48,7 +48,8 @@ describe("harness doctor: the coding agents (EA1)", () => {
     const check = checks?.[0];
     assert.equal(check?.status, "ok", check?.detail);
     assert.equal(check?.title, "Coding agent gemini (acp, configured)");
-    assert.match(check?.detail ?? "", /^fake-acp 0\.1\.0 \(/);
+    // Its program is node, not an agent's: `node FAKE_ACP --version` is not run.
+    assert.match(check?.detail ?? "", /^installed at .*node; version not probed for a custom command whose program is not an agent's/);
     assert.match(check?.detail ?? "", /answered initialize in \d+ ms: protocol version 1, loadSession yes, MCP over http yes, over sse no, agent fake-acp 0\.1\.0/);
     assert.match(check?.detail ?? "", /No prompt was sent and no model was called/);
     assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l).method), ["initialize"]);
@@ -115,6 +116,24 @@ describe("harness doctor: the coding agents (EA1)", () => {
     assert.match(text, /answered initialize/);
     assert.match(text, /`claude \[hidden\] --help`/);
     assert.ok(!text.includes("sk-in-the-command"), text);
+  });
+
+  it("runs --version and --help of a custom command only when its program is an agent's", async () => {
+    const calls: Array<{ argv: string[] }> = [];
+    const script = await codingAgentChecks(machine({ has: ["python3"], calls }), { configPath: config({ agent: "pi", command: ["python3", "wrapper.py", "-p"], unsandboxed: true }), all: false });
+    assert.equal(calls.length, 0, "python3 wrapper.py --version would run the script");
+    assert.match(script?.[0]?.detail ?? "", /version and flags not probed for a custom command/);
+    const known = await codingAgentChecks(machine({ has: ["claude"], calls }), { configPath: config({ agent: "claude-code", command: ["claude", "-p", "--permission-mode", "bypassPermissions"], unsandboxed: true }), all: false });
+    assert.deepEqual(calls.map((c) => c.argv), [["claude", "--version"], ["claude", "--help"]]);
+    assert.doesNotMatch(known?.[0]?.detail ?? "", /not probed/);
+  });
+
+  it("with --agents runs the other agents behind the configured agent's sandbox", async () => {
+    const calls: Array<{ argv: string[] }> = [];
+    await codingAgentChecks(machine({ has: ["claude", "codex"], calls }), { configPath: config({ agent: "claude-code", sandbox: ["bwrap", "--ro-bind", "/", "/"] }), all: true });
+    const codex = calls.filter((c) => c.argv.includes("codex"));
+    assert.ok(codex.length > 0);
+    for (const c of calls) assert.deepEqual(c.argv.slice(0, 4), ["bwrap", "--ro-bind", "/", "/"], c.argv.join(" "));
   });
 
   it("with --agents lists every default agent, the installed ones checked and the others in one line", async () => {

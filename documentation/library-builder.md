@@ -139,14 +139,17 @@ client needs fit in one module.
 `--agents`, for every agent of the two default tables that is installed; the others are listed in one line) it says:
 
 - whether the agent's program is installed (on `PATH`, or the path the command names), and what `--version` prints (the program for a
-  default command; the tokens before the first flag for a command of the person's);
+  default command; the tokens before the first flag for a command of the person's). A command of the person's whose program is not
+  one of the default commands' (`claude`, `codex`, `claude-agent-acp`, ...) is asked neither `--version` nor `--help`, since its
+  tokens may be an interpreter and a script that would run: the section says "not probed";
 - for the CLI transport, whether the help of the non-interactive mode (`claude --help`, `codex exec --help`, the tokens before the first
   flag and `--help`) names every flag the command passes, placeholders given a value; a flag it does not name is a warning, since a
   release may have renamed it (some programs do not list every flag in their help);
 - for ACP, whether the agent answers `initialize` within 10 seconds, and with what: the protocol version, `loadSession`, its MCP
   capabilities (`http`, `sse`), its name and version. Nothing is sent after `initialize`, and the process group is killed.
 
-The checks run as a build would run the agent: behind its `sandbox`, with its environment only (`PATH`, a `HOME` and `TMPDIR` of their
+The checks run as a build would run the agent: behind its `sandbox` (with `--agents`, the other agents behind the configured agent's
+`sandbox`, or none when the config names none), with its environment only (`PATH`, a `HOME` and `TMPDIR` of their
 own, the variables of `agent.env`), in an empty directory. No value of the config is printed: every value a `${env:NAME}` of the
 agent's section expanded to, wherever it stands (`command`, `sandbox`, `env`), and every value of `agent.env` is shown as `[hidden]`,
 in the commands the section prints as in the agent's own output, which is cut to a line. A `${env:NAME}` that is not set is named (never guessed) and the checks run without

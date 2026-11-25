@@ -124,11 +124,28 @@ async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { pr
     const env = agentEnvironment(settings, home, system.env);
     const notes: string[] = [];
     let warn = false;
-    const [vProgram, ...vArgs] = plan.version as [string, ...string[]];
-    const version = await system.run(vProgram, vArgs, 15_000, { env, cwd: home });
-    const said = shown(version.stdout || version.stderr, secrets);
-    notes.push(version.code === 0 && said !== "" ? `${said} (${shown(path, secrets)})` : `installed at ${shown(path, secrets)}, no version (\`${shown(plan.program, secrets)} --version\` exited ${version.code})`);
-    if (plan.help !== undefined) {
+    if (plan.version === undefined) {
+      notes.push(`installed at ${shown(path, secrets)}; version${transport === "cli" ? " and flags" : ""} not probed for a custom command whose program is not an agent's (its arguments might be a script that --version would run)`);
+    } else {
+      const [vProgram, ...vArgs] = plan.version as [string, ...string[]];
+      const version = await system.run(vProgram, vArgs, 15_000, { env, cwd: home });
+      const said = shown(version.stdout || version.stderr, secrets);
+      notes.push(version.code === 0 && said !== "" ? `${said} (${shown(path, secrets)})` : `installed at ${shown(path, secrets)}, no version (\`${shown(plan.program, secrets)} --version\` exited ${version.code})`);
+    }
+    if (transport === "acp") {
+      const answer: AcpProbe = await o.probe(plan.argv, { cwd: home, env, timeoutMs: ACP_TIMEOUT_MS });
+      if (answer.ok) {
+        const a = answer.agent;
+        const yes = (b: boolean) => (b ? "yes" : "no");
+        if (a.protocolVersion !== 1) warn = true;
+        notes.push(
+          `\`${shown(plan.argv.slice((settings.sandbox ?? []).length).join(" "), secrets)}\` answered initialize in ${answer.ms} ms: protocol version ${String(a.protocolVersion)}${a.protocolVersion === 1 ? "" : " (Seshat speaks 1)"}, loadSession ${yes(a.loadSession)}, MCP over http ${yes(a.mcp.http)}, over sse ${yes(a.mcp.sse)}${a.name !== undefined ? `, agent ${shown(`${a.name} ${a.version ?? ""}`, secrets)}` : ""}`,
+        );
+      } else {
+        warn = true;
+        notes.push(`\`${shown(plan.argv.slice((settings.sandbox ?? []).length).join(" "), secrets)}\` did not answer initialize: ${shown(answer.reason, secrets)}`);
+      }
+    } else if (plan.help !== undefined) {
       const [hProgram, ...hArgs] = plan.help as [string, ...string[]];
       const help = await system.run(hProgram, hArgs, 15_000, { env, cwd: home });
       const text = `${help.stdout}\n${help.stderr}`;
@@ -142,19 +159,6 @@ async function checkAgent(system: DoctorSystem, settings: AgentSettings, o: { pr
         notes.push(`\`${shown(shownHelp, secrets)}\` does not name ${missing.join(", ")}, which the command passes: this release may not take it (some programs do not list every flag)`);
       } else if (plan.flags.length > 0) notes.push(`\`${shown(shownHelp, secrets)}\` names every flag the command passes (${plan.flags.join(", ")})`);
       else notes.push("the command passes no flag");
-    } else {
-      const answer: AcpProbe = await o.probe(plan.argv, { cwd: home, env, timeoutMs: ACP_TIMEOUT_MS });
-      if (answer.ok) {
-        const a = answer.agent;
-        const yes = (b: boolean) => (b ? "yes" : "no");
-        if (a.protocolVersion !== 1) warn = true;
-        notes.push(
-          `\`${shown(plan.argv.slice((settings.sandbox ?? []).length).join(" "), secrets)}\` answered initialize in ${answer.ms} ms: protocol version ${String(a.protocolVersion)}${a.protocolVersion === 1 ? "" : " (Seshat speaks 1)"}, loadSession ${yes(a.loadSession)}, MCP over http ${yes(a.mcp.http)}, over sse ${yes(a.mcp.sse)}${a.name !== undefined ? `, agent ${shown(`${a.name} ${a.version ?? ""}`, secrets)}` : ""}`,
-        );
-      } else {
-        warn = true;
-        notes.push(`\`${shown(plan.argv.slice((settings.sandbox ?? []).length).join(" "), secrets)}\` did not answer initialize: ${shown(answer.reason, secrets)}`);
-      }
     }
     if ((o.unset ?? []).length > 0) {
       warn = true;
@@ -192,10 +196,10 @@ export async function codingAgentChecks(system: DoctorSystem, o: AgentsCheckOpti
   const probe = o.probe ?? probeAcp;
   const checks: Check[] = [];
   const section = (raw?.["coding-agent"] ?? undefined) as { agent?: unknown } | undefined;
-  let configured: { agent: AgentName; transport: Transport; custom: boolean } | undefined;
+  let configured: { agent: AgentName; transport: Transport; custom: boolean; sandbox?: readonly string[] } | undefined;
   if (section?.agent !== undefined && section.agent !== null && typeof section.agent === "object") {
     const { settings, unset, secrets } = expandAgent(section.agent as Record<string, unknown>, system.env);
-    configured = { agent: settings.agent, transport: settings.transport ?? "cli", custom: settings.command !== undefined };
+    configured = { agent: settings.agent, transport: settings.transport ?? "cli", custom: settings.command !== undefined, ...((settings.sandbox?.length ?? 0) > 0 ? { sandbox: settings.sandbox } : {}) };
     checks.push((await checkAgent(system, settings, { probe, unset, secrets, configured: true })).check);
   } else if (selected) {
     checks.push({ id: "coding-agent", status: "warn", title: "Coding agent", detail: `${o.configPath} selects coding-agent but names no agent.`, fix: "Fill in coding-agent.agent (documentation/library-builder.md, \"Config\")." });
@@ -206,7 +210,8 @@ export async function codingAgentChecks(system: DoctorSystem, o: AgentsCheckOpti
       for (const transport of ["cli", "acp"] as const) {
         if ((transport === "cli" ? DEFAULT_COMMANDS : DEFAULT_ACP_COMMANDS)[agent] === undefined) continue;
         if (configured !== undefined && !configured.custom && configured.agent === agent && configured.transport === transport) continue;
-        const { installed, check } = await checkAgent(system, { agent, transport }, { probe, configured: false });
+        // The other agents run behind the configured agent's sandbox, as a build would run them; with none configured, with none.
+        const { installed, check } = await checkAgent(system, { agent, transport, ...(configured?.sandbox !== undefined ? { sandbox: configured.sandbox } : {}) }, { probe, configured: false });
         if (installed) checks.push(check);
         else absent.push(`${agent} (${transport}: ${probePlan({ agent, transport }).program})`);
       }
