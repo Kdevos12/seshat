@@ -228,8 +228,8 @@ are in the task ledger ([plans/seshat-plan-ledger.md](../plans/seshat-plan-ledge
   the families, the context a `when` reads, the built-in cards, overlaps, and what is the bank's and what is not.
 - [packs.md](packs.md): installable packs of tools and skills: `pack.json`, what a pack may be, `harness add`,
   `packs` and `remove`, level 2, the three-skill rule, the content hash a run records.
-- [compute.md](compute.md): SageMath for the provers: installing it, its settings and resources,
-  what it offers and refuses.
+- [compute.md](compute.md): SageMath and Python on Pyodide for the provers: installing them, their
+  settings, isolation and resources, what they offer and refuse, and the host's compute tool.
 - [bench.md](bench.md): the formal-conjectures bench and its index, and the graded bench (grades A, B, C; Task 33).
 - [models.md](models.md): small models of the discrete domain: batteries of magmas, groups,
   graphs and integers, evaluators, fingerprints, certified refutations, identification of

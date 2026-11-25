@@ -73,6 +73,7 @@ Some tests run only when their data is on disk:
 | `lean.lsp` against the real lean-lsp-mcp, its language server and sites canned (no Lean, no network) | a Python with `lean-lsp-mcp==0.31.0` and `leanclient==0.13.2` | `LEAN_LSP_MCP_PYTHON` |
 | `lean.search` against a real search service or an index of Mathlib, and its `#check` verification against a real Lean | a service at `LEAN_SEARCH_URL` or `LEAN_PATTERN_URL`, or an index at `LEAN_SEARCH_INDEX`; a Kimina server | `pnpm harness contract lean.search` (needs a backend set up) |
 | Graph and group batteries read from SageMath (`@seshat/models`) | the `sagemath-mcp` executable | `SAGEMATH_MCP_COMMAND` |
+| The contract of `compute.python` against the real Pyodide (`packages/registry/test/python.test.ts`) | Pyodide 314.0.7 with its packages | `PYODIDE_DIR` |
 
 The contract of a capability runs against real implementations with `pnpm harness contract <id>`
 ([capabilities.md](capabilities.md#contract-tests)); it is not part of `pnpm test`. That includes

@@ -1,0 +1,216 @@
+{
+  "capability": "compute.python",
+  "cases": [
+    {
+      "name": "exact integer arithmetic",
+      "purpose": "Python's integers are exact, however large.",
+      "input": {
+        "code": "2**64 + 1"
+      },
+      "expect": [
+        {
+          "path": "result_type",
+          "equals": "expression"
+        },
+        {
+          "path": "result",
+          "equals": "18446744073709551617"
+        }
+      ]
+    },
+    {
+      "name": "the last line and what was printed",
+      "purpose": "The value of the last line comes back in result, and print() output in stdout.",
+      "input": {
+        "code": "print(1); print(2)\n3"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "3"
+        },
+        {
+          "path": "stdout",
+          "equals": "1\n2\n"
+        }
+      ]
+    },
+    {
+      "name": "a statement has no value",
+      "purpose": "Code that ends with an assignment is a statement, with no result.",
+      "input": {
+        "code": "a = 2**10"
+      },
+      "expect": [
+        {
+          "path": "result_type",
+          "equals": "statement"
+        },
+        {
+          "path": "result",
+          "equals": null
+        }
+      ]
+    },
+    {
+      "name": "variables persist within a scope",
+      "purpose": "What one call defines, the next call of the same scope sees.",
+      "before": [
+        {
+          "code": "squares = [k * k for k in range(10)]"
+        }
+      ],
+      "input": {
+        "code": "sum(squares)"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "285"
+        }
+      ]
+    },
+    {
+      "name": "each scope starts empty",
+      "purpose": "A new scope does not have the names of others (here, the squares of the case before), so provers do not share state.",
+      "input": {
+        "code": "squares"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "name 'squares' is not defined"
+      }
+    },
+    {
+      "name": "a sympy Gröbner basis",
+      "purpose": "sympy's groebner, the cofactors that a linear_combination certificate needs (CX4).",
+      "input": {
+        "code": "from sympy import groebner, symbols\nx, y = symbols('x y')\n[str(p) for p in groebner([x**2 + y**2 - 1, x - y], x, y, order='lex').exprs]"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "['x - y', 'y**2 - 1/2']"
+        }
+      ]
+    },
+    {
+      "name": "a python-sat model",
+      "purpose": "A SAT solver of python-sat finds the model that unit propagation forces.",
+      "input": {
+        "code": "from pysat.solvers import Solver\nwith Solver(name='g3', bootstrap_with=[[1, 2], [-1], [-2, 3]]) as solver:\n    found = solver.solve()\n    model = solver.get_model()\n(found, model)"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "(True, [-1, 2, 3])"
+        }
+      ]
+    },
+    {
+      "name": "a clarabel SDP",
+      "purpose": "clarabel solves a semidefinite program: the least t with [[t, 1], [1, t]] positive semidefinite is 1 (the SOS stage of CX4 rests on it).",
+      "input": {
+        "code": "import clarabel\nimport numpy as np\nfrom scipy import sparse\nP = sparse.csc_matrix((1, 1))\nq = np.array([1.0])\nA = sparse.csc_matrix(np.array([[-1.0], [0.0], [-1.0]]))\nb = np.array([0.0, np.sqrt(2.0), 0.0])\nsettings = clarabel.DefaultSettings()\nsettings.verbose = False\nsolution = clarabel.DefaultSolver(P, q, A, b, [clarabel.PSDTriangleConeT(2)], settings).solve()\n(str(solution.status), round(float(solution.x[0]), 6))"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "matches": "^\\('(SolverStatus\\.)?Solved', 1\\.0\\)$"
+        }
+      ]
+    },
+    {
+      "name": "errors come back with their message",
+      "purpose": "The model sees why its code failed.",
+      "input": {
+        "code": "[][1]"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "index out of range"
+      }
+    },
+    {
+      "name": "the call's own time limit",
+      "purpose": "A computation past the timeout of the input is stopped with its interpreter, the message says so, and the registry's limit has not fired yet.",
+      "input": {
+        "code": "while True: pass",
+        "timeout": 2
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "timed out after 2\\.00s.*variables were discarded"
+      }
+    },
+    {
+      "name": "the memory limit",
+      "purpose": "An allocation past the WebAssembly memory cap (2048 MB by default) is a MemoryError, not a dead process.",
+      "input": {
+        "code": "len(bytearray(2000 * 1024**2))"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "MemoryError"
+      }
+    },
+    {
+      "name": "import js is refused",
+      "purpose": "Python reaches no JavaScript object: the js module is removed and refused before the code runs.",
+      "input": {
+        "code": "import js\njs.process"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "module js is not available in this sandbox"
+      }
+    },
+    {
+      "name": "pyodide.ffi is refused",
+      "purpose": "The other way to JavaScript, Pyodide's foreign function interface, is refused too.",
+      "input": {
+        "code": "from pyodide.ffi import to_js"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "module pyodide.ffi is not available in this sandbox"
+      }
+    },
+    {
+      "name": "no network",
+      "purpose": "The code reaches no address: there is no socket and no fetch in the sandbox.",
+      "input": {
+        "code": "import urllib.request\nurllib.request.urlopen('http://example.com', timeout=5).read()",
+        "timeout": 20
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "Error"
+      }
+    },
+    {
+      "name": "no file outside the scratch directory",
+      "purpose": "The files of the host are not there: Python sees its own file system and the scratch directory only.",
+      "input": {
+        "code": "open('/etc/passwd').read()"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "FileNotFoundError|PermissionError"
+      }
+    },
+    {
+      "name": "files in the scratch directory",
+      "purpose": "The working directory is the session's scratch directory, which the code may write and read.",
+      "input": {
+        "code": "with open('notes.txt', 'w') as f:\n    f.write('kept')\nopen('/scratch/notes.txt').read()"
+      },
+      "expect": [
+        {
+          "path": "result",
+          "equals": "'kept'"
+        }
+      ]
+    }
+  ]
+}

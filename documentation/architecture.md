@@ -82,7 +82,7 @@ Data that is versioned with the code:
    edits the two regions and calls its `lean_check` tool, which runs the fast check and answers
    with Lean's messages and the goals of the `sorry`s at the prover's own line numbers. Lean is
    reached through the capability `lean.check`, so each check is a tool run of the attempt. A run
-   can give the agent other tools, such as SageMath (`compute_sage`) or Lean's language server
+   can give the agent other tools, such as SageMath (`compute_sage`), Python on Pyodide (`compute_python`) or Lean's language server
    (`lean_lsp`), whose calls are tool runs of the attempt too ([compute.md](compute.md),
    [lean-lsp.md](lean-lsp.md)).
 5. A session ends when the model stops, at a limit of turns or context, or when the budget runs

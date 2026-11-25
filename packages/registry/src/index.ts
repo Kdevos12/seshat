@@ -9,6 +9,7 @@ export * from "./pack-store.ts";
 export * from "./packs.ts";
 export * from "./paths.ts";
 export * from "./pricing.ts";
+export * from "./python.ts";
 export * from "./registry.ts";
 export * from "./schema.ts";
 export * from "./skills.ts";

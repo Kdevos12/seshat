@@ -1,4 +1,8 @@
-# Computer algebra: SageMath
+# Computer algebra: SageMath and Python
+
+Two stateful capabilities run the code a model writes: `compute.sage` (SageMath, below) and
+`compute.python` (Python with numpy, scipy, sympy and solvers, on Pyodide,
+[below](#python-on-pyodide-computepython)).
 
 The capability `compute.sage` gives the provers a computer algebra system:
 [SageMath](https://www.sagemath.org), the open-source counterpart of Mathematica and of the
@@ -152,8 +156,139 @@ whose messages were not kept. The 15 runs after it passed, one of them with a co
 two under load, and so did 40 sessions opened and ended in a row. The cause is not known. When a
 case fails, run the contract again with `--out FILE` to keep every output.
 
+## Python on Pyodide (`compute.python`)
+
+Plan change CX3 (Ruling 47): a compute tool for the machine that has neither Docker nor a 4 GB
+SageMath, such as a student's laptop. `compute.python` runs Python 3.14 code in
+[Pyodide](https://pyodide.org) (MPL-2.0), CPython compiled to WebAssembly, with the packages
+Pyodide ships for it: numpy, scipy, sympy, networkx, mpmath, python-sat, highspy, clarabel and gmpy2.
+It is the same kind of tool as `compute.sage`: `direct`, stateful, the input `code` and an optional
+`timeout` (60 seconds by default, at most 300), and the output `result_type`, `result` (Python's
+`repr` of the last line's value), `stdout` and `elapsed_ms`. Its implementation `pyodide` (factory
+`pyodide`, in `@seshat/registry`, `python.ts` and `python-child.ts`) needs no program besides the
+Node that runs the harness, and no Python on the machine.
+
+### What a prover gets
+
+- Each scope has its own interpreter, in a Node process of its own: an attempt's calls share their
+  variables, and the interpreter is stopped when the attempt ends, by the same scope rule as Sage's
+  (`capabilityTool` passes the attempt as the scope, the prover releases it). Each contract case and
+  each health check has a scope of its own too.
+- A module the code imports from the package set is loaded on that call, from the local copy; a
+  module outside the set is an `ImportError`. The time a package takes to load counts in the call's
+  time limit (scipy and clarabel take a few seconds on a first import).
+- A call past its `timeout` cannot be interrupted inside WebAssembly, so its process is killed: the
+  call fails with "timed out after N s: the interpreter was stopped, and this session's variables
+  were discarded", and the next call of the scope starts a new, empty interpreter. A process that
+  dies (its JavaScript heap full) fails the call the same way, with "it ran out of memory".
+- At most `maxSessions` interpreters are open at once (8 by default); a call in a new scope beyond
+  them fails until one is released.
+
+### What isolates it
+
+Each interpreter is a Node process started with:
+
+| What | How |
+|---|---|
+| Files | `--permission`, with `--allow-fs-read` on the child script, Pyodide's directory and the scratch directory only, and `--allow-fs-write` on the scratch directory only. Python itself sees its own in-memory file system, with the scratch directory mounted at `/scratch` as its working directory; the host's files are not there. |
+| Processes and workers | refused by `--permission` (no `--allow-child-process`, no `--allow-worker`). |
+| Environment | empty (Windows keeps `SystemRoot`): none of the harness's keys reaches the process that runs the model's code. Python's `HOME` is `/scratch`. |
+| JavaScript | Pyodide is given an empty object as its `js` module, `js` and `pyodide_js` are unregistered, and, before any call, `js`, `pyodide_js`, `pyodide.ffi` and `pyodide.http` are removed from `sys.modules` and from the `pyodide` package and refused by an import hook (`builtins.__import__` and a finder first on `sys.meta_path`). |
+| Network | the JavaScript globals that reach it (`fetch`, `WebSocket`, `XMLHttpRequest`, `EventSource`) are deleted before Python runs; Pyodide's socket file system is not turned on; packages are read from the local copy, never downloaded (`packageBaseUrl` is the local directory). Node 22's permission model does not restrict the network itself. |
+| Memory | Python's memory is WebAssembly memory, capped at `memoryMb` (2048 MB): a growth past it is refused, which Python sees as a `MemoryError`, and the session lives on. The JavaScript heap is capped by `--max-old-space-size` at `heapMb` (1024 MB); past it the process dies and the call fails. |
+| Time | the call's `timeout`, then the process is killed. |
+
+This guards against the mistakes of code a model wrote (a loop, a large allocation, a stray `open`
+or `import js`), not against code written to escape, like the JavaScript sandbox of `runValues`
+([induction.md](induction.md#the-sandbox-for-programs)): the import guard is Python code that Python code could
+undo, and WebAssembly is not a security boundary that this project has audited. Nothing a call
+returns changes a claim: its output is `computed` evidence at most, as Sage's is.
+
+### Installing Pyodide
+
+Pyodide is not a dependency of the harness: no package of the repository installs it. The host
+profile points at a local copy of the pinned release with its packages, and without one
+`compute.python` is unavailable, and `harness health` says how to install it:
+
+```sh
+# Pyodide 314.0.7 (Python 3.14.2), the release the manifest pins, with its package wheels.
+curl -LO https://github.com/pyodide/pyodide/releases/download/314.0.7/pyodide-314.0.7.tar.bz2
+tar -xjf pyodide-314.0.7.tar.bz2              # a directory pyodide/ with pyodide.mjs and the wheels
+export PYODIDE_DIR=$PWD/pyodide
+pnpm harness health compute.python
+pnpm harness contract compute.python
+```
+
+The directory must hold `pyodide.mjs`, `pyodide.asm.mjs`, `pyodide.asm.wasm`,
+`python_stdlib.zip`, `pyodide-lock.json` and the wheels of the package set and of their
+dependencies. The npm package `pyodide@314.0.7` has only the first five, so it is not enough on its
+own; the wheels can be added next to them from the release's `full/` directory
+(`https://cdn.jsdelivr.net/pyodide/v314.0.7/full/`), by the file names `pyodide-lock.json` gives. The package set, with the versions of that release's lock file:
+
+| Package | Version | For |
+|---|---|---|
+| numpy | 2.4.6 | arrays, linear algebra |
+| scipy | 1.18.0 | sparse matrices, optimization (clarabel needs it) |
+| sympy | 1.14.0 | exact and symbolic algebra, Gröbner bases (`groebner`), `rsolve`, `nsimplify` |
+| networkx | 3.6.1 | graphs |
+| mpmath | 1.4.1 | arbitrary precision, `identify` |
+| python-sat | 1.8.dev26 | SAT solvers (`pysat.solvers`) |
+| highspy | 1.13.1 | linear and mixed-integer programming (HiGHS) |
+| clarabel | 0.11.1 | conic and semidefinite programming |
+| gmpy2 | 2.3.0 | fast big integers and rationals |
+
+Not verified: the archive's name and its layout are those of Pyodide's earlier releases; the
+versions above were read from the lock file of the npm package `pyodide@314.0.7`. No interpreter
+of this release has been started from the harness (see "Not done yet").
+
+### Settings
+
+Settings of the implementation `pyodide`, in the host profile (`capabilities.compute.python.settings.pyodide`):
+
+| Setting | Default | Value |
+|---|---|---|
+| `pyodideDir` | `""` (the `local` profile: `PYODIDE_DIR`) | The directory of the local Pyodide copy. Empty or without `pyodide.mjs`: the implementation is unavailable. |
+| `versionCheck` | `true` | Refuse a Pyodide whose version is not the manifest's (314.0.7), as the MCP implementations refuse another server version. |
+| `memoryMb` | 2048 | Python's WebAssembly memory. |
+| `heapMb` | 1024 | The process's JavaScript heap (`--max-old-space-size`). |
+| `maxSessions` | 8 | Interpreters open at once. |
+| `timeoutSec` | 60 | Seconds per call when the call gives no `timeout`. |
+| `startSec` | 60 | Seconds an interpreter may take to start. |
+| `maxStdout` | 20000 | Characters of printed output kept per call. |
+
+### On the hosts
+
+The `local` profile offers both tools: `compute.sage` (Docker, then a local install) and
+`compute.python`, marked `optional` so that `harness health` shows a missing Pyodide as a warning.
+The `server` profile offers Sage in Docker only: the dedicated server has Docker and the full Sage,
+and the plan names `local` alone for Pyodide; a server that wants it adds the same entry. A run
+gives it to the provers with `--tool compute.python`.
+
+### Its contract and tests
+
+`capabilities/compute.python/contract.json` has 16 cases: exact arithmetic, the last line and what
+was printed, a statement, variables within a scope, a new scope that starts empty, a sympy Gröbner
+basis, a python-sat model, a clarabel SDP, an error message, the call's own time limit, the memory
+limit, `import js` and `pyodide.ffi` refused, no network, no file outside the scratch directory, and
+files in it. They need the real Pyodide: `pnpm harness contract compute.python` on a host with
+`PYODIDE_DIR`, and `packages/registry/test/python.test.ts` runs them when `PYODIDE_DIR` is set and
+skips them otherwise. They have not run: the expectations of the sympy, python-sat and clarabel
+cases are written from those libraries' documentation, and whether Pyodide's clarabel has its
+semidefinite cone is what the SDP case checks.
+
+`pnpm test` runs the implementation against a stand-in for Pyodide
+(`packages/registry/test/fixtures/pyodide/pyodide.mjs`, a module with Pyodide's `loadPyodide` that
+runs a toy language): the protocol, scopes and their release, the time limit, a process that runs
+out of memory, the WebAssembly cap, the empty environment, the file permissions of the real
+`--permission` process, the deleted `fetch`, the version check, `maxSessions`, and health without
+Pyodide.
+
 ## Not done yet
 
+- `compute.python` has never run against the real Pyodide: its contract, its health on Linux, macOS
+  and Windows, and the time Pyodide and its packages take to load. CI runs only the fast checks
+  (`.github/workflows/check.yml`); the plan's acceptance asks for health and contract on the three
+  systems in CI, which needs the Pyodide download in the workflow.
 - The `docker` implementation has never been started (see above).
 - The server's other tools, such as `evaluate_sage_streaming` and `interrupt_sage_session`, are
   not given to the provers, although Sage's timeout message names them.

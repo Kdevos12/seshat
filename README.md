@@ -238,6 +238,7 @@ flowchart TB
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::real
     sage["compute_sage<br/>SageMath"]:::real
+    python["compute_python<br/>Python on Pyodide:<br/>sympy, SAT, SDP"]:::wait
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
     leanlsp["lean_lsp<br/>Lean language server"]:::real
@@ -359,6 +360,7 @@ flowchart TB
   m14 -->|"repair suggestions<br/>for the next session"| provers
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
+  provers -.->|"--tool"| python
   provers -->|"sketches ending in<br/>named sorry holes"| m12
   m12 -->|"holes as claims,<br/>one prove task each"| holes
   holes -->|"link lemma, hole proofs"| leancheck
