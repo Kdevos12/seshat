@@ -72,11 +72,11 @@ characters), and from the router's features when it could read the goal.
 | Move | Tagged when the statement... |
 |---|---|
 | E1 small cases up to isomorphism | names a class of finite structures (`SimpleGraph`, `Fintype`, `Magma`, `Group`, `Finpartition`, a variable of a `Finset` type) |
-| E2 a witness or construction | has an `∃` (not `∃ᶠ`) or a `¬ ∀` in its conclusion, a `.Nonempty`, `IsLeast`/`IsGreatest`, or pins an extremal quantity to a value or a lower bound (`W 3 6 = 32`, `190 ≤ L 9`) |
+| E2 a witness or construction | has an `∃` (not `∃ᶠ`, and not a negated `¬ ∃`, which says there is none) or a `¬ ∀` in its conclusion, a `.Nonempty`, `IsLeast`/`IsGreatest`, or pins an extremal quantity to a value or a lower bound (`W 3 6 = 32`, `190 ≤ L 9`) |
 | E3 a counterexample | has a universal variable (a binder that is not a hypothesis or a type, or a `∀`), and is not an eventual statement (no asymptotic token below); also every polynomial inequality |
 | E4 a closed form, recurrence or relation | has a variable of type `ℕ → _` or `ℤ → _`, `StrictMono`/`Monotone`, an equation with `∑`/`∏` and an integer variable, or a function it does not define applied to an integer variable (`a n = 3 ^ n + 6`) |
 | E5 an invariant | iterates (`f^[n]`, `.iterate`) |
-| E6 a certificate | is a polynomial inequality (readable, nonlinear, an order over number sorts), an integer equation (an equation hypothesis, nonlinear over `ℕ`/`ℤ`), or ends in an impossibility (`≠`, `∉`, a `¬` that is not `¬ ∀`) over arithmetic |
+| E6 a certificate | is a polynomial inequality (readable, nonlinear, an order over number sorts), an integer equation (an equation hypothesis, nonlinear over `ℕ`/`ℤ`), or ends in an impossibility (`≠`, `∉`, a `¬` that is not `¬ ∀`, a `¬ ∃` or `¬ (∃` read whole) over arithmetic |
 | E8 a split into cases | has a variable of `Fin n`, or a hypothesis or premise bounding a variable by a numeral (`n < 2^50`, `k ≤ 8 →`) |
 | E9 an extremal object | names one (`IsLeast`, `sSup`, `⨅`, `max`, `min`, `Largest`, `Longest`, `chromatic`...), bounds a quantity it does not define (`F N 3 ≤ ...`), or pins one at numerals to a numeral |
 | E12 growth or asymptotics | has `atTop`, `=O[`, `=o[`, `≪`, `Tendsto`, `limsup`, `∀ᶠ`, `𝓝`, a density |
@@ -198,9 +198,8 @@ runs every method of the stage on every problem, one method at a time, with no t
 of `compute.python` (else `compute.sage`), in a session per problem. It prints, per problem, whether the router tags
 it E6 and the methods whose certificate Lean accepted, then the count per method (accepted, expected, and checks
 Lean did not answer); `--out` writes the report as JSON, `--problem ID` (repeatable) picks problems. It changes no
-status and writes no journal. One problem, `eq-15` (`¬ ∃ x y : ℤ, x ^ 2 = 8 * y + 2`), is not tagged E6 by the
-router, which reads the consequent after the last comma: the pass runs the stage on it anyway, and the battery
-would not. It has not run: this machine has no Lean.
+status and writes no journal. The router tags every problem of the bench E6 (`eq-15`, `¬ ∃ x y : ℤ, x ^ 2 = 8 *
+y + 2`, since a negated existential is read whole). It has not run: this machine has no Lean.
 
 **Not verified.** Nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
 Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed). Unchecked: that

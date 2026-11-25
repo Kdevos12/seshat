@@ -492,17 +492,20 @@ export function movesOf(statementText: string, features?: Features): Move[] {
   const { variables, declared, conclusion, all } = signatureOf(text);
   const found = new Set<Move>();
   const asymptotic = ASYMPTOTIC.some((s) => text.includes(s));
-  const negatedForall = (ts: readonly Tok[], i: number): boolean => ts[i - 1]?.v === "¬" || (ts[i - 1]?.v === "(" && ts[i - 2]?.v === "¬");
+  /** Whether the quantifier at `i` is negated: `¬ ∀`, `¬ (∀`, `¬ ∃`, `¬ (∃`. */
+  const negated = (ts: readonly Tok[], i: number): boolean => ts[i - 1]?.v === "¬" || (ts[i - 1]?.v === "(" && ts[i - 2]?.v === "¬");
+  /** An existential that is negated says there is none: an impossibility, not something to exhibit (`¬ ∃!` is not one). */
+  const noneExists = (ts: readonly Tok[], i: number): boolean => (ts[i]?.v === "∃" || ts[i]?.v === "∃ᵉ") && negated(ts, i);
 
   // E1: a class of finite structures (graphs, groups, magmas, finite sets).
   if (all.some((t) => t.k === "id" && STRUCTURES.has(t.v)) || [...declared.values()].some((type) => /^Finset\b/u.test(type))) found.add("E1");
 
   // E2: something to exhibit.
-  if (conclusion.some((t, i) => t.v === "∃" || t.v === "∃ᵉ" || t.v === "∃!" || (t.v === "∀" && negatedForall(conclusion, i)))) found.add("E2");
+  if (conclusion.some((t, i) => ((t.v === "∃" || t.v === "∃ᵉ") && !noneExists(conclusion, i)) || t.v === "∃!" || (t.v === "∀" && negated(conclusion, i)))) found.add("E2");
   if (conclusion.some((t) => t.k === "id" && (/\.Nonempty$/u.test(t.v) || t.v === "IsLeast" || t.v === "IsGreatest"))) found.add("E2");
 
   // E3: a universal claim over instances one can enumerate or sample, unless it holds only eventually.
-  const universal = variables.size > 0 || conclusion.some((t, i) => (t.v === "∀" || t.v === "∀ᵉ") && !negatedForall(conclusion, i));
+  const universal = variables.size > 0 || conclusion.some((t, i) => (t.v === "∀" || t.v === "∀ᵉ") && !negated(conclusion, i));
   if (universal && !asymptotic) found.add("E3");
 
   // E4: a sequence.
@@ -521,7 +524,8 @@ export function movesOf(statementText: string, features?: Features): Move[] {
     if (integers && features.nonlinear && features.equationHypotheses) found.add("E6");
   }
   const last = consequent(conclusion);
-  const impossible = (last[0]?.v === "¬" && last[1]?.v !== "∀") || last.some((t) => t.v === "≠" || t.v === "∉");
+  // `¬ ∃ xs, P` is read whole: its consequent (after the last comma) is P, without the negation.
+  const impossible = (last[0]?.v === "¬" && last[1]?.v !== "∀") || last.some((t) => t.v === "≠" || t.v === "∉") || conclusion.some((_, i) => noneExists(conclusion, i));
   if (impossible && conclusion.some((t) => ARITHMETIC_SYMBOLS.has(t.v))) found.add("E6");
 
   // E8: a variable bounded by a numeral in a hypothesis, or ranging over a small `Fin n`.

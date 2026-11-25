@@ -23,6 +23,13 @@ describe("the router's exploration moves (plan change CX1)", () => {
     assert.ok(!moves("(x y : ℤ) : (x + y) ^ 2 = x ^ 2 + 2 * x * y + y ^ 2").includes("E6"), "an identity is ring's, not a modulus's");
   });
 
+  it("reads a negated existential as an impossibility (a certificate), not as something to exhibit", () => {
+    assert.deepEqual(moves(": ¬ ∃ x y : ℤ, x ^ 2 = 8 * y + 2"), ["E6"]);
+    assert.deepEqual(moves(": ¬ (∃ n : ℕ, n ^ 2 = 2 * n + 7)"), ["E6"]);
+    assert.ok(moves(": ∃! x : ℤ, x + 1 = 2").includes("E2"), "a unique existential is still a witness");
+    assert.ok(moves("(x : ℝ) : ¬ ∀ y : ℝ, y ^ 2 < x").includes("E2"), "a negated universal asks for a counterexample");
+  });
+
   it("tags an existential with a witness search, and a small Fin with cases", () => {
     assert.deepEqual(moves(": ∃ x : Fin 5, x * x = 4"), ["E2", "E8"]);
     assert.deepEqual(moves("(n : ℕ) (hn : Odd n) (h : n < 2^50) : ∃ k l : ℕ , Squarefree k ∧ n = k + 2^l"), ["E2", "E3", "E8"]);

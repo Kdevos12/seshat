@@ -33,8 +33,8 @@ describe("the inputs of CX4's real pass", () => {
       assert.ok(typeof goal !== "string", `${p.id}: ${String(goal)}`);
       assert.ok(p.kind === "inequality" ? goal.sort === "ℝ" : goal.sort === "ℤ" || goal.sort === "ℕ", p.id);
     }
-    // The router tags all but the `¬ ∃` form E6 (CX1 reads the consequent after the last comma): the battery would not run the stage on eq-15.
-    assert.deepEqual(bench.problems.filter((p) => !routeStatement(p.statement).moves.includes("E6")).map((p) => p.id), ["eq-15"]);
+    // The router tags every problem E6, the `¬ ∃` form of eq-15 included: the battery would run the stage on each.
+    assert.deepEqual(bench.problems.filter((p) => !routeStatement(p.statement).moves.includes("E6")).map((p) => p.id), []);
   });
 
   it("refuses a bench file that is not one", () => {
