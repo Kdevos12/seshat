@@ -184,7 +184,18 @@ Node that runs the harness, and no Python on the machine.
   were discarded", and the next call of the scope starts a new, empty interpreter. A process that
   dies (its JavaScript heap full) fails the call the same way, with "it ran out of memory".
 - At most `maxSessions` interpreters are open at once (8 by default); a call in a new scope beyond
-  them fails until one is released.
+  them fails at once, it does not wait, until one is released. The limit is the registry's, so it is
+  shared by everything of one run that calls `compute.python`: the provers' attempts that have it
+  (CA17), the certificate stage of line M10 (one scope per goal, released when the goal is done) and
+  the first cases of a statement. A run whose `concurrency` times the provers of a problem can
+  exceed 8 at once raises it in the host profile
+  (`capabilities.compute.python.settings.pyodide.maxSessions`); each interpreter holds up to
+  `memoryMb` plus `heapMb` of memory, so the machine's memory bounds it.
+- An interpreter whose harness died ends itself: idle, when its standard input closes; busy in
+  Python code, when Pyodide next reads its interrupt buffer (every few bytecodes), which checks at
+  most once a second that its parent process is still the one that started it. A loop inside a
+  compiled library (numpy, a solver) reads no buffer until it returns, so such a call can outlive
+  the harness by its own length.
 
 ### What isolates it
 
@@ -193,17 +204,22 @@ Each interpreter is a Node process started with:
 | What | How |
 |---|---|
 | Files | `--permission`, with `--allow-fs-read` on the child script, Pyodide's directory and the scratch directory only, and `--allow-fs-write` on the scratch directory only. Python itself sees its own in-memory file system, with the scratch directory mounted at `/scratch` as its working directory; the host's files are not there. |
-| Processes and workers | refused by `--permission` (no `--allow-child-process`, no `--allow-worker`). |
+| Processes and workers | refused by `--permission` (no `--allow-child-process`, no `--allow-worker`); `process.kill`, `process.execve` and `process.dlopen` throw once the process is sealed. |
 | Environment | empty (Windows keeps `SystemRoot`): none of the harness's keys reaches the process that runs the model's code. Python's `HOME` is `/scratch`. |
-| JavaScript | Pyodide is given an empty object as its `js` module, `js` and `pyodide_js` are unregistered, and, before any call, `js`, `pyodide_js`, `pyodide.ffi` and `pyodide.http` are removed from `sys.modules` and from the `pyodide` package and refused by an import hook (`builtins.__import__` and a finder first on `sys.meta_path`). Pyodide's own modules (`pyodide.*`, `_pyodide.*`) are imported just before, so that the guard does not stop Pyodide loading a package. |
-| Network | the JavaScript globals that reach it (`fetch`, `WebSocket`, `XMLHttpRequest`, `EventSource`) are deleted before Python runs; Pyodide's socket file system is not turned on; packages are read from the local copy, never downloaded (`packageBaseUrl` is the local directory). Node 22's permission model does not restrict the network itself. |
+| JavaScript | Pyodide is given an empty object as its `js` module, and `js` and `pyodide_js` are unregistered. Every module that reaches JavaScript is refused to the call's code by prefix: `pyodide` and its submodules (`pyodide.ffi`, `pyodide._core`, `pyodide.http`, ...), `_pyodide` and its submodules, `_pyodide_core` (which holds `to_js` and `create_proxy`), `js` and `pyodide_js`. Pyodide's own modules are imported first, so that what Pyodide runs later to load a package has its names; then they are removed from `sys.modules` (again before each call), and the attributes of other modules that hold one of them or one of their functions or classes are deleted. The refusal is an import hook (`builtins.__import__` and a finder first on `sys.meta_path`) that lets an import through only when the code asking for it is itself one of Pyodide's modules. |
+| Network | the process is sealed once Pyodide is loaded and before any Python runs (`seal` in `python-child.ts`), because Node 22's permission model does not restrict the network and JavaScript that Python reaches past the import guard could otherwise import `node:net`: a module loader hook refuses `net`, `tls`, `dgram`, `dns`, `http`, `https`, `http2`, `child_process`, `cluster`, `worker_threads`, `inspector` and `module` (dynamic `import()` included); `process.getBuiltinModule`, `process.binding` and `process._linkedBinding` throw and cannot be put back; the globals that reach the network (`fetch`, `WebSocket`, `XMLHttpRequest`, `EventSource`, and `fetch`'s dispatcher) are deleted. Pyodide's socket file system is not turned on; packages are read from the local copy, never downloaded (`packageBaseUrl` is the local directory). |
 | Memory | Python's memory is WebAssembly memory, capped at `memoryMb` (2048 MB): a growth past it is refused, which Python sees as a `MemoryError`, and the session lives on. The JavaScript heap is capped by `--max-old-space-size` at `heapMb` (1024 MB); past it the process dies and the call fails. |
 | Time | the call's `timeout`, then the process is killed. |
 
 This guards against the mistakes of code a model wrote (a loop, a large allocation, a stray `open`
 or `import js`), not against code written to escape, like the JavaScript sandbox of `runValues`
 ([induction.md](induction.md#the-sandbox-for-programs)): the import guard is Python code that Python code could
-undo, and WebAssembly is not a security boundary that this project has audited. Nothing a call
+undo (Pyodide's modules stay reachable through the live objects, `gc.get_objects()`, which is why the
+process is sealed as well), the seal closes the routes to a socket that Node 22 has but cannot stop
+JavaScript from writing to the process's own standard output, and WebAssembly is not a security
+boundary that this project has audited. `--disallow-code-generation-from-strings`, which would refuse
+`Function("...")` itself, is not set: whether Pyodide's loader and its packages run without
+generating code from strings has to be checked on a real Pyodide first (see "Not done yet"). Nothing a call
 returns changes a claim: its output is `computed` evidence at most, as Sage's is.
 
 ### Installing Pyodide
@@ -279,10 +295,11 @@ run has; for Python their code first imports `comb` (as `binomial`), `factorial`
 
 ### Its contract and tests
 
-`capabilities/compute.python/contract.json` has 16 cases: exact arithmetic, the last line and what
+`capabilities/compute.python/contract.json` has 19 cases: exact arithmetic, the last line and what
 was printed, a statement, variables within a scope, a new scope that starts empty, a sympy Gröbner
 basis, a python-sat model, a clarabel SDP, an error message, the call's own time limit, the memory
-limit, `import js` and `pyodide.ffi` refused, no network, no file outside the scratch directory, and
+limit, `import js`, `pyodide.ffi`, `_pyodide_core` and `pyodide._core` refused, no socket from
+JavaScript reached past the import guard, no network, no file outside the scratch directory, and
 files in it. They need the real Pyodide: `pnpm harness contract compute.python` on a host with
 `PYODIDE_DIR`, and `packages/registry/test/python.test.ts` runs them when `PYODIDE_DIR` is set and
 skips them otherwise. They have not run: the expectations of the sympy, python-sat and clarabel
@@ -293,17 +310,28 @@ semidefinite cone is what the SDP case checks.
 (`packages/registry/test/fixtures/pyodide/pyodide.mjs`, a module with Pyodide's `loadPyodide` that
 runs a toy language): the protocol, scopes and their release, the time limit, a process that runs
 out of memory, the WebAssembly cap, the empty environment, the file permissions of the real
-`--permission` process, the deleted `fetch`, the version check, `maxSessions`, and health without
-Pyodide. The Python every interpreter runs first (`PYTHON_PRELUDE`: the import guard and the function
-that runs a call) is plain Python, and the same test runs it on the machine's `python3` when it has
-one. `packages/orchestrator/test/compute-python.test.ts` covers the host's compute tool: the
+`--permission` process, the deleted `fetch`, the seal (the stand-in reaches `process` through
+`[].constructor.constructor` and tries `getBuiltinModule`, `binding`, `fetch` and `import()` of
+`node:net`, `node:http` and `node:module` against a server of the test, which sees no connection,
+while the same route outside the sandbox connects), an interpreter busy in a loop that ends itself
+when its parent is killed, the version check, `maxSessions`, and health without Pyodide. The Python
+every interpreter runs first (`PYTHON_PRELUDE`: the import guard and the function that runs a call)
+is plain Python, and the same test runs it on the machine's `python3` when it has one, with a copy of
+Pyodide's module layout as files (`pyodide`, `pyodide.ffi`, `pyodide._core`, `_pyodide`,
+`_pyodide_core`): every import of them from the call's code is refused, a library's name bound to
+`to_js` is deleted, and a late import of Pyodide's own still works. `packages/orchestrator/test/compute-python.test.ts` covers the host's compute tool: the
 choice, the fallback when Sage does not answer, a `solve` that records `compute.python`, and the
 first-cases code run by a `python3` when the machine has one.
 
 ## Not done yet
 
 - `compute.python` has never run against the real Pyodide: its contract, its health on Linux, macOS
-  and Windows, and the time Pyodide and its packages take to load. CI runs only the fast checks
+  and Windows, and the time Pyodide and its packages take to load. To check there besides: that
+  loading a package (scipy, clarabel) still works with every module of Pyodide's refused and removed
+  from `sys.modules` (a late import of Pyodide's that the guard does not recognise as Pyodide's would
+  be refused), that Pyodide reads the orphan watch's interrupt buffer (`setInterruptBuffer`), and
+  whether the process runs with `--disallow-code-generation-from-strings`, which would close the
+  `Function("...")` route the seal now only narrows. CI runs only the fast checks
   (`.github/workflows/check.yml`); the plan's acceptance asks for health and contract on the three
   systems in CI, which needs the Pyodide download in the workflow.
 - The `docker` implementation has never been started (see above).

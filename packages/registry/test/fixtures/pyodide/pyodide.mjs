@@ -7,14 +7,17 @@
 //   NAME                  an expression: the value of NAME, or a NameError
 //   INTEGER + INTEGER     an expression
 //   print TEXT            prints TEXT
-//   loop                  never returns (the time limit)
+//   loop                  never returns (the time limit), reading the interrupt buffer as Python does
+//   pid                   the process's id
+//   escape PORT           reaches `process` from a JavaScript object, as Python could through Pyodide's FFI, and tries
+//                         every route to a socket to 127.0.0.1:PORT: the value lists what each route did
 //   hog                   fills the JavaScript heap (the memory limit kills the process)
 //   grow MB               grows a WebAssembly memory by MB megabytes (the WebAssembly cap refuses it)
 //   read PATH / write PATH  reads or writes a file of the host (the permission model)
 //   env                   the names of the environment variables, as a list
 //   net                   the type of the global fetch
 //   jsglobals             the keys of the object Pyodide was given for the `js` module
-//   import js             refused, as the import guard of python-child.ts refuses it
+//   import js             refused, as the import guard of python.ts refuses it
 //   raise TEXT            a Python error with TEXT
 //
 // Several lines run in order; the value is the last line's when it is an expression.
@@ -31,6 +34,7 @@ export async function loadPyodide(options) {
   const names = new Map();
   const unregistered = [];
   let prelude = false;
+  let interrupt;
   const fail = (kind, text) => {
     throw new Error(`Traceback (most recent call last):\n  File "/lib/python3.14/site-packages/_pyodide/_base.py", line 1, in eval_code\n  File "<code>", line 1, in <module>\n${kind}: ${text}`);
   };
@@ -45,7 +49,33 @@ export async function loadPyodide(options) {
       stdout(m[1]);
       return { statement: true };
     }
-    if (text === "loop") for (;;) {}
+    if (text === "loop") for (;;) if (interrupt !== undefined && interrupt[0] === 2) fail("KeyboardInterrupt", "");
+    if (text === "pid") return { value: String(process.pid) };
+    if ((m = /^escape (\d+)$/.exec(text))) {
+      const port = Number(m[1]);
+      const proc = [].constructor.constructor("return process")();
+      const routes = [];
+      const attempt = (route, reach) => {
+        try {
+          reach();
+          routes.push(`${route}: reached`);
+        } catch (error) {
+          routes.push(`${route}: ${error.message}`);
+        }
+      };
+      attempt("getBuiltinModule", () => proc.getBuiltinModule("node:net").connect(port, "127.0.0.1").on("error", () => {}));
+      attempt("binding", () => proc.binding("tcp_wrap"));
+      attempt("_linkedBinding", () => proc._linkedBinding("tcp_wrap"));
+      attempt("fetch", () => globalThis.fetch(`http://127.0.0.1:${port}/`).catch(() => {}));
+      // An import is asynchronous: it is started here, and a connection it made shows on the test's server.
+      for (const name of ["node:net", "net", "node:http", "node:module", "node:child_process"]) {
+        [].constructor.constructor(`return import(${JSON.stringify(name)})`)().then(
+          (module) => (module.connect ?? module.get)?.(name.endsWith("http") ? `http://127.0.0.1:${port}/` : port, ...(name.endsWith("http") ? [] : ["127.0.0.1"]))?.on?.("error", () => {}),
+          () => {},
+        );
+      }
+      return { value: JSON.stringify(routes) };
+    }
     if (text === "hog") {
       const kept = [];
       for (;;) kept.push(new Array(1_000_000).fill(kept.length));
@@ -118,5 +148,8 @@ export async function loadPyodide(options) {
       stdout = (text) => o.batched(text);
     },
     setStderr() {},
+    setInterruptBuffer(buffer) {
+      interrupt = buffer;
+    },
   };
 }

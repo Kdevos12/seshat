@@ -177,6 +177,39 @@
       }
     },
     {
+      "name": "_pyodide_core is refused",
+      "purpose": "The module that holds Pyodide's foreign function interface (to_js, create_proxy) is refused, as every module of Pyodide's is.",
+      "input": {
+        "code": "import _pyodide_core"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "module _pyodide_core is not available in this sandbox"
+      }
+    },
+    {
+      "name": "pyodide._core is refused",
+      "purpose": "The submodule that re-exports the foreign function interface is refused too.",
+      "input": {
+        "code": "from pyodide._core import to_js"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "module pyodide._core is not available in this sandbox"
+      }
+    },
+    {
+      "name": "no socket from JavaScript",
+      "purpose": "Code that reaches JavaScript all the same (here: the foreign function interface's module found among the live objects, past the import guard) opens no socket: the process is sealed before Python runs, so process.getBuiltinModule throws. Without the seal, the call would return the socket's type.",
+      "input": {
+        "code": "import gc, types\ncore = next(m for m in gc.get_objects() if isinstance(m, types.ModuleType) and m.__name__ == '_pyodide_core')\nprocess = core.to_js([]).constructor.constructor('return process')()\nstr(process.getBuiltinModule('node:net').connect(9, '127.0.0.1').constructor.name)"
+      },
+      "fails": {
+        "code": "failed",
+        "matches": "process\\.getBuiltinModule is not available in this sandbox"
+      }
+    },
+    {
       "name": "no network",
       "purpose": "The code reaches no address: there is no socket and no fetch in the sandbox.",
       "input": {

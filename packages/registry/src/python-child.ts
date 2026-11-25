@@ -9,12 +9,16 @@
  * answered by `{id, ok: true, output}` (the capability's output) or `{id, ok: false, error}`. Standard output carries
  * nothing else: what Python prints is captured into the call's output, and the console goes to standard error.
  *
- * `loader` is a module that exports `loadPyodide` (Pyodide's `pyodide.mjs`; a test gives a stand-in). Before the
- * first call, the `js`, `pyodide_js`, `pyodide.ffi` and `pyodide.http` modules are removed from `sys.modules` and
- * refused by an import hook, so that Python reaches no JavaScript object; the JavaScript globals that reach the
- * network are deleted; WebAssembly memory cannot grow past `wasmMemoryMb`. This guards against the mistakes of
- * code a model wrote, not against code written to escape (documentation/compute.md, "What isolates it").
+ * `loader` is a module that exports `loadPyodide` (Pyodide's `pyodide.mjs`; a test gives a stand-in). Once Pyodide
+ * is loaded and before any Python runs, the process is sealed (`seal`): the Node modules that reach the network or
+ * another process cannot be imported any more, `process.getBuiltinModule`, `process.binding` and the other routes to
+ * Node's internals throw, and the JavaScript globals that reach the network are deleted, so that JavaScript code that
+ * Python reaches all the same reaches no socket. Then the prelude refuses to the call's code every module of Pyodide's
+ * and the JavaScript modules (python.ts), and WebAssembly memory cannot grow past `wasmMemoryMb`. While Python runs,
+ * the process ends itself when its parent is gone (`orphanWatch`). This guards against the mistakes of code a model
+ * wrote, not against code written to escape (documentation/compute.md, "What isolates it").
  */
+import { registerHooks } from "node:module";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 
@@ -42,6 +46,8 @@ interface Pyodide {
   mountNodeFS?(emscriptenPath: string, hostPath: string): void;
   setStdout?(options: { batched: (text: string) => void }): void;
   setStderr?(options: { batched: (text: string) => void }): void;
+  /** Python reads `buffer[0]` every few bytecodes while it runs, and a 2 there is a `KeyboardInterrupt`. */
+  setInterruptBuffer?(buffer: { 0: number }): void;
 }
 
 type LoadPyodide = (options: Record<string, unknown>) => Promise<Pyodide>;
@@ -83,6 +89,63 @@ function capWasmMemory(mb: number): void {
   };
 }
 
+/** The Node modules that reach the network, another process or the module loader: none is imported once the process is sealed. */
+const SEALED_MODULES: readonly string[] = [
+  "child_process", "cluster", "dgram", "dns", "dns/promises", "http", "http2", "https", "inspector", "inspector/promises", "module", "net", "tls", "worker_threads",
+];
+
+/** The members of `process` that reach Node's internals, a native module or another process: each throws once the process is sealed. */
+const SEALED_PROCESS: readonly string[] = ["getBuiltinModule", "binding", "_linkedBinding", "dlopen", "kill", "_kill", "execve"];
+
+/**
+ * Seals the process before Python runs: Node 22's permission model does not restrict the network, and JavaScript that
+ * Python reaches (through a JavaScript object of Pyodide's, `[].constructor.constructor("return process")()`) could
+ * otherwise import `node:net`. The loader refuses `SEALED_MODULES` from now on (`import()` included), the members of
+ * `SEALED_PROCESS` throw and cannot be put back, and the globals that reach the network are deleted. What this process
+ * itself needs (its standard streams, `process.exit`) is untouched.
+ */
+function seal(): void {
+  const refused = new Set(SEALED_MODULES);
+  registerHooks({
+    resolve(specifier, context, next) {
+      if (refused.has(specifier.replace(/^node:/u, ""))) throw new Error(`the module ${specifier} is not available in this sandbox`);
+      return next(specifier, context);
+    },
+  });
+  for (const name of SEALED_PROCESS) {
+    if (!(name in process)) continue;
+    const refuse = (): never => {
+      throw new Error(`process.${name} is not available in this sandbox`);
+    };
+    Object.defineProperty(process, name, { value: refuse, writable: false, configurable: false, enumerable: false });
+  }
+  const globals = globalThis as unknown as Record<string | symbol, unknown>;
+  for (const name of ["fetch", "WebSocket", "XMLHttpRequest", "EventSource"]) delete globals[name];
+  // The dispatcher `fetch` made, if it made one.
+  for (const symbol of Object.getOwnPropertySymbols(globalThis)) if (String(symbol.description).startsWith("undici.")) delete globals[symbol];
+}
+
+/**
+ * The interrupt buffer Pyodide reads while Python runs: every second at most, it checks that the process's parent is
+ * still the one that started it, and ends the process when it is not, so that a harness that died leaves no
+ * interpreter busy in a Python loop (an idle one ends when its standard input closes). A loop inside a compiled
+ * library (numpy, clarabel) reads no buffer until it returns.
+ */
+function orphanWatch(parent: number, exit: (code: number) => void): { 0: number } {
+  let checked = Date.now();
+  return {
+    get 0(): number {
+      const now = Date.now();
+      if (now - checked >= 1000) {
+        checked = now;
+        if (process.ppid !== parent) exit(1);
+      }
+      return 0;
+    },
+    set 0(_value: number) {},
+  };
+}
+
 async function start(setup: Setup): Promise<{ pyodide: Pyodide; printed: { text: string } }> {
   capWasmMemory(setup.wasmMemoryMb);
   const printed = { text: "" };
@@ -111,8 +174,11 @@ async function start(setup: Setup): Promise<{ pyodide: Pyodide; printed: { text:
     }
   }
   pyodide.mountNodeFS?.(SCRATCH_MOUNT, setup.scratch);
-  // Nothing in this process may reach the network once Python runs.
-  for (const name of ["fetch", "WebSocket", "XMLHttpRequest", "EventSource"]) delete (globalThis as Record<string, unknown>)[name];
+  const parent = process.ppid;
+  const exit = process.exit.bind(process);
+  pyodide.setInterruptBuffer?.(orphanWatch(parent, exit));
+  // Nothing in this process may reach the network or another process once Python runs.
+  seal();
   pyodide.runPython(setup.prelude);
   pyodide.runPython(`import os\nos.chdir(${JSON.stringify(SCRATCH_MOUNT)})`);
   return { pyodide, printed };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -192,6 +193,81 @@ describe("compute.python over the stand-in", () => {
     }
   });
 
+  it("seals the process: JavaScript that Python reaches all the same opens no socket", async () => {
+    let connections = 0;
+    const server: Server = createServer((socket) => {
+      connections++;
+      socket.destroy();
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const port = (server.address() as { port: number }).port;
+    const settle = (): Promise<void> => new Promise((resolveWait) => setTimeout(resolveWait, 500));
+    const r = registry();
+    try {
+      // Without the sandbox, the stand-in's first route reaches the server: the case below would succeed.
+      const net = ([].constructor.constructor as (body: string) => () => NodeJS.Process)("return process")().getBuiltinModule("node:net") as typeof import("node:net");
+      net.connect(port, "127.0.0.1").on("error", () => undefined);
+      await settle();
+      assert.equal(connections, 1, "the route works outside the sandbox");
+      const routes = JSON.parse(String((await run(r, `escape ${port}`)).result)) as string[];
+      await settle();
+      assert.equal(connections, 1, "no route reached the server from the sandbox");
+      assert.deepEqual(routes, [
+        "getBuiltinModule: process.getBuiltinModule is not available in this sandbox",
+        "binding: process.binding is not available in this sandbox",
+        "_linkedBinding: process._linkedBinding is not available in this sandbox",
+        "fetch: globalThis.fetch is not a function",
+      ]);
+      assert.equal((await run(r, "1 + 1")).result, "2", "the process still answers");
+    } finally {
+      await r.close();
+      server.close();
+    }
+  });
+
+  it("ends an interpreter busy in a loop when the process that started it dies", async () => {
+    const root = tempDir();
+    const script = [
+      `import { loadCatalog, pythonFactory, Registry } from ${JSON.stringify(join(REPO, "packages/registry/src/index.ts"))};`,
+      `const catalog = loadCatalog(${JSON.stringify(join(REPO, "capabilities"))});`,
+      `const host = { host: "test", capabilities: { "compute.python": { use: ["pyodide"], settings: { pyodide: { pyodideDir: ${JSON.stringify(FAKE)} } } } } };`,
+      "const r = new Registry({ catalog, host, factories: { pyodide: pythonFactory() } });",
+      'const pid = (await r.invoke("compute.python", { code: "pid" }, { scope: "s" })).output.result;',
+      'process.stdout.write(pid + "\\n");',
+      'r.invoke("compute.python", { code: "loop", timeout: 300 }, { scope: "s", timeoutMs: 600000 }).catch(() => {});',
+    ].join("\n");
+    const parent = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "--input-type=module", "-e", script], { env: { ...process.env, TMPDIR: root }, stdio: ["ignore", "pipe", "inherit"] });
+    const pid = await new Promise<number>((resolvePid, rejectPid) => {
+      let out = "";
+      parent.stdout.on("data", (chunk: Buffer) => {
+        out += chunk.toString("utf8");
+        if (out.includes("\n")) resolvePid(Number(out.trim()));
+      });
+      parent.once("exit", (code) => rejectPid(new Error(`the parent exited with ${code}`)));
+    });
+    const alive = (): boolean => {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return false;
+      }
+      // A zombie has ended; only its entry is left for a parent to reap.
+      try {
+        return !/^\d+ \(.*\) Z/u.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+      } catch {
+        return true;
+      }
+    };
+    await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+    assert.ok(alive(), "the interpreter is running its loop");
+    parent.kill("SIGKILL");
+    const deadline = Date.now() + 10_000;
+    while (alive() && Date.now() < deadline) await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    const left = alive();
+    if (left) process.kill(pid, "SIGKILL");
+    assert.equal(left, false, "the orphaned interpreter ended itself");
+  });
+
   it("lets the process read and write its scratch directory and nothing else of the host", async () => {
     const r = registry();
     const outside = join(tempDir(), "outside.txt");
@@ -266,6 +342,70 @@ describe("the prelude every interpreter runs first", () => {
       "NameError: name '__seshat_run' is not defined",
     ]);
   });
+
+  it("refuses every module of Pyodide's to the call's code, and scrubs the names other modules hold, but not Pyodide's own late imports", { skip: python3 ? false : "no python3 on this host" }, () => {
+    // Pyodide's modules, as files: `_pyodide_core` (a built-in module in Pyodide) holds the FFI, which `pyodide.ffi` and `pyodide._core` re-export.
+    const root = tempDir();
+    const files: Record<string, string> = {
+      "_pyodide_core.py": "def to_js(x):\n    return x\ndef create_proxy(x):\n    return x\n",
+      "pyodide/__init__.py": "",
+      "pyodide/ffi/__init__.py": "from _pyodide_core import to_js, create_proxy\n",
+      "pyodide/_core.py": "from _pyodide_core import *\n",
+      "pyodide/code.py": "def late():\n    from pyodide.ffi import to_js\n    return to_js.__name__\n",
+      "_pyodide/__init__.py": "",
+      "_pyodide/_base.py": "x = 1\n",
+      // A library that imported an FFI function before the guard.
+      "helper.py": "from pyodide.ffi import to_js\nimport pyodide\nkept = 1\n",
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, ".."), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    const driver = [
+      "import sys",
+      `sys.path.insert(0, ${JSON.stringify(root)})`,
+      "import pyodide.code, helper",
+      // What Pyodide's JavaScript side holds (the module that runs the code, the package loader): not in a module's names.
+      "held = [pyodide.code]",
+      PYTHON_PRELUDE,
+      'print(sorted(n for n in sys.modules if n.split(".")[0] in ("pyodide", "_pyodide", "_pyodide_core", "js", "pyodide_js")))',
+      'print(hasattr(helper, "to_js"), hasattr(helper, "pyodide"), helper.kept)',
+      "print(held[0].late())",
+      'print(json.loads(__seshat_run("import sys\\n\\"pyodide.ffi\\" in sys.modules", 100))["result"])',
+      "codes = [",
+      '    "import _pyodide_core",',
+      '    "from pyodide._core import to_js",',
+      '    "from pyodide.ffi import create_proxy",',
+      '    "import pyodide",',
+      '    "from pyodide import code",',
+      '    "import importlib\\nimportlib.import_module(\\"_pyodide._base\\")",',
+      '    "exec(\\"import _pyodide_core\\", {})",',
+      '    "import json\\njson.dumps(1)",',
+      "]",
+      "for code in codes:",
+      "    try:",
+      '        print(json.loads(__seshat_run(code, 100))["result"])',
+      "    except Exception as error:",
+      "        print(type(error).__name__ + ': ' + str(error))",
+    ].join("\n");
+    const run = spawnSync("python3", ["-I", "-c", `import json\n${driver}`], { encoding: "utf8", env: {} });
+    assert.equal(run.status, 0, run.stderr);
+    const refused = (name: string): string => `ImportError: the module ${name} is not available in this sandbox: it would reach JavaScript`;
+    assert.deepEqual(run.stdout.trim().split("\n"), [
+      "[]",
+      "False False 1",
+      "to_js",
+      "False",
+      refused("_pyodide_core"),
+      refused("pyodide._core"),
+      refused("pyodide.ffi"),
+      refused("pyodide"),
+      refused("pyodide"),
+      refused("_pyodide"),
+      refused("_pyodide_core"),
+      "'1'",
+    ]);
+  });
 });
 
 /** The contract's own cases need Python: they run where PYODIDE_DIR points at the pinned Pyodide with its packages. */
@@ -287,7 +427,7 @@ describe("the contract of compute.python against the real Pyodide", { skip: real
 describe("the contract of compute.python", () => {
   it("has the plan's cases (CX3)", () => {
     const names = catalog.capabilities.get("compute.python")?.contract.map((c) => c.name) ?? [];
-    for (const name of ["exact integer arithmetic", "a sympy Gröbner basis", "a python-sat model", "a clarabel SDP", "the call's own time limit", "the memory limit", "import js is refused", "no network", "no file outside the scratch directory"]) {
+    for (const name of ["exact integer arithmetic", "a sympy Gröbner basis", "a python-sat model", "a clarabel SDP", "the call's own time limit", "the memory limit", "import js is refused", "_pyodide_core is refused", "pyodide._core is refused", "no socket from JavaScript", "no network", "no file outside the scratch directory"]) {
       assert.ok(names.includes(name), `the contract has no case ${name}`);
     }
   });

@@ -54,55 +54,81 @@ export const DEFAULT_PYTHON_SETTINGS: Omit<PythonSettings, "pyodideDir"> = {
 const CHILD = fileURLToPath(new URL("./python-child.ts", import.meta.url));
 
 /**
- * The Python each interpreter runs once before any call (python-child.ts): the import guard, which removes `js`, `pyodide_js`,
- * `pyodide.ffi` and `pyodide.http` from `sys.modules` and from the `pyodide` package and refuses them through `builtins.__import__`
- * and a finder first on `sys.meta_path`, and `__seshat_run(code, max)`, which runs a call's code in a namespace of its own (the
- * session's variables) and answers the JSON of `result_type`, `result` (the last expression's `repr`) and `elapsed_ms`.
+ * The Python each interpreter runs once before any call (python-child.ts): the import guard and `__seshat_run`.
+ *
+ * The guard refuses to the call's code every module that reaches JavaScript: Pyodide's own (`pyodide` and its submodules,
+ * `_pyodide` and its submodules, `_pyodide_core`, which holds `to_js` and `create_proxy`) and the JavaScript modules (`js`,
+ * `pyodide_js`). Pyodide's own modules are imported first, while they still can be, so that what Pyodide runs later (to load a
+ * package) has its names already; then they are removed from `sys.modules`, and the attributes of the other modules that hold one
+ * of them, or a function or class of theirs, are deleted. The refusal is in `builtins.__import__` and in a finder first on
+ * `sys.meta_path`: an import is refused unless the code that asks for it is itself one of Pyodide's modules (a late import of
+ * Pyodide's, while it loads a package). `__seshat_run(code, max)` removes them from `sys.modules` again, then runs a call's code in
+ * a namespace of its own (the session's variables) and answers the JSON of `result_type`, `result` (the last expression's `repr`)
+ * and `elapsed_ms`.
  */
 export const PYTHON_PRELUDE = String.raw`
 def __seshat_setup():
-    import ast, builtins, importlib.abc, json, sys, time
-    blocked = ("js", "pyodide_js", "pyodide.ffi", "pyodide.http")
+    import ast, builtins, importlib, importlib.abc, json, pkgutil, sys, time, types
     def refused(name):
-        return any(name == b or name.startswith(b + ".") for b in blocked)
-    # Pyodide's own modules are imported while the blocked ones still can be, so that one it imports late (to load a
-    # package) has its names already: the guard is for the model's code, not for Pyodide.
-    import importlib, pkgutil
+        top = name.split(".", 1)[0]
+        return top in ("js", "pyodide_js", "pyodide") or top.startswith("_pyodide")
     for package in ("pyodide", "_pyodide"):
         try:
             root = importlib.import_module(package)
         except ImportError:
             continue
         for info in pkgutil.iter_modules(getattr(root, "__path__", []), package + "."):
-            if not refused(info.name):
-                try:
-                    importlib.import_module(info.name)
-                except Exception:
-                    pass
-    for name in list(sys.modules):
-        if refused(name):
+            try:
+                importlib.import_module(info.name)
+            except Exception:
+                pass
+    def scrub():
+        for name in [name for name in sys.modules if refused(name)]:
             del sys.modules[name]
-    try:
-        import pyodide
-        for attr in ("ffi", "http"):
-            if hasattr(pyodide, attr):
-                delattr(pyodide, attr)
-    except ImportError:
-        pass
+    scrub()
+    for module in list(sys.modules.values()):
+        if module is sys or module is builtins:
+            continue
+        try:
+            items = list(vars(module).items())
+        except TypeError:
+            continue
+        for key, value in items:
+            try:
+                origin = value.__name__ if isinstance(value, types.ModuleType) else getattr(value, "__module__", None)
+                if isinstance(origin, str) and refused(origin) and (isinstance(value, types.ModuleType) or callable(value)):
+                    delattr(module, key)
+            except Exception:
+                pass
+    machinery = ("importlib", "importlib._bootstrap", "importlib._bootstrap_external", "_frozen_importlib", "_frozen_importlib_external")
+    guard = set()
+    def from_pyodide():
+        frame = sys._getframe(1)
+        while frame is not None:
+            name = frame.f_globals.get("__name__")
+            if frame.f_code in guard or name in machinery:
+                frame = frame.f_back
+                continue
+            return isinstance(name, str) and refused(name)
+        return False
+    def refuse(name):
+        raise ImportError("the module " + name + " is not available in this sandbox: it would reach JavaScript")
     class Refuse(importlib.abc.MetaPathFinder):
         def find_spec(self, name, path=None, target=None):
-            if refused(name):
-                raise ImportError("the module " + name + " is not available in this sandbox: it would reach JavaScript")
+            if refused(name) and not from_pyodide():
+                refuse(name)
             return None
     sys.meta_path.insert(0, Refuse())
     plain_import = builtins.__import__
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if level == 0 and refused(name):
-            raise ImportError("the module " + name + " is not available in this sandbox: it would reach JavaScript")
+        if level == 0 and refused(name) and not from_pyodide():
+            refuse(name)
         return plain_import(name, globals, locals, fromlist, level)
     builtins.__import__ = guarded_import
+    guard.update((Refuse.find_spec.__code__, guarded_import.__code__, from_pyodide.__code__))
     user = {"__name__": "__main__", "__builtins__": builtins}
     def run(code, max_stdout):
+        scrub()
         tree = ast.parse(code, "<code>", "exec")
         last = tree.body[-1] if tree.body and isinstance(tree.body[-1], ast.Expr) else None
         if last is not None:

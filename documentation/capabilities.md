@@ -366,7 +366,7 @@ own started with `--permission`, an empty environment, no JavaScript module and 
 `direct`. Its implementation `pyodide` (factory `pyodide`, in `@seshat/registry`) reads a local copy
 of Pyodide 314.0.7 (`pyodideDir`, `PYODIDE_DIR` in the `local` profile) and is unavailable without
 one; Pyodide is not a dependency of the harness. The `local` profile offers it, `optional`; it is the
-host's compute tool when Sage does not answer. Its contract has 16 cases, which need the real
+host's compute tool when Sage does not answer. Its contract has 19 cases, which need the real
 Pyodide and have not run; `pnpm test` runs the implementation against a stand-in.
 [compute.md](compute.md#python-on-pyodide-computepython) covers the isolation, the installation and
 the settings.
