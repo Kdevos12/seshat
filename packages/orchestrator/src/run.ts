@@ -736,10 +736,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     const refusals = resumeRefusals(enabled.lines);
     if (refusals.length > 0) throw new RunSetupError(`a consortium run (--human or a turn limit) is resumed after each turn, and it cannot be: ${refusals.join("; ")}`);
   }
-  // What of the run is known before the registry is built: the prompts, the policy and the lines.
+  // What of the run is known before the registry is built: the prompt's version, the policy and the lines. The prompt's hash
+  // names the provers' tools, so it is taken once they are pinned (a compute tool that cannot be reached is replaced then).
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...config.tools, ...(config.autoTool !== undefined ? [config.autoTool] : [])].map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -765,7 +765,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     const refusals = resumeRefusals(enabled.lines);
     if (refusals.length > 0) throw new RunSetupError(`the run cannot be resumed: ${refusals.join("; ")}`);
     const changed = configMismatches(resume.started.config, {
-      prompt: promptRecord,
       policy: policyRecord,
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
     });
@@ -942,6 +941,12 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const autoPinned = (t: { capability: string }): boolean => t.capability === config.autoTool || autoFallbacks.includes(t.capability);
   const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => !autoPinned(t)) };
   const pinnedAuto = pinnedAll.tools.find(autoPinned);
+  // The prompt the provers get names the tools they get: the pinned ones, a fallback in place of the tool it replaced.
+  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...pinned.tools, ...(pinnedAuto !== undefined ? [pinnedAuto] : [])].map((t) => toolName(t.capability)), proverTemplate, config.editTool === true) };
+  if (resume !== undefined) {
+    const changed = configMismatches(resume.started.config, { prompt: promptRecord });
+    if (changed.length > 0) return await abandon(`the run cannot be resumed with this code: ${changed.join("; ")}`, undefined, registry);
+  }
   // The statement identity of the run is the one an enabled line gives; without one, the text's.
   const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
   let identity: StatementIdentity | undefined;

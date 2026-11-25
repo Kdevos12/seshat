@@ -289,7 +289,9 @@ package only one of them has (`computeOrder(["clarabel"])` puts `compute.python`
 certificate stage), and its `registryCompute` passes to the next tool when a call finds one unavailable. When the run pins its
 tools at its start and that tool does not answer, the next one the host offers takes its place
 (`computeFallbacks`, `pinTools`): the run logs "compute.sage cannot be reached ...: compute.python is
-used in its place" and records `compute.python` as its `autoTool`. Sage stays the tool wherever it
+used in its place" and records `compute.python` as its `autoTool`; the prompt's hash in `run.started`
+(`config.prompt`) is taken after the tools are pinned, so it names `compute_python`, the tool the
+provers get. Sage stays the tool wherever it
 answers. The first cases the harness computes for a parameterised statement
 ([induction.md](induction.md#the-first-cases-the-harness-pushes)) go through whichever of the two the
 run has; for Python their code first imports `comb` (as `binomial`), `factorial` and `prod` from

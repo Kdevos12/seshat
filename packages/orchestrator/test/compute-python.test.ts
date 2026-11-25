@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type LeanChecker, readEvents } from "@seshat/core";
+import { CARD_NOTES_CHARS } from "@seshat/memory";
 import { leanCheckImplementation, loadCatalog, pythonFactory, Registry, type HostProfile } from "@seshat/registry";
-import { benchAdditions, COMPUTE_TOOLS, computeFallbacks, describeSet, firstCasesCode, firstCasesPlan, hostComputeTool, pinTools, REPO_ROOT, resolveAdditions, solve, type SolveOptions } from "../src/index.ts";
+import { benchAdditions, COMPUTE_TOOLS, computeFallbacks, describeSet, firstCasesCode, firstCasesPlan, hostComputeTool, pinTools, promptHash, REPO_ROOT, resolveAdditions, solve, type SolveOptions } from "../src/index.ts";
 import { fakeSage } from "./fixtures/fake-sage.ts";
 import { check, DemoLean, fauxModels, ofType, tempDir } from "./m0-helpers.ts";
 
@@ -104,8 +105,13 @@ describe("the host's compute tool", () => {
       log: (line) => shown.push(line),
       autoTool: "compute.sage",
     });
-    const config = ofType(readEvents(join(dir, "journal.jsonl")), "run.started")[0]?.data.config as { autoTool?: { capability: string; implementation: string } };
+    const config = ofType(readEvents(join(dir, "journal.jsonl")), "run.started")[0]?.data.config as { autoTool?: { capability: string; implementation: string }; prompt: { hash: string }; notesChars: number };
     assert.deepEqual(config.autoTool, { capability: "compute.python", implementation: "pyodide", version: "314.0.7+child-1" });
+    // The prompt's hash names the tool the provers get, the fallback, and not the Sage the run asked for (the v2 defaults of
+    // solve: a state card, which caps the notes, and the edit tool).
+    const notes = Math.min(config.notesChars, CARD_NOTES_CHARS);
+    assert.equal(config.prompt.hash, promptHash(notes, ["compute_python"], undefined, true));
+    assert.notEqual(config.prompt.hash, promptHash(notes, ["compute_sage"], undefined, true));
     assert.ok(shown.some((l) => /compute\.python is used in its place/.test(l)), shown.join("\n"));
     assert.ok(shown.some((l) => /filed as number: the provers get compute\.python/.test(l)), shown.join("\n"));
   });
