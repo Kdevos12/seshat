@@ -9,7 +9,9 @@ import type { ValidateRequest, ValidateResult } from "@seshat/lines";
 import { CapabilityError } from "@seshat/registry";
 import { MemoryStore } from "@seshat/memory";
 import {
+  applicableCertificates,
   BATTERY_RUN,
+  CERTIFICATE_METHODS,
   type BatteryRunData,
   bernsteinCandidates,
   CERTIFICATE_NEEDS,
@@ -341,6 +343,30 @@ describe("the stage in the battery", () => {
     const spent = await runCertificates({ checker: new ScriptedLean({}), goal: { header: HEADER, statement: STATEMENT }, domain: "general", settings: DEFAULT_CERTIFICATES, budgetSec: 0.5, maxSubmissions: 1, submit: async () => true });
     assert.equal(spent.tries.length, 0);
     assert.ok(spent.notes.every((n) => /budget is spent/.test(n.note)));
+  });
+
+  it("keeps no reserve on a goal tagged E6 that no method can take: the tactics get the whole budget", async () => {
+    // Tagged E6 (an impossibility over arithmetic), but a factorial is no polynomial: no method's fragment holds it.
+    const statement = "(n x : ℕ) : n ! + 1 ≠ x ^ 4";
+    assert.ok(routeStatement(statement).moves.includes("E6"));
+    assert.deepEqual(applicableCertificates(statement, CERTIFICATE_METHODS, true), []);
+    const lean = new ScriptedLean({ omega: { timeMs: 40_000 }, nlinarith: { ok: true } });
+    const { ctx, claimId } = await context(lean, statement);
+    const out = await solveGoal({ ...ctx, settings: { ...ctx.settings, parallel: 1, only: ["omega", "nlinarith"] } }, { claimId, header: HEADER, statement });
+    // omega spends 40 s of 60; without a reserve the 20 s left are nlinarith's.
+    assert.equal(out.winner?.tactic, "nlinarith");
+  });
+
+  it("gives what the stage left of its reserve back to the tactics it cut short", async () => {
+    assert.deepEqual(applicableCertificates(STATEMENT, CERTIFICATE_METHODS, false), ["modular"]);
+    const lean = new ScriptedLean({ nlinarith: { timeMs: 40_000 }, omega: { ok: true } });
+    const { ctx, claimId, store } = await context(lean, STATEMENT);
+    const out = await solveGoal({ ...ctx, settings: { ...ctx.settings, parallel: 1, only: ["omega", "nlinarith"] } }, { claimId, header: HEADER, statement: STATEMENT });
+    // nlinarith (first in this domain) spends 40 s, past the tactics' 30; the stage's two modular certificates fail at once;
+    // omega gets the rest.
+    assert.equal(out.winner?.tactic, "omega");
+    const tried = (store.nodes(BATTERY_RUN, { claimId })[0]?.data as unknown as BatteryRunData).tries.map((t) => t.tactic);
+    assert.deepEqual(tried, ["nlinarith", "cert.modular", "cert.modular", "omega"]);
   });
 
   it("refuses a candidate the screen refuses, before Lean sees it", async () => {

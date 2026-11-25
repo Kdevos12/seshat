@@ -271,9 +271,9 @@ export function obstructingModuli(p: Poly, maxModulus: number, maxCases = MAX_RE
  * makes any goal follow (`exfalso`).
  */
 export function modularCandidates(goal: PolyGoal, settings: Pick<CertificateSettings, "maxModulus">): Generated {
-  if (goal.sort !== "ℤ" && goal.sort !== "ℕ") return { candidates: [], note: `outside the fragment: the variables are of ${goal.sort}, not ℕ or ℤ` };
+  const outside = outsideFragment(goal, "modular");
+  if (outside !== undefined) return { candidates: [], note: outside };
   const equations = goal.hyps.filter((h) => h.atom.rel === "=");
-  if (equations.length === 0) return { candidates: [], note: "outside the fragment: no integer equation to reduce" };
   const candidates: Candidate[] = [];
   for (const h of equations) {
     const p = h.atom.lhs.sub(h.atom.rhs);
@@ -426,11 +426,9 @@ const MAX_CERT_VARS = 6;
  * from the compute tool, checked here exactly, written for `linear_combination`.
  */
 export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: { timeoutSec: number; signal?: AbortSignal }): Promise<Generated> {
-  if (goal.target.kind !== "atom" || goal.target.atom.rel !== "=") return { candidates: [], note: "outside the fragment: the conclusion is not an equation" };
-  if (goal.sort === "ℕ") return { candidates: [], note: "outside the fragment: ℕ is no ring for linear_combination" };
+  const outside = outsideFragment(goal, "polyrith");
+  if (outside !== undefined || goal.target.kind !== "atom") return { candidates: [], note: outside ?? "outside the fragment" };
   const eqs = goal.hyps.filter((h) => h.atom.rel === "=");
-  if (eqs.length === 0) return { candidates: [], note: "outside the fragment: no equation hypothesis" };
-  if (goal.vars.length > MAX_CERT_VARS) return { candidates: [], note: `outside the fragment: more than ${MAX_CERT_VARS} variables` };
   if (compute === undefined) return { candidates: [], note: "skipped: the host offers no compute tool (compute.python or compute.sage)" };
   const n = goal.vars.length;
   const gens = eqs.map((h) => h.atom.lhs.sub(h.atom.rhs));
@@ -697,13 +695,11 @@ function sosScripts(goal: PolyGoal, terms: readonly SosTerm[]): string[] {
  * the projection, the LDLᵀ and the check of the identity run here, exactly.
  */
 export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undefined, options: { timeoutSec: number; signal?: AbortSignal }): Promise<Generated> {
-  if (goal.sort !== "ℝ" && goal.sort !== "ℚ") return { candidates: [], note: `outside the fragment: the variables are of ${goal.sort}, not ℝ or ℚ` };
-  if (goal.target.kind !== "atom" || goal.target.atom.rel !== "≤") return { candidates: [], note: "outside the fragment: the conclusion is not a non-strict inequality" };
+  const outside = outsideFragment(goal, "sos");
+  if (outside !== undefined || goal.target.kind !== "atom") return { candidates: [], note: outside ?? "outside the fragment" };
   const f = goal.target.atom.rhs.sub(goal.target.atom.lhs);
-  if (f.variables().length === 0) return { candidates: [], note: "outside the fragment: no variable in the inequality" };
-  if (goal.vars.length > MAX_CERT_VARS) return { candidates: [], note: `outside the fragment: more than ${MAX_CERT_VARS} variables` };
   const n = f.nvars;
-  const multipliers = goal.hyps.filter((h) => h.atom.rel !== "=" && h.atom.rhs.sub(h.atom.lhs).variables().length > 0);
+  const multipliers = sosMultipliers(goal);
   const attempts: Array<Array<Omit<Block, "offset">>> = [];
   const half = Math.ceil(f.degree() / 2);
   if (f.degree() % 2 === 0) {
@@ -834,18 +830,14 @@ export function bernsteinCoefficients(f: Poly, vs: readonly number[], lo: readon
 /** The most Bernstein coefficients of one box. */
 const MAX_BERNSTEIN_TERMS = 64;
 
-/**
- * (d) `lhs ≤ rhs` (or `<`) over `ℝ` or `ℚ` with every variable of `rhs - lhs` between numeral bounds: the box is
- * split at midpoints until every box's Bernstein coefficients are nonnegative (positive for `<`), each box closed
- * by `linarith` (then `nlinarith`) with the Bernstein products as hints, the boxes joined by `rcases le_total`.
- */
-export function bernsteinCandidates(goal: PolyGoal, settings: Pick<CertificateSettings, "maxBoxes">): Generated {
-  if (goal.sort !== "ℝ" && goal.sort !== "ℚ") return { candidates: [], note: `outside the fragment: the variables are of ${goal.sort}, not ℝ or ℚ` };
-  if (goal.target.kind !== "atom" || goal.target.atom.rel === "=") return { candidates: [], note: "outside the fragment: the conclusion is not an inequality" };
+/** (d)'s box: the inequality `0 ≤ f` (or `<`), its variables, and their numeral bounds from the hypotheses; or why there is none. */
+function bernsteinBox(goal: PolyGoal): { f: Poly; vs: number[]; lo: Array<Bound | undefined>; hi: Array<Bound | undefined>; strict: boolean } | string {
+  if (goal.sort !== "ℝ" && goal.sort !== "ℚ") return `outside the fragment: the variables are of ${goal.sort}, not ℝ or ℚ`;
+  if (goal.target.kind !== "atom" || goal.target.atom.rel === "=") return "outside the fragment: the conclusion is not an inequality";
   const strict = goal.target.atom.rel === "<";
   const f = goal.target.atom.rhs.sub(goal.target.atom.lhs);
   const vs = f.variables();
-  if (vs.length === 0) return { candidates: [], note: "outside the fragment: no variable in the inequality" };
+  if (vs.length === 0) return "outside the fragment: no variable in the inequality";
   const lo: Array<Bound | undefined> = new Array(f.nvars).fill(undefined);
   const hi: Array<Bound | undefined> = new Array(f.nvars).fill(undefined);
   for (const h of goal.hyps) {
@@ -866,10 +858,21 @@ export function bernsteinCandidates(goal: PolyGoal, settings: Pick<CertificateSe
     if (right !== undefined && v2 !== undefined && (hi[v2] === undefined || rcmp(right, (hi[v2] as Bound).value) < 0)) hi[v2] = { value: right, proof: `sub_nonneg.2 ${proof}` };
   }
   const missing = vs.filter((v) => lo[v] === undefined || hi[v] === undefined);
-  if (missing.length > 0) return { candidates: [], note: `outside the fragment: ${missing.map((v) => goal.vars[v]).join(", ")} without numeral bounds on both sides` };
-  if (vs.some((v) => rcmp((lo[v] as Bound).value, (hi[v] as Bound).value) >= 0)) return { candidates: [], note: "outside the fragment: an empty box" };
-  if (vs.reduce((acc, v) => acc * (f.degreeIn(v) + 1), 1) > MAX_BERNSTEIN_TERMS) return { candidates: [], note: `outside the fragment: more than ${MAX_BERNSTEIN_TERMS} Bernstein coefficients a box` };
+  if (missing.length > 0) return `outside the fragment: ${missing.map((v) => goal.vars[v]).join(", ")} without numeral bounds on both sides`;
+  if (vs.some((v) => rcmp((lo[v] as Bound).value, (hi[v] as Bound).value) >= 0)) return "outside the fragment: an empty box";
+  if (vs.reduce((acc, v) => acc * (f.degreeIn(v) + 1), 1) > MAX_BERNSTEIN_TERMS) return `outside the fragment: more than ${MAX_BERNSTEIN_TERMS} Bernstein coefficients a box`;
+  return { f, vs, lo, hi, strict };
+}
 
+/**
+ * (d) `lhs ≤ rhs` (or `<`) over `ℝ` or `ℚ` with every variable of `rhs - lhs` between numeral bounds: the box is
+ * split at midpoints until every box's Bernstein coefficients are nonnegative (positive for `<`), each box closed
+ * by `linarith` (then `nlinarith`) with the Bernstein products as hints, the boxes joined by `rcases le_total`.
+ */
+export function bernsteinCandidates(goal: PolyGoal, settings: Pick<CertificateSettings, "maxBoxes">): Generated {
+  const box = bernsteinBox(goal);
+  if (typeof box === "string") return { candidates: [], note: box };
+  const { f, vs, lo, hi, strict } = box;
   let boxes = 0;
   let failure: string | undefined;
   const build = (los: readonly Rat[], his: readonly Rat[]): BoxTree | undefined => {
@@ -931,6 +934,58 @@ export function bernsteinCandidates(goal: PolyGoal, settings: Pick<CertificateSe
   return {
     candidates: ["linarith", "nlinarith"].map((tactic) => ({ method: "bernstein" as const, script: [...goal.prelude, ...render(tree, lo, hi, tactic)].join("\n"), detail })),
   };
+}
+
+// --- The fragments -------------------------------------------------------------------------------
+
+/** (c)'s Putinar multipliers: the hypotheses `0 ≤ g` (or `<`) with a variable in `g`. */
+function sosMultipliers(goal: PolyGoal): Hypothesis[] {
+  return goal.hyps.filter((h) => h.atom.rel !== "=" && h.atom.rhs.sub(h.atom.lhs).variables().length > 0);
+}
+
+/**
+ * Why `method` cannot take the goal (the "outside the fragment" note its generator gives), or undefined when it may: a test of
+ * the goal's shape alone, with no compute call and no Lean, which each generator runs first.
+ */
+export function outsideFragment(goal: PolyGoal, method: CertificateMethod): string | undefined {
+  switch (method) {
+    case "modular":
+      if (goal.sort !== "ℤ" && goal.sort !== "ℕ") return `outside the fragment: the variables are of ${goal.sort}, not ℕ or ℤ`;
+      if (!goal.hyps.some((h) => h.atom.rel === "=")) return "outside the fragment: no integer equation to reduce";
+      return undefined;
+    case "polyrith":
+      if (goal.target.kind !== "atom" || goal.target.atom.rel !== "=") return "outside the fragment: the conclusion is not an equation";
+      if (goal.sort === "ℕ") return "outside the fragment: ℕ is no ring for linear_combination";
+      if (!goal.hyps.some((h) => h.atom.rel === "=")) return "outside the fragment: no equation hypothesis";
+      if (goal.vars.length > MAX_CERT_VARS) return `outside the fragment: more than ${MAX_CERT_VARS} variables`;
+      return undefined;
+    case "sos": {
+      if (goal.sort !== "ℝ" && goal.sort !== "ℚ") return `outside the fragment: the variables are of ${goal.sort}, not ℝ or ℚ`;
+      if (goal.target.kind !== "atom" || goal.target.atom.rel !== "≤") return "outside the fragment: the conclusion is not a non-strict inequality";
+      const f = goal.target.atom.rhs.sub(goal.target.atom.lhs);
+      if (f.variables().length === 0) return "outside the fragment: no variable in the inequality";
+      if (goal.vars.length > MAX_CERT_VARS) return `outside the fragment: more than ${MAX_CERT_VARS} variables`;
+      if (f.degree() % 2 !== 0 && sosMultipliers(goal).length === 0) return "outside the fragment: an odd degree and no hypothesis to multiply";
+      return undefined;
+    }
+    case "bernstein": {
+      const box = bernsteinBox(goal);
+      return typeof box === "string" ? box : undefined;
+    }
+  }
+}
+
+/** The methods that need the host's compute tool: without one, they give no candidate. */
+const NEEDS_COMPUTE: ReadonlySet<CertificateMethod> = new Set(["polyrith", "sos"]);
+
+/**
+ * The methods of `methods` that may give a candidate for the statement: its goal is in their fragment and, for (b) and (c), there
+ * is a compute tool. Pure (no compute call, no Lean): what `solveGoal` reads to decide whether to keep the stage's reserve.
+ */
+export function applicableCertificates(statement: string, methods: readonly CertificateMethod[], compute: boolean): CertificateMethod[] {
+  const goal = readPolyGoal(statement);
+  if (typeof goal === "string") return [];
+  return methods.filter((m) => (compute || !NEEDS_COMPUTE.has(m)) && outsideFragment(goal, m) === undefined);
 }
 
 // --- The stage ----------------------------------------------------------------------------------

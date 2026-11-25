@@ -158,10 +158,13 @@ certificate rests on is checked here, exactly, before Lean sees it. The text the
 changes no status, and `native_decide` is never written. The SDP value, the residues and the coefficients are
 evidence at most, and are not recorded as anything else.
 
-**Budget and journal.** The stage spends the battery's budget: on a goal tagged E6 the tactics run under
-`cpuBudgetSec` minus `certificateSec` (default 30, at most half the budget), and the stage spends what is left,
-Lean time and compute time together, each Lean check at most 30 s and each compute call at most 30 s. Its
-submissions count against `maxSubmissions` with the tactics'. Each Lean check is a try `cert.<method>` in the
+**Budget and journal.** The stage spends the battery's budget: on a goal tagged E6 that some method's fragment
+holds (`applicableCertificates`, the generators' own shape tests with no compute call: (b) and (c) count only with a
+compute tool), the tactics run under `cpuBudgetSec` minus `certificateSec` (default 30, at most half the budget); on
+one that none holds, they get the whole budget and the stage only writes its notes. The stage spends what is left,
+Lean time and compute time together, each Lean check at most 30 s and each compute call at most 30 s. When the
+reserve cut the tactics short and the stage closes nothing, what it left of the budget goes back to the tactics
+not tried yet. Its submissions count against `maxSubmissions` with the tactics'. Each Lean check is a try `cert.<method>` in the
 same `battery_run` node as the tactics, so it has a Beta posterior per (domain, method) like theirs; the node's
 `certificates` field says why each method gave no accepted proof. The briefing names the certificates that
 failed.
