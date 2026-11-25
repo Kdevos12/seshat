@@ -132,6 +132,7 @@ export async function solveGoal(ctx: SolveContext, goal: ClaimGoal): Promise<Sol
   const data: BatteryRunData = {
     statement: goal.statement,
     domains: route.domains,
+    moves: route.moves,
     tries,
     ...(winner !== undefined ? { solved: { tactic: winner.tactic, proof: winner.proof } } : {}),
     ...(submission !== undefined ? { submission: { verdict: submission.verdict, status: submission.status, ...(submission.validationId !== undefined ? { validationId: submission.validationId } : {}), reasons: submission.reasons } } : {}),

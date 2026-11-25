@@ -1,0 +1,353 @@
+{
+  "about": [
+    "Hand-labelled exploration moves (plan change CX1) for the router's recall test (packages/classical/test/moves.test.ts).",
+    "The statements: every 15th problem of bench/fc-bench-v1-discrete.json from index 7 (38 problems, picked by index, not by content), and the two Putnam statements the repository holds (PutnamBench itself is downloaded, not committed).",
+    "The labels say which moves a person would set a CPU tool on, from the statement alone: E1 the statement ranges over a class of finite structures; E2 it asks for an object (an ∃, a refutation of a ∀, the witness side of an extremal value); E3 a ∀ whose small instances can be checked (not an eventual statement); E4 the object is a sequence or a function of n; E5 an iteration or process; E6 a polynomial inequality, an integer equation or an arithmetic impossibility; E8 a parameter bounded to finitely many values; E9 a bound on, or the value of, an extremal quantity; E12 growth, limits or densities.",
+    "E7, E10 and E11 are never labelled: every proof may need them, and the syntax gives no signal for them. The labels were written before the rules were tuned and were not changed to fit them, except #22 (E9 added) and #517 (E3 dropped: an eventual statement has no finite counterexample), both for consistency with the definitions above."
+  ],
+  "statements": [
+    {
+      "source": "bench/fc-bench-v1-discrete.json#7",
+      "id": "FormalConjectures/ErdosProblems/1.lean#Erdos1.erdos_1.variants.least_N_5",
+      "statement": ":\n    IsLeast { N | ∃ A, IsSumDistinctSet A N ∧ A.card = 5 } 13",
+      "moves": [
+        "E2",
+        "E9"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#22",
+      "id": "FormalConjectures/ErdosProblems/1063.lean#Erdos1063.erdos_1063.variants.monier_upper_bound",
+      "statement": "{k : ℕ} (hk : 3 ≤ k) :\n    n k ≤ k !",
+      "moves": [
+        "E3",
+        "E4",
+        "E9"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#37",
+      "id": "FormalConjectures/ErdosProblems/11.lean#Erdos11.erdos_11.variants.finite_bound2",
+      "statement": "(n : ℕ) (hn : Odd n) (h : n < 2^50) (hn' : 1 < n) :\n    ∃ k l : ℕ , Squarefree k ∧ n = k + 2^l",
+      "moves": [
+        "E2",
+        "E3",
+        "E8"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#52",
+      "id": "FormalConjectures/ErdosProblems/1148.lean#Erdos1148.erdos_1148.variants.weaker",
+      "statement": ": ∀ n, erdos_1148_weaker_prop n",
+      "moves": [
+        "E3"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#67",
+      "id": "FormalConjectures/ErdosProblems/124.lean#Erdos124.erdos124.melfi_construction",
+      "statement": "{ε : ℝ} (hε : 0 < ε) :\n    ∃ d : ℕ → ℕ, StrictMono d ∧ ∑' i, (d i - 1 : ℝ)⁻¹ ≤ ε ∧ ∀ᶠ n in atTop,\n      ∃ (I : Finset ℕ) (a : ℕ → ℕ), (∀ i ∈ I, a i ∈ sumsOfDistinctPowers (d i) 0) ∧\n        ∑ i ∈ I, a i = n",
+      "moves": [
+        "E2",
+        "E4",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#82",
+      "id": "FormalConjectures/ErdosProblems/152.lean#Erdos152.erdos_152",
+      "statement": ": answer(True) ↔ Tendsto f atTop atTop",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#97",
+      "id": "FormalConjectures/ErdosProblems/193.lean#Erdos193.erdos_193_z2",
+      "statement": ":\n    ∀ S : Set (Fin 2 → ℤ), S.Finite →\n      ∀ a : ℕ → Fin 2 → ℤ, IsSWalk S a → (range a).Infinite →\n      HasCollinearTriple ℚ (range (fun n ↦ (↑) ∘ a n : ℕ → Fin 2 → ℚ))",
+      "moves": [
+        "E3"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#112",
+      "id": "FormalConjectures/ErdosProblems/241.lean#Erdos241.erdos_241.variants.upper_bound",
+      "statement": ":\n    ∃ ε : ℕ → ℝ, ε =o[atTop] (fun _ ↦ (1 : ℝ)) ∧\n    ∀ᶠ N in atTop, (f N 3 : ℝ) ≤ ((7 / 2 : ℝ) ^ ((1 : ℝ) / 3) + ε N) * (N : ℝ) ^ ((1 : ℝ) / 3)",
+      "moves": [
+        "E9",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#127",
+      "id": "FormalConjectures/ErdosProblems/253.lean#Erdos253.erdos_253",
+      "statement": ": ¬ ∀ a : ℕ → ℕ, 0 < a 0 →\n    RepresentsAPs a → (Filter.atTop.Tendsto (fun n ↦ (a <| n + 1 : ℝ) / a n) (𝓝 1)) →\n      subsetSums (Set.range a) ∈ Filter.cofinite",
+      "moves": [
+        "E2",
+        "E4"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#142",
+      "id": "FormalConjectures/ErdosProblems/264.lean#Erdos264.erdos_264.parts.i",
+      "statement": ": ¬IsIrrationalitySequence (2 ^ ·)",
+      "moves": [
+        "E2"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#157",
+      "id": "FormalConjectures/ErdosProblems/285.lean#Erdos285.erdos_285",
+      "statement": ":\n    answer(True) ↔ ∀ᵉ (f : ℕ → ℕ)\n    (S : Set ℕ)\n    (hS : S = {k | ∃ (n : Fin k.succ → ℕ), StrictMono n ∧ 0 ∉ Set.range n ∧\n      1 = ∑ i, (1 : ℝ) / n i })\n    (h : ∀ k ∈ S,\n      IsLeast\n        { n (Fin.last k) | (n : Fin k.succ → ℕ) (_ : StrictMono n) (_ : 0 ∉ Set.range n)\n          (_ : 1 = ∑ i, (1 : ℝ) / n i) }\n        (f k)),\n    ∃ (o : ℕ → ℝ) (_ : o =o[atTop] (1 : ℕ → ℝ)),\n      ∀ k ∈ S, f k = (1 + o k) * rexp 1 / (rexp 1 - 1) * (k + 1)",
+      "moves": [
+        "E4",
+        "E9",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#172",
+      "id": "FormalConjectures/ErdosProblems/318.lean#Erdos318.erdos_318.variants.infinite_AP",
+      "statement": "{A : Set ℕ} (hA : A.IsAPOfLength ⊤) : P₁ A",
+      "moves": []
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#187",
+      "id": "FormalConjectures/ErdosProblems/33.lean#Erdos33.erdos_33.variants.vanDoorn",
+      "statement": ":\n    ⨅ A : {A : Set ℕ | AdditiveBasisCondition A}, Filter.atTop.limsup (fun N =>\n    (A.1 ∩ Icc 1 N).ncard / (√N : EReal)) ≤ ↑(2 * (φ ^ ((5 : ℝ) / 2)))",
+      "moves": [
+        "E9",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#202",
+      "id": "FormalConjectures/ErdosProblems/357.lean#Erdos357.erdos_357.variants.infinite_set_lower_density",
+      "statement": "(A : ℕ → ℕ) (hA : StrictMono A)\n    (hA : HasDistinctSums A) : (Set.range A).lowerDensity = 0",
+      "moves": [
+        "E4",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#217",
+      "id": "FormalConjectures/ErdosProblems/375.lean#Erdos375.erdos_375.variants.bounded_gap",
+      "statement": ": Erdos375Prop →\n    ∃ c > 0, ∀ᶠ n in atTop, (n + 1).nth Nat.Prime - n.nth Nat.Prime\n    < (n.nth Nat.Prime : ℝ) ^ (1 / (2 : ℝ) - c)",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#232",
+      "id": "FormalConjectures/ErdosProblems/394.lean#Erdos394.erdos_394.variants.factorial_gap_10",
+      "statement": ":\n    ∀ (k : ℕ), 2 ≤ k → k < 10 →\n    t k (10 !) <\n    t (k - 1) (10 !) - 1",
+      "moves": [
+        "E3",
+        "E8"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#247",
+      "id": "FormalConjectures/ErdosProblems/416.lean#Erdos416.erdos_416.variants.Pillai",
+      "statement": ": V =o[atTop] id",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#262",
+      "id": "FormalConjectures/ErdosProblems/457.lean#Erdos457.erdos_457",
+      "statement": ": answer(True) ↔ ∃ ε > (0 : ℝ),\n    { (n : ℕ) | ∀ (p : ℕ), p ≤ (2 + ε) * Real.log n → p.Prime →\n      p ∣ ∏ i ∈ Finset.Icc 1 ⌊Real.log n⌋₊, (n + i) }.Infinite",
+      "moves": [
+        "E2"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#277",
+      "id": "FormalConjectures/ErdosProblems/494.lean#Erdos494.erdos_494.variants.card_divisible_by_prime_gt_k",
+      "statement": ":\n    ∀ (k card p : ℕ), p.Prime → k ∈ Set.Ioo 0 p → p ∣ card → Erdos494Unique k card",
+      "moves": [
+        "E3"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#292",
+      "id": "FormalConjectures/ErdosProblems/539.lean#Erdos539.erdos_539.variants.isBigO_sq_cube_root",
+      "statement": ":\n    (fun n ↦ (cofactorThreshold n : ℝ)) =O[atTop] fun n ↦ (n : ℝ) ^ ((2 : ℝ) / 3)",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#307",
+      "id": "FormalConjectures/ErdosProblems/67.lean#Erdos67.erdos_67",
+      "statement": "(f : ℕ → ({-1, 1} : Finset ℝ)) (C : ℝ) (hC : 0 < C) : ∃ᵉ (d ≥ 1) (m ≥ 1),\n    C < |∑ k ∈ Finset.Icc 1 m, (f (k * d)).1|",
+      "moves": [
+        "E2",
+        "E3"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#322",
+      "id": "FormalConjectures/ErdosProblems/697.lean#Erdos697.erdos_697.parts.ii",
+      "statement": "{α : ℝ} (hα : α < 1 / log (2 : ℝ)) : Tendsto (δ · α) atTop (𝓝 1)",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#337",
+      "id": "FormalConjectures/ErdosProblems/741.lean#Erdos741.erdos_741.variants.upper",
+      "statement": ": answer(True) ↔ ∀ A : Set ℕ, 0 < upperDensity (A + A) → ∃ A₁ A₂,\n    A = A₁ ∪ A₂ ∧ Disjoint A₁ A₂ ∧ 0 < upperDensity (A₁ + A₁)\n    ∧ 0 < upperDensity (A₂ + A₂)",
+      "moves": [
+        "E2",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#352",
+      "id": "FormalConjectures/ErdosProblems/835.lean#Erdos835.johnsonGraph_2k_k_chromaticNumber_known_cases",
+      "statement": "(k : ℕ) (hk : 3 ≤ k) (hk' : k ≤ 8) :\n    J(2 * k, k).chromaticNumber > k + 1",
+      "moves": [
+        "E8",
+        "E9"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#367",
+      "id": "FormalConjectures/ErdosProblems/865.lean#Erdos865.erdos_865.variants.upper_bound",
+      "statement": "(k : ℕ) (hk : 3 ≤ k) :\n    ∃ ε > 0, ∀ᶠ N in atTop, (f N k : ℝ) ≤ (2 / 3 - ε) * N",
+      "moves": [
+        "E9",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#382",
+      "id": "FormalConjectures/ErdosProblems/890.lean#Erdos890.erdos_890.variants.omega_limsup",
+      "statement": ":\n    limsup (fun n ↦ (ω n : EReal) * (log (log n) / log n)) atTop = 1",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#397",
+      "id": "FormalConjectures/ErdosProblems/930.lean#Erdos930.erdos_930.variants.consecutive_integers",
+      "statement": ":\n    ∀ n k, 0 ≤ n → 2 ≤ k →\n      ¬ IsPower (∏ m ∈ Icc (n + 1) (n + k), m)",
+      "moves": [
+        "E3",
+        "E6"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#412",
+      "id": "FormalConjectures/ErdosProblems/946.lean#Erdos946.erdos_946.variants.upper_bound",
+      "statement": ": erdos946Count =O[atTop] (fun x => x / √x.log.log )",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#427",
+      "id": "FormalConjectures/ErdosProblems/978.lean#Erdos978.erdos_978.variants.sub_one",
+      "statement": "{f : ℤ[X]} (hi : Irreducible f) (hd : 2 < f.natDegree)\n    (hp : ∀ (x : ℕ), f.natDegree ≠ 2 ^ x) (hlc : 0 < f.leadingCoeff) :\n    {n : ℕ | Powerfree (f.natDegree - 1) (f.eval (n : ℤ))}.Infinite",
+      "moves": [
+        "E3"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#442",
+      "id": "FormalConjectures/GreensOpenProblems/14.lean#Green14.W_3_6",
+      "statement": ": W 3 6 = 32",
+      "moves": [
+        "E2",
+        "E9"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#457",
+      "id": "FormalConjectures/GreensOpenProblems/18.lean#Green18.green_18.bmz_corners",
+      "statement": ": ∀ α > 0, ∃ c > 0, ∃ m₀ : ℕ,\n    ∀ (G : Type*) [Group G] [Fintype G] [DecidableEq G] (A : Finset (G × G)),\n    Fintype.card G ≥ m₀ →\n    (A.card : ℝ) ≥ α * (Fintype.card G) ^ 2 →\n    (numBmzCorners A : ℝ) ≥ c * (Fintype.card G) ^ 3",
+      "moves": [
+        "E1",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#472",
+      "id": "FormalConjectures/GreensOpenProblems/27.lean#Green27.green_27.variants.lower_be23",
+      "statement": ":\n  ∃ ω : ℕ → ℝ, Tendsto ω primesAtTop atTop ∧\n    ∀ᶠ p in primesAtTop,\n      ω p * Real.log (p : ℝ) ≤ m p",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#487",
+      "id": "FormalConjectures/GreensOpenProblems/38.lean#Green38.green_38.variants.best_upper",
+      "statement": ":\n    ∀ ε > 0, ∀ᶠ n in atTop, LargestAdmissibleCardinality n ≤ (C₂ + ε) ^ n",
+      "moves": [
+        "E9",
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#502",
+      "id": "FormalConjectures/Paper/DegreeSequencesTriangleFree.lean#SimpleGraph.theorem2",
+      "statement": "(G : SimpleGraph α) [DecidableRel G.Adj] (h_conn: G.Connected)\n    (h : G.CliqueFree 3) :\n    ∃ (β : Type*) (_ : Fintype β) (H : SimpleGraph β) (_ : DecidableRel H.Adj) (i : G ↪g H),\n      H.CliqueFree 3 ∧ degreeSequenceMultiplicity H = 3",
+      "moves": [
+        "E1",
+        "E2"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#517",
+      "id": "FormalConjectures/Wikipedia/Andrica.lean#Andrica.andrica_conjecture.ferreira_large_n",
+      "statement": ":\n    ∀ᶠ n in atTop, Real.sqrt ((n+1).nth Nat.Prime) - Real.sqrt (n.nth Nat.Prime) < 1",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#532",
+      "id": "FormalConjectures/Wikipedia/GaussCircleProblem.lean#GaussCircleProblem.error_le",
+      "statement": ": ∀ᶠ r in atTop, |E r| ≤ 2 * √2 * π * r",
+      "moves": [
+        "E12"
+      ]
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#547",
+      "id": "FormalConjectures/Wikipedia/ModularityConjecture.lean#ModularityConjecture.modularity_conjecture",
+      "statement": "(E : WeierstrassCurve ℚ) [E.IsElliptic] : modularityConjecture E",
+      "moves": []
+    },
+    {
+      "source": "bench/fc-bench-v1-discrete.json#562",
+      "id": "FormalConjectures/Wikipedia/UnionClosed.lean#UnionClosed.union_closed.variants.family_card",
+      "statement": "[Nonempty n]\n    (h_ne_singleton_empty : A ≠ {∅})\n    (h_union_closed : IsUnionClosed A)\n    (hA : #A ≤ 50) :\n    ∃ i : n, (1 / 2 : ℚ) * #A ≤ #{x ∈ A | i ∈ x}",
+      "moves": [
+        "E1",
+        "E2",
+        "E8"
+      ]
+    },
+    {
+      "source": "packages/lit/test/doc-queries.test.ts",
+      "id": "putnam_2020_b5",
+      "statement": "(z : Fin 4 → ℂ) (hzle1 : ∀ n, ‖z n‖ = 1) (hzne1 : ∀ n, z n ≠ 1) : 3 - z 0 - z 1 - z 2 - z 3 + (z 0) * (z 1) * (z 2) * (z 3) ≠ 0",
+      "moves": [
+        "E3",
+        "E6"
+      ]
+    },
+    {
+      "source": "packages/orchestrator/test/first-cases.test.ts",
+      "id": "putnam_1983_a4 (its shape)",
+      "statement": "(k : ℕ) (hk : 0 < k) : ∑ j ∈ Finset.range (k + 1), (-1 : ℤ) ^ j * (Nat.choose (3 * k) (3 * j) : ℤ) = (-1 : ℤ) ^ (k + 1) * 3 ^ (3 * k - 1) + 1",
+      "moves": [
+        "E3",
+        "E4"
+      ]
+    }
+  ]
+}

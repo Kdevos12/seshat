@@ -60,6 +60,38 @@ The router is a guess from syntax. A wrong guess costs one failed try, and the p
 learn it. Its precision (the share of goals whose winning tactic is in the first three of its list)
 is what the report will measure once there are runs.
 
+### Exploration moves (plan change CX1)
+
+Beside its domains, `routeStatement` tags the goal with its **moves** (`moves`, from `movesOf`): which of the
+twelve exploration moves of `plans/plan-change-cpu-exploration.md` its syntax calls for, the steps where a CPU
+tool beats a model (a witness found by search, a counterexample, a certificate). The tags order which tools to
+build and try; they prove nothing and change no status. A goal the reader cannot read still gets its moves:
+they are read from the text (comments and strings masked, a lexer that never throws, nothing read past 16000
+characters), and from the router's features when it could read the goal.
+
+| Move | Tagged when the statement... |
+|---|---|
+| E1 small cases up to isomorphism | names a class of finite structures (`SimpleGraph`, `Fintype`, `Magma`, `Group`, `Finpartition`, a variable of a `Finset` type) |
+| E2 a witness or construction | has an `∃` (not `∃ᶠ`) or a `¬ ∀` in its conclusion, a `.Nonempty`, `IsLeast`/`IsGreatest`, or pins an extremal quantity to a value or a lower bound (`W 3 6 = 32`, `190 ≤ L 9`) |
+| E3 a counterexample | has a universal variable (a binder that is not a hypothesis or a type, or a `∀`), and is not an eventual statement (no asymptotic token below); also every polynomial inequality |
+| E4 a closed form, recurrence or relation | has a variable of type `ℕ → _` or `ℤ → _`, `StrictMono`/`Monotone`, an equation with `∑`/`∏` and an integer variable, or a function it does not define applied to an integer variable (`a n = 3 ^ n + 6`) |
+| E5 an invariant | iterates (`f^[n]`, `.iterate`) |
+| E6 a certificate | is a polynomial inequality (readable, nonlinear, an order over number sorts), an integer equation (an equation hypothesis, nonlinear over `ℕ`/`ℤ`), or ends in an impossibility (`≠`, `∉`, a `¬` that is not `¬ ∀`) over arithmetic |
+| E8 a split into cases | has a variable of `Fin n`, or a hypothesis or premise bounding a variable by a numeral (`n < 2^50`, `k ≤ 8 →`) |
+| E9 an extremal object | names one (`IsLeast`, `sSup`, `⨅`, `max`, `min`, `Largest`, `Longest`, `chromatic`...), bounds a quantity it does not define (`F N 3 ≤ ...`), or pins one at numerals to a numeral |
+| E12 growth or asymptotics | has `atTop`, `=O[`, `=o[`, `≪`, `Tendsto`, `limsup`, `∀ᶠ`, `𝓝`, a density |
+
+E7 (a change of representation), E10 (a rewrite path) and E11 (an intermediate lemma) have no syntactic signal and
+are never tagged. The moves are journaled in the `battery_run` node with the domains (below), and `harness audit`
+counts them over a run's problems ([audit.md](audit.md)).
+
+**Recall.** `packages/classical/test/fixtures/labelled-moves.json` holds 40 statements labelled by hand (every 15th
+problem of `bench/fc-bench-v1-discrete.json` from index 7, and the two Putnam statements the repository holds), with
+the labelling rules in its header; `moves.test.ts` asserts that at least 80% of the labelled moves are found (the
+plan's acceptance) and prints the measured recall: 62 of 65 (95.4%) when it was written. The labels and the rules
+were written by the same hand, so the number is an upper estimate of what a fresh set would give; extra tags are not
+counted (23 on the set), since a tag costs one tool try at most.
+
 ## The tactics, and what the host has
 
 `TACTICS` (`tactics.ts`): `decide`, `omega`, `norm_num`, `simp`, `ring`, `linarith`, `positivity`,
@@ -126,9 +158,11 @@ goes on, up to `maxSubmissions` refusals. Every run, solved or not, is recorded 
 `battery_run` on the claim:
 
 ```
-data: { statement, domains, tries: [{tactic, domain, outcome, timeMs, suggestion?}],
+data: { statement, domains, moves?, tries: [{tactic, domain, outcome, timeMs, suggestion?}],
         solved?: {tactic, proof}, submission?: {verdict, status, validationId, reasons}, cpuMs, budgetSec }
 ```
+
+`moves` (plan change CX1) is the router's moves for the statement, absent in a node written before them.
 
 `outcome` is `success`, `failed`, `timeout`, `error` or `aborted`.
 
@@ -264,7 +298,7 @@ When the battery closed every `sorry`, the harness also checks the completed fil
 
 ## Tests, and what has not run
 
-`packages/classical/test`: the reader and the router on a table of goals; snippet generation; the
+`packages/classical/test`: the reader and the router on a table of goals; the router's moves on planted goals and their recall on the 40 labelled statements (`moves.test.ts`); snippet generation; the
 posteriors rebuilt from nodes and their order; the first-success stop, the parallel limit, the CPU
 budget and abort; the host probe; the non-triviality test; `solveGoal` against a scripted Lean (a
 refused proof, the allowed refusals, a failed run recorded). The scripted Lean (`test/fake-lean.ts`)
