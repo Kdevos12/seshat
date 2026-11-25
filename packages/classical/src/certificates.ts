@@ -510,9 +510,13 @@ function monomials(n: number, vs: readonly number[], d: number, cap: (v: number)
   return out;
 }
 
-/** The most monomials in one Gram basis, and the most unknowns of the whole program. */
+/**
+ * The most monomials in one Gram basis, the most unknowns of the whole program, and the most linear constraints: the
+ * exact projection solves a square system of that many rows per rounding, in TypeScript, and cannot be cut short.
+ */
 const MAX_BASIS = 36;
 const MAX_UNKNOWNS = 2000;
+const MAX_CONSTRAINTS = 150;
 
 interface Block {
   /** The multiplier: 1, or a hypothesis `0 ≤ g`. */
@@ -763,8 +767,8 @@ export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undef
       last = program;
       continue;
     }
-    if (program.nx > MAX_UNKNOWNS) {
-      last = `outside the fragment: more than ${MAX_UNKNOWNS} unknowns`;
+    if (program.nx > MAX_UNKNOWNS || program.rows.length > MAX_CONSTRAINTS) {
+      last = `outside the fragment: more than ${MAX_UNKNOWNS} unknowns or ${MAX_CONSTRAINTS} constraints`;
       continue;
     }
     const data = {

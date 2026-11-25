@@ -392,3 +392,13 @@ describe("the stage's Python programs", () => {
     assert.ok(sum.equals(poly(data.target)));
   });
 });
+
+describe("the bounds of (c)", () => {
+  it("leaves a program with too many constraints outside, before any call", async () => {
+    // Degree 8 in 4 variables: 495 monomials to match, far above the bound on constraints.
+    const compute = new FakeCompute(() => "{}");
+    const out = await sosCandidates(goalOf("(a b c d : ℝ) : 0 ≤ (a + b + c + d) ^ 8 + a ^ 8 + b ^ 8 + c ^ 8 + d ^ 8"), compute, call);
+    assert.equal(compute.calls.length, 0);
+    assert.match(out.note ?? "", /outside the fragment: more than/);
+  });
+});
