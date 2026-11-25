@@ -283,7 +283,10 @@ and the plan names `local` alone for Pyodide; a server that wants it adds the sa
 
 `harness solve --auto-tool` (and the `v2` defaults, and the bench arms of `harness ablate`) give a
 problem "the host's compute tool" (CA17, `RunConfig.autoTool`): the first of `COMPUTE_TOOLS`
-(`compute.sage`, then `compute.python`, in `tools.ts`) that the host offers. When the run pins its
+(`compute.sage`, then `compute.python`, in `@seshat/classical`'s `compute.ts`, which the orchestrator's
+`tools.ts` re-exports) that the host offers. The same file orders the tools for a caller that needs a
+package only one of them has (`computeOrder(["clarabel"])` puts `compute.python` first, for line M10's
+certificate stage), and its `registryCompute` passes to the next tool when a call finds one unavailable. When the run pins its
 tools at its start and that tool does not answer, the next one the host offers takes its place
 (`computeFallbacks`, `pinTools`): the run logs "compute.sage cannot be reached ...: compute.python is
 used in its place" and records `compute.python` as its `autoTool`. Sage stays the tool wherever it

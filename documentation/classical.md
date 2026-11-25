@@ -166,9 +166,11 @@ same `battery_run` node as the tactics, so it has a Beta posterior per (domain, 
 `certificates` field says why each method gave no accepted proof. The briefing names the certificates that
 failed.
 
-**The compute tool.** (b) and (c) use the host's compute tool through the registry (`registryCompute`):
-`compute.python` (CX3; its pinned packages have sympy and clarabel), else `compute.sage` (which has sympy; (c)
-then fails at the import of clarabel and says so). One session per goal (scope
+**The compute tool.** (b) and (c) use the host's compute tool through the registry (`registryCompute` in
+`compute.ts`, which also holds the run's order, `COMPUTE_TOOLS`, so that there is one list): the stage needs
+clarabel (`CERTIFICATE_NEEDS`), so `compute.python` (CX3; its pinned packages have sympy and clarabel) comes first,
+and `compute.sage` (which has sympy; (c) then fails at the import of clarabel and says so) when the host does not
+offer Python or a call finds it unavailable (no Pyodide), for that call and the goal's later ones. One session per goal (scope
 `m10:<problem>:<claim>:certificates`), released when the goal's battery ends; every call is a tool run. Without
 either, (b) and (c) are skipped with the note "the host offers no compute tool"; (a) and (d) need none.
 

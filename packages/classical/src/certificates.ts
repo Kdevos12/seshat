@@ -1,5 +1,5 @@
 import { type LeanChecker, leanTextProblems } from "@seshat/core";
-import type { Registry } from "@seshat/registry";
+import type { ComputeAnswer, ComputeNeed, ComputeTool } from "./compute.ts";
 import { parseStatement, type Term, Unreadable, canonicalSort } from "./parse.ts";
 import { ldlt, ONE, Poly, type Rat, rat, rcmp, rdiv, rmul, rneg, roundTo, rsign, rsub, radd, isInteger, isZero, solveLinear, toPoly, ZERO } from "./polynomial.ts";
 import type { TryRecord } from "./posterior.ts";
@@ -41,43 +41,11 @@ export const CERTIFICATE_TRY_SEC = 30;
 /** Seconds one compute call may take. */
 export const COMPUTE_CALL_SEC = 30;
 
-// --- The compute tool ---------------------------------------------------------------------------
-
-/** What a compute capability (`compute.python`, `compute.sage`) answered: what the code printed, and its last value. */
-export interface ComputeAnswer {
-  stdout: string;
-  result?: string | null;
-}
-
-/** The host's compute tool as the stage uses it: one session (scope) per goal. */
-export interface ComputeTool {
-  /** The capability that answers, for the notes. */
-  capability: string;
-  run(code: string, options: { timeoutSec: number; signal?: AbortSignal }): Promise<ComputeAnswer>;
-  /** Ends the session. */
-  release?(): Promise<void>;
-}
-
 /**
- * The compute capabilities the stage uses, in order: `compute.python` first, because its pinned package set has
- * both sympy and clarabel (plan change CX3); Sage has sympy, and (c) then fails at the import of clarabel.
+ * What the stage needs of the host's compute tool (`registryCompute`'s `needs`): (c) needs clarabel, which only
+ * `compute.python`'s package set has, so it is tried first, and Sage when it cannot be reached; (b) needs sympy, which both have.
  */
-export const CERTIFICATE_COMPUTE: readonly string[] = ["compute.python", "compute.sage"];
-
-/** The registry's compute tool for the stage, as tool runs of `actor` in `scope`; undefined when the host offers none. */
-export function registryCompute(registry: Pick<Registry, "offers" | "invoke" | "release">, options: { actor: string; scope: string }): ComputeTool | undefined {
-  const capability = CERTIFICATE_COMPUTE.find((c) => registry.offers(c));
-  if (capability === undefined) return undefined;
-  return {
-    capability,
-    async run(code, { timeoutSec, signal }) {
-      const result = await registry.invoke(capability, { code, timeout: timeoutSec }, { actor: options.actor, scope: options.scope, ...(signal !== undefined ? { signal } : {}) });
-      const out = (result.output ?? {}) as { stdout?: unknown; result?: unknown };
-      return { stdout: typeof out.stdout === "string" ? out.stdout : "", ...(typeof out.result === "string" ? { result: out.result } : {}) };
-    },
-    release: () => registry.release(options.scope),
-  };
-}
+export const CERTIFICATE_NEEDS: readonly ComputeNeed[] = ["clarabel"];
 
 // --- The goal as polynomials --------------------------------------------------------------------
 

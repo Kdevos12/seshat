@@ -47,15 +47,11 @@ export interface PinnedTool {
 }
 
 /**
- * The compute capabilities, in the order a run prefers them: "the host's compute tool" of `RunConfig.autoTool` (CA17) is the first
- * of them that the host offers and that answers, so SageMath where it runs and Python on Pyodide without it (plan change CX3).
+ * The compute capabilities in the order a run prefers them, and the ones it may use in place of one that cannot be reached: "the
+ * host's compute tool" of `RunConfig.autoTool` (CA17) is the first of them that the host offers and that answers, so SageMath where it
+ * runs and Python on Pyodide without it (plan change CX3). One list with line M10's certificate stage (`@seshat/classical`, compute.ts).
  */
-export const COMPUTE_TOOLS: readonly string[] = ["compute.sage", "compute.python"];
-
-/** The compute tools a run may use in place of `id` when it cannot be reached: the other `COMPUTE_TOOLS` the host offers, in order. */
-export function computeFallbacks(registry: Pick<Registry, "offers">, id: string): string[] {
-  return COMPUTE_TOOLS.includes(id) ? COMPUTE_TOOLS.filter((other) => other !== id && registry.offers(other)) : [];
-}
+export { COMPUTE_TOOLS, computeFallbacks } from "@seshat/classical";
 
 /**
  * Pins each capability to the first of the host's implementations that answers now, so that every

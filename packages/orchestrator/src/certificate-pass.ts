@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import {
   CERTIFICATE_METHODS,
+  CERTIFICATE_NEEDS,
   type CertificateMethod,
   type CertificateNote,
   type ComputeTool,
@@ -169,7 +170,7 @@ export async function certificatesCommand(registry: Registry, file: string, opti
   const actor = "line:M10";
   const report = await certificatePass(bench, {
     checker: new RegistryLeanChecker(registry, { actor }),
-    compute: (id) => registryCompute(registry, { actor, scope: `cx4-pass:${id}` }),
+    compute: (id) => registryCompute(registry, { actor, scope: `cx4-pass:${id}`, needs: CERTIFICATE_NEEDS }),
     log: options.log,
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });

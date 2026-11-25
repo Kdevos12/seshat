@@ -8,7 +8,8 @@ import { RegistryLeanChecker, type Registry } from "@seshat/registry";
 import { type AtpTool, parseAtpTools, type FirstOrderSettings, FIRST_ORDER_RUN, type FirstOrderRunData, registrySolvers, type Solvers, solveFirstOrder } from "./firstorder.ts";
 import { type HostProbe, probeHost } from "./probe.ts";
 import { routeStatement } from "./router.ts";
-import { CERTIFICATE_METHODS, type ComputeTool, DEFAULT_CERTIFICATES, isCertificateTry, registryCompute } from "./certificates.ts";
+import { CERTIFICATE_METHODS, CERTIFICATE_NEEDS, DEFAULT_CERTIFICATES, isCertificateTry } from "./certificates.ts";
+import { type ComputeTool, registryCompute } from "./compute.ts";
 import { BATTERY_RUN, type BatteryRunData, Posteriors } from "./posterior.ts";
 import { type Premise, type PremiseSelector, parseCutoffs } from "./premises.ts";
 import { type GoalClient, posteriorOrderer, searchGoal } from "./search.ts";
@@ -243,7 +244,7 @@ async function beforeProvers(problem: ProblemContext, services: M10Services): Pr
       // One compute session per goal the certificate stage may run on (tagged E6), ended when the goal's battery ends.
       const scope = `m10:${problem.problemId}:${claim.claimId}:certificates`;
       const wantsCompute = options.certificates && routeStatement(goal.statement).moves.includes("E6");
-      const compute = wantsCompute ? (services.compute !== undefined ? services.compute(problem, scope) : registryCompute(problem.registry, { actor: ACTOR, scope })) : undefined;
+      const compute = wantsCompute ? (services.compute !== undefined ? services.compute(problem, scope) : registryCompute(problem.registry, { actor: ACTOR, scope, needs: CERTIFICATE_NEEDS })) : undefined;
       const ctx: SolveContext = {
         checker,
         memory: problem.memory,

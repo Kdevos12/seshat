@@ -6,11 +6,16 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { BlobStore, Journal, seeded } from "@seshat/core";
 import type { ValidateRequest, ValidateResult } from "@seshat/lines";
+import { CapabilityError } from "@seshat/registry";
 import { MemoryStore } from "@seshat/memory";
 import {
   BATTERY_RUN,
   type BatteryRunData,
   bernsteinCandidates,
+  CERTIFICATE_NEEDS,
+  COMPUTE_TOOLS,
+  computeFallbacks,
+  computeOrder,
   type ComputeAnswer,
   type ComputeTool,
   DEFAULT_CERTIFICATES,
@@ -359,11 +364,39 @@ describe("the host's compute tool for the stage", () => {
       },
       release: async () => {},
     };
-    const tool = registryCompute(registry as never, { actor: "line:M10", scope: "s1" });
+    const tool = registryCompute(registry as never, { actor: "line:M10", scope: "s1", needs: CERTIFICATE_NEEDS });
     assert.equal(tool?.capability, "compute.python");
     assert.deepEqual(await tool?.run("print(1)", { timeoutSec: 5 }), { stdout: "ok\n" });
     assert.deepEqual(calls[0], { id: "compute.python", input: { code: "print(1)", timeout: 5 }, options: { actor: "line:M10", scope: "s1" } });
     assert.equal(registryCompute({ ...registry, offers: () => false } as never, { actor: "a", scope: "s" }), undefined);
+  });
+
+  it("is Sage when compute.python is offered but cannot be reached, for that call and the later ones", async () => {
+    const calls: string[] = [];
+    const registry = {
+      offers: (id: string) => id === "compute.python" || id === "compute.sage",
+      invoke: async (id: string) => {
+        calls.push(id);
+        if (id === "compute.python") throw new CapabilityError("unavailable", id, "compute.python: no implementation could be reached (pyodide: Pyodide is not installed)");
+        return { output: { result_type: "statement", stdout: '{"member": false}\n', elapsed_ms: 1 } };
+      },
+      release: async () => {},
+    };
+    const tool = registryCompute(registry as never, { actor: "line:M10", scope: "s1", needs: CERTIFICATE_NEEDS });
+    const out = await polyrithCandidates(goalOf("(x y : ℚ) (h : x = y) : x ^ 2 = 2"), tool, call);
+    assert.equal(out.note, "the conclusion is not in the ideal of the equation hypotheses", "(b) got Sage's answer");
+    assert.equal(tool?.capability, "compute.sage");
+    await tool?.run("1", { timeoutSec: 5 });
+    assert.deepEqual(calls, ["compute.python", "compute.sage", "compute.sage"]);
+  });
+
+  it("is one order with the run's: Sage first, and the tools with clarabel first for the stage", () => {
+    assert.deepEqual(COMPUTE_TOOLS, ["compute.sage", "compute.python"]);
+    assert.deepEqual(computeOrder(), ["compute.sage", "compute.python"]);
+    assert.deepEqual(computeOrder(CERTIFICATE_NEEDS), ["compute.python", "compute.sage"]);
+    const offers = { offers: () => true };
+    assert.deepEqual(computeFallbacks(offers, "compute.sage"), ["compute.python"]);
+    assert.deepEqual(computeFallbacks(offers, "compute.python", CERTIFICATE_NEEDS), ["compute.sage"]);
   });
 });
 
