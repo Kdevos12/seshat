@@ -272,13 +272,17 @@ describe("the ACP transport of the coding-agent builder (EA2)", () => {
     }
   });
 
-  it("checks the settings: a command for the transport, known tool kinds, the sandbox rule", () => {
+  it("checks the settings: a command for the transport, known tool kinds, the grace period, the sandbox rule", () => {
     const make = (settings: AgentSettings) => new CodingAgentBuilder({ settings, repo: "/nowhere", certifierFor: () => ({}) as never });
     assert.throws(() => make({ agent: "agy", transport: "acp", unsandboxed: true }), /agy has no default acp command: set command/);
     assert.throws(() => make({ agent: "gemini", unsandboxed: true }), /gemini has no default cli command/);
     assert.throws(() => make({ agent: "gemini", transport: "acp", unsandboxed: true, acp: { deny: ["network"] } }), /unknown tool kinds: network/);
     assert.throws(() => make({ agent: "gemini", transport: "acp" }), /needs a sandbox command/);
     assert.throws(() => make({ agent: "pi", transport: "ssh" as never, unsandboxed: true }), /unknown transport ssh/);
+    for (const grace of [-1, Number.NaN, Number.POSITIVE_INFINITY, 301, "5" as never]) {
+      assert.throws(() => make({ agent: "gemini", transport: "acp", unsandboxed: true, acp: { cancelGraceSec: grace } }), /acp.cancelGraceSec must be a number of seconds from 0 to 300/, String(grace));
+    }
+    assert.ok(make({ agent: "gemini", transport: "acp", unsandboxed: true, acp: { cancelGraceSec: 0 } }));
     assert.ok(make({ agent: "gemini", transport: "acp", unsandboxed: true }));
     assert.deepEqual(renderCommand({ agent: "gemini", transport: "acp", sandbox: ["bwrap"] }, {}, 60), ["bwrap", "gemini", "--experimental-acp"]);
     assert.deepEqual(renderCommand({ agent: "claude-code", transport: "acp", unsandboxed: true }, { usd: 3 }, 60), ["claude-agent-acp"]);

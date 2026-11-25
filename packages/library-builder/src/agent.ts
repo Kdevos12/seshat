@@ -62,9 +62,12 @@ export interface AcpSettings {
    * path outside the clone is denied whatever its kind.
    */
   deny?: readonly string[];
-  /** How long the agent has to answer `session/cancel` before its process group is killed, in seconds. Default 5. */
+  /** How long the agent has to answer `session/cancel` before its process group is killed, in seconds, from 0 to 300. Default 5. */
   cancelGraceSec?: number;
 }
+
+/** The longest grace period `acp.cancelGraceSec` may give: past it, a typo would keep a cancelled agent running for hours. */
+export const MAX_CANCEL_GRACE_SEC = 300;
 
 export interface AgentSettings {
   agent: AgentName;
@@ -120,6 +123,10 @@ export function settingsProblem(settings: AgentSettings): string | undefined {
   const deny = settings.acp?.deny ?? [];
   const unknown = deny.filter((k) => !(TOOL_KIND_NAMES as readonly string[]).includes(k));
   if (unknown.length > 0) return `acp.deny names unknown tool kinds: ${unknown.join(", ")}`;
+  const grace = settings.acp?.cancelGraceSec;
+  if (grace !== undefined && (typeof grace !== "number" || !Number.isFinite(grace) || grace < 0 || grace > MAX_CANCEL_GRACE_SEC)) {
+    return `acp.cancelGraceSec must be a number of seconds from 0 to ${MAX_CANCEL_GRACE_SEC}, not ${String(grace).slice(0, 40)}`;
+  }
   return undefined;
 }
 
