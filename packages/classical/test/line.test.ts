@@ -286,7 +286,7 @@ describe("the certificate stage in the line (plan change CX4)", () => {
         return tool;
       },
     };
-    const { problem, requests, lean, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false }, script: { [HINTS]: { ok: true } } });
+    const { problem, requests, lean, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false, certificates: true }, script: { [HINTS]: { ok: true } } });
     const refuse = (what: string) => new Proxy({}, { get: () => { throw new Error(`the stage called ${what}`); } });
     Object.assign(problem as object, { llm: refuse("a model"), decide: refuse("decide") });
     await hook(createM10(services), "beforeProvers")(problem);
@@ -300,23 +300,25 @@ describe("the certificate stage in the line (plan change CX4)", () => {
 
   it("tells the provers which certificates failed, and opens no compute session on a goal not tagged E6", async () => {
     const tool = compute();
-    const { problem, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false } });
+    const { problem, memory, claimId } = await problemOf({ statement: SOS, options: { firstOrder: false, certificates: true } });
     await hook(createM10({ compute: () => tool }), "beforeProvers")(problem);
     assert.match(describeTried(memory, claimId) ?? "", /Certificates written without a model and checked by Lean did not close the goal: a sum of squares/);
     const other = compute();
-    const plain = await problemOf({ options: { firstOrder: false } });
+    const plain = await problemOf({ options: { firstOrder: false, certificates: true } });
     await hook(createM10({ compute: () => other }), "beforeProvers")(plain.problem);
     assert.equal(other.calls + other.released, 0);
   });
 
-  it("reads its options, and is off with certificates false", async () => {
+  it("reads its options, and is off by default and with certificates false", async () => {
     const o = readOptions(M10_DEFAULTS);
-    assert.deepEqual([o.certificates, o.maxModulus, o.maxBoxes, o.certificateSec], [true, 64, 16, 30]);
+    assert.deepEqual([o.certificates, o.maxModulus, o.maxBoxes, o.certificateSec], [false, 64, 16, 30]);
     assert.throws(() => readOptions({ ...M10_DEFAULTS, maxModulus: 1 }), /option M10\.maxModulus is an integer from 2 to 256/);
     const tool = compute();
-    const { problem, lean } = await problemOf({ statement: SOS, options: { firstOrder: false, certificates: false } });
-    await hook(createM10({ compute: () => tool }), "beforeProvers")(problem);
-    assert.ok(!lean.calls.some((c) => c.id.includes("cert.")));
+    for (const options of [{ firstOrder: false }, { firstOrder: false, certificates: false }]) {
+      const { problem, lean } = await problemOf({ statement: SOS, options });
+      await hook(createM10({ compute: () => tool }), "beforeProvers")(problem);
+      assert.ok(!lean.calls.some((c) => c.id.includes("cert.")));
+    }
     assert.equal(tool.calls, 0);
   });
 });

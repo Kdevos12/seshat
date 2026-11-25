@@ -133,7 +133,10 @@ has not run.
 
 ## The certificate stage (plan change CX4)
 
-`certificates.ts`, with the exact arithmetic in `polynomial.ts`. On a goal the router tags E6 ("a
+`certificates.ts`, with the exact arithmetic in `polynomial.ts`. Off by default (`--line-option
+M10.certificates=true` turns it on): the plan leaves every item off unless it says otherwise, and a paid
+comparison of runs with and without the stage decides; `harness certificates` (below) runs every method whatever
+the option says. On a goal the router tags E6 ("a
 certificate of a bound or an impossibility", CX1), when no tactic closed it, the battery tries four kinds of
 certificate that a plain Mathlib checks, with no model call, in this order, before the ATPs:
 
@@ -346,7 +349,8 @@ Options (`--line-option M10.<name>=<value>`): `parallel` 4, `cpuBudgetSec` 60, `
 `order` thompson|mean, `hammerCutoffs` "16,64,256", `packages` "" (the optional tactics the profile
 promises, not probed), `probe` true, `subgoals` true, `maxSubgoals` 8, `firstOrder` true,
 `atpTimeoutSec` 20, `premiseCutoffs` "16,64,256", `reconstructBudgetSec` 60, `search` false,
-`searchNodes` 60, `orderer` posterior|decide, and for the certificate stage `certificates` true,
+`searchNodes` 60, `orderer` posterior|decide, and for the certificate stage `certificates` false (off, as the
+plan's items are unless it says otherwise; a paid comparison of runs with and without it decides),
 `maxModulus` 64, `maxBoxes` 16, `certificateSec` 30. A bad value stops the hook with the option's name.
 
 The **briefing** (`describeTried`) says, from the nodes, what was tried: the router's domain as a guess,

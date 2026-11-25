@@ -38,8 +38,11 @@ export const M10_DEFAULTS = {
   /** Run the battery on the open subgoals of the problem's claim too (claims joined to it by `decomposes_into`). */
   subgoals: true,
   maxSubgoals: 8,
-  /** The certificate stage (plan change CX4) after the tactics, on goals the router tags E6: modular obstruction, cofactors, sums of squares, Bernstein boxes. */
-  certificates: true,
+  /**
+   * The certificate stage (plan change CX4) after the tactics, on goals the router tags E6: modular obstruction, cofactors, sums of
+   * squares, Bernstein boxes. Off, as every item of the plan is unless it says otherwise: a paid comparison with and without it decides.
+   */
+  certificates: false,
   /** The largest modulus of the modular obstruction. */
   maxModulus: 64,
   /** The most boxes of the Bernstein subdivision. */
