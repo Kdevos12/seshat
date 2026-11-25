@@ -158,9 +158,12 @@ export function permissionOutcome(optionId: string | undefined): Record<string, 
   return { outcome: optionId === undefined ? { outcome: "cancelled" } : { outcome: "selected", optionId } };
 }
 
-/** The option of a permission request for a decision: once rather than always, so that every later request is asked again. */
+/**
+ * The option of a permission request for a decision. An allow is `allow_once` only, so that every later request is asked again:
+ * when none is offered the answer is `cancelled` (undefined), never `allow_always`. A denial is `reject_once`, else `reject_always`.
+ */
 export function optionFor(request: PermissionRequest, decision: "allow" | "deny"): string | undefined {
-  const order = decision === "allow" ? ["allow_once", "allow_always"] : ["reject_once", "reject_always"];
+  const order = decision === "allow" ? ["allow_once"] : ["reject_once", "reject_always"];
   for (const kind of order) {
     const found = request.options.find((o) => o.kind === kind);
     if (found !== undefined) return found.optionId;

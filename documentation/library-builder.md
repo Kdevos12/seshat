@@ -93,7 +93,7 @@ output). It starts the agent's ACP command, then:
 4. **Permission requests** (`session/request_permission`) are answered by the settings: a tool kind listed in `acp.deny` (default
    `["fetch"]`: the network is the sandbox's to give, and the CLI transport's print mode denies a fetch too) is refused; a request
    that names a path outside the clone is refused whatever its kind; anything else is allowed, once (`allow_once`
-   rather than `allow_always`, so that every request is asked). Every answer is journaled with its reason. A path is placed by
+   rather than `allow_always`, so that every request is asked; a request that offers no `allow_once` is answered `cancelled`). Every answer is journaled with its reason. A path is placed by
    resolving each component physically, as the kernel would: a link is followed where it stands and `..` goes to the parent of
    what came before it, so `clone/d/link/../passwd` with `link` to `/etc` is `/passwd`. A path that starts with `~`, is a URI
    (`file://...`), holds a NUL byte, has a `..` after a part that does not exist, or cannot be resolved (a name too long) is

@@ -15,6 +15,7 @@ import {
   decidePermission,
   insideDirectory,
   type LibraryBuildResult,
+  optionFor,
   probeAcp,
   recordBuild,
   renderCommand,
@@ -317,6 +318,13 @@ describe("the permission policy", () => {
     assert.equal(decidePermission(request, { clone: root, deny: [] }).decision, "allow");
     assert.equal(decidePermission({ ...request, kind: "execute" }, { clone: root, deny: ["execute"] }).decision, "deny");
     assert.equal(decidePermission({ ...request, paths: [join(root, "a.lean"), "/tmp/x"] }, { clone: root, deny: [] }).decision, "deny");
+  });
+
+  it("allows once or not at all: a request that offers only allow_always is answered cancelled", () => {
+    const request = { toolCallId: "c", kind: "edit", paths: [], options: [{ optionId: "always", kind: "allow_always" }, { optionId: "no", kind: "reject_always" }] };
+    assert.equal(optionFor(request, "allow"), undefined);
+    assert.equal(optionFor(request, "deny"), "no");
+    assert.equal(optionFor({ ...request, options: [...request.options, { optionId: "once", kind: "allow_once" }] }, "allow"), "once");
   });
 
   it("resolves each component physically: the root's first character, `..` after a link, `~`, URIs and NUL", () => {
