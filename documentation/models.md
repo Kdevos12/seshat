@@ -692,7 +692,7 @@ edge that is not `computed`, and a fingerprint alone refutes nothing. The option
 | `leanFiles` | 200 | The most files the Lean evaluator sends for a problem (its statement and the claims around it together) and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
 | `lawWork` | 500 000 000 | The most steps the law evaluator may take, as `magmaWork` bounds them (the assignments of variables, each costing the occurrences of variables in the law and 4), for a problem and for each call of the tool; 0 turns it off ([caps](#the-caps)) |
 | `sat` | false | The SAT encoders for finite counterexamples ([SAT encoders](#sat-encoders)); off by default |
-| `satMagmaOrder`, `satGraphOrder` | 5, 10 | The largest order the SAT encoders try, from 1, for magmas and for graphs |
+| `satMagmaOrder`, `satGraphOrder` | 5, 8 | The largest order the SAT encoders try, from 1, for magmas and for graphs; 8 is the largest graph sent to Lean (`GRAPH_HUNT.leanVertices`), so a larger order finds only graphs recorded `too_large` |
 | `satTimeoutSec`, `satMaxClauses` | 60, 300 000 | The time of one call of the compute tool, and the most clauses of one CNF (a larger one ends the search for that statement as `too_large`) |
 
 A value out of range fails the problem's `beforeProvers` with the name of the option.

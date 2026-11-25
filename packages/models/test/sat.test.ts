@@ -17,6 +17,7 @@ import {
   createM11,
   encodeGraph,
   encodeMagma,
+  GRAPH_HUNT,
   type GraphHitData,
   graphFormula,
   M11_DEFAULTS,
@@ -352,6 +353,11 @@ describe("line M11 with the option sat", () => {
     assert.match(search?.note ?? "", /refute is off/);
   });
 
+  it("tries graphs up to the largest that goes to Lean by default", () => {
+    assert.equal(M11_DEFAULTS.satGraphOrder, GRAPH_HUNT.leanVertices);
+    assert.equal(M11_DEFAULTS.satGraphOrder, 8);
+  });
+
   it("records UNSAT as computed evidence and no status: R(3,3) = 6", async () => {
     const statement = "(V : Type) [Fintype V] [DecidableEq V] (G : SimpleGraph V) [DecidableRel G.Adj] (h : Fintype.card V = 6) (h3 : G.CliqueFree 3) : ¬ Gᶜ.CliqueFree 3";
     const compute = fakeCompute(plainDpll);
@@ -387,7 +393,7 @@ describe("line M11 with the option sat", () => {
     }
     const planted = word(edges).split("").map((bit, i) => (bit === "1" ? i + 1 : -(i + 1)));
     const compute = fakeCompute((clauses, variables, show) => (show === 45 ? dpll(clauses, variables, planted) : dpll(clauses, variables)));
-    const t = await setup({ statement, compute, options: { graphs: true } });
+    const t = await setup({ statement, compute, options: { graphs: true, satGraphOrder: 10 } });
     await t.run();
     const [search] = t.sat();
     assert.equal(search?.outcome, "found");

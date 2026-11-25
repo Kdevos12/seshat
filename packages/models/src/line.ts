@@ -68,11 +68,12 @@ export const M11_DEFAULTS = {
   /**
    * SAT encoders for finite counterexamples (plan change CX6), off by default: magmas to `satMagmaOrder` elements when the battery found no
    * counter-model, graphs to `satGraphOrder` vertices (with `graphs` on), solved by python-sat in the host's compute tool, each call within
-   * `satTimeoutSec`, a CNF of at most `satMaxClauses` clauses. documentation/models.md, "SAT encoders".
+   * `satTimeoutSec`, a CNF of at most `satMaxClauses` clauses. documentation/models.md, "SAT encoders". `satGraphOrder` is by default
+   * the largest graph sent to Lean (`GRAPH_HUNT.leanVertices`): a larger model would be recorded `too_large` and refute nothing.
    */
   sat: false,
   satMagmaOrder: 5,
-  satGraphOrder: 10,
+  satGraphOrder: GRAPH_HUNT.leanVertices,
   satTimeoutSec: 60,
   satMaxClauses: 300_000,
 } satisfies JsonObject;
