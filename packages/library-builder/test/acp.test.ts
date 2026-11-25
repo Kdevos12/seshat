@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -21,6 +22,7 @@ import {
 import { harness, SPEC } from "./fixtures.ts";
 
 const FAKE_ACP = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-acp-agent.mjs");
+const EXIT_MID_TURN = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "exit-mid-turn.ts");
 const OPTIONS: BuildOptions = { budget: { usd: 2, seconds: 60 }, timeoutSec: 60 };
 
 /** The settings of an ACP agent that is the fake script in a scenario; FAKE_LOG receives every message Seshat sends it. */
@@ -186,6 +188,44 @@ describe("the ACP transport of the coding-agent builder (EA2)", () => {
     for (const scenario of ["prompt_error", "exit_mid_turn"]) {
       const { result } = await acpRun(scenario);
       assert.equal(result.status, "accepted", `${scenario}: ${result.reason}`);
+    }
+  });
+
+  it("denies a path that cannot be resolved, and goes on: a failing answer never ends the harness", async () => {
+    const { result } = await acpRun("unresolvable");
+    assert.equal(result.status, "accepted", result.reason);
+    assert.match(result.provenance.agentOutput ?? "", /ns allowed: false; long allowed: false/);
+    const answers = result.provenance.acp?.permissions ?? [];
+    assert.deepEqual(answers.map((x) => [x.decision, x.answer]), [["deny", "reject-once"], ["deny", "reject-once"]]);
+    assert.match(answers[0]?.reason ?? "", /\/proc\/self\/ns\/net is outside the clone/);
+    assert.match(answers[1]?.reason ?? "", /could not be resolved: ENAMETOOLONG/);
+  });
+
+  it("kills the agent's process group when the harness exits during the turn", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mh-acp-exit-"));
+    const pidFile = join(dir, "agent.pid");
+    const child = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", EXIT_MID_TURN, FAKE_ACP, pidFile, dir], { encoding: "utf8", timeout: 20_000 });
+    assert.equal(child.status, 0, child.stderr);
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    assert.ok(pid > 0);
+    // Alive is signalable and, where /proc says, not a zombie that its new parent has not reaped yet.
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return false;
+      }
+      try {
+        return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+      } catch {
+        return true;
+      }
+    };
+    try {
+      for (let i = 0; i < 100 && alive(); i++) await new Promise((r) => setTimeout(r, 20));
+      assert.equal(alive(), false, "the agent outlived the harness");
+    } finally {
+      if (alive()) process.kill(-pid, "SIGKILL");
     }
   });
 

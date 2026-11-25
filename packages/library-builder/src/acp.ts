@@ -6,6 +6,7 @@ import {
   type AcpAgentInfo,
   type AcpMcpServer,
   cancelParams,
+  INTERNAL_ERROR,
   initializeParams,
   METHOD_NOT_FOUND,
   METHODS,
@@ -20,7 +21,7 @@ import {
   readStopReason,
   readUpdate,
 } from "./acp-protocol.ts";
-import { type AcpSettings, type AgentRun, type AgentRunner, killProcessGroup } from "./agent.ts";
+import { type AcpSettings, type AgentRun, type AgentRunner, killProcessGroup, trackProcessGroup } from "./agent.ts";
 
 /** One answer Seshat gave to a `session/request_permission`, as the build's record keeps it. */
 export interface PermissionAnswer {
@@ -217,6 +218,7 @@ function launch(
     return { child: undefined, send: () => {}, stopped, request: async () => await stopped, answer: async () => await new Promise(() => {}), kill: () => {} };
   }
   const child = spawn(program, args, { cwd: o.cwd, env: o.env, stdio: ["pipe", "pipe", "pipe"], detached: true });
+  trackProcessGroup(child);
   const kill = () => killProcessGroup(child);
   const timer = setTimeout(() => stop({ stop: "timeout" }), o.timeoutMs);
   const onAbort = () => stop({ stop: "abort" });
@@ -250,7 +252,12 @@ function launch(
         return;
       }
       if (typeof id !== "string" && typeof id !== "number") return o.onIgnored();
-      void o.onRequest(message.method, message.params).then((answer) => send({ id, ...answer }));
+      // A handler that throws answers an internal error: an unhandled rejection would end the harness and leave the agent running.
+      const method = message.method;
+      void o
+        .onRequest(method, message.params)
+        .catch((error: unknown) => ({ error: { code: INTERNAL_ERROR, message: `the client failed on ${method.slice(0, 60)}: ${String((error as Error | undefined)?.message ?? error).slice(0, 200)}` } }))
+        .then((answer) => send({ id, ...answer }));
       return;
     }
     if (typeof id === "number" && pending.has(id)) {

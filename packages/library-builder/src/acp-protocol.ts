@@ -24,6 +24,9 @@ export const METHODS = {
 /** The JSON-RPC error code for a method the client does not serve (`fs/*`, `terminal/*`, anything else). */
 export const METHOD_NOT_FOUND = -32601;
 
+/** The JSON-RPC error code Seshat answers when its own handling of a request failed. */
+export const INTERNAL_ERROR = -32603;
+
 /** The tool kinds ACP names; `fetch` is the one that reaches the network. */
 export const TOOL_KINDS = ["read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other"] as const;
 

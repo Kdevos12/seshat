@@ -236,10 +236,32 @@ export interface AgentRun {
 
 /** Kills a process started with `detached: true` and everything in its group. */
 export function killProcessGroup(child: ChildProcess): void {
+  live.delete(child);
   try {
     if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
   } catch {
     child.kill("SIGKILL");
+  }
+}
+
+/** The agents started in a process group of their own that have not exited or been killed. */
+const live = new Set<ChildProcess>();
+let killOnExit = false;
+
+/**
+ * Registers an agent started with `detached: true`, so that its process group is killed if the harness exits first (`exit` comes
+ * after `process.exit` and after an uncaught error too): a detached group is not the harness's to outlive. It is forgotten when it
+ * exits or is killed, so that a recycled group id is never signalled.
+ */
+export function trackProcessGroup(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  live.add(child);
+  child.once("exit", () => live.delete(child));
+  if (!killOnExit) {
+    killOnExit = true;
+    process.once("exit", () => {
+      for (const c of [...live]) killProcessGroup(c);
+    });
   }
 }
 
@@ -261,6 +283,7 @@ export const spawnAgent: AgentRunner = (argv, { cwd, env, stdin, timeoutMs, sign
       return;
     }
     const child = spawn(program, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], detached: true });
+    trackProcessGroup(child);
     const killGroup = () => killProcessGroup(child);
     const timer = setTimeout(() => {
       timedOut = true;

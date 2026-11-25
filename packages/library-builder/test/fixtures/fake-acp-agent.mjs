@@ -11,6 +11,9 @@ if (process.argv.includes("--version")) {
 }
 
 const scenario = process.env.FAKE_SCENARIO ?? "good";
+if (process.env.FAKE_PID !== undefined) writeFileSync(process.env.FAKE_PID, String(process.pid));
+// A deaf agent ignores the cancel and the end of its input too: only a kill ends it.
+if (scenario === "deaf") setInterval(() => {}, 60_000);
 const log = process.env.FAKE_LOG;
 const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
 const put = (path, text) => {
@@ -78,6 +81,14 @@ async function onPrompt(id, sessionId) {
       const outside = await permission(sessionId, "edit", "/etc/passwd");
       const dotdot = await permission(sessionId, "edit", `${cwd}/../escape.lean`);
       say(sessionId, `fetch allowed: ${allowed(fetch)}; outside allowed: ${allowed(outside)}; dotdot allowed: ${allowed(dotdot)}`);
+      put(join(cwd, DIR, "Basic.lean"), GOOD);
+      return send({ id, result: { stopReason: "end_turn" } });
+    }
+    case "unresolvable": {
+      // A link that resolves to no path (realpath fails on it) and a name too long to look up: both are denied, and the run goes on.
+      const ns = await permission(sessionId, "edit", "/proc/self/ns/net");
+      const long = await permission(sessionId, "edit", join(cwd, "a".repeat(300), "x.lean"));
+      say(sessionId, `ns allowed: ${allowed(ns)}; long allowed: ${allowed(long)}`);
       put(join(cwd, DIR, "Basic.lean"), GOOD);
       return send({ id, result: { stopReason: "end_turn" } });
     }

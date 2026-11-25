@@ -101,6 +101,8 @@ output). It starts the agent's ACP command, then:
    made after the check), and an agent may not ask at all. Only the sandbox confines the agent.
 5. **Every other request of the agent** (`fs/read_text_file`, `fs/write_text_file`, `terminal/*`, anything else) is answered
    "method not found" and recorded. A line that is not a JSON-RPC message is counted and ignored; a line longer than 4 MiB ends the run.
+   A request whose handling fails in Seshat is answered with an internal error (-32603) and the run goes on; if the harness itself
+   exits during a build (an uncaught error, `process.exit`), the agent's process group is killed first, on either transport.
 6. At the time limit or on abort, Seshat sends `session/cancel`, waits `acp.cancelGraceSec` (default 5) for the turn to end, then kills
    the process group as the CLI transport does: the build is `failed`. When the reported cost reaches the dollar budget (`budget.usd`,
    in USD), Seshat cancels the turn and the gate judges what was written. The cost is recorded, not charged anywhere: `harness library
