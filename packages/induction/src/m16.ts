@@ -212,12 +212,19 @@ export function createM16(): Line {
     const best: Scored | undefined = result.best;
     if (best !== undefined) {
       out.best = { code: best.code, score: best.score };
-      if (result.local !== undefined) out.local = { score: result.local.score, phase: result.local.phase };
+      // PD5 for the local search too: an object Lean already refuted for this claim is not its witness, and the best program's output is.
+      const refutedBy = result.local !== undefined ? set.find((c) => JSON.stringify(c.object) === JSON.stringify(result.local?.object)) : undefined;
+      if (refutedBy !== undefined) {
+        recordDrop(memory, claimId, { line: ACTOR, candidate: hashJson({ key: specNode.key, local: result.local?.object } as unknown as Json).slice(0, 16), by: refutedBy, tokensSaved: 0 });
+        out.reached = spec.target !== undefined && best.score >= spec.target;
+      }
+      const local = refutedBy === undefined ? result.local : undefined;
+      if (local !== undefined) out.local = { score: local.score, phase: local.phase };
       const input = spec.witnessInput ?? (spec.inputs[spec.inputs.length - 1] as Json);
       // The witness is the local search's object when it scored more than the best program's (CX5), else the best program's output.
-      const witness = result.local !== undefined ? result.local.object : (await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal)).values[0];
+      const witness = local !== undefined ? local.object : (await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal)).values[0];
       if (witness !== undefined) out.witness = witness;
-      if (s.submit && witness !== undefined && (spec.target === undefined || result.reached)) {
+      if (s.submit && witness !== undefined && (spec.target === undefined || out.reached)) {
         out.verdict = await submit(problem, memory, claimId, spec, witness, out);
         // A witness Lean rejected is a counterexample a checker produced: the next search for this claim meets it.
         if (out.verdict.startsWith("invalid")) admitCounterexample(memory, claimId, { object: witness, id: JSON.stringify(witness).slice(0, 80), source: "lean_decide", refutes: `the witness of "${spec.description.slice(0, 60)}"` });

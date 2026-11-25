@@ -540,6 +540,17 @@ describe("local search between model rounds (plan change CX5)", () => {
     assert.equal(without.local.length, 0);
   });
 
+  it("does not submit a local witness that Lean already refuted for the claim: the counterexample set screens it too", async () => {
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    admitCounterexample(memory, claimId, { object: Array(12).fill(1), id: "twelve ones", source: "lean_decide", refutes: "an earlier witness" });
+    const run = await runLine({ ...bitsSpec, neighborhood: "bits" }, {}, memory);
+    assert.notDeepEqual(run.done.witness, Array(12).fill(1));
+    assert.equal(run.done.local, undefined, "the refuted object is not the search's witness");
+    assert.equal(run.requests.length, 0, "nothing reached the target, so nothing went to Lean");
+    assert.ok(cegisCounter(memory, claimId).dropped >= 1);
+  });
+
   it("is the search it was without a neighborhood, whatever the local options say", async () => {
     const a = await runLine(bitsSpec);
     const b = await runLine(bitsSpec, { localMethod: "tabu", localSteps: 3, plateauSteps: 1, localNeighbors: 2, localMs: 100 });

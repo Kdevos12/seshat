@@ -305,7 +305,8 @@ the phase's best). A phase ends after `plateauSteps` steps without a better witn
 or the target; only then does the model round run. An improved object is scored like a program's output: its total is the
 program's it started from with the witness input's score replaced, so the target, the briefing and the submission read it as
 they read a program's; when it beats every program the witness submitted to Lean is the local object, through `leanTerm` like
-any witness. Each phase's source is seeded from the run's seed, the problem and the spec (apart from the program search's
+any witness, unless Lean already refuted that object for the claim: the counterexample set (PD5) screens it as it screens a
+program's output, the drop is counted, and the best program's output is the witness, submitted only if it reaches the target. Each phase's source is seeded from the run's seed, the problem and the spec (apart from the program search's
 source, which it leaves alone), and each phase is a `search_local` node (seed, steps, objects scored, start and best scores);
 a resumed process that finds a phase's node runs it again for the steps on record and not by the time, so it reproduces it.
 The steps on record fix how far a replay goes, not what each step scores: the sandbox's time per call is wall time, so a
