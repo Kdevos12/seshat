@@ -592,7 +592,7 @@ is `unknown`, never UNSAT.
   hypothesis holds at every assignment of its variables, and one selector per assignment of the conclusion's variables says
   it fails there. The first order with a model ends the search: the decoded magma must fail the statement under the law
   evaluator too, and is then recorded as a `counter_model` (battery `magmas:sat:<n>`) whose negation goes through `validate`,
-  as the battery's do.
+  as the battery's do (with `refute: false`, it is recorded and nothing is submitted).
 - **Graphs.** With `graphs` on, a statement in the template's fragment (`graphFormula`: hypotheses and a conclusion built from
   `G.CliqueFree k`, `Gᶜ.CliqueFree k`, comparisons of `G.edgeFinset.card` or `#G.edgeFinset`, `Fintype.card V`, `G.minDegree`,
   `G.maxDegree` with a numeral, and `∀ v, G.degree v ≤ d` for any comparison, joined by `¬`, `∧`, `∨`, `→`; a `∀` reaches to the

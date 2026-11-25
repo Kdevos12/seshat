@@ -330,6 +330,19 @@ describe("line M11 with the option sat", () => {
     assert.equal(t.sat().length, 1);
   });
 
+  it("with refute off, records the SAT counter-model and submits nothing, as for the battery's", async () => {
+    const planted = Array.from({ length: 25 }, (_, i) => Math.floor(i / 5));
+    const solve: Solver = (clauses, variables, show) => (show !== 125 ? undefined : dpll(clauses, variables, planted.map((c, cell) => cell * 5 + c + 1)));
+    const t = await setup({ statement: SEMIGROUPS, compute: fakeCompute(solve), options: { exhaustive: 1, samples: 0, refute: false } });
+    await t.run();
+    assert.equal(t.requests.length, 0, "nothing went to validate");
+    assert.equal(t.memory.nodes("counter_model", { claimId: t.claimId }).length, 1);
+    const [search] = t.sat();
+    assert.equal(search?.outcome, "found");
+    assert.equal(search?.confirmed, undefined);
+    assert.match(search?.note ?? "", /refute is off/);
+  });
+
   it("records UNSAT as computed evidence and no status: R(3,3) = 6", async () => {
     const statement = "(V : Type) [Fintype V] [DecidableEq V] (G : SimpleGraph V) [DecidableRel G.Adj] (h : Fintype.card V = 6) (h3 : G.CliqueFree 3) : ¬ Gᶜ.CliqueFree 3";
     const compute = fakeCompute(plainDpll);

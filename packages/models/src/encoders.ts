@@ -438,6 +438,8 @@ export interface SatSettings {
   graphOrder: number;
   timeoutSec: number;
   maxClauses: number;
+  /** M11's `refute`: false records a magma counter-model and submits no negation, as the battery's are. */
+  refute: boolean;
 }
 
 /** What one order came to. */
@@ -529,7 +531,7 @@ const outcomeOf = (tried: SatOrderRecord[], found: boolean): SatSearchData["outc
 /**
  * A statement of magmas that the battery did not refute: the template encoder from order 1 to `magmaOrder`. A model is a magma that
  * the law evaluator must also see failing; it is recorded as a counter-model and its negation goes through `validate`, as the
- * battery's do. Once per statement (a `sat_search` node).
+ * battery's do, unless `refute` is off. Once per statement (a `sat_search` node).
  */
 export async function satMagma(problem: ProblemContext, statement: MagmaStatement, settings: SatSettings, compute: SatCompute | undefined): Promise<void> {
   const statementHash = sha256Hex(problem.target.statement);
@@ -561,6 +563,10 @@ export async function satMagma(problem: ProblemContext, statement: MagmaStatemen
   const { node } = recordCounterModel(problem.memory, { claimId: problem.claimId, battery, index: 0, object: found.object, evaluator: "law", ...(verdict.witness !== undefined ? { witness: verdict.witness } : {}) });
   problem.log(`M11: SAT found that the statement fails on ${describeCounterModel(found.object)}`);
   problem.memory.recordObstruction({ claimId: problem.claimId, reason: "counterexample", detail: `the statement fails on ${describeCounterModel(found.object)}` });
+  if (!settings.refute) {
+    recordSearch(problem, { ...base, tried, outcome: "found", capability: compute.capability, note: "refute is off: the negation was not submitted" });
+    return;
+  }
   const attempts = await submitRefutation(problem.validate, { claimId: problem.claimId, statement, object: found.object });
   problem.memory.updateNode(node.nodeId, { refutation: attempts }, "the negation was submitted through validate");
   recordSearch(problem, { ...base, tried, outcome: "found", confirmed: attempts.some((a) => a.verdict === "valid"), capability: compute.capability });

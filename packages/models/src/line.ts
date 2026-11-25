@@ -121,7 +121,7 @@ export function readOptions(raw: Readonly<JsonObject>): M11Options {
 }
 
 function satSettings(options: M11Options): SatSettings {
-  return { magmaOrder: options.satMagmaOrder, graphOrder: options.satGraphOrder, timeoutSec: options.satTimeoutSec, maxClauses: options.satMaxClauses };
+  return { magmaOrder: options.satMagmaOrder, graphOrder: options.satGraphOrder, timeoutSec: options.satTimeoutSec, maxClauses: options.satMaxClauses, refute: options.refute };
 }
 
 /** The objects a statement is tried on: magmas for a statement of magmas, the numbers from 0 for a statement about a number. */
