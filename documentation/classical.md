@@ -197,7 +197,8 @@ pnpm harness certificates bench/cx4-certificates.json --host local --out cx4-pas
 ```
 
 runs every method of the stage on every problem, one method at a time, with no tactics, no model, no claim and no
-`validate` (`certificate-pass.ts`): each Lean check is a `lean.check` tool run of `line:M10`, each compute call one
+`validate` (`certificate-pass.ts`). The file's header and statements pass the screen of text that reaches Lean
+(`headerProblems`, `leanTextProblems`) before anything runs, and a file that fails it is refused whole. Each Lean check is a `lean.check` tool run of `line:M10`, each compute call one
 of `compute.python` (else `compute.sage`), in a session per problem. It prints, per problem, whether the router tags
 it E6 and the methods whose certificate Lean accepted, then the count per method (accepted, expected, and checks
 Lean did not answer); `--out` writes the report as JSON, `--problem ID` (repeatable) picks problems. It changes no

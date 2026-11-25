@@ -6,7 +6,9 @@ import {
   type CertificateNote,
   type ComputeTool,
   DEFAULT_CERTIFICATES,
+  headerProblems,
   isCertificateMethod,
+  leanTextProblems,
   primaryDomain,
   registryCompute,
   routeStatement,
@@ -39,7 +41,10 @@ export interface CertificateBench {
 
 export class CertificateBenchError extends Error {}
 
-/** Reads and checks a certificate bench file. */
+/**
+ * Reads and checks a certificate bench file. Its header and statements reach Lean files, so they pass the screen of text that
+ * reaches Lean first (`headerProblems`, `leanTextProblems`), as a bench's do anywhere else: a file that fails it is refused whole.
+ */
 export function readCertificateBench(path: string): CertificateBench {
   let raw: unknown;
   try {
@@ -59,6 +64,11 @@ export function readCertificateBench(path: string): CertificateBench {
     }
     ids.add(q.id);
   }
+  const refused = [
+    ...headerProblems(b.header).map((reason) => `its header: ${reason}`),
+    ...(b.problems as CertificateBenchProblem[]).flatMap((p) => leanTextProblems(p.statement).map((reason) => `problem ${p.id}: ${reason}`)),
+  ];
+  if (refused.length > 0) throw new CertificateBenchError(`${path} is refused before Lean sees it: ${refused.join("; ")}`);
   return b as CertificateBench;
 }
 
@@ -105,7 +115,6 @@ export async function certificatePass(bench: CertificateBench, deps: Certificate
     if (deps.signal?.aborted) break;
     const route = routeStatement(problem.statement);
     const compute = deps.compute(problem.id);
-    if (compute !== undefined) capability = compute.capability;
     const row: CertificatePassRow = { id: problem.id, kind: problem.kind, e6: route.moves.includes("E6"), expect: problem.expect, accepted: [], tries: [], notes: [], cpuMs: 0 };
     try {
       for (const method of CERTIFICATE_METHODS) {
@@ -127,6 +136,8 @@ export async function certificatePass(bench: CertificateBench, deps: Certificate
         if (out.winner !== undefined) row.accepted.push(method);
       }
     } finally {
+      // Read after the calls: the tool that answered, once one was found unavailable.
+      if (compute !== undefined) capability = compute.capability;
       await compute?.release?.().catch(() => {});
     }
     rows.push(row);

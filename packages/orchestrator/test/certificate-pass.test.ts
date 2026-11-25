@@ -41,6 +41,14 @@ describe("the inputs of CX4's real pass", () => {
     const dir = mkdtempSync(join(tmpdir(), "mh-cx4-"));
     writeFileSync(join(dir, "bad.json"), JSON.stringify({ benchId: "x", header: "import Mathlib", problems: [{ id: "p", kind: "inequality", statement: ": True", expect: ["magic"] }] }));
     assert.throws(() => readCertificateBench(join(dir, "bad.json")), CertificateBenchError);
+    // A header or a statement that fails the screen never reaches Lean.
+    const problem = { id: "p", kind: "inequality", statement: "(x : ℝ) : 0 ≤ x ^ 2", expect: ["sos"] };
+    writeFileSync(join(dir, "header.json"), JSON.stringify({ benchId: "x", header: "import Mathlib\n#eval IO.println 1", problems: [problem] }));
+    assert.throws(() => readCertificateBench(join(dir, "header.json")), /refused before Lean sees it: its header: .*'#'/u);
+    writeFileSync(join(dir, "statement.json"), JSON.stringify({ benchId: "x", header: "import Mathlib", problems: [{ ...problem, statement: "(x : ℝ) : 0 ≤ x ^ 2 -- " }] }));
+    assert.throws(() => readCertificateBench(join(dir, "statement.json")), /refused before Lean sees it: problem p: .*'--'/u);
+    writeFileSync(join(dir, "good.json"), JSON.stringify({ benchId: "x", header: "import Mathlib", problems: [problem] }));
+    assert.equal(readCertificateBench(join(dir, "good.json")).problems.length, 1);
   });
 });
 
