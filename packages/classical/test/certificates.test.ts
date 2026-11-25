@@ -449,8 +449,20 @@ describe("the stage's Python programs", () => {
     // The cofactors combine to the target, exactly.
     const n = 2;
     const poly = (raw: unknown): Poly => new Poly(n, (raw as Array<[number[], string, string]>).map(([m, a, b]) => [m, rat(BigInt(a), BigInt(b))]));
+    const poly1 = (raw: unknown): Poly => new Poly(1, (raw as Array<[number[], string, string]>).map(([m, a, b]) => [m, rat(BigInt(a), BigInt(b))]));
     const sum = poly(out.cofactors[0]).mul(poly(data.gens[0])).add(poly(out.cofactors[1]).mul(poly(data.gens[1])));
     assert.ok(sum.equals(poly(data.target)));
+    // Over ℤ: x = (-1)·2x + 1·3x. The first solution, with the free cofactor at 0, is x = (1/2)·2x; an integral one is found.
+    const integral = { nvars: 1, gens: [[[[1], "2", "1"]], [[[1], "3", "1"]]], target: [[[1], "1", "1"]], extra: 2 };
+    for (const [flag, integers] of [[true, true], [false, false]] as const) {
+      const input = { ...integral, integral: flag };
+      const driven = spawnSync("python3", ["-I", "-c", driver.replace(JSON.stringify(JSON.stringify(data)), JSON.stringify(JSON.stringify(input)))], { input: POLYRITH_PY, encoding: "utf8", env: {} });
+      assert.equal(driven.status, 0, driven.stderr);
+      const got = JSON.parse(driven.stdout.trim()) as { cofactors: Array<Array<[number[], string, string]>> };
+      const cof = got.cofactors.map((c) => poly1(c));
+      assert.ok(cof[0]?.mul(poly1(integral.gens[0])).add((cof[1] as Poly).mul(poly1(integral.gens[1]))).equals(poly1(integral.target)));
+      assert.equal(cof.every((c) => c.integral()), integers, `integral ${flag}`);
+    }
   });
 });
 

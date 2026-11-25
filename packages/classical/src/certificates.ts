@@ -347,9 +347,11 @@ const pythonWith = (data: unknown, body: string): string => `DATA = ${JSON.strin
 
 /**
  * (b)'s program: sympy's Gröbner basis says whether the target lies in the ideal of the hypotheses; then the
- * cofactors, by an ansatz of growing degree solved exactly over `Fraction`. It prints one JSON line.
+ * cofactors, by an ansatz of growing degree solved exactly over `Fraction`. Over ℤ (`integral`), a solution with
+ * denominators tries small integers (-2 to 2) for up to three of the free unknowns it depends on, then the next
+ * degree, and is given as it is only when none is integral. It prints one JSON line.
  */
-export const POLYRITH_PY = String.raw`import json
+export const POLYRITH_PY = String.raw`import itertools, json
 from fractions import Fraction
 import sympy
 D = json.loads(DATA)
@@ -367,7 +369,7 @@ def monos(d, k):
     if k == 0:
         return [()]
     return [(a,) + m for a in range(d + 1) for m in monos(d - a, k - 1)]
-def solve(rows, rhs, ncols):
+def solve(rows, rhs, ncols, integral):
     rows = [dict(r) for r in rows]
     rhs = list(rhs)
     piv = {}
@@ -398,14 +400,32 @@ def solve(rows, rhs, ncols):
         r += 1
     if any(rhs[i] != 0 for i in range(r, len(rows))):
         return None
-    x = [Fraction(0)] * ncols
+    def at(chosen):
+        x = [Fraction(0)] * ncols
+        for col, v in chosen.items():
+            x[col] = Fraction(v)
+        for col, i in piv.items():
+            x[col] = rhs[i] - sum(rows[i].get(c, 0) * v for c, v in chosen.items())
+        return x
+    x = at({})
+    if not integral or all(v.denominator == 1 for v in x):
+        return x
+    free = []
     for col, i in piv.items():
-        x[col] = rhs[i]
+        if x[col].denominator != 1:
+            free += [c for c in rows[i] if c not in piv and c not in free]
+    free = free[:3]
+    for values in itertools.product(range(-2, 3), repeat=len(free)):
+        y = at(dict(zip(free, values)))
+        if all(v.denominator == 1 for v in y):
+            return y
     return x
 G = sympy.groebner([ex(g) for g in gens], *xs, order="grevlex")
 out = {"member": bool(G.contains(ex(target))), "cofactors": None}
+integral = bool(D.get("integral"))
 if out["member"]:
     top = max([deg(target)] + [deg(g) for g in gens])
+    rational = None
     for extra in range(int(D["extra"]) + 1):
         bound = top + extra
         cols = [(i, m) for i, g in enumerate(gens) if bound >= deg(g) for m in monos(bound - deg(g), n)]
@@ -418,14 +438,18 @@ if out["member"]:
         if any(k not in eqs for k in target):
             continue
         keys = list(eqs)
-        sol = solve([eqs[k] for k in keys], [target.get(k, Fraction(0)) for k in keys], len(cols))
+        sol = solve([eqs[k] for k in keys], [target.get(k, Fraction(0)) for k in keys], len(cols), integral)
         if sol is not None:
             cof = [[] for _ in gens]
             for j, (i, m) in enumerate(cols):
                 if sol[j] != 0:
                     cof[i].append([list(m), str(sol[j].numerator), str(sol[j].denominator)])
-            out["cofactors"] = cof
-            break
+            if not integral or all(v.denominator == 1 for v in sol):
+                out["cofactors"] = cof
+                break
+            rational = rational or cof
+    if out["cofactors"] is None:
+        out["cofactors"] = rational
 print(json.dumps(out))
 `;
 
@@ -449,7 +473,7 @@ export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | 
   const timeoutSec = callSeconds(options.deadline);
   if (timeoutSec < 1) return { candidates: [], note: "not tried: the time for this method is spent" };
   const call = { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) };
-  const answer = await compute.run(pythonWith({ nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE }, POLYRITH_PY), call);
+  const answer = await compute.run(pythonWith({ nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE, integral: goal.sort === "ℤ" }, POLYRITH_PY), call);
   const out = lastJson(answer) as { member?: unknown; cofactors?: unknown } | undefined;
   if (out === undefined || typeof out !== "object" || out === null || typeof out.member !== "boolean") return { candidates: [], note: `${compute.capability} gave no answer in the expected form` };
   if (!out.member) return { candidates: [], note: "the conclusion is not in the ideal of the equation hypotheses" };
