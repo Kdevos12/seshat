@@ -1640,6 +1640,19 @@ lives in the one module its design table names; no new package. In this order:
   heuristic card per move.
 - Task 80 (CX9): native packs, each only on a measured need. The paid comparison run (at most $1) only on the owner's go.
 
+### Tasks 81 to 83: a coding agent behind Seshat, and models by role and depth (EA1 to EA6, MM1 to MM3)
+
+The plan change `plans/plan-change-coding-agents.md` (approved on 2026-11-25, Ruling 48). Off by default; no benchmark
+gates it. In this order:
+
+- Task 81 (EA1, EA2): `harness doctor` checks the configured coding agents ($0); ACP as a second transport of
+  `library-builder`'s `coding-agent` builder (`agent.transport`, default `"cli"`, byte-identical).
+- Task 82 (EA3, MM1, after DP7 merges): the reasoning partner on a hole that is `too_hard` at DP7's maximum depth
+  (`RunConfig.externalAgent`; its proof goes through `validate`, its text is advice); `roles.<role>.deeper` for the
+  role's calls at depth 1 or more.
+- Task 83 (EA4, EA5, EA6, MM2): the `compute` job (`harness agent compute`), the connector's documentation page, the
+  settings panel's switch and its model picker per role. MM3 only on the owner's go and a cap.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a
