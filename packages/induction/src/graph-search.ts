@@ -22,9 +22,6 @@ import { booleans, numbers, runValues } from "./sandbox.ts";
 
 type Graph = SearchGraph;
 
-/** CA20's graph move, which is M16's `graph` neighborhood (plan change CX5): one code path. */
-export const neighbor = graphNeighbor;
-
 function start(random: RandomSource, minVertices: number, maxVertices: number): Graph {
   const count = maxVertices - minVertices + 1;
   const n = minVertices + Math.min(count - 1, Math.floor(random() * count));
