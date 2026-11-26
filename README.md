@@ -203,6 +203,7 @@ flowchart TB
   graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
   satenc["SAT encoders (M11.sat, off)<br/>magmas and graphs, lex-leader CNF,<br/>python-sat; UNSAT is evidence only"]:::wait
   z3recipes["Z3 recipes (CX7: M14.invariants, M8.optima, off)<br/>Spacer invariants, Optimize optima,<br/>read strictly; open conjectures"]:::wait
+  guess["Guessing and growth (CX8, M8.guess)<br/>rsolve, nsimplify, identify, Richardson;<br/>read strictly, every known term checked;<br/>open conjectures"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
@@ -368,6 +369,9 @@ flowchart TB
   m8 -->|"extremal questions,<br/>option M8.optima"| z3recipes
   z3recipes -->|"HORN clauses,<br/>maximize, minimize"| smtz3
   z3recipes -->|"open claims derived<br/>from the target, smt_recipe nodes"| journal
+  m8 -->|"integer columns, when the<br/>host has compute.python"| guess
+  guess -->|"recurrences and terms,<br/>never to Sage"| python
+  guess -->|"closed forms and growths<br/>as pool candidates"| m8
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.->|"--tool, or when Sage<br/>does not answer"| python

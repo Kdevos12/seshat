@@ -302,8 +302,10 @@ provers get. Sage stays the tool wherever it
 answers. The first cases the harness computes for a parameterised statement
 ([induction.md](induction.md#the-first-cases-the-harness-pushes)) go through whichever of the two the
 run has; for Python their code first imports `comb` (as `binomial`), `factorial` and `prod` from
-`math`, the built-ins Sage has. Lines M8, M11 and M16, whose code is Sage's, still need
-`compute.sage` (CX8 moves M8's guessing to Python).
+`math`, the built-ins Sage has. Lines M8 (its Sage columns), M11 and M16, whose code is Sage's, still need
+`compute.sage`. M8's guessing and growth (plan change CX8) is the other way round: its programs import sympy and mpmath,
+so they are written for `compute.python` alone and never sent to Sage, and a host without `compute.python` runs none of it
+([induction.md](induction.md#guessing-and-growth-through-computepython-plan-change-cx8)).
 
 ### Its contract and tests
 

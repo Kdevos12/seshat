@@ -7,6 +7,7 @@ import { defaultColumns } from "./columns.ts";
 import { type ColumnSpec, type DataTable, buildTable, invariantDependencies, numericColumns, recordTable, readTables } from "./datatable.ts";
 import { dalmatian, boundStatement, type LeanLeaf } from "./dalmatian.ts";
 import { cheapTactics, formalizeHypothesis, proposeHypothesisDag, recordHypothesisDag, testLemmas, type TrivialityTest } from "./formalize.ts";
+import { offersPython, recordGuessEvidence, sequenceGuesses, sequenceOf, type SequenceGuessData } from "./guess.ts";
 import { type Hypothesis, executeHypotheses, proposeHypotheses } from "./hypotheses.ts";
 import { interestOf, type Verdicts } from "./interest.ts";
 import { optionReader } from "./options.ts";
@@ -70,6 +71,14 @@ export const M8_OPTIONS: JsonObject = {
    * in SMT-LIB over integer variables; each optimum becomes an open claim with an `smt_recipe` node. Empty: none, as before.
    */
   optima: [],
+  /**
+   * Guessing and growth through `compute.python` (plan change CX8): for each integer column, sympy's `rsolve` on the recurrence
+   * guessed from it, and a Richardson fit of its growth, each answer an open conjecture once it agrees with every known term.
+   * Only when the host offers `compute.python` (never sent to Sage); without it, or false, M8 is as before.
+   */
+  guess: true,
+  /** The limit of one guessing call, the interpreter's start included, in seconds. */
+  guessSec: 60,
 };
 
 interface Settings {
@@ -90,6 +99,8 @@ interface Settings {
   columns: ColumnSpec[];
   programMs: number;
   optima: SmtRecipe[];
+  guess: boolean;
+  guessSec: number;
 }
 
 export function readM8Options(raw: Readonly<JsonObject>): Settings {
@@ -119,6 +130,9 @@ export function readM8Options(raw: Readonly<JsonObject>): Settings {
     columns,
     programMs: o.integer("programMs", 1000, 300_000),
     optima: readSmtRecipes("M8", raw, "optima", "optimum"),
+    // Absent (options written before CX8): the defaults.
+    guess: raw.guess === undefined ? (M8_OPTIONS.guess as boolean) : o.flag("guess"),
+    guessSec: raw.guessSec === undefined ? (M8_OPTIONS.guessSec as number) : o.integer("guessSec", 5, 600),
   };
 }
 
@@ -129,6 +143,8 @@ interface Candidate {
   source: string;
   interest: number;
   hypothesisId?: string;
+  /** The evidence the pool writes on the claim (CX8's `sequence_guess` node). */
+  evidence?: SequenceGuessData;
 }
 
 /** What the line keeps of a problem; rebuilt from the memory by `run`. */
@@ -218,6 +234,8 @@ export function createM8(hooks: M8Hooks = {}): Line {
       // A resumed problem keeps the pool it already made: the model rounds are not paid again (their prompts carry what was
       // proved by then, so `reuse` would miss) and the pool does not grow with each resume.
       if (rebuildPool(problem, work)) return;
+      // CX8, after the resume check so that a resumed problem asks the tool nothing; free of model spend, like the classical part.
+      if (s.classical && s.guess && family === "integers" && offersPython(problem.registry)) await guess(problem, s, table, candidates);
       if (s.rounds > 0) {
         // The classical candidates are free and already in `candidates`: a model round that fails (the budget, Lean) does not lose them.
         try {
@@ -305,6 +323,19 @@ export function createM8(hooks: M8Hooks = {}): Line {
       }
     }
     for (const dep of invariantDependencies(table).slice(0, 12)) work.headline.push(`${dep.kind}: ${dep.from} -> ${dep.to} on ${dep.rows} objects`);
+  }
+
+  /** Guessing and growth through `compute.python` (CX8): the candidates join the pool's, whose screen and claims they go through. */
+  async function guess(problem: ProblemContext, s: Settings, table: DataTable, out: Candidate[]): Promise<void> {
+    const sequences = numericColumns(table)
+      .filter((c) => c.name !== "n")
+      .map((c) => sequenceOf(c.name, c.values, table.columns.find((x) => x.name === c.name)?.lean));
+    try {
+      out.push(...(await sequenceGuesses(problem, ACTOR, sequences, { timeoutSec: s.guessSec, counterexampleSet: s.counterexampleSet })));
+    } catch (error) {
+      if (isInterrupted(error) || problem.signal.aborted) throw error;
+      problem.log(`M8: the guessing failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function models(problem: ProblemContext, s: Settings, table: DataTable, targetStatement: string, header: string, out: Candidate[], hooks: M8Hooks): Promise<void> {
@@ -414,6 +445,7 @@ export function createM8(hooks: M8Hooks = {}): Line {
       if (memory.edges({ from: claimId, kinds: ["derived_from"] }).every((e) => e.to[0] !== problem.claimId)) {
         memory.addEdge({ kind: "derived_from", from: claimId, to: problem.claimId, note: `${c.source}: ${c.informal.slice(0, 200)}` });
       }
+      if (c.evidence !== undefined) recordGuessEvidence(memory, claimId, c.evidence);
       const relevance = await relevanceOf({ ...(problem.decide !== undefined ? { decide: problem.decide } : {}), llm: problem.llm, log: problem.log }, target, c.statement);
       entries.push(entryOf(memory, claimId, c.statement, relevance.value, c.interest));
     }

@@ -187,6 +187,9 @@ the proof length; `prunePool` keeps the best.
    Lean in the reals and entered as candidates; a linear recurrence guessed from each integer column, kept
    as a `recurrence` evidence node (the Lean form of a function of the column is for a prover to give);
    a lookup of two columns as sequences through `oeis.search` (`identification` nodes), when the host has it.
+   Then, when the host offers `compute.python` and the option `guess` is on, the guessing and growth of plan change CX8
+   (below): a closed form and a growth for each integer column, entered as candidates. A resumed problem whose pool exists
+   skips this step and asks the tool nothing.
 4. For each of `rounds` rounds, the model's hypotheses (site `induction.hypotheses`), run on the table; a
    hypothesis with a counterexample is dropped, so is a vacuous one (`minSupport`). One without a Lean
    statement goes through the step DAG and is formalized. The statement is screened, tried in Lean on its
@@ -221,7 +224,9 @@ theory exploration stops collecting equations past `max(2000, 50 * maxLaws)`; an
 
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
-true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000, `optima` [].
+true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000, `optima` [], `guess` true (CX8; it does
+anything only on a host that offers `compute.python`), `guessSec` 60 (5 to 600, the limit of one guessing call, the
+interpreter's start included).
 
 **Small optima through z3** (plan change CX7, option `optima`, an empty list by default, and then nothing changes): each
 entry is a question `{name, vars, constraints, objective, sense}` in SMT-LIB over integer variables, `sense` `maximize`
@@ -233,8 +238,49 @@ claim; a host without `smt.z3` runs none, and says so in the log. The recipe, it
 are in [classical.md](classical.md#z3-recipes-invariants-and-small-optima-plan-change-cx7); the shared step
 (`smtRecipeConjectures`, `readSmtRecipes`, `smtRecipeBriefing`) is `smt-conjectures.ts`, used by M14's `invariants` too.
 
+### Guessing and growth through `compute.python` (plan change CX8)
+
+`guess.ts`, moves E4 (guess a closed form) and E12 (estimate growth). The sequences are the integer columns of an integer
+table (every numeric column but `n`), each read from n = 0 up to its first value that is not an exact non-negative integer
+(a JavaScript number past 2^53 ends it), at most `GUESS_COLUMNS` (8) of them. For each, at most two questions go to
+`compute.python`, as programs Seshat writes, whose data (integers only) is a JSON line at their top:
+
+- **closed form**, when a recurrence is guessed from at least 12 terms (Berlekamp-Massey to order 6, as in step 3, else a
+  holonomic guess of order and degree at most 2 with 6 equations to spare): sympy's `rsolve` with the first terms as
+  initial values; its gammas are rewritten as factorials (`Γ(n + k)` and `Γ(n + k + 1/2)`, the latter by the duplication
+  formula), and the first of the simplified forms that the tree printer accepts comes back;
+- **growth**, when the terms are positive from n = 1 and strictly increasing on their last third: Richardson extrapolations
+  of order 6 of the ratios `a(n+1)/a(n)` (the base μ) and of the log-log slopes of `a(n)/μ^n` (the exponent α), each made a
+  small rational by sympy's `nsimplify` (denominator at most 12, within 10⁻⁴) and refused when two windows differ by more
+  than 10⁻⁴ (relative) for μ or 10⁻³ for α; then the constant `C` of `a(n) ~ C μ^n n^α`, when its two windows agree within
+  10⁻⁵ (relative), looked up by mpmath's `identify` among combinations of π and e (within 10⁻⁶).
+
+The tool is untrusted, and only its last line is read, strictly: a closed form is a JSON tree of `int`, `rat`, `n`, `pi`,
+`e`, `add`, `mul`, `pow`, `fact` and `binom` (at most 64 nodes, depth 12, integers of at most 40 digits); a growth is
+`{base, exponent, constant}` with small rationals and a constant tree. Anything else is `malformed` and gives nothing. Then
+the screen, the CEGIS rule of PD5 for M8's other candidates: a closed form is evaluated exactly at the counterexample set's
+numbers first (a disagreement there is a `cegis_drop`), then at every term of the column; the first term it does not give
+drops it and enters the set as a `table_run` counterexample. A growth cannot be refuted by finitely many terms, so it is
+checked against a first-order Richardson estimate of the last terms instead (the ratio within 5%, the slope within 0.15,
+the constant within 5%): a necessary check, not a proof.
+
+What survives becomes a candidate of the pool, with interest 0.9 for a closed form, 0.7 for a growth with its constant and
+0.6 without. Its Lean statement is written by Seshat from the parsed tree and the column's own `lean` term (a column
+without one gives a node and no claim), never from the tool's text: `(n : ℕ) : ((lean : ℕ) : ℚ) = …` over ℚ for a closed form
+(factorials, binomials and exponents only of natural terms without subtraction, so that ℕ's truncation never enters), and
+`: Asymptotics.IsEquivalent Filter.atTop (fun n : ℕ => ((lean : ℕ) : ℝ)) (fun n : ℕ => C * μ ^ n * (n : ℝ) ^ α)` for a
+growth with its constant, `Asymptotics.IsTheta` without it. The pool screens it (`statementProblem`) and makes it an `open`
+claim like any other, with a `derived_from` edge (`guess:rsolve` or `guess:growth`) and a `sequence_guess` node on the claim:
+the column, the recurrence, Seshat's printing of the closed form or of μ, α and C, and the terms it was read from. A
+question that gives no candidate (`none`, `malformed`, `disagrees`, `unstated`) is a node on the target; a question with a
+node is not asked again. Every program is code for `compute.python` alone (`ComputeCode`): Sage refuses its imports and is
+never sent one. On a host without `compute.python`, or with `guess` false, M8 writes and asks exactly what it did before;
+a `compute.python` that cannot be reached stops the step at its first call, with a log line and no node.
+
 Not run: the model's hypotheses are tested with the faux provider, Lean with a simulated `decide`, Sage
-and the OEIS with stand-ins.
+and the OEIS with stand-ins. CX8's programs have not run on a real Pyodide (sympy's `rsolve` and `simplify`, mpmath's
+`identify` and the Richardson windows are written from their documentation, and tested against a fake `compute.python`), and
+no closed form or growth statement has been elaborated by a real Lean.
 
 ## Theory exploration (line M13)
 
@@ -423,6 +469,10 @@ the local search of CX5: annealing and tabu with a seeded source, each neighborh
 target in fewer model rounds with the `bits` neighborhood than without, the same search without a neighborhood whatever the
 local options, a journaled phase replayed by its step count, the phases that say why they do nothing). `smt-conjectures.test.ts` (M8's `optima` against a
 stand-in `smt.z3`: the open claim, its edge and node, the briefing, a resume that does not ask z3 again, a malformed or
-`unknown` answer that makes no claim, the option off with no call, a host without z3). None of it needs Lean, a model or a network.
+`unknown` answer that makes no claim, the option off with no call, a host without z3). `guess.test.ts` (CX8: the strict
+readers and their refusals, exact evaluation, the Lean writers over ℚ and ℝ, the tail check of a growth; M8 against a fake
+`compute.python`: Catalan's closed form and the growth of a planted `n³ + 5` as open claims with their nodes, a resume that
+asks nothing, malformed answers that give nothing, a closed form a term refutes and the set's drop, the same tables, claims
+and nodes as before without `compute.python`, on Sage alone or with `guess` false, an unreachable tool). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.
