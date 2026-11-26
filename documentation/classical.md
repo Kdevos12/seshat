@@ -215,14 +215,7 @@ answers, it prints "Lean does not answer: lean.check cannot be reached on host .
 exits 1, with nothing run, instead of 40 problems whose every check went without an answer. The router tags every
 problem of the bench E6 (`eq-15`, `¬ ∃ x y : ℤ, x ^ 2 = 8 * y + 2`, since a negated existential is read whole).
 
-A first pass ran on a host with Lean 4.27.0 and a Kimina server, `compute.sage` in Docker and no Pyodide: modular
-16 of 16, Bernstein 3 of 4, polyrith 0 of 4, sums of squares 0 of 18. Every (b) and (c) call had failed on Sage's
-refusal of the Python programs' imports; (b) now sends Sage its own program and (c) is skipped there with its note.
-Neither has run again since, and (b)'s Sage program has never run on a real Sage. An earlier try without the Kimina
-server gave 0 of 40, every check "without an answer from Lean", which the check of Lean's health now stops at the
-start.
-
-**Not verified.** Besides the first pass above (whose accepted certificates were (a) and (d), on a real Lean), nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
+**Not verified.** Methods (a) and (d) have run against a real Lean; nothing else of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
 Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed, and (b)'s Sage program,
 checked to have no import, function or comprehension, runs on CPython with the few names of Sage it uses stubbed:
 `QQ`, `PolynomialRing`, the ideal and `lift`). Unchecked: that
